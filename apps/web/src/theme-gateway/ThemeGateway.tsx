@@ -1,0 +1,59 @@
+import * as React from 'react';
+import { useMemo, useState } from 'react';
+import { Activity, ArrowRight, Bell, Boxes, CalendarDays, ChevronDown, CircleHelp, Command, Database, FileBarChart2, FileText, GitBranch, Grid2X2, LayoutDashboard, Menu, Plus, Search, Settings2, ShieldCheck, Sparkles, Users, Workflow, X } from 'lucide-react';
+import './theme.css';
+
+type Page = 'dashboard' | 'objects' | 'records' | 'flows' | 'reports' | 'dashboards' | 'pages' | 'users' | 'settings';
+const sections: { key: Page; title: string; icon: React.ComponentType<{size?:number;strokeWidth?:number}>; link:string; category:string }[] = [
+  {key:'dashboard',title:'Overview',icon:LayoutDashboard,link:'/une/setup/home',category:'Workspace'},
+  {key:'objects',title:'Object Manager',icon:Database,link:'/une/setup/object-manager',category:'Workspace'},
+  {key:'records',title:'Records',icon:Grid2X2,link:'/une/apps/Records/home',category:'Workspace'},
+  {key:'flows',title:'Flow Builder',icon:Workflow,link:'/une/setup/flow-builder',category:'Build'},
+  {key:'reports',title:'Report Builder',icon:FileBarChart2,link:'/une/setup/report-builder',category:'Build'},
+  {key:'dashboards',title:'Dashboard Builder',icon:Activity,link:'/une/setup/dashboard-builder',category:'Build'},
+  {key:'pages',title:'Page Builder',icon:Boxes,link:'/une/setup/page-builder',category:'Build'},
+  {key:'users',title:'Users & Permissions',icon:ShieldCheck,link:'/une/setup/users',category:'Manage'},
+  {key:'settings',title:'Settings',icon:Settings2,link:'/une/setup/home',category:'Manage'}
+];
+const initialPage = (): Page => {
+ const slug = new URLSearchParams(window.location.search).get('view');
+ return sections.some(s=>s.key===slug) ? slug as Page : 'dashboard';
+};
+const sample = [
+ {name:'Acme Holdings',type:'Account',owner:'Olivia Parker',date:'Today',status:'Active'},
+ {name:'Website redesign',type:'Opportunity',owner:'James Wilson',date:'Yesterday',status:'In progress'},
+ {name:'Northern Distribution',type:'Account',owner:'Amelia Reed',date:'Oct 6',status:'Active'},
+ {name:'Onboarding request',type:'Case',owner:'Noah Smith',date:'Oct 5',status:'New'},
+ {name:'Quarterly renewal',type:'Opportunity',owner:'Sophia Lee',date:'Oct 3',status:'In progress'}
+];
+export default function ThemeGateway() {
+ const [page,setPage]=useState<Page>(initialPage);
+ const [search,setSearch]=useState('');
+ const [menuOpen,setMenuOpen]=useState(false);
+ const [commandOpen,setCommandOpen]=useState(false);
+ const [selected,setSelected]=useState<string|null>(null);
+ const [compact,setCompact]=useState(false);
+ const active=sections.find(s=>s.key===page)!;
+ const items=useMemo(()=>sample.filter(item=>Object.values(item).some(v=>v.toLowerCase().includes(search.toLowerCase()))),[search]);
+ function navigate(next:Page){setPage(next);setMenuOpen(false);setSearch('');setSelected(null);window.history.pushState({},'', '/theme-preview?view='+next);}
+ React.useEffect(()=>{const listener=()=>{setPage(initialPage())};window.addEventListener('popstate',listener);return()=>window.removeEventListener('popstate',listener)},[]);
+ React.useEffect(()=>{const handler=(e:KeyboardEvent)=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();setCommandOpen(v=>!v)}if(e.key==='Escape')setCommandOpen(false)};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler)},[]);
+ return <div className="md-theme">
+  <aside className={'md-rail '+(compact?'is-compact':'')+(menuOpen?' is-open':'')}>
+   <div className="md-brand"><div className="md-brand-mark"><span>m</span></div>{!compact&&<span className="md-brand-name">metadrive<span className="md-brand-dot">.</span></span>}<button title="Toggle navigation" className="md-icon md-collapse" onClick={()=>setCompact(v=>!v)}><Menu size={17}/></button></div>
+   <div className="md-rail-content">{['Workspace','Build','Manage'].map(group=><div className="md-nav-group" key={group}>{!compact&&<p className="md-group-label">{group}</p>}{sections.filter(s=>s.category===group).map(s=><button title={s.title} className={'md-nav-item '+(page===s.key?'active':'')} key={s.key} onClick={()=>navigate(s.key)}><s.icon size={19} strokeWidth={1.9}/>{!compact&&<span>{s.title}</span>}{page===s.key&&!compact&&<span className="md-nav-indicator"/>}</button>)}</div>)}</div>
+   <div className="md-rail-bottom">{!compact&&<div className="md-tip"><Sparkles size={18}/><div><b>Theme preview</b><p>Your original workspace is unchanged.</p></div></div>}<a className="md-original-link" href={active.link}><ArrowRight size={17}/>{!compact&&<span>Open original screen</span>}</a></div>
+  </aside>
+  {menuOpen&&<button className="md-mobile-overlay" onClick={()=>setMenuOpen(false)} aria-label="Close navigation"/>}
+  <div className="md-main">
+    <header className="md-topbar"><div className="md-top-left"><button className="md-icon md-mobile-menu" onClick={()=>setMenuOpen(true)} aria-label="Open navigation"><Menu size={22}/></button><span className="md-breadcrumb">Workspace</span><span className="md-slash">/</span><strong>{active.title}</strong></div><div className="md-top-actions"><button className="md-command" onClick={()=>setCommandOpen(true)}><Search size={17}/><span>Search anything...</span><kbd>Ctrl K</kbd></button><button className="md-icon" title="Help" onClick={()=>setCommandOpen(true)}><CircleHelp size={19}/></button><button className="md-icon" title="Notifications" onClick={()=>setSelected('Notifications')}><Bell size={19}/></button><div className="md-avatar">MD</div></div></header>
+    <main className="md-content"><div className="md-page-heading"><div><div className="md-eyebrow"><span className="md-live-dot"/> META WORKSPACE <span className="md-heading-sep">/</span> {active.category.toUpperCase()}</div><h1>{page==='dashboard'?'Good afternoon.':active.title}</h1><p>{page==='dashboard'?'Here’s a clear view of what’s happening in your workspace.':page==='objects'?'Manage your objects, fields, relationships and data models.':page==='flows'?'Create and manage automations from a single workspace.':page==='settings'?'Manage workspace preferences and configuration.':'Your '+active.title.toLowerCase()+' workspace, designed for clarity.'}</p></div><a href={active.link} className="md-primary-button">Go to live workspace <ArrowRight size={17}/></a></div>
+    {page==='dashboard'?<><div className="md-stats"><Metric icon={Database} label="Total records" value="2,846" change="+12.8%" /><Metric icon={Workflow} label="Active flows" value="24" change="+3 this month"/><Metric icon={Users} label="Workspace users" value="18" change="All active"/><Metric icon={Activity} label="System health" value="98.9%" change="Operational"/></div><div className="md-content-grid"><section className="md-panel md-activity"><div className="md-panel-header"><div><h2>Recent activity</h2><p>Changes and updates across your workspace</p></div><button className="md-subtle-button" onClick={()=>navigate('records')}>View records <ArrowRight size={15}/></button></div><RecordTable items={items} selected={selected} setSelected={setSelected} search={search} setSearch={setSearch}/></section><aside className="md-panel md-quick-panel"><div className="md-panel-header"><div><h2>Quick access</h2><p>Jump back into your work</p></div></div><div className="md-shortcuts">{sections.filter(s=>['objects','flows','reports','pages'].includes(s.key)).map(s=><button key={s.key} onClick={()=>navigate(s.key)}><span className="md-shortcut-icon"><s.icon size={19}/></span><span>{s.title}<small>Open workspace</small></span><ArrowRight size={17}/></button>)}</div><div className="md-panel-footer"><CalendarDays size={17}/> Your workspace is ready</div></aside></div></>:<><div className="md-stats md-stats-small"><Metric icon={active.icon} label={active.title} value="Workspace" change="Available"/><Metric icon={Activity} label="Status" value="Ready" change="Preview mode"/><Metric icon={GitBranch} label="Original routing" value="Linked" change="Unchanged"/></div><section className="md-panel md-wide-panel"><div className="md-panel-header"><div><h2>{page==='objects'?'Objects and data':page==='flows'?'Automation catalogue':page==='reports'?'Reports and analytics':page==='settings'?'Workspace settings':active.title}</h2><p>Explore this view in the new theme, or open the existing working screen.</p></div><a className="md-subtle-button" href={active.link}>Open working screen <ArrowRight size={15}/></a></div>{page==='records'||page==='objects'?<RecordTable items={items} selected={selected} setSelected={setSelected} search={search} setSearch={setSearch}/>:<div className="md-placeholder-grid">{sections.filter(s=>s.category===active.category).map(s=><button key={s.key} className="md-feature-card" onClick={()=>navigate(s.key)}><span className="md-shortcut-icon"><s.icon size={23}/></span><strong>{s.title}</strong><small>Explore workspace</small><ArrowRight size={18}/></button>)}</div>}</section></>}
+    <footer className="md-footer">MetaDrive theme gateway <span>Isolated preview • No changes to existing screens or API</span></footer></main>
+  </div>
+  {selected&&<div className="md-detail-backdrop" onClick={()=>setSelected(null)}><aside className="md-detail" onClick={e=>e.stopPropagation()}><div className="md-detail-title"><h2>{selected}</h2><button className="md-icon" onClick={()=>setSelected(null)}><X size={20}/></button></div><p>This is a preview interaction. The original workspace retains all live data operations.</p><a href={active.link} className="md-primary-button">Open live workspace <ArrowRight size={16}/></a></aside></div>}
+  {commandOpen&&<div className="md-command-backdrop" onClick={()=>setCommandOpen(false)}><div className="md-command-dialog" onClick={e=>e.stopPropagation()}><div className="md-command-input"><Search size={20}/><input autoFocus placeholder="Search workspaces…" value={search} onChange={e=>setSearch(e.target.value)}/><button className="md-icon" onClick={()=>setCommandOpen(false)}><X size={17}/></button></div><div className="md-command-results">{sections.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())).map(s=><button key={s.key} onClick={()=>{navigate(s.key);setCommandOpen(false)}}><s.icon size={19}/><span>{s.title}</span><ArrowRight size={16}/></button>)}</div></div></div>}
+ </div>
+}
+function Metric({icon:Icon,label,value,change}:{icon:React.ComponentType<{size?:number}>,label:string,value:string,change:string}){return <div className="md-metric"><div className="md-metric-top"><span>{label}</span><span className="md-metric-icon"><Icon size={19}/></span></div><strong>{value}</strong><span className="md-metric-change"><span className="md-green-dot"/> {change}</span></div>}
+function RecordTable({items,selected,setSelected,search,setSearch}:{items:typeof sample;selected:string|null;setSelected:(v:string)=>void;search:string;setSearch:(v:string)=>void}){return <><div className="md-table-tools"><label className="md-table-search"><Search size={17}/><input placeholder="Search records" value={search} onChange={e=>setSearch(e.target.value)}/></label><span className="md-count">{items.length} results</span></div><div className="md-table-scroll"><table className="md-table"><thead><tr><th>NAME</th><th>TYPE</th><th>OWNER</th><th>UPDATED</th><th>STATUS</th><th/></tr></thead><tbody>{items.map((item,i)=><tr key={item.name} onClick={()=>setSelected(item.name)}><td><span className="md-name-cell"><span className="md-record-icon">{item.name.slice(0,1)}</span><b>{item.name}</b></span></td><td>{item.type}</td><td>{item.owner}</td><td>{item.date}</td><td><span className={'md-status '+(item.status==='Active'?'is-active':'')}>{item.status}</span></td><td><ArrowRight size={16}/></td></tr>)}</tbody></table>{items.length===0&&<div className="md-empty">No matching records found.</div>}</div><div className="md-table-note">Preview data only · Live records are available through the original workspace</div></>}
