@@ -99,6 +99,7 @@ async function startApi(port: number, dataPath: string, bootstrap = false): Prom
   apiLogs = '';
   child.stdout?.on('data', (chunk: Buffer) => { apiLogs += chunk.toString(); });
   child.stderr?.on('data', (chunk: Buffer) => { apiLogs += chunk.toString(); });
+  child.on('exit', (code, signal) => { apiLogs += `\nTest API exited with code ${code} and signal ${signal}`; });
   const healthUrl = `http://127.0.0.1:${port}/health`;
   for (let attempt = 0; attempt < 600; attempt += 1) {
     if (child.exitCode !== null) throw new Error(`Test API exited during startup:\n${apiLogs}`);
@@ -437,15 +438,20 @@ test('dashboard Includes and Excludes filters match configured multi-select valu
 function client(port: number) {
   const root = `http://127.0.0.1:${port}/api`;
   const send = async (pathName: string, token?: string, method = 'GET', body?: unknown, requestSource?: 'web-app') => {
-    const response = await fetch(`${root}${pathName}`, {
-      method,
-      headers: {
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-        ...(requestSource ? { 'x-metadrive-request-source': requestSource } : {}),
-        ...(body ? { 'content-type': 'application/json' } : {})
-      },
-      ...(body ? { body: JSON.stringify(body) } : {})
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${root}${pathName}`, {
+        method,
+        headers: {
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          ...(requestSource ? { 'x-metadrive-request-source': requestSource } : {}),
+          ...(body ? { 'content-type': 'application/json' } : {})
+        },
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+    } catch (error) {
+      throw new Error(`API ${method} ${pathName} could not complete: ${error instanceof Error ? error.message : String(error)}\n${apiLogs}`);
+    }
     const text = await response.text();
     if (response.status >= 500) console.error(`API ${method} ${pathName} returned ${response.status}:\n${apiLogs}`);
     return { status: response.status, data: text ? JSON.parse(text) as Record<string, any> : {} };
@@ -832,6 +838,27 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       }
     });
     assert.equal(createdLifecycleObject.status, 201, JSON.stringify(createdLifecycleObject.data));
+    const lifecycleNavigationApp = await api.send('/metadata/apps', adminToken, 'POST', {
+      apiName: 'LifecycleNavigationApp',
+      label: 'Lifecycle Navigation',
+      description: '',
+      navigationItems: [lifecycleObjectApiName],
+      navigationPageApiNames: [],
+      navigationOrder: [{ type: 'Object', apiName: lifecycleObjectApiName }],
+      brandColor: '#0176d3',
+      utilityItems: []
+    });
+    assert.equal(lifecycleNavigationApp.status, 201, JSON.stringify(lifecycleNavigationApp.data));
+    const lifecycleObjectDependencies = await api.send(`/metadata/objects/${lifecycleObjectApiName}/dependencies`, adminToken);
+    assert.equal(lifecycleObjectDependencies.status, 200, JSON.stringify(lifecycleObjectDependencies.data));
+    assert.ok(lifecycleObjectDependencies.data.dependencies.includes('Lightning app Lifecycle Navigation navigation'),
+      'object dependency inspection must report app navigation references');
+    const blockedLifecycleObjectDelete = await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'DELETE');
+    assert.equal(blockedLifecycleObjectDelete.status, 409, 'object deletion must be blocked by Lightning app navigation');
+    assert.match(String(blockedLifecycleObjectDelete.data.error), /Lifecycle Navigation/,
+      'object deletion errors must identify the blocking app');
+    assert.equal((await api.send('/metadata/apps/LifecycleNavigationApp', adminToken, 'DELETE')).status, 204,
+      'the blocking app reference must be removable before object deletion');
     const hierarchicalUserField = await api.send('/metadata/objects/User/fields', adminToken, 'POST', {
       apiName: 'Reports_To__c',
       label: 'Reports To',
@@ -1003,20 +1030,101 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       ...lifecycleTabUpdate.data.object,
       customTab: { style: 'NotAStyle' }
     })).status, 400, 'unsupported custom tab styles must be rejected');
+    const lifecycleLayoutId = createdLifecycleObject.data.object.pageLayouts[0].id as string;
+    const rejectedFieldLayout = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+      field: {
+        apiName: 'Rejected_Layout_Field__c', label: 'Rejected Layout Field', dataType: 'Text(40)',
+        required: false, unique: false
+      },
+      pageLayoutIds: ['unknown-layout']
+    });
+    assert.equal(rejectedFieldLayout.status, 400, 'field creation must reject unknown layout targets');
+    assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken)).data.object.fields
+      .some((field: { apiName: string }) => field.apiName === 'Rejected_Layout_Field__c'), false,
+    'invalid layout placement must not partially create its field');
     const createdLifecyclePicklist = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
-      apiName: 'Lifecycle_Status__c',
-      label: 'Status',
-      dataType: 'Picklist',
-      required: false,
-      unique: false,
-      helpText: 'A concise status explanation for users.',
-      picklistValues: ['Open', 'Closed'],
-      picklistRestricted: true,
-      defaultValue: 'Open'
+      field: {
+        apiName: 'Lifecycle_Status__c',
+        label: 'Status',
+        dataType: 'Picklist',
+        required: false,
+        unique: false,
+        helpText: 'A concise status explanation for users.',
+        picklistValues: ['Open', 'Closed'],
+        picklistRestricted: true,
+        defaultValue: 'Open'
+      },
+      pageLayoutIds: [lifecycleLayoutId]
     });
     assert.equal(createdLifecyclePicklist.status, 201, JSON.stringify(createdLifecyclePicklist.data));
+    assert.ok(createdLifecyclePicklist.data.object.pageLayouts[0].sections[0].fieldApiNames.includes('Lifecycle_Status__c'),
+      'new field placement must be committed with the field metadata');
+    assert.ok((await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken)).data.object.pageLayouts[0]
+      .sections[0].fieldApiNames.includes('Lifecycle_Status__c'),
+    'field layout placement must persist after metadata reload');
     assert.equal(createdLifecyclePicklist.data.field.helpText, 'A concise status explanation for users.',
       'field help text must be saved and returned by the metadata API');
+    const lifecycleFieldDependencies = await api.send(`/metadata/objects/${lifecycleObjectApiName}/field-dependencies`, adminToken);
+    assert.equal(lifecycleFieldDependencies.status, 200, JSON.stringify(lifecycleFieldDependencies.data));
+    assert.ok(lifecycleFieldDependencies.data.fields.find((field: { fieldApiName: string }) =>
+      field.fieldApiName === 'Lifecycle_Status__c')?.dependencies.includes('a page layout'),
+    'field dependencies must be derived from persisted layout metadata');
+    const lifecycleRecordTypeMetadata = (await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken)).data.object;
+    const lifecycleSecondaryRecordType = {
+      id: 'lifecycle-secondary',
+      label: 'Secondary',
+      developerName: 'Secondary',
+      description: 'A separate supported record process.',
+      active: true,
+      isDefault: false,
+      picklistValues: { Lifecycle_Status__c: ['Closed'] }
+    };
+    const incompatibleRecordTypeDefault = await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'PUT', {
+      ...lifecycleRecordTypeMetadata,
+      recordTypes: [...lifecycleRecordTypeMetadata.recordTypes, lifecycleSecondaryRecordType]
+    });
+    assert.equal(incompatibleRecordTypeDefault.status, 400,
+      'record-type picklist configuration must include a configured field default');
+    const compatibleRecordTypeMetadata = await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'PUT', {
+      ...lifecycleRecordTypeMetadata,
+      recordTypes: [...lifecycleRecordTypeMetadata.recordTypes, {
+        ...lifecycleSecondaryRecordType,
+        picklistValues: { Lifecycle_Status__c: ['Open'] }
+      }]
+    });
+    assert.equal(compatibleRecordTypeMetadata.status, 200, JSON.stringify(compatibleRecordTypeMetadata.data));
+    const secondaryLifecycleRecord = await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
+      Name: 'Secondary Lifecycle Record',
+      RecordTypeId: 'lifecycle-secondary'
+    });
+    assert.equal(secondaryLifecycleRecord.status, 201, JSON.stringify(secondaryLifecycleRecord.data));
+    assert.equal(secondaryLifecycleRecord.data.record.Lifecycle_Status__c, 'Open',
+      'record-type-specific picklist defaults must be applied at runtime');
+    assert.equal((await api.send(`/records/${lifecycleObjectApiName}/${secondaryLifecycleRecord.data.record.Id}`, adminToken, 'DELETE')).status, 204);
+    const lifecycleRecordTypeFlow = await api.send('/metadata/flows/Object_Manager_Lifecycle_Record_Type_Flow', adminToken, 'PUT', {
+      label: 'Lifecycle Record Type Flow',
+      description: '',
+      flowType: 'Autolaunched Flow',
+      status: 'Draft',
+      versionNumber: 1,
+      activeVersion: null,
+      triggerObject: null,
+      startConfig: { objectApiName: lifecycleObjectApiName, recordTypeId: 'lifecycle-secondary' },
+      elements: [{ id: 1, type: 'Start', label: 'Start', config: {} }],
+      connectors: [],
+      resources: [],
+      versions: []
+    });
+    assert.equal(lifecycleRecordTypeFlow.status, 200, JSON.stringify(lifecycleRecordTypeFlow.data));
+    const lifecycleWithoutSecondary = {
+      ...compatibleRecordTypeMetadata.data.object,
+      recordTypes: compatibleRecordTypeMetadata.data.object.recordTypes.filter((recordType: { id: string }) => recordType.id !== 'lifecycle-secondary')
+    };
+    assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'PUT', lifecycleWithoutSecondary)).status, 409,
+      'record types referenced by flows cannot be silently removed');
+    assert.equal((await api.send('/metadata/flows/Object_Manager_Lifecycle_Record_Type_Flow', adminToken, 'DELETE')).status, 204);
+    assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'PUT', lifecycleWithoutSecondary)).status, 200,
+      'record types can be removed after their metadata consumers are deleted');
     assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields/Lifecycle_Status__c`, adminToken, 'PUT', {
       ...createdLifecyclePicklist.data.field,
       helpText: 'Updated status guidance.'
@@ -1208,8 +1316,21 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         : field)
     });
     assert.equal(lifecycleHistoryMetadata.status, 200, JSON.stringify(lifecycleHistoryMetadata.data));
+    for (let index = 1; index <= 20; index += 1) {
+      const fieldApiName = `Tracked_History_${String(index).padStart(2, '0')}__c`;
+      const trackedField = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+        apiName: fieldApiName,
+        label: `Tracked History ${index}`,
+        dataType: 'Text(80)',
+        required: false,
+        unique: false,
+        trackHistory: true
+      });
+      assert.equal(trackedField.status, 201, `objects must allow more than 20 tracked fields: ${JSON.stringify(trackedField.data)}`);
+    }
+    const lifecycleTrackedMetadata = (await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken)).data.object;
     const lifecycleFieldSet = await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'PUT', {
-      ...lifecycleHistoryMetadata.data.object,
+      ...lifecycleTrackedMetadata,
       fieldSets: [{ apiName: 'LifecycleSummary', label: 'Lifecycle Summary', fieldApiNames: ['Name', 'External_Code__c'] }]
     });
     assert.equal(lifecycleFieldSet.status, 200, JSON.stringify(lifecycleFieldSet.data));
@@ -1286,8 +1407,28 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       label: 'External Reference'
     });
     assert.equal(lifecycleCodeUpdate.status, 200, JSON.stringify(lifecycleCodeUpdate.data));
+    const lifecycleBeforeStatusDelete = (await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken)).data.object;
+    assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'PUT', {
+      ...lifecycleBeforeStatusDelete,
+      pageLayouts: lifecycleBeforeStatusDelete.pageLayouts.map((layout: Record<string, any>) => ({
+        ...layout,
+        sections: layout.sections.map((section: Record<string, any>) => ({
+          ...section,
+          fieldApiNames: section.fieldApiNames.filter((name: string) => name !== 'Lifecycle_Status__c')
+        }))
+      }))
+    })).status, 200, 'field placements must be removable before deleting their field');
+    const lifecyclePermissions = (await api.send('/metadata/permissions', adminToken)).data;
+    lifecyclePermissions.profiles.find((profile: { id: string }) => profile.id === 'system-administrator')
+      .fieldPermissions[`${lifecycleObjectApiName}.Lifecycle_Status__c`] = { read: true, edit: true };
+    assert.equal((await api.send('/metadata/permissions', adminToken, 'PUT', lifecyclePermissions)).status, 200,
+      'the lifecycle field access fixture must be saved');
     assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields/Lifecycle_Status__c`, adminToken, 'DELETE')).status, 200,
       'unreferenced custom fields must be deletable');
+    const cleanedLifecyclePermissions = (await api.send('/metadata/permissions', adminToken)).data;
+    assert.equal(Object.hasOwn(cleanedLifecyclePermissions.profiles.find((profile: { id: string }) =>
+      profile.id === 'system-administrator').fieldPermissions, `${lifecycleObjectApiName}.Lifecycle_Status__c`), false,
+    'permitted field deletion must remove stale profile field access metadata');
     const lifecycleRecordAfterFieldDelete = await api.send(`/records/${lifecycleObjectApiName}/${lifecycleRecord.data.record.Id}`, adminToken);
     assert.equal(lifecycleRecordAfterFieldDelete.status, 200, JSON.stringify(lifecycleRecordAfterFieldDelete.data));
     assert.equal(Object.hasOwn(lifecycleRecordAfterFieldDelete.data.record, 'Lifecycle_Status__c'), false,
@@ -1313,12 +1454,45 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       }
     });
     assert.equal(autoNumberObject.status, 201, JSON.stringify(autoNumberObject.data));
+    const originalAutoNumberMetadata = autoNumberObject.data.object as Record<string, any>;
+    assert.equal((await api.send(`/metadata/objects/${autoNumberObjectApiName}`, adminToken, 'PUT', {
+      ...originalAutoNumberMetadata,
+      apiName: 'Renamed_Auto_Number_Lifecycle__c'
+    })).status, 400, 'object API names must remain immutable after creation');
+    assert.equal((await api.send(`/metadata/objects/${autoNumberObjectApiName}/fields/Name`, adminToken, 'PUT', {
+      ...originalAutoNumberMetadata.fields.find((field: { apiName: string }) => field.apiName === 'Name'),
+      apiName: 'Renamed_Name'
+    })).status, 400, 'field API names must remain immutable after creation');
+    assert.equal((await api.send(`/metadata/objects/${autoNumberObjectApiName}`, adminToken, 'PUT', {
+      ...originalAutoNumberMetadata,
+      settings: { ...originalAutoNumberMetadata.settings, recordNameFormat: 'LIFE-no-sequence' }
+    })).status, 400, 'auto-number formats must include exactly one numeric token');
+    const updatedAutoNumberMetadata = {
+      ...originalAutoNumberMetadata,
+      label: 'Updated Auto Number Lifecycle',
+      pluralLabel: 'Updated Auto Number Lifecycles',
+      description: 'Updated object metadata must persist.',
+      settings: {
+        ...originalAutoNumberMetadata.settings,
+        allowReports: false,
+        allowActivities: true,
+        trackFieldHistory: true,
+        allowInChatter: true
+      }
+    };
+    const savedAutoNumberMetadata = await api.send(`/metadata/objects/${autoNumberObjectApiName}`, adminToken, 'PUT', updatedAutoNumberMetadata);
+    assert.equal(savedAutoNumberMetadata.status, 200, JSON.stringify(savedAutoNumberMetadata.data));
     const firstAutoNumberRecord = await api.send(`/records/${autoNumberObjectApiName}`, adminToken, 'POST', {});
     const secondAutoNumberRecord = await api.send(`/records/${autoNumberObjectApiName}`, adminToken, 'POST', {});
     assert.equal(firstAutoNumberRecord.status, 201, JSON.stringify(firstAutoNumberRecord.data));
     assert.equal(secondAutoNumberRecord.status, 201, JSON.stringify(secondAutoNumberRecord.data));
     assert.deepEqual([firstAutoNumberRecord.data.record.Name, secondAutoNumberRecord.data.record.Name],
       ['LIFE-0001', 'LIFE-0002'], 'custom object auto-number record names must follow the configured display format');
+    assert.equal((await api.send(`/records/${autoNumberObjectApiName}/${firstAutoNumberRecord.data.record.Id}`, adminToken, 'DELETE')).status, 204);
+    const thirdAutoNumberRecord = await api.send(`/records/${autoNumberObjectApiName}`, adminToken, 'POST', {});
+    assert.equal(thirdAutoNumberRecord.status, 201, JSON.stringify(thirdAutoNumberRecord.data));
+    assert.equal(thirdAutoNumberRecord.data.record.Name, 'LIFE-0003',
+      'auto-number sequences must not reuse numbers after deleting records');
     const objectMetadata = (await api.send('/metadata/objects', adminToken)).data.objects as Array<{ apiName: string; pluralLabel: string }>;
     const developmentOnlyObject = objectMetadata.find((object) => object.apiName === 'Development_Only__c');
     assert.ok(developmentOnlyObject, 'the deployment-status test object must be registered');
@@ -1329,6 +1503,21 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     };
     assert.equal((await api.send('/metadata/objects/Development_Only__c', adminToken, 'PUT', metadataWithFieldSet)).status, 200,
       'valid field sets must be saved');
+    const editedFieldSetMetadata = {
+      ...metadataWithFieldSet,
+      fieldSets: [{ ...metadataWithFieldSet.fieldSets[0], apiName: 'SummaryDetails', label: 'Summary Details' }]
+    };
+    assert.equal((await api.send('/metadata/objects/Development_Only__c', adminToken, 'PUT', editedFieldSetMetadata)).status, 200,
+      'field set API names and labels must be editable');
+    assert.deepEqual((await api.send('/metadata/objects/Development_Only__c', adminToken)).data.object.fieldSets,
+      editedFieldSetMetadata.fieldSets, 'edited field set names and saved field order must persist');
+    assert.equal((await api.send('/metadata/objects/Development_Only__c', adminToken, 'PUT', {
+      ...metadataWithFieldSet,
+      fieldSets: [
+        ...metadataWithFieldSet.fieldSets,
+        { apiName: 'SummaryOther', label: 'summary', fieldApiNames: ['Name'] }
+      ]
+    })).status, 400, 'field set labels must be unique without regard to case');
     assert.equal((await api.send('/metadata/objects/Development_Only__c', adminToken, 'PUT', {
       ...metadataWithFieldSet,
       listViewButtons: ['New', 'Printable View']
@@ -1509,17 +1698,63 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       apiName: 'Invalid_Text__c', label: 'Invalid Text', dataType: 'Text(256)', required: false, unique: false
     })).status, 400, 'text length must not exceed platform limits');
     assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Oversized_Text_Default__c', label: 'Oversized Text Default', dataType: 'Text(3)',
+      required: false, unique: false, defaultValue: 'four'
+    })).status, 400, 'text defaults must fit the configured field length');
+    assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
       apiName: 'Invalid_Default__c', label: 'Invalid Default', dataType: 'Picklist',
       required: false, unique: false, picklistValues: ['Ready', 'Done'], picklistRestricted: true, defaultValue: 'Unknown'
     })).status, 400, 'restricted picklist defaults must come from the configured value set');
     assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Unsupported_Type__c', label: 'Unsupported Type', dataType: 'Unsupported',
+      required: false, unique: false
+    })).status, 400, 'the metadata API must reject field types that are not exposed by the field builder');
+    assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Invalid_Email_Default__c', label: 'Invalid Email Default', dataType: 'Email',
+      required: false, unique: false, defaultValue: 'not-an-email'
+    })).status, 400, 'email field defaults must be validated before metadata is saved');
+    assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Invalid_DateTime_Default__c', label: 'Invalid DateTime Default', dataType: 'Date/Time',
+      required: false, unique: false, defaultValue: '2026-02-30T10:00:00Z'
+    })).status, 400, 'date/time defaults must reject impossible calendar dates');
+    assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Unconfigured_Formula__c', label: 'Unconfigured Formula', dataType: 'Formula(Number)',
+      required: false, unique: false
+    })).status, 400, 'formula data types must include a formula definition');
+    assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
       apiName: 'Invalid_Multi_Default__c', label: 'Invalid Multi Default', dataType: 'Multi-Select Picklist',
       required: false, unique: false, picklistValues: ['Product', 'Events'], picklistRestricted: true, defaultValue: 'Product;Unknown'
     })).status, 400, 'every multi-select picklist default must come from the configured value set');
+    assert.equal((await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Unique_Multi__c', label: 'Unique Multi', dataType: 'Multi-Select Picklist',
+      required: false, unique: true, picklistValues: ['Product', 'Events']
+    })).status, 400, 'multi-select fields must reject unsupported unique constraints');
+    const emailField = await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Validated_Email__c', label: 'Validated Email', dataType: 'Email',
+      required: false, unique: false, defaultValue: 'default@example.test'
+    });
+    assert.equal(emailField.status, 201, JSON.stringify(emailField.data));
+    const dateTimeField = await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Validated_DateTime__c', label: 'Validated Date Time', dataType: 'Date/Time',
+      required: false, unique: false
+    });
+    assert.equal(dateTimeField.status, 201, JSON.stringify(dateTimeField.data));
     const precisionValid = await api.send('/records/Contact', adminToken, 'POST', {
       Name: 'Precision Valid Contact', Budget__c: 999.99, Short_Code__c: '1234567890'
     });
     assert.equal(precisionValid.status, 201, JSON.stringify(precisionValid.data));
+    assert.equal(precisionValid.data.record.Validated_Email__c, 'default@example.test',
+      'valid field defaults must be applied consistently on record creation');
+    assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Invalid Runtime Email Contact', Validated_Email__c: 'not-an-email'
+    })).status, 422, 'email validation must run on API record writes');
+    assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Invalid Runtime Date Contact', Validated_DateTime__c: '2026-02-30T10:00:00Z'
+    })).status, 422, 'date/time validation must reject impossible dates on API record writes');
+    const validDateTimeContact = await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Valid Runtime Date Contact', Validated_DateTime__c: '2026-03-01T10:00:00Z'
+    });
+    assert.equal(validDateTimeContact.status, 201, JSON.stringify(validDateTimeContact.data));
     const fieldMetadata = (await api.send('/metadata/objects/Contact', adminToken)).data.object.fields as Array<Record<string, unknown>>;
     const budgetField = fieldMetadata.find((field) => field.apiName === 'Budget__c')!;
     const shortCodeField = fieldMetadata.find((field) => field.apiName === 'Short_Code__c')!;
@@ -1543,6 +1778,9 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
       Name: 'Precision Overflow Contact', Budget__c: 10000
     })).status, 422, 'numeric precision must be enforced on record values');
+    assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Text Length Boundary Contact', Short_Code__c: '123456789012'
+    })).status, 201, 'text field values at the configured length must be accepted');
     assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
       Name: 'Scale Overflow Contact', Budget__c: 1.239
     })).status, 422, 'numeric scale must be enforced on record values');
@@ -1599,6 +1837,31 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         required: true
       }]
     })).status, 400, 'lookup filters must reference an existing comparison field on the source object');
+    assert.equal((await api.send('/metadata/objects/Contact', adminToken, 'PUT', {
+      ...lookupContactMetadata,
+      relatedLookupFilters: [{
+        id: 'invalid-lookup-operator-type',
+        fieldApiName: 'AccountId',
+        relatedObject: 'Account',
+        relatedFieldApiName: 'AnnualRevenue',
+        operator: 'Contains',
+        value: '100',
+        required: true
+      }]
+    })).status, 400, 'lookup filters must reject text operators on numeric target fields');
+    assert.equal((await api.send('/metadata/objects/Contact', adminToken, 'PUT', {
+      ...lookupContactMetadata,
+      relatedLookupFilters: [{
+        id: 'invalid-lookup-comparison-type',
+        fieldApiName: 'AccountId',
+        relatedObject: 'Account',
+        relatedFieldApiName: 'AnnualRevenue',
+        operator: 'Equals',
+        value: '',
+        valueFieldApiName: 'Name',
+        required: true
+      }]
+    })).status, 400, 'field-to-field lookup filters must reject incompatible comparison types');
     assert.equal((await api.send('/metadata/objects/Contact', adminToken, 'PUT', {
       ...lookupContactMetadata,
       relatedLookupFilters: [{
@@ -1663,6 +1926,115 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
       Name: 'Non-Matching Lookup Contact', AccountId: nonMatchingAccount.data.record.Id
     })).status, 422, 'Starts With lookup filters must reject nonmatching related records');
+    const anyLookupFilterUpdate = await api.send('/metadata/objects/Contact', adminToken, 'PUT', {
+      ...lookupFilterUpdate.data.object,
+      relatedLookupFilterLogic: { AccountId: 'Any' }
+    });
+    assert.equal(anyLookupFilterUpdate.status, 200, JSON.stringify(anyLookupFilterUpdate.data));
+    assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Any Lookup Filter Contact', AccountId: nonMatchingAccount.data.record.Id
+    })).status, 201, 'Any logic must accept a related record matching at least one required criterion');
+    const anyLogicRejectAccount = await api.send('/records/Account', adminToken, 'POST', {
+      Name: 'Bad Lookup Account With Website',
+      Website: 'https://example.test'
+    });
+    assert.equal(anyLogicRejectAccount.status, 201, JSON.stringify(anyLogicRejectAccount.data));
+    assert.equal((await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Any Logic Non-Matching Contact', AccountId: anyLogicRejectAccount.data.record.Id
+    })).status, 422, 'Any logic must reject a related record matching none of the required criteria');
+    const optionalLookupFilterUpdate = await api.send('/metadata/objects/Contact', adminToken, 'PUT', {
+      ...lookupFilterUpdate.data.object,
+      relatedLookupFilters: [{
+        id: 'optional-account-name-prefix',
+        fieldApiName: 'AccountId',
+        relatedObject: 'Account',
+        relatedFieldApiName: 'Name',
+        operator: 'Starts With',
+        value: 'Good',
+        required: false
+      }]
+    });
+    assert.equal(optionalLookupFilterUpdate.status, 200, JSON.stringify(optionalLookupFilterUpdate.data));
+    const optionalFilterContact = await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Optional Lookup Filter Contact', AccountId: nonMatchingAccount.data.record.Id
+    });
+    assert.equal(optionalFilterContact.status, 201, 'optional lookup filters must not block saving a nonmatching related record');
+    assert.equal((await api.send('/metadata/objects/Contact', adminToken, 'PUT', lookupFilterUpdate.data.object)).status, 200,
+      'required lookup filter metadata must be restored before update and import checks');
+    const rejectedLookupUpdate = await api.send(`/records/Contact/${matchingContact.data.record.Id}`, adminToken, 'PUT', {
+      AccountId: nonMatchingAccount.data.record.Id
+    });
+    assert.equal(rejectedLookupUpdate.status, 422, 'record updates must enforce required lookup filters');
+    const unchangedLookupContact = await api.send(`/records/Contact/${matchingContact.data.record.Id}`, adminToken);
+    assert.equal(unchangedLookupContact.data.record.AccountId, matchingAccount.data.record.Id,
+      'a rejected lookup-filter update must leave the stored relationship unchanged');
+    const contactsBeforeRejectedLookupImport = (await api.send('/records/Contact', adminToken)).data.records.length as number;
+    const rejectedLookupImport = await api.send('/records/Contact/import', adminToken, 'POST', {
+      records: [
+        { Name: 'Valid Lookup Import Row', AccountId: matchingAccount.data.record.Id },
+        { Name: 'Invalid Lookup Import Row', AccountId: nonMatchingAccount.data.record.Id }
+      ]
+    });
+    assert.equal(rejectedLookupImport.status, 422, 'record imports must enforce required lookup filters');
+    assert.equal((await api.send('/records/Contact', adminToken)).data.records.length, contactsBeforeRejectedLookupImport,
+      'a rejected lookup-filter import must not persist a partial batch');
+    const invalidLookupCreateFlow = await api.send('/metadata/flows/Lookup_Filter_Create_Smoke', adminToken, 'PUT', {
+      apiName: 'Lookup_Filter_Create_Smoke',
+      label: 'Lookup Filter Create Smoke',
+      flowType: 'Autolaunched Flow',
+      status: 'Active',
+      versionNumber: 1,
+      activeVersion: null,
+      triggerObject: null,
+      startConfig: {},
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Create Records', label: 'Create Invalid Contact', config: {
+          object: 'Contact',
+          fieldValues: [
+            { field: 'Name', value: 'Flow Invalid Lookup Contact' },
+            { field: 'AccountId', value: nonMatchingAccount.data.record.Id }
+          ]
+        } }
+      ],
+      connectors: [{ id: 'start-create-contact', from: 1, to: 2, label: '', kind: 'normal' }],
+      resources: [],
+      versions: []
+    });
+    assert.equal(invalidLookupCreateFlow.status, 200, JSON.stringify(invalidLookupCreateFlow.data));
+    const contactsBeforeInvalidLookupFlow = (await api.send('/records/Contact', adminToken)).data.records.length as number;
+    assert.equal((await api.send('/flows/Lookup_Filter_Create_Smoke/execute', adminToken, 'POST', {})).status, 422,
+      'Flow Create Records must enforce required lookup filters');
+    assert.equal((await api.send('/records/Contact', adminToken)).data.records.length, contactsBeforeInvalidLookupFlow,
+      'a Flow create rejected by a required lookup filter must not persist a record');
+    const invalidLookupUpdateFlow = await api.send('/metadata/flows/Lookup_Filter_Update_Smoke', adminToken, 'PUT', {
+      apiName: 'Lookup_Filter_Update_Smoke',
+      label: 'Lookup Filter Update Smoke',
+      flowType: 'Autolaunched Flow',
+      status: 'Active',
+      versionNumber: 1,
+      activeVersion: null,
+      triggerObject: null,
+      startConfig: {},
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Update Records', label: 'Update Invalid Contact', config: {
+          object: 'Contact',
+          conditionLogic: 'All',
+          conditions: [{ field: 'Name', operator: 'Equals', value: 'Matching Lookup Contact' }],
+          fieldValues: [{ field: 'AccountId', value: nonMatchingAccount.data.record.Id }]
+        } }
+      ],
+      connectors: [{ id: 'start-update-contact', from: 1, to: 2, label: '', kind: 'normal' }],
+      resources: [],
+      versions: []
+    });
+    assert.equal(invalidLookupUpdateFlow.status, 200, JSON.stringify(invalidLookupUpdateFlow.data));
+    assert.equal((await api.send('/flows/Lookup_Filter_Update_Smoke/execute', adminToken, 'POST', {})).status, 422,
+      'Flow Update Records must enforce required lookup filters');
+    const unchangedFlowUpdatedContact = await api.send(`/records/Contact/${matchingContact.data.record.Id}`, adminToken);
+    assert.equal(unchangedFlowUpdatedContact.data.record.AccountId, matchingAccount.data.record.Id,
+      'a Flow update rejected by a required lookup filter must leave the relationship unchanged');
     const websiteAccount = await api.send('/records/Account', adminToken, 'POST', {
       Name: 'Good Website Account', Website: 'https://example.test'
     });
@@ -1721,14 +2093,46 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         value: '',
         valueFieldApiName: 'Name',
         required: true
-      }]
+      }, {
+        id: 'field-matched-account-name-not-null',
+        fieldApiName: 'Field_Matched_Account__c',
+        relatedObject: 'Account',
+        relatedFieldApiName: 'Name',
+        operator: 'Is Not Null',
+        value: '',
+        required: false
+      }],
+      relatedLookupFilterLogic: { Field_Matched_Account__c: 'Any' }
     });
     assert.equal(inlineLookupField.status, 201, JSON.stringify(inlineLookupField.data));
-    assert.equal(inlineLookupField.data.object.relatedLookupFilters.at(-1).valueFieldApiName, 'Name',
-      'relationship creation must persist its source-field lookup filter atomically');
+    assert.deepEqual(
+      inlineLookupField.data.object.relatedLookupFilters.filter((filter: { fieldApiName: string }) => filter.fieldApiName === 'Field_Matched_Account__c'),
+      [{
+        id: 'field-matched-account-name',
+        fieldApiName: 'Field_Matched_Account__c',
+        relatedObject: 'Account',
+        relatedFieldApiName: 'Name',
+        operator: 'Equals',
+        value: '',
+        valueFieldApiName: 'Name',
+        required: true
+      }, {
+        id: 'field-matched-account-name-not-null',
+        fieldApiName: 'Field_Matched_Account__c',
+        relatedObject: 'Account',
+        relatedFieldApiName: 'Name',
+        operator: 'Is Not Null',
+        value: '',
+        required: false
+      }],
+      'relationship creation must persist all inline lookup criteria atomically'
+    );
+    assert.equal(inlineLookupField.data.object.relatedLookupFilterLogic.Field_Matched_Account__c, 'Any',
+      'relationship creation must persist its filter combination logic atomically');
     const clearInlineFilter = await api.send('/metadata/objects/Contact', adminToken, 'PUT', {
       ...inlineLookupField.data.object,
-      relatedLookupFilters: lookupContactMetadata.relatedLookupFilters
+      relatedLookupFilters: lookupContactMetadata.relatedLookupFilters,
+      relatedLookupFilterLogic: lookupContactMetadata.relatedLookupFilterLogic ?? {}
     });
     assert.equal(clearInlineFilter.status, 200, JSON.stringify(clearInlineFilter.data));
     assert.equal((await api.send('/metadata/objects/Contact/fields/Field_Matched_Account__c', adminToken, 'DELETE')).status, 200,
@@ -1737,7 +2141,13 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     const ownerToken = await api.login('owner@rbac-sharing-smoke.test');
     const outsiderToken = await api.login('outsider@rbac-sharing-smoke.test');
     assert.equal((await api.send('/component-library')).status, 401, 'component library metadata must require authentication');
-    assert.equal((await api.send('/component-library', adminToken)).status, 200, 'authenticated metadata readers can load the component library');
+    const componentLibrary = await api.send('/component-library', adminToken);
+    assert.equal(componentLibrary.status, 200, 'authenticated metadata readers can load the component library');
+    const bundledKioskCard = componentLibrary.data.components.find((component: { apiName: string }) => component.apiName === 'KioskCard');
+    assert.ok(bundledKioskCard, 'reading the shared library registers bundled custom components');
+    assert.ok(bundledKioskCard.surfaces.includes('flow'), 'bundled components are available in Flow Builder screens');
+    assert.deepEqual(bundledKioskCard.resize, { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 },
+      'bundled component resize metadata is preserved in the shared library');
     let permissions = (await api.send('/metadata/permissions', adminToken)).data;
 
     const dashboardComponent = {
@@ -1882,6 +2292,22 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     const originalStandardPermissions = [...standardProfileForFolderTest.systemPermissions];
     standardProfileForFolderTest.systemPermissions = originalStandardPermissions.filter((permission: string) => permission !== 'metadata:write');
     assert.equal((await api.send('/metadata/permissions', adminToken, 'PUT', permissions)).status, 200);
+    assert.equal((await api.send('/metadata/pages', outsiderToken)).status, 200,
+      'metadata readers must be able to open the Lightning Page catalog');
+    assert.equal((await api.send('/metadata/pages/Denied_Page_Edit', outsiderToken, 'PUT', {
+      apiName: 'Denied_Page_Edit',
+      label: 'Denied Page Edit',
+      targetObject: 'Account',
+      pageType: 'App Page',
+      layoutMode: 'template',
+      template: 'one-region',
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+      status: 'Draft',
+      devices: ['Desktop'],
+      components: [],
+      activationAssignments: []
+    })).status, 403, 'metadata readers without metadata:write or pages:manage must not save Lightning pages');
     assert.equal((await api.send('/metadata/dashboards/Folder_Access_Dashboard', outsiderToken, 'PUT', {
       ...folderEditorDashboard, description: 'Edited by folder editor'
     })).status, 200, 'folder Editor grants must permit dashboard content updates with metadata read permission');
@@ -2024,12 +2450,15 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       apiName: 'Snapshot_Card',
       label: 'Snapshot Card',
       description: '',
-      surfaces: ['page', 'dashboard'],
+      surfaces: ['page', 'dashboard', 'flow'],
+      resize: { defaultWidth: 400, defaultHeight: 220, minWidth: 160, minHeight: 80 },
       jsxSource: 'const SnapshotCard=()=> <div><strong>Custom output</strong></div>; export default SnapshotCard;',
       cssSource: ''
     };
     const customLibraryComponent = await api.send('/component-library', adminToken, 'POST', customComponentSource);
     assert.equal(customLibraryComponent.status, 201, JSON.stringify(customLibraryComponent.data));
+    assert.deepEqual(customLibraryComponent.data.component.resize, customComponentSource.resize,
+      'custom component resize metadata persists on registration');
     const updatedLibraryComponent = await api.send('/component-library/Snapshot_Card', adminToken, 'PUT', {
       ...customComponentSource,
       description: 'Updated custom component version'
@@ -2083,6 +2512,14 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'existing page save payloads must receive the backwards-compatible default template');
     assert.equal(savedComponentPage.data.page.components[0].region, 'main',
       'existing page component payloads must receive the backwards-compatible main-region default');
+    const blockedSurfaceRemoval = await api.send('/component-library/Snapshot_Card', adminToken, 'PUT', {
+      ...customComponentSource,
+      surfaces: ['dashboard', 'flow']
+    });
+    assert.equal(blockedSurfaceRemoval.status, 409,
+      'a component surface must not be removed while a saved page still uses it');
+    assert.match(String(blockedSurfaceRemoval.data.error), /Snapshot Card Page Use/,
+      'surface-removal blockers must identify the page using the component');
     const dynamicFormsPage = {
       ...componentPage,
       apiName: 'Dynamic_Forms_Record_Page',
@@ -2215,15 +2652,33 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         label: pageName.replaceAll('_', ' '),
         pageType,
         template: 'header-main-sidebar',
-        components: [{ ...componentPage.components[0], region: 'sidebar' }]
+        components: [
+          { ...componentPage.components[0], region: 'sidebar' },
+          {
+            id: `${pageType.toLocaleLowerCase().replaceAll(' ', '-')}-summary`,
+            type: 'Accordion',
+            label: 'Summary',
+            properties: { content: `${pageType} summary` },
+            visible: true,
+            region: 'header'
+          },
+          {
+            id: `${pageType.toLocaleLowerCase().replaceAll(' ', '-')}-tabs`,
+            type: 'Tabs',
+            label: 'Page Tabs',
+            properties: { tabs: ['Summary', 'Details'] },
+            visible: false,
+            region: 'main'
+          }
+        ]
       });
       assert.equal(pageResponse.status, 200, `${pageType} should save with template regions: ${JSON.stringify(pageResponse.data)}`);
       assert.equal(pageResponse.data.page.pageType, pageType);
       assert.equal(pageResponse.data.page.template, 'header-main-sidebar');
       assert.equal(pageResponse.data.page.components[0].region, 'sidebar');
       const persistedPage = (await api.send('/metadata/pages', adminToken)).data.pages.find((item: { apiName: string }) => item.apiName === pageName);
-      assert.equal(persistedPage.components[0].region, 'sidebar',
-        `${pageType} component region must survive metadata reload`);
+      assert.deepEqual(persistedPage.components, pageResponse.data.page.components,
+        `${pageType} component order, visibility, properties, and regions must survive metadata reload`);
     }
     assert.equal((await api.send('/metadata/pages/Invalid_Template_Region_Page', adminToken, 'PUT', {
       ...componentPage,
@@ -2317,6 +2772,8 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     })).status, 400, 'app navigation must reference tenant objects');
     const appCatalog = (await api.send('/metadata/apps', adminToken)).data.apps as Array<{ apiName: string }>;
     assert.ok(appCatalog.some((app) => app.apiName === 'Records'), 'default app should be tenant metadata');
+    assert.equal(appCatalog.some((app) => app.apiName === 'InvalidNavigationApp'), false,
+      'rejected tenant-scoped app references must not persist partially or leave stale metadata');
     assert.equal((await api.send('/metadata/apps/OtherApp', adminToken, 'PUT', {
       label: 'Other Updated',
       description: '',
@@ -2803,6 +3260,43 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal((await api.send('/metadata/objects/Contact/fields/Rating__c', adminToken, 'PUT', {
       ...ratingField, valueSettings: { Web: [], Referral: ['Hot'] }
     })).status, 409, 'dependency mappings cannot be changed incompatibly with existing record values');
+    const createdDependentPicklist = await api.send('/metadata/objects/Contact/fields', adminToken, 'POST', {
+      apiName: 'Created_Dependency__c',
+      label: 'Created Dependency',
+      dataType: 'Picklist',
+      required: false,
+      unique: false,
+      picklistValues: ['Alpha', 'Beta'],
+      picklistRestricted: true,
+      controllerFieldApiName: 'Source__c',
+      valueSettings: { Web: ['Alpha'], Referral: ['Beta'] }
+    });
+    assert.equal(createdDependentPicklist.status, 201, JSON.stringify(createdDependentPicklist.data));
+    assert.deepEqual(createdDependentPicklist.data.field.valueSettings, { Web: ['Alpha'], Referral: ['Beta'] },
+      'field creation must persist controlling-field mappings atomically with its picklist values');
+    const reloadedContactFields = (await api.send('/metadata/objects/Contact', adminToken)).data.object.fields;
+    assert.deepEqual(reloadedContactFields.find((field: { apiName: string }) => field.apiName === 'Created_Dependency__c').valueSettings,
+      { Web: ['Alpha'], Referral: ['Beta'] },
+      'dependent picklist mappings must round-trip through object metadata reloads');
+    const createdDependencyRecord = await api.send('/records/Contact', adminToken, 'POST', {
+      Name: 'Created Dependency Runtime Contact',
+      Source__c: 'Web',
+      Created_Dependency__c: 'Alpha'
+    });
+    assert.equal(createdDependencyRecord.status, 201, JSON.stringify(createdDependencyRecord.data));
+    assert.equal((await api.send(`/records/Contact/${createdDependencyRecord.data.record.Id}`, adminToken, 'PUT', {
+      RecordTypeId: 'contact-partner',
+      Source__c: 'Referral'
+    })).status, 422, 'record updates must reject dependent values that no longer match the controller');
+    assert.equal((await api.send('/records/Contact/import', adminToken, 'POST', {
+      records: [{ Name: 'Invalid Created Dependency Import', Source__c: 'Web', Created_Dependency__c: 'Beta' }]
+    })).status, 422, 'record imports must enforce newly created dependent-picklist mappings');
+    const createdDependentUpdate = await api.send(`/records/Contact/${createdDependencyRecord.data.record.Id}`, adminToken, 'PUT', {
+      RecordTypeId: 'contact-partner',
+      Source__c: 'Referral',
+      Created_Dependency__c: 'Beta'
+    });
+    assert.equal(createdDependentUpdate.status, 200, JSON.stringify(createdDependentUpdate.data));
     assert.equal((await api.send(`/records/Contact/${retailContact.data.record.Id}`, ownerToken, 'PUT', {
       RecordTypeId: 'contact-partner', Source__c: 'Referral'
     })).status, 422,
@@ -2833,6 +3327,15 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     });
     assert.equal(importResult.status, 201, JSON.stringify(importResult.data));
     assert.equal(importResult.data.count, 2);
+    const expandedImport = await api.send('/records/Contact/import', ownerToken, 'POST', {
+      records: Array.from({ length: 201 }, (_, index) => ({
+        Name: `Expanded Import Contact ${index + 1}`,
+        RecordTypeId: 'contact-retail',
+        Source__c: 'Web'
+      }))
+    });
+    assert.equal(expandedImport.status, 201, JSON.stringify(expandedImport.data));
+    assert.equal(expandedImport.data.count, 201, 'CSV import must not apply an undocumented 200-row application limit');
     const campaignResult = await api.send('/records/Campaign', adminToken, 'POST', { Name: 'Smoke Campaign' });
     assert.equal(campaignResult.status, 201, JSON.stringify(campaignResult.data));
     const campaignId = campaignResult.data.record.Id as string;
@@ -4781,15 +5284,51 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'deleted custom objects must disappear from tenant metadata');
     const persistedAutoNumberMetadata = await api.send(`/metadata/objects/${autoNumberObjectApiName}`, persistenceToken);
     assert.equal(persistedAutoNumberMetadata.status, 200, JSON.stringify(persistedAutoNumberMetadata.data));
+    assert.equal(persistedAutoNumberMetadata.data.object.label, 'Updated Auto Number Lifecycle');
+    assert.equal(persistedAutoNumberMetadata.data.object.pluralLabel, 'Updated Auto Number Lifecycles');
+    assert.equal(persistedAutoNumberMetadata.data.object.description, 'Updated object metadata must persist.');
+    assert.deepEqual(persistedAutoNumberMetadata.data.object.settings, updatedAutoNumberMetadata.settings,
+      'object features and record-name settings must survive a server restart');
     assert.equal(persistedAutoNumberMetadata.data.object.settings.recordNameFormat, 'LIFE-{0000}',
       'auto-number formats must survive a server restart');
     const persistedAutoNumberRecords = await api.send(`/records/${autoNumberObjectApiName}`, persistenceToken);
     assert.deepEqual(persistedAutoNumberRecords.data.records.map((record: { Name: string }) => record.Name),
-      ['LIFE-0001', 'LIFE-0002'], 'generated record names must survive a server restart');
+      ['LIFE-0002', 'LIFE-0003'], 'generated record names must survive a server restart');
     for (const record of persistedAutoNumberRecords.data.records) {
       assert.equal((await api.send(`/records/${autoNumberObjectApiName}/${record.Id}`, persistenceToken, 'DELETE')).status, 204);
     }
+    const fourthAutoNumberRecord = await api.send(`/records/${autoNumberObjectApiName}`, persistenceToken, 'POST', {});
+    assert.equal(fourthAutoNumberRecord.status, 201, JSON.stringify(fourthAutoNumberRecord.data));
+    assert.equal(fourthAutoNumberRecord.data.record.Name, 'LIFE-0004',
+      'the auto-number sequence must persist independently of existing records');
+    assert.equal((await api.send(`/records/${autoNumberObjectApiName}/${fourthAutoNumberRecord.data.record.Id}`, persistenceToken, 'DELETE')).status, 204);
     assert.equal((await api.send(`/metadata/objects/${autoNumberObjectApiName}`, persistenceToken, 'DELETE')).status, 204);
+    const appReferencedPages = (await api.send('/metadata/pages', persistenceToken)).data.pages as Array<Record<string, any>>;
+    for (const page of appReferencedPages) {
+      const assignments = page.activationAssignments as Array<{ appId?: string | null }> | undefined;
+      if (!assignments?.some((assignment) => assignment.appId)) continue;
+      const remainingAssignments = assignments.filter((assignment) => !assignment.appId);
+      const updatedPage = {
+        ...page,
+        status: remainingAssignments.length ? page.status : 'Draft',
+        activationAssignments: remainingAssignments
+      };
+      const savedPage = await api.send(`/metadata/pages/${encodeURIComponent(String(page.apiName))}`, persistenceToken, 'PUT', updatedPage);
+      assert.equal(savedPage.status, 200, `app assignments must be removable before deleting their apps: ${JSON.stringify(savedPage.data)}`);
+    }
+    const appsBeforeCleanup = (await api.send('/metadata/apps', persistenceToken)).data.apps as Array<{ apiName: string }>;
+    assert.ok(appsBeforeCleanup.length > 0, 'the smoke tenant should still contain its initial app metadata');
+    for (const app of appsBeforeCleanup) {
+      const deletedApp = await api.send(`/metadata/apps/${encodeURIComponent(app.apiName)}`, persistenceToken, 'DELETE');
+      assert.equal(deletedApp.status, 204, `the final app must be deletable: ${JSON.stringify(deletedApp.data)}`);
+    }
+    assert.deepEqual((await api.send('/metadata/apps', persistenceToken)).data.apps, [],
+      'tenants may intentionally keep an empty Lightning app catalog');
+    if (child) await stopApi(child);
+    child = await startApi(port, dataPath);
+    const emptyAppCatalogToken = await api.login(adminEmail);
+    assert.deepEqual((await api.send('/metadata/apps', emptyAppCatalogToken)).data.apps, [],
+      'an intentionally empty app catalog must survive a server restart without migration defaults being reinserted');
     console.log('PASS: isolated API smoke covered RBAC/sharing, fault handling, screen routing, and formula resources');
   } finally {
     if (child) await stopApi(child);

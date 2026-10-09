@@ -105,6 +105,142 @@ test('Collection Filter and Collection Sort execute and validate record collecti
       const created = await send('/records/Account', token, 'POST', { Name });
       assert.equal(created.status, 201, JSON.stringify(created.data));
     }
+    const flowAccessRecord = await send('/records/Account', token, 'POST', { Name: 'Flow Access Target' });
+    assert.equal(flowAccessRecord.status, 201, JSON.stringify(flowAccessRecord.data));
+    const flowAccessFlow = await send('/metadata/flows/Flow_Data_Access_Smoke', token, 'PUT', {
+      apiName: 'Flow_Data_Access_Smoke', label: 'Flow Data Access Smoke',
+      flowType: 'Autolaunched Flow', status: 'Active', versionNumber: 1, activeVersion: null,
+      triggerObject: null, startConfig: {},
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Get Records', label: 'Read Accounts', config: {
+          object: 'Account', conditions: [{ field: 'Name', operator: 'Equals', value: 'Flow Access Target' }],
+          fields: ['Name'], outputVariable: 'AccessibleAccounts', recordLimit: 'all'
+        } }
+      ],
+      connectors: [{ id: 'start-get', from: 1, to: 2, label: '', kind: 'normal' }],
+      resources: [{
+        name: 'AccessibleAccounts', label: 'Accessible Accounts', type: 'Record Collection',
+        dataType: 'Account', isCollection: true, availableForInput: false, availableForOutput: true
+      }],
+      versions: []
+    });
+    assert.equal(flowAccessFlow.status, 200, JSON.stringify(flowAccessFlow.data));
+    const flowAccessRead = await send('/flows/Flow_Data_Access_Smoke/execute', token, 'POST', {});
+    assert.equal(flowAccessRead.status, 200, JSON.stringify(flowAccessRead.data));
+    assert.equal(flowAccessRead.data.outputs.AccessibleAccounts.length, 1,
+      'Get Records returns records readable to the Flow running user');
+    const originalAccessControl = await send('/metadata/permissions', token);
+    assert.equal(originalAccessControl.status, 200, JSON.stringify(originalAccessControl.data));
+    const adminAccessUser = originalAccessControl.data.users.find((user: Record<string, unknown>) =>
+      user.username === adminEmail);
+    assert.ok(adminAccessUser, 'the Flow running user must be present in access metadata');
+    const adminProfileId = String(adminAccessUser.profileId ?? 'system-administrator');
+    const adminProfile = originalAccessControl.data.profiles.find((profile: Record<string, any>) =>
+      profile.id === adminProfileId);
+    assert.ok(adminProfile, 'the Flow running user must have a profile');
+    const profileWithAccountPermission = (permission: Record<string, boolean>) => ({
+      ...originalAccessControl.data,
+      profiles: originalAccessControl.data.profiles.map((profile: Record<string, any>) =>
+        profile.id === adminProfileId
+          ? { ...profile, objectPermissions: {
+            ...profile.objectPermissions,
+            Account: { ...profile.objectPermissions.Account, ...permission }
+          } }
+          : profile),
+      permissionSets: originalAccessControl.data.permissionSets.map((permissionSet: Record<string, any>) => ({
+        ...permissionSet,
+        objectPermissions: {
+          ...permissionSet.objectPermissions,
+          ...(permissionSet.objectPermissions.Account
+            ? { Account: { ...permissionSet.objectPermissions.Account, ...permission } }
+            : {})
+        }
+      }))
+    });
+    const deniedRead = await send('/metadata/permissions', token, 'PUT', profileWithAccountPermission({
+      read: false, create: false, edit: false, delete: false, viewAll: false, modifyAll: false
+    }));
+    assert.equal(deniedRead.status, 200, JSON.stringify(deniedRead.data));
+    const deniedObjectRead = await send('/flows/Flow_Data_Access_Smoke/execute', token, 'POST', {});
+    assert.equal(deniedObjectRead.status, 422, 'Get Records must enforce running-user object read permission');
+    assert.match(String(deniedObjectRead.data.error), /does not have read access/);
+    const restoredObjectRead = await send('/metadata/permissions', token, 'PUT', originalAccessControl.data);
+    assert.equal(restoredObjectRead.status, 200, JSON.stringify(restoredObjectRead.data));
+    const deniedFieldRead = await send('/metadata/permissions', token, 'PUT', {
+      ...originalAccessControl.data,
+      profiles: originalAccessControl.data.profiles.map((profile: Record<string, any>) =>
+        profile.id === adminProfileId
+          ? { ...profile, fieldPermissions: {
+            ...profile.fieldPermissions,
+            'Account.Name': { ...profile.fieldPermissions['Account.Name'], read: false, edit: false }
+          } }
+          : profile),
+      permissionSets: originalAccessControl.data.permissionSets.map((permissionSet: Record<string, any>) => ({
+        ...permissionSet,
+        fieldPermissions: {
+          ...permissionSet.fieldPermissions,
+          'Account.Name': { ...permissionSet.fieldPermissions['Account.Name'], read: false, edit: false }
+        },
+        objectPermissions: {
+          ...permissionSet.objectPermissions,
+          ...(permissionSet.objectPermissions.Account
+            ? { Account: { ...permissionSet.objectPermissions.Account, read: true, viewAll: false, modifyAll: false } }
+            : {})
+        }
+      }))
+    });
+    assert.equal(deniedFieldRead.status, 200, JSON.stringify(deniedFieldRead.data));
+    const deniedSelectedField = await send('/flows/Flow_Data_Access_Smoke/execute', token, 'POST', {});
+    assert.equal(deniedSelectedField.status, 422, 'Get Records must enforce read access to selected fields');
+    assert.match(String(deniedSelectedField.data.error), /read permission for field "Account.Name"/);
+    const restoredFieldRead = await send('/metadata/permissions', token, 'PUT', originalAccessControl.data);
+    assert.equal(restoredFieldRead.status, 200, JSON.stringify(restoredFieldRead.data));
+    const emptyAccountQueueId = 'flow-data-access-empty-account-queue';
+    const restrictedRecordAccess = await send('/metadata/permissions', token, 'PUT', {
+      ...originalAccessControl.data,
+      queues: [...originalAccessControl.data.queues, {
+        id: emptyAccountQueueId, label: 'Flow Data Access Empty Queue', apiName: 'Flow_Data_Access_Empty_Queue',
+        supportedObjectApiNames: ['Account'], userIds: [], roleIds: [], roleAndSubordinateIds: [], publicGroupIds: []
+      }],
+      sharingSettings: {
+        ...originalAccessControl.data.sharingSettings,
+        Account: { defaultAccess: 'Private', grantAccessUsingHierarchies: false }
+      },
+      profiles: originalAccessControl.data.profiles.map((profile: Record<string, any>) =>
+        profile.id === adminProfileId
+          ? { ...profile, objectPermissions: {
+            ...profile.objectPermissions,
+            Account: { ...profile.objectPermissions.Account, viewAll: false }
+          } }
+          : profile),
+      permissionSets: originalAccessControl.data.permissionSets.map((permissionSet: Record<string, any>) => ({
+        ...permissionSet,
+        objectPermissions: {
+          ...permissionSet.objectPermissions,
+          ...(permissionSet.objectPermissions.Account
+            ? { Account: { ...permissionSet.objectPermissions.Account, viewAll: false } }
+            : {})
+        }
+      }))
+    });
+    assert.equal(restrictedRecordAccess.status, 200, JSON.stringify(restrictedRecordAccess.data));
+    const transferredFlowAccessRecord = await send(
+      `/records/Account/${flowAccessRecord.data.record.Id}/owner`, token, 'PUT', { ownerId: emptyAccountQueueId }
+    );
+    assert.equal(transferredFlowAccessRecord.status, 200, JSON.stringify(transferredFlowAccessRecord.data));
+    const inaccessibleRecordRead = await send('/flows/Flow_Data_Access_Smoke/execute', token, 'POST', {});
+    assert.equal(inaccessibleRecordRead.status, 200, JSON.stringify(inaccessibleRecordRead.data));
+    assert.deepEqual(inaccessibleRecordRead.data.outputs.AccessibleAccounts, [],
+      'Get Records must exclude records the running user cannot read under sharing rules');
+    const restoredFlowAccessOwner = await send(
+      `/records/Account/${flowAccessRecord.data.record.Id}/owner`, token, 'PUT', { ownerId: adminAccessUser.id }
+    );
+    assert.equal(restoredFlowAccessOwner.status, 200, JSON.stringify(restoredFlowAccessOwner.data));
+    const restoredRecordAccess = await send('/metadata/permissions', token, 'PUT', originalAccessControl.data);
+    assert.equal(restoredRecordAccess.status, 200, JSON.stringify(restoredRecordAccess.data));
+    const removedFlowAccessRecord = await send(`/records/Account/${flowAccessRecord.data.record.Id}`, token, 'DELETE');
+    assert.equal(removedFlowAccessRecord.status, 204, JSON.stringify(removedFlowAccessRecord.data));
 
     const advancedScreenFlow = await send('/metadata/flows/Screen_Advanced_Components_Smoke', token, 'PUT', {
       apiName: 'Screen_Advanced_Components_Smoke', label: 'Screen Advanced Components Smoke',
@@ -276,6 +412,111 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     );
     assert.ok(transformed.data.outputs.ContactShapes.every((record: Record<string, unknown>) => !('Id' in record)),
       'Transform returns in-memory mapped records without creating stored records');
+
+    for (const Name of ['Flow Loop Source A', 'Flow Loop Source B']) {
+      const created = await send('/records/Account', token, 'POST', { Name });
+      assert.equal(created.status, 201, JSON.stringify(created.data));
+    }
+    const loopFlowDefinition = {
+      apiName: 'Loop_Collection_Smoke', label: 'Loop Collection Smoke', flowType: 'Autolaunched Flow',
+      status: 'Active', versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Get Records', label: 'Get Loop Sources', config: {
+          object: 'Account', recordLimit: 'all', outputVariable: 'LoopSources',
+          conditions: [{ field: 'Name', operator: 'Starts With', value: 'Flow Loop Source' }]
+        } },
+        { id: 3, type: 'Loop', label: 'Visit Sources', config: {
+          collection: 'LoopSources', loopVariable: 'CurrentAccount', direction: 'Last to first'
+        } },
+        { id: 4, type: 'Create Records', label: 'Record Visit', config: {
+          object: 'Account', fieldValues: [{ field: 'Name', value: '{CurrentAccount.Name}' }]
+        } },
+        { id: 5, type: 'End', label: 'End', config: {} }
+      ],
+      connectors: [
+        { id: 'start-get-sources', from: 1, to: 2, label: '', kind: 'normal' },
+        { id: 'get-loop', from: 2, to: 3, label: '', kind: 'normal' },
+        { id: 'loop-each', from: 3, to: 4, label: 'For Each', kind: 'normal' },
+        { id: 'record-next', from: 4, to: 3, label: '', kind: 'normal' },
+        { id: 'loop-after-last', from: 3, to: 5, label: 'After Last', kind: 'normal' }
+      ],
+      resources: [
+        { name: 'LoopSources', label: 'Loop Sources', type: 'Record Collection', dataType: 'Account', isCollection: true, availableForInput: false, availableForOutput: false },
+        { name: 'CurrentAccount', label: 'Current Account', type: 'Record', dataType: 'Account', isCollection: false, availableForInput: false, availableForOutput: false }
+      ],
+      versions: []
+    };
+    const savedLoopFlow = await send('/metadata/flows/Loop_Collection_Smoke', token, 'PUT', loopFlowDefinition);
+    assert.equal(savedLoopFlow.status, 200, JSON.stringify(savedLoopFlow.data));
+    const loopRun = await send('/flows/Loop_Collection_Smoke/execute', token, 'POST', {});
+    assert.equal(loopRun.status, 200, JSON.stringify(loopRun.data));
+    const loopVisits = (await send('/records/Account', token)).data.records
+      .map((record: Record<string, unknown>) => record.Name)
+      .filter((name: unknown) => typeof name === 'string' && name.startsWith('Flow Loop Source'));
+    assert.deepEqual(loopVisits, [
+      'Flow Loop Source A', 'Flow Loop Source B', 'Flow Loop Source B', 'Flow Loop Source A'
+    ], 'Loop direction and For Each/After Last paths must be honored at runtime');
+
+    const missingLoopPath = await send('/metadata/flows/Loop_Collection_Smoke/validate', token, 'POST', {
+      ...loopFlowDefinition,
+      connectors: loopFlowDefinition.connectors.filter((connector) => connector.id !== 'loop-after-last')
+    });
+    assert.equal(missingLoopPath.status, 200, JSON.stringify(missingLoopPath.data));
+    assert.ok(missingLoopPath.data.errors.some((error: string) => error.includes('exactly one For Each and one After Last')),
+      JSON.stringify(missingLoopPath.data));
+    const invalidLoopDirection = await send('/metadata/flows/Loop_Collection_Smoke/validate', token, 'POST', {
+      ...loopFlowDefinition,
+      elements: loopFlowDefinition.elements.map((element) => element.type === 'Loop'
+        ? { ...element, config: { ...element.config, direction: 'Random' } }
+        : element)
+    });
+    assert.equal(invalidLoopDirection.status, 200, JSON.stringify(invalidLoopDirection.data));
+    assert.ok(invalidLoopDirection.data.errors.some((error: string) => error.includes('direction must be')),
+      JSON.stringify(invalidLoopDirection.data));
+
+    const invalidDecisionPaths = await send('/metadata/flows/Decision_Paths_Smoke/validate', token, 'POST', {
+      apiName: 'Decision_Paths_Smoke', label: 'Decision Paths Smoke', flowType: 'Autolaunched Flow',
+      status: 'Draft', versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Decision', label: 'Choose Route', config: { outcomes: [
+          { name: 'Qualified', label: 'Qualified', conditions: [{ field: 'Name', operator: 'Equals', value: 'Match' }] },
+          { name: 'Default', label: 'Default Outcome', conditions: [] }
+        ] } },
+        { id: 3, type: 'End', label: 'Qualified End', config: {} },
+        { id: 4, type: 'End', label: 'Default End', config: {} }
+      ],
+      connectors: [
+        { id: 'start-decision', from: 1, to: 2, label: '', kind: 'normal' },
+        { id: 'decision-default', from: 2, to: 4, label: 'Default Outcome', kind: 'normal' }
+      ],
+      resources: [], versions: []
+    });
+    assert.equal(invalidDecisionPaths.status, 200, JSON.stringify(invalidDecisionPaths.data));
+    assert.ok(invalidDecisionPaths.data.errors.some((error: string) => error.includes('outcome "Qualified" must have exactly one connector')),
+      JSON.stringify(invalidDecisionPaths.data));
+
+    const invalidScreenPaths = await send('/metadata/flows/Screen_Paths_Smoke/validate', token, 'POST', {
+      apiName: 'Screen_Paths_Smoke', label: 'Screen Paths Smoke', flowType: 'Screen Flow',
+      status: 'Draft', versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Screen', label: 'Choose Route', config: { fields: [], outcomes: [
+          { name: 'Continue', label: 'Continue' }, { name: 'Cancel', label: 'Cancel' }
+        ] } },
+        { id: 3, type: 'End', label: 'Continue End', config: {} },
+        { id: 4, type: 'End', label: 'Cancel End', config: {} }
+      ],
+      connectors: [
+        { id: 'start-screen', from: 1, to: 2, label: '', kind: 'normal' },
+        { id: 'screen-continue', from: 2, to: 3, label: 'Continue', kind: 'normal' }
+      ],
+      resources: [], versions: []
+    });
+    assert.equal(invalidScreenPaths.status, 200, JSON.stringify(invalidScreenPaths.data));
+    assert.ok(invalidScreenPaths.data.errors.some((error: string) => error.includes('outcome "Cancel" must have exactly one connector')),
+      JSON.stringify(invalidScreenPaths.data));
 
     const invalidFlow = {
       ...flow,
@@ -1448,6 +1689,41 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     assert.equal(transitionAccounts.data.records.filter((record: Record<string, unknown>) =>
       record.Name === 'Transition Fired').length, 1,
     'updated-record transition flows must run only when entry conditions change from false to true');
+    const deletedRecordFlowDefinition = {
+      apiName: 'Contact_Deleted_Record_Smoke', label: 'Contact Deleted Record Smoke',
+      flowType: 'Record-Triggered Flow', status: 'Active', versionNumber: 1, activeVersion: null,
+      triggerObject: 'Contact',
+      startConfig: {
+        trigger: 'deleted', runWhen: 'after-save',
+        entryConditions: [{ field: 'Name', operator: 'Equals', value: 'Delete Trigger Contact' }]
+      },
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Create Records', label: 'Create Delete Marker', config: {
+          object: 'Account', fieldValues: [{ field: 'Name', value: 'Contact Delete Trigger Fired' }]
+        } }
+      ],
+      connectors: [{ id: 'start-delete-marker', from: 1, to: 2, label: '', kind: 'normal' }],
+      resources: [], versions: []
+    };
+    const invalidBeforeSaveDelete = await send('/metadata/flows/Contact_Deleted_Record_Smoke/validate', token, 'POST', {
+      ...deletedRecordFlowDefinition,
+      startConfig: { ...deletedRecordFlowDefinition.startConfig, runWhen: 'before-save' }
+    });
+    assert.equal(invalidBeforeSaveDelete.status, 200, JSON.stringify(invalidBeforeSaveDelete.data));
+    assert.ok(invalidBeforeSaveDelete.data.errors.some((error: string) =>
+      error.includes('Before-save record-triggered flows cannot run when a record is deleted')),
+    JSON.stringify(invalidBeforeSaveDelete.data));
+    const deletedRecordFlow = await send('/metadata/flows/Contact_Deleted_Record_Smoke', token, 'PUT', deletedRecordFlowDefinition);
+    assert.equal(deletedRecordFlow.status, 200, JSON.stringify(deletedRecordFlow.data));
+    const deleteTriggerContact = await send('/records/Contact', token, 'POST', { Name: 'Delete Trigger Contact' });
+    assert.equal(deleteTriggerContact.status, 201, JSON.stringify(deleteTriggerContact.data));
+    const deletedContact = await send(`/records/Contact/${deleteTriggerContact.data.record.Id}`, token, 'DELETE');
+    assert.equal(deletedContact.status, 204, JSON.stringify(deletedContact.data));
+    const deletedTriggerAccounts = await send('/records/Account', token);
+    assert.equal(deletedTriggerAccounts.data.records.filter((record: Record<string, unknown>) =>
+      record.Name === 'Contact Delete Trigger Fired').length, 1,
+    'after-save delete-trigger flows must execute with the deleted record context');
     const rollbackTarget = await send('/records/Account', token, 'POST', { Name: 'Transaction Rollback Target', AnnualRevenue: 125 });
     assert.equal(rollbackTarget.status, 201, JSON.stringify(rollbackTarget.data));
     const rollbackFlow = await send('/metadata/flows/Contact_Transaction_Rollback_Smoke', token, 'PUT', {

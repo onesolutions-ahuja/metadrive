@@ -28,13 +28,15 @@ import {
   type ObjectMetadata,
   type PlatformEventMetadata,
   type UserMetadata,
-  type ApprovalProcessMetadata
+  type ApprovalProcessMetadata,
+  type LibraryComponentMetadata
 } from './metadata';
 
 type FlowBuilderProps = {
   landing?: boolean;
   flow: FlowDefinitionMetadata;
   flows: FlowDefinitionMetadata[];
+  libraryComponents: LibraryComponentMetadata[];
   platformEvents: PlatformEventMetadata[];
   objects: ObjectMetadata[];
   users: UserMetadata[];
@@ -97,27 +99,6 @@ function rowsFrom(value: unknown): ConfigRow[] {
     ? value.filter((item): item is ConfigRow => typeof item === 'object' && item !== null && !Array.isArray(item))
     : [];
 }
-if (selected.type === 'Publish Platform Event') {
-  const platformEvent = platformEvents.find((event) => event.apiName === displayValue(selected.config.eventApiName));
-  const fieldValues = rowsFrom(selected.config.fieldValues);
-  return <>
-    <label className="form-label">Platform Event<select className="form-control" value={displayValue(selected.config.eventApiName)} onChange={(event) => {
-      setConfig('eventApiName', event.target.value);
-      setConfig('fieldValues', []);
-    }}><option value="">Select platform event</option>{platformEvents.map((event) => <option key={event.apiName} value={event.apiName}>{event.label} ({event.apiName})</option>)}</select></label>
-    <p className="settings-panel-copy">Map event fields to literal values or Flow resource references such as {'{!$Record.Id}'}.</p>
-    <div className="flow-config-list">{fieldValues.map((fieldValue, index) => <div className="flow-config-row" key={`platform-event-field-${index}`}>
-      <select className="form-control" aria-label="Platform event field" value={displayValue(fieldValue.field)} onChange={(event) => setConfig('fieldValues', fieldValues.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item))}>
-        <option value="">Select event field</option>{platformEvent?.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
-      </select>
-      <input className="form-control" aria-label="Platform event value" placeholder="Value or resource" value={displayValue(fieldValue.value)} onChange={(event) => setConfig('fieldValues', fieldValues.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
-      <button className="row-menu" aria-label="Remove event field mapping" onClick={() => setConfig('fieldValues', fieldValues.filter((_, itemIndex) => itemIndex !== index))}><X size={14} /></button>
-    </div>)}
-      {platformEvent && <button className="text-action" onClick={() => setConfig('fieldValues', [...fieldValues, { field: '', value: '' }])}><Plus size={13} />Add Field</button>}
-    </div>
-  </>;
-}
-
 function outcomesFrom(value: unknown): DecisionOutcome[] {
   return rowsFrom(value).map((item, index) => ({
     name: typeof item.name === 'string' ? item.name : `Outcome_${index + 1}`,
@@ -140,11 +121,12 @@ function displayValue(value: unknown): string {
 }
 
 export default function FlowBuilder({
-  landing = false, flow, flows, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
+  landing = false, flow, flows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
   onAdd, onUpdateLabel, onUpdateConfig, onRemove, onValidate, onSave, onActivate, onRun, onDebug, onNotify,
   onSaveNamedCredential, onDeleteNamedCredential, onRotateNamedCredential, onSaveEmailAlert, onDeleteEmailAlert, onSavePlatformEvent, onDeletePlatformEvent
 }: FlowBuilderProps) {
+  const flowComponents = libraryComponents.filter((component) => component.surfaces.includes('flow'));
   const [elementSearch, setElementSearch] = useState('');
   const [newFlowLabel, setNewFlowLabel] = useState('');
   const [newFlowType, setNewFlowType] = useState<FlowDefinitionMetadata['flowType']>('Screen Flow');
@@ -155,6 +137,19 @@ export default function FlowBuilder({
     { type: 'Schedule-Triggered Flow', description: 'Run records on a scheduled basis.' },
     { type: 'Platform Event-Triggered Flow', description: 'Run when a platform event is published.' }
   ];
+  const formulaFunctions = [
+    'TRUE', 'FALSE', 'IF', 'CASE', 'AND', 'OR', 'NOT', 'XOR', 'ISNEW', 'ISCLONE', 'ISCHANGED', 'PRIORVALUE', 'ISBLANK', 'ISNULL', 'BLANKVALUE', 'NULLVALUE', 'EXACT',
+    'ISNUMBER', 'LEN', 'ASCII', 'LOWER', 'UPPER', 'TRIM', 'PROPER', 'LEFT', 'RIGHT', 'MID', 'FIND',
+    'SUBSTITUTE', 'CONCATENATE', 'CONTAINS', 'BEGINS', 'ISPICKVAL', 'INCLUDES', 'VALUE', 'TEXT', 'DATE',
+    'DATEVALUE', 'DATETIMEVALUE', 'TIME', 'TIMEVALUE', 'TODAY', 'NOW', 'TIMENOW', 'YEAR', 'MONTH', 'DAY',
+    'WEEKDAY', 'WEEKNUM', 'HOUR', 'MINUTE', 'SECOND', 'MILLISECOND', 'ADDDAYS', 'DAYS', 'ADDMONTHS',
+    'TZOFFSET', 'ABS', 'SQRT', 'POWER', 'EXP', 'LN', 'LOG', 'PI', 'DEGREES', 'RADIANS', 'SIN', 'COS',
+    'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'SINH', 'COSH', 'TANH', 'COT', 'SIGN', 'CEILING', 'MCEILING',
+    'FLOOR', 'MFLOOR', 'MIN', 'MAX', 'MOD', 'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'TRUNC', 'REGEX', 'GEOLOCATION',
+    'DISTANCE', 'CURRENCYRATE', 'CONVERTCURRENCY', 'CASESAFEID', 'HYPERLINK', 'IMAGE', 'URLENCODE',
+    'ENCODEURL', 'URLDECODE', 'HTMLENCODE', 'JSENCODE', 'REPT', 'REVERSE', 'LPAD', 'RPAD', 'BR'
+  ];
+  const formulaOperators = ['+', '-', '*', '/', '^', '&', '=', '<>', '!=', '<', '<=', '>', '>=', 'AND', 'OR'];
   const isElementAvailable = (type: string) =>
     (type !== 'Screen' || flow.flowType === 'Screen Flow')
     && (type !== 'Roll Back Records' || ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType));
@@ -162,6 +157,9 @@ export default function FlowBuilder({
   const [resourceType, setResourceType] = useState<FlowResourceMetadata['type']>('Variable');
   const [resourceDataType, setResourceDataType] = useState('Text');
   const [resourceValue, setResourceValue] = useState('');
+  const [formulaFunction, setFormulaFunction] = useState('IF');
+  const [formulaInsertField, setFormulaInsertField] = useState('');
+  const [formulaOperator, setFormulaOperator] = useState('+');
   const [credentialId, setCredentialId] = useState('');
   const [credentialName, setCredentialName] = useState('');
   const [credentialLabel, setCredentialLabel] = useState('');
@@ -186,8 +184,10 @@ export default function FlowBuilder({
   const [platformEventFields, setPlatformEventFields] = useState<PlatformEventMetadata['fields']>([]);
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const formulaEditorRef = useRef<HTMLTextAreaElement>(null);
   const selected = flow.elements.find((element) => element.id === selectedId) ?? flow.elements[0];
   const selectedObject = objects.find((object) => object.apiName === flow.triggerObject);
+  const selectedPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
   const toolboxGroups = [...new Set(flowElementMetadata.map((item) => item.group))];
   const graphNodeWidth = 320;
   const graphColumnGap = 115;
@@ -253,8 +253,12 @@ export default function FlowBuilder({
       ? flow.triggerObject ?? objects.find((object) => object.apiName !== 'User')?.apiName ?? null
       : null;
     const startConfig = flowType === 'Schedule-Triggered Flow'
-      ? { ...flow.startConfig, startDate: '', startTime: '', frequency: '', timeZone: displayValue(flow.startConfig.timeZone) || 'UTC' }
-      : { ...flow.startConfig };
+      ? { entryConditions: [], startDate: '', startTime: '', frequency: '', timeZone: displayValue(flow.startConfig.timeZone) || 'UTC' }
+      : flowType === 'Platform Event-Triggered Flow'
+        ? { entryConditions: rowsFrom(flow.startConfig.entryConditions), ...(flow.startConfig.conditionLogic ? { conditionLogic: flow.startConfig.conditionLogic } : {}) }
+        : flowType === 'Record-Triggered Flow'
+          ? { entryConditions: rowsFrom(flow.startConfig.entryConditions), trigger: 'created-or-updated', runWhen: 'after-save', ...(flow.startConfig.conditionLogic ? { conditionLogic: flow.startConfig.conditionLogic } : {}) }
+          : {};
     const elements = flow.elements
       .filter((element) => element.type !== 'Screen' || flowType === 'Screen Flow')
       .map((element) => element.type === 'Start'
@@ -423,6 +427,16 @@ export default function FlowBuilder({
       resources: flow.resources.map((resource) => resource.name === name ? { ...resource, ...update } : resource)
     });
   };
+  const insertFormulaToken = (text: string, caretOffset = text.length) => {
+    const editor = formulaEditorRef.current;
+    const start = editor?.selectionStart ?? resourceValue.length;
+    const end = editor?.selectionEnd ?? start;
+    setResourceValue(`${resourceValue.slice(0, start)}${text}${resourceValue.slice(end)}`);
+    requestAnimationFrame(() => {
+      editor?.focus();
+      editor?.setSelectionRange(start + caretOffset, start + caretOffset);
+    });
+  };
   const addCondition = (key: string) => {
     setConfig(key, [...rowsFrom(selected?.config[key]), { field: '', operator: 'Equals', value: '' }]);
   };
@@ -486,7 +500,12 @@ export default function FlowBuilder({
   };
   const renderStartSettings = () => (
     <>
-      {flow.flowType === 'Platform Event-Triggered Flow' && <label className="form-label">Platform Event<select className="form-control" value={flow.triggerObject ?? ''} onChange={(event) => setStartConfig('object', event.target.value)}><option value="">Select platform event</option>{platformEvents.map((platformEvent) => <option key={platformEvent.apiName} value={platformEvent.apiName}>{platformEvent.label} ({platformEvent.apiName})</option>)}</select></label>}
+      {flow.flowType === 'Platform Event-Triggered Flow' && <>
+        <label className="form-label">Platform Event<select className="form-control" value={flow.triggerObject ?? ''} onChange={(event) => setStartConfig('object', event.target.value)}><option value="">Select platform event</option>{platformEvents.map((platformEvent) => <option key={platformEvent.apiName} value={platformEvent.apiName}>{platformEvent.label} ({platformEvent.apiName})</option>)}</select></label>
+        <label className="form-label">Entry Conditions</label>
+        {renderConditions('entryConditions', selectedPlatformEvent?.fields ?? [])}
+        {renderConditionLogic('Condition Requirements', flow.startConfig.conditionLogic, rowsFrom(flow.startConfig.entryConditions).length, (logic) => setStartConfig('conditionLogic', logic))}
+      </>}
       {(flow.flowType === 'Record-Triggered Flow' || flow.flowType === 'Schedule-Triggered Flow') && <>
         <label className="form-label">Object<select className="form-control" value={flow.triggerObject ?? ''} onChange={(event) => setStartConfig('object', event.target.value)}><option value="">Select object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
         {flow.flowType === 'Record-Triggered Flow' && <>
@@ -518,6 +537,28 @@ export default function FlowBuilder({
       return <div className="info-callout">
         Restores record changes made earlier in this Flow transaction. Execution continues, so later record changes can still be saved.
       </div>;
+    }
+    if (selected.type === 'Publish Platform Event') {
+      const platformEvent = platformEvents.find((event) => event.apiName === displayValue(selected.config.eventApiName));
+      const fieldValues = rowsFrom(selected.config.fieldValues);
+      return <>
+        <label className="form-label">Platform Event<select className="form-control" value={displayValue(selected.config.eventApiName)} onChange={(event) => onFlowChange({
+          ...flow,
+          elements: flow.elements.map((element) => element.id === selected.id
+            ? { ...element, config: { ...element.config, eventApiName: event.target.value, fieldValues: [] } }
+            : element)
+        })}><option value="">Select platform event</option>{platformEvents.map((event) => <option key={event.apiName} value={event.apiName}>{event.label} ({event.apiName})</option>)}</select></label>
+        <p className="settings-panel-copy">Map event fields to literal values or Flow resource references such as {'{!$Record.Id}'}.</p>
+        <div className="flow-config-list">{fieldValues.map((fieldValue, index) => <div className="flow-config-row" key={`platform-event-field-${index}`}>
+          <select className="form-control" aria-label="Platform event field" value={displayValue(fieldValue.field)} onChange={(event) => setConfig('fieldValues', fieldValues.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item))}>
+            <option value="">Select event field</option>{platformEvent?.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+          </select>
+          <input className="form-control" aria-label="Platform event value" placeholder="Value or resource" value={displayValue(fieldValue.value)} onChange={(event) => setConfig('fieldValues', fieldValues.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} />
+          <button className="row-menu" aria-label="Remove event field mapping" onClick={() => setConfig('fieldValues', fieldValues.filter((_, itemIndex) => itemIndex !== index))}><X size={14} /></button>
+        </div>)}
+          {platformEvent && <button className="text-action" onClick={() => setConfig('fieldValues', [...fieldValues, { field: '', value: '' }])}><Plus size={13} />Add Field</button>}
+        </div>
+      </>;
     }
     if (selected.type === 'Decision') {
       const outcomes = outcomesFrom(selected.config.outcomes);
@@ -649,7 +690,34 @@ export default function FlowBuilder({
         <label className="form-label">Screen Layout<select className="form-control" value={displayValue(selected.config.layout) || 'One Column'} onChange={(event) => setConfig('layout', event.target.value)}><option>One Column</option><option>Two Columns</option></select></label>
         {screenFields.map((field, index) => <div className="metadata-card" key={`screen-field-${index}`}>
           <label className="form-label">Label<input className="form-control" value={displayValue(field.label)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item))} /></label>
-          {field.type === 'Display Text'
+          {field.type === 'Custom Component'
+            ? <>
+              <label className="form-label">API Name<input className="form-control" value={displayValue(field.apiName)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, apiName: event.target.value.replace(/[^A-Za-z0-9_]/g, '') } : item))} /></label>
+              <label className="form-label">Component<select className="form-control" value={displayValue(field.componentApiName)} onChange={(event) => {
+                const component = flowComponents.find((item) => item.apiName === event.target.value);
+                setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? {
+                  ...item,
+                  componentApiName: event.target.value,
+                  width: component?.resize?.defaultWidth ?? 320,
+                  height: component?.resize?.defaultHeight ?? 180
+                } : item));
+              }}>
+                <option value="">Select a registered component</option>
+                {flowComponents.map((component) => <option key={component.apiName} value={component.apiName}>{component.label}</option>)}
+              </select></label>
+              <label className="form-label">Width (px)<input className="form-control" type="number"
+                min={Math.min(libraryComponents.find((item) => item.apiName === field.componentApiName)?.resize?.minWidth ?? 120, 2000)} max={2000}
+                value={displayValue(field.width) || libraryComponents.find((item) => item.apiName === field.componentApiName)?.resize?.defaultWidth || 320}
+                onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, width: Number(event.target.value) } : item))} /></label>
+              <label className="form-label">Height (px)<input className="form-control" type="number"
+                min={Math.min(libraryComponents.find((item) => item.apiName === field.componentApiName)?.resize?.minHeight ?? 60, 2000)} max={2000}
+                value={displayValue(field.height) || libraryComponents.find((item) => item.apiName === field.componentApiName)?.resize?.defaultHeight || 180}
+                onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, height: Number(event.target.value) } : item))} /></label>
+              <label className="form-label">Column Span<select className="form-control" value={displayValue(field.columnSpan) || '1'} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, columnSpan: Number(event.target.value) } : item))}><option value="1">One column</option><option value="2">Full width</option></select></label>
+              <label className="form-label">Component Props (JSON)<textarea className="form-control" rows={4} value={displayValue(field.componentPropsJson) || '{}'} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, componentPropsJson: event.target.value } : item))} /></label>
+              <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>
+            </>
+            : field.type === 'Display Text'
             ? <label className="form-label">Text Content<textarea className="form-control" rows={4} value={displayValue(field.text)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, text: event.target.value } : item))} /></label>
             : field.type === 'Display Image'
               ? <>
@@ -664,13 +732,28 @@ export default function FlowBuilder({
             : <>
           <label className="form-label">API Name<input className="form-control" value={displayValue(field.apiName)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, apiName: event.target.value.replace(/[^A-Za-z0-9_]/g, '') } : item))} /></label>
           <label className="form-label">Help Text<input className="form-control" value={displayValue(field.helpText)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, helpText: event.target.value } : item))} /></label>
-          {!['Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater'].includes(String(field.type)) && <label className="form-label">Default Value{['Checkbox', 'Toggle'].includes(String(field.type))
+          {!['Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater', 'Custom Component'].includes(String(field.type)) && <label className="form-label">Default Value{['Checkbox', 'Toggle'].includes(String(field.type))
             ? <input className="form-control" type="checkbox" checked={field.defaultValue === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, defaultValue: event.target.checked } : item))} />
             : field.type === 'Multi-Select Picklist'
               ? <textarea className="form-control" rows={2} value={Array.isArray(field.defaultValue) ? field.defaultValue.filter((choice): choice is string => typeof choice === 'string').join('\n') : ''} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, defaultValue: event.target.value.split(/\r?\n/).map((choice) => choice.trim()).filter(Boolean) } : item))} />
               : <input className="form-control" type={['Number', 'Currency', 'Slider'].includes(String(field.type)) ? 'number' : field.type === 'Date' ? 'date' : field.type === 'Time' ? 'time' : field.type === 'Date/Time' ? 'datetime-local' : 'text'} value={displayValue(field.defaultValue)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, defaultValue: ['Number', 'Currency', 'Slider'].includes(String(field.type)) ? (event.target.value === '' ? undefined : Number(event.target.value)) : event.target.value } : item))} />}</label>}
           {field.type === 'Multi-Select Picklist' && <small className="settings-panel-copy">Enter one default choice per line.</small>}
-          {!['Display Text', 'Display Image', 'Section'].includes(String(field.type)) && <label className="form-label">Data Type<select className="form-control" value={displayValue(field.type) || 'Text'} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, type: event.target.value, defaultValue: undefined } : item))}>{['Text', 'Password', 'Number', 'Currency', 'Slider', 'Date', 'Time', 'Date/Time', 'Email', 'URL', 'Phone', 'Checkbox', 'Toggle', 'Picklist', 'Multi-Select Picklist', 'Long Text Area', 'Display Text', 'Display Image', 'Section', 'Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater'].map((type) => <option key={type}>{type}</option>)}</select></label>}
+          {!['Display Text', 'Display Image', 'Section'].includes(String(field.type)) && <label className="form-label">Data Type<select className="form-control" value={displayValue(field.type) || 'Text'} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => {
+            if (itemIndex !== index) return item;
+            if (event.target.value === 'Custom Component') {
+              const component = flowComponents[0];
+              return {
+                ...item,
+                type: event.target.value,
+                componentApiName: component?.apiName ?? '',
+                width: component?.resize?.defaultWidth ?? 320,
+                height: component?.resize?.defaultHeight ?? 180,
+                componentPropsJson: '{}',
+                apiName: displayValue(item.apiName) || `Custom_Component_${index + 1}`
+              };
+            }
+            return { ...item, type: event.target.value, defaultValue: undefined };
+          }))}>{['Text', 'Password', 'Number', 'Currency', 'Slider', 'Date', 'Time', 'Date/Time', 'Email', 'URL', 'Phone', 'Checkbox', 'Toggle', 'Picklist', 'Multi-Select Picklist', 'Long Text Area', 'Display Text', 'Display Image', 'Section', 'Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater', ...(flowComponents.length ? ['Custom Component'] : [])].map((type) => <option key={type}>{type}</option>)}</select></label>}
           {['Lookup', 'Choice Lookup'].includes(String(field.type)) && <>
             <label className="form-label">Target Object<select className="form-control" value={displayValue(field.objectApiName)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, objectApiName: event.target.value, displayField: 'Name' } : item))}><option value="">Select object</option>{objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
             {field.type === 'Choice Lookup' && <>
@@ -722,7 +805,7 @@ export default function FlowBuilder({
           </>}
           {['Picklist', 'Multi-Select Picklist'].includes(String(field.type)) && <label className="form-label">Choices (one per line)<textarea className="form-control" rows={3} value={Array.isArray(field.choices) ? field.choices.filter((choice): choice is string => typeof choice === 'string').join('\n') : ''} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, choices: event.target.value.split(/\r?\n/).map((choice) => choice.trim()).filter(Boolean) } : item))} /></label>}
           {['Picklist', 'Multi-Select Picklist'].includes(String(field.type)) && <label className="form-label">Display As<select className="form-control" value={displayValue(field.displayAs) || (field.type === 'Picklist' ? 'Dropdown' : 'Multi-Select Dropdown')} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, displayAs: event.target.value } : item))}>{(field.type === 'Picklist' ? ['Dropdown', 'Radio Buttons'] : ['Multi-Select Dropdown', 'Checkbox Group']).map((mode) => <option key={mode}>{mode}</option>)}</select></label>}
-          {!['Display Text', 'Display Image', 'Section'].includes(String(field.type)) && <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>}
+          {!['Display Text', 'Display Image', 'Section', 'Custom Component'].includes(String(field.type)) && <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>}
           {screenFields.filter((candidate) => !['Display Text', 'Display Image', 'Section'].includes(String(candidate.type)) && candidate.apiName !== field.apiName).length > 0 && <>
             <label className="form-label">Visibility Logic<select className="form-control" value={displayValue(field.visibilityLogic) || 'All'} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, visibilityLogic: event.target.value } : item))}><option>All</option><option>Any</option></select></label>
             {rowsFrom(field.visibilityConditions).map((condition, conditionIndex) => <div className="flow-config-row" key={`${index}-visibility-${conditionIndex}`}>
@@ -741,6 +824,20 @@ export default function FlowBuilder({
           <button className="row-menu" aria-label="Remove screen field" onClick={() => setConfig('fields', screenFields.filter((_, itemIndex) => itemIndex !== index))}><X size={14} /></button>
         </div>)}
         <button className="text-action" onClick={() => setConfig('fields', [...screenFields, { label: 'New Screen Field', apiName: 'New_Screen_Field', type: 'Text', required: false }])}><Plus size={13} />Add Screen Field</button>
+        {flowComponents.length > 0 && <button className="text-action" onClick={() => {
+          const component = flowComponents[0];
+          setConfig('fields', [...screenFields, {
+            label: component?.label ?? 'Custom Component',
+            apiName: `Custom_Component_${screenFields.length + 1}`,
+            type: 'Custom Component',
+            componentApiName: component?.apiName ?? '',
+            width: component?.resize?.defaultWidth ?? 320,
+            height: component?.resize?.defaultHeight ?? 180,
+            columnSpan: 1,
+            componentPropsJson: '{}',
+            required: false
+          }]);
+        }}><Plus size={13} />Add Custom Component</button>}
         <h3>Screen Navigation</h3>
         <p className="settings-panel-copy">Configure the buttons shown when this screen is submitted. Add a connector for each button to route the flow.</p>
         {outcomes.map((outcome, index) => <div className="flow-config-row" key={`${outcome.name}-${index}`}>
@@ -940,6 +1037,12 @@ export default function FlowBuilder({
           <div className="toolbox-group"><h3>Flow Description</h3><label className="form-label">Description<textarea className="form-control" rows={3} value={flow.description ?? ''} onChange={(event) => onFlowChange({ ...flow, description: event.target.value })} /></label></div>
           <div className="toolbox-group"><h3>New Flow</h3><label className="form-label">Flow Label<input className="form-control" value={newFlowLabel} onChange={(event) => setNewFlowLabel(event.target.value)} /></label><label className="form-label">Flow Type<select className="form-control" value={newFlowType} onChange={(event) => setNewFlowType(event.target.value as FlowDefinitionMetadata['flowType'])}>{flowTypeOptions.map((option) => <option key={option.type}>{option.type}</option>)}</select></label><button className="btn btn-brand" disabled={!newFlowLabel.trim()} onClick={() => { onCreateFlow(newFlowLabel, newFlowType); setNewFlowLabel(''); }}><Plus size={13} />Create Flow</button></div>
           <div className="toolbox-group"><h3>Platform Events</h3>
+            <button className="btn" onClick={() => {
+              setPlatformEventApiName('');
+              setPlatformEventLabel('');
+              setPlatformEventDescription('');
+              setPlatformEventFields([]);
+            }}><Plus size={13} />New Event</button>
             {platformEvents.map((event) => <div className="flow-resource-card" key={event.apiName}>
               <button className="flow-manager-item" onClick={() => {
                 setPlatformEventApiName(event.apiName);
@@ -959,9 +1062,22 @@ export default function FlowBuilder({
             <label className="form-label">API Name<input className="form-control" value={platformEventApiName} onChange={(event) => setPlatformEventApiName(event.target.value)} placeholder="Order_Updated__e" /></label>
             <label className="form-label">Description<textarea className="form-control" rows={2} value={platformEventDescription} onChange={(event) => setPlatformEventDescription(event.target.value)} /></label>
             {platformEventFields.map((field, index) => <div className="flow-resource-card" key={`new-platform-field-${index}`}>
-              <label className="form-label">Field Label<input className="form-control" value={field.label} onChange={(event) => setPlatformEventFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value, apiName: event.target.value.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '')} : item))} /></label>
+              <label className="form-label">Field Label<input className="form-control" value={field.label} onChange={(event) => setPlatformEventFields((current) => current.map((item, itemIndex) => itemIndex === index ? {
+                ...item,
+                label: event.target.value,
+                apiName: `${event.target.value.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}__c`
+              } : item))} /></label>
               <label className="form-label">API Name<input className="form-control" value={field.apiName} onChange={(event) => setPlatformEventFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, apiName: event.target.value } : item))} /></label>
-              <label className="form-label">Data Type<select className="form-control" value={field.dataType} onChange={(event) => setPlatformEventFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dataType: event.target.value } : item))}>{['Text(255)', 'Long Text Area', 'Number', 'Currency', 'Percent', 'Checkbox', 'Date', 'DateTime', 'Picklist'].map((type) => <option key={type}>{type}</option>)}</select></label>
+              <label className="form-label">Data Type<select className="form-control" value={field.dataType} onChange={(event) => setPlatformEventFields((current) => current.map((item, itemIndex) => itemIndex === index ? {
+                ...item,
+                dataType: event.target.value,
+                ...(event.target.value === 'Picklist' ? { picklistRestricted: true, picklistValues: item.picklistValues ?? [] } : {})
+              } : item))}>{['Text(255)', 'Long Text Area', 'Number', 'Currency', 'Percent', 'Checkbox', 'Date', 'DateTime', 'Picklist'].map((type) => <option key={type}>{type}</option>)}</select></label>
+              {field.dataType === 'Picklist' && <label className="form-label">Picklist Values (one per line)<textarea className="form-control" rows={3} value={field.picklistValues?.join('\n') ?? ''} onChange={(event) => setPlatformEventFields((current) => current.map((item, itemIndex) => itemIndex === index ? {
+                ...item,
+                picklistRestricted: true,
+                picklistValues: event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)
+              } : item))} /></label>}
               <button className="btn btn-small" onClick={() => setPlatformEventFields((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove Field</button>
             </div>)}
             <button className="text-action" onClick={addPlatformEventField}><Plus size={13} />Add Field</button>
@@ -980,8 +1096,38 @@ export default function FlowBuilder({
                     {['Text', 'Number', 'Currency', 'Percent', 'Boolean', 'Date', 'Date/Time', 'Time', 'Id', 'Picklist', 'Multi-Select Picklist'].map((type) => <option key={type}>{type}</option>)}
                   </select>
                 : <input className="form-control" value={resourceDataType} onChange={(event) => setResourceDataType(event.target.value)} />}</label>
-            <label className="form-label">{resourceType === 'Formula' ? 'Formula Expression' : resourceType === 'Text Template' ? 'Template' : 'Default Value'}<input className="form-control" value={resourceValue} onChange={(event) => setResourceValue(event.target.value)} /></label>{resourceType === 'Formula' && <p className="settings-panel-copy">Supported formula functions include IF, AND, OR, NOT, ISBLANK, BLANKVALUE, LEN, LOWER, UPPER, TRIM, LEFT, RIGHT, MID, FIND, VALUE, ABS, SQRT, POWER, CEILING, FLOOR, MIN, MAX, ROUND, TEXT, TODAY, and DATE. This is a supported subset, not the full Salesforce formula language.</p>}<button className="btn" disabled={!resourceLabel.trim()} onClick={addResource}><Plus size={13} />New Resource</button>
-            {flow.resources.map((resource) => <div className="flow-resource-card" key={resource.name}><strong>{resource.label}</strong><small>{resource.name} · {resource.type} · {resource.dataType}</small><div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={resource.availableForInput} disabled={!['Variable', 'Record', 'Record Collection'].includes(resource.type)} onChange={(event) => updateResource(resource.name, { availableForInput: event.target.checked })} />Available for input</label><label className="checkbox-row"><input type="checkbox" checked={resource.availableForOutput} onChange={(event) => updateResource(resource.name, { availableForOutput: event.target.checked })} />Available for output</label></div><button className="text-action" onClick={() => onFlowChange({ ...flow, resources: flow.resources.filter((item) => item.name !== resource.name) })}><X size={13} />Delete Resource</button></div>)}
+            {resourceType === 'Formula' && <div className="flow-config-list">
+              <div className="flow-config-row">
+                <select className="form-control" aria-label="Formula field or resource" value={formulaInsertField} onChange={(event) => setFormulaInsertField(event.target.value)}>
+                  <option value="">Select field or resource</option>
+                  {selectedObject && <optgroup label="Trigger Fields">{selectedObject.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}
+                  {selectedPlatformEvent && <optgroup label="Event Fields">{selectedPlatformEvent.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}
+                  <optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</optgroup>
+                </select>
+                <button className="btn btn-small" disabled={!formulaInsertField} onClick={() => insertFormulaToken(formulaInsertField)}>Insert Field</button>
+              </div>
+              <div className="flow-config-row">
+                <select className="form-control" aria-label="Formula operator" value={formulaOperator} onChange={(event) => setFormulaOperator(event.target.value)}>{formulaOperators.map((operator) => <option key={operator}>{operator}</option>)}</select>
+                <button className="btn btn-small" onClick={() => insertFormulaToken(` ${formulaOperator} `)}>Insert Operator</button>
+              </div>
+              <div className="flow-config-row">
+                <select className="form-control" aria-label="Formula function" value={formulaFunction} onChange={(event) => setFormulaFunction(event.target.value)}>{formulaFunctions.map((name) => <option key={name}>{name}</option>)}</select>
+                <button className="btn btn-small" onClick={() => insertFormulaToken(`${formulaFunction}()`, formulaFunction.length + 1)}>Insert Function</button>
+              </div>
+              <p className="settings-panel-copy">Insert controls add text at the cursor. Use Check to validate the expression and the rest of the Flow.</p>
+            </div>}
+            <label className="form-label">{resourceType === 'Formula' ? 'Formula Expression' : resourceType === 'Text Template' ? 'Template' : 'Default Value'}{resourceType === 'Formula' || resourceType === 'Text Template'
+              ? <textarea ref={resourceType === 'Formula' ? formulaEditorRef : undefined} className="form-control" rows={5} value={resourceValue} onChange={(event) => setResourceValue(event.target.value)} />
+              : <input className="form-control" value={resourceValue} onChange={(event) => setResourceValue(event.target.value)} />}</label>
+            <button className="btn" disabled={!resourceLabel.trim()} onClick={addResource}><Plus size={13} />New Resource</button>
+            {flow.resources.map((resource) => <div className="flow-resource-card" key={resource.name}>
+              <strong>{resource.label}</strong><small>{resource.name} · {resource.type} · {resource.dataType}</small>
+              <label className="form-label">{resource.type === 'Formula' ? 'Formula Expression' : resource.type === 'Text Template' ? 'Template' : 'Default Value'}{resource.type === 'Formula' || resource.type === 'Text Template'
+                ? <textarea className="form-control" rows={4} value={displayValue(resource.value)} onChange={(event) => updateResource(resource.name, { value: event.target.value })} />
+                : <input className="form-control" value={displayValue(resource.value)} onChange={(event) => updateResource(resource.name, { value: event.target.value })} />}</label>
+              <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={resource.availableForInput} disabled={!['Variable', 'Record', 'Record Collection'].includes(resource.type)} onChange={(event) => updateResource(resource.name, { availableForInput: event.target.checked })} />Available for input</label><label className="checkbox-row"><input type="checkbox" checked={resource.availableForOutput} onChange={(event) => updateResource(resource.name, { availableForOutput: event.target.checked })} />Available for output</label></div>
+              <button className="text-action" onClick={() => onFlowChange({ ...flow, resources: flow.resources.filter((item) => item.name !== resource.name) })}><X size={13} />Delete Resource</button>
+            </div>)}
           </div>
           <div className="toolbox-group"><h3>Named Credentials</h3>          <p>Tenant-scoped HTTPS and SMTP credentials are encrypted at rest. Secrets are never returned to the browser.</p>
             <label className="form-label">API Name<input className="form-control" value={credentialName} onChange={(event) => setCredentialName(event.target.value.replace(/[^A-Za-z0-9_]/g, ''))} placeholder="Partner_API" /></label>
@@ -1040,7 +1186,7 @@ export default function FlowBuilder({
           {flow.elements.map((element) => {
             const position = graphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding };
             return <button key={element.id} className={`flow-step flow-graph-node ${element.type === 'Start' ? 'start-step' : ''} ${selectedId === element.id ? 'selected' : ''}`} style={{ left: position.x, top: position.y, width: graphNodeWidth }} onClick={() => onSelect(element.id)}>
-              <span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === element.type)?.icon ?? '◉'}</span><span className="flow-step-content"><small>{element.type === 'Start' ? flow.flowType.toUpperCase() : element.type.toUpperCase()}</small><strong>{element.label}</strong>{element.type === 'Start' && <em>{flow.triggerObject ? `Object: ${flow.triggerObject}` : 'No record object'} · {displayValue(flow.startConfig.trigger) || displayValue(flow.startConfig.frequency) || 'Manual'}</em>}</span><MoreHorizontal size={16} className="step-menu" />
+              <span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === element.type)?.icon ?? '◉'}</span><span className="flow-step-content"><small>{element.type === 'Start' ? flow.flowType.toUpperCase() : element.type.toUpperCase()}</small><strong>{element.label}</strong>{element.type === 'Start' && <em>{flow.flowType === 'Platform Event-Triggered Flow' ? `Event: ${selectedPlatformEvent?.label ?? flow.triggerObject ?? 'Select event'}` : flow.triggerObject ? `Object: ${flow.triggerObject}` : 'No record object'} · {displayValue(flow.startConfig.trigger) || displayValue(flow.startConfig.frequency) || 'Manual'}</em>}</span><MoreHorizontal size={16} className="step-menu" />
             </button>;
           })}
         </div></div>

@@ -423,7 +423,22 @@ test('Trailhead report defaults and grouped Leads by Lead Source dashboard sourc
       folderName: 'Private Reports',
       visibility: 'Private',
       status: 'Deployed',
-      filters: [],
+      filters: [
+        {
+          id: 'lead-source-filter',
+          objectApiName: 'Lead',
+          fieldApiName: 'LeadSource',
+          operator: 'Equals',
+          value: ''
+        },
+        {
+          id: 'lead-name-filter',
+          objectApiName: 'Lead',
+          fieldApiName: 'LastName',
+          operator: 'Equals',
+          value: ''
+        }
+      ],
       filterLogic: 'All',
       components: [{
         id: 'leads-by-source',
@@ -436,10 +451,177 @@ test('Trailhead report defaults and grouped Leads by Lead Source dashboard sourc
         measureFieldApiName: null,
         groupByFieldApiName: 'LeadSource',
         chartType: 'Donut',
-        displayFieldApiNames: []
+        displayFieldApiNames: [],
+        width: 'Half',
+        height: 'Short'
+      }, {
+        id: 'lead-details',
+        title: 'Lead Details',
+        type: 'Table',
+        reportApiName: 'Trailhead_Leads_by_Source',
+        properties: {},
+        objectApiName: 'Lead',
+        aggregation: 'Count',
+        measureFieldApiName: null,
+        groupByFieldApiName: null,
+        chartType: 'Bar',
+        displayFieldApiNames: ['LastName', 'LeadSource'],
+        width: 'Full',
+        height: 'Tall'
       }]
     });
     assert.equal(dashboard.status, 200, JSON.stringify(dashboard.data));
+    assert.deepEqual(dashboard.data.dashboard.components.map((component: {
+      id: string; width: string; height: string;
+    }) => [component.id, component.width, component.height]), [
+      ['leads-by-source', 'Half', 'Short'],
+      ['lead-details', 'Full', 'Tall']
+    ], 'dashboard layout order, width, and height are persisted with the saved metadata');
+    assert.equal((await send('/metadata/dashboards/Trailhead_Leads_by_Source', token, 'PUT', {
+      ...dashboard.data.dashboard,
+      filters: [{
+        id: 'stale-lead-filter',
+        objectApiName: 'Lead',
+        fieldApiName: 'RemovedField__c',
+        operator: 'Equals',
+        value: ''
+      }]
+    })).status, 400, 'dashboard saves reject stale filter fields rather than persisting an inert filter');
+    assert.equal((await send('/metadata/dashboards/Trailhead_Leads_by_Source', token, 'PUT', {
+      ...dashboard.data.dashboard,
+      filters: [{
+        id: 'invalid-lead-source-filter',
+        objectApiName: 'Lead',
+        fieldApiName: 'LeadSource',
+        operator: 'Equals',
+        value: 'Not a valid Lead Source'
+      }]
+    })).status, 422, 'dashboard saves reject values not present in the field picklist');
+    const selectedLeadFilterRun = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardFilters: [
+        { id: 'lead-source-filter', objectApiName: 'Lead', fieldApiName: 'LeadSource', operator: 'Equals', value: 'Partner Referral' },
+        { id: 'lead-name-filter', objectApiName: 'Lead', fieldApiName: 'LastName', operator: 'Equals', value: '' }
+      ],
+      dashboardFilterLogic: 'All',
+      limit: 5000
+    });
+    assert.equal(selectedLeadFilterRun.status, 200, JSON.stringify(selectedLeadFilterRun.data));
+    assert.equal(selectedLeadFilterRun.data.totalRows, 2,
+      'a viewer-selected filter value overrides a blank saved default in the report-backed widget');
+    const crossFilteredLeadRun = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardFilters: [],
+      dashboardCrossFilters: [{
+        id: 'selected-lead-source',
+        objectApiName: 'Lead',
+        fieldApiName: 'LeadSource',
+        operator: 'Equals',
+        value: 'Partner Referral'
+      }],
+      limit: 5000
+    });
+    assert.equal(crossFilteredLeadRun.status, 200, JSON.stringify(crossFilteredLeadRun.data));
+    assert.equal(crossFilteredLeadRun.data.totalRows, 2,
+      'a chart selection cross-filters the other report-backed dashboard widgets');
+    const multipleCrossFilteredLeadRun = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardCrossFilters: [
+        { id: 'selected-partner-source', objectApiName: 'Lead', fieldApiName: 'LeadSource', operator: 'Equals', value: 'Partner Referral' },
+        { id: 'selected-web-source', objectApiName: 'Lead', fieldApiName: 'LeadSource', operator: 'Equals', value: 'Web' }
+      ],
+      limit: 5000
+    });
+    assert.equal(multipleCrossFilteredLeadRun.status, 200, JSON.stringify(multipleCrossFilteredLeadRun.data));
+    assert.equal(multipleCrossFilteredLeadRun.data.totalRows, 3,
+      'multiple selected categories on one chart field combine as a multi-value selection');
+    const conflictingLeadRun = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardFilters: [{
+        id: 'lead-source-filter',
+        objectApiName: 'Lead',
+        fieldApiName: 'LeadSource',
+        operator: 'Equals',
+        value: 'Partner Referral'
+      }],
+      dashboardCrossFilters: [{
+        id: 'selected-web-source',
+        objectApiName: 'Lead',
+        fieldApiName: 'LeadSource',
+        operator: 'Equals',
+        value: 'Web'
+      }],
+      limit: 5000
+    });
+    assert.equal(conflictingLeadRun.status, 200, JSON.stringify(conflictingLeadRun.data));
+    assert.equal(conflictingLeadRun.data.totalRows, 0,
+      'dashboard filter criteria and chart cross-filters intersect rather than broadening data');
+    const emptyLeadRun = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardFilters: [{
+        id: 'lead-source-filter',
+        objectApiName: 'Lead',
+        fieldApiName: 'LeadSource',
+        operator: 'Equals',
+        value: 'Phone Inquiry'
+      }],
+      limit: 5000
+    });
+    assert.equal(emptyLeadRun.status, 200, JSON.stringify(emptyLeadRun.data));
+    assert.equal(emptyLeadRun.data.totalRows, 0);
+    assert.deepEqual(emptyLeadRun.data.rows, [],
+      'a valid filter with no matching data returns an explicit empty result rather than stale rows');
+    const anyLeadFilterRun = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardFilters: [
+        { id: 'lead-source-filter', objectApiName: 'Lead', fieldApiName: 'LeadSource', operator: 'Equals', value: 'Partner Referral' },
+        { id: 'lead-name-filter', objectApiName: 'Lead', fieldApiName: 'LastName', operator: 'Equals', value: 'Web Lead' }
+      ],
+      dashboardFilterLogic: 'Any',
+      limit: 5000
+    });
+    assert.equal(anyLeadFilterRun.status, 200, JSON.stringify(anyLeadFilterRun.data));
+    assert.equal(anyLeadFilterRun.data.totalRows, 3,
+      'saved dashboard filters apply their configured All/Any logic to report-backed widgets');
+    const staleDashboardCrossFilter = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardCrossFilters: [{
+        id: 'stale-chart-field',
+        objectApiName: 'Lead',
+        fieldApiName: 'Company',
+        operator: 'Equals',
+        value: 'Trailhead Partner One'
+      }],
+      limit: 5000
+    });
+    assert.equal(staleDashboardCrossFilter.status, 400,
+      'dashboard report runs reject cross-filters whose field is no longer provided by a chart');
+    const invalidDashboardCrossFilterOperator = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardCrossFilters: [{
+        id: 'invalid-lead-source-operator',
+        objectApiName: 'Lead',
+        fieldApiName: 'LeadSource',
+        operator: 'Contains',
+        value: 'Partner'
+      }],
+      limit: 5000
+    });
+    assert.equal(invalidDashboardCrossFilterOperator.status, 400,
+      'dashboard report runs reject cross-filter operators incompatible with the selected chart field');
+    const invalidDashboardFilter = await send('/reports/Trailhead_Leads_by_Source/run', token, 'POST', {
+      dashboardApiName: 'Trailhead_Leads_by_Source',
+      dashboardFilters: [{
+        id: 'lead-source-filter',
+        objectApiName: 'Lead',
+        fieldApiName: 'LeadSource',
+        operator: 'Equals',
+        value: 'Not a valid Lead Source'
+      }],
+      limit: 5000
+    });
+    assert.equal(invalidDashboardFilter.status, 400,
+      'dashboard report runs reject viewer values that are invalid for the filter field');
     const dashboardSnapshot = await send(
       '/metadata/dashboards/Trailhead_Leads_by_Source/snapshots',
       token,
@@ -449,10 +631,64 @@ test('Trailhead report defaults and grouped Leads by Lead Source dashboard sourc
     assert.equal(dashboardSnapshot.status, 201, JSON.stringify(dashboardSnapshot.data));
     const leadChart = dashboardSnapshot.data.snapshot.components[0];
     assert.equal(leadChart.totalRows, 3);
+    assert.equal(leadChart.width, 'Half');
+    assert.equal(leadChart.height, 'Short');
+    assert.equal(dashboardSnapshot.data.snapshot.components[1].width, 'Full');
+    assert.equal(dashboardSnapshot.data.snapshot.components[1].height, 'Tall');
     assert.ok(leadChart.buckets.some((bucket: { label: string; value: number }) =>
       bucket.label === 'Partner Referral' && bucket.value === 2));
     assert.ok(leadChart.buckets.some((bucket: { label: string; value: number }) =>
       bucket.label === 'Web' && bucket.value === 1));
+    const filteredDashboardSnapshot = await send(
+      '/metadata/dashboards/Trailhead_Leads_by_Source/snapshots',
+      token,
+      'POST',
+      {
+        label: 'Partner Referral cross-filter',
+        filters: dashboard.data.dashboard.filters,
+        crossFilters: [{
+          id: 'snapshot-lead-source',
+          objectApiName: 'Lead',
+          fieldApiName: 'LeadSource',
+          operator: 'Equals',
+          value: 'Partner Referral'
+        }]
+      }
+    );
+    assert.equal(filteredDashboardSnapshot.status, 201, JSON.stringify(filteredDashboardSnapshot.data));
+    assert.equal(filteredDashboardSnapshot.data.snapshot.components[0].totalRows, 2,
+      'snapshots capture dashboard filters and active chart cross-filters consistently');
+    assert.deepEqual(filteredDashboardSnapshot.data.snapshot.components[1].rows.map((row: { LeadSource: string }) =>
+      row.LeadSource), ['Partner Referral', 'Partner Referral']);
+    const invalidSnapshotFilter = await send(
+      '/metadata/dashboards/Trailhead_Leads_by_Source/snapshots',
+      token,
+      'POST',
+      {
+        label: 'Invalid dashboard filter',
+        filters: dashboard.data.dashboard.filters.map((filter: Record<string, unknown>) =>
+          filter.id === 'lead-source-filter' ? { ...filter, value: 'Invalid Source' } : filter)
+      }
+    );
+    assert.equal(invalidSnapshotFilter.status, 400,
+      'snapshot creation explicitly rejects invalid viewer filter values');
+    const staleSnapshotCrossFilter = await send(
+      '/metadata/dashboards/Trailhead_Leads_by_Source/snapshots',
+      token,
+      'POST',
+      {
+        label: 'Stale chart cross-filter',
+        crossFilters: [{
+          id: 'stale-company-chart-field',
+          objectApiName: 'Lead',
+          fieldApiName: 'Company',
+          operator: 'Equals',
+          value: 'Trailhead Partner One'
+        }]
+      }
+    );
+    assert.equal(staleSnapshotCrossFilter.status, 400,
+      'snapshots reject stale cross-filter fields that are not exposed by dashboard charts');
     const invalidDashboardSourceEdit = await send('/metadata/reports/Trailhead_Leads_by_Source', token, 'PUT', {
       ...leadReport.data.report,
       groupByFieldApiNames: []
@@ -758,6 +994,22 @@ test('Trailhead report defaults and grouped Leads by Lead Source dashboard sourc
     assert.equal(migratedLeadMetadata.status, 200, JSON.stringify(migratedLeadMetadata.data));
     assert.ok(migratedLeadMetadata.data.object.fields.some((field: { apiName: string }) => field.apiName === 'Street'),
       'startup migration restores the standard Lead Street field to existing tenant metadata');
+    const persistedDashboard = await send('/metadata/dashboards', migratedLogin.data.access_token, 'GET');
+    assert.equal(persistedDashboard.status, 200, JSON.stringify(persistedDashboard.data));
+    const persistedDashboardMetadata = persistedDashboard.data.dashboards.find((item: { apiName: string }) =>
+      item.apiName === 'Trailhead_Leads_by_Source');
+    assert.ok(persistedDashboardMetadata, 'saved dashboard metadata is available after restart');
+    assert.deepEqual(persistedDashboardMetadata.filters.map((filter: { id: string; value: string }) =>
+      [filter.id, filter.value]), [
+      ['lead-source-filter', ''],
+      ['lead-name-filter', '']
+    ], 'dashboard filter criteria and saved defaults survive restart');
+    assert.deepEqual(persistedDashboardMetadata.components.map((component: {
+      id: string; width: string; height: string;
+    }) => [component.id, component.width, component.height]), [
+      ['leads-by-source', 'Half', 'Short'],
+      ['lead-details', 'Full', 'Tall']
+    ], 'dashboard widget order and responsive sizing survive restart and metadata migration');
   } finally {
     if (child) await stopApi(child);
     await rm(dataDirectory, { recursive: true, force: true });

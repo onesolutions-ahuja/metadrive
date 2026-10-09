@@ -1,6 +1,6 @@
 # Dashboard Builder Parity — Handoff
 
-**Status: Paused at the user's request. Not 100% complete.**
+**Status: Dashboard parity work resumed; overall scope remains in progress and is not 100% complete.**
 
 ## Source of truth
 
@@ -14,22 +14,26 @@
 - Hardened snapshot reads to recheck current report-folder access, object/field permissions, running-user eligibility, and captured record-level access. Added tests for snapshots becoming unavailable after report-folder or record-share access is revoked.
 - Added a report-builder regression test for preventing source-report changes that invalidate a saved chart grouping and for blocking deletion of referenced reports.
 - Added a focused title helper and unit test for adopting source report labels while preserving user-customized widget titles.
+- Fixed dashboard filter resolution so viewer-selected values (including values selected for filters with blank saved defaults) are sent to report-backed widgets and applied to local-record widgets. Preview now starts from saved defaults, and Reset restores those defaults.
+- Hardened dashboard report execution so chart cross-filters must still map to a configured chart grouping/series field, and reject stale fields, unsupported operators, and invalid filter values explicitly.
+- Expanded the authenticated server integration to exercise the real Leads-by-Lead-Source dashboard with report-backed chart/table widgets: saved filter values, All/Any logic, viewer overrides, multi-category chart selection, filter/cross-filter intersection, zero-result handling, snapshot parity, invalid/stale state rejection, and Joined/Historical Trend source rejection.
+- Verified widget order and mixed width/height settings persist through a server restart/migration and are carried through the snapshot output.
+- Extracted the chart selection toggle into a shared helper and covered independent selections, multi-value selection, and deselection with focused frontend tests.
+- Confirmed the DASH-03 layout path remains backed by the existing responsive grid and persisted widget order/width/height; the prior authenticated browser walkthrough verified reorder, resize, preview/viewer, reload, and persisted order/size.
 - Recorded Trailhead Dashboard lesson inventory notes and progress in `PARITY_SCOPE_FREEZE.md`.
 
-## Verification status at pause
+## Verification status
 
-- Full server suite passed **14/14** after the page-test reactivation and before the latest scheduled-delivery authorization change.
-- Server and web production builds passed before the latest scheduled-delivery authorization change.
-- The focused title behavior test passed.
-- A newly identified gap was addressed in code: scheduled dashboard email rendering now marks a report-backed widget unavailable when its recipient cannot access the source report folder. The matching RBAC smoke test checks that the email and saved snapshot do not reveal report data.
-- The latest focused RBAC smoke test completed with one failure at the later team-preview record-count assertion: actual 7 vs expected 8 (`team preview report runs must use the selected subordinate identity`). The new scheduled source-report access assertions are earlier in the same test, so execution reached beyond them; however, the test as a whole is not passing. The added test fixture creates and shares an Account record, which likely changes the later count; isolate or clean up that fixture on resume, rerun the smoke test, then perform full verification.
+- Focused dashboard filter/title/cross-filter tests passed **5/5**.
+- The expanded Dashboard/report end-to-end integration passed **1/1**.
+- Full server suite passed **16/16**, including the RBAC smoke and report-builder integration tests.
+- Web and server production builds passed. Vite continues to report the pre-existing large-chunk warning.
+- The former team-preview row-count failure did not reproduce; the focused RBAC smoke test passed **5/5** with its Account fixture and strict row-count assertion intact.
 
-## Resume here
+## Remaining dashboard parity work
 
-1. Fix the record fixture/count interference noted above without weakening the team-preview assertion; rerun `apps/server/test/rbac-sharing.smoke.test.ts`.
-2. Run server build, web build, and the complete server test suite against the final changes.
-3. Continue implementing and verifying the remaining applicable Dashboard criteria in the frozen checklist, especially DASH-11/12/13. The existing inventory/evidence entries do not constitute full completion.
-4. Do not report 100% until every applicable frozen Dashboard criterion is implemented and verified. If a genuinely unresolvable blocker appears, state the exact criterion and required external input; otherwise continue.
+1. Continue the complete Trailhead control/widget/property inventory and interactive authenticated browser matrix required by DASH-11/12/13; the integration coverage here closes the pictured task cases, not every frozen Dashboard criterion.
+2. Do not report 100% until every applicable frozen Dashboard criterion is implemented and verified. If a genuinely unresolvable blocker appears, state the exact criterion and required external input; otherwise continue.
 
 ## Workspace
 

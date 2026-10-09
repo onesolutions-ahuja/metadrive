@@ -1,10 +1,13 @@
 import FlowScreenAdvancedField from './FlowScreenAdvancedField';
+import RegisteredComponent from './RegisteredComponent';
+import type { LibraryComponentMetadata } from './metadata';
 
 type ScreenField = Record<string, unknown>;
 type ScreenRecord = Record<string, unknown>;
 
 type FlowScreenContentProps = {
   fields: ScreenField[];
+  libraryComponents: LibraryComponentMetadata[];
   interviewId: string;
   values: Record<string, unknown>;
   onValueChange: (name: string, value: unknown) => void;
@@ -21,6 +24,7 @@ function fieldName(field: ScreenField, index: number): string {
 
 export default function FlowScreenContent({
   fields,
+  libraryComponents,
   interviewId,
   values,
   onValueChange,
@@ -53,6 +57,53 @@ export default function FlowScreenContent({
     const help = helpText ? <small className="settings-panel-copy" id={helpId}>{helpText}</small> : null;
     const choices = (Array.isArray(field.choices) ? field.choices : []).filter((choice): choice is string => typeof choice === 'string');
 
+    if (type === 'Custom Component') {
+      const definition = libraryComponents.find((component) =>
+        component.apiName === field.componentApiName && component.surfaces.includes('flow'));
+      if (!definition) return <div className="flow-screen-component-error" role="alert" key={name}>
+        Custom component "{String(field.componentApiName ?? '')}" is no longer registered for Flow screens.
+      </div>;
+      let componentProps: Record<string, unknown> = {};
+      if (typeof field.componentPropsJson === 'string') {
+        try {
+          const parsed: unknown = JSON.parse(field.componentPropsJson);
+          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            return <div className="flow-screen-component-error" role="alert" key={name}>Component props must be a JSON object.</div>;
+          }
+          componentProps = parsed as Record<string, unknown>;
+        } catch {
+          return <div className="flow-screen-component-error" role="alert" key={name}>Component props contain invalid JSON.</div>;
+        }
+      }
+      const resize = definition.resize;
+      const width = typeof field.width === 'number' ? field.width : resize?.defaultWidth ?? 320;
+      const height = typeof field.height === 'number' ? field.height : resize?.defaultHeight ?? 180;
+      const safeWidth = Math.min(2000, Math.max(resize?.minWidth ?? 120, width));
+      const safeHeight = Math.min(2000, Math.max(resize?.minHeight ?? 60, height));
+      return <div className="flow-screen-custom-component" key={name}
+        style={{
+          gridColumn: field.columnSpan === 2 ? '1 / -1' : undefined,
+          width: safeWidth,
+          height: safeHeight,
+          minWidth: resize?.minWidth ?? 120,
+          minHeight: resize?.minHeight ?? 60,
+          maxWidth: '100%'
+        }}>
+        <RegisteredComponent definition={definition} props={{
+          ...componentProps,
+          label,
+          value,
+          onChange: setValue,
+          onAction: (action: unknown) => {
+            if (typeof action === 'object' && action !== null && 'value' in action) {
+              setValue((action as { value: unknown }).value);
+            } else {
+              setValue(action);
+            }
+          }
+        }} />
+      </div>;
+    }
     if (type === 'Display Text') return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{String(field.text ?? '')}</p>;
     if (type === 'Display Image') return <figure className="flow-screen-image" key={`image-${index}`}>
       <img src={String(field.imageUrl ?? '')} alt={String(field.imageAltText ?? '')} loading="lazy" />

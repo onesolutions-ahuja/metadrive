@@ -1,0 +1,860 @@
+[
+    {
+        "apiName":  "KioskContainer",
+        "label":  "Kiosk Container",
+        "category":  "Layout",
+        "description":  "Main content wrapper with configurable width, padding and background.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskContainer/KioskContainer.jsx",
+        "css":  "KioskContainer/KioskContainer.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskRow",
+        "label":  "Kiosk Row",
+        "category":  "Layout",
+        "description":  "Horizontal row with configurable alignment and wrapping.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskRow/KioskRow.jsx",
+        "css":  "KioskRow/KioskRow.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskColumn",
+        "label":  "Kiosk Column",
+        "category":  "Layout",
+        "description":  "Vertical column with flexible spacing.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskColumn/KioskColumn.jsx",
+        "css":  "KioskColumn/KioskColumn.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskGrid",
+        "label":  "Kiosk Grid",
+        "category":  "Layout",
+        "description":  "Responsive grid for arbitrary child elements.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskGrid/KioskGrid.jsx",
+        "css":  "KioskGrid/KioskGrid.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskSpacer",
+        "label":  "Kiosk Spacer",
+        "category":  "Layout",
+        "description":  "Adjustable empty space.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskSpacer/KioskSpacer.jsx",
+        "css":  "KioskSpacer/KioskSpacer.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskDivider",
+        "label":  "Kiosk Divider",
+        "category":  "Layout",
+        "description":  "Horizontal or vertical separator.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskDivider/KioskDivider.jsx",
+        "css":  "KioskDivider/KioskDivider.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskTopBar",
+        "label":  "Kiosk Top Bar",
+        "category":  "Navigation",
+        "description":  "Logo, store title, language and cart controls.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskTopBar/KioskTopBar.jsx",
+        "css":  "KioskTopBar/KioskTopBar.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskBottomBar",
+        "label":  "Kiosk Bottom Bar",
+        "category":  "Navigation",
+        "description":  "Fixed-looking configurable footer with back and next actions.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskBottomBar/KioskBottomBar.jsx",
+        "css":  "KioskBottomBar/KioskBottomBar.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskSidebar",
+        "label":  "Kiosk Sidebar",
+        "category":  "Navigation",
+        "description":  "Vertical list of configurable categories.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskSidebar/KioskSidebar.jsx",
+        "css":  "KioskSidebar/KioskSidebar.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskTabs",
+        "label":  "Kiosk Tabs",
+        "category":  "Navigation",
+        "description":  "Selectable tab bar controlled with active prop.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskTabs/KioskTabs.jsx",
+        "css":  "KioskTabs/KioskTabs.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskSteps",
+        "label":  "Kiosk Steps",
+        "category":  "Navigation",
+        "description":  "Order flow progress indicator.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskSteps/KioskSteps.jsx",
+        "css":  "KioskSteps/KioskSteps.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskText",
+        "label":  "Kiosk Text",
+        "category":  "Basic",
+        "description":  "Heading, body text or caption.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskText/KioskText.jsx",
+        "css":  "KioskText/KioskText.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskImage",
+        "label":  "Kiosk Image",
+        "category":  "Basic",
+        "description":  "Responsive image with accessible alt text.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskImage/KioskImage.jsx",
+        "css":  "KioskImage/KioskImage.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskButton",
+        "label":  "Kiosk Button",
+        "category":  "Basic",
+        "description":  "Primary/secondary configurable action button.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskButton/KioskButton.jsx",
+        "css":  "KioskButton/KioskButton.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskBadge",
+        "label":  "Kiosk Badge",
+        "category":  "Basic",
+        "description":  "Small status pill.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskBadge/KioskBadge.jsx",
+        "css":  "KioskBadge/KioskBadge.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskCard",
+        "label":  "Kiosk Card",
+        "category":  "Basic",
+        "description":  "Content card with title, description and optional image.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskCard/KioskCard.jsx",
+        "css":  "KioskCard/KioskCard.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskIconTile",
+        "label":  "Kiosk Icon Tile",
+        "category":  "Basic",
+        "description":  "Tappable tile with emoji/icon, label and action.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskIconTile/KioskIconTile.jsx",
+        "css":  "KioskIconTile/KioskIconTile.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskCategoryGrid",
+        "label":  "Kiosk Category Grid",
+        "category":  "Products",
+        "description":  "Image category buttons with responsive columns.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskCategoryGrid/KioskCategoryGrid.jsx",
+        "css":  "KioskCategoryGrid/KioskCategoryGrid.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskProductGrid",
+        "label":  "Kiosk Product Grid",
+        "category":  "Products",
+        "description":  "Dynamic products supplied through items prop, with add action.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskProductGrid/KioskProductGrid.jsx",
+        "css":  "KioskProductGrid/KioskProductGrid.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskProductDetail",
+        "label":  "Kiosk Product Detail",
+        "category":  "Products",
+        "description":  "Selected product with quantity and add-to-cart action.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskProductDetail/KioskProductDetail.jsx",
+        "css":  "KioskProductDetail/KioskProductDetail.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskQuantity",
+        "label":  "Kiosk Quantity",
+        "category":  "Ordering",
+        "description":  "Plus/minus quantity control using change event.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskQuantity/KioskQuantity.jsx",
+        "css":  "KioskQuantity/KioskQuantity.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskCart",
+        "label":  "Kiosk Cart",
+        "category":  "Ordering",
+        "description":  "Cart item list with edit and remove actions.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskCart/KioskCart.jsx",
+        "css":  "KioskCart/KioskCart.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskTotals",
+        "label":  "Kiosk Totals",
+        "category":  "Ordering",
+        "description":  "Subtotal, tax, discount and total summary.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskTotals/KioskTotals.jsx",
+        "css":  "KioskTotals/KioskTotals.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskOrderType",
+        "label":  "Kiosk Order Type",
+        "category":  "Ordering",
+        "description":  "Eat in or takeaway selection.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskOrderType/KioskOrderType.jsx",
+        "css":  "KioskOrderType/KioskOrderType.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskPaymentMethods",
+        "label":  "Kiosk Payment Methods",
+        "category":  "Checkout",
+        "description":  "Payment method selection.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskPaymentMethods/KioskPaymentMethods.jsx",
+        "css":  "KioskPaymentMethods/KioskPaymentMethods.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskConfirmation",
+        "label":  "Kiosk Confirmation",
+        "category":  "Checkout",
+        "description":  "Order placed confirmation screen.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskConfirmation/KioskConfirmation.jsx",
+        "css":  "KioskConfirmation/KioskConfirmation.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskTextInput",
+        "label":  "Kiosk Text Input",
+        "category":  "Forms",
+        "description":  "Single-line input; value controlled by Page Builder.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskTextInput/KioskTextInput.jsx",
+        "css":  "KioskTextInput/KioskTextInput.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskSearch",
+        "label":  "Kiosk Search",
+        "category":  "Forms",
+        "description":  "Search products and records.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskSearch/KioskSearch.jsx",
+        "css":  "KioskSearch/KioskSearch.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskSelect",
+        "label":  "Kiosk Select",
+        "category":  "Forms",
+        "description":  "Dropdown selection from options.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskSelect/KioskSelect.jsx",
+        "css":  "KioskSelect/KioskSelect.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskCheckbox",
+        "label":  "Kiosk Checkbox",
+        "category":  "Forms",
+        "description":  "Single boolean checkbox.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskCheckbox/KioskCheckbox.jsx",
+        "css":  "KioskCheckbox/KioskCheckbox.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskRadioGroup",
+        "label":  "Kiosk Radio Group",
+        "category":  "Forms",
+        "description":  "Radio group for one selection.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskRadioGroup/KioskRadioGroup.jsx",
+        "css":  "KioskRadioGroup/KioskRadioGroup.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskModal",
+        "label":  "Kiosk Modal",
+        "category":  "Display",
+        "description":  "Modal-style panel with close action; visibility controlled by show prop.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskModal/KioskModal.jsx",
+        "css":  "KioskModal/KioskModal.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskDrawer",
+        "label":  "Kiosk Drawer",
+        "category":  "Display",
+        "description":  "Slide-over side panel within its component bounds.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskDrawer/KioskDrawer.jsx",
+        "css":  "KioskDrawer/KioskDrawer.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskAccordion",
+        "label":  "Kiosk Accordion",
+        "category":  "Display",
+        "description":  "Expandable panel with change event.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskAccordion/KioskAccordion.jsx",
+        "css":  "KioskAccordion/KioskAccordion.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskCarousel",
+        "label":  "Kiosk Carousel",
+        "category":  "Display",
+        "description":  "Horizontal scrolling image/card items with selection actions.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskCarousel/KioskCarousel.jsx",
+        "css":  "KioskCarousel/KioskCarousel.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskProgress",
+        "label":  "Kiosk Progress",
+        "category":  "Display",
+        "description":  "Accessible step/progress bar.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskProgress/KioskProgress.jsx",
+        "css":  "KioskProgress/KioskProgress.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskRecordList",
+        "label":  "Kiosk Record List",
+        "category":  "Data",
+        "description":  "Display dynamically provided named records.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskRecordList/KioskRecordList.jsx",
+        "css":  "KioskRecordList/KioskRecordList.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskDataTable",
+        "label":  "Kiosk Data Table",
+        "category":  "Data",
+        "description":  "Generic records table driven by columns and rows.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskDataTable/KioskDataTable.jsx",
+        "css":  "KioskDataTable/KioskDataTable.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    },
+    {
+        "apiName":  "KioskRepeater",
+        "label":  "Kiosk Repeater",
+        "category":  "Data",
+        "description":  "Generic repeated cards from records; suitable for data binding.",
+        "surfaces":  [
+                         "page",
+                         "dashboard",
+                         "flow"
+                     ],
+        "defaults":  {
+
+                     },
+        "jsx":  "KioskRepeater/KioskRepeater.jsx",
+        "css":  "KioskRepeater/KioskRepeater.css",
+        "resize":  {
+                       "defaultWidth":  320,
+                       "defaultHeight":  180,
+                       "minWidth":  120,
+                       "minHeight":  60
+                   }
+    }
+]

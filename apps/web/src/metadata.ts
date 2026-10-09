@@ -98,6 +98,7 @@ export type RecordTypeMetadata = {
   id: string;
   label: string;
   developerName: string;
+  description?: string;
   active: boolean;
   isDefault: boolean;
   picklistValues?: Record<string, string[]>;
@@ -160,6 +161,7 @@ export type ObjectMetadata = {
     lookupPhoneDialog?: string[];
   };
   relatedLookupFilters?: RelatedLookupFilterMetadata[];
+  relatedLookupFilterLogic?: Record<string, 'All' | 'Any'>;
   listViewButtons?: string[];
   actions?: ObjectActionMetadata[];
   customTab?: { style: 'Blue' | 'Green' | 'Orange' | 'Purple' | 'Red' | 'Teal' | 'Yellow' };
@@ -272,7 +274,7 @@ export type FlowVersionMetadata = {
   savedAt: string;
   label?: string;
   description?: string;
-  flowType?: 'Record-Triggered Flow' | 'Screen Flow' | 'Autolaunched Flow' | 'Schedule-Triggered Flow';
+  flowType?: 'Record-Triggered Flow' | 'Screen Flow' | 'Autolaunched Flow' | 'Schedule-Triggered Flow' | 'Platform Event-Triggered Flow';
   triggerObject?: string | null;
   startConfig?: Record<string, unknown>;
   elements: FlowElementMetadata[];
@@ -670,7 +672,13 @@ export type LibraryComponentMetadata = {
   apiName: string;
   label: string;
   description: string;
-  surfaces: Array<'page' | 'dashboard'>;
+  surfaces: Array<'page' | 'dashboard' | 'flow'>;
+  resize?: {
+    defaultWidth: number;
+    defaultHeight: number;
+    minWidth: number;
+    minHeight: number;
+  };
   jsxSource: string;
   cssSource: string;
   compiledJs: string;

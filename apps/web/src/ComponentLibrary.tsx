@@ -3,7 +3,7 @@ import { Check, Code2, Grid2X2, Pencil, Plus, Puzzle, Save, Trash2, X } from 'lu
 import type { LibraryComponentMetadata } from './metadata';
 import { standardDashboardComponents, standardPageComponents } from './componentCatalog';
 
-type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'jsxSource' | 'cssSource'>;
+type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'>;
 
 export default function ComponentLibrary({
   components, canManage, onSave, onDelete
@@ -17,7 +17,10 @@ export default function ComponentLibrary({
   const [apiName, setApiName] = useState('');
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
-  const [surfaces, setSurfaces] = useState<Array<'page' | 'dashboard'>>(['page', 'dashboard']);
+  const [surfaces, setSurfaces] = useState<Array<'page' | 'dashboard' | 'flow'>>(['page', 'dashboard']);
+  const [resize, setResize] = useState<NonNullable<LibraryComponentMetadata['resize']>>({
+    defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60
+  });
   const [jsxSource, setJsxSource] = useState('');
   const [cssSource, setCssSource] = useState('');
   const [jsxFileName, setJsxFileName] = useState('');
@@ -31,6 +34,7 @@ export default function ComponentLibrary({
     setLabel('');
     setDescription('');
     setSurfaces(['page', 'dashboard']);
+    setResize({ defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
     setJsxSource('');
     setCssSource('');
     setJsxFileName('');
@@ -44,6 +48,7 @@ export default function ComponentLibrary({
     setLabel(component.label);
     setDescription(component.description);
     setSurfaces(component.surfaces);
+    setResize(component.resize ?? { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
     setJsxSource(component.jsxSource);
     setCssSource(component.cssSource);
     setJsxFileName(`${component.apiName}.jsx`);
@@ -60,6 +65,7 @@ export default function ComponentLibrary({
         label: label.trim(),
         description: description.trim(),
         surfaces,
+        resize,
         jsxSource,
         cssSource
       }, Boolean(editingApiName));
@@ -135,7 +141,7 @@ export default function ComponentLibrary({
     }
   };
 
-  const toggleSurface = (surface: 'page' | 'dashboard', checked: boolean) => {
+  const toggleSurface = (surface: 'page' | 'dashboard' | 'flow', checked: boolean) => {
     setSurfaces((current) => checked
       ? current.includes(surface) ? current : [...current, surface]
       : current.filter((item) => item !== surface));
@@ -143,7 +149,7 @@ export default function ComponentLibrary({
 
   return <div className="component-library-page">
     <div className="page-heading">
-      <div><div className="eyebrow">Setup / Platform Tools</div><h1>Global Component Library</h1><p>Browse built-in builder components and register reusable JSX and CSS components for Lightning pages and dashboards.</p></div>
+      <div><div className="eyebrow">Setup / Platform Tools</div><h1>Global Component Library</h1><p>Browse built-in builder components and register reusable JSX and CSS components for Lightning pages, dashboards, and Flow screens.</p></div>
       {canManage && <button className="btn btn-brand" onClick={reset}><Plus size={14} />Register component</button>}
     </div>
     {!canManage && <div className="info-callout component-library-notice">You can use shared components in builders. A user with the <strong>Manage global components</strong> permission is required to register, update, or remove library entries.</div>}
@@ -191,6 +197,17 @@ export default function ComponentLibrary({
         <div className="properties-section-title">Available in</div>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('page')} onChange={(event) => toggleSurface('page', event.target.checked)} />Lightning page builder</label>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('dashboard')} onChange={(event) => toggleSurface('dashboard', event.target.checked)} />Dashboard builder</label>
+        <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('flow')} onChange={(event) => toggleSurface('flow', event.target.checked)} />Flow Builder screens</label>
+        <div className="properties-section-title">Resizable canvas defaults (pixels)</div>
+        {([
+          ['defaultWidth', 'Default width'],
+          ['defaultHeight', 'Default height'],
+          ['minWidth', 'Minimum width'],
+          ['minHeight', 'Minimum height']
+        ] as const).map(([key, fieldLabel]) => <label className="form-label" key={key}>{fieldLabel}
+          <input className="form-control" type="number" min={1} max={2000} value={resize[key]}
+            onChange={(event) => setResize((current) => ({ ...current, [key]: Number(event.target.value) }))} />
+        </label>)}
         <div className="properties-section-title">Component source</div>
         <label className="form-label" htmlFor="library-jsx-file">Component source and optional stylesheet</label>
         <input id="library-jsx-file" className="form-control library-file-input" type="file" accept=".jsx,.tsx,.js,.ts,.css" multiple onChange={(event) => {

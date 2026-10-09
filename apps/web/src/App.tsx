@@ -132,6 +132,16 @@ import {
   type WorkspaceId
 } from './metadata';
 
+type NewFieldLookupFilterDraft = {
+  id: string;
+  relatedFieldApiName: string;
+  operator: RelatedLookupFilterMetadata['operator'];
+  valueMode: 'Value' | 'Field';
+  value: string;
+  valueFieldApiName: string;
+  required: boolean;
+};
+
 const customTabStyles = [
   { name: 'Blue', color: '#1589ee', icon: Database },
   { name: 'Green', color: '#2e844a', icon: UsersRound },
@@ -366,6 +376,17 @@ function matchesLookupFilter(record: RecordData, filter: RelatedLookupFilterMeta
   return filter.operator === 'Greater Than'
     ? actual.localeCompare(expected) > 0
     : actual.localeCompare(expected) < 0;
+}
+
+function matchesLookupFilterGroup(
+  record: RecordData,
+  filters: RelatedLookupFilterMetadata[],
+  sourceRecord: Record<string, unknown>,
+  logic: 'All' | 'Any'
+): boolean {
+  if (filters.length === 0) return true;
+  const results = filters.map((filter) => matchesLookupFilter(record, filter, sourceRecord));
+  return logic === 'Any' ? results.some(Boolean) : results.every(Boolean);
 }
 
 function parseAppRoute(pathname: string, search = ''): AppRoute {
@@ -851,6 +872,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [canManageLibrary, setCanManageLibrary] = useState(false);
   const [selectedFlowId, setSelectedFlowId] = useState(2);
   const [showNewField, setShowNewField] = useState(false);
+  const [newFieldStage, setNewFieldStage] = useState<0 | 1 | 2 | 3>(0);
+  const [newFieldLayoutIds, setNewFieldLayoutIds] = useState<string[]>([]);
   const [newFieldLabel, setNewFieldLabel] = useState('');
   const [newFieldType, setNewFieldType] = useState('Text');
   const [newFieldTextLength, setNewFieldTextLength] = useState(255);
@@ -865,14 +888,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const formulaEditorRef = useRef<HTMLTextAreaElement>(null);
   const [newFieldPicklistValues, setNewFieldPicklistValues] = useState('');
   const [newFieldPicklistRestricted, setNewFieldPicklistRestricted] = useState(true);
+  const [newFieldControllerApiName, setNewFieldControllerApiName] = useState('');
+  const [newFieldValueSettings, setNewFieldValueSettings] = useState<Record<string, string[]>>({});
   const [newFieldReturnType, setNewFieldReturnType] = useState('Number');
   const [newFieldRelationshipTarget, setNewFieldRelationshipTarget] = useState('');
-  const [newFieldLookupFilterRelatedField, setNewFieldLookupFilterRelatedField] = useState('');
-  const [newFieldLookupFilterOperator, setNewFieldLookupFilterOperator] = useState<RelatedLookupFilterMetadata['operator']>('Equals');
-  const [newFieldLookupFilterValueMode, setNewFieldLookupFilterValueMode] = useState<'Value' | 'Field'>('Value');
-  const [newFieldLookupFilterValue, setNewFieldLookupFilterValue] = useState('');
-  const [newFieldLookupFilterValueField, setNewFieldLookupFilterValueField] = useState('');
-  const [newFieldLookupFilterRequired, setNewFieldLookupFilterRequired] = useState(true);
+  const [newFieldLookupFilters, setNewFieldLookupFilters] = useState<NewFieldLookupFilterDraft[]>([]);
+  const [newFieldLookupFilterLogic, setNewFieldLookupFilterLogic] = useState<'All' | 'Any'>('All');
   const [newFieldRequired, setNewFieldRequired] = useState(false);
   const [newFieldUnique, setNewFieldUnique] = useState(false);
   const [showNewObject, setShowNewObject] = useState(false);
@@ -1450,10 +1471,108 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     });
   };
 
+  const resetNewFieldDraft = () => {
+    setNewFieldType('Text');
+    setNewFieldStage(0);
+    setNewFieldLabel('');
+    setNewFieldTextLength(255);
+    setNewFieldPrecision(18);
+    setNewFieldScale(0);
+    setNewFieldDescription('');
+    setNewFieldHelpText('');
+    setNewFieldDefaultValue('');
+    setNewFieldHasDefault(false);
+    setNewFieldFormula('');
+    setNewFieldFormulaValidation({ status: 'idle', message: '' });
+    setNewFieldPicklistValues('');
+    setNewFieldPicklistRestricted(true);
+    setNewFieldControllerApiName('');
+    setNewFieldValueSettings({});
+    setNewFieldRelationshipTarget('');
+    setNewFieldLookupFilters([]);
+    setNewFieldLookupFilterLogic('All');
+    setNewFieldRequired(false);
+    setNewFieldUnique(false);
+    setNewFieldLayoutIds([]);
+  };
+
+  const newFieldApiName = `${newFieldLabel.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '')}__c`;
+  const newFieldPicklistOptions = newFieldPicklistValues.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  const newFieldController = object.fields.find((field) => field.apiName === newFieldControllerApiName);
+  const newFieldControllerValues = newFieldController?.dataType === 'Checkbox'
+    ? ['true', 'false']
+    : newFieldController?.picklistValues ?? [];
+  const newFieldDefaultError = (() => {
+    if (!newFieldHasDefault) return '';
+    if (['Number', 'Currency', 'Percent'].includes(newFieldType)) {
+      const value = Number(newFieldDefaultValue);
+      const fraction = newFieldDefaultValue.split('.')[1] ?? '';
+      if (!Number.isFinite(value) || fraction.length > newFieldScale || Math.abs(value) >= 10 ** (newFieldPrecision - newFieldScale)) {
+        return 'The default value exceeds this field’s precision or scale.';
+      }
+    }
+    if (newFieldType === 'Text' && newFieldDefaultValue.length > newFieldTextLength) return 'The default value exceeds the configured text length.';
+    if (['Picklist', 'Multi-Select Picklist'].includes(newFieldType)) {
+      const values = newFieldType === 'Multi-Select Picklist' ? newFieldDefaultValue.split(';') : [newFieldDefaultValue];
+      if (values.some((value) => !newFieldPicklistOptions.includes(value))
+        || (newFieldType === 'Multi-Select Picklist' && new Set(values).size !== values.length)) {
+        return 'Choose distinct configured values for the default.';
+      }
+    }
+    if (newFieldType === 'Email' && newFieldDefaultValue && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newFieldDefaultValue)) return 'Enter a valid email default.';
+    if (newFieldType === 'URL' && newFieldDefaultValue) {
+      try {
+        if (!['http:', 'https:'].includes(new URL(newFieldDefaultValue).protocol)) return 'Enter a valid HTTP or HTTPS URL default.';
+      } catch {
+        return 'Enter a valid HTTP or HTTPS URL default.';
+      }
+    }
+    if (newFieldType === 'Date' && newFieldDefaultValue) {
+      const date = new Date(`${newFieldDefaultValue}T00:00:00.000Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(newFieldDefaultValue) || !Number.isFinite(date.getTime())
+        || date.toISOString().slice(0, 10) !== newFieldDefaultValue) return 'Enter a valid date default.';
+    }
+    if (newFieldType === 'Date/Time' && newFieldDefaultValue
+      && (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?(?:Z|[+-](?:0\d|1[0-4]):[0-5]\d)?$/.test(newFieldDefaultValue)
+        || !Number.isFinite(Date.parse(newFieldDefaultValue)))) return 'Enter a valid date and time default.';
+    return '';
+  })();
+  const newFieldConfigurationError = !newFieldLabel.trim()
+    ? 'Enter a field label.'
+    : !/^[A-Za-z][A-Za-z0-9_]*__c$/.test(newFieldApiName)
+      ? 'The field label must produce a valid custom field name.'
+      : object.fields.some((field) => field.apiName.toLocaleLowerCase() === newFieldApiName.toLocaleLowerCase())
+        ? 'A field with this name already exists.'
+        : newFieldType === 'Text' && (!Number.isInteger(newFieldTextLength) || newFieldTextLength < 1 || newFieldTextLength > 255)
+          ? 'Text length must be between 1 and 255.'
+          : ['Number', 'Currency', 'Percent'].includes(newFieldType)
+            && (!Number.isInteger(newFieldPrecision) || newFieldPrecision < 1 || newFieldPrecision > 18
+              || !Number.isInteger(newFieldScale) || newFieldScale < 0 || newFieldScale > newFieldPrecision)
+              ? 'Precision must be 1–18 and scale must be between 0 and precision.'
+              : newFieldType === 'Formula' && !newFieldFormula.trim()
+                ? 'Enter a formula expression.'
+                : ['Picklist', 'Multi-Select Picklist'].includes(newFieldType)
+                  && (newFieldPicklistOptions.length === 0
+                    || new Set(newFieldPicklistOptions.map((value) => value.toLocaleLowerCase())).size !== newFieldPicklistOptions.length)
+                    ? 'Enter at least one unique picklist value.'
+                    : newFieldType === 'Multi-Select Picklist' && newFieldPicklistOptions.some((value) => value.includes(';'))
+                      ? 'Multi-select picklist values cannot contain semicolons.'
+                      : Boolean(newFieldControllerApiName)
+                        && (!newFieldController || !newFieldControllerValues.length)
+                          ? 'Choose a controlling field with configured values.'
+                          : ['Lookup Relationship', 'Master-Detail Relationship'].includes(newFieldType) && !newFieldRelationshipTarget
+                            ? 'Select a related object.'
+                            : newFieldLookupFilters.some((filter) =>
+                              !filter.relatedFieldApiName
+                              || (filter.operator !== 'Is Null' && filter.operator !== 'Is Not Null'
+                                && filter.valueMode === 'Field' && !filter.valueFieldApiName))
+                              ? 'Complete each lookup filter or remove it before continuing.'
+                              : newFieldDefaultError;
+
   const addField = async () => {
     const label = newFieldLabel.trim();
     if (!label) return;
-    const apiName = `${label.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '')}__c`;
+    const apiName = newFieldApiName;
     const relationshipType = newFieldType === 'Lookup Relationship' ? 'Lookup'
       : newFieldType === 'Master-Detail Relationship' ? 'Master-Detail'
         : newFieldType === 'Hierarchical Relationship' ? 'Hierarchical' : undefined;
@@ -1476,8 +1595,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       ...(newFieldHelpText.trim() ? { helpText: newFieldHelpText.trim() } : {}),
       ...(newFieldType === 'Formula' ? { formula: { expression: newFieldFormula.trim(), returnType: newFieldReturnType } } : {}),
       ...(['Picklist', 'Multi-Select Picklist'].includes(newFieldType) ? {
-        picklistValues: newFieldPicklistValues.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
-        picklistRestricted: newFieldPicklistRestricted
+        picklistValues: newFieldPicklistOptions,
+        picklistRestricted: newFieldPicklistRestricted,
+        ...(newFieldControllerApiName ? {
+          controllerFieldApiName: newFieldControllerApiName,
+          valueSettings: newFieldValueSettings
+        } : {})
       } : {}),
       ...(newFieldHasDefault ? {
         defaultValue: newFieldType === 'Checkbox'
@@ -1495,47 +1618,38 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     };
     try {
       if (newFieldType === 'Formula' && !await validateNewFieldFormula()) return;
-      const isNullOperator = newFieldLookupFilterOperator === 'Is Null' || newFieldLookupFilterOperator === 'Is Not Null';
-      const addLookupFilter = Boolean(relationshipType && newFieldLookupFilterRelatedField);
-      const lookupFilter: RelatedLookupFilterMetadata | undefined = addLookupFilter ? {
-        id: `lookup-filter-${crypto.randomUUID()}`,
-        fieldApiName: apiName,
-        relatedObject: relationshipTarget,
-        relatedFieldApiName: newFieldLookupFilterRelatedField,
-        operator: newFieldLookupFilterOperator,
-        value: newFieldLookupFilterValueMode === 'Value' && !isNullOperator ? newFieldLookupFilterValue : '',
-        ...(newFieldLookupFilterValueMode === 'Field' && !isNullOperator && newFieldLookupFilterValueField
-          ? { valueFieldApiName: newFieldLookupFilterValueField }
-          : {}),
-        required: newFieldLookupFilterRequired
-      } : undefined;
+      const lookupFilters: RelatedLookupFilterMetadata[] = relationshipType
+        ? newFieldLookupFilters.map((filter) => {
+          const isNullOperator = filter.operator === 'Is Null' || filter.operator === 'Is Not Null';
+          return {
+            id: `lookup-filter-${crypto.randomUUID()}`,
+            fieldApiName: apiName,
+            relatedObject: relationshipTarget,
+            relatedFieldApiName: filter.relatedFieldApiName,
+            operator: filter.operator,
+            value: filter.valueMode === 'Value' && !isNullOperator ? filter.value : '',
+            ...(filter.valueMode === 'Field' && !isNullOperator && filter.valueFieldApiName
+              ? { valueFieldApiName: filter.valueFieldApiName }
+              : {}),
+            required: filter.required
+          };
+        })
+        : [];
       const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/fields`, {
         method: 'POST',
-        body: JSON.stringify(lookupFilter ? { field, relatedLookupFilters: [lookupFilter] } : field)
+        body: JSON.stringify({
+          field,
+          pageLayoutIds: newFieldLayoutIds,
+          ...(lookupFilters.length ? { relatedLookupFilters: lookupFilters } : {}),
+          ...(lookupFilters.length && newFieldLookupFilterLogic === 'Any'
+            ? { relatedLookupFilterLogic: { [apiName]: newFieldLookupFilterLogic } }
+            : {})
+        })
       });
       setObject(payload.object);
       setObjects((current) => current.map((item) => item.apiName === payload.object.apiName ? payload.object : item));
       setShowNewField(false);
-      setNewFieldLabel('');
-      setNewFieldTextLength(255);
-      setNewFieldPrecision(18);
-      setNewFieldScale(0);
-      setNewFieldDescription('');
-      setNewFieldHelpText('');
-      setNewFieldDefaultValue('');
-      setNewFieldHasDefault(false);
-      setNewFieldFormula('');
-      setNewFieldFormulaValidation({ status: 'idle', message: '' });
-      setNewFieldPicklistValues('');
-      setNewFieldPicklistRestricted(true);
-      setNewFieldLookupFilterRelatedField('');
-      setNewFieldLookupFilterOperator('Equals');
-      setNewFieldLookupFilterValueMode('Value');
-      setNewFieldLookupFilterValue('');
-      setNewFieldLookupFilterValueField('');
-      setNewFieldLookupFilterRequired(true);
-      setNewFieldRequired(false);
-      setNewFieldUnique(false);
+      resetNewFieldDraft();
       notify(`${label} field saved to ${object.label}`);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Unable to save field');
@@ -1732,7 +1846,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     setPlatformEvents((current) => current.some((item) => item.apiName === result.platformEvent.apiName)
       ? current.map((item) => item.apiName === result.platformEvent.apiName ? result.platformEvent : item)
       : [...current, result.platformEvent]);
-    notify(`Platform Event ${platformEvent.apiName.endsWith('__e') ? 'saved' : 'saved'}`);
+    notify(`Platform Event ${platformEvent.apiName} saved`);
   };
 
   const deletePlatformEvent = async (apiName: string) => {
@@ -1995,7 +2109,11 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         : null;
     const startConfig: Record<string, unknown> = flowType === 'Schedule-Triggered Flow'
       ? { startDate: '', startTime: '', frequency: '', entryConditions: [] }
-      : { trigger: 'created-or-updated', runWhen: 'after-save', entryConditions: [] };
+      : flowType === 'Platform Event-Triggered Flow'
+        ? { entryConditions: [] }
+        : flowType === 'Record-Triggered Flow'
+          ? { trigger: 'created-or-updated', runWhen: 'after-save', entryConditions: [] }
+          : {};
     const created: FlowDefinitionMetadata = {
       apiName,
       label: cleanLabel,
@@ -2244,13 +2362,17 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     const remaining = apps.filter((app) => app.apiName !== apiName);
     setApps(remaining);
     const nextApp = remaining[0];
-    if (currentAppId === apiName && nextApp) {
-      setCurrentAppId(nextApp.apiName);
-      if (route.kind !== 'setup') navigateRoute({ ...route, appId: nextApp.apiName });
+    if (currentAppId === apiName) {
+      setCurrentAppId(nextApp?.apiName ?? '');
+      if (route.kind !== 'setup') {
+        navigateRoute(nextApp
+          ? { ...route, appId: nextApp.apiName }
+          : { kind: 'setup', workspace: 'home' });
+      }
     }
   };
   const saveLibraryComponent = async (
-    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'jsxSource' | 'cssSource'>,
+    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'>,
     updating: boolean
   ) => {
     const path = updating ? `/component-library/${encodeURIComponent(component.apiName)}` : '/component-library';
@@ -2602,7 +2724,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page');
             if (!appPage) return null;
             return <button className={route.kind === 'app-page' && route.pageApiName === apiName ? 'primary-tab active' : 'primary-tab'}
-              key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp.apiName, pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
+              key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp?.apiName ?? '', pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
           })}
           <button className={route.kind === 'app-home' || (route.kind === 'setup' && workspace === 'home') ? 'primary-tab active' : 'primary-tab'}
             onClick={() => route.kind === 'setup' ? openSetupWorkspace('home') : navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
@@ -2723,7 +2845,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                   ? { kind: 'setup', workspace: target.workspace, resourceApiName: target.resourceApiName }
                   : { kind: 'setup', workspace: 'object-manager', objectApiName: target.objectApiName ?? object.apiName, setting: target.setting ?? 'Fields & Relationships' });
               }}
-              onNewField={() => setShowNewField(true)}
+              onNewField={() => { resetNewFieldDraft(); setNewFieldLayoutIds(object.pageLayouts?.map((layout) => layout.id) ?? []); setShowNewField(true); }}
               onCreateObject={() => setShowNewObject(true)}
               onSaveObject={saveObject}
               onRefreshObject={refreshObject}
@@ -2833,6 +2955,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               landing={!route.resourceApiName}
               flow={flow}
               flows={flows}
+              libraryComponents={libraryComponents}
               platformEvents={platformEvents}
               objects={objects}
               users={accessControl.users}
@@ -2898,16 +3021,23 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       </main>
 
       {showNewField && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowNewField(false); }}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { resetNewFieldDraft(); setShowNewField(false); } }}>
           <section className="modal" role="dialog" aria-modal="true" aria-labelledby="new-field-title">
-            <div className="modal-header"><h2 id="new-field-title">New Field</h2><button className="icon-button dark" onClick={() => setShowNewField(false)} aria-label="Close"><X size={18} /></button></div>
+            <div className="modal-header"><h2 id="new-field-title">New Field</h2><button className="icon-button dark" onClick={() => { resetNewFieldDraft(); setShowNewField(false); }} aria-label="Close"><X size={18} /></button></div>
             <p className="modal-copy">Create a field on {object.label}. Formula and relationship definitions are stored as object metadata.</p>
-            <label className="form-label" htmlFor="new-field-type">Data Type</label>
-            <select className="form-control" id="new-field-type" value={newFieldType} onChange={(event) => setNewFieldType(event.target.value)}>
+            <div className="wizard-progress" aria-label="New field steps">
+              {(['Select Type', 'Configure', 'Page Layouts', 'Review'] as const).map((step, index) => <span key={step} className={newFieldStage === index ? 'active' : newFieldStage > index ? 'complete' : ''}>{index + 1}. {step}</span>)}
+            </div>
+            {newFieldStage === 0 && <div>
+              <label className="form-label" htmlFor="new-field-type">Data Type</label>
+              <select className="form-control" id="new-field-type" value={newFieldType} onChange={(event) => setNewFieldType(event.target.value)}>
               {['Text', 'Long Text Area', 'Number', 'Currency', 'Percent', 'Date', 'Date/Time', 'Checkbox', 'Email', 'Phone', 'URL', 'Picklist', 'Multi-Select Picklist', 'Formula', 'Lookup Relationship', 'Master-Detail Relationship', ...(object.apiName === 'User' ? ['Hierarchical Relationship'] : [])].map((type) => <option key={type}>{type}</option>)}
-            </select>
+              </select>
+            </div>}
+            {newFieldStage === 1 && <div>
             <label className="form-label" htmlFor="new-field-label">Field Label</label>
             <input className="form-control" id="new-field-label" value={newFieldLabel} onChange={(event) => setNewFieldLabel(event.target.value)} placeholder="Enter a field label" autoFocus />
+            <label className="form-label">Field Name<div className="form-display">{newFieldApiName || 'Enter a field label to generate the API name'}</div></label>
             {newFieldType === 'Text' && <label className="form-label" htmlFor="new-field-text-length">Length<input className="form-control" id="new-field-text-length" type="number" min={1} max={255} step={1} value={newFieldTextLength} onChange={(event) => setNewFieldTextLength(Number(event.target.value))} /></label>}
             {['Number', 'Currency', 'Percent'].includes(newFieldType) && <div className="form-options">
               <label className="form-label">Length (Precision)<input className="form-control" type="number" min={1} max={18} step={1} value={newFieldPrecision} onChange={(event) => {
@@ -2919,8 +3049,33 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             </div>}
             {['Picklist', 'Multi-Select Picklist'].includes(newFieldType) && <>
               <label className="form-label" htmlFor="new-field-picklist-values">Picklist Values</label>
-              <textarea className="form-control" id="new-field-picklist-values" value={newFieldPicklistValues} onChange={(event) => setNewFieldPicklistValues(event.target.value)} placeholder={'New\\nIn Progress\\nCompleted'} rows={4} />
+              <textarea className="form-control" id="new-field-picklist-values" value={newFieldPicklistValues} onChange={(event) => {
+                const values = event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+                setNewFieldPicklistValues(event.target.value);
+                setNewFieldValueSettings((current) => Object.fromEntries(Object.entries(current)
+                  .map(([controllerValue, selectedValues]) => [controllerValue, selectedValues.filter((value) => values.includes(value))])));
+              }} placeholder={'New\\nIn Progress\\nCompleted'} rows={4} />
               <label className="checkbox-row"><input type="checkbox" checked={newFieldPicklistRestricted} onChange={(event) => setNewFieldPicklistRestricted(event.target.checked)} />Restrict to the values defined in the value set</label>
+              {object.fields.some((field) => field.apiName !== newFieldApiName && (field.dataType === 'Picklist' || field.dataType === 'Checkbox')) && <div className="metadata-card">
+                <label className="form-label">Controlling Field
+                  <select className="form-control" value={newFieldControllerApiName} onChange={(event) => {
+                    const controllerApiName = event.target.value;
+                    const controller = object.fields.find((field) => field.apiName === controllerApiName);
+                    const values = controller?.dataType === 'Checkbox' ? ['true', 'false'] : controller?.picklistValues ?? [];
+                    setNewFieldControllerApiName(controllerApiName);
+                    setNewFieldValueSettings(Object.fromEntries(values.map((value) => [value, newFieldValueSettings[value] ?? []])));
+                  }}>
+                    <option value="">None</option>{object.fields.filter((field) => field.apiName !== newFieldApiName && (field.dataType === 'Picklist' || field.dataType === 'Checkbox')).map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.dataType})</option>)}
+                  </select>
+                </label>
+                {newFieldControllerApiName && <><p className="permission-help">Choose which values are available for each controlling value.</p>{newFieldControllerValues.map((controllerValue) => <div className="metadata-card" key={controllerValue}>
+                  <strong>{controllerValue}</strong>
+                  <div className="field-selector-list">{newFieldPicklistOptions.map((value) => <label className="checkbox-row" key={value}><input type="checkbox" checked={(newFieldValueSettings[controllerValue] ?? []).includes(value)} onChange={() => {
+                    const selectedValues = newFieldValueSettings[controllerValue] ?? [];
+                    setNewFieldValueSettings({ ...newFieldValueSettings, [controllerValue]: selectedValues.includes(value) ? selectedValues.filter((item) => item !== value) : [...selectedValues, value] });
+                  }} />{value}</label>)}</div>
+                </div>)}</>}
+              </div>}
             </>}
             {(newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship' || newFieldType === 'Hierarchical Relationship') && <>
               {newFieldType === 'Hierarchical Relationship'
@@ -2928,48 +3083,70 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                 : <label className="form-label" htmlFor="new-field-target">Related Object
                   <select className="form-control" id="new-field-target" value={newFieldRelationshipTarget} onChange={(event) => {
                     setNewFieldRelationshipTarget(event.target.value);
-                    setNewFieldLookupFilterRelatedField('');
-                    setNewFieldLookupFilterValueField('');
+                    setNewFieldLookupFilters([]);
+                    setNewFieldLookupFilterLogic('All');
                   }}>
                     <option value="">Select an object</option>{objects.filter((item) => item.apiName !== object.apiName).map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}
                   </select>
                 </label>}
               {newFieldType !== 'Hierarchical Relationship' && newFieldRelationshipTarget && <>
-                <label className="checkbox-row"><input type="checkbox" checked={Boolean(newFieldLookupFilterRelatedField)} onChange={(event) => {
-                  if (event.target.checked) setNewFieldLookupFilterRelatedField(objects.find((item) => item.apiName === newFieldRelationshipTarget)?.fields[0]?.apiName ?? '');
-                  else setNewFieldLookupFilterRelatedField('');
-                }} />Add a related lookup filter</label>
-                {newFieldLookupFilterRelatedField && <div className="metadata-card">
-                  <p>Only allow related records that match this criterion.</p>
-                  <label className="form-label">Related Field
-                    <select className="form-control" value={newFieldLookupFilterRelatedField} onChange={(event) => setNewFieldLookupFilterRelatedField(event.target.value)}>
-                      {(objects.find((item) => item.apiName === newFieldRelationshipTarget)?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
-                    </select>
-                  </label>
-                  <label className="form-label">Operator
-                    <select className="form-control" value={newFieldLookupFilterOperator} onChange={(event) => setNewFieldLookupFilterOperator(event.target.value as RelatedLookupFilterMetadata['operator'])}>
-                      {relatedLookupFilterOperators.map((operator) => <option key={operator}>{operator}</option>)}
-                    </select>
-                  </label>
-                  {!['Is Null', 'Is Not Null'].includes(newFieldLookupFilterOperator) && <>
-                    <label className="form-label">Compare Against
-                      <select className="form-control" value={newFieldLookupFilterValueMode} onChange={(event) => setNewFieldLookupFilterValueMode(event.target.value as 'Value' | 'Field')}>
-                        <option value="Value">A value</option>
-                        <option value="Field">A field on this object</option>
+                <div className="section-toolbar">
+                  <div><h3>Related Lookup Filters</h3><p>Add one or more criteria that determine which records are eligible.</p></div>
+                  <button type="button" className="btn" onClick={() => setNewFieldLookupFilters((filters) => [...filters, {
+                    id: crypto.randomUUID(),
+                    relatedFieldApiName: '',
+                    operator: 'Equals',
+                    valueMode: 'Value',
+                    value: '',
+                    valueFieldApiName: '',
+                    required: true
+                  }])}><Plus size={14} />Add Filter</button>
+                </div>
+                {newFieldLookupFilters.length > 1 && <label className="form-label">Required criteria match
+                  <select className="form-control" aria-label="Lookup filter logic" value={newFieldLookupFilterLogic} onChange={(event) => setNewFieldLookupFilterLogic(event.target.value as 'All' | 'Any')}>
+                    <option value="All">All criteria</option><option value="Any">Any criterion</option>
+                  </select>
+                </label>}
+                {newFieldLookupFilters.map((filter, index) => {
+                  const relatedFields = objects.find((item) => item.apiName === newFieldRelationshipTarget)?.fields ?? [];
+                  const noOperand = filter.operator === 'Is Null' || filter.operator === 'Is Not Null';
+                  const updateFilter = (update: Partial<NewFieldLookupFilterDraft>) => setNewFieldLookupFilters((filters) =>
+                    filters.map((candidate) => candidate.id === filter.id ? { ...candidate, ...update } : candidate));
+                  return <div className="metadata-card" key={filter.id}>
+                    <div className="metadata-card-header"><h4>Filter {index + 1}</h4><button type="button" className="row-menu" aria-label={`Remove lookup filter ${index + 1}`} onClick={() => setNewFieldLookupFilters((filters) => filters.filter((candidate) => candidate.id !== filter.id))}><X size={14} /></button></div>
+                    <label className="form-label">Related Field
+                      <select className="form-control" value={filter.relatedFieldApiName} onChange={(event) => updateFilter({ relatedFieldApiName: event.target.value })}>
+                        <option value="">Select a field…</option>{relatedFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
                       </select>
                     </label>
-                    {newFieldLookupFilterValueMode === 'Field'
-                      ? <label className="form-label">Source Field
-                        <select className="form-control" value={newFieldLookupFilterValueField} onChange={(event) => setNewFieldLookupFilterValueField(event.target.value)}>
-                          <option value="">Select a field…</option>{object.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
+                    <label className="form-label">Operator
+                      <select className="form-control" value={filter.operator} onChange={(event) => updateFilter({
+                        operator: event.target.value as RelatedLookupFilterMetadata['operator'],
+                        ...(event.target.value === 'Is Null' || event.target.value === 'Is Not Null' ? { value: '', valueFieldApiName: '' } : {})
+                      })}>
+                        {relatedLookupFilterOperators.map((operator) => <option key={operator}>{operator}</option>)}
+                      </select>
+                    </label>
+                    {!noOperand && <>
+                      <label className="form-label">Compare Against
+                        <select className="form-control" value={filter.valueMode} onChange={(event) => updateFilter({ valueMode: event.target.value as 'Value' | 'Field', value: '', valueFieldApiName: '' })}>
+                          <option value="Value">A value</option>
+                          <option value="Field">A field on this object</option>
                         </select>
                       </label>
-                      : <label className="form-label">Value
-                        <input className="form-control" value={newFieldLookupFilterValue} onChange={(event) => setNewFieldLookupFilterValue(event.target.value)} />
-                      </label>}
-                  </>}
-                  <label className="checkbox-row"><input type="checkbox" checked={newFieldLookupFilterRequired} onChange={(event) => setNewFieldLookupFilterRequired(event.target.checked)} />Required</label>
-                </div>}
+                      {filter.valueMode === 'Field'
+                        ? <label className="form-label">Source Field
+                          <select className="form-control" value={filter.valueFieldApiName} onChange={(event) => updateFilter({ valueFieldApiName: event.target.value })}>
+                            <option value="">Select a field…</option>{object.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.apiName})</option>)}
+                          </select>
+                        </label>
+                        : <label className="form-label">Value
+                          <input className="form-control" value={filter.value} onChange={(event) => updateFilter({ value: event.target.value })} />
+                        </label>}
+                    </>}
+                    <label className="checkbox-row"><input type="checkbox" checked={filter.required} onChange={(event) => updateFilter({ required: event.target.checked })} />Required</label>
+                  </div>;
+                })}
               </>}
             </>}
             {newFieldType === 'Formula' && <>
@@ -3033,9 +3210,43 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                 : <label className="form-label" htmlFor="new-field-default">Default Value<input className="form-control" id="new-field-default" type={['Number', 'Currency', 'Percent'].includes(newFieldType) ? 'number' : newFieldType === 'Date' ? 'date' : newFieldType === 'Date/Time' ? 'datetime-local' : newFieldType === 'Email' ? 'email' : newFieldType === 'URL' ? 'url' : 'text'} step={['Number', 'Currency', 'Percent'].includes(newFieldType) ? (newFieldScale ? 10 ** -newFieldScale : 1) : undefined} maxLength={newFieldType === 'Text' ? newFieldTextLength : undefined} value={newFieldDefaultValue} onChange={(event) => { setNewFieldDefaultValue(event.target.value); setNewFieldHasDefault(event.target.value !== ''); }} /></label>)}
             {newFieldType !== 'Formula' && <div className="form-options">
               <label className="checkbox-row"><input type="checkbox" checked={newFieldType === 'Master-Detail Relationship' || newFieldRequired} disabled={newFieldType === 'Master-Detail Relationship'} onChange={(event) => setNewFieldRequired(event.target.checked)} /> Required</label>
-              <label className="checkbox-row"><input type="checkbox" checked={newFieldUnique} disabled={newFieldType === 'Long Text Area' || newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship' || newFieldType === 'Hierarchical Relationship'} onChange={(event) => setNewFieldUnique(event.target.checked)} /> Unique</label>
+              <label className="checkbox-row"><input type="checkbox" checked={newFieldUnique} disabled={newFieldType === 'Long Text Area' || newFieldType === 'Multi-Select Picklist' || newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship' || newFieldType === 'Hierarchical Relationship'} onChange={(event) => setNewFieldUnique(event.target.checked)} /> Unique</label>
             </div>}
-            <div className="modal-actions"><button className="btn" onClick={() => setShowNewField(false)}>Cancel</button><button className="btn btn-brand" onClick={addField} disabled={!newFieldLabel.trim() || (newFieldType === 'Text' && (!Number.isInteger(newFieldTextLength) || newFieldTextLength < 1 || newFieldTextLength > 255)) || (['Number', 'Currency', 'Percent'].includes(newFieldType) && (!Number.isInteger(newFieldPrecision) || newFieldPrecision < 1 || newFieldPrecision > 18 || !Number.isInteger(newFieldScale) || newFieldScale < 0 || newFieldScale > newFieldPrecision)) || (newFieldType === 'Formula' && !newFieldFormula.trim()) || (['Picklist', 'Multi-Select Picklist'].includes(newFieldType) && !newFieldPicklistValues.split(/\r?\n/).some((value) => value.trim())) || ((newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship') && !newFieldRelationshipTarget) || (Boolean(newFieldLookupFilterRelatedField) && newFieldLookupFilterValueMode === 'Field' && !newFieldLookupFilterValueField)}>Save</button></div>
+            </div>}
+            {newFieldStage === 2 && <div className="metadata-card" aria-label="Add field to page layouts">
+              <h3>Add to Page Layouts</h3>
+              <p className="permission-help">Choose which record layouts should display this field. You can change placements later in Page Layouts.</p>
+              {(object.pageLayouts ?? []).map((layout) => <label className="checkbox-row" key={layout.id}>
+                <input type="checkbox" checked={newFieldLayoutIds.includes(layout.id)} onChange={() => setNewFieldLayoutIds((current) =>
+                  current.includes(layout.id) ? current.filter((id) => id !== layout.id) : [...current, layout.id])} />
+                {layout.label}
+              </label>)}
+              {(object.pageLayouts ?? []).length === 0 && <p className="permission-help">No page layouts are available for this object.</p>}
+            </div>}
+            {newFieldStage === 3 && <div className="metadata-card" aria-label="Field review">
+              <h3>Review Field</h3>
+              <dl className="metadata-summary">
+                <dt>Data Type</dt><dd>{newFieldType}{newFieldType === 'Text' ? ` (${newFieldTextLength})` : ''}{['Number', 'Currency', 'Percent'].includes(newFieldType) ? ` (${newFieldPrecision}, ${newFieldScale})` : ''}</dd>
+                <dt>Field Label</dt><dd>{newFieldLabel.trim()}</dd>
+                <dt>Field Name</dt><dd>{newFieldApiName}</dd>
+                <dt>Required / Unique</dt><dd>{newFieldType === 'Master-Detail Relationship' || newFieldRequired ? 'Required' : 'Optional'} / {newFieldUnique ? 'Unique' : 'Not unique'}</dd>
+                {newFieldDescription.trim() && <><dt>Description</dt><dd>{newFieldDescription.trim()}</dd></>}
+                {newFieldHelpText.trim() && <><dt>Help Text</dt><dd>{newFieldHelpText.trim()}</dd></>}
+                {newFieldPicklistOptions.length > 0 && <><dt>Values</dt><dd>{newFieldPicklistOptions.join(', ')}</dd></>}
+                {newFieldController && <><dt>Controlling Field</dt><dd>{newFieldController.label}</dd></>}
+                {newFieldRelationshipTarget && <><dt>Related Object</dt><dd>{newFieldRelationshipTarget}</dd></>}
+                {newFieldHasDefault && <><dt>Default Value</dt><dd>{newFieldDefaultValue || '(blank)'}</dd></>}
+                <dt>Page Layouts</dt><dd>{(object.pageLayouts ?? []).filter((layout) => newFieldLayoutIds.includes(layout.id)).map((layout) => layout.label).join(', ') || 'None'}</dd>
+              </dl>
+            </div>}
+            {newFieldStage === 1 && newFieldConfigurationError && <p className="form-error" role="alert">{newFieldConfigurationError}</p>}
+            <div className="modal-actions">
+              <button className="btn" onClick={() => { resetNewFieldDraft(); setShowNewField(false); }}>Cancel</button>
+              {newFieldStage > 0 && <button className="btn" onClick={() => setNewFieldStage((stage) => (stage - 1) as 0 | 1 | 2 | 3)}>Back</button>}
+              {newFieldStage < 3
+                ? <button className="btn btn-brand" onClick={() => setNewFieldStage((stage) => (stage + 1) as 0 | 1 | 2 | 3)} disabled={newFieldStage === 1 && Boolean(newFieldConfigurationError)}>Next</button>
+                : <button className="btn btn-brand" onClick={() => { void addField(); }} disabled={Boolean(newFieldConfigurationError)}>Save Field</button>}
+            </div>
           </section>
         </div>
       )}
@@ -3098,6 +3309,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             <div className={`flow-screen-grid${flowRun.screen.config.layout === 'Two Columns' ? ' flow-screen-grid-two' : ''}`}>
               <FlowScreenContent
                 fields={(Array.isArray(flowRun.screen.config.fields) ? flowRun.screen.config.fields : []) as Array<Record<string, unknown>>}
+                libraryComponents={libraryComponents}
                 interviewId={flowRun.interviewId}
                 values={flowRun.values}
                 onValueChange={(name, value) => {
@@ -3899,7 +4111,6 @@ function RecordWorkspace({
     setImportError('');
     try {
       const rows = parseCsvImport(await file.text(), object);
-      if (rows.length > 200) throw new Error('Import is limited to 200 records per batch.');
       setImportRows(rows);
       setImportFileName(file.name);
     } catch (failure) {
@@ -4359,7 +4570,7 @@ function RecordWorkspace({
       <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="import-records-title">
         <header><div><div className="eyebrow">{object.label}</div><h2 id="import-records-title">Import Records</h2></div><button className="icon-button" aria-label="Close" disabled={importSaving} onClick={() => { setImportFileName(''); setImportRows([]); setImportError(''); }}><X size={16} /></button></header>
         <form onSubmit={(event) => { event.preventDefault(); void runImport(); }}>
-          <p className="modal-copy">{importFileName}: ready to import {importRows.length} record{importRows.length === 1 ? '' : 's'}. CSV headers may use field API names or labels. Maximum 200 records per import.</p>
+          <p className="modal-copy">{importFileName}: ready to import {importRows.length} record{importRows.length === 1 ? '' : 's'}. CSV headers may use field API names or labels.</p>
           {importRows.length > 0 && <div className="records-table-wrap"><table className="slds-table records-table">
             <thead><tr>{Object.keys(importRows[0]).map((name) => <th key={name}>{object.fields.find((field) => field.apiName === name)?.label ?? name}</th>)}</tr></thead>
             <tbody>{importRows.slice(0, 3).map((row, index) => <tr key={index}>{Object.values(row).map((value, column) => <td key={`${index}-${column}`}>{String(value)}</td>)}</tr>)}</tbody>
@@ -4446,6 +4657,7 @@ function RecordFormDialog({
   const [isPhoneViewport, setIsPhoneViewport] = useState(() => window.matchMedia('(max-width: 600px)').matches);
   const [lookupDialogField, setLookupDialogField] = useState<FieldMetadata | null>(null);
   const [lookupQuery, setLookupQuery] = useState('');
+  const [includeNonmatchingOptionalLookupResults, setIncludeNonmatchingOptionalLookupResults] = useState(false);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 600px)');
     const updateViewport = () => setIsPhoneViewport(media.matches);
@@ -4518,6 +4730,11 @@ function RecordFormDialog({
       .filter((itemValue) => itemValue !== undefined && itemValue !== null && itemValue !== '')
       .map(String).join(' · ') || String(item.Name ?? item.Email ?? item.Id);
   };
+  const openLookupDialog = (field: FieldMetadata) => {
+    setLookupDialogField(field);
+    setLookupQuery('');
+    setIncludeNonmatchingOptionalLookupResults(false);
+  };
   const renderField = (field: FieldMetadata) => {
     const rawValue = formValues[field.apiName] ?? (editing ? '' : field.defaultValue);
     const value = rawValue === undefined || rawValue === null ? '' : String(rawValue);
@@ -4536,7 +4753,8 @@ function RecordFormDialog({
       const options = lookupRecords[field.relationship.targetObject] ?? [];
       const targetObject = objects.find((item) => item.apiName === field.relationship?.targetObject);
       const requiredFilters = object.relatedLookupFilters?.filter((filter) => filter.fieldApiName === field.apiName && filter.required) ?? [];
-      const filteredOptions = options.filter((item) => requiredFilters.every((filter) => matchesLookupFilter(item, filter, formValues)));
+      const lookupFilterLogic = object.relatedLookupFilterLogic?.[field.apiName] ?? 'All';
+      const filteredOptions = options.filter((item) => matchesLookupFilterGroup(item, requiredFilters, formValues, lookupFilterLogic));
       const selectedRecord = options.find((item) => item.Id === value);
       const selectedMatchesFilters = filteredOptions.some((item) => item.Id === value);
       const selectedCompactFields = lookupCompactFields(field);
@@ -4546,10 +4764,10 @@ function RecordFormDialog({
             value={selectedRecord ? lookupRecordLabel(field, selectedRecord) : ''}
             placeholder={targetObject ? `Search ${targetObject.label}…` : 'Related object unavailable'}
             readOnly aria-readonly="true" required={field.required && !value} disabled={common.disabled}
-            onClick={() => { if (!common.disabled && targetObject) { setLookupDialogField(field); setLookupQuery(''); } }} />
+            onClick={() => { if (!common.disabled && targetObject) openLookupDialog(field); }} />
           <button type="button" className="btn lookup-picker-button" disabled={common.disabled || !targetObject}
             aria-label={`Search ${targetObject?.label ?? 'related records'} for ${field.label}`}
-            onClick={() => { if (targetObject) { setLookupDialogField(field); setLookupQuery(''); } }}>
+            onClick={() => { if (targetObject) openLookupDialog(field); }}>
             <Search size={14} />Search
           </button>
           {value && !common.disabled && <button type="button" className="btn lookup-picker-clear" aria-label={`Clear ${field.label}`}
@@ -4593,8 +4811,18 @@ function RecordFormDialog({
             : dataType === 'phone' ? 'tel'
               : dataType.startsWith('number') || dataType.startsWith('currency') || dataType.startsWith('percent') ? 'number'
                 : 'text';
+    const numericFormat = field.dataType.match(/^(?:Number|Currency|Percent)\((\d+),\s*(\d+)\)$/);
+    const numericMaximum = numericFormat
+      ? 10 ** (Number(numericFormat[1]) - Number(numericFormat[2])) - 10 ** -Number(numericFormat[2])
+      : undefined;
+    const textMaximum = field.dataType.match(/^Text\((\d+)\)$/)?.[1];
     return <label className="form-label" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
-      <input className="form-control" {...common} type={type} step={type === 'number' ? 'any' : undefined} value={value}
+      <input className="form-control" {...common} type={type}
+        min={numericMaximum === undefined ? undefined : -numericMaximum}
+        max={numericMaximum}
+        step={numericFormat ? (Number(numericFormat[2]) ? 10 ** -Number(numericFormat[2]) : 1) : type === 'number' ? 'any' : undefined}
+        maxLength={textMaximum ? Number(textMaximum) : field.dataType === 'Text' ? 255 : undefined}
+        value={value}
         onChange={(event) => onChange(field.apiName, type === 'number' ? (event.target.value === '' ? '' : Number(event.target.value)) : event.target.value)} />
       {helpText}
     </label>;
@@ -4647,7 +4875,13 @@ function RecordFormDialog({
       const options = lookupRecords[lookupDialogField.relationship?.targetObject ?? ''] ?? [];
       const requiredFilters = object.relatedLookupFilters?.filter((filter) =>
         filter.fieldApiName === lookupDialogField.apiName && filter.required) ?? [];
-      const filteredOptions = options.filter((item) => requiredFilters.every((filter) => matchesLookupFilter(item, filter, formValues)));
+      const optionalFilters = object.relatedLookupFilters?.filter((filter) =>
+        filter.fieldApiName === lookupDialogField.apiName && !filter.required) ?? [];
+      const lookupFilterLogic = object.relatedLookupFilterLogic?.[lookupDialogField.apiName] ?? 'All';
+      const filteredOptions = options.filter((item) =>
+        matchesLookupFilterGroup(item, requiredFilters, formValues, lookupFilterLogic)
+        && (includeNonmatchingOptionalLookupResults
+          || matchesLookupFilterGroup(item, optionalFilters, formValues, lookupFilterLogic)));
       const displayFields = lookupDisplayFields(lookupDialogField);
       const configuredFields = isPhoneViewport
         ? targetObject?.searchLayouts?.lookupPhoneDialog ?? targetObject?.searchLayouts?.lookupDialog
@@ -4672,6 +4906,11 @@ function RecordFormDialog({
           </header>
           <label className="lookup-dialog-search"><Search size={15} /><input autoFocus aria-label={`Search ${targetObject?.label ?? 'records'}`}
             value={lookupQuery} onChange={(event) => setLookupQuery(event.target.value)} placeholder={`Search this ${targetObject?.label.toLocaleLowerCase() ?? 'list'}…`} /></label>
+          {optionalFilters.length > 0 && <label className="checkbox-row">
+            <input type="checkbox" checked={includeNonmatchingOptionalLookupResults}
+              onChange={(event) => setIncludeNonmatchingOptionalLookupResults(event.target.checked)} />
+            <span>Include records outside optional lookup filters</span>
+          </label>}
           {matchingOptions.length ? <div className="lookup-dialog-results" role="listbox" aria-label={`${targetObject?.label ?? 'Record'} results`}>
             {matchingOptions.map((item) => <button type="button" role="option" aria-selected={String(formValues[lookupDialogField.apiName] ?? '') === item.Id}
               key={item.Id} className="lookup-dialog-result" onClick={() => {
@@ -4977,7 +5216,11 @@ function ObjectManager({
   const [layoutProfileId, setLayoutProfileId] = useState('*');
   const [assignedLayoutId, setAssignedLayoutId] = useState('');
   const [fieldSetLabel, setFieldSetLabel] = useState('');
+  const [fieldSetApiName, setFieldSetApiName] = useState('');
   const [recordTypeLabel, setRecordTypeLabel] = useState('');
+  const [persistedFieldDependencies, setPersistedFieldDependencies] = useState<Array<{ fieldApiName: string; dependencies: string[] }>>([]);
+  const [persistedObjectDependencies, setPersistedObjectDependencies] = useState<string[]>([]);
+  const [fieldDependenciesLoading, setFieldDependenciesLoading] = useState(false);
   const [customLinkLabel, setCustomLinkLabel] = useState('');
   const [customLinkUrl, setCustomLinkUrl] = useState('');
   const [customLinkNewWindow, setCustomLinkNewWindow] = useState(false);
@@ -5030,6 +5273,11 @@ function ObjectManager({
   const fields = draft.fields
     .filter((field) => `${field.label} ${field.apiName} ${field.dataType}`.toLowerCase().includes(fieldSearch.toLowerCase()))
     .sort((left, right) => left.label.localeCompare(right.label));
+  const editingNumericFormat = editingField?.dataType.match(/^(?:Number|Currency|Percent)\((\d+),\s*(\d+)\)$/);
+  const editingNumericMaximum = editingNumericFormat
+    ? 10 ** (Number(editingNumericFormat[1]) - Number(editingNumericFormat[2])) - 10 ** -Number(editingNumericFormat[2])
+    : undefined;
+  const editingTextMaximum = editingField?.dataType.match(/^Text\((\d+)\)$/)?.[1];
   const hasFieldReference = (value: unknown, apiName: string): boolean => {
     if (typeof value === 'string') return new RegExp(`(^|[^A-Za-z0-9_])${apiName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^A-Za-z0-9_])`).test(value);
     if (Array.isArray(value)) return value.some((item) => hasFieldReference(item, apiName));
@@ -5251,6 +5499,30 @@ function ObjectManager({
   const refreshObject = () => {
     void onRefreshObject(draft.apiName).then(setDraft).catch((error: unknown) => onNotify(error instanceof Error ? error.message : 'Unable to refresh object metadata'));
   };
+  const toggleFieldDependencies = async () => {
+    if (showDependencies) {
+      setShowDependencies(false);
+      return;
+    }
+    setShowDependencies(true);
+    setFieldDependenciesLoading(true);
+    try {
+      const [fieldPayload, objectPayload] = await Promise.all([
+        apiRequest<{ fields: Array<{ fieldApiName: string; dependencies: string[] }> }>(
+          `/metadata/objects/${encodeURIComponent(draft.apiName)}/field-dependencies`
+        ),
+        apiRequest<{ dependencies: string[] }>(
+          `/metadata/objects/${encodeURIComponent(draft.apiName)}/dependencies`
+        )
+      ]);
+      setPersistedFieldDependencies(fieldPayload.fields);
+      setPersistedObjectDependencies(objectPayload.dependencies);
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Unable to load field dependencies');
+    } finally {
+      setFieldDependenciesLoading(false);
+    }
+  };
   const confirmDeleteObject = async () => {
     try {
       await onDeleteObject(draft.apiName);
@@ -5357,12 +5629,20 @@ function ObjectManager({
       onNotify('Each object must keep at least one record type');
       return;
     }
+    const assignedPageLayout = draft.pageLayoutAssignments?.find((assignment) => assignment.recordTypeId === id);
+    if (assignedPageLayout) {
+      onNotify('Remove this record type’s page layout assignment before deleting it');
+      return;
+    }
+    const assignedCompactLayout = draft.compactLayoutAssignments?.find((assignment) => assignment.recordTypeId === id);
+    if (assignedCompactLayout) {
+      onNotify('Remove this record type’s compact layout assignment before deleting it');
+      return;
+    }
     const remaining = recordTypes.filter((recordType) => recordType.id !== id);
     const removedDefault = recordTypes.find((recordType) => recordType.id === id)?.isDefault;
     updateDraft({
-      recordTypes: removedDefault ? remaining.map((recordType, index) => ({ ...recordType, isDefault: index === 0 })) : remaining,
-      pageLayoutAssignments: (draft.pageLayoutAssignments ?? []).filter((assignment) => assignment.recordTypeId !== id),
-      compactLayoutAssignments: (draft.compactLayoutAssignments ?? []).filter((assignment) => assignment.recordTypeId !== id)
+      recordTypes: removedDefault ? remaining.map((recordType, index) => ({ ...recordType, isDefault: index === 0 })) : remaining
     });
     if (selectedRecordTypeId === id) setSelectedRecordTypeId(remaining[0]?.id ?? '');
   };
@@ -5374,7 +5654,14 @@ function ObjectManager({
       onNotify('A record type with this name already exists');
       return;
     }
-    const recordType: RecordTypeMetadata = { id, label, developerName: label.replace(/[^a-zA-Z0-9]+/g, '_'), active: true, isDefault: recordTypes.length === 0 };
+    const developerNameBase = label.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    const developerName = /^[A-Za-z]/.test(developerNameBase) ? developerNameBase : `RecordType_${developerNameBase}`;
+    if (recordTypes.some((item) => item.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase()
+      || item.developerName.toLocaleLowerCase() === developerName.toLocaleLowerCase())) {
+      onNotify('A record type with this label or developer name already exists');
+      return;
+    }
+    const recordType: RecordTypeMetadata = { id, label, developerName, description: '', active: true, isDefault: recordTypes.length === 0 };
     updateDraft({ recordTypes: [...recordTypes, recordType] });
     setSelectedRecordTypeId(id);
     setRecordTypeLabel('');
@@ -5412,8 +5699,14 @@ function ObjectManager({
   );
   const renderFields = () => (
     <>
-      <div className="section-toolbar"><div><h2>Fields & Relationships</h2><p>Typed fields, formulas, and object relationships for {draft.label} records.</p></div><div className="toolbar-actions"><button className="btn" onClick={() => setShowDependencies((current) => !current)}><SlidersHorizontal size={14} />Field Dependencies</button><button className="btn btn-brand" onClick={onNewField}><Plus size={15} />New</button></div></div>
-      {showDependencies && <section className="surface metadata-card"><div className="metadata-card-header"><h3>Field Dependencies</h3><button className="row-menu" aria-label="Close field dependencies" onClick={() => setShowDependencies(false)}><X size={14} /></button></div>{dependencies.length ? <div className="table-scroll"><table className="slds-table"><thead><tr><th>Used By</th><th>Depends On</th><th>Dependency Type</th></tr></thead><tbody>{dependencies.map((dependency, index) => <tr key={`${dependency.dependent}-${dependency.dependency}-${dependency.kind}-${index}`}><td>{dependency.target ? <button className="field-link" type="button" onClick={() => { if (dependency.target) onOpenDependency(dependency.target); }}>{dependency.dependent}</button> : dependency.dependent}</td><td className="api-name">{dependency.dependency}</td><td>{dependency.kind}</td></tr>)}</tbody></table></div> : <div className="empty-state">No field dependencies are defined.</div>}</section>}
+      <div className="section-toolbar"><div><h2>Fields & Relationships</h2><p>Typed fields, formulas, and object relationships for {draft.label} records.</p></div><div className="toolbar-actions"><button className="btn" onClick={() => void toggleFieldDependencies()}><SlidersHorizontal size={14} />Metadata Dependencies</button><button className="btn btn-brand" onClick={onNewField}><Plus size={15} />New</button></div></div>
+      {showDependencies && <section className="surface metadata-card"><div className="metadata-card-header"><h3>Metadata Dependencies</h3><button className="row-menu" aria-label="Close metadata dependencies" onClick={() => setShowDependencies(false)}><X size={14} /></button></div>
+        {fieldDependenciesLoading ? <div className="empty-state">Checking saved metadata dependencies…</div>
+          : <>{persistedObjectDependencies.length > 0 && <div className="table-scroll"><table className="slds-table"><thead><tr><th>Object</th><th>Deletion Blocker</th></tr></thead><tbody>{persistedObjectDependencies.map((dependency) => <tr key={dependency}><td className="api-name">{draft.apiName}</td><td>{dependency}</td></tr>)}</tbody></table></div>}
+            {persistedFieldDependencies.length ? <div className="table-scroll"><table className="slds-table"><thead><tr><th>Field</th><th>Persisted Consumer / Deletion Blocker</th></tr></thead><tbody>{persistedFieldDependencies.flatMap((field) => field.dependencies.map((dependency) => <tr key={`${field.fieldApiName}-${dependency}`}><td className="api-name">{field.fieldApiName}</td><td>{dependency}</td></tr>))}</tbody></table></div>
+              : persistedObjectDependencies.length === 0 && <div className="empty-state">No persisted consumers currently reference this object or its fields.</div>}</>}
+        {dependencies.length > 0 && <div className="table-scroll"><h4>Open supported configuration</h4><table className="slds-table"><thead><tr><th>Used By</th><th>Depends On</th><th>Dependency Type</th></tr></thead><tbody>{dependencies.map((dependency, index) => <tr key={`${dependency.dependent}-${dependency.dependency}-${dependency.kind}-${index}`}><td>{dependency.target ? <button className="field-link" type="button" onClick={() => { if (dependency.target) onOpenDependency(dependency.target); }}>{dependency.dependent}</button> : dependency.dependent}</td><td className="api-name">{dependency.dependency}</td><td>{dependency.kind}</td></tr>)}</tbody></table></div>}
+      </section>}
       <div className="surface field-surface">
         <div className="field-list-toolbar"><div className="results-count">{fields.length} of {draft.fields.length} fields · Sorted by Field Label</div><div className="field-list-actions"><div className="mini-search"><Search size={13} /><input aria-label="Search fields" placeholder="Search this list..." value={fieldSearch} onChange={(event) => setFieldSearch(event.target.value)} /></div><button className="icon-button subtle" aria-label="Refresh fields" onClick={refreshObject}><RefreshCw size={15} /></button></div></div>
         <div className="table-scroll"><table className="slds-table"><thead><tr><th>Field Label</th><th>Field Name</th><th>Data Type</th><th>Relationship / Formula</th><th>Required</th><th>Unique</th><th>Track History</th></tr></thead>
@@ -5482,7 +5775,15 @@ function ObjectManager({
     <section className="surface object-setting-surface">
       <div className="section-toolbar"><div><h2>Record Types</h2><p>Define record variations and choose their default page layout.</p></div><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div>
       <div className="record-type-create"><input className="form-control" aria-label="New record type label" placeholder="New record type label" value={recordTypeLabel} onChange={(event) => setRecordTypeLabel(event.target.value)} /><button className="btn" onClick={addRecordType} disabled={!recordTypeLabel.trim()}><Plus size={14} />Add Record Type</button></div>
-      <table className="slds-table"><thead><tr><th>Label</th><th>Developer Name</th><th>Active</th><th>Default</th><th /></tr></thead><tbody>{recordTypes.map((recordType) => <tr key={recordType.id}><td><input className="form-control" value={recordType.label} onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, label: event.target.value } : item) })} /></td><td><input className="form-control api-name" value={recordType.developerName} onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, developerName: event.target.value.replace(/[^A-Za-z0-9_]/g, '_') } : item) })} /></td><td><input type="checkbox" checked={recordType.active} onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, active: event.target.checked } : item) })} /></td><td><input type="radio" name="default-record-type" checked={recordType.isDefault} onChange={() => updateDraft({ recordTypes: recordTypes.map((item) => ({ ...item, isDefault: item.id === recordType.id })) })} /></td><td><button className="row-menu" aria-label={`Delete ${recordType.label}`} disabled={recordTypes.length <= 1} onClick={() => removeRecordType(recordType.id)}><X size={14} /></button></td></tr>)}</tbody></table>
+      <table className="slds-table"><thead><tr><th>Label</th><th>Developer Name</th><th>Active</th><th>Default</th><th /></tr></thead><tbody>{recordTypes.map((recordType) => <tr key={recordType.id}><td><input className="form-control" maxLength={80} value={recordType.label} onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, label: event.target.value } : item) })} /></td><td><input className="form-control api-name" maxLength={80} value={recordType.developerName} onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, developerName: event.target.value.replace(/[^A-Za-z0-9_]/g, '_') } : item) })} /></td><td><input aria-label={`Active ${recordType.label}`} type="checkbox" disabled={recordType.isDefault} checked={recordType.active} onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, active: event.target.checked } : item) })} /></td><td><input aria-label={`Default ${recordType.label}`} type="radio" name="default-record-type" checked={recordType.isDefault} disabled={!recordType.active} onChange={() => updateDraft({ recordTypes: recordTypes.map((item) => ({ ...item, isDefault: item.id === recordType.id })) })} /></td><td><button className="row-menu" aria-label={`Delete ${recordType.label}`} disabled={recordTypes.length <= 1} onClick={() => {
+        if (!window.confirm(`Delete record type "${recordType.label}"? Existing records, permission assignments, and page assignments must be removed first.`)) return;
+        removeRecordType(recordType.id);
+      }}><X size={14} /></button></td></tr>)}</tbody></table>
+      {recordTypes.map((recordType) => <label className="form-label" key={`${recordType.id}-description`}>{recordType.label} Description
+        <textarea className="form-control" rows={2} maxLength={1000} value={recordType.description ?? ''}
+          onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, description: event.target.value } : item) })} />
+      </label>)}
+      <p className="permission-help">Picklist values below act as the available process options for each record type. Defaults must be included in every applicable record type.</p>
       {recordTypes.map((recordType) => <details className="permission-field-group" key={`${recordType.id}-picklists`}>
         <summary>{recordType.label} picklist values</summary>
         {draft.fields.filter((field) => field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist').map((field) => {
@@ -5542,18 +5843,49 @@ function ObjectManager({
   );
   const renderFieldSets = () => {
     const fieldSets = draft.fieldSets ?? [];
+    const moveField = (fieldSetApiName: string, fieldApiName: string, offset: -1 | 1) => {
+      const fieldSet = fieldSets.find((item) => item.apiName === fieldSetApiName);
+      if (!fieldSet) return;
+      const currentIndex = fieldSet.fieldApiNames.indexOf(fieldApiName);
+      const nextIndex = currentIndex + offset;
+      if (currentIndex < 0 || nextIndex < 0 || nextIndex >= fieldSet.fieldApiNames.length) return;
+      const fieldApiNames = [...fieldSet.fieldApiNames];
+      fieldApiNames.splice(currentIndex, 1);
+      fieldApiNames.splice(nextIndex, 0, fieldApiName);
+      updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSetApiName ? { ...item, fieldApiNames } : item) });
+    };
     return <section className="surface object-setting-surface">
       <div className="section-toolbar"><div><h2>Field Sets</h2><p>Reusable field groups for configurable views and integrations.</p></div><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div>
-      <div className="record-type-create"><input className="form-control" aria-label="New field set label" placeholder="New field set label" value={fieldSetLabel} onChange={(event) => setFieldSetLabel(event.target.value)} /><button className="btn" onClick={() => {
+      <div className="record-type-create"><input className="form-control" aria-label="New field set label" placeholder="New field set label" maxLength={80} value={fieldSetLabel} onChange={(event) => {
+        const label = event.target.value;
+        const baseName = label.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        setFieldSetLabel(label);
+        setFieldSetApiName(/^[a-zA-Z]/.test(baseName) ? baseName : baseName ? `FieldSet_${baseName}` : '');
+      }} /><input className="form-control api-name" aria-label="New field set API name" placeholder="API name" maxLength={255} value={fieldSetApiName} onChange={(event) => setFieldSetApiName(event.target.value)} /><button className="btn" onClick={() => {
         const label = fieldSetLabel.trim();
-        if (!label) return;
-        const normalizedApiName = label.replace(/[^a-zA-Z0-9_]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
-        const apiName = /^[a-zA-Z]/.test(normalizedApiName) ? normalizedApiName : `FieldSet_${normalizedApiName}`;
-        if (fieldSets.some((item) => item.apiName.toLocaleLowerCase() === apiName.toLocaleLowerCase())) { onNotify('A field set with this name already exists'); return; }
+        const apiName = fieldSetApiName.trim();
+        if (!label || !/^[A-Za-z][A-Za-z0-9_]{0,254}$/.test(apiName)) { onNotify('Enter a valid field set label and API name'); return; }
+        if (fieldSets.some((item) => item.apiName.toLocaleLowerCase() === apiName.toLocaleLowerCase()
+          || item.label.trim().toLocaleLowerCase() === label.toLocaleLowerCase())) { onNotify('A field set with this label or API name already exists'); return; }
         updateDraft({ fieldSets: [...fieldSets, { apiName, label, fieldApiNames: [] }] });
         setFieldSetLabel('');
-      }} disabled={!fieldSetLabel.trim()}><Plus size={14} />New Field Set</button></div>
-      {fieldSets.map((fieldSet) => <div className="metadata-card" key={fieldSet.apiName}><div className="metadata-card-header"><label className="form-label">Field Set Label<input className="form-control" value={fieldSet.label} onChange={(event) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, label: event.target.value } : item) })} /></label><button className="row-menu" aria-label={`Delete field set ${fieldSet.label}`} onClick={() => updateDraft({ fieldSets: fieldSets.filter((item) => item.apiName !== fieldSet.apiName) })}><X size={14} /></button></div><FieldSelectorList fields={draft.fields} selected={fieldSet.fieldApiNames} onToggle={(apiName) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, fieldApiNames: toggleField(item.fieldApiNames, apiName) } : item) })} /></div>)}
+        setFieldSetApiName('');
+      }} disabled={!fieldSetLabel.trim() || !/^[A-Za-z][A-Za-z0-9_]{0,254}$/.test(fieldSetApiName.trim())}><Plus size={14} />New Field Set</button></div>
+      {fieldSets.map((fieldSet, fieldSetIndex) => <div className="metadata-card" key={`field-set-${fieldSetIndex}`}>
+        <div className="metadata-card-header"><label className="form-label">Field Set Label<input className="form-control" maxLength={80} value={fieldSet.label} onChange={(event) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, label: event.target.value } : item) })} /></label>
+          <label className="form-label">API Name<input className="form-control api-name" maxLength={255} value={fieldSet.apiName} onChange={(event) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, apiName: event.target.value } : item) })} /></label>
+          <button className="row-menu" aria-label={`Delete field set ${fieldSet.label}`} onClick={() => {
+            if (!window.confirm(`Delete field set "${fieldSet.label}"? Record-detail field-set views will no longer offer it.`)) return;
+            updateDraft({ fieldSets: fieldSets.filter((item) => item.apiName !== fieldSet.apiName) });
+          }}><X size={14} /></button></div>
+        <FieldSelectorList fields={draft.fields} selected={fieldSet.fieldApiNames} onToggle={(apiName) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, fieldApiNames: toggleField(item.fieldApiNames, apiName) } : item) })} />
+        <div className="assignment-list" aria-label={`${fieldSet.label} field order`}>{fieldSet.fieldApiNames.map((apiName, index) => <div className="metadata-row" key={apiName}>
+          <span><strong>{index + 1}. {draft.fields.find((field) => field.apiName === apiName)?.label ?? apiName}</strong><small>{apiName}</small></span>
+          <div className="toolbar-actions"><button type="button" className="icon-button subtle" aria-label={`Move ${apiName} up in ${fieldSet.label}`} disabled={index === 0} onClick={() => moveField(fieldSet.apiName, apiName, -1)}><ArrowUp size={13} /></button>
+            <button type="button" className="icon-button subtle" aria-label={`Move ${apiName} down in ${fieldSet.label}`} disabled={index === fieldSet.fieldApiNames.length - 1} onClick={() => moveField(fieldSet.apiName, apiName, 1)}><ArrowDown size={13} /></button></div>
+        </div>)}</div>
+        {!fieldSet.fieldApiNames.length && <div className="empty-state">This field set is empty; its runtime consumer will show an empty-state message.</div>}
+      </div>)}
       {fieldSets.length === 0 && <div className="empty-state">No field sets are defined.</div>}
     </section>;
   };
@@ -5727,7 +6059,26 @@ function ObjectManager({
       {filter.valueFieldApiName
         ? <select className="form-control compact-select" aria-label={`Source field for ${filter.fieldApiName}`} value={filter.valueFieldApiName} onChange={(event) => updateDraft({ relatedLookupFilters: filters.map((item) => item.id === filter.id ? { ...item, valueFieldApiName: event.target.value } : item) })}>{draft.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select>
         : <input className="form-control compact-select" aria-label={`Value for ${filter.fieldApiName}`} value={filter.value} disabled={filter.operator === 'Is Null' || filter.operator === 'Is Not Null'} onChange={(event) => updateDraft({ relatedLookupFilters: filters.map((item) => item.id === filter.id ? { ...item, value: event.target.value } : item) })} />}
-      </span><label className="checkbox-row"><input type="checkbox" checked={filter.required} onChange={(event) => updateDraft({ relatedLookupFilters: filters.map((item) => item.id === filter.id ? { ...item, required: event.target.checked } : item) })} />Required</label><button className="row-menu" aria-label="Remove lookup filter" onClick={() => updateDraft({ relatedLookupFilters: filters.filter((item) => item.id !== filter.id) })}><X size={14} /></button></div>)}
+      </span><label className="checkbox-row"><input type="checkbox" checked={filter.required} onChange={(event) => updateDraft({ relatedLookupFilters: filters.map((item) => item.id === filter.id ? { ...item, required: event.target.checked } : item) })} />Required</label><button className="row-menu" aria-label="Remove lookup filter" onClick={() => {
+        const remainingFilters = filters.filter((item) => item.id !== filter.id);
+        const remainingLogic = { ...draft.relatedLookupFilterLogic };
+        if (!remainingFilters.some((item) => item.fieldApiName === filter.fieldApiName)) delete remainingLogic[filter.fieldApiName];
+        updateDraft({ relatedLookupFilters: remainingFilters, relatedLookupFilterLogic: remainingLogic });
+      }}><X size={14} /></button></div>)}
+      {relationshipFields.map((field) => {
+        const fieldFilters = filters.filter((filter) => filter.fieldApiName === field.apiName);
+        if (fieldFilters.length < 2) return null;
+        return <label className="form-label" key={`logic-${field.apiName}`}>Required criteria match for {field.label}
+          <select className="form-control" aria-label={`Lookup filter logic for ${field.label}`} value={draft.relatedLookupFilterLogic?.[field.apiName] ?? 'All'} onChange={(event) => {
+            const relatedLookupFilterLogic = { ...draft.relatedLookupFilterLogic };
+            if (event.target.value === 'All') delete relatedLookupFilterLogic[field.apiName];
+            else relatedLookupFilterLogic[field.apiName] = event.target.value as 'Any';
+            updateDraft({ relatedLookupFilterLogic });
+          }}>
+            <option value="All">All criteria</option><option value="Any">Any criterion</option>
+          </select>
+        </label>;
+      })}
       {relationshipFields.length === 0 && <div className="empty-state">Create a lookup or master-detail field to configure a related lookup filter.</div>}
     </section>;
   };
@@ -5834,7 +6185,12 @@ function ObjectManager({
                   setEditingField(next);
                 } else setEditingField({ ...editingField, defaultValue: value });
               }}><option value="">— None —</option>{(editingField.picklistValues ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-              : <label className="form-label">Default Value<input className="form-control" type={/^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? 'number' : editingField.dataType === 'Date' ? 'date' : editingField.dataType === 'Date/Time' ? 'datetime-local' : editingField.dataType === 'Email' ? 'email' : editingField.dataType === 'URL' ? 'url' : 'text'} value={editingField.defaultValue === undefined ? '' : String(editingField.defaultValue)} onChange={(event) => { const value = event.target.value; if (!value) { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } else setEditingField({ ...editingField, defaultValue: /^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? Number(value) : value }); }} /></label>)}
+              : <label className="form-label">Default Value<input className="form-control" type={/^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? 'number' : editingField.dataType === 'Date' ? 'date' : ['Date/Time', 'DateTime'].includes(editingField.dataType) ? 'datetime-local' : editingField.dataType === 'Email' ? 'email' : editingField.dataType === 'URL' ? 'url' : 'text'}
+                min={editingNumericMaximum === undefined ? undefined : -editingNumericMaximum}
+                max={editingNumericMaximum}
+                step={editingNumericFormat ? (Number(editingNumericFormat[2]) ? 10 ** -Number(editingNumericFormat[2]) : 1) : undefined}
+                maxLength={editingTextMaximum ? Number(editingTextMaximum) : editingField.dataType === 'Text' ? 255 : undefined}
+                value={editingField.defaultValue === undefined ? '' : String(editingField.defaultValue)} onChange={(event) => { const value = event.target.value; if (!value) { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } else setEditingField({ ...editingField, defaultValue: /^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? Number(value) : value }); }} /></label>)}
           {(editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist') && <>
             <label className="form-label">Picklist Values<textarea className="form-control" rows={4} value={(editingField.picklistValues ?? []).join('\n')} onChange={(event) => {
               const picklistValues = event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
@@ -5881,7 +6237,7 @@ function ObjectManager({
             <label className="form-label">Formula<textarea className="form-control" rows={4} value={editingField.formula.expression} onChange={(event) => setEditingField({ ...editingField, formula: { ...editingField.formula!, expression: event.target.value } })} /></label>
           </>}
           {editingField.relationship && <div className="info-callout">{editingField.relationship.type} relationship to {editingField.relationship.targetObject}; relationship target and API name are immutable here.</div>}
-          {!editingField.formula && <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.required} disabled={editingField.relationship?.type === 'Master-Detail'} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label><label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={Boolean(editingField.relationship) || editingField.dataType === 'Long Text Area'} onChange={(event) => setEditingField({ ...editingField, unique: event.target.checked })} />Unique</label></div>}
+          {!editingField.formula && <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.required} disabled={editingField.relationship?.type === 'Master-Detail'} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label><label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={Boolean(editingField.relationship) || editingField.dataType === 'Long Text Area' || editingField.dataType === 'Multi-Select Picklist'} onChange={(event) => setEditingField({ ...editingField, unique: event.target.checked })} />Unique</label></div>}
           <div className="modal-actions">{editingField.apiName.endsWith('__c') && <button className="btn" onClick={() => setShowDeleteFieldConfirmation(true)}><Trash2 size={14} />Delete</button>}<button className="btn" onClick={() => setEditingField(null)}>Cancel</button><button className="btn btn-brand" onClick={() => {
             void onSaveField(editingField).then((updatedObject) => { setDraft(updatedObject); setEditingField(null); }).catch((error: unknown) => onNotify(error instanceof Error ? error.message : 'Unable to save field'));
           }} disabled={!editingField.label.trim() || (editingField.formula !== undefined && !editingField.formula.expression.trim())}>Save</button></div>
@@ -5992,6 +6348,8 @@ function PageBuilder({
   const [dragOverId, setDragOverId] = useState('');
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
+  const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null);
+  const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -6005,6 +6363,10 @@ function PageBuilder({
   const [saving, setSaving] = useState(false);
   const fields = targetObject?.fields ?? [];
   const pageLayouts = targetObject?.pageLayouts ?? [];
+  const selected = page.components.find((component) => component.id === selectedId);
+  const selectedCustomDefinition = selected?.type.startsWith('Custom:')
+    ? libraryComponents.find((item) => item.apiName === selected.type.slice('Custom:'.length))
+    : undefined;
   const assignedMigrationLayout = pageLayouts.find((layout) =>
     layout.id === targetObject?.pageLayoutAssignments?.[0]?.pageLayoutId) ?? pageLayouts[0];
   const selectedMigrationLayout = pageLayouts.find((layout) => layout.id === migrationLayoutId) ?? assignedMigrationLayout;
@@ -6054,7 +6416,6 @@ function PageBuilder({
   useEffect(() => {
     if (builderAppApiName) setRecordAppId(builderAppApiName);
   }, [builderAppApiName]);
-  const selected = page.components.find((component) => component.id === selectedId);
   const selectSavedPage = (apiName: string) => {
     savedPageApiName.current = apiName;
     onSelectPage(apiName);
@@ -6076,6 +6437,51 @@ function PageBuilder({
   const updateComponent = (id: string, update: Partial<LightningPageMetadata['components'][number]>) => {
     applyPage({ ...page, components: page.components.map((component) => component.id === id ? { ...component, ...update } : component) });
   };
+  const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata) => {
+    if (!component.position) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    canvasResizeStart.current = {
+      id: component.id,
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      width: component.position.width,
+      height: component.position.height
+    };
+    setSelectedId(component.id);
+    setCanvasResizePreview({ id: component.id, width: component.position.width, height: component.position.height });
+  };
+  const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = canvasResizeStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const component = page.components.find((item) => item.id === start.id);
+    if (!component) return;
+    const definition = component.type.startsWith('Custom:')
+      ? libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length))
+      : undefined;
+    const minWidth = definition?.resize?.minWidth ?? 1;
+    const minHeight = definition?.resize?.minHeight ?? 1;
+    const x = component.position?.x ?? 0;
+    const y = component.position?.y ?? 0;
+    const maxWidth = Math.max(0, page.canvasWidth - x);
+    const maxHeight = Math.max(0, page.canvasHeight - y);
+    setCanvasResizePreview({
+      id: component.id,
+      width: Math.min(maxWidth, Math.max(Math.min(minWidth, maxWidth), start.width + (event.clientX - start.pointerX) / fitScale)),
+      height: Math.min(maxHeight, Math.max(Math.min(minHeight, maxHeight), start.height + (event.clientY - start.pointerY) / fitScale))
+    });
+  };
+  const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = canvasResizeStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const size = canvasResizePreview?.id === start.id ? canvasResizePreview : { id: start.id, width: start.width, height: start.height };
+    const component = page.components.find((item) => item.id === start.id);
+    if (component?.position) updateComponent(start.id, { position: { ...component.position, width: size.width, height: size.height } });
+    canvasResizeStart.current = null;
+    setCanvasResizePreview(null);
+  };
   const hasOverlappingPageAssignment = (assignment: PageActivationAssignmentMetadata) =>
     (page.activationAssignments ?? []).some((existing) =>
       existing.scope === assignment.scope
@@ -6093,12 +6499,14 @@ function PageBuilder({
     }
     const id = `${type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`;
     const components = [...page.components];
+    const defaultWidth = Math.min(page.canvasWidth, custom?.resize?.defaultWidth ?? 320);
+    const defaultHeight = Math.min(page.canvasHeight, custom?.resize?.defaultHeight ?? 180);
     const freeCanvasPosition = page.layoutMode === 'free-canvas'
-      ? canvasPosition ?? {
-        x: Math.min(24 + (page.components.length * 24) % Math.max(1, page.canvasWidth - 320), page.canvasWidth - 320),
-        y: Math.min(24 + (page.components.length * 24) % Math.max(1, page.canvasHeight - 180), page.canvasHeight - 180),
-        width: 320,
-        height: 180
+      ? {
+        x: Math.min(canvasPosition?.x ?? 24 + (page.components.length * 24) % Math.max(1, page.canvasWidth - defaultWidth), page.canvasWidth - defaultWidth),
+        y: Math.min(canvasPosition?.y ?? 24 + (page.components.length * 24) % Math.max(1, page.canvasHeight - defaultHeight), page.canvasHeight - defaultHeight),
+        width: defaultWidth,
+        height: defaultHeight
       }
       : undefined;
     components.splice(Math.max(0, Math.min(position, components.length)), 0, {
@@ -6489,15 +6897,15 @@ function PageBuilder({
       const sourceIndex = page.components.findIndex((component) => component.id === draggedId);
       if (sourceIndex < 0) return;
       const components = [...page.components];
-      const [component] = components.splice(sourceIndex, 1);
+      const [draggedComponent] = components.splice(sourceIndex, 1);
+      if (!draggedComponent) return;
       const targetElement = event.currentTarget;
       const isComponentTarget = targetElement.classList.contains('record-component');
       const insertAfterTarget = isComponentTarget
         && event.clientY > targetElement.getBoundingClientRect().top + targetElement.getBoundingClientRect().height / 2;
       const dropIndex = targetIndex + (insertAfterTarget ? 1 : 0);
       const insertionIndex = sourceIndex < dropIndex ? dropIndex - 1 : dropIndex;
-      component.region = region;
-      components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, component);
+      components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, { ...draggedComponent, region });
       applyPage({ ...page, components });
       setSelectedId(draggedId);
     } else if (data.startsWith('field:')) {
@@ -6520,8 +6928,8 @@ function PageBuilder({
       style={page.layoutMode === 'free-canvas' ? {
         left: component.position?.x ?? 0,
         top: component.position?.y ?? 0,
-        width: component.position?.width ?? 320,
-        height: component.position?.height ?? 180
+        width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
+        height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
       } : undefined}
       onClick={() => { if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } }}
       onKeyDown={(event) => { if (!previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } }}
@@ -6557,6 +6965,11 @@ function PageBuilder({
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={{ label: component.label, properties: component.properties, object: page.pageType === 'Record Page' ? targetObject : undefined, device }} />
                     : <div className="component-content-hint">This component is no longer in the global library.</div>}
+      {page.layoutMode === 'free-canvas' && customDefinition && selectedId === component.id && !previewMode
+        && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
+          title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
+          onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
+          onClick={(event) => event.stopPropagation()} />}
     </div>;
   };
   const renderRegion = (region: 'header' | 'main' | 'sidebar') => {
@@ -6838,14 +7251,17 @@ function PageBuilder({
                   : key === 'y' ? page.canvasHeight - selected.position!.height
                     : key === 'width' ? page.canvasWidth - selected.position!.x
                       : page.canvasHeight - selected.position!.y;
+                const min = key === 'width' ? selectedCustomDefinition?.resize?.minWidth ?? 1
+                  : key === 'height' ? selectedCustomDefinition?.resize?.minHeight ?? 1
+                    : 0;
                 return <label className="form-label" key={key}>{label}
-                  <input className="form-control" type="number" min={key === 'width' || key === 'height' ? 1 : 0}
+                  <input className="form-control" type="number" min={min}
                     max={max}
                     value={selected.position![key]}
                     onChange={(event) => {
                       const value = Number(event.target.value);
                       if (!Number.isInteger(value)) return;
-                      updateComponent(selected.id, { position: { ...selected.position!, [key]: Math.min(max, Math.max(key === 'width' || key === 'height' ? 1 : 0, value)) } });
+                      updateComponent(selected.id, { position: { ...selected.position!, [key]: Math.min(max, Math.max(min, value)) } });
                     }} />
                 </label>;
               })}

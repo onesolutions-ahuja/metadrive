@@ -26,6 +26,14 @@ import {
 } from 'lucide-react';
 import RegisteredComponent from './RegisteredComponent';
 import { sourceReportTitleUpdate } from './dashboardComponentTitle';
+import {
+  dashboardFilterValue,
+  dashboardFiltersForObject,
+  matchesDashboardFilter,
+  matchesDashboardFilters,
+  toggleDashboardCrossFilter,
+  type ActiveDashboardCrossFilter
+} from './dashboardFilters';
 import type {
   DashboardComponentMetadata,
   DashboardFolderInput,
@@ -91,7 +99,7 @@ type DashboardBuilderProps = {
 type RecordData = Record<string, unknown>;
 type Aggregation = DashboardComponentMetadata['aggregation'];
 type ComponentType = DashboardComponentMetadata['type'];
-type ActiveCrossFilter = DashboardFilterMetadata & { componentId: string };
+type ActiveCrossFilter = ActiveDashboardCrossFilter;
 type RelationshipPathStep = { sourceObjectApiName: string; targetObjectApiName: string; fieldApiName: string; direction: 'forward' | 'reverse' };
 const defaultComponentTitles: Record<ComponentType, string> = {
   Metric: 'New Metric',
@@ -339,32 +347,6 @@ function chartAxisTicks(range: { minimum: number; maximum: number }): number[] {
   );
 }
 
-function matchesFilter(record: RecordData, filter: DashboardFilterMetadata): boolean {
-  const raw = record[filter.fieldApiName];
-  if (filter.operator === 'Is Null') return raw === null || raw === undefined || raw === '';
-  if (filter.operator === 'Is Not Null') return raw !== null && raw !== undefined && raw !== '';
-  if (!filter.value.trim()) return true;
-  const actual = raw === null || raw === undefined ? '' : String(raw);
-  const expected = filter.value;
-  if (filter.operator === 'Includes' || filter.operator === 'Excludes') {
-    const selectedValues = expected.split(';').map((value) => value.trim().toLocaleLowerCase()).filter(Boolean);
-    const actualValues = actual.split(';').map((value) => value.trim().toLocaleLowerCase()).filter(Boolean);
-    return filter.operator === 'Includes'
-      ? selectedValues.some((value) => actualValues.includes(value))
-      : selectedValues.every((value) => !actualValues.includes(value));
-  }
-  if (filter.operator === 'Equals') return actual.toLocaleLowerCase() === expected.toLocaleLowerCase();
-  if (filter.operator === 'Not Equal To') return actual.toLocaleLowerCase() !== expected.toLocaleLowerCase();
-  if (filter.operator === 'Contains') return actual.toLocaleLowerCase().includes(expected.toLocaleLowerCase());
-  if (filter.operator === 'Starts With') return actual.toLocaleLowerCase().startsWith(expected.toLocaleLowerCase());
-  const left = Number(actual);
-  const right = Number(expected);
-  if (Number.isFinite(left) && Number.isFinite(right)) {
-    return filter.operator === 'Greater Than' ? left > right : left < right;
-  }
-  return filter.operator === 'Greater Than' ? actual > expected : actual < expected;
-}
-
 function aggregate(records: RecordData[], component: DashboardComponentMetadata): number {
   if (component.aggregation === 'Count') return records.length;
   const values = records
@@ -454,6 +436,10 @@ export default function DashboardBuilder({
   useEffect(() => {
     setSelectedRunningUserId(current?.runningUserId ?? userId);
   }, [current?.apiName, current?.runningUserId, userId]);
+  useEffect(() => {
+    setViewFilterValues({});
+    setCrossFilters([]);
+  }, [current?.apiName]);
   const selected = current?.components.find((component) => component.id === selectedComponentId);
   const folderPath = (folderId: string | null | undefined): string => {
     if (!folderId) return '';
@@ -675,7 +661,7 @@ export default function DashboardBuilder({
     try {
       const filters = current.filters.map((filter) => ({
         ...filter,
-        value: previewMode ? viewFilterValues[filter.id] ?? '' : filter.value
+        value: dashboardFilterValue(filter, previewMode ? viewFilterValues : undefined)
       }));
       const selectedCrossFilters = previewMode
         ? crossFilters.map(({ componentId: _componentId, ...filter }) => filter)
@@ -782,13 +768,11 @@ export default function DashboardBuilder({
     void Promise.all(reportNames.map(async (apiName) => {
       const report = reports.find((item) => item.apiName === apiName);
       const selectedCrossFilters = crossFilters;
-      const filters = (current?.filters ?? [])
-        .filter((filter) => filter.objectApiName === report?.objectApiName
-          && (filter.value.trim() !== '' || filter.operator === 'Is Null' || filter.operator === 'Is Not Null'))
-        .map((filter) => ({
-          ...filter,
-          value: previewMode ? viewFilterValues[filter.id] ?? '' : filter.value
-        }));
+      const filters = dashboardFiltersForObject(
+        current?.filters ?? [],
+        report?.objectApiName,
+        previewMode ? viewFilterValues : undefined
+      );
       const activeCrossFilters = previewMode
         ? selectedCrossFilters.map(({ componentId: _componentId, ...filter }) => filter)
         : [];
@@ -813,13 +797,11 @@ export default function DashboardBuilder({
     const reportApiName = component.reportApiName;
     if (!reportApiName || offset < 0 || loadingTablePageId) return;
     const report = reports.find((item) => item.apiName === reportApiName);
-    const filters = (current?.filters ?? [])
-      .filter((filter) => filter.objectApiName === report?.objectApiName)
-      .map((filter) => ({
-        ...filter,
-        value: previewMode ? viewFilterValues[filter.id] ?? '' : filter.value
-      }))
-      .filter((filter) => filter.value.trim() !== '' || filter.operator === 'Is Null' || filter.operator === 'Is Not Null');
+    const filters = dashboardFiltersForObject(
+      current?.filters ?? [],
+      report?.objectApiName,
+      previewMode ? viewFilterValues : undefined
+    );
     const activeCrossFilters = previewMode
       ? crossFilters.map(({ componentId: _componentId, ...filter }) => filter)
       : [];
@@ -1151,17 +1133,13 @@ export default function DashboardBuilder({
   const filteredRecords = (component: DashboardComponentMetadata) => {
     if (component.reportApiName) return reportRuns[component.reportApiName]?.rows ?? [];
     const records = recordsByObject[component.objectApiName] ?? [];
-    const filters = current?.filters.filter((filter) =>
-      filter.objectApiName === component.objectApiName
-      && ((previewMode ? viewFilterValues[filter.id] ?? '' : filter.value).trim() !== ''
-        || filter.operator === 'Is Null' || filter.operator === 'Is Not Null')
-    ) ?? [];
-    const matches = (record: RecordData, filter: DashboardFilterMetadata) => matchesFilter(record, {
-      ...filter,
-      value: previewMode ? viewFilterValues[filter.id] ?? '' : filter.value
-    });
-    const configuredFiltersMatch = (record: RecordData) => filters.length === 0
-      || (current?.filterLogic === 'Any' ? filters.some((filter) => matches(record, filter)) : filters.every((filter) => matches(record, filter)));
+    const configuredFiltersMatch = (record: RecordData) => matchesDashboardFilters(
+      record,
+      current?.filters ?? [],
+      component.objectApiName,
+      current?.filterLogic ?? 'All',
+      previewMode ? viewFilterValues : undefined
+    );
     const crossFilterMatches = (record: RecordData) => {
       if (!previewMode || !crossFilters.length) return true;
       const groups = new Map<string, ActiveCrossFilter[]>();
@@ -1172,7 +1150,7 @@ export default function DashboardBuilder({
       return [...groups.values()].every((filters) => {
         const targetObjectApiName = filters[0].objectApiName;
         if (targetObjectApiName === component.objectApiName) {
-          return filters.some((filter) => matchesFilter(record, filter));
+          return filters.some((filter) => matchesDashboardFilter(record, filter));
         }
         const paths = relationshipPaths(objects, component.objectApiName, targetObjectApiName);
         if (!paths.length) return true;
@@ -1190,7 +1168,7 @@ export default function DashboardBuilder({
             }
             if (!relatedRecords.length) return false;
           }
-          return relatedRecords.some((related) => filters.some((filter) => matchesFilter(related, filter)));
+          return relatedRecords.some((related) => filters.some((filter) => matchesDashboardFilter(related, filter)));
         });
       });
     };
@@ -1211,14 +1189,11 @@ export default function DashboardBuilder({
         const initialRun = reportRuns[component.reportApiName];
         if (!initialRun) throw new Error('The report has not finished loading.');
         rows = [...initialRun.rows];
-        const filters = (current?.filters ?? [])
-          .filter((filter) => filter.objectApiName === component.objectApiName
-            && ((previewMode ? viewFilterValues[filter.id] ?? '' : filter.value).trim() !== ''
-              || filter.operator === 'Is Null' || filter.operator === 'Is Not Null'))
-          .map((filter) => ({
-            ...filter,
-            value: previewMode ? viewFilterValues[filter.id] ?? '' : filter.value
-          }));
+        const filters = dashboardFiltersForObject(
+          current?.filters ?? [],
+          component.objectApiName,
+          previewMode ? viewFilterValues : undefined
+        );
         const activeCrossFilters = previewMode
           ? crossFilters.map(({ componentId: _componentId, ...filter }) => filter)
           : [];
@@ -1258,20 +1233,8 @@ export default function DashboardBuilder({
   };
   const toggleCrossFilter = (component: DashboardComponentMetadata, value: string, fieldApiName = component.groupByFieldApiName) => {
     if (!previewMode || !fieldApiName) return;
-    const existing = crossFilters.find((filter) =>
-      filter.componentId === component.id && filter.fieldApiName === fieldApiName && filter.value === value);
-    if (existing) {
-      setCrossFilters((active) => active.filter((filter) => filter.id !== existing.id));
-      return;
-    }
-    setCrossFilters((active) => [...active, {
-      id: crypto.randomUUID(),
-      componentId: component.id,
-      objectApiName: component.objectApiName,
-      fieldApiName,
-      operator: 'Equals',
-      value
-    }]);
+    setCrossFilters((active) =>
+      toggleDashboardCrossFilter(active, component.id, component.objectApiName, fieldApiName, value));
   };
   const crossFilterSelected = (component: DashboardComponentMetadata, fieldApiName: string | null, value: string) =>
     crossFilters.some((filter) => filter.componentId === component.id && filter.fieldApiName === fieldApiName && filter.value === value);
@@ -1871,7 +1834,13 @@ export default function DashboardBuilder({
         <button className="btn" disabled={!current || current.status !== 'Deployed'} onClick={() => setRefreshKey((key) => key + 1)}><RefreshCw size={14} />Refresh</button>
         {viewerMode
           ? <button className="btn" onClick={() => current && window.print()} disabled={!current}><Printer size={14} />Print</button>
-          : <button className="btn" disabled={!current} onClick={() => setPreviewMode((mode) => !mode)}><Eye size={14} />{previewMode ? 'Edit' : 'Preview'}</button>}
+          : <button className="btn" disabled={!current} onClick={() => {
+            if (!previewMode) {
+              setViewFilterValues({});
+              setCrossFilters([]);
+            }
+            setPreviewMode((mode) => !mode);
+          }}><Eye size={14} />{previewMode ? 'Edit' : 'Preview'}</button>}
         {!viewerMode && previewMode && current?.status === 'Deployed' && <button className="btn" onClick={() => onOpenViewer(current.apiName)}><Eye size={14} />Open Viewer</button>}
         {viewerMode && current && <button className="btn" onClick={() => onExitViewer(current.apiName)}>Back to Setup</button>}
         {previewMode && current?.status === 'Deployed' && <button className="btn" onClick={() => setSnapshotsOpen((open) => !open)}>
@@ -2087,7 +2056,7 @@ export default function DashboardBuilder({
               {current.filters.map((filter) => {
                 const field = objectFor(filter.objectApiName)?.fields.find((item) => item.apiName === filter.fieldApiName);
                 const inputType = dashboardFilterInputType(field);
-                const filterValue = viewFilterValues[filter.id] ?? '';
+                const filterValue = dashboardFilterValue(filter, viewFilterValues);
                 const multiSelectFilter = dashboardFilterValueType(field) === 'Multi-Select Picklist'
                   && ['Includes', 'Excludes'].includes(filter.operator);
                 return <label key={filter.id} className="dashboard-view-filter">
@@ -2116,7 +2085,7 @@ export default function DashboardBuilder({
                       placeholder="All values" />}
                 </label>;
               })}
-              <button className="text-action dashboard-filter-reset" onClick={() => setViewFilterValues(Object.fromEntries(current.filters.map((filter) => [filter.id, ''])))}>Reset filters</button>
+              <button className="text-action dashboard-filter-reset" onClick={() => setViewFilterValues({})}>Reset filters</button>
             </div>}
             {!previewMode && current.filters.map((filter) => {
               const object = objectFor(filter.objectApiName);

@@ -4,7 +4,8 @@ import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import postcss from 'postcss';
@@ -35,6 +36,7 @@ if (!Number.isInteger(schedulePollInterval) || schedulePollInterval < 100 || sch
   throw new Error('METADRIVE_SCHEDULE_POLL_MS must be an integer between 100 and 3600000');
 }
 const dataPath = resolve(process.env.METADRIVE_DATA_PATH ?? 'data/platform-state.json');
+const bundledCustomComponentsPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/src/custom-components');
 const webOrigins = new Set([
   ...(process.env.WEB_ORIGIN ?? 'http://localhost:5173').split(','),
   ...(process.env.WEB_ORIGINS ?? '').split(',')
@@ -128,11 +130,18 @@ const fieldSchema = z.object({
     childRelationshipName: z.string().min(1)
   }).optional()
 }).superRefine((field, context) => {
+  const supportedDataType = /^(?:Text(?:\(\d+\))?|Long Text Area|Number(?:\(\d+,\s*\d+\))?|Currency(?:\(\d+,\s*\d+\))?|Percent(?:\(\d+,\s*\d+\))?|Date|Date\/Time|DateTime|Checkbox|Email|Phone|URL|Picklist|Multi-Select Picklist|AutoNumber|Auto Number|Name|Formula\((?:Number|Currency|Percent|Text|Date|Checkbox)\)|Lookup\([A-Za-z][A-Za-z0-9_]*\)|Master-Detail\([A-Za-z][A-Za-z0-9_]*\))$/.test(field.dataType);
+  if (!supportedDataType) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['dataType'], message: `Unsupported field type "${field.dataType}"` });
+  }
   if (field.formula && field.relationship) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['relationship'], message: 'A field cannot be both a formula and a relationship' });
   }
   if (field.formula && !field.dataType.startsWith('Formula(')) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['dataType'], message: 'Formula fields must use a Formula data type' });
+  }
+  if (field.dataType.startsWith('Formula(') && !field.formula) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['formula'], message: 'Formula data types require a formula definition' });
   }
   if (field.formula && field.dataType !== `Formula(${field.formula.returnType})`) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['dataType'], message: 'Formula return type must match its data type' });
@@ -143,12 +152,27 @@ const fieldSchema = z.object({
   if (field.relationship && field.dataType !== `${field.relationship.type === 'Hierarchical' ? 'Lookup' : field.relationship.type}(${field.relationship.targetObject})`) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['dataType'], message: 'Relationship field type must match its relationship definition' });
   }
+  if (/^(?:Lookup|Master-Detail)\(/.test(field.dataType) !== Boolean(field.relationship)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['relationship'], message: 'Lookup and master-detail field types require a matching relationship definition' });
+  }
+  if (field.formula && !['Number', 'Currency', 'Percent', 'Text', 'Date', 'Checkbox'].includes(field.formula.returnType)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['formula', 'returnType'], message: 'Unsupported formula return type' });
+  }
   if (field.relationship?.type === 'Master-Detail' && !field.required) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['required'], message: 'Master-detail relationship fields must be required' });
   }
   const isPicklist = field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist';
   if (field.picklistValues && !isPicklist) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist values can only be configured on Picklist fields' });
+  }
+  if (field.picklistValues && field.picklistValues.length === 0) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist fields must define at least one value' });
+  }
+  if (isPicklist && !field.picklistValues?.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist fields must define at least one value' });
+  }
+  if ((field.picklistRestricted !== undefined || field.controllerFieldApiName !== undefined || field.valueSettings !== undefined) && !isPicklist) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist settings can only be configured on Picklist fields' });
   }
   if (field.picklistValues && new Set(field.picklistValues.map((value) => value.toLowerCase())).size !== field.picklistValues.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist values must be unique' });
@@ -159,8 +183,8 @@ const fieldSchema = z.object({
   if (field.trackHistory && field.formula) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['trackHistory'], message: 'Formula fields cannot have field history tracking enabled' });
   }
-  if (field.dataType === 'Long Text Area' && field.unique) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['unique'], message: 'Long text area fields cannot be unique' });
+  if ((field.dataType === 'Long Text Area' || field.dataType === 'Multi-Select Picklist') && field.unique) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['unique'], message: 'Long text area and multi-select picklist fields cannot be unique' });
   }
   if (field.dataType.startsWith('Text(')) {
     const textLength = field.dataType.match(/^Text\((\d+)\)$/);
@@ -185,21 +209,48 @@ const fieldSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Checkbox fields require a true or false default value' });
     } else if (!/^(Number|Currency|Percent)(\(|$)/.test(field.dataType) && field.dataType !== 'Checkbox' && typeof field.defaultValue !== 'string') {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'This field type requires a text default value' });
-    } else if ((isPicklist || /^(Text|Email|Phone|URL)(\(|$)/.test(field.dataType)) && typeof field.defaultValue === 'string') {
-      const textLimit = field.dataType.match(/^Text\((\d+)\)$/);
-      if (textLimit && field.defaultValue.length > Number(textLimit[1])) {
-        context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: `Default value exceeds the ${textLimit[1]} character limit` });
+    } else if (/^(Number|Currency|Percent)(\(|$)/.test(field.dataType) && typeof field.defaultValue === 'number') {
+      const numericError = numericFieldValueError(field.dataType, field.defaultValue);
+      if (numericError) context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: numericError });
+    } else if (typeof field.defaultValue === 'string') {
+      const textLimit = field.dataType.match(/^Text(?:\((\d+)\))?$/);
+      const maximumTextLength = textLimit ? Number(textLimit[1] ?? 255) : undefined;
+      if (maximumTextLength !== undefined && field.defaultValue.length > maximumTextLength) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: `Default value exceeds the ${maximumTextLength} character limit` });
       }
       if (field.dataType === 'Long Text Area' && field.defaultValue.length > 131072) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Default value exceeds the 131072 character limit' });
       }
-      if (/^(Number|Currency|Percent)(\(|$)/.test(field.dataType) && typeof field.defaultValue === 'number') {
-        const numericError = numericFieldValueError(field.dataType, field.defaultValue);
-        if (numericError) context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: numericError });
+      if (field.dataType === 'Date' && (!/^\d{4}-\d{2}-\d{2}$/.test(field.defaultValue)
+        || !Number.isFinite(Date.parse(`${field.defaultValue}T00:00:00.000Z`))
+        || new Date(`${field.defaultValue}T00:00:00.000Z`).toISOString().slice(0, 10) !== field.defaultValue)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Date defaults must be valid YYYY-MM-DD dates' });
       }
-      if (isPicklist && field.picklistRestricted && field.picklistValues !== undefined
-        && field.defaultValue.split(';').some((value) => !field.picklistValues?.includes(value))) {
+      if ((field.dataType === 'Date/Time' || field.dataType === 'DateTime') && !isValidFlowDateTime(field.defaultValue)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Date/time defaults must be valid date-time values' });
+      }
+      if (field.dataType === 'Email' && field.defaultValue && !z.string().email().safeParse(field.defaultValue).success) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Email defaults must be valid email addresses' });
+      }
+      if (field.dataType === 'URL' && field.defaultValue) {
+        let validUrl = false;
+        try {
+          validUrl = ['http:', 'https:'].includes(new URL(field.defaultValue).protocol);
+        } catch {
+          validUrl = false;
+        }
+        if (!validUrl) context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'URL defaults must be valid HTTP or HTTPS URLs' });
+      }
+      const defaultPicklistValues = field.dataType === 'Multi-Select Picklist'
+        ? field.defaultValue.split(';')
+        : [field.defaultValue];
+      if (isPicklist && (!field.picklistValues
+        || defaultPicklistValues.some((value) => !field.picklistValues?.includes(value)))) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Default value must match configured picklist options' });
+      }
+      if (field.dataType === 'Multi-Select Picklist' && (defaultPicklistValues.some((value) => !value)
+        || new Set(defaultPicklistValues).size !== defaultPicklistValues.length)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Multi-select defaults must contain distinct configured values' });
       }
     }
   }
@@ -265,15 +316,16 @@ const compactLayoutAssignmentSchema = z.object({
 });
 const recordTypeSchema = z.object({
   id: z.string().min(1),
-  label: z.string().min(1),
-  developerName: z.string().min(1),
+  label: z.string().trim().min(1).max(80),
+  developerName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,79}$/),
+  description: z.string().max(1000).optional(),
   active: z.boolean(),
   isDefault: z.boolean(),
   picklistValues: z.record(z.array(z.string().trim().min(1))).optional()
 });
 const fieldSetSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,254}$/),
-  label: z.string().min(1),
+  label: z.string().trim().min(1).max(80),
   fieldApiNames: z.array(z.string())
 });
 const searchLayoutsSchema = z.object({
@@ -373,6 +425,7 @@ const platformEventMessageSchema = z.object({
   processedAt: z.string().datetime().nullable().default(null),
   deadLettered: z.boolean().default(false)
 });
+const normalizeFieldApiName = (name: string) => name.trim().toLocaleLowerCase();
 const objectSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
@@ -389,6 +442,7 @@ const objectSchema = z.object({
   fieldSets: z.array(fieldSetSchema).optional(),
   searchLayouts: searchLayoutsSchema.optional(),
   relatedLookupFilters: z.array(relatedLookupFilterSchema).optional(),
+  relatedLookupFilterLogic: z.record(z.enum(['All', 'Any'])).optional(),
   listViewButtons: z.array(listViewButtonSchema).optional(),
   actions: z.array(objectActionSchema).optional(),
   customTab: customObjectTabSchema.optional(),
@@ -398,7 +452,7 @@ const objectSchema = z.object({
   if (new Set(listViewButtons).size !== listViewButtons.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['listViewButtons'], message: 'List view buttons must be unique' });
   }
-  const fieldNames = new Set(object.fields.map((field) => field.apiName));
+  const fieldNames = new Set(object.fields.map((field) => normalizeFieldApiName(field.apiName)));
   if (fieldNames.size !== object.fields.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'Field API names must be unique' });
   object.fields.forEach((field, index) => {
     const controllerApiName = field.controllerFieldApiName;
@@ -408,8 +462,8 @@ const objectSchema = z.object({
       }
       return;
     }
-    const controller = object.fields.find((candidate) => candidate.apiName === controllerApiName);
-    if ((field.dataType !== 'Picklist' && field.dataType !== 'Multi-Select Picklist') || !controller || controller.apiName === field.apiName
+    const controller = object.fields.find((candidate) => normalizeFieldApiName(candidate.apiName) === normalizeFieldApiName(controllerApiName));
+    if ((field.dataType !== 'Picklist' && field.dataType !== 'Multi-Select Picklist') || !controller || normalizeFieldApiName(controller.apiName) === normalizeFieldApiName(field.apiName)
       || !(controller.dataType === 'Picklist' || controller.dataType === 'Checkbox')) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields', index, 'controllerFieldApiName'], message: 'A dependent picklist must use a different Picklist or Checkbox field as its controller' });
       return;
@@ -428,27 +482,24 @@ const objectSchema = z.object({
     }
   });
   if (object.kind === 'Custom Object') {
-    const nameField = object.fields.find((field) => field.apiName === 'Name');
+    const nameField = object.fields.find((field) => normalizeFieldApiName(field.apiName) === 'name');
     if (!nameField) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'Custom objects must include a Name field' });
     } else if (nameField.formula || nameField.relationship || !nameField.required) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'The Name field must be required and cannot be a formula or relationship' });
-    } else if (object.settings?.recordNameType === 'Auto Number' && nameField.dataType !== 'AutoNumber') {
+    } else if ((object.settings?.recordNameType ?? 'Text') === 'Auto Number' && nameField.dataType !== 'AutoNumber') {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'Auto-number record names require an AutoNumber Name field' });
-    } else if (object.settings?.recordNameType === 'Text' && nameField.dataType === 'AutoNumber') {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'Text record names cannot use an AutoNumber Name field' });
+    } else if ((object.settings?.recordNameType ?? 'Text') === 'Text' && !/^Text(?:\(|$)/.test(nameField.dataType)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'Text record names require a Text Name field' });
     }
   }
   const trackedFields = object.fields.filter((field) => field.trackHistory);
   if (!object.settings?.trackFieldHistory && trackedFields.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'Enable field history tracking before selecting fields to track' });
   }
-  if (trackedFields.length > 20) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['fields'], message: 'An object can track changes to at most 20 fields' });
-  }
   const checkFields = (names: string[], path: (string | number)[]) => {
     names.forEach((name, index) => {
-      if (!fieldNames.has(name)) context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, index], message: `Unknown field ${name}` });
+      if (!fieldNames.has(normalizeFieldApiName(name))) context.addIssue({ code: z.ZodIssueCode.custom, path: [...path, index], message: `Unknown field ${name}` });
     });
   };
   object.pageLayouts?.forEach((layout, index) => {
@@ -466,8 +517,11 @@ const objectSchema = z.object({
   }
   object.fieldSets?.forEach((fieldSet, index) => {
     checkFields(fieldSet.fieldApiNames, ['fieldSets', index, 'fieldApiNames']);
-    if (new Set(fieldSet.fieldApiNames).size !== fieldSet.fieldApiNames.length) {
+    if (new Set(fieldSet.fieldApiNames.map(normalizeFieldApiName)).size !== fieldSet.fieldApiNames.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['fieldSets', index, 'fieldApiNames'], message: 'Field set fields must be unique' });
+    }
+    if (fieldSet.fieldApiNames.some((name) => !object.fields.some((field) => field.apiName === name))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['fieldSets', index, 'fieldApiNames'], message: 'Field set fields must use their exact API names' });
     }
   });
   Object.entries(object.searchLayouts ?? {}).forEach(([name, fields]) => {
@@ -477,7 +531,13 @@ const objectSchema = z.object({
     }
   });
   object.relatedLookupFilters?.forEach((filter, index) => {
-    if (!fieldNames.has(filter.fieldApiName)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['relatedLookupFilters', index, 'fieldApiName'], message: `Unknown field ${filter.fieldApiName}` });
+    if (!fieldNames.has(normalizeFieldApiName(filter.fieldApiName))) context.addIssue({ code: z.ZodIssueCode.custom, path: ['relatedLookupFilters', index, 'fieldApiName'], message: `Unknown field ${filter.fieldApiName}` });
+  });
+  Object.keys(object.relatedLookupFilterLogic ?? {}).forEach((fieldApiName) => {
+    const field = object.fields.find((candidate) => candidate.apiName === fieldApiName);
+    if (!field?.relationship || !object.relatedLookupFilters?.some((filter) => filter.fieldApiName === fieldApiName)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['relatedLookupFilterLogic', fieldApiName], message: 'Lookup filter logic requires a relationship field with at least one lookup filter' });
+    }
   });
   if (object.recordTypes && object.recordTypes.length === 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes'], message: 'An object must have at least one record type' });
@@ -490,14 +550,35 @@ const objectSchema = z.object({
   }
   object.recordTypes?.forEach((recordType, recordTypeIndex) => {
     for (const [fieldApiName, values] of Object.entries(recordType.picklistValues ?? {})) {
-      const field = object.fields.find((item) => item.apiName === fieldApiName);
+      const field = object.fields.find((item) => normalizeFieldApiName(item.apiName) === normalizeFieldApiName(fieldApiName));
       if (!field || (field.dataType !== 'Picklist' && field.dataType !== 'Multi-Select Picklist')) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes', recordTypeIndex, 'picklistValues', fieldApiName], message: `Record type picklist values reference a non-picklist field "${fieldApiName}"` });
-      } else if (field.picklistValues && values.some((value) => !field.picklistValues?.includes(value))) {
-        context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes', recordTypeIndex, 'picklistValues', fieldApiName], message: `Record type values for "${fieldApiName}" must be in the field's configured picklist values` });
+      } else {
+        if (field.apiName !== fieldApiName) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes', recordTypeIndex, 'picklistValues', fieldApiName], message: `Record type picklist settings must use the exact field API name "${field.apiName}"` });
+        }
+        if (field.picklistValues && values.some((value) => !field.picklistValues?.includes(value))) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes', recordTypeIndex, 'picklistValues', fieldApiName], message: `Record type values for "${fieldApiName}" must be in the field's configured picklist values` });
+        }
       }
       if (new Set(values.map((value) => value.toLocaleLowerCase())).size !== values.length) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes', recordTypeIndex, 'picklistValues', fieldApiName], message: `Record type values for "${fieldApiName}" must be unique` });
+      }
+    }
+    for (const field of object.fields) {
+      if ((field.dataType !== 'Picklist' && field.dataType !== 'Multi-Select Picklist')
+        || typeof field.defaultValue !== 'string') continue;
+      const recordTypeValues = recordType.picklistValues?.[field.apiName];
+      if (!recordTypeValues) continue;
+      const defaultValues = field.dataType === 'Multi-Select Picklist'
+        ? field.defaultValue.split(';').filter(Boolean)
+        : [field.defaultValue];
+      if (defaultValues.some((value) => !recordTypeValues.includes(value))) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['recordTypes', recordTypeIndex, 'picklistValues', field.apiName],
+          message: `Record type "${recordType.label}" must include the default value for "${field.label}"`
+        });
       }
     }
   });
@@ -507,11 +588,24 @@ const objectSchema = z.object({
   if (object.recordTypes && new Set(object.recordTypes.map((recordType) => recordType.id)).size !== object.recordTypes.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes'], message: 'Record type IDs must be unique' });
   }
-  if (object.recordTypes && new Set(object.recordTypes.map((recordType) => recordType.developerName)).size !== object.recordTypes.length) {
+  if (object.recordTypes && new Set(object.recordTypes.map((recordType) => recordType.developerName.toLocaleLowerCase())).size !== object.recordTypes.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes'], message: 'Record type developer names must be unique' });
   }
-  if (object.settings?.recordNameType === 'Auto Number' && !object.settings.recordNameFormat.trim()) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'recordNameFormat'], message: 'Auto-number record names require a display format' });
+  if (object.recordTypes && new Set(object.recordTypes.map((recordType) => recordType.label.toLocaleLowerCase())).size !== object.recordTypes.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordTypes'], message: 'Record type labels must be unique' });
+  }
+  if ((object.settings?.recordNameType ?? 'Text') === 'Auto Number') {
+    const format = object.settings?.recordNameFormat ?? '';
+    const tokens = format.match(/\{0+\}/g) ?? [];
+    if (tokens.length !== 1 || /[{}]/.test(format.replace(/\{0+\}/, ''))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['settings', 'recordNameFormat'],
+        message: 'Auto-number display formats must contain exactly one numeric token, such as {0000}'
+      });
+    }
+  } else if (object.settings?.recordNameFormat) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['settings', 'recordNameFormat'], message: 'Text record names cannot have an auto-number display format' });
   }
   if (object.pageLayouts && new Set(object.pageLayouts.map((layout) => layout.id)).size !== object.pageLayouts.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['pageLayouts'], message: 'Page layout IDs must be unique' });
@@ -533,7 +627,7 @@ const objectSchema = z.object({
     (layout.customLinks ?? []).forEach((link, linkIndex) => {
       const fieldReferences = [...link.url.matchAll(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g)].map((match) => match[1]);
       fieldReferences.forEach((fieldName) => {
-        if (fieldName !== 'Id' && !fieldNames.has(fieldName)) {
+        if (fieldName !== 'Id' && !fieldNames.has(normalizeFieldApiName(fieldName))) {
           context.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['pageLayouts', index, 'customLinks', linkIndex, 'url'],
@@ -545,6 +639,9 @@ const objectSchema = z.object({
   });
   if (object.fieldSets && new Set(object.fieldSets.map((fieldSet) => fieldSet.apiName.toLocaleLowerCase())).size !== object.fieldSets.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['fieldSets'], message: 'Field set API names must be unique' });
+  }
+  if (object.fieldSets && new Set(object.fieldSets.map((fieldSet) => fieldSet.label.toLocaleLowerCase())).size !== object.fieldSets.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['fieldSets'], message: 'Field set labels must be unique' });
   }
   if (object.actions && new Set(object.actions.map((action) => action.id)).size !== object.actions.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['actions'], message: 'Object action IDs must be unique' });
@@ -564,7 +661,7 @@ const objectSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['actions', index, 'label'], message: 'Standard actions must use a supported standard action label' });
     }
     if (action.type === 'Custom' && action.behavior === 'Set Field Value') {
-      const targetField = object.fields.find((field) => field.apiName === action.fieldApiName);
+      const targetField = object.fields.find((field) => normalizeFieldApiName(field.apiName) === normalizeFieldApiName(action.fieldApiName ?? ''));
       if (!targetField || targetField.formula || targetField.relationship
         || targetField.dataType === 'AutoNumber' || targetField.dataType === 'Auto Number') {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['actions', index, 'fieldApiName'], message: 'Custom actions can update only existing writable, non-formula fields' });
@@ -847,11 +944,26 @@ const pageComponentSchema = z.object({
   properties: z.record(z.unknown()).default({}),
   visible: z.boolean()
 });
+const libraryComponentResizeSchema = z.object({
+  defaultWidth: z.number().int().min(80).max(2000),
+  defaultHeight: z.number().int().min(40).max(2000),
+  minWidth: z.number().int().min(40).max(2000),
+  minHeight: z.number().int().min(30).max(2000)
+}).superRefine((resize, context) => {
+  if (resize.minWidth > resize.defaultWidth) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['minWidth'], message: 'Minimum width cannot exceed the default width' });
+  }
+  if (resize.minHeight > resize.defaultHeight) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['minHeight'], message: 'Minimum height cannot exceed the default height' });
+  }
+});
+const defaultLibraryComponentResize = { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 };
 const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   description: z.string().max(500),
-  surfaces: z.array(z.enum(['page', 'dashboard'])).min(1),
+  surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+  resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000),
   compiledJs: z.string().min(1).max(500_000),
@@ -867,7 +979,8 @@ const libraryComponentInputSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   description: z.string().max(500).default(''),
-  surfaces: z.array(z.enum(['page', 'dashboard'])).min(1),
+  surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+  resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000).default('')
 }).superRefine((component, context) => {
@@ -1397,7 +1510,7 @@ const dashboardFolderSchema = z.object({
   label: z.string().trim().min(1).max(80),
   parentFolderId: z.string().uuid().nullable(),
   ownerUserId: z.string().min(1),
-  shares: z.array(dashboardFolderShareSchema).max(100).default([]),
+  shares: z.array(dashboardFolderShareSchema).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 }).superRefine((folder, context) => {
@@ -1412,7 +1525,7 @@ const reportFolderSchema = z.object({
   label: z.string().trim().min(1).max(80),
   parentFolderId: z.string().uuid().nullable(),
   ownerUserId: z.string().min(1),
-  shares: z.array(dashboardFolderShareSchema).max(100).default([]),
+  shares: z.array(dashboardFolderShareSchema).default([]),
   visibility: z.enum(['Private', 'All Users']).default('Private'),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
@@ -2273,7 +2386,48 @@ const integrationConnectionRequestSchema = z.object({
 const connectorDefinitionRequestSchema = connectorDefinitionSchema;
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
-type TenantData = { objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type TenantData = { objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
+  return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
+    ? object.settings.recordNameFormat
+    : field.dataType === 'AutoNumber' ? 'REC-{00000}' : 'REC-{000000}';
+}
+function formatAutoNumber(format: string, sequence: number): string {
+  return format.replace(/\{(0+)\}/, (_match, digits: string) => String(sequence).padStart(digits.length, '0'));
+}
+function autoNumberSequenceFromValue(format: string, value: unknown): number | undefined {
+  if (typeof value !== 'string') return undefined;
+  const token = /\{0+\}/.exec(format);
+  if (!token || token.index === undefined) return undefined;
+  const prefix = format.slice(0, token.index);
+  const suffix = format.slice(token.index + token[0].length);
+  const escape = (part: string) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`^${escape(prefix)}(\\d+)${escape(suffix)}$`).exec(value);
+  if (!match) return undefined;
+  const sequence = Number(match[1]);
+  return Number.isSafeInteger(sequence) ? sequence : undefined;
+}
+function autoNumberSequenceKey(objectApiName: string, fieldApiName: string): string {
+  return `${objectApiName}.${fieldApiName}`;
+}
+function migrateAutoNumberSequences(
+  objects: ObjectMetadata[],
+  records: Record<string, RuntimeRecord[]>,
+  existingSequences: Record<string, number>
+): Record<string, number> {
+  const sequences = { ...existingSequences };
+  for (const object of objects) {
+    for (const field of object.fields) {
+      if (field.dataType !== 'AutoNumber' && field.dataType !== 'Auto Number') continue;
+      const key = autoNumberSequenceKey(object.apiName, field.apiName);
+      const format = autoNumberFormatForField(object, field);
+      const highestExisting = (records[object.apiName] ?? []).reduce((highest, record) =>
+        Math.max(highest, autoNumberSequenceFromValue(format, record[field.apiName]) ?? 0), 0);
+      sequences[key] = Math.max(sequences[key] ?? 0, highestExisting);
+    }
+  }
+  return sequences;
+}
 const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'Records', label: 'Records', description: 'Browse and manage customer records.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
   { apiName: 'SalesApp', label: 'Sales', description: 'Manage sales accounts and opportunities.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
@@ -2312,8 +2466,8 @@ function validateExistingFieldValues(object: ObjectMetadata, records: RuntimeRec
     for (const field of object.fields) {
       const value = record[field.apiName];
       if (value === undefined || value === null || value === '') continue;
-      if (field.dataType.startsWith('Text(')) {
-        const length = Number(field.dataType.match(/^Text\((\d+)\)$/)?.[1]);
+      if (/^Text(?:\(|$)/.test(field.dataType)) {
+        const length = Number(field.dataType.match(/^Text\((\d+)\)$/)?.[1] ?? 255);
         if (String(value).length > length) return `Field "${field.apiName}" cannot be shortened because existing records exceed its new length`;
       }
       if (/^(Number|Currency|Percent)(\(|$)/.test(field.dataType) && typeof value === 'number') {
@@ -2385,8 +2539,37 @@ function validateRelatedLookupFilters(object: ObjectMetadata, knownObjects: Obje
     if (!relatedObject.fields.some((field) => field.apiName === filter.relatedFieldApiName)) {
       return `Related lookup filter "${filter.id}" references unknown field "${filter.relatedFieldApiName}" on "${filter.relatedObject}"`;
     }
-    if (filter.valueFieldApiName && !object.fields.some((field) => field.apiName === filter.valueFieldApiName)) {
-      return `Related lookup filter "${filter.id}" references unknown field "${filter.valueFieldApiName}" on "${object.apiName}"`;
+    const relatedField = relatedObject.fields.find((field) => field.apiName === filter.relatedFieldApiName)!;
+    const category = (field: ObjectMetadata['fields'][number]): 'text' | 'number' | 'date' | 'boolean' | 'other' => {
+      const type = field.formula?.returnType ?? field.dataType.replace(/\(.*/, '');
+      if (['Text', 'Long Text Area', 'Email', 'Phone', 'URL', 'Picklist', 'Multi-Select Picklist', 'Name', 'AutoNumber', 'Auto Number'].includes(type)) return 'text';
+      if (['Number', 'Currency', 'Percent'].includes(type)) return 'number';
+      if (['Date', 'Date/Time', 'DateTime'].includes(type)) return 'date';
+      if (type === 'Checkbox') return 'boolean';
+      return 'other';
+    };
+    const relatedCategory = category(relatedField);
+    if (['Contains', 'Starts With'].includes(filter.operator) && relatedCategory !== 'text') {
+      return `Related lookup filter "${filter.id}" uses ${filter.operator} with a non-text field`;
+    }
+    if (['Greater Than', 'Less Than'].includes(filter.operator) && !['number', 'date'].includes(relatedCategory)) {
+      return `Related lookup filter "${filter.id}" uses ${filter.operator} with an unsupported field type`;
+    }
+    if (filter.valueFieldApiName) {
+      const sourceField = object.fields.find((field) => field.apiName === filter.valueFieldApiName);
+      if (!sourceField) {
+        return `Related lookup filter "${filter.id}" references unknown field "${filter.valueFieldApiName}" on "${object.apiName}"`;
+      }
+      if (category(sourceField) !== relatedCategory) {
+        return `Related lookup filter "${filter.id}" compares incompatible field types`;
+      }
+    } else if (['Greater Than', 'Less Than'].includes(filter.operator)) {
+      if (relatedCategory === 'number' && !Number.isFinite(Number(filter.value))) {
+        return `Related lookup filter "${filter.id}" requires a numeric comparison value`;
+      }
+      if (relatedCategory === 'date' && !Number.isFinite(Date.parse(filter.value))) {
+        return `Related lookup filter "${filter.id}" requires a valid date comparison value`;
+      }
     }
   }
   return null;
@@ -2503,7 +2686,7 @@ function findFieldDependencies(tenant: TenantData, objectApiName: string, fieldA
   for (const flow of tenant.flows) {
     const flowConfigs = flow.elements.map((element) => element.config);
     if (flowUsesObject(flow, objectApiName)
-      && containsFieldReference([flow.startConfig, flowConfigs, flow.resources], fieldApiName)) {
+      && containsFieldReference([flow.startConfig, flowConfigs, flow.resources, flow.versions], fieldApiName)) {
       dependencies.push(`flow ${flow.label}`);
     }
   }
@@ -2548,6 +2731,71 @@ function findFieldDependencies(tenant: TenantData, objectApiName: string, fieldA
   return [...new Set(dependencies)];
 }
 
+function findObjectDependencies(tenant: TenantData, objectApiName: string): string[] {
+  const dependencies: string[] = [];
+  const add = (description: string) => {
+    if (!dependencies.includes(description)) dependencies.push(description);
+  };
+  for (const candidate of tenant.objects) {
+    if (candidate.apiName !== objectApiName && candidate.fields.some((field) =>
+      field.relationship?.targetObject === objectApiName)) {
+      const fields = candidate.fields
+        .filter((field) => field.relationship?.targetObject === objectApiName)
+        .map((field) => field.apiName);
+      add(`relationship field${fields.length === 1 ? '' : 's'} ${fields.join(', ')} on ${candidate.label}`);
+    }
+    if (candidate.apiName !== objectApiName && candidate.relatedLookupFilters?.some((filter) =>
+      filter.relatedObject === objectApiName)) {
+      add(`related lookup filter on ${candidate.label}`);
+    }
+    if (candidate.apiName !== objectApiName && candidate.pageLayouts?.some((layout) =>
+      layout.relatedLists.some((relatedList) => tenant.objects
+        .find((child) => child.apiName === objectApiName)?.fields.some((field) =>
+          field.relationship?.targetObject === candidate.apiName
+          && field.relationship.childRelationshipName === relatedList)))) {
+      add(`related list on ${candidate.label}`);
+    }
+  }
+  for (const app of tenant.apps ?? []) {
+    if (app.navigationItems.includes(objectApiName)) add(`Lightning app ${app.label} navigation`);
+  }
+  for (const flow of tenant.flows) {
+    if (flowUsesObject(flow, objectApiName)
+      || containsFieldReference([flow.startConfig, flow.elements.map((element) => element.config), flow.resources, flow.versions], objectApiName)) {
+      add(`flow ${flow.label}`);
+    }
+  }
+  for (const page of tenant.pages) {
+    if (page.targetObject === objectApiName
+      || page.components.some((component) => containsFieldReference(component.properties, objectApiName))) {
+      add(`Lightning page ${page.label}`);
+    }
+  }
+  for (const report of tenant.reports) {
+    if (report.objectApiName === objectApiName
+      || report.crossFilters.some((crossFilter) => crossFilter.childObjectApiName === objectApiName)) {
+      add(`report ${report.label}`);
+    }
+  }
+  for (const dashboard of tenant.dashboards) {
+    if (dashboard.filters.some((filter) => filter.objectApiName === objectApiName)
+      || dashboard.components.some((component) => component.objectApiName === objectApiName
+        || containsFieldReference(component.properties, objectApiName))) {
+      add(`dashboard ${dashboard.label}`);
+    }
+  }
+  for (const process of tenant.approvalProcesses) {
+    if (process.objectApiName === objectApiName) add(`approval process ${process.label}`);
+  }
+  for (const alert of tenant.emailAlerts) {
+    if (alert.objectApiName === objectApiName) add(`email alert ${alert.label}`);
+  }
+  for (const rule of tenant.accessControl.sharingRules) {
+    if (rule.objectApiName === objectApiName) add(`sharing rule ${rule.label}`);
+  }
+  return dependencies;
+}
+
 type LocalUser = {
   id: string;
   tenantId: string;
@@ -2585,7 +2833,7 @@ const stateSchema = z.object({
     platformEvents: z.array(platformEventSchema).default([]),
     platformEventMessages: z.array(platformEventMessageSchema).default([]),
     pages: z.array(pageSchema),
-    apps: z.array(lightningAppSchema).default([]),
+    apps: z.array(lightningAppSchema).default(defaultLightningApps),
     dashboards: z.array(dashboardSchema).default([]),
     dashboardFolders: z.array(dashboardFolderSchema).default([]),
     reportFolders: z.array(reportFolderSchema).default([]),
@@ -2604,6 +2852,7 @@ const stateSchema = z.object({
     approvalRequests: z.array(approvalRequestSchema).default([]),
     approvalProcesses: z.array(approvalProcessSchema).default([]),
     records: z.record(z.array(runtimeRecordSchema)).default({}),
+    autoNumberSequences: z.record(z.number().int().nonnegative()).default({}),
     fieldHistory: z.array(fieldHistoryEntrySchema).default([]),
     interviews: z.array(flowInterviewSchema).default([]),
     flowLogs: z.array(flowExecutionLogSchema).default([]),
@@ -2970,6 +3219,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'ro
       ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
       IntegrationConnection__c: []
     },
+    autoNumberSequences: {},
     fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, namedCredentials: [], emailAlerts: [],
     connectorSettings: structuredClone(defaultConnectorSettings),
     connectorDefinitions: structuredClone(defaultConnectorDefinitions),
@@ -3227,7 +3477,8 @@ function loadState(): PlatformState {
       return [tenantId, {
       ...tenant,
       records,
-      apps: tenant.apps?.length ? tenant.apps : defaultLightningApps(),
+      autoNumberSequences: migrateAutoNumberSequences(objects, records, tenant.autoNumberSequences),
+      apps: tenant.apps,
       fieldHistory: tenant.fieldHistory ?? [],
       interviews: tenant.interviews ?? [],
       flowLogs: tenant.flowLogs ?? [],
@@ -4249,6 +4500,20 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
   const invalidRecordType = (tenant.records[object.apiName] ?? []).find((record) =>
     typeof record.RecordTypeId === 'string' && !object.recordTypes?.some((recordType) => recordType.id === record.RecordTypeId && recordType.active));
   if (invalidRecordType) return res.status(409).json({ error: `Record type "${String(invalidRecordType.RecordTypeId)}" is assigned to existing records and cannot be removed or deactivated` });
+  const removedRecordTypes = (current.recordTypes ?? []).filter((recordType) =>
+    !object.recordTypes?.some((candidate) => candidate.id === recordType.id && candidate.active));
+  for (const recordType of removedRecordTypes) {
+    const pageDependency = tenant.pages.find((page) => page.targetObject === object.apiName
+      && page.activationAssignments?.some((assignment) => assignment.recordTypeId === recordType.id));
+    if (pageDependency) return res.status(409).json({
+      error: `Record type "${recordType.label}" is assigned to Lightning page "${pageDependency.label}"`
+    });
+    const flowDependency = tenant.flows.find((flow) => flowUsesObject(flow, object.apiName)
+      && containsFieldReference([flow.startConfig, flow.elements.map((element) => element.config), flow.resources], recordType.id));
+    if (flowDependency) return res.status(409).json({
+      error: `Record type "${recordType.label}" is referenced by flow "${flowDependency.label}"`
+    });
+  }
   const invalidRecordTypeAssignment = [
     ...tenant.accessControl.profiles.flatMap((profile) => Object.keys(profile.recordTypePermissions)),
     ...tenant.accessControl.permissionSets.flatMap((set) => Object.keys(set.recordTypePermissions)),
@@ -4294,41 +4559,19 @@ app.delete('/api/metadata/objects/:apiName', requireAnyPermission('metadata:writ
   if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
   if (object.kind !== 'Custom Object') return res.status(403).json({ error: 'Standard objects cannot be deleted' });
   if ((tenant.records[apiName] ?? []).length) return res.status(409).json({ error: 'Delete or export this object’s records before deleting the object' });
-  const fieldDependency = tenant.objects.find((candidate) => candidate.apiName !== apiName && candidate.fields.some((field) => field.relationship?.targetObject === apiName));
-  if (fieldDependency) return res.status(409).json({ error: `Object "${apiName}" is referenced by relationship fields on "${fieldDependency.apiName}"` });
-  const flowDependency = tenant.flows.find((flow) =>
-    flowUsesObject(flow, apiName)
-    || containsFieldReference([flow.startConfig, flow.elements.map((element) => element.config), flow.resources], apiName));
-  if (flowDependency) return res.status(409).json({ error: `Object "${apiName}" is referenced by flow "${flowDependency.label}"` });
-  const pageDependency = tenant.pages.find((page) =>
-    page.targetObject === apiName || page.components.some((component) => containsFieldReference(component.properties, apiName)));
-  if (pageDependency) return res.status(409).json({ error: `Object "${apiName}" is referenced by page "${pageDependency.label}"` });
-  const reportDependency = tenant.reports.find((report) =>
-    report.objectApiName === apiName || report.crossFilters.some((crossFilter) => crossFilter.childObjectApiName === apiName));
-  if (reportDependency) return res.status(409).json({ error: `Object "${apiName}" is referenced by report "${reportDependency.label}"` });
-  const dashboardDependency = tenant.dashboards.find((dashboard) =>
-    dashboard.filters.some((filter) => filter.objectApiName === apiName)
-    || dashboard.components.some((component) => component.objectApiName === apiName
-      || containsFieldReference(component.properties, apiName)));
-  if (dashboardDependency) return res.status(409).json({ error: `Object "${apiName}" is referenced by dashboard "${dashboardDependency.label}"` });
-  const lookupFilterDependency = tenant.objects.find((candidate) =>
-    candidate.relatedLookupFilters?.some((filter) => candidate.apiName === apiName || filter.relatedObject === apiName));
-  if (lookupFilterDependency) {
-    return res.status(409).json({ error: `Object "${apiName}" is referenced by a related lookup filter on "${lookupFilterDependency.label}"` });
-  }
-  const relatedListDependency = tenant.objects.find((candidate) =>
-    candidate.apiName !== apiName
-    && candidate.pageLayouts?.some((layout) => layout.relatedLists.some((relatedList) =>
-      object.fields.some((field) => field.relationship?.targetObject === candidate.apiName
-        && field.relationship.childRelationshipName === relatedList))));
-  if (relatedListDependency) {
-    return res.status(409).json({ error: `Object "${apiName}" is referenced by a related list on "${relatedListDependency.label}"` });
-  }
+  const dependencies = findObjectDependencies(tenant, apiName);
+  if (dependencies.length) return res.status(409).json({
+    error: `Object "${apiName}" is still referenced by ${dependencies.join('; ')}`,
+    dependencies
+  });
   const updatedTenant: TenantData = {
     ...tenant,
     objects: tenant.objects.filter((item) => item.apiName !== apiName),
     records: Object.fromEntries(Object.entries(tenant.records).filter(([name]) => name !== apiName)),
     fieldHistory: tenant.fieldHistory.filter((entry) => entry.objectApiName !== apiName),
+    activities: tenant.activities.filter((activity) => activity.objectApiName !== apiName),
+    chatterPosts: tenant.chatterPosts.filter((post) => post.objectApiName !== apiName),
+    approvalRequests: tenant.approvalRequests.filter((request) => request.objectApiName !== apiName),
     sharingSettings: Object.fromEntries(Object.entries(tenant.sharingSettings).filter(([name]) => name !== apiName)),
     recordShares: tenant.recordShares.filter((share) => share.objectApiName !== apiName),
     accessControl: {
@@ -4411,12 +4654,16 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata
     fieldSchema,
     z.object({
       field: fieldSchema,
-      relatedLookupFilters: z.array(relatedLookupFilterSchema).optional()
+      relatedLookupFilters: z.array(relatedLookupFilterSchema).optional(),
+      relatedLookupFilterLogic: z.record(z.enum(['All', 'Any'])).optional(),
+      pageLayoutIds: z.array(z.string().min(1)).optional()
     }).strict()
   ]).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid field metadata', details: parsed.error.flatten() });
   const field = 'field' in parsed.data ? parsed.data.field : parsed.data;
   const relatedLookupFilters = 'field' in parsed.data ? parsed.data.relatedLookupFilters ?? [] : [];
+  const relatedLookupFilterLogic = 'field' in parsed.data ? parsed.data.relatedLookupFilterLogic ?? {} : {};
+  const pageLayoutIds = 'field' in parsed.data ? parsed.data.pageLayoutIds ?? [] : [];
   if (!field.apiName.endsWith('__c')) return res.status(400).json({ error: 'New custom field API names must end in __c' });
   if (object.fields.some((item) => item.apiName === field.apiName)) return res.status(409).json({ error: 'Field API name already exists' });
   if (field.relationship && !tenant.objects.some((item) => item.apiName === field.relationship?.targetObject)) {
@@ -4425,14 +4672,30 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata
   if (relatedLookupFilters.some((filter) => filter.fieldApiName !== field.apiName)) {
     return res.status(400).json({ error: 'New field lookup filters must reference the field being created' });
   }
+  if (new Set(pageLayoutIds).size !== pageLayoutIds.length
+    || pageLayoutIds.some((id) => !object.pageLayouts?.some((layout) => layout.id === id))) {
+    return res.status(400).json({ error: 'Field creation references an unknown or duplicate page layout' });
+  }
   const fieldError = validateFieldChange(undefined, field, tenant.records[object.apiName] ?? []);
   if (fieldError) return res.status(409).json({ error: fieldError });
   if (field.trackHistory && !object.settings?.trackFieldHistory) return res.status(400).json({ error: 'Enable object field history tracking before tracking individual fields' });
-  if (field.trackHistory && object.fields.filter((item) => item.trackHistory).length >= 20) return res.status(409).json({ error: 'An object can track changes to at most 20 fields' });
   const updatedObject = {
     ...object,
     fields: [...object.fields, field],
-    relatedLookupFilters: [...(object.relatedLookupFilters ?? []), ...relatedLookupFilters]
+    pageLayouts: object.pageLayouts?.map((layout) => pageLayoutIds.includes(layout.id)
+      ? {
+        ...layout,
+        sections: layout.sections.length
+          ? layout.sections.map((section, index) => index === 0
+            ? { ...section, fieldApiNames: [...section.fieldApiNames, field.apiName] }
+            : section)
+          : [{ id: `${layout.id}-record-information`, label: 'Record Information', columns: 2 as const, fieldApiNames: [field.apiName] }]
+      }
+      : layout),
+    relatedLookupFilters: [...(object.relatedLookupFilters ?? []), ...relatedLookupFilters],
+    ...(Object.keys({ ...object.relatedLookupFilterLogic, ...relatedLookupFilterLogic }).length
+      ? { relatedLookupFilterLogic: { ...object.relatedLookupFilterLogic, ...relatedLookupFilterLogic } }
+      : {})
   };
   const objectValidation = objectSchema.safeParse(updatedObject);
   if (!objectValidation.success) return res.status(400).json({ error: 'Invalid object metadata', details: objectValidation.error.flatten() });
@@ -4456,6 +4719,28 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata
   state = nextState;
   return res.status(201).json({ object: updatedObject, field });
 });
+app.get('/api/metadata/objects/:apiName/field-dependencies', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  const object = tenant.objects.find((item) => item.apiName === apiName);
+  if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
+  return res.json({
+    fields: object.fields.map((field) => ({
+      fieldApiName: field.apiName,
+      dependencies: findFieldDependencies(tenant, apiName, field.apiName)
+    })).filter((item) => item.dependencies.length > 0)
+  });
+});
+app.get('/api/metadata/objects/:apiName/dependencies', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  if (!tenant.objects.some((item) => item.apiName === apiName)) {
+    return res.status(404).json({ error: `Object "${apiName}" was not found` });
+  }
+  return res.json({ dependencies: findObjectDependencies(tenant, apiName) });
+});
 app.put('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -4469,9 +4754,6 @@ app.put('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermiss
   const fieldError = validateFieldChange(existing, parsed.data, tenant.records[object.apiName] ?? []);
   if (fieldError) return res.status(409).json({ error: fieldError });
   if (parsed.data.trackHistory && !object.settings?.trackFieldHistory) return res.status(400).json({ error: 'Enable object field history tracking before tracking individual fields' });
-  if (parsed.data.trackHistory && !existing.trackHistory && object.fields.filter((field) => field.trackHistory).length >= 20) {
-    return res.status(409).json({ error: 'An object can track changes to at most 20 fields' });
-  }
   if (parsed.data.relationship && !tenant.objects.some((item) => item.apiName === parsed.data.relationship?.targetObject)) {
     return res.status(400).json({ error: `Relationship target "${parsed.data.relationship.targetObject}" does not exist` });
   }
@@ -4503,7 +4785,14 @@ app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPerm
   const dependencies = findFieldDependencies(tenant, apiName, fieldApiName);
   if (dependencies.length) return res.status(409).json({ error: `Field "${fieldApiName}" is referenced by ${dependencies.join(', ')}` });
 
-  const updatedObject = { ...object, fields: object.fields.filter((item) => item.apiName !== fieldApiName) };
+  const relatedLookupFilterLogic = Object.fromEntries(
+    Object.entries(object.relatedLookupFilterLogic ?? {}).filter(([name]) => name !== fieldApiName)
+  );
+  const updatedObject = {
+    ...object,
+    fields: object.fields.filter((item) => item.apiName !== fieldApiName),
+    relatedLookupFilterLogic: Object.keys(relatedLookupFilterLogic).length ? relatedLookupFilterLogic : undefined
+  };
   const updatedTenant: TenantData = {
     ...tenant,
     objects: tenant.objects.map((item) => item.apiName === apiName ? updatedObject : item),
@@ -4518,6 +4807,11 @@ app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPerm
     },
     accessControl: {
       ...tenant.accessControl,
+      profiles: tenant.accessControl.profiles.map((profile) => ({
+        ...profile,
+        fieldPermissions: Object.fromEntries(Object.entries(profile.fieldPermissions)
+          .filter(([key]) => key !== `${apiName}.${fieldApiName}`))
+      })),
       permissionSets: tenant.accessControl.permissionSets.map((set) => ({
         ...set,
         fieldPermissions: Object.fromEntries(Object.entries(set.fieldPermissions).filter(([key]) => key !== `${apiName}.${fieldApiName}`))
@@ -5576,7 +5870,19 @@ function hasRecordTypeAccessForUser(userId: string, tenant: TenantData, objectNa
   });
 }
 
-function applyRecordDefaults(tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, userId: string): Record<string, unknown> {
+function allocateAutoNumberSequence(tenantId: string, tenant: TenantData, object: ObjectMetadata, field: ObjectMetadata['fields'][number]): number {
+  const latestTenant = tenantData(tenantId);
+  if (!latestTenant) throw new Error(`Tenant "${tenantId}" is unavailable for auto-number allocation.`);
+  const key = autoNumberSequenceKey(object.apiName, field.apiName);
+  const sequence = Math.max(latestTenant.autoNumberSequences[key] ?? 0, tenant.autoNumberSequences[key] ?? 0) + 1;
+  persistTenantRecords(tenantId, {
+    ...latestTenant,
+    autoNumberSequences: { ...latestTenant.autoNumberSequences, [key]: sequence }
+  });
+  tenant.autoNumberSequences = { ...tenant.autoNumberSequences, [key]: sequence };
+  return sequence;
+}
+function applyRecordDefaults(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, userId: string): Record<string, unknown> {
   const result = { ...values };
   if (object.fields.some((field) => field.apiName === 'CurrencyIsoCode')
     && result.CurrencyIsoCode === undefined) {
@@ -5601,11 +5907,8 @@ function applyRecordDefaults(tenant: TenantData, object: ObjectMetadata, values:
     if (result[field.apiName] === undefined && field.defaultValue !== undefined) result[field.apiName] = field.defaultValue;
     if (field.dataType === 'AutoNumber' || field.dataType === 'Auto Number') {
       if (result[field.apiName] !== undefined) throw new Error(`Auto-number field "${field.apiName}" cannot be supplied.`);
-      const sequence = (tenant.records[object.apiName]?.length ?? 0) + 1;
-      const format = field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
-        ? object.settings.recordNameFormat
-        : field.dataType === 'AutoNumber' ? 'REC-{00000}' : 'REC-{000000}';
-      result[field.apiName] = format.replace(/\{(0+)\}/g, (_match, digits: string) => String(sequence).padStart(digits.length, '0'));
+      const sequence = allocateAutoNumberSequence(tenantId, tenant, object, field);
+      result[field.apiName] = formatAutoNumber(autoNumberFormatForField(object, field), sequence);
     }
   }
   if (object.fields.some((field) => field.apiName === 'OwnerId') && result.OwnerId === undefined) result.OwnerId = userId;
@@ -5696,7 +5999,7 @@ function appendCommunicationRecord(
     ?? state.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id;
   if (!ownerId) throw new Error(`No active owner is available for Communication Records in tenant "${tenantId}".`);
   const now = new Date().toISOString();
-  const values = applyRecordDefaults(tenant, object, {
+  const values = applyRecordDefaults(tenantId, tenant, object, {
     Api_Id__c: entry.apiId.slice(0, 255),
     Url__c: entry.url,
     Auth_Type__c: entry.authType,
@@ -5726,7 +6029,13 @@ function appendCommunicationRecord(
 }
 
 function persistTenantRecords(tenantId: string, tenant: TenantData): void {
-  const nextState = { ...state, tenants: { ...state.tenants, [tenantId]: tenant } };
+  const currentSequences = state.tenants[tenantId]?.autoNumberSequences ?? {};
+  const autoNumberSequences = { ...tenant.autoNumberSequences };
+  for (const [key, sequence] of Object.entries(currentSequences)) {
+    autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
+  }
+  const updatedTenant = { ...tenant, autoNumberSequences };
+  const nextState = { ...state, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
   persistState(nextState);
   state = nextState;
 }
@@ -6186,8 +6495,8 @@ app.post('/api/campaigns/:campaignId/members', accessAuthentication, (req: Reque
   if (!recordActionEnabled(campaignObject, 'Edit', typeof campaign.RecordTypeId === 'string' ? campaign.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for Campaign' });
   }
-  const parsed = z.object({ contactIds: z.array(z.string().min(1)).min(1).max(200) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Provide between 1 and 200 Contact IDs', details: parsed.error.flatten() });
+  const parsed = z.object({ contactIds: z.array(z.string().min(1)).min(1) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Provide at least one Contact ID', details: parsed.error.flatten() });
   const contactIds = [...new Set(parsed.data.contactIds)];
   const contacts = tenant.records.Contact ?? [];
   const accessibleContacts = contactIds.map((id) => contacts.find((record) => record.Id === id))
@@ -6263,7 +6572,7 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
         return res.status(403).json({ error: 'Records can only be assigned to a queue you belong to or one you can manage' });
       }
     }
-    const values = applyRecordDefaults(working, object, sanitized, principal.userId);
+    const values = applyRecordDefaults(principal.tenantId, working, object, sanitized, principal.userId);
     validateRuntimeRecord(principal.tenantId, working, object, values);
     const now = new Date().toISOString();
     const isClone = cloneSource !== undefined;
@@ -6292,8 +6601,8 @@ app.post('/api/records/:objectName/import', accessAuthentication, async (req: Re
   if (objectName === 'User') return res.status(403).json({ error: 'Users must be provisioned through the security workspace' });
   if (!hasObjectPermission(principal, tenant, objectName, 'create')) return res.status(403).json({ error: `Missing create permission for object "${objectName}"` });
   if (!object.listViewButtons?.includes('Import')) return res.status(403).json({ error: 'Import is not enabled for this object' });
-  const parsed = z.object({ records: z.array(z.record(z.unknown())).min(1).max(200) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Import requires between 1 and 200 record rows', details: parsed.error.flatten() });
+  const parsed = z.object({ records: z.array(z.record(z.unknown())).min(1) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Import requires at least one record row', details: parsed.error.flatten() });
   const working = structuredClone(tenant);
   const created: RuntimeRecord[] = [];
   try {
@@ -6308,7 +6617,7 @@ app.post('/api/records/:objectName/import', accessAuthentication, async (req: Re
       if (!recordActionEnabled(object, 'New', recordTypeId, profileIdForPrincipal(principal, tenant))) {
         throw new Error(`Row ${index + 1}: New is not enabled for this object, list view, or page layout.`);
       }
-      const defaulted = applyRecordDefaults(working, object, values, principal.userId);
+      const defaulted = applyRecordDefaults(principal.tenantId, working, object, values, principal.userId);
       validateRuntimeRecord(principal.tenantId, working, object, defaulted);
       const now = new Date().toISOString();
       let record = calculateFormulaFields(object, stampRecordAuditFields({ ...defaulted, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now }, principal.userId, now), formulaContextForUser(working, principal.userId));
@@ -6499,6 +6808,12 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
   const inputError = validateFlowInputValues(flow, input.data);
   if (inputError) return res.status(400).json({ error: inputError });
+  const validation = validateFlow(
+    flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
+    tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId), tenant.flows,
+    tenant.approvalProcesses, tenant.platformEvents
+  );
+  if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
   try {
     const working = structuredClone(tenant);
     const result = await executeFlow(flow, working, principal.tenantId, principal.userId, input.data, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
@@ -6927,7 +7242,124 @@ function scopeLibraryCss(cssSource: string, apiName: string): string {
   return root.toString();
 }
 
-app.get('/api/component-library', requirePermission('metadata:read'), (_req: Request, res: Response) => {
+type LibraryComponentUsage = { tenantId: string; surface: 'page' | 'dashboard' | 'flow'; label: string };
+function containsLibraryComponentReference(value: unknown, apiName: string): boolean {
+  if (Array.isArray(value)) return value.some((item) => containsLibraryComponentReference(item, apiName));
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(([key, item]) =>
+    (/component(?:api)?name/i.test(key) && item === apiName)
+    || containsLibraryComponentReference(item, apiName));
+}
+function findLibraryComponentUsages(platformState: PlatformState, apiName: string): LibraryComponentUsage[] {
+  const usages: LibraryComponentUsage[] = [];
+  for (const [tenantId, tenant] of Object.entries(platformState.tenants)) {
+    for (const page of tenant.pages) {
+      if (page.components.some((component) => component.type === `Custom:${apiName}`
+        || containsLibraryComponentReference(component.properties, apiName))) {
+        usages.push({ tenantId, surface: 'page', label: page.label });
+      }
+    }
+    for (const dashboard of tenant.dashboards) {
+      if (dashboard.components.some((component) => component.customComponentApiName === apiName)) {
+        usages.push({ tenantId, surface: 'dashboard', label: dashboard.label });
+      }
+    }
+    for (const flow of tenant.flows) {
+      if (containsLibraryComponentReference([
+        flow.startConfig,
+        flow.elements.map((element) => element.config),
+        flow.resources,
+        flow.versions
+      ], apiName)) {
+        usages.push({ tenantId, surface: 'flow', label: flow.label });
+      }
+    }
+  }
+  return usages;
+}
+function usageBlockerDetails(usages: LibraryComponentUsage[], tenantId: string) {
+  const own = usages.filter((usage) => usage.tenantId === tenantId)
+    .map(({ surface, label }) => `${surface} "${label}"`);
+  const otherTenantCount = new Set(usages.filter((usage) => usage.tenantId !== tenantId).map((usage) => usage.tenantId)).size;
+  if (otherTenantCount) own.push(`references in ${otherTenantCount} other tenant${otherTenantCount === 1 ? '' : 's'}`);
+  return own;
+}
+
+let bundledComponentSync: Promise<void> | null = null;
+function syncBundledLibraryComponents(): Promise<void> {
+  if (bundledComponentSync) return bundledComponentSync;
+  bundledComponentSync = (async () => {
+    const manifestPath = resolve(bundledCustomComponentsPath, 'manifest.json');
+    const manifest = z.array(z.object({
+      apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+      label: z.string().trim().min(1).max(80),
+      description: z.string().max(500),
+      surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+      resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
+      jsx: z.string().min(1),
+      css: z.string().min(1)
+    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')));
+    const imported: LibraryComponent[] = [];
+    for (const entry of manifest) {
+      if (state.libraryComponents.some((component) => component.apiName.toLowerCase() === entry.apiName.toLowerCase())) continue;
+      const jsxPath = resolve(bundledCustomComponentsPath, entry.jsx);
+      const cssPath = resolve(bundledCustomComponentsPath, entry.css);
+      const jsxRelativePath = relative(bundledCustomComponentsPath, jsxPath);
+      const cssRelativePath = relative(bundledCustomComponentsPath, cssPath);
+      if (jsxRelativePath.startsWith('..') || cssRelativePath.startsWith('..')
+        || isAbsolute(jsxRelativePath) || isAbsolute(cssRelativePath)) {
+        throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
+      }
+      const input = libraryComponentInputSchema.parse({
+        apiName: entry.apiName,
+        label: entry.label,
+        description: entry.description,
+        surfaces: entry.surfaces,
+        resize: entry.resize,
+        jsxSource: readFileSync(jsxPath, 'utf8'),
+        cssSource: readFileSync(cssPath, 'utf8')
+      });
+      const compiled = await transform(input.jsxSource, {
+        loader: 'tsx',
+        format: 'cjs',
+        target: 'es2020',
+        jsxFactory: 'React.createElement',
+        jsxFragment: 'React.Fragment',
+        sourcefile: `${input.apiName}.tsx`
+      });
+      if (!hasDefaultComponentExport(compiled.code)) {
+        throw new Error(`Bundled component "${input.apiName}" must export a default React component`);
+      }
+      if (/\brequire\s*\(/.test(compiled.code)) {
+        throw new Error(`Bundled component "${input.apiName}" cannot import external modules`);
+      }
+      imported.push({
+        ...input,
+        compiledJs: compiled.code,
+        scopedCss: scopeLibraryCss(input.cssSource, input.apiName),
+        version: 1,
+        updatedAt: new Date().toISOString()
+      });
+    }
+    if (imported.length) {
+      const nextState = { ...state, libraryComponents: [...state.libraryComponents, ...imported] };
+      persistState(nextState);
+      state = nextState;
+    }
+  })().catch((error: unknown) => {
+    bundledComponentSync = null;
+    throw error;
+  });
+  return bundledComponentSync;
+}
+
+app.get('/api/component-library', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
+  try {
+    await syncBundledLibraryComponents();
+  } catch (error) {
+    console.error('Unable to register bundled custom components', error);
+    return res.status(500).json({ error: `Unable to register bundled custom components: ${error instanceof Error ? error.message : String(error)}` });
+  }
   const principal = getPrincipal(res);
   res.json({
     components: state.libraryComponents,
@@ -6977,6 +7409,18 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
   if (!parsed.success) return res.status(400).json({ error: 'Invalid custom component metadata', details: parsed.error.flatten() });
   const existingIndex = state.libraryComponents.findIndex((component) => component.apiName === apiName);
   if (existingIndex < 0) return res.status(404).json({ error: 'Library component was not found' });
+  const principal = getPrincipal(res);
+  const existing = state.libraryComponents[existingIndex];
+  const usages = findLibraryComponentUsages(state, apiName);
+  const unavailableSurfaces = existing.surfaces.filter((surface) =>
+    !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
+  if (unavailableSurfaces.length) {
+    const blockers = usageBlockerDetails(usages.filter((usage) => unavailableSurfaces.includes(usage.surface)), principal.tenantId);
+    return res.status(409).json({
+      error: `Cannot remove ${unavailableSurfaces.join(', ')} surface${unavailableSurfaces.length === 1 ? '' : 's'} while components are in use: ${blockers.join('; ')}`,
+      dependencies: blockers
+    });
+  }
   try {
     const compiled = await transform(parsed.data.jsxSource, {
       loader: 'tsx',
@@ -7012,10 +7456,15 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
 app.delete('/api/component-library/:apiName', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
   if (!state.libraryComponents.some((component) => component.apiName === apiName)) return res.status(404).json({ error: 'Library component was not found' });
-  const inUse = Object.values(state.tenants).some((tenant) =>
-    tenant.pages.some((page) => page.components.some((component) => component.type === `Custom:${apiName}`))
-    || tenant.dashboards.some((dashboard) => dashboard.components.some((component) => component.customComponentApiName === apiName)));
-  if (inUse) return res.status(409).json({ error: 'This component is used by a page or dashboard. Remove it from all tenants before deleting it.' });
+  const principal = getPrincipal(res);
+  const usages = findLibraryComponentUsages(state, apiName);
+  if (usages.length) {
+    const dependencies = usageBlockerDetails(usages, principal.tenantId);
+    return res.status(409).json({
+      error: `This component is still used by ${dependencies.join('; ')}. Remove those references before deleting it.`,
+      dependencies
+    });
+  }
   const nextState = { ...state, libraryComponents: state.libraryComponents.filter((component) => component.apiName !== apiName) };
   persistState(nextState);
   state = nextState;
@@ -7025,7 +7474,7 @@ app.delete('/api/component-library/:apiName', requirePermission('components:mana
 const dashboardFolderInputSchema = z.object({
   label: z.string().trim().min(1).max(80),
   parentFolderId: z.string().uuid().nullable(),
-  shares: z.array(dashboardFolderShareSchema).max(100).default([])
+  shares: z.array(dashboardFolderShareSchema).default([])
 });
 app.get('/api/metadata/dashboard-folders', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -7141,8 +7590,8 @@ const dashboardTerritoryInputSchema = z.array(z.object({
   id: z.string().uuid(),
   label: z.string().trim().min(1).max(80),
   parentTerritoryId: z.string().uuid().nullable(),
-  userIds: z.array(z.string().min(1)).max(200)
-})).max(200);
+  userIds: z.array(z.string().min(1))
+}));
 app.get('/api/metadata/dashboard-territories', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -7735,6 +8184,12 @@ app.post('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metad
   for (const filter of snapshotFilters) {
     const object = tenant.objects.find((item) => item.apiName === filter.objectApiName);
     const field = object?.fields.find((item) => item.apiName === filter.fieldApiName);
+    if (!field || !object?.settings?.allowReports) {
+      return res.status(409).json({ error: `Dashboard filter field "${filter.objectApiName}.${filter.fieldApiName}" is no longer available` });
+    }
+    if (!dashboardFilterOperatorAllowed(field, filter.operator)) {
+      return res.status(409).json({ error: `Dashboard filter operator "${filter.operator}" is no longer valid for "${filter.objectApiName}.${field.apiName}"` });
+    }
     const invalidValue = field ? dashboardFilterValueError(field, filter.value) : null;
     if (invalidValue) return res.status(400).json({ error: `Snapshot filter value is invalid for "${filter.fieldApiName}": ${invalidValue}` });
   }
@@ -7754,6 +8209,15 @@ app.post('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metad
     && (component.groupByFieldApiName === crossFilter.fieldApiName
       || component.seriesFieldApiName === crossFilter.fieldApiName)))) {
     return res.status(400).json({ error: 'Snapshot cross-filter must use a chart grouping field on this dashboard' });
+  }
+  const invalidCrossFilter = crossFilters.find((filter) => {
+    const object = tenant.objects.find((item) => item.apiName === filter.objectApiName);
+    const field = object?.fields.find((item) => item.apiName === filter.fieldApiName);
+    return !field || !dashboardFilterOperatorAllowed(field, filter.operator)
+      || Boolean(field && dashboardFilterValueError(field, filter.value));
+  });
+  if (invalidCrossFilter) {
+    return res.status(400).json({ error: `Snapshot cross-filter is invalid for "${invalidCrossFilter.objectApiName}.${invalidCrossFilter.fieldApiName}"` });
   }
   const matchesFilter = (record: RuntimeRecord, filter: DashboardFilterMetadata) => reportFilterMatches(record, filter);
   const components: DashboardSnapshot['components'] = [];
@@ -8122,7 +8586,7 @@ app.delete('/api/metadata/dashboards/:apiName/snapshots/:snapshotId', requirePer
 const reportFolderInputSchema = z.object({
   label: z.string().trim().min(1).max(80),
   parentFolderId: z.string().uuid().nullable().default(null),
-  shares: z.array(dashboardFolderShareSchema).max(100).default([]),
+  shares: z.array(dashboardFolderShareSchema).default([]),
   visibility: z.enum(['Private', 'All Users']).default('Private')
 });
 const canManageReportFolders = (principal: Principal) =>
@@ -8287,6 +8751,17 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
   if (mismatchedFilter) return res.status(400).json({ error: 'Dashboard filters must target the report object' });
   if (dashboardForRun) {
     const configuredDashboard = dashboardForRun;
+    const staleDashboardFilter = configuredDashboard.filters.find((filter) => {
+      if (filter.objectApiName !== report.objectApiName) return false;
+      const field = object.fields.find((item) => item.apiName === filter.fieldApiName);
+      return !field || !dashboardFilterOperatorAllowed(field, filter.operator)
+        || Boolean(field && dashboardFilterValueError(field, filter.value));
+    });
+    if (staleDashboardFilter) {
+      return res.status(409).json({
+        error: `Dashboard filter "${staleDashboardFilter.id}" is no longer valid for report "${report.label}"`
+      });
+    }
     const invalidDashboardFilter = runOptions.data.dashboardFilters.find((filter) => {
       const configured = configuredDashboard.filters.find((item) => item.id === filter.id);
       return !configured
@@ -8357,6 +8832,32 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
     return res.status(403).json({ error: `Missing read permission for report field "${object.apiName}.${inaccessibleField}"` });
   }
   const crossFilters = [...runOptions.data.dashboardCrossFilters, ...(runOptions.data.dashboardCrossFilter ? [runOptions.data.dashboardCrossFilter] : [])];
+  if (dashboardForRun) {
+    const configuredDashboard = dashboardForRun;
+    const invalidCrossFilter = crossFilters.find((filter) => !configuredDashboard.components.some((component) =>
+      component.type === 'Chart'
+      && component.objectApiName === filter.objectApiName
+      && (component.groupByFieldApiName === filter.fieldApiName
+        || component.seriesFieldApiName === filter.fieldApiName)));
+    if (invalidCrossFilter) {
+      return res.status(400).json({ error: 'Dashboard cross-filters must use a chart grouping or series field on this dashboard' });
+    }
+  }
+  const invalidCrossFilter = crossFilters.find((filter) => {
+    const crossFilterObject = tenant.objects.find((item) => item.apiName === filter.objectApiName);
+    const field = crossFilterObject?.fields.find((item) => item.apiName === filter.fieldApiName);
+    return field && (!dashboardFilterOperatorAllowed(field, filter.operator)
+      || Boolean(dashboardFilterValueError(field, filter.value)));
+  });
+  if (invalidCrossFilter) {
+    const crossFilterObject = tenant.objects.find((item) => item.apiName === invalidCrossFilter.objectApiName);
+    const field = crossFilterObject?.fields.find((item) => item.apiName === invalidCrossFilter.fieldApiName);
+    return res.status(400).json({
+      error: field
+        ? `Dashboard cross-filter is invalid for "${invalidCrossFilter.objectApiName}.${field.apiName}"`
+        : `Dashboard cross-filter field "${invalidCrossFilter.objectApiName}.${invalidCrossFilter.fieldApiName}" is unavailable`
+    });
+  }
   const sourceRecords = object.apiName === 'User'
     ? state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => runtimeRecordSchema.parse({
         Id: user.id, Name: user.name, Email: user.email, Username: user.email, IsActive: !user.disabled, UserRoleId: user.role, CreatedDate: user.createdAt, LastModifiedDate: user.createdAt
@@ -9052,7 +9553,6 @@ app.delete('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write',
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   if (!tenant.apps.some((item) => item.apiName === apiName)) return res.status(404).json({ error: 'Lightning app was not found' });
-  if (tenant.apps.length === 1) return res.status(409).json({ error: 'At least one Lightning app must remain' });
   if (tenant.pages.some((page) => page.activationAssignments?.some((assignment) => assignment.appId === apiName))) {
     return res.status(409).json({ error: 'This app is used by Lightning page activation assignments. Reassign those pages before deleting it.' });
   }
@@ -11445,8 +11945,11 @@ function normalizeRuntimeValues(object: ObjectMetadata, values: Record<string, u
       else if (typeof value !== 'boolean') throw new Error(`Field "${fieldName}" must be true or false.`);
     } else if (field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist' || field.dataType === 'Long Text Area' || /^(Text|Email|Phone|URL)(\(|$)/.test(field.dataType)) {
       if (typeof value !== 'string') throw new Error(`Field "${fieldName}" must contain text.`);
-      const textLimit = field.dataType.match(/^Text\((\d+)\)$/);
-      if (textLimit && value.length > Number(textLimit[1])) throw new Error(`Field "${fieldName}" exceeds its ${textLimit[1]} character limit.`);
+      const textLimit = field.dataType.match(/^Text(?:\((\d+)\))?$/);
+      const maximumTextLength = textLimit ? Number(textLimit[1] ?? 255) : undefined;
+      if (maximumTextLength !== undefined && value.length > maximumTextLength) {
+        throw new Error(`Field "${fieldName}" exceeds its ${maximumTextLength} character limit.`);
+      }
       if (field.dataType === 'Long Text Area' && value.length > 131072) throw new Error(`Field "${fieldName}" exceeds its 131072 character limit.`);
       if (field.dataType === 'Email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new Error(`Field "${fieldName}" must contain a valid email address.`);
       if (field.dataType === 'URL' && value) {
@@ -11458,7 +11961,15 @@ function normalizeRuntimeValues(object: ObjectMetadata, values: Record<string, u
         }
       }
     } else if (field.dataType === 'Date' || field.dataType === 'Date/Time') {
-      if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) throw new Error(`Field "${fieldName}" must contain a valid ${field.dataType.toLowerCase()}.`);
+      if (typeof value !== 'string' || (field.dataType === 'Date'
+        ? !/^\d{4}-\d{2}-\d{2}$/.test(value)
+          || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`))
+          || new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value
+        : !isValidFlowDateTime(value))) {
+        throw new Error(`Field "${fieldName}" must contain a valid ${field.dataType.toLowerCase()}.`);
+      }
+    } else if (field.dataType === 'DateTime') {
+      if (typeof value !== 'string' || !isValidFlowDateTime(value)) throw new Error(`Field "${fieldName}" must contain a valid date/time.`);
     }
   }
   return normalized;
@@ -11538,20 +12049,29 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
       throw new Error(`Value "${String(dependentValue)}" is not allowed for "${field.label}" when "${field.controllerFieldApiName}" is "${String(controllerValue ?? '')}".`);
     }
   }
+  const requiredFiltersByField = new Map<string, RelatedLookupFilterMetadata[]>();
   for (const filter of object.relatedLookupFilters ?? []) {
     if (!filter.required) continue;
-    const relatedId = values[filter.fieldApiName] ?? current?.[filter.fieldApiName];
+    requiredFiltersByField.set(filter.fieldApiName, [...(requiredFiltersByField.get(filter.fieldApiName) ?? []), filter]);
+  }
+  for (const [fieldApiName, filters] of requiredFiltersByField) {
+    const relatedId = values[fieldApiName] ?? current?.[fieldApiName];
     if (relatedId === undefined || relatedId === null || relatedId === '') continue;
-    const relatedRecord = tenant.records[filter.relatedObject]?.find((record) => record.Id === relatedId);
+    const relatedRecord = tenant.records[filters[0].relatedObject]?.find((record) => record.Id === relatedId);
     if (!relatedRecord) continue;
-    const actual = relatedRecord[filter.relatedFieldApiName];
-    const expected = filter.valueFieldApiName
-      ? Object.hasOwn(values, filter.valueFieldApiName)
-        ? values[filter.valueFieldApiName]
-        : current?.[filter.valueFieldApiName]
-      : filter.value;
-    const matches = matchesRelatedLookupFilter(actual, expected, filter.operator);
-    if (!matches) throw new Error(`Related record does not satisfy required lookup filter "${filter.id}".`);
+    const filterMatches = filters.map((filter) => {
+      const actual = relatedRecord[filter.relatedFieldApiName];
+      const expected = filter.valueFieldApiName
+        ? Object.hasOwn(values, filter.valueFieldApiName)
+          ? values[filter.valueFieldApiName]
+          : current?.[filter.valueFieldApiName]
+        : filter.value;
+      return matchesRelatedLookupFilter(actual, expected, filter.operator);
+    });
+    const matches = object.relatedLookupFilterLogic?.[fieldApiName] === 'Any'
+      ? filterMatches.some(Boolean)
+      : filterMatches.every(Boolean);
+    if (!matches) throw new Error(`Related record does not satisfy required lookup filters for "${fieldApiName}".`);
   }
   for (const field of object.fields) {
     const value = values[field.apiName] ?? current?.[field.apiName];
@@ -11929,6 +12449,10 @@ async function executeFlow(
 ): Promise<FlowExecutionResult> {
   if (depth > 10) throw new Error('Flow subflow nesting exceeded the 10-level limit.');
   if (flow.status !== 'Active' && !allowDraftExecution) throw new Error(`Flow "${flow.label}" is not active.`);
+  const runningUser = state.users.find((user) => user.id === currentUserId
+    && user.tenantId === tenantId && !user.disabled);
+  if (!runningUser) throw new Error('The Flow running user is not available in this tenant.');
+  const runningPrincipal = principalForUser(runningUser, tenant);
   const interviewGuid = resume?.interviewGuid ?? parentInterview?.interviewGuid ?? randomUUID();
   const interviewStartTime = resume?.interviewStartTime ?? parentInterview?.interviewStartTime ?? new Date().toISOString();
   const context: FlowRuntimeContext = {
@@ -12051,8 +12575,10 @@ async function executeFlow(
         }
         selected ??= outcomes.find((item) => item.name === 'Default');
         if (selected) {
-          const label = String(selected.label ?? '');
-          nextConnectors = nextConnectors.filter((connector) => connector.label === label || connector.label === String(selected?.name));
+          const routeLabels = [selected.label, selected.name]
+            .filter((value): value is string => typeof value === 'string')
+            .map((value) => value.trim().toLowerCase());
+          nextConnectors = nextConnectors.filter((connector) => routeLabels.includes(connector.label.trim().toLowerCase()));
         } else {
           nextConnectors = [];
         }
@@ -12160,17 +12686,11 @@ async function executeFlow(
         if (position.index >= position.items.length) {
           loopPositions.delete(element.id);
           nextConnectors = nextConnectors.filter((connector) => connector.label.toLowerCase().includes('after last'));
-          if (!nextConnectors.length && flow.connectors.filter((connector) => connector.from === element.id).length === 2) {
-            nextConnectors = [flow.connectors.filter((connector) => connector.from === element.id)[1]];
-          }
         } else {
           loopPositions.set(element.id, position);
           context.variables[loopVariable] = position.items[position.index];
           nextConnectors = nextConnectors.filter((connector) =>
             connector.label.toLowerCase().includes('for each') || connector.label.toLowerCase().includes('next'));
-          if (!nextConnectors.length && flow.connectors.filter((connector) => connector.from === element.id).length === 2) {
-            nextConnectors = [flow.connectors.filter((connector) => connector.from === element.id)[0]];
-          }
         }
         break;
       }
@@ -12194,7 +12714,8 @@ async function executeFlow(
             throw new Error(`Platform event field "${fieldName}" must be true or false.`);
           } else if (['Text', 'Long Text Area', 'Picklist'].includes(field.dataType.split('(')[0])) {
             if (typeof value !== 'string') throw new Error(`Platform event field "${fieldName}" must contain text.`);
-            const limit = Number(field.dataType.match(/^Text\((\d+)\)$/)?.[1] ?? 255);
+            const limit = Number(field.dataType.match(/^Text\((\d+)\)$/)?.[1]
+              ?? (field.dataType.startsWith('Long Text Area') ? 131072 : 255));
             if (value.length > limit) throw new Error(`Platform event field "${fieldName}" exceeds its ${limit} character limit.`);
             if (field.dataType === 'Picklist' && field.picklistRestricted
               && field.picklistValues && !field.picklistValues.includes(value)) {
@@ -12245,12 +12766,32 @@ async function executeFlow(
         const objectName = typeof config.object === 'string' ? config.object : '';
         const object = tenant.objects.find((candidate) => candidate.apiName === objectName);
         if (!object) throw new Error(`${element.type} "${element.label}" references an unknown object.`);
+        const objectAction = element.type === 'Get Records' ? 'read'
+          : element.type === 'Create Records' ? 'create'
+            : element.type === 'Update Records' ? 'edit' : 'delete';
+        if (!hasObjectPermission(runningPrincipal, tenant, objectName, objectAction)) {
+          throw new Error(`The running user does not have ${objectAction} access to "${objectName}" for "${element.label}".`);
+        }
         const records = tenant.records[objectName] ?? [];
         const conditions = asConfigRows(config.conditions);
+        const requestedFields = [
+          ...conditions.map((condition) => typeof condition.field === 'string' ? condition.field : ''),
+          ...(typeof config.sortField === 'string' ? [config.sortField] : []),
+          ...(Array.isArray(config.fields) ? config.fields.filter((field): field is string => typeof field === 'string') : [])
+        ];
+        for (const requestedField of requestedFields) {
+          const fieldName = requestedField.split('.')[0];
+          if (object.fields.some((field) => field.apiName === fieldName)
+            && !hasFieldPermission(runningPrincipal, tenant, objectName, fieldName, 'read')) {
+            throw new Error(`The running user does not have read permission for field "${objectName}.${fieldName}" used by "${element.label}".`);
+          }
+        }
         const matching = records.filter((item) => flowConditionsMatch(conditions, item, context, config.conditionLogic));
         if (element.type === 'Get Records') {
+          const readableRecords = matching.filter((item) =>
+            hasRecordAccess(runningPrincipal, tenant, objectName, item, 'Read'));
           const sorted = typeof config.sortField === 'string' && config.sortField
-            ? [...matching].sort((a, b) => {
+            ? [...readableRecords].sort((a, b) => {
                 const left = a[config.sortField as string];
                 const right = b[config.sortField as string];
                 const leftNumber = Number(left);
@@ -12260,17 +12801,19 @@ async function executeFlow(
                   : String(left ?? '').localeCompare(String(right ?? ''));
                 return String(config.sortOrder ?? 'Ascending') === 'Descending' ? -comparison : comparison;
               })
-            : matching;
+            : readableRecords;
           const project = (item: RuntimeRecord): RuntimeRecord => {
-            if (!Array.isArray(config.fields)) return item;
+            if (!Array.isArray(config.fields)) return sanitizeRecordForRead(runningPrincipal, tenant, object, item);
             const selectedFields = new Set(config.fields.filter((name): name is string => typeof name === 'string'));
             const projected: RuntimeRecord = {
               Id: item.Id,
               CreatedDate: item.CreatedDate,
               LastModifiedDate: item.LastModifiedDate
             };
-            for (const [name, value] of Object.entries(item)) {
-              if (selectedFields.has(name)) projected[name] = value;
+            for (const name of selectedFields) {
+              if (Object.hasOwn(item, name)) {
+                projected[name] = sanitizeRecordForRead(runningPrincipal, tenant, object, item)[name];
+              }
             }
             return projected;
           };
@@ -12280,7 +12823,9 @@ async function executeFlow(
           const variableName = typeof config.outputVariable === 'string' && config.outputVariable ? config.outputVariable : `element${element.id}`;
           context.variables[variableName] = result;
         } else if (element.type === 'Create Records') {
-          const values = applyRecordDefaults(tenant, object, normalizeRuntimeValues(object, flowFieldValues(config, context)), currentUserId);
+          const configuredValues = normalizeRuntimeValues(object, flowFieldValues(config, context));
+          assertFieldEditPermissions(runningPrincipal, tenant, object, configuredValues);
+          const values = applyRecordDefaults(tenantId, tenant, object, configuredValues, currentUserId);
           validateRuntimeRecord(tenantId, tenant, object, values);
           const now = new Date().toISOString();
           let created = calculateFormulaFields(object, stampRecordAuditFields({ ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now }, currentUserId, now), context);
@@ -12299,18 +12844,21 @@ async function executeFlow(
           context.variables[`record${element.id}`] = created;
         } else if (element.type === 'Update Records') {
           const values = normalizeRuntimeValues(object, flowFieldValues(config, context));
+          assertFieldEditPermissions(runningPrincipal, tenant, object, values);
           const candidates = context.record && objectName === flow.triggerObject && !conditions.length
             ? records.filter((item) => item.Id === context.record?.Id)
             : matching;
-          if (candidates.length > 200) throw new Error(`Update Records "${element.label}" exceeded the 200-record transaction limit.`);
+          const editableCandidates = candidates.filter((item) =>
+            hasRecordAccess(runningPrincipal, tenant, objectName, item, 'Edit'));
+          if (editableCandidates.length > 200) throw new Error(`Update Records "${element.label}" exceeded the 200-record transaction limit.`);
           const selectedRecordTypeId = values.RecordTypeId;
-          if (typeof selectedRecordTypeId === 'string' && candidates.some((item) =>
+          if (typeof selectedRecordTypeId === 'string' && editableCandidates.some((item) =>
             item.RecordTypeId !== selectedRecordTypeId
             && !hasRecordTypeAccessForUser(currentUserId, tenant, objectName, selectedRecordTypeId))) {
             throw new Error(`Record type "${selectedRecordTypeId}" is not assigned to this user for "${objectName}".`);
           }
           const updates = new Map<string, RuntimeRecord>();
-          for (const previous of candidates) {
+          for (const previous of editableCandidates) {
             const now = new Date().toISOString();
             let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...previous, ...values, LastModifiedDate: now }, currentUserId, now, previous), context);
             await runBeforeSaveRecordTriggeredFlows(
@@ -12322,12 +12870,12 @@ async function executeFlow(
             validateRuntimeRecord(tenantId, tenant, object, { ...values, ...beforeSaveValues }, updated);
             updates.set(previous.Id, updated);
           }
-          for (const previous of candidates) {
+          for (const previous of editableCandidates) {
             const updated = updates.get(previous.Id);
             if (updated) appendFieldHistory(tenant, object, previous, updated, currentUserId);
           }
           tenant.records[objectName] = records.map((item) => updates.get(item.Id) ?? item);
-          for (const previous of candidates) {
+          for (const previous of editableCandidates) {
             const updated = updates.get(previous.Id);
             if (updated) {
               await runRecordTriggeredFlows(
@@ -12338,8 +12886,10 @@ async function executeFlow(
           }
           if (context.record && updates.has(context.record.Id)) context.record = updates.get(context.record.Id);
         } else {
-          if (matching.length > 200) throw new Error(`Delete Records "${element.label}" exceeded the 200-record transaction limit.`);
-          for (const removed of matching) {
+          const deletableRecords = matching.filter((item) =>
+            hasRecordAccess(runningPrincipal, tenant, objectName, item, 'Delete'));
+          if (deletableRecords.length > 200) throw new Error(`Delete Records "${element.label}" exceeded the 200-record transaction limit.`);
+          for (const removed of deletableRecords) {
             if ((tenant.records[objectName] ?? []).some((item) => item.Id === removed.Id)) {
               await deleteRecordCascade(
                 tenantId, tenant, currentUserId, objectName, removed, triggerDepth + 1, context.debug, context.debugTrace,
@@ -12842,6 +13392,30 @@ async function executeDueScheduledFlows(now = new Date()): Promise<void> {
   }
 }
 
+function platformEventFlowMatches(
+  flow: FlowMetadata,
+  tenant: TenantData,
+  userId: string,
+  payload: RuntimeRecord
+): boolean {
+  const context: FlowRuntimeContext = {
+    record: payload,
+    triggerObjectName: flow.triggerObject ?? undefined,
+    currentUserId: userId,
+    resourceDefinitions: flow.resources,
+    formulaStack: new Set(),
+    variables: Object.fromEntries(flow.resources.map((resource) => [resource.name, resource.value])),
+    flowVariables: flowVariablesForUser(tenant, userId),
+    ...formulaContextForUser(tenant, userId)
+  };
+  return flowConditionsMatch(
+    asConfigRows(flow.startConfig.entryConditions),
+    payload,
+    context,
+    flow.startConfig.conditionLogic
+  );
+}
+
 async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
   const nowIso = now.toISOString();
   for (const tenantId of Object.keys(state.tenants)) {
@@ -12854,9 +13428,12 @@ async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
       let currentTenant = tenantData(tenantId);
       let message = currentTenant?.platformEventMessages.find((item) => item.id === queuedMessage.id);
       if (!currentTenant || !message || message.processedAt || message.deadLettered) continue;
-      const subscribers = currentTenant.flows.filter((flow) =>
+      const subscriberTenant = currentTenant;
+      const eventMessage = message;
+      const subscribers = subscriberTenant.flows.filter((flow) =>
         flow.status === 'Active' && flow.flowType === 'Platform Event-Triggered Flow'
-        && flow.triggerObject === message?.eventApiName);
+        && flow.triggerObject === eventMessage.eventApiName
+        && platformEventFlowMatches(flow, subscriberTenant, eventMessage.publishedBy, eventMessage.payload as RuntimeRecord));
       if (!subscribers.length) {
         persistTenantRecords(tenantId, {
           ...currentTenant,
@@ -13177,6 +13754,19 @@ function validateFlow(
         }
         if (routeKeys.has(key)) errors.push(`Screen "${element.label}" has more than one connector for outcome "${connector.label}".`);
         routeKeys.add(key);
+      }
+      for (const outcome of outcomes) {
+        const label = String(outcome.label ?? '').trim().toLowerCase();
+        const name = String(outcome.name ?? '').trim().toLowerCase();
+        const matchingConnectors = connectors.filter((connector) => {
+          const connectorLabel = connector.label.trim().toLowerCase();
+          return connectorLabel && (connectorLabel === label || connectorLabel === name);
+        });
+        const implicitDefaultPath = outcomes.length === 1 && connectors.length === 1
+          && !connectors[0].label && String(outcome.name ?? '').toLowerCase() === 'default';
+        if (!implicitDefaultPath && matchingConnectors.length !== 1) {
+          errors.push(`Screen "${element.label}" outcome "${String(outcome.label ?? outcome.name ?? '')}" must have exactly one connector.`);
+        }
       }
       const fields = asConfigRows(element.config.fields);
       const displayFields = fields.filter((field) => ['Display Text', 'Display Image', 'Section'].includes(String(field.type)));
@@ -13602,12 +14192,36 @@ function validateFlow(
     const sourceCollection = flow.resources.find((resource) => resource.name === sourceCollectionName);
     const elementObjectName = typeof element.config.object === 'string'
       ? element.config.object
-      : ['Collection Filter', 'Collection Sort', 'Transform'].includes(element.type) && sourceCollection?.type === 'Record Collection'
+      : ['Collection Filter', 'Collection Sort', 'Transform', 'Loop'].includes(element.type) && sourceCollection?.type === 'Record Collection'
         ? sourceCollection.dataType
         : undefined;
     const elementObject = elementObjectName ? objects.find((object) => object.apiName === elementObjectName) : undefined;
     if (elementObjectName && !elementObject) {
       errors.push(`Object "${elementObjectName}" on element "${element.label}" does not exist.`);
+    }
+    if (element.type === 'Loop') {
+      const loopVariable = typeof element.config.loopVariable === 'string' ? element.config.loopVariable.trim() : '';
+      const loopResource = flow.resources.find((resource) => resource.name === loopVariable);
+      if (!sourceCollection || sourceCollection.type !== 'Record Collection' || !sourceCollection.isCollection || !elementObject) {
+        errors.push(`Loop "${element.label}" requires a record collection with a valid object type.`);
+      }
+      if (!loopResource || loopResource.type !== 'Record' || loopResource.isCollection
+        || loopResource.dataType !== sourceCollection?.dataType) {
+        errors.push(`Loop "${element.label}" requires a record loop variable with the same object type as its collection.`);
+      }
+      if (element.config.direction !== undefined
+        && !['First to last', 'Last to first'].includes(String(element.config.direction))) {
+        errors.push(`Loop "${element.label}" direction must be First to last or Last to first.`);
+      }
+      const loopConnectors = flow.connectors.filter((connector) =>
+        connector.from === element.id && connector.kind === 'normal');
+      const forEachConnectors = loopConnectors.filter((connector) =>
+        ['for each', 'next'].includes(connector.label.trim().toLowerCase()));
+      const afterLastConnectors = loopConnectors.filter((connector) =>
+        connector.label.trim().toLowerCase() === 'after last');
+      if (loopConnectors.length !== 2 || forEachConnectors.length !== 1 || afterLastConnectors.length !== 1) {
+        errors.push(`Loop "${element.label}" must have exactly one For Each and one After Last connector.`);
+      }
     }
     validateConditionLogic(element.config.conditionLogic, element.label, asConfigRows(element.config.conditions).length);
     validateConditions(element.config.conditions, elementObject, element.label);
@@ -13744,16 +14358,43 @@ function validateFlow(
       }
     }
     if (element.type === 'Decision') {
-      const outcomes = Array.isArray(element.config.outcomes) ? element.config.outcomes : [];
-      const outcomeLabels = outcomes.flatMap((outcome) => outcome && typeof outcome === 'object' && 'label' in outcome && typeof outcome.label === 'string' ? [outcome.label] : []);
-      if (new Set(outcomeLabels).size !== outcomeLabels.length) errors.push(`Decision "${element.label}" has duplicate outcome labels.`);
-      const defaultOutcomes = outcomes.filter((outcome) => outcome && typeof outcome === 'object' && 'name' in outcome && outcome.name === 'Default');
+      const outcomes = asConfigRows(element.config.outcomes);
+      const outcomeLabels = outcomes.map((outcome) => String(outcome.label ?? '').trim().toLowerCase());
+      const outcomeNames = outcomes.map((outcome) => String(outcome.name ?? '').trim().toLowerCase());
+      if (outcomeLabels.some((label) => !label)
+        || new Set(outcomeLabels).size !== outcomeLabels.length
+        || new Set(outcomeNames).size !== outcomeNames.length) {
+        errors.push(`Decision "${element.label}" outcomes must have unique, non-empty labels and API names.`);
+      }
+      const defaultOutcomes = outcomes.filter((outcome) => outcome.name === 'Default');
       if (defaultOutcomes.length !== 1) {
         errors.push(`Decision "${element.label}" must have exactly one default outcome.`);
       }
-      for (const outcome of outcomes.filter((candidate) => candidate && typeof candidate === 'object' && 'name' in candidate && candidate.name !== 'Default')) {
-        const conditions = outcome && typeof outcome === 'object' && 'conditions' in outcome ? asConfigRows(outcome.conditions) : [];
-        if (!conditions.length) errors.push(`Decision outcome "${String(outcome && typeof outcome === 'object' && 'label' in outcome ? outcome.label : 'Unknown')}" on "${element.label}" requires at least one condition.`);
+      const decisionConnectors = flow.connectors.filter((connector) =>
+        connector.from === element.id && connector.kind === 'normal');
+      for (const outcome of outcomes) {
+        const label = String(outcome.label ?? '').trim().toLowerCase();
+        const name = String(outcome.name ?? '').trim().toLowerCase();
+        const matchingConnectors = decisionConnectors.filter((connector) => {
+          const connectorLabel = connector.label.trim().toLowerCase();
+          return connectorLabel && (connectorLabel === label || connectorLabel === name);
+        });
+        if (matchingConnectors.length !== 1) {
+          errors.push(`Decision "${element.label}" outcome "${String(outcome.label ?? outcome.name ?? '')}" must have exactly one connector.`);
+        }
+      }
+      for (const connector of decisionConnectors) {
+        const connectorLabel = connector.label.trim().toLowerCase();
+        const matchingOutcomes = outcomes.filter((outcome) =>
+          connectorLabel && (connectorLabel === String(outcome.label ?? '').trim().toLowerCase()
+            || connectorLabel === String(outcome.name ?? '').trim().toLowerCase()));
+        if (matchingOutcomes.length !== 1) {
+          errors.push(`Decision connector "${connector.id}" does not match exactly one outcome on "${element.label}".`);
+        }
+      }
+      for (const outcome of outcomes.filter((candidate) => candidate.name !== 'Default')) {
+        const conditions = asConfigRows(outcome.conditions);
+        if (!conditions.length) errors.push(`Decision outcome "${String(outcome.label ?? 'Unknown')}" on "${element.label}" requires at least one condition.`);
       }
     }
     if (element.type === 'HTTP Callout') {
