@@ -95,6 +95,7 @@ test('connector providers and tenant connections are metadata-backed and keep cr
     assert.equal(whatsapp.timeoutMs, 30000);
     assert.deepEqual(whatsapp.retryPolicy, { maxAttempts: 3 });
     assert.deepEqual(whatsapp.operations.send_message, { method: 'POST', path: '/{phone_number_id}/messages' });
+    assert.deepEqual(whatsapp.test, { method: 'GET', path: '/{phone_number_id}?fields=id', expectedStatus: 200 });
     const providerRecords = (await request('/records/ConnectorProvider__c', token)).data.records as Array<Record<string, unknown>>;
     assert.equal(providerRecords.length, 5);
 
@@ -133,6 +134,41 @@ test('connector providers and tenant connections are metadata-backed and keep cr
       status: 'ACTIVE'
     });
     assert.equal(plaintextCredential.status, 400);
+
+    const unconfigured = await request('/integration-connections', token, 'POST', {
+      connectorKey: 'META_WHATSAPP',
+      name: 'Unconfigured WhatsApp',
+      configuration: {},
+      credentials: {}
+    });
+    assert.equal(unconfigured.status, 201, JSON.stringify(unconfigured.data));
+    const missingCredentialTest = await request(`/integration-connections/${unconfigured.data.connection.id}/test`, token, 'POST');
+    assert.equal(missingCredentialTest.status, 200);
+    assert.equal(missingCredentialTest.data.result.status, 'Not configured');
+    assert.ok(missingCredentialTest.data.result.lastTestedAt);
+    assert.equal(JSON.stringify(missingCredentialTest.data).includes(secret), false);
+    assert.equal(JSON.stringify(await readFile(dataPath, 'utf8')).includes(secret), false);
+
+    const email = providers.find((item) => item.connectorKey === 'EMAIL')!;
+    const unsupportedConnection = await request('/integration-connections', token, 'POST', {
+      connectorKey: 'EMAIL',
+      name: 'Email connection',
+      configuration: {},
+      credentials: {}
+    });
+    const unsupportedTest = await request(`/integration-connections/${unsupportedConnection.data.connection.id}/test`, token, 'POST');
+    assert.equal(unsupportedTest.data.result.status, 'Test unavailable');
+    assert.ok(unsupportedTest.data.connection.lastTestedAt);
+
+    const privateTestProvider = await request('/connector-providers/EMAIL', token, 'PUT', {
+      ...email,
+      baseUrl: 'https://127.0.0.1',
+      test: { method: 'GET', path: '/status', expectedStatus: 200 }
+    });
+    assert.equal(privateTestProvider.status, 200, JSON.stringify(privateTestProvider.data));
+    const privateEndpointTest = await request(`/integration-connections/${unsupportedConnection.data.connection.id}/test`, token, 'POST');
+    assert.equal(privateEndpointTest.data.result.status, 'Failed');
+    assert.match(privateEndpointTest.data.result.message, /safely/);
   } finally {
     if (child) await stopApi(child);
     await rm(dataDirectory, { recursive: true, force: true });

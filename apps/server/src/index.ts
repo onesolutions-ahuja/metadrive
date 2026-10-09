@@ -8,6 +8,7 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
+import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -114,6 +115,8 @@ const fieldSchema = z.object({
   dataType: z.string().min(1),
   required: z.boolean(),
   unique: z.boolean(),
+  externalId: z.boolean().optional(),
+  caseSensitive: z.boolean().optional(),
   description: z.string().optional(),
   helpText: z.string().max(255).optional(),
   picklistValues: z.array(z.string().trim().min(1)).optional(),
@@ -126,11 +129,13 @@ const fieldSchema = z.object({
   relationship: z.object({
     type: z.enum(['Lookup', 'Master-Detail', 'Hierarchical']),
     targetObject: z.string().min(1),
-    relationshipName: z.string().min(1),
-    childRelationshipName: z.string().min(1)
+    relationshipName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+    childRelationshipName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+    deleteBehavior: z.enum(['Clear', 'Restrict']).optional(),
+    allowReparenting: z.boolean().optional()
   }).optional()
 }).superRefine((field, context) => {
-  const supportedDataType = /^(?:Text(?:\(\d+\))?|Long Text Area|Number(?:\(\d+,\s*\d+\))?|Currency(?:\(\d+,\s*\d+\))?|Percent(?:\(\d+,\s*\d+\))?|Date|Date\/Time|DateTime|Checkbox|Email|Phone|URL|Picklist|Multi-Select Picklist|AutoNumber|Auto Number|Name|Formula\((?:Number|Currency|Percent|Text|Date|Checkbox)\)|Lookup\([A-Za-z][A-Za-z0-9_]*\)|Master-Detail\([A-Za-z][A-Za-z0-9_]*\))$/.test(field.dataType);
+  const supportedDataType = /^(?:Text(?:\(\d+\))?|Long Text Area|Number(?:\(\d+,\s*\d+\))?|Currency(?:\(\d+,\s*\d+\))?|Percent(?:\(\d+,\s*\d+\))?|Date|Date\/Time|DateTime|Checkbox|Email|Phone|URL|Geolocation|Picklist|Multi-Select Picklist|AutoNumber|Auto Number|Name|Formula\((?:Number|Currency|Percent|Text|Date|Checkbox)\)|Lookup\([A-Za-z][A-Za-z0-9_]*\)|Master-Detail\([A-Za-z][A-Za-z0-9_]*\))$/.test(field.dataType);
   if (!supportedDataType) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['dataType'], message: `Unsupported field type "${field.dataType}"` });
   }
@@ -161,6 +166,15 @@ const fieldSchema = z.object({
   if (field.relationship?.type === 'Master-Detail' && !field.required) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['required'], message: 'Master-detail relationship fields must be required' });
   }
+  if (field.relationship?.deleteBehavior !== undefined && field.relationship.type !== 'Lookup') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['relationship', 'deleteBehavior'], message: 'Delete behavior can only be configured on lookup relationships' });
+  }
+  if (field.relationship?.deleteBehavior === 'Clear' && field.required) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['relationship', 'deleteBehavior'], message: 'Required lookup relationships cannot be cleared when the parent is deleted' });
+  }
+  if (field.relationship?.allowReparenting !== undefined && field.relationship.type !== 'Master-Detail') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['relationship', 'allowReparenting'], message: 'Reparenting can only be configured on master-detail relationships' });
+  }
   const isPicklist = field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist';
   if (field.picklistValues && !isPicklist) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist values can only be configured on Picklist fields' });
@@ -183,8 +197,14 @@ const fieldSchema = z.object({
   if (field.trackHistory && field.formula) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['trackHistory'], message: 'Formula fields cannot have field history tracking enabled' });
   }
-  if ((field.dataType === 'Long Text Area' || field.dataType === 'Multi-Select Picklist') && field.unique) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['unique'], message: 'Long text area and multi-select picklist fields cannot be unique' });
+  if ((field.dataType === 'Long Text Area' || field.dataType === 'Multi-Select Picklist' || field.dataType === 'Geolocation') && field.unique) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['unique'], message: 'Long text area, multi-select picklist, and geolocation fields cannot be unique' });
+  }
+  if (field.externalId && !/^(Text(?:\(\d+\))?|Number(?:\(\d+,\s*\d+\))?|Email|Phone|AutoNumber|Auto Number)$/.test(field.dataType)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['externalId'], message: 'External IDs require a text, number, email, phone, or auto-number field' });
+  }
+  if (field.caseSensitive !== undefined && (!field.unique || !/^(Text(?:\(\d+\))?|Email|Phone)$/.test(field.dataType))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['caseSensitive'], message: 'Case sensitivity can only be configured for unique text, email, or phone fields' });
   }
   if (field.dataType.startsWith('Text(')) {
     const textLength = field.dataType.match(/^Text\((\d+)\)$/);
@@ -200,8 +220,8 @@ const fieldSchema = z.object({
     }
   }
   if (field.defaultValue !== undefined) {
-    if (field.formula || field.relationship || field.dataType === 'AutoNumber' || field.dataType === 'Auto Number') {
-      context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Formula, relationship, and auto-number fields cannot have a default value' });
+    if (field.formula || field.relationship || field.dataType === 'Geolocation' || field.dataType === 'AutoNumber' || field.dataType === 'Auto Number') {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Formula, relationship, geolocation, and auto-number fields cannot have a default value' });
     } else if (/^(Number|Currency|Percent)(\(|$)/.test(field.dataType)
       && (typeof field.defaultValue !== 'number' || !Number.isFinite(field.defaultValue))) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['defaultValue'], message: 'Numeric fields require a numeric default value' });
@@ -1342,6 +1362,17 @@ const reportSchema = z.object({
   rowLimit: reportRowLimitSchema.default({}),
   summaryOperations: z.record(z.array(reportSummaryOperationSchema).max(5)).default({}),
   dateGroupings: z.record(reportDateGroupingSchema).default({}),
+  bucketFields: z.array(z.object({
+    apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,79}$/),
+    label: z.string().trim().min(1).max(80),
+    fieldApiName: z.string().min(1),
+    ranges: z.array(z.object({
+      label: z.string().trim().min(1).max(80),
+      lowerBound: z.number().finite().nullable(),
+      upperBound: z.number().finite().nullable()
+    })).min(1),
+    treatBlanksAsZero: z.boolean().default(false)
+  })).default([]),
   showDetails: z.boolean().default(true),
   showChart: z.boolean().default(false),
   folderName: z.string().trim().min(1).max(80).default('My Reports'),
@@ -1352,6 +1383,25 @@ const reportSchema = z.object({
   }
   if (new Set(report.groupByFieldApiNames).size !== report.groupByFieldApiNames.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['groupByFieldApiNames'], message: 'Report grouping fields must be unique' });
+  }
+  if (new Set(report.bucketFields.map((bucket) => bucket.apiName.toLowerCase())).size !== report.bucketFields.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['bucketFields'], message: 'Bucket API names must be unique' });
+  }
+  for (const [bucketIndex, bucket] of report.bucketFields.entries()) {
+    if (new Set(bucket.ranges.map((range) => range.label.toLocaleLowerCase())).size !== bucket.ranges.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['bucketFields', bucketIndex, 'ranges'], message: 'Bucket labels must be unique' });
+    }
+    if (bucket.ranges.some((range) => range.lowerBound !== null && range.upperBound !== null && range.lowerBound >= range.upperBound)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['bucketFields', bucketIndex, 'ranges'], message: 'Bucket lower bounds must be less than upper bounds' });
+    }
+    const orderedRanges = [...bucket.ranges].sort((left, right) =>
+      (left.lowerBound ?? Number.NEGATIVE_INFINITY) - (right.lowerBound ?? Number.NEGATIVE_INFINITY));
+    if (orderedRanges.some((range, index) => index > 0
+      && (orderedRanges[index - 1].upperBound === null
+        || range.lowerBound === null
+        || orderedRanges[index - 1].upperBound! > range.lowerBound))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['bucketFields', bucketIndex, 'ranges'], message: 'Bucket ranges cannot overlap' });
+    }
   }
   if (report.sortFieldApiName
     && !report.fieldApiNames.includes(report.sortFieldApiName)
@@ -2297,12 +2347,36 @@ const connectorOperationSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']),
   path: z.string().min(1).max(500)
 });
+const connectorTestSchema = z.object({
+  method: z.enum(['GET', 'HEAD']),
+  path: z.string().min(1).max(500),
+  expectedStatus: z.number().int().min(100).max(599),
+  responseValidation: z.object({
+    jsonPath: z.string().min(1).max(200),
+    equals: z.string().max(500)
+  }).optional()
+}).strict().superRefine((test, context) => {
+  if (test.path.startsWith('//') || test.path.includes('\\')
+    || /^[a-z][a-z0-9+.-]*:/i.test(test.path)
+    || test.path.split(/[/?#]/).some((part) => part === '..')
+    || test.path.includes('#')
+    || /[\u0000-\u001f\u007f]/.test(test.path)
+    || test.path.split(/[/?#]/).some((part) => {
+      try { return decodeURIComponent(part) === '..'; } catch { return true; }
+    })) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['path'], message: 'Test paths must remain relative and cannot contain URL, traversal, or fragment syntax' });
+  }
+  if (test.method === 'HEAD' && test.responseValidation) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['responseValidation'], message: 'HEAD tests cannot validate a response body' });
+  }
+});
 const connectorDefinitionSchema = z.object({
   connectorKey: z.string().regex(/^[A-Z][A-Z0-9_]{1,79}$/),
   name: z.string().trim().min(1).max(80),
   authType: z.enum(['NONE', 'BEARER', 'BASIC', 'API_KEY']),
   baseUrl: z.string().url(),
   authHeader: z.string().trim().optional(),
+  authCredential: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/).optional(),
   credentialsSchema: z.array(z.object({
     name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
     label: z.string().trim().min(1).max(80),
@@ -2310,6 +2384,7 @@ const connectorDefinitionSchema = z.object({
     required: z.boolean().default(true)
   })).max(30),
   operations: z.record(connectorOperationSchema),
+  test: connectorTestSchema.optional(),
   timeoutMs: z.number().int().min(1000).max(120000).default(30000),
   retryPolicy: z.object({ maxAttempts: z.number().int().min(1).max(5).default(1) }).default({ maxAttempts: 1 }),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE')
@@ -2322,6 +2397,26 @@ const connectorDefinitionSchema = z.object({
     || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(definition.authHeader)
     || ['authorization', 'proxy-authorization', 'host', 'cookie', 'content-length', 'transfer-encoding', 'connection'].includes(definition.authHeader.toLowerCase()))) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['authHeader'], message: 'API Key authentication requires a safe, valid HTTP header name' });
+  }
+  if (definition.authType === 'BEARER' || definition.authType === 'API_KEY') {
+    const requiredSecrets = definition.credentialsSchema.filter((field) => field.secret && field.required);
+    if (!requiredSecrets.length) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['credentialsSchema'], message: `${definition.authType} authentication requires a required secret credential field` });
+    }
+    if (definition.authCredential
+      && !definition.credentialsSchema.some((field) => field.name === definition.authCredential && field.secret && field.required)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['authCredential'], message: 'Authentication credential must name a required secret credential field' });
+    }
+    if (requiredSecrets.length > 1 && !definition.authCredential) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['authCredential'], message: 'Select which required secret credential is used for authentication' });
+    }
+  }
+  if (definition.authType === 'BASIC') {
+    for (const name of ['username', 'password']) {
+      if (!definition.credentialsSchema.some((field) => field.name === name && field.secret && field.required)) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['credentialsSchema'], message: `Basic authentication requires a required secret "${name}" credential field` });
+      }
+    }
   }
   const credentialNames = definition.credentialsSchema.map((field) => field.name.toLowerCase());
   if (new Set(credentialNames).size !== credentialNames.length) {
@@ -2338,6 +2433,14 @@ const connectorDefinitionSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['operations', operationName], message: 'Operation paths must remain relative and cannot contain URL, traversal, query, or fragment syntax' });
     }
   }
+  if (definition.test) {
+    for (const [, fieldName] of definition.test.path.matchAll(/\{([A-Za-z][A-Za-z0-9_]*)\}/g)) {
+      const field = definition.credentialsSchema.find((candidate) => candidate.name === fieldName);
+      if (!field || field.secret) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['test', 'path'], message: `Test endpoint placeholder "${fieldName}" must refer to a non-secret credential field` });
+      }
+    }
+  }
 });
 type ConnectorDefinition = z.infer<typeof connectorDefinitionSchema>;
 const defaultConnectorDefinitions: ConnectorDefinition[] = [
@@ -2350,6 +2453,7 @@ const defaultConnectorDefinitions: ConnectorDefinition[] = [
       { name: 'waba_id', label: 'WABA ID', secret: false, required: false }
     ],
     operations: { send_message: { method: 'POST', path: '/{phone_number_id}/messages' } },
+    test: { method: 'GET', path: '/{phone_number_id}?fields=id', expectedStatus: 200 },
     timeoutMs: 30000, retryPolicy: { maxAttempts: 3 }, status: 'ACTIVE'
   },
   { connectorKey: 'EMAIL', name: 'Email', authType: 'NONE', baseUrl: 'https://api.example.com', credentialsSchema: [], operations: {}, timeoutMs: 30000, retryPolicy: { maxAttempts: 1 }, status: 'ACTIVE' },
@@ -2367,6 +2471,9 @@ const integrationConnectionSchema = z.object({
   credentialAuthTag: z.string().nullable().default(null),
   credentialsCiphertext: z.string().nullable().default(null),
   status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
+  testStatus: z.enum(['Connected', 'Failed', 'Not configured', 'Test unavailable']).nullable().default(null),
+  lastTestedAt: z.string().datetime().nullable().default(null),
+  lastTestMessage: z.string().max(500).nullable().default(null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 }).superRefine((connection, context) => {
@@ -2452,12 +2559,17 @@ function validateFieldChange(current: ObjectMetadata['fields'][number] | undefin
     for (const record of records) {
       const value = record[next.apiName];
       if (value === undefined || value === null || value === '') continue;
-      const key = `${typeof value}:${JSON.stringify(value)}`;
+      const key = uniqueFieldValueKey(next, value);
       if (values.has(key)) return `Field "${next.apiName}" cannot be made unique while duplicate values exist`;
       values.add(key);
     }
   }
   return null;
+}
+
+function uniqueFieldValueKey(field: ObjectMetadata['fields'][number], value: unknown): string {
+  if (typeof value === 'string' && field.caseSensitive !== true) return `string:${value.toLocaleLowerCase('en-US')}`;
+  return `${typeof value}:${JSON.stringify(value)}`;
 }
 
 function validateExistingFieldValues(object: ObjectMetadata, records: RuntimeRecord[]): string | null {
@@ -3006,8 +3118,10 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'ConnectorKey__c', label: 'Connector Key', dataType: 'Text(80)', required: true, unique: true },
     { apiName: 'AuthType__c', label: 'Authentication Type', dataType: 'Picklist', required: true, unique: false, picklistValues: ['NONE', 'BEARER', 'BASIC', 'API_KEY'], picklistRestricted: true },
     { apiName: 'BaseUrl__c', label: 'Base URL', dataType: 'URL', required: true, unique: false },
+    { apiName: 'AuthCredential__c', label: 'Authentication Credential Field', dataType: 'Text(80)', required: false, unique: false },
     { apiName: 'CredentialsSchema__c', label: 'Credentials Schema', dataType: 'Long Text Area', required: false, unique: false },
     { apiName: 'Operations__c', label: 'Operations', dataType: 'Long Text Area', required: false, unique: false },
+    { apiName: 'Test__c', label: 'Connection Test', dataType: 'Long Text Area', required: false, unique: false },
     { apiName: 'TimeoutMs__c', label: 'Timeout (ms)', dataType: 'Number(9, 0)', required: true, unique: false, defaultValue: 30000 },
     { apiName: 'RetryPolicy__c', label: 'Retry Policy', dataType: 'Long Text Area', required: false, unique: false },
     { apiName: 'Status__c', label: 'Status', dataType: 'Picklist', required: true, unique: false, picklistValues: ['ACTIVE', 'INACTIVE'], picklistRestricted: true, defaultValue: 'ACTIVE' }
@@ -3016,7 +3130,9 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'Name', label: 'Connection Name', dataType: 'Text(80)', required: true, unique: false },
     { apiName: 'ConnectorKey__c', label: 'Connector Key', dataType: 'Text(80)', required: true, unique: false },
     { apiName: 'Configuration__c', label: 'Connector Configuration', dataType: 'Long Text Area', required: false, unique: false },
-    { apiName: 'Status__c', label: 'Status', dataType: 'Picklist', required: true, unique: false, picklistValues: ['ACTIVE', 'INACTIVE'], picklistRestricted: true, defaultValue: 'ACTIVE' }
+    { apiName: 'Status__c', label: 'Status', dataType: 'Picklist', required: true, unique: false, picklistValues: ['ACTIVE', 'INACTIVE'], picklistRestricted: true, defaultValue: 'ACTIVE' },
+    { apiName: 'TestStatus__c', label: 'Test Status', dataType: 'Text(30)', required: false, unique: false },
+    { apiName: 'LastTestedAt__c', label: 'Last Tested At', dataType: 'Date/Time', required: false, unique: false }
   ] },
   { apiName: 'UneConnector__c', label: 'Une Connector', pluralLabel: 'Une Connectors', kind: 'Standard Object', description: 'Legacy connector settings records.', fields: [
     { apiName: 'Name', label: 'Connector Name', dataType: 'Text(80)', required: true, unique: true },
@@ -3123,8 +3239,10 @@ function connectorDefinitionRecords(definitions: ConnectorDefinition[], ownerId:
     ConnectorKey__c: definition.connectorKey,
     AuthType__c: definition.authType,
     BaseUrl__c: definition.baseUrl,
+    AuthCredential__c: definition.authCredential ?? '',
     CredentialsSchema__c: JSON.stringify(definition.credentialsSchema),
     Operations__c: JSON.stringify(definition.operations),
+    Test__c: definition.test ? JSON.stringify(definition.test) : '',
     TimeoutMs__c: definition.timeoutMs,
     RetryPolicy__c: JSON.stringify(definition.retryPolicy),
     Status__c: definition.status,
@@ -3142,6 +3260,8 @@ function integrationConnectionRecord(connection: IntegrationConnection, ownerId:
     ConnectorKey__c: connection.connectorKey,
     Configuration__c: JSON.stringify(connection.configuration),
     Status__c: connection.status,
+    TestStatus__c: connection.testStatus ?? '',
+    LastTestedAt__c: connection.lastTestedAt ?? '',
     OwnerId: ownerId,
     RecordTypeId: 'master',
     CreatedDate: connection.createdAt,
@@ -3227,6 +3347,11 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'ro
   };
 }
 
+function relationshipApiName(label: string): string {
+  const normalized = label.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  return /^[A-Za-z]/.test(normalized) ? normalized : `Related_${normalized}`;
+}
+
 function withObjectDefaults(object: ObjectMetadata): ObjectMetadata {
   const fieldsWithOwner = object.apiName !== 'User' && !object.fields.some((field) => field.apiName === 'OwnerId')
     ? [...object.fields, fieldSchema.parse({
@@ -3239,7 +3364,11 @@ function withObjectDefaults(object: ObjectMetadata): ObjectMetadata {
           type: 'Lookup',
           targetObject: 'User',
           relationshipName: 'Owner',
-          childRelationshipName: `Owned${object.pluralLabel}`
+
+childRelationshipName: relationshipApiName(
+  `Owned${object.pluralLabel.replace(/[^a-zA-Z0-9_]/g, '')}`
+)
+
         }
       })]
     : object.fields;
@@ -3269,7 +3398,7 @@ function withObjectDefaults(object: ObjectMetadata): ObjectMetadata {
         type: relationshipMatch[1] as 'Lookup' | 'Master-Detail' | 'Hierarchical',
         targetObject: relationshipMatch[2],
         relationshipName: field.apiName.replace(/(__c|Id)$/, ''),
-        childRelationshipName: object.pluralLabel
+        childRelationshipName: relationshipApiName(object.pluralLabel)
       }
     };
   });
@@ -3385,8 +3514,18 @@ function loadState(): PlatformState {
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
     const parsed = stateSchema.parse(storedState);
     const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
-      const storedObjects = tenant.objects.map((object) =>
-        withObjectDefaults(ensureLeadStreetField(ensureCommunicationFields(object))));
+      const storedObjects = tenant.objects.map((object) => {
+        const ensured = withObjectDefaults(ensureLeadStreetField(ensureCommunicationFields(object)));
+        const baseline = baseObjects.find((candidate) => candidate.apiName === object.apiName);
+        if (!baseline || !['ConnectorProvider__c', 'IntegrationConnection__c'].includes(object.apiName)) return ensured;
+        return {
+          ...ensured,
+          fields: [
+            ...ensured.fields,
+            ...baseline.fields.filter((field) => !ensured.fields.some((existing) => existing.apiName === field.apiName))
+          ]
+        };
+      });
       const objects = [
         ...storedObjects,
         ...baseObjects.filter((object) => ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'].includes(object.apiName)
@@ -3396,9 +3535,28 @@ function loadState(): PlatformState {
       if (!records.Communication_Records__c) records.Communication_Records__c = [];
       const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
       if (!(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
-      const connectorDefinitions = tenant.connectorDefinitions ?? structuredClone(defaultConnectorDefinitions);
-      if (!(records.ConnectorProvider__c?.length)) records.ConnectorProvider__c = connectorDefinitionRecords(connectorDefinitions, ownerId);
-      if (!(records.IntegrationConnection__c?.length)) records.IntegrationConnection__c = (tenant.integrationConnections ?? []).map((connection) => integrationConnectionRecord(connection, ownerId));
+      const previousProviderRecords = records.ConnectorProvider__c ?? [];
+      const connectorDefinitions = (tenant.connectorDefinitions ?? structuredClone(defaultConnectorDefinitions)).map((definition) => {
+        const previousRecord = previousProviderRecords.find((record) => record.ConnectorKey__c === definition.connectorKey);
+        const baseline = defaultConnectorDefinitions.find((candidate) => candidate.connectorKey === definition.connectorKey);
+        if (previousRecord?.Test__c === undefined && !definition.test && baseline?.test
+          && definition.authType === baseline.authType && definition.baseUrl === baseline.baseUrl) {
+          return { ...definition, test: baseline.test };
+        }
+        return definition;
+      });
+      records.ConnectorProvider__c = connectorDefinitions.flatMap((definition) => {
+        const previous = previousProviderRecords.find((record) => record.ConnectorKey__c === definition.connectorKey);
+        if (!previous) return connectorDefinitionRecords([definition], ownerId);
+        return [{
+          ...previous,
+          AuthCredential__c: definition.authCredential ?? '',
+          Test__c: definition.test ? JSON.stringify(definition.test) : ''
+        }];
+      });
+      const previousConnections = records.IntegrationConnection__c ?? [];
+      records.IntegrationConnection__c = (tenant.integrationConnections ?? []).map((connection) =>
+        integrationConnectionRecord(connection, String(previousConnections.find((record) => record.Id === connection.id)?.OwnerId ?? ownerId)));
       const defaultProfiles = buildDefaultProfiles(objects, tenant.accessControl.permissionSets);
       const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'];
       const connectorObjectPermissions = Object.fromEntries(connectorObjectNames.map((apiName) => [apiName, { ...fullObjectPermissions }]));
@@ -3686,6 +3844,9 @@ function publicIntegrationConnection(connection: IntegrationConnection, definiti
       required: field.required,
       configured: field.secret ? Boolean(credentials[field.name]) : Boolean(connection.configuration[field.name])
     })),
+    testStatus: connection.testStatus,
+    lastTestedAt: connection.lastTestedAt,
+    lastTestMessage: connection.lastTestMessage,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt
   };
@@ -4968,8 +5129,10 @@ app.put('/api/connector-providers/:connectorKey', requireAnyPermission('metadata
       Name: parsed.data.name,
       AuthType__c: parsed.data.authType,
       BaseUrl__c: parsed.data.baseUrl,
+      AuthCredential__c: parsed.data.authCredential ?? '',
       CredentialsSchema__c: JSON.stringify(parsed.data.credentialsSchema),
       Operations__c: JSON.stringify(parsed.data.operations),
+      Test__c: parsed.data.test ? JSON.stringify(parsed.data.test) : '',
       TimeoutMs__c: parsed.data.timeoutMs,
       RetryPolicy__c: JSON.stringify(parsed.data.retryPolicy),
       Status__c: parsed.data.status,
@@ -5006,13 +5169,11 @@ app.post('/api/integration-connections', requireAnyPermission('metadata:write', 
   if (unknownCredential) return res.status(400).json({ error: `Credential "${unknownCredential}" is not defined as a secret by this connector provider` });
   const plaintextSecret = Object.keys(parsed.data.configuration).find((name) => credentialNames.has(name));
   if (plaintextSecret) return res.status(400).json({ error: `Secret field "${plaintextSecret}" must be submitted as a credential so it can be encrypted` });
-  const missingSecret = definition.credentialsSchema.find((field) => field.secret && field.required && !parsed.data.credentials[field.name]?.trim());
-  const missingConfig = definition.credentialsSchema.find((field) => !field.secret && field.required && !parsed.data.configuration[field.name]?.trim());
-  if (missingSecret || missingConfig) return res.status(400).json({ error: `Required connector field "${(missingSecret ?? missingConfig)!.label}" is missing` });
+  const credentials = Object.fromEntries(Object.entries(parsed.data.credentials).filter(([, value]) => value.trim()));
   const id = randomUUID();
   const now = new Date().toISOString();
-  const encrypted = Object.keys(parsed.data.credentials).length
-    ? sealIntegrationCredentials(principal.tenantId, id, parsed.data.credentials)
+  const encrypted = Object.keys(credentials).length
+    ? sealIntegrationCredentials(principal.tenantId, id, credentials)
     : { credentialKeyId: null, credentialIv: null, credentialAuthTag: null, credentialsCiphertext: null };
   const connection = integrationConnectionSchema.parse({
     id,
@@ -5021,6 +5182,9 @@ app.post('/api/integration-connections', requireAnyPermission('metadata:write', 
     configuration: parsed.data.configuration,
     ...encrypted,
     status: parsed.data.status,
+    testStatus: null,
+    lastTestedAt: null,
+    lastTestMessage: null,
     createdAt: now,
     updatedAt: now
   });
@@ -5033,7 +5197,7 @@ app.post('/api/integration-connections', requireAnyPermission('metadata:write', 
     integrationConnections: [...tenant.integrationConnections, connection],
     records: { ...tenant.records, IntegrationConnection__c: records }
   });
-  return res.status(201).json({ connection: publicIntegrationConnection(connection, definition, parsed.data.credentials) });
+  return res.status(201).json({ connection: publicIntegrationConnection(connection, definition, credentials) });
 });
 app.put('/api/integration-connections/:id', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
   const parsed = integrationConnectionRequestSchema.safeParse(req.body);
@@ -5053,9 +5217,6 @@ app.put('/api/integration-connections/:id', requireAnyPermission('metadata:write
   if (plaintextSecret) return res.status(400).json({ error: `Secret field "${plaintextSecret}" must be submitted as a credential so it can be encrypted` });
   const existingCredentials = openIntegrationCredentials(principal.tenantId, current);
   const credentials = { ...existingCredentials, ...Object.fromEntries(Object.entries(parsed.data.credentials).filter(([, value]) => value.trim())) };
-  const missingSecret = definition.credentialsSchema.find((field) => field.secret && field.required && !credentials[field.name]?.trim());
-  const missingConfig = definition.credentialsSchema.find((field) => !field.secret && field.required && !parsed.data.configuration[field.name]?.trim());
-  if (missingSecret || missingConfig) return res.status(400).json({ error: `Required connector field "${(missingSecret ?? missingConfig)!.label}" is missing` });
   const now = new Date().toISOString();
   const encrypted = Object.keys(credentials).length
     ? sealIntegrationCredentials(principal.tenantId, id, credentials)
@@ -5066,6 +5227,9 @@ app.put('/api/integration-connections/:id', requireAnyPermission('metadata:write
     configuration: parsed.data.configuration,
     ...encrypted,
     status: parsed.data.status,
+    testStatus: null,
+    lastTestedAt: null,
+    lastTestMessage: null,
     updatedAt: now
   });
   persistTenantRecords(principal.tenantId, {
@@ -5078,6 +5242,100 @@ app.put('/api/integration-connections/:id', requireAnyPermission('metadata:write
     }
   });
   return res.json({ connection: publicIntegrationConnection(updated, definition, credentials) });
+});
+app.post('/api/integration-connections/:id/test', requireAnyPermission('metadata:write', 'namedCredentials:manage'), requirePermission('callouts:execute'), async (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const connection = tenant.integrationConnections.find((item) => item.id === routeParam(req, 'id'));
+  if (!connection) return res.status(404).json({ error: 'Integration Connection was not found' });
+  const definition = tenant.connectorDefinitions.find((item) => item.connectorKey === connection.connectorKey);
+  if (!definition) return res.status(422).json({ error: 'The connector provider definition is unavailable' });
+
+  let result: ConnectorTestResult;
+  let credentials: Record<string, string> = {};
+  if (connection.status !== 'ACTIVE' || definition.status !== 'ACTIVE') {
+    result = { status: 'Failed', message: 'The Integration Connection and provider must both be active before testing.' };
+  } else {
+    try {
+      credentials = openIntegrationCredentials(principal.tenantId, connection);
+      result = await executeConnectorTest(definition, connection.configuration, credentials, async (url, method, headers, timeoutMs) =>
+        new Promise((resolve, reject) => {
+          let responseSize = 0;
+          let timer: ReturnType<typeof setTimeout>;
+          const request = httpsRequest(url, {
+            method,
+            headers,
+            timeout: timeoutMs,
+            maxHeaderSize: 16 * 1024,
+            lookup: (hostname, options, callback) => {
+              if (isReservedHostname(hostname)) {
+                callback(new Error('Connector test host is reserved'), '', 0);
+                return;
+              }
+              void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
+                if (!addresses.length || addresses.some((address) => !isPublicAddress(address.address))) {
+                  callback(new Error('Connector test DNS resolved to a private or reserved address'), '', 0);
+                  return;
+                }
+                const selected = addresses[0];
+                if (options && typeof options === 'object' && 'all' in options && options.all) callback(null, [selected]);
+                else callback(null, selected.address, selected.family);
+              }).catch(() => callback(new Error('Connector test host could not be resolved safely'), '', 0));
+            }
+          }, (incoming) => {
+            const chunks: Buffer[] = [];
+            incoming.on('data', (chunk: Buffer | string) => {
+              const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+              responseSize += data.length;
+              if (responseSize > 64 * 1024) {
+                request.destroy(new Error('Connector test response exceeded the size limit'));
+                return;
+              }
+              chunks.push(data);
+            });
+            incoming.on('end', () => {
+              clearTimeout(timer);
+              const text = Buffer.concat(chunks).toString('utf8');
+              let body: unknown = text;
+              if (text) {
+                try { body = JSON.parse(text) as unknown; } catch { /* Keep non-JSON response content internal to validation. */ }
+              }
+              resolve({ status: incoming.statusCode ?? 0, body, headers: incoming.headers });
+            });
+            incoming.on('error', (error) => { clearTimeout(timer); reject(error); });
+          });
+          timer = setTimeout(() => request.destroy(Object.assign(new Error('Connector test timed out'), { code: 'ETIMEDOUT' })), timeoutMs);
+          request.on('error', (error) => { clearTimeout(timer); reject(error); });
+          request.end();
+        })
+      );
+    } catch (error) {
+      result = {
+        status: 'Failed',
+        message: error instanceof Error && error.message.includes('could not be decrypted')
+          ? 'Saved credentials could not be decrypted; verify the credential encryption configuration.'
+          : 'Connection test could not be completed; verify the saved credentials and configuration.'
+      };
+    }
+  }
+
+  const lastTestedAt = new Date().toISOString();
+  const updated = integrationConnectionSchema.parse({
+    ...connection,
+    testStatus: result.status,
+    lastTestedAt,
+    lastTestMessage: result.message
+  });
+  persistTenantRecords(principal.tenantId, {
+    ...tenant,
+    integrationConnections: tenant.integrationConnections.map((item) => item.id === connection.id ? updated : item),
+    records: {
+      ...tenant.records,
+      IntegrationConnection__c: (tenant.records.IntegrationConnection__c ?? []).map((record) =>
+        record.Id === connection.id ? integrationConnectionRecord(updated, String(record.OwnerId ?? principal.userId)) : record)
+    }
+  });
+  return res.json({ result: { ...result, lastTestedAt }, connection: publicIntegrationConnection(updated, definition, credentials) });
 });
 app.get('/api/connector-settings', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId)!;
@@ -6102,6 +6360,9 @@ async function deleteRecordCascade(
           );
         }
       } else {
+        if (field.relationship.deleteBehavior === 'Restrict') {
+          throw new Error(`Cannot delete this record while lookup "${field.relationship.relationshipName}" (${childObject.apiName}.${field.apiName}) has related records.`);
+        }
         if (field.required) throw new Error(`Cannot delete this record while required lookup "${childObject.apiName}.${field.apiName}" is populated.`);
         for (const child of children) {
           if (!hasRecordAccess(principal, tenant, childObject.apiName, child, 'Edit')) {
@@ -6726,6 +6987,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
     await runBeforeSaveRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     const beforeSaveValues = normalizeFlowRecordAssignments(object, updated, existing);
     updated = calculateFormulaFields(object, updated, formulaContextForUser(working, principal.userId));
+    validateRelationshipReparenting(object, existing, updated);
     validateRuntimeRecord(principal.tenantId, working, object, { ...values, ...beforeSaveValues }, updated);
     appendFieldHistory(working, object, existing, updated, principal.userId);
     working.records[objectName] = (working.records[objectName] ?? []).map((item) => item.Id === existing.Id ? updated : item);
@@ -8826,8 +9088,12 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
     ...(report.standardFilters.dateFieldApiName ? [report.standardFilters.dateFieldApiName] : []),
     ...(report.standardFilters.statusFieldApiName ? [report.standardFilters.statusFieldApiName] : [])
   ])];
-  const inaccessibleField = selectedFields.find((fieldApiName) => !object.fields.some((field) => field.apiName === fieldApiName)
-    || !hasFieldPermission(principal, tenant, object.apiName, fieldApiName, 'read'));
+  const inaccessibleField = selectedFields.find((fieldApiName) => {
+    const bucket = report.bucketFields.find((item) => `Bucket_${item.apiName}` === fieldApiName);
+    const sourceFieldApiName = bucket?.fieldApiName ?? fieldApiName;
+    return !object.fields.some((field) => field.apiName === sourceFieldApiName)
+      || !hasFieldPermission(principal, tenant, object.apiName, sourceFieldApiName, 'read');
+  });
   if (inaccessibleField) {
     return res.status(403).json({ error: `Missing read permission for report field "${object.apiName}.${inaccessibleField}"` });
   }
@@ -8930,7 +9196,7 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
   if ('error' in reportCrossFilterResolution) {
     return res.status(reportCrossFilterResolution.status).json({ error: reportCrossFilterResolution.error });
   }
-  const visibleRecords = visibleSourceRecords.filter((record) => (
+  const matchedRecords = visibleSourceRecords.filter((record) => (
     report.filters.length === 0 || activeReportFilterMatches(record)
   )
     && (report.standardFilters.showMe !== 'My' || record.OwnerId === principal.userId)
@@ -8953,12 +9219,29 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
     )
     && (!crossFilters.length || crossFilterResolution.recordIds.has(record.Id))
     && reportCrossFilterResolution.matchesRecord(record));
+  const visibleRecords = matchedRecords.map((record) => {
+    const bucketValues: Record<string, unknown> = {};
+    for (const bucket of report.bucketFields) {
+      const raw = (record as RuntimeRecord)[bucket.fieldApiName];
+      const numericValue = raw === null || raw === undefined || raw === ''
+        ? bucket.treatBlanksAsZero ? 0 : Number.NaN
+        : Number(raw);
+      const range = Number.isFinite(numericValue)
+        ? bucket.ranges.find((candidate) =>
+          (candidate.lowerBound === null || numericValue >= candidate.lowerBound)
+          && (candidate.upperBound === null || numericValue < candidate.upperBound))
+        : undefined;
+      bucketValues[`Bucket_${bucket.apiName}`] = range?.label ?? null;
+    }
+    return { ...record, ...bucketValues } as RuntimeRecord;
+  });
   const configuredSortField = report.rowLimit.limit !== null
     ? report.rowLimit.sortFieldApiName
     : report.sortFieldApiName;
   const sortField = configuredSortField
     ? object.fields.find((field) => field.apiName === configuredSortField)
     : undefined;
+  const isBucketSort = Boolean(configuredSortField && report.bucketFields.some((bucket) => `Bucket_${bucket.apiName}` === configuredSortField));
   const sortDirection = (report.rowLimit.limit !== null ? report.rowLimit.sortDirection : report.sortDirection) === 'Descending' ? -1 : 1;
   const compareSortValues = (leftValue: unknown, rightValue: unknown): number => {
     if (leftValue === null || leftValue === undefined || leftValue === '') return rightValue === null || rightValue === undefined || rightValue === '' ? 0 : -1;
@@ -8968,9 +9251,10 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
     }
     return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * sortDirection;
   };
-  if (sortField) {
+  if (sortField || isBucketSort) {
     visibleRecords.sort((left, right) =>
-      compareSortValues(left[sortField.apiName], right[sortField.apiName]) || left.Id.localeCompare(right.Id));
+      compareSortValues((left as RuntimeRecord)[configuredSortField!], (right as RuntimeRecord)[configuredSortField!])
+      || left.Id.localeCompare(right.Id));
   }
   if (report.rowLimit.limit !== null) visibleRecords.splice(report.rowLimit.limit);
   const numericSummaryFields = report.fieldApiNames.filter((fieldApiName) => {
@@ -9077,7 +9361,9 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
     const readable = sanitizeRecordForRead(principal, tenant, object, record);
     const outputFields = new Set([...report.fieldApiNames, ...report.groupByFieldApiNames, ...(report.columnGroupByFieldApiName ? [report.columnGroupByFieldApiName] : [])]);
     return Object.fromEntries([...outputFields].map((fieldApiName) => {
-      const value = readable[fieldApiName] ?? null;
+      const value = report.bucketFields.some((bucket) => `Bucket_${bucket.apiName}` === fieldApiName)
+        ? (record as RuntimeRecord)[fieldApiName] ?? null
+        : readable[fieldApiName] ?? null;
       if (runOptions.data.dashboardApiName || typeof value !== 'string') return [fieldApiName, value];
       const field = object.fields.find((item) => item.apiName === fieldApiName);
       const targetObjectApiName = field?.relationship?.targetObject;
@@ -9148,6 +9434,7 @@ app.post('/api/reports/preview', accessAuthentication, (req: Request, res: Respo
     return res.status(422).json({ error: `Reports are not enabled for object "${parsed.data.objectApiName}"` });
   }
   const fieldNames = new Set(object.fields.map((field) => field.apiName));
+  const bucketApiNames = new Set(parsed.data.bucketFields.map((bucket) => `Bucket_${bucket.apiName}`));
   const referencedFields = [
     ...parsed.data.fieldApiNames,
     ...parsed.data.groupByFieldApiNames,
@@ -9158,10 +9445,15 @@ app.post('/api/reports/preview', accessAuthentication, (req: Request, res: Respo
     ...(parsed.data.standardFilters.dateFieldApiName ? [parsed.data.standardFilters.dateFieldApiName] : []),
     ...(parsed.data.standardFilters.statusFieldApiName ? [parsed.data.standardFilters.statusFieldApiName] : [])
   ];
-  const unknownField = referencedFields.find((fieldApiName) => !fieldNames.has(fieldApiName));
+  const unknownField = referencedFields.find((fieldApiName) => !fieldNames.has(fieldApiName) && !bucketApiNames.has(fieldApiName));
   if (unknownField) {
     return res.status(400).json({ error: `Report references unknown field "${unknownField}" on "${object.label}"` });
   }
+  const invalidBucket = parsed.data.bucketFields.find((bucket) => {
+    const source = object.fields.find((field) => field.apiName === bucket.fieldApiName);
+    return !source || !isNumericField(source) || fieldNames.has(`Bucket_${bucket.apiName}`);
+  });
+  if (invalidBucket) return res.status(422).json({ error: `Bucket "${invalidBucket.label}" requires a numeric source field and a unique generated field name` });
   if (parsed.data.standardFilters.showMe === 'My' && !fieldNames.has('OwnerId')) {
     return res.status(422).json({ error: `The "${object.label}" report type does not support the My records standard filter` });
   }
@@ -9215,9 +9507,10 @@ app.post('/api/reports/preview', accessAuthentication, (req: Request, res: Respo
   }
   const invalidSummaryField = Object.keys(parsed.data.summaryOperations).find((fieldApiName) => {
     const field = object.fields.find((item) => item.apiName === fieldApiName);
+    const bucket = parsed.data.bucketFields.find((item) => `Bucket_${item.apiName}` === fieldApiName);
     const operations = parsed.data.summaryOperations[fieldApiName];
     return !parsed.data.fieldApiNames.includes(fieldApiName)
-      || !field
+      || (bucket ? operations.some((operation) => operation !== 'Count') : !field)
       || (operations.some((operation) => operation !== 'Count') && !isNumericField(field));
   });
   if (invalidSummaryField) {
@@ -9280,12 +9573,18 @@ app.put('/api/metadata/reports/:apiName', requirePermission('metadata:read'), (r
     return res.status(422).json({ error: `Reports are not enabled for object "${parsed.data.objectApiName}"` });
   }
   const fieldNames = new Set(object.fields.map((field) => field.apiName));
+  const bucketApiNames = new Set(parsed.data.bucketFields.map((bucket) => `Bucket_${bucket.apiName}`));
   const unknownField = [...parsed.data.fieldApiNames, ...parsed.data.groupByFieldApiNames, ...(parsed.data.columnGroupByFieldApiName ? [parsed.data.columnGroupByFieldApiName] : []),   ...parsed.data.filters.map((filter) => filter.fieldApiName),
   ...Object.keys(parsed.data.summaryOperations), ...Object.keys(parsed.data.dateGroupings),
   ...(parsed.data.standardFilters.dateFieldApiName ? [parsed.data.standardFilters.dateFieldApiName] : []),
   ...(parsed.data.standardFilters.statusFieldApiName ? [parsed.data.standardFilters.statusFieldApiName] : [])]
-    .find((fieldApiName) => !fieldNames.has(fieldApiName));
+    .find((fieldApiName) => !fieldNames.has(fieldApiName) && !bucketApiNames.has(fieldApiName));
   if (unknownField) return res.status(400).json({ error: `Report references unknown field "${unknownField}" on "${object.label}"` });
+  const invalidBucket = parsed.data.bucketFields.find((bucket) => {
+    const source = object.fields.find((field) => field.apiName === bucket.fieldApiName);
+    return !source || !isNumericField(source) || fieldNames.has(`Bucket_${bucket.apiName}`);
+  });
+  if (invalidBucket) return res.status(422).json({ error: `Bucket "${invalidBucket.label}" requires a numeric source field and a unique generated field name` });
   const invalidFilterOperator = parsed.data.filters.find((filter) => {
     const field = object.fields.find((item) => item.apiName === filter.fieldApiName);
     return !field || !reportFilterOperatorAllowed(field, filter.operator);
@@ -9322,9 +9621,10 @@ app.put('/api/metadata/reports/:apiName', requirePermission('metadata:read'), (r
   }
   const invalidSummaryField = Object.keys(parsed.data.summaryOperations).find((fieldApiName) => {
     const field = object.fields.find((item) => item.apiName === fieldApiName);
+    const bucket = parsed.data.bucketFields.find((item) => `Bucket_${item.apiName}` === fieldApiName);
     const operations = parsed.data.summaryOperations[fieldApiName];
     return !parsed.data.fieldApiNames.includes(fieldApiName)
-      || !field
+      || (bucket ? operations.some((operation) => operation !== 'Count') : !field)
       || (operations.some((operation) => operation !== 'Count') && !isNumericField(field));
   });
   if (invalidSummaryField) return res.status(422).json({ error: `Only Count can summarize a nonnumeric report column: "${invalidSummaryField}"` });
@@ -10306,7 +10606,7 @@ async function performHttpCallout(
     operationMethod = operation?.method;
     defaultTimeoutMs = definition.timeoutMs;
     maxAttempts = definition.retryPolicy.maxAttempts;
-    const passwordField = definition.credentialsSchema.find((field) => field.secret)?.name;
+    const passwordField = definition.authCredential ?? definition.credentialsSchema.find((field) => field.secret)?.name;
     const token = (passwordField ? encryptedCredentials[passwordField] : undefined)
       ?? encryptedCredentials.access_token ?? encryptedCredentials.api_key ?? encryptedCredentials.token;
     credential = {
@@ -11984,6 +12284,21 @@ function normalizeFlowRecordAssignments(object: ObjectMetadata, record: RuntimeR
   return normalized;
 }
 
+function validateRelationshipReparenting(
+  object: ObjectMetadata,
+  previous: RuntimeRecord,
+  next: RuntimeRecord
+): void {
+  for (const field of object.fields) {
+    if (field.relationship?.type !== 'Master-Detail' || field.relationship.allowReparenting === true) continue;
+    const previousParentId = previous[field.apiName];
+    const nextParentId = next[field.apiName];
+    if (previousParentId !== undefined && previousParentId !== nextParentId) {
+      throw new Error(`Master-detail relationship "${field.label}" does not allow reparenting.`);
+    }
+  }
+}
+
 function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, current?: RuntimeRecord): void {
   const fields = new Map(object.fields.map((field) => [field.apiName, field]));
   const recordTypeId = values.RecordTypeId ?? current?.RecordTypeId
@@ -12002,6 +12317,18 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
       throw new Error(`Currency "${String(value)}" is not active for this tenant.`);
     }
     if (field.formula) throw new Error(`Formula field "${fieldName}" is read-only.`);
+    if (field.dataType === 'Geolocation' && value !== undefined && value !== null) {
+      const coordinates = typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : undefined;
+      const latitude = coordinates?.latitude;
+      const longitude = coordinates?.longitude;
+      if (!coordinates || Object.keys(coordinates).length !== 2
+        || typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90
+        || typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        throw new Error(`Field "${field.label}" requires numeric latitude (-90 to 90) and longitude (-180 to 180).`);
+      }
+    }
     if ((field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist')
       && value !== undefined && value !== null) {
       const recordType = object.recordTypes?.find((item) => item.id === recordTypeId);
@@ -12018,8 +12345,10 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
         throw new Error(`Value "${String(value)}" contains an inactive picklist option for record type "${recordType?.label ?? recordTypeId ?? 'default'}" on "${field.label}".`);
       }
     }
-    if (field.unique && value !== undefined && value !== null && (current?.[fieldName] !== value)) {
-      if (tenant.records[object.apiName]?.some((record) => record.Id !== current?.Id && record[fieldName] === value)) {
+    if (field.unique && value !== undefined && value !== null
+      && uniqueFieldValueKey(field, current?.[fieldName]) !== uniqueFieldValueKey(field, value)) {
+      if (tenant.records[object.apiName]?.some((record) =>
+        record.Id !== current?.Id && uniqueFieldValueKey(field, record[fieldName]) === uniqueFieldValueKey(field, value))) {
         throw new Error(`Value for unique field "${fieldName}" already exists.`);
       }
     }
@@ -12867,6 +13196,7 @@ async function executeFlow(
             );
             const beforeSaveValues = normalizeFlowRecordAssignments(object, updated, previous);
             updated = calculateFormulaFields(object, updated, context);
+            validateRelationshipReparenting(object, previous, updated);
             validateRuntimeRecord(tenantId, tenant, object, { ...values, ...beforeSaveValues }, updated);
             updates.set(previous.Id, updated);
           }

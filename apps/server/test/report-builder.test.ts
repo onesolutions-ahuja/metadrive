@@ -289,6 +289,14 @@ test('Trailhead report defaults and grouped Leads by Lead Source dashboard sourc
       });
       assert.equal(matrixOpportunity.status, 201, JSON.stringify(matrixOpportunity.data));
     }
+    const blankAmountOpportunity = await send('/records/Opportunity', token, 'POST', {
+      Name: 'Trailhead Matrix Blank Amount',
+      Type: 'New Business',
+      CloseDate: '2026-05-31',
+      StageName: 'Closed Won',
+      Probability: 100
+    });
+    assert.equal(blankAmountOpportunity.status, 201, JSON.stringify(blankAmountOpportunity.data));
     const opportunityMatrixReport = await send('/metadata/reports/Trailhead_Opportunity_Matrix', token, 'PUT', {
       label: 'Opportunities by Sum of Amount',
       description: '',
@@ -320,8 +328,8 @@ test('Trailhead report defaults and grouped Leads by Lead Source dashboard sourc
     const opportunityMatrixRun = await send('/reports/Trailhead_Opportunity_Matrix/run', token, 'POST', { limit: 5000 });
     assert.equal(opportunityMatrixRun.status, 200, JSON.stringify(opportunityMatrixRun.data));
     assert.equal(opportunityMatrixRun.data.rows.length, 0, 'the demonstrated matrix workflow can hide detail rows');
-    assert.equal(opportunityMatrixRun.data.summaryTotals.rowCount, 2);
-    assert.equal(opportunityMatrixRun.data.summaryRows.length, 2);
+    assert.equal(opportunityMatrixRun.data.summaryTotals.rowCount, 3);
+    assert.equal(opportunityMatrixRun.data.summaryRows.length, 3);
     assert.equal(opportunityMatrixRun.data.summaryRows.find((group: {
       groupValues: Record<string, unknown>;
     }) => group.groupValues.CloseDate === '2026-03'
@@ -330,6 +338,59 @@ test('Trailhead report defaults and grouped Leads by Lead Source dashboard sourc
       groupValues: Record<string, unknown>;
     }) => group.groupValues.CloseDate === '2026-04'
       && group.groupValues.Type === 'Existing Business')?.sums.Amount, 200000);
+
+    const bucketReport = await send('/metadata/reports/Trailhead_Opportunity_Bucket', token, 'PUT', {
+      label: 'Opportunity Amount Buckets',
+      description: '',
+      objectApiName: 'Opportunity',
+      fieldApiNames: ['Name', 'Amount', 'Bucket_Size'],
+      groupByFieldApiNames: ['Bucket_Size'],
+      format: 'Summary',
+      filters: [{
+        id: 'bucket-example-records',
+        fieldApiName: 'Name',
+        operator: 'Contains',
+        value: 'Trailhead Matrix',
+        values: [],
+        locked: false
+      }],
+      standardFilters: { showMe: 'All', dateFieldApiName: 'CloseDate', dateRange: 'All Time' },
+      summaryOperations: { Amount: ['Sum'] },
+      bucketFields: [{
+        apiName: 'Size',
+        label: 'Size',
+        fieldApiName: 'Amount',
+        ranges: [
+          { label: 'Below target', lowerBound: null, upperBound: 100000 },
+          { label: 'Near target', lowerBound: 100000, upperBound: 150000 },
+          { label: 'Target range', lowerBound: 150000, upperBound: 250000 },
+          { label: 'Above target', lowerBound: 250000, upperBound: null }
+        ],
+        treatBlanksAsZero: true
+      }],
+      showDetails: false
+    });
+    assert.equal(bucketReport.status, 200, JSON.stringify(bucketReport.data));
+    const bucketRun = await send('/reports/Trailhead_Opportunity_Bucket/run', token, 'POST', { limit: 100 });
+    assert.equal(bucketRun.status, 200, JSON.stringify(bucketRun.data));
+    assert.equal(bucketRun.data.summaryRows.find((group: { groupValues: Record<string, unknown> }) =>
+      group.groupValues.Bucket_Size === 'Near target')?.sums.Amount, 100000);
+    assert.equal(bucketRun.data.summaryRows.find((group: { groupValues: Record<string, unknown> }) =>
+      group.groupValues.Bucket_Size === 'Target range')?.sums.Amount, 200000);
+    assert.equal(bucketRun.data.summaryRows.find((group: { groupValues: Record<string, unknown> }) =>
+      group.groupValues.Bucket_Size === 'Below target')?.rowCount, 1,
+    'blank numeric values can be assigned to a configured bucket as zero');
+    const overlappingBuckets = await send('/metadata/reports/Invalid_Overlapping_Buckets', token, 'PUT', {
+      ...bucketReport.data.report,
+      bucketFields: [{
+        ...bucketReport.data.report.bucketFields[0],
+        ranges: [
+          { label: 'First', lowerBound: null, upperBound: 100000 },
+          { label: 'Overlapping', lowerBound: 90000, upperBound: null }
+        ]
+      }]
+    });
+    assert.equal(overlappingBuckets.status, 400, 'overlapping bucket ranges must be rejected');
 
     const uncappedFilters = Array.from({ length: 21 }, (_, index) => ({
       id: `uncapped-field-filter-${index + 1}`,

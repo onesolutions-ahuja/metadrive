@@ -36,6 +36,8 @@ export type FieldMetadata = {
   dataType: string;
   required: boolean;
   unique: boolean;
+  externalId?: boolean;
+  caseSensitive?: boolean;
   description?: string;
   helpText?: string;
   picklistValues?: string[];
@@ -50,6 +52,8 @@ export type FieldMetadata = {
     targetObject: string;
     relationshipName: string;
     childRelationshipName: string;
+    deleteBehavior?: 'Clear' | 'Restrict';
+    allowReparenting?: boolean;
   };
 };
 
@@ -602,6 +606,18 @@ export type ReportRowLimitMetadata = {
 
 export type ReportSummaryOperation = 'Count' | 'Sum' | 'Average' | 'Minimum' | 'Maximum';
 export type ReportDateGrouping = 'Day' | 'Month' | 'Quarter' | 'Year';
+export type ReportBucketRangeMetadata = {
+  label: string;
+  lowerBound: number | null;
+  upperBound: number | null;
+};
+export type ReportBucketMetadata = {
+  apiName: string;
+  label: string;
+  fieldApiName: string;
+  ranges: ReportBucketRangeMetadata[];
+  treatBlanksAsZero: boolean;
+};
 
 export type ReportMetadata = {
   reportType: 'Standard';
@@ -622,6 +638,7 @@ export type ReportMetadata = {
   rowLimit: ReportRowLimitMetadata;
   summaryOperations: Record<string, ReportSummaryOperation[]>;
   dateGroupings: Record<string, ReportDateGrouping>;
+  bucketFields?: ReportBucketMetadata[];
   showDetails: boolean;
   showChart: boolean;
   folderName: string;
@@ -705,8 +722,15 @@ export type ConnectorProviderMetadata = {
   authType: 'NONE' | 'BEARER' | 'BASIC' | 'API_KEY';
   baseUrl: string;
   authHeader?: string;
+  authCredential?: string;
   credentialsSchema: Array<{ name: string; label: string; secret: boolean; required: boolean }>;
   operations: Record<string, { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string }>;
+  test?: {
+    method: 'GET' | 'HEAD';
+    path: string;
+    expectedStatus: number;
+    responseValidation?: { jsonPath: string; equals: string };
+  };
   timeoutMs: number;
   retryPolicy: { maxAttempts: number };
   status: 'ACTIVE' | 'INACTIVE';
@@ -720,6 +744,9 @@ export type IntegrationConnectionMetadata = {
   status: 'ACTIVE' | 'INACTIVE';
   hasCredentials: boolean;
   credentialFields: Array<{ name: string; label: string; secret: boolean; required: boolean; configured: boolean }>;
+  testStatus: 'Connected' | 'Failed' | 'Not configured' | 'Test unavailable' | null;
+  lastTestedAt: string | null;
+  lastTestMessage: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -136,8 +136,8 @@ export function canAccessDashboard(
   canManageAll: boolean
 ): boolean {
   if (dashboard.ownerUserId === userId || canManageAll) return true;
-  if (dashboard.folderAccessLevel) return true;
   if (dashboard.status !== 'Deployed') return false;
+  if (dashboard.folderAccessLevel) return true;
   return dashboard.visibility === 'All Users'
     || dashboard.sharedUserIds.includes(userId)
     || dashboard.sharedPermissionSetGroupIds.some((groupId) => permissionSetGroupIds.includes(groupId));
@@ -149,6 +149,7 @@ export function canEditDashboard(
   canManageAll: boolean
 ): boolean {
   if (dashboard.ownerUserId === userId || canManageAll) return true;
+  if (dashboard.status !== 'Deployed') return false;
   return dashboard.folderAccessLevel === 'Editor' || dashboard.folderAccessLevel === 'Manager';
 }
 

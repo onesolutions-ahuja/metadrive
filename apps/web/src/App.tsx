@@ -42,6 +42,7 @@ import {
   Scissors,
   Settings2,
   SlidersHorizontal,
+  Star,
   Undo2,
   Redo2,
   Trash2,
@@ -63,6 +64,17 @@ import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import { standardPageComponents } from './componentCatalog';
+import {
+  canvasDimensionsForOrientation,
+  canvasOrientation,
+  canvasScaleToFitWidth,
+  canvasUnitsFromScreenDelta
+} from './pageCanvas';
+import {
+  createComponentPreviewProps,
+  getPageBuilderComponentCategories,
+  pageBuilderPaletteCategories
+} from './pageBuilderPalette';
 import {
   defaultFlow,
   defaultLightningPage,
@@ -111,6 +123,7 @@ import {
   type DashboardSubscriptionInput,
   type DashboardSnapshot,
   type ReportMetadata,
+  type ReportBucketMetadata,
   type ReportFolderMetadata,
   type ReportFolderInput,
   type ReportRunMetadata,
@@ -478,6 +491,7 @@ function ConnectorSettingsWorkspace({
   onSelect,
   onSaveProvider,
   onSaveIntegrationConnection,
+  onTestIntegrationConnection,
   onNotify
 }: {
   provider: ConnectorProviderMetadata;
@@ -486,6 +500,7 @@ function ConnectorSettingsWorkspace({
   onSelect: (connectorKey: string) => void;
   onSaveProvider: (provider: ConnectorProviderMetadata) => Promise<ConnectorProviderMetadata>;
   onSaveIntegrationConnection: (connection: Omit<Pick<IntegrationConnectionMetadata, 'id' | 'connectorKey' | 'name' | 'configuration' | 'status'>, 'id'> & { id?: string; credentials: Record<string, string> }) => Promise<IntegrationConnectionMetadata>;
+  onTestIntegrationConnection: (id: string) => Promise<IntegrationConnectionMetadata>;
   onNotify: (message: string) => void;
 }) {
   const providerConnections = integrationConnections.filter((item) => item.connectorKey === provider.connectorKey);
@@ -495,14 +510,18 @@ function ConnectorSettingsWorkspace({
   const [connectionConfiguration, setConnectionConfiguration] = useState<Record<string, string>>({});
   const [connectionCredentials, setConnectionCredentials] = useState<Record<string, string>>({});
   const [savingConnection, setSavingConnection] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTestError, setConnectionTestError] = useState('');
   const [editingProvider, setEditingProvider] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
   const [providerName, setProviderName] = useState('');
   const [providerAuthType, setProviderAuthType] = useState<ConnectorProviderMetadata['authType']>('NONE');
   const [providerBaseUrl, setProviderBaseUrl] = useState('');
   const [providerAuthHeader, setProviderAuthHeader] = useState('');
+  const [providerAuthCredential, setProviderAuthCredential] = useState('');
   const [providerCredentialsSchema, setProviderCredentialsSchema] = useState('[]');
   const [providerOperations, setProviderOperations] = useState('{}');
+  const [providerTest, setProviderTest] = useState('');
   const [providerTimeout, setProviderTimeout] = useState('30000');
   const [providerRetries, setProviderRetries] = useState('1');
   const [providerStatus, setProviderStatus] = useState<ConnectorProviderMetadata['status']>('ACTIVE');
@@ -521,8 +540,10 @@ function ConnectorSettingsWorkspace({
     setProviderAuthType(provider.authType);
     setProviderBaseUrl(provider.baseUrl);
     setProviderAuthHeader(provider.authHeader ?? '');
+    setProviderAuthCredential(provider.authCredential ?? '');
     setProviderCredentialsSchema(JSON.stringify(provider.credentialsSchema, null, 2));
     setProviderOperations(JSON.stringify(provider.operations, null, 2));
+    setProviderTest(provider.test ? JSON.stringify(provider.test, null, 2) : '');
     setProviderTimeout(String(provider.timeoutMs));
     setProviderRetries(String(provider.retryPolicy.maxAttempts));
     setProviderStatus(provider.status);
@@ -538,8 +559,10 @@ function ConnectorSettingsWorkspace({
         authType: providerAuthType,
         baseUrl: providerBaseUrl,
         ...(providerAuthHeader ? { authHeader: providerAuthHeader } : {}),
+        ...(providerAuthCredential ? { authCredential: providerAuthCredential } : {}),
         credentialsSchema: JSON.parse(providerCredentialsSchema) as ConnectorProviderMetadata['credentialsSchema'],
         operations: JSON.parse(providerOperations) as ConnectorProviderMetadata['operations'],
+        ...(providerTest.trim() ? { test: JSON.parse(providerTest) as NonNullable<ConnectorProviderMetadata['test']> } : {}),
         timeoutMs: Number(providerTimeout),
         retryPolicy: { maxAttempts: Number(providerRetries) },
         status: providerStatus
@@ -560,6 +583,7 @@ function ConnectorSettingsWorkspace({
     setConnectionStatus(selected?.status ?? 'ACTIVE');
     setConnectionConfiguration(selected?.configuration ?? {});
     setConnectionCredentials({});
+    setConnectionTestError('');
   };
   const saveConnection = async () => {
     setSavingConnection(true);
@@ -573,12 +597,41 @@ function ConnectorSettingsWorkspace({
         status: connectionStatus
       });
       setSelectedConnectionId(saved.id);
+      setConnectionName(saved.name);
+      setConnectionConfiguration(saved.configuration);
+      setConnectionStatus(saved.status);
       setConnectionCredentials({});
+      setConnectionTestError('');
       onNotify(`${saved.name} connection saved`);
     } catch (error) {
       onNotify(error instanceof Error ? error.message : 'Unable to save Integration Connection');
     } finally {
       setSavingConnection(false);
+    }
+  };
+  const selectedConnection = providerConnections.find((item) => item.id === selectedConnectionId);
+  const connectionIsDirty = !selectedConnection
+    || selectedConnection.name !== connectionName
+    || selectedConnection.status !== connectionStatus
+    || JSON.stringify(selectedConnection.configuration) !== JSON.stringify(connectionConfiguration)
+    || Object.values(connectionCredentials).some((value) => value.trim().length > 0);
+  const testStatusLabel = connectionTestError
+    ? 'Failed'
+    : !provider.test ? 'Test unavailable' : selectedConnection?.testStatus ?? 'Not tested';
+  const testStatusClass = testStatusLabel === 'Connected' ? 'connected'
+    : testStatusLabel === 'Failed' || testStatusLabel === 'Not configured' ? 'failed' : '';
+  const testConnection = async () => {
+    if (!selectedConnectionId || connectionIsDirty || editingProvider) return;
+    setTestingConnection(true);
+    setConnectionTestError('');
+    try {
+      await onTestIntegrationConnection(selectedConnectionId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Connection test failed';
+      setConnectionTestError(message);
+      onNotify(message);
+    } finally {
+      setTestingConnection(false);
     }
   };
 
@@ -613,8 +666,10 @@ function ConnectorSettingsWorkspace({
               <label className="form-label">Authentication Type<select className="form-control" value={providerAuthType} onChange={(event) => setProviderAuthType(event.target.value as ConnectorProviderMetadata['authType'])}>{['NONE', 'BEARER', 'BASIC', 'API_KEY'].map((type) => <option key={type}>{type}</option>)}</select></label>
               <label className="form-label">Base URL<input className="form-control" type="url" value={providerBaseUrl} onChange={(event) => setProviderBaseUrl(event.target.value)} /></label>
               {providerAuthType === 'API_KEY' && <label className="form-label">API Key Header<input className="form-control" value={providerAuthHeader} onChange={(event) => setProviderAuthHeader(event.target.value)} /></label>}
+              {['BEARER', 'API_KEY'].includes(providerAuthType) && <label className="form-label">Authentication Credential Field (optional when only one required secret)<input className="form-control" value={providerAuthCredential} onChange={(event) => setProviderAuthCredential(event.target.value)} /></label>}
               <label className="form-label">Credentials Schema (JSON)<textarea className="form-control" rows={6} value={providerCredentialsSchema} onChange={(event) => setProviderCredentialsSchema(event.target.value)} /></label>
               <label className="form-label">Operations (JSON)<textarea className="form-control" rows={6} value={providerOperations} onChange={(event) => setProviderOperations(event.target.value)} /></label>
+              <label className="form-label">Safe Test Configuration (JSON, GET/HEAD only)<textarea className="form-control" rows={4} placeholder={'{"method":"GET","path":"/status","expectedStatus":200}'} value={providerTest} onChange={(event) => setProviderTest(event.target.value)} /></label>
               <div className="connector-definition-row">
                 <label className="form-label">Timeout (ms)<input className="form-control" type="number" min={1000} max={120000} value={providerTimeout} onChange={(event) => setProviderTimeout(event.target.value)} /></label>
                 <label className="form-label">Max Attempts<input className="form-control" type="number" min={1} max={5} value={providerRetries} onChange={(event) => setProviderRetries(event.target.value)} /></label>
@@ -623,10 +678,12 @@ function ConnectorSettingsWorkspace({
             </div> : <div className="connector-field-list">
               <div className="connector-config-field"><div className="connector-config-label"><span>Connector Key</span></div><code>{provider.connectorKey}</code></div>
               <div className="connector-config-field"><div className="connector-config-label"><span>Authentication</span></div><div className="connector-config-value">{provider.authType}</div></div>
+              {provider.authCredential && <div className="connector-config-field"><div className="connector-config-label"><span>Authentication Credential</span></div><div className="connector-config-value">{provider.authCredential}</div></div>}
               <div className="connector-config-field"><div className="connector-config-label"><span>Base URL</span></div><div className="connector-config-value">{provider.baseUrl}</div></div>
               <div className="connector-config-field"><div className="connector-config-label"><span>Timeout</span></div><div className="connector-config-value">{provider.timeoutMs} ms</div></div>
               <div className="connector-config-field"><div className="connector-config-label"><span>Retry Policy</span></div><div className="connector-config-value">{provider.retryPolicy.maxAttempts} attempts</div></div>
               <div className="connector-config-field"><div className="connector-config-label"><span>Operations</span></div><div className="connector-config-value">{Object.entries(provider.operations).map(([name, operation]) => `${name} (${operation.method} ${operation.path})`).join(', ') || 'No operations defined'}</div></div>
+              <div className="connector-config-field"><div className="connector-config-label"><span>Connection Test</span></div><div className="connector-config-value">{provider.test ? `${provider.test.method} ${provider.test.path} → HTTP ${provider.test.expectedStatus}` : 'Test unavailable (no safe endpoint configured)'}</div></div>
               <p className="connector-security-note">Provider definitions are also listed as records under Connector Providers; API secrets belong to Integration Connections.</p>
             </div>}
           </div>
@@ -658,8 +715,22 @@ function ConnectorSettingsWorkspace({
               </label>)}
             </div>
             <div className="connector-save-footer">
-              <p className="connector-security-note">Credentials are encrypted at rest and are never returned to the browser. Leave a saved secret blank to keep it unchanged.</p>
-              <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}><Save size={14} />{savingConnection ? 'Saving…' : 'Save Connection'}</button>
+              <div className="connector-test-state" aria-live="polite">
+                <span className={`connector-test-result ${testStatusClass}`}>{testStatusLabel}</span>
+                {connectionTestError
+                  ? <span>{connectionTestError}</span>
+                  : (provider.test || selectedConnection?.testStatus === 'Test unavailable')
+                    && selectedConnection?.lastTestMessage && <span>{selectedConnection.lastTestMessage}</span>}
+                {selectedConnection?.lastTestedAt && <time dateTime={selectedConnection.lastTestedAt}>Last tested {new Date(selectedConnection.lastTestedAt).toLocaleString()}</time>}
+                {connectionIsDirty && <span>Save connection changes before testing.</span>}
+                <p className="connector-security-note">Credentials are encrypted at rest and are never returned to the browser. Leave a saved secret blank to keep it unchanged.</p>
+              </div>
+              <div className="connector-connection-actions">
+                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || savingConnection || testingConnection || editingProvider}>
+                  {testingConnection ? 'Testing…' : 'Test Connection'}
+                </button>
+                <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}><Save size={14} />{savingConnection ? 'Saving…' : 'Save Connection'}</button>
+              </div>
             </div>
           </div>
         </>
@@ -758,6 +829,7 @@ function App() {
 function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () => void; onRetry?: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [message, setMessage] = useState(error ?? '');
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -777,6 +849,19 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
       setSubmitting(false);
     }
   };
+  if (showPasswordReset) return <main className="auth-screen">
+    <section className="auth-card" aria-labelledby="password-reset-heading">
+      <span className="auth-brand-mark">M</span>
+      <div className="eyebrow">METADRIVE WORKSPACE</div>
+      <h1 id="password-reset-heading">Reset your password</h1>
+      <p>Enter your account email to request a password reset.</p>
+      <label className="form-label" htmlFor="reset-email">Email</label>
+      <input className="form-control" id="reset-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+      <div className="auth-notice" role="status">Password reset isn’t available yet. Contact your workspace administrator for help.</div>
+      <button className="btn btn-brand auth-submit" type="button" disabled title="Password reset is not configured yet">Send reset link</button>
+      <button className="text-action auth-back" type="button" onClick={() => setShowPasswordReset(false)}>Back to sign in</button>
+    </section>
+  </main>;
   return <main className="auth-screen">
     <form className="auth-card" onSubmit={(event) => void signIn(event)}>
       <span className="auth-brand-mark">M</span>
@@ -788,6 +873,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
       <input className="form-control" id="login-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
       <label className="form-label" htmlFor="login-password">Password</label>
       <input className="form-control" id="login-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+      <button className="text-action auth-forgot" type="button" onClick={() => { setMessage(''); setShowPasswordReset(true); }}>Forgot password?</button>
       <button className="btn btn-brand auth-submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
     </form>
   </main>;
@@ -892,10 +978,16 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [newFieldValueSettings, setNewFieldValueSettings] = useState<Record<string, string[]>>({});
   const [newFieldReturnType, setNewFieldReturnType] = useState('Number');
   const [newFieldRelationshipTarget, setNewFieldRelationshipTarget] = useState('');
+  const [newFieldRelationshipName, setNewFieldRelationshipName] = useState('');
+  const [newFieldChildRelationshipName, setNewFieldChildRelationshipName] = useState('');
+  const [newFieldDeleteBehavior, setNewFieldDeleteBehavior] = useState<'Clear' | 'Restrict'>('Clear');
+  const [newFieldAllowReparenting, setNewFieldAllowReparenting] = useState(false);
   const [newFieldLookupFilters, setNewFieldLookupFilters] = useState<NewFieldLookupFilterDraft[]>([]);
   const [newFieldLookupFilterLogic, setNewFieldLookupFilterLogic] = useState<'All' | 'Any'>('All');
   const [newFieldRequired, setNewFieldRequired] = useState(false);
   const [newFieldUnique, setNewFieldUnique] = useState(false);
+  const [newFieldExternalId, setNewFieldExternalId] = useState(false);
+  const [newFieldCaseSensitive, setNewFieldCaseSensitive] = useState(false);
   const [showNewObject, setShowNewObject] = useState(false);
   const [newObjectLabel, setNewObjectLabel] = useState('');
   const [newObjectPluralLabel, setNewObjectPluralLabel] = useState('');
@@ -1263,6 +1355,16 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       : [...current, result.connection]);
     return result.connection;
   };
+  const testIntegrationConnection = async (id: string) => {
+    const result = await apiRequest<{ connection: IntegrationConnectionMetadata }>(
+      `/integration-connections/${encodeURIComponent(id)}/test`,
+      { method: 'POST' }
+    );
+    setIntegrationConnections((current) => current.map((item) =>
+      item.id === result.connection.id ? result.connection : item
+    ));
+    return result.connection;
+  };
   const commitFlow = (nextFlow: FlowDefinitionMetadata) => {
     if (JSON.stringify(flow) === JSON.stringify(nextFlow)) return;
     const editedFlow = flow.status === 'Active' && nextFlow.status === 'Active'
@@ -1489,10 +1591,16 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     setNewFieldControllerApiName('');
     setNewFieldValueSettings({});
     setNewFieldRelationshipTarget('');
+    setNewFieldRelationshipName('');
+    setNewFieldChildRelationshipName('');
+    setNewFieldDeleteBehavior('Clear');
+    setNewFieldAllowReparenting(false);
     setNewFieldLookupFilters([]);
     setNewFieldLookupFilterLogic('All');
     setNewFieldRequired(false);
     setNewFieldUnique(false);
+    setNewFieldExternalId(false);
+    setNewFieldCaseSensitive(false);
     setNewFieldLayoutIds([]);
   };
 
@@ -1562,6 +1670,14 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                           ? 'Choose a controlling field with configured values.'
                           : ['Lookup Relationship', 'Master-Detail Relationship'].includes(newFieldType) && !newFieldRelationshipTarget
                             ? 'Select a related object.'
+                            : ['Lookup Relationship', 'Master-Detail Relationship', 'Hierarchical Relationship'].includes(newFieldType)
+                              && !/^[A-Za-z][A-Za-z0-9_]*$/.test(newFieldRelationshipName.trim()
+                                || newFieldLabel.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, ''))
+                              ? 'Enter a valid relationship name using letters, numbers, and underscores.'
+                              : ['Lookup Relationship', 'Master-Detail Relationship', 'Hierarchical Relationship'].includes(newFieldType)
+                                && !/^[A-Za-z][A-Za-z0-9_]*$/.test(newFieldChildRelationshipName.trim()
+                                  || `${object.apiName.replace(/__c$/, '')}Records`)
+                                ? 'Enter a valid child relationship name using letters, numbers, and underscores.'
                             : newFieldLookupFilters.some((filter) =>
                               !filter.relatedFieldApiName
                               || (filter.operator !== 'Is Null' && filter.operator !== 'Is Not Null'
@@ -1590,7 +1706,11 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       label,
       dataType,
       required: newFieldType === 'Master-Detail Relationship' || (newFieldType !== 'Formula' && newFieldRequired),
-      unique: newFieldType !== 'Formula' && newFieldType !== 'Long Text Area' && !relationshipType && newFieldUnique,
+      unique: newFieldType !== 'Formula' && newFieldType !== 'Long Text Area' && newFieldType !== 'Geolocation' && !relationshipType && newFieldUnique,
+      ...(newFieldExternalId ? { externalId: true } : {}),
+      ...(newFieldUnique && ['Text', 'Email', 'Phone'].includes(newFieldType)
+        ? { caseSensitive: newFieldCaseSensitive }
+        : {}),
       ...(newFieldDescription.trim() ? { description: newFieldDescription.trim() } : {}),
       ...(newFieldHelpText.trim() ? { helpText: newFieldHelpText.trim() } : {}),
       ...(newFieldType === 'Formula' ? { formula: { expression: newFieldFormula.trim(), returnType: newFieldReturnType } } : {}),
@@ -1612,8 +1732,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       ...(relationshipType ? { relationship: {
         type: relationshipType,
         targetObject: relationshipTarget,
-        relationshipName,
-        childRelationshipName: `${object.apiName.replace(/__c$/, '')}Records`
+        relationshipName: newFieldRelationshipName.trim() || relationshipName,
+        childRelationshipName: newFieldChildRelationshipName.trim() || `${object.apiName.replace(/__c$/, '')}Records`,
+        ...(relationshipType === 'Lookup' ? {
+          deleteBehavior: newFieldRequired ? 'Restrict' : newFieldDeleteBehavior
+        } : {}),
+        ...(relationshipType === 'Master-Detail' ? { allowReparenting: newFieldAllowReparenting } : {})
       } } : {})
     };
     try {
@@ -2930,6 +3054,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               onSelect={(connectorKey) => navigateRoute({ kind: 'setup', workspace: 'connector-settings', resourceApiName: connectorKey })}
               onSaveProvider={saveConnectorProvider}
               onSaveIntegrationConnection={saveIntegrationConnection}
+              onTestIntegrationConnection={testIntegrationConnection}
               onNotify={notify}
             /> : <div className="connector-settings-page"><div className="surface connector-empty">Connector metadata is loading…</div></div>;
           })()}
@@ -3031,8 +3156,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             {newFieldStage === 0 && <div>
               <label className="form-label" htmlFor="new-field-type">Data Type</label>
               <select className="form-control" id="new-field-type" value={newFieldType} onChange={(event) => setNewFieldType(event.target.value)}>
-              {['Text', 'Long Text Area', 'Number', 'Currency', 'Percent', 'Date', 'Date/Time', 'Checkbox', 'Email', 'Phone', 'URL', 'Picklist', 'Multi-Select Picklist', 'Formula', 'Lookup Relationship', 'Master-Detail Relationship', ...(object.apiName === 'User' ? ['Hierarchical Relationship'] : [])].map((type) => <option key={type}>{type}</option>)}
+              {['Text', 'Long Text Area', 'Number', 'Currency', 'Percent', 'Date', 'Date/Time', 'Checkbox', 'Email', 'Phone', 'URL', 'Geolocation', 'Picklist', 'Multi-Select Picklist', 'Formula', 'Lookup Relationship', 'Master-Detail Relationship', ...(object.apiName === 'User' ? ['Hierarchical Relationship'] : [])].map((type) => <option key={type}>{type}</option>)}
               </select>
+              <p className="permission-help">External Lookup and Indirect Lookup require external objects, which are not supported for this object. Hierarchical Relationship is available for User.</p>
             </div>}
             {newFieldStage === 1 && <div>
             <label className="form-label" htmlFor="new-field-label">Field Label</label>
@@ -3089,6 +3215,26 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                     <option value="">Select an object</option>{objects.filter((item) => item.apiName !== object.apiName).map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}
                   </select>
                 </label>}
+              <label className="form-label">Relationship Name
+                  <input className="form-control" value={newFieldRelationshipName || newFieldLabel.trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '')}
+                  onChange={(event) => setNewFieldRelationshipName(event.target.value)} />
+              </label>
+              <label className="form-label">Child Relationship Name
+                <input className="form-control" value={newFieldChildRelationshipName || `${object.apiName.replace(/__c$/, '')}Records`}
+                  onChange={(event) => setNewFieldChildRelationshipName(event.target.value)} />
+              </label>
+              {newFieldType === 'Lookup Relationship' && <label className="form-label">When a referenced record is deleted
+                <select className="form-control" value={newFieldRequired ? 'Restrict' : newFieldDeleteBehavior}
+                  disabled={newFieldRequired}
+                  onChange={(event) => setNewFieldDeleteBehavior(event.target.value as 'Clear' | 'Restrict')}>
+                  <option value="Clear">Clear the lookup field</option>
+                  <option value="Restrict">Prevent deletion</option>
+                </select>
+              </label>}
+              {newFieldType === 'Master-Detail Relationship' && <label className="checkbox-row">
+                <input type="checkbox" checked={newFieldAllowReparenting} onChange={(event) => setNewFieldAllowReparenting(event.target.checked)} />
+                Allow reparenting
+              </label>}
               {newFieldType !== 'Hierarchical Relationship' && newFieldRelationshipTarget && <>
                 <div className="section-toolbar">
                   <div><h3>Related Lookup Filters</h3><p>Add one or more criteria that determine which records are eligible.</p></div>
@@ -3198,7 +3344,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             <input className="form-control" id="new-field-description" value={newFieldDescription} onChange={(event) => setNewFieldDescription(event.target.value)} placeholder="Optional field description" />
             <label className="form-label" htmlFor="new-field-help-text">Help Text</label>
             <textarea className="form-control" id="new-field-help-text" value={newFieldHelpText} onChange={(event) => setNewFieldHelpText(event.target.value)} placeholder="Optional guidance shown to users" maxLength={255} rows={2} />
-            {!['Formula', 'Lookup Relationship', 'Master-Detail Relationship', 'Hierarchical Relationship'].includes(newFieldType) && (newFieldType === 'Checkbox'
+            {!['Formula', 'Geolocation', 'Lookup Relationship', 'Master-Detail Relationship', 'Hierarchical Relationship'].includes(newFieldType) && (newFieldType === 'Checkbox'
               ? <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={newFieldHasDefault} onChange={(event) => setNewFieldHasDefault(event.target.checked)} />Set a default value</label><label className="checkbox-row"><input type="checkbox" disabled={!newFieldHasDefault} checked={newFieldDefaultValue === 'true'} onChange={(event) => setNewFieldDefaultValue(String(event.target.checked))} />Default to checked</label></div>
               : ['Picklist', 'Multi-Select Picklist'].includes(newFieldType)
                 ? <label className="form-label">Default Value<select className="form-control" multiple={newFieldType === 'Multi-Select Picklist'} value={newFieldType === 'Multi-Select Picklist' ? newFieldDefaultValue.split(';').filter(Boolean) : newFieldDefaultValue} onChange={(event) => {
@@ -3210,7 +3356,13 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                 : <label className="form-label" htmlFor="new-field-default">Default Value<input className="form-control" id="new-field-default" type={['Number', 'Currency', 'Percent'].includes(newFieldType) ? 'number' : newFieldType === 'Date' ? 'date' : newFieldType === 'Date/Time' ? 'datetime-local' : newFieldType === 'Email' ? 'email' : newFieldType === 'URL' ? 'url' : 'text'} step={['Number', 'Currency', 'Percent'].includes(newFieldType) ? (newFieldScale ? 10 ** -newFieldScale : 1) : undefined} maxLength={newFieldType === 'Text' ? newFieldTextLength : undefined} value={newFieldDefaultValue} onChange={(event) => { setNewFieldDefaultValue(event.target.value); setNewFieldHasDefault(event.target.value !== ''); }} /></label>)}
             {newFieldType !== 'Formula' && <div className="form-options">
               <label className="checkbox-row"><input type="checkbox" checked={newFieldType === 'Master-Detail Relationship' || newFieldRequired} disabled={newFieldType === 'Master-Detail Relationship'} onChange={(event) => setNewFieldRequired(event.target.checked)} /> Required</label>
-              <label className="checkbox-row"><input type="checkbox" checked={newFieldUnique} disabled={newFieldType === 'Long Text Area' || newFieldType === 'Multi-Select Picklist' || newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship' || newFieldType === 'Hierarchical Relationship'} onChange={(event) => setNewFieldUnique(event.target.checked)} /> Unique</label>
+              <label className="checkbox-row"><input type="checkbox" checked={newFieldUnique} disabled={newFieldType === 'Long Text Area' || newFieldType === 'Geolocation' || newFieldType === 'Multi-Select Picklist' || newFieldType === 'Lookup Relationship' || newFieldType === 'Master-Detail Relationship' || newFieldType === 'Hierarchical Relationship'} onChange={(event) => setNewFieldUnique(event.target.checked)} /> Unique</label>
+              {['Text', 'Number', 'Email', 'Phone'].includes(newFieldType) && <label className="checkbox-row">
+                <input type="checkbox" checked={newFieldExternalId} onChange={(event) => setNewFieldExternalId(event.target.checked)} /> External ID
+              </label>}
+              {newFieldUnique && ['Text', 'Email', 'Phone'].includes(newFieldType) && <label className="checkbox-row">
+                <input type="checkbox" checked={newFieldCaseSensitive} onChange={(event) => setNewFieldCaseSensitive(event.target.checked)} /> Treat uppercase and lowercase values as different
+              </label>}
             </div>}
             </div>}
             {newFieldStage === 2 && <div className="metadata-card" aria-label="Add field to page layouts">
@@ -3230,6 +3382,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                 <dt>Field Label</dt><dd>{newFieldLabel.trim()}</dd>
                 <dt>Field Name</dt><dd>{newFieldApiName}</dd>
                 <dt>Required / Unique</dt><dd>{newFieldType === 'Master-Detail Relationship' || newFieldRequired ? 'Required' : 'Optional'} / {newFieldUnique ? 'Unique' : 'Not unique'}</dd>
+                {['Text', 'Number', 'Email', 'Phone'].includes(newFieldType) && <><dt>External ID</dt><dd>{newFieldExternalId ? 'Yes' : 'No'}</dd></>}
+                {newFieldUnique && ['Text', 'Email', 'Phone'].includes(newFieldType) && <><dt>Case sensitivity</dt><dd>{newFieldCaseSensitive ? 'Case sensitive' : 'Case insensitive'}</dd></>}
                 {newFieldDescription.trim() && <><dt>Description</dt><dd>{newFieldDescription.trim()}</dd></>}
                 {newFieldHelpText.trim() && <><dt>Help Text</dt><dd>{newFieldHelpText.trim()}</dd></>}
                 {newFieldPicklistOptions.length > 0 && <><dt>Values</dt><dd>{newFieldPicklistOptions.join(', ')}</dd></>}
@@ -3558,7 +3712,7 @@ function LightningAppRuntime({
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
       return definition
         ? <RegisteredComponent key={component.id} definition={definition}
-          props={{ label: component.label, properties: component.properties, objects, reports, flows: availableFlows, device: formFactor, onNavigate, onLaunchFlow }} />
+          props={{ ...component.properties, label: component.label, properties: component.properties, objects, reports, flows: availableFlows, device: formFactor, onNavigate, onLaunchFlow }} />
         : <div className="records-message" role="status" key={component.id}>Component is no longer registered: {component.label}</div>;
     }
     if (component.type === 'Report Chart') {
@@ -4749,6 +4903,38 @@ function RecordFormDialog({
       </label>
       {helpText}
     </div>;
+    if (field.dataType === 'Geolocation') {
+      const coordinates = rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)
+        ? Object.fromEntries(Object.entries(rawValue))
+        : {};
+      const updateCoordinate = (coordinate: 'latitude' | 'longitude', input: string) => {
+        const next = {
+          ...coordinates,
+          [coordinate]: input === '' ? null : Number(input)
+        };
+        onChange(field.apiName, next.latitude == null && next.longitude == null ? null : next);
+      };
+      return <fieldset className="form-label" key={field.apiName}>
+        <legend>{field.label}{field.required && <b aria-hidden="true"> *</b>}</legend>
+        <div className="form-options">
+          <label className="form-label">Latitude
+            <input className="form-control" type="number" min="-90" max="90" step="any"
+              aria-label={`${field.label} latitude`} required={field.required}
+              disabled={saving || !fieldAccess[`${object.apiName}.${field.apiName}`]?.edit}
+              value={coordinates.latitude == null ? '' : String(coordinates.latitude)}
+              onChange={(event) => updateCoordinate('latitude', event.target.value)} />
+          </label>
+          <label className="form-label">Longitude
+            <input className="form-control" type="number" min="-180" max="180" step="any"
+              aria-label={`${field.label} longitude`} required={field.required}
+              disabled={saving || !fieldAccess[`${object.apiName}.${field.apiName}`]?.edit}
+              value={coordinates.longitude == null ? '' : String(coordinates.longitude)}
+              onChange={(event) => updateCoordinate('longitude', event.target.value)} />
+          </label>
+        </div>
+        {helpText}
+      </fieldset>;
+    }
     if (field.relationship) {
       const options = lookupRecords[field.relationship.targetObject] ?? [];
       const targetObject = objects.find((item) => item.apiName === field.relationship?.targetObject);
@@ -4930,7 +5116,12 @@ function RecordFormDialog({
 
 function formatRecordValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '—';
-  if (typeof value === 'object') return JSON.stringify(value) ?? String(value);
+  if (typeof value === 'object') {
+    if (!Array.isArray(value) && value !== null && 'latitude' in value && 'longitude' in value) {
+      return `${String(value.latitude)}, ${String(value.longitude)}`;
+    }
+    return JSON.stringify(value) ?? String(value);
+  }
   return String(value);
 }
 
@@ -6173,6 +6364,19 @@ function ObjectManager({
           })()}
           <label className="form-label">Description<input className="form-control" value={editingField.description ?? ''} onChange={(event) => setEditingField({ ...editingField, description: event.target.value })} /></label>
           <label className="form-label">Help Text<textarea className="form-control" value={editingField.helpText ?? ''} onChange={(event) => setEditingField({ ...editingField, helpText: event.target.value })} maxLength={255} rows={2} /></label>
+          <div className="form-options">
+            <label className="checkbox-row"><input type="checkbox" checked={editingField.required} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label>
+            <label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={['Long Text Area', 'Multi-Select Picklist'].includes(editingField.dataType) || Boolean(editingField.relationship) || Boolean(editingField.formula)}
+              onChange={(event) => {
+                const next = { ...editingField, unique: event.target.checked };
+                if (!event.target.checked) delete next.caseSensitive;
+                setEditingField(next);
+              }} />Unique</label>
+            {/^(Text(?:\(\d+\))?|Number(?:\(\d+,\s*\d+\))?|Email|Phone|AutoNumber|Auto Number)$/.test(editingField.dataType)
+              && <label className="checkbox-row"><input type="checkbox" checked={editingField.externalId ?? false} onChange={(event) => setEditingField({ ...editingField, externalId: event.target.checked })} />External ID</label>}
+            {editingField.unique && /^(Text(?:\(\d+\))?|Email|Phone)$/.test(editingField.dataType)
+              && <label className="checkbox-row"><input type="checkbox" checked={editingField.caseSensitive ?? false} onChange={(event) => setEditingField({ ...editingField, caseSensitive: event.target.checked })} />Treat uppercase and lowercase values as different</label>}
+          </div>
           {!editingField.formula && !editingField.relationship && !['AutoNumber', 'Auto Number'].includes(editingField.dataType) && (editingField.dataType === 'Checkbox'
             ? <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.defaultValue !== undefined} onChange={(event) => { if (event.target.checked) setEditingField({ ...editingField, defaultValue: false }); else { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } }} />Set a default value</label><label className="checkbox-row"><input type="checkbox" disabled={editingField.defaultValue === undefined} checked={editingField.defaultValue === true} onChange={(event) => setEditingField({ ...editingField, defaultValue: event.target.checked })} />Default to checked</label></div>
             : (editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist')
@@ -6309,11 +6513,12 @@ function PageBuilder({
       page
     ];
   const currentPageIsAssignedToBuilderApp = appPages.some((item) => item.apiName === page.apiName);
-  const palette = standardPageComponents.map((component) => component.apiName);
   const targetObject = objects.find((object) => object.apiName === page.targetObject);
   const pageTypeComponents = page.pageType === 'Record Page'
-    ? palette
-    : palette.filter((component) => component === 'Accordion' || component === 'Tabs' || component === 'Report Chart');
+    ? standardPageComponents.map((component) => component.apiName)
+    : standardPageComponents
+      .filter((component) => ['Accordion', 'Tabs', 'Report Chart'].includes(component.apiName))
+      .map((component) => component.apiName);
   const relatedListOptions = [...new Map(objects.flatMap((childObject) => childObject.fields.flatMap((field) => {
     const relationship = field.relationship;
     if (relationship?.targetObject !== page.targetObject || !relationship.childRelationshipName) return [];
@@ -6329,14 +6534,22 @@ function PageBuilder({
   const [selectedId, setSelectedId] = useState(page.components[0]?.id ?? '');
   const savedPageApiName = useRef(page.apiName);
   const [device, setDevice] = useState<'Desktop' | 'Tablet' | 'Phone'>('Desktop');
+  const orientation = canvasOrientation(page.canvasWidth, page.canvasHeight);
   const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields'>('Components');
   const [paletteSearch, setPaletteSearch] = useState('');
+  const [paletteCategory, setPaletteCategory] = useState<(typeof pageBuilderPaletteCategories)[number]>('All Components');
+  const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
+  const [favouritesLoaded, setFavouritesLoaded] = useState(false);
+  const [componentPanelWidth, setComponentPanelWidth] = useState(280);
+  const paletteResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
+  const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
+  const [customPropertiesError, setCustomPropertiesError] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const [dynamicFormsUpgradeOpen, setDynamicFormsUpgradeOpen] = useState(false);
   const [migrationLayoutId, setMigrationLayoutId] = useState('');
-  const [fitCanvas, setFitCanvas] = useState(false);
+  const [fitCanvas, setFitCanvas] = useState(true);
   const [fitScale, setFitScale] = useState(1);
   const pagePreviewAreaRef = useRef<HTMLDivElement | null>(null);
   const [canvasRefreshKey, setCanvasRefreshKey] = useState(0);
@@ -6367,26 +6580,86 @@ function PageBuilder({
   const selectedCustomDefinition = selected?.type.startsWith('Custom:')
     ? libraryComponents.find((item) => item.apiName === selected.type.slice('Custom:'.length))
     : undefined;
+  const selectedComponentDescription = selectedCustomDefinition?.description
+    ?? standardPageComponents.find((component) => component.apiName === selected?.type)?.description
+    ?? (selected?.type === 'Field Section' ? 'Group record fields into a configurable section.' : '');
   const assignedMigrationLayout = pageLayouts.find((layout) =>
     layout.id === targetObject?.pageLayoutAssignments?.[0]?.pageLayoutId) ?? pageLayouts[0];
   const selectedMigrationLayout = pageLayouts.find((layout) => layout.id === migrationLayoutId) ?? assignedMigrationLayout;
   const dynamicFormsEnabled = page.components.some((component) => component.type === 'Field Section' || component.type === 'Record Field');
-  const filteredLibraryComponents = libraryComponents.filter((component) =>
-    component.surfaces.includes('page')
-    && `${component.label} ${component.apiName} ${component.description}`.toLowerCase().includes(paletteSearch.trim().toLowerCase()));
-  const filteredStandardComponents = standardPageComponents.filter((component) =>
-    `${component.label} ${component.description}`.toLowerCase().includes(paletteSearch.trim().toLowerCase())
-    && availableComponents.includes(component.apiName));
+  const paletteComponents = [
+    ...(page.layoutMode === 'template' ? standardPageComponents
+      .filter((component) => availableComponents.includes(component.apiName))
+      .map((component) => ({
+        id: component.apiName,
+        type: component.apiName,
+        label: component.label,
+        description: component.description,
+        categories: getPageBuilderComponentCategories(component.apiName, component.label, component.description, true)
+      })) : []),
+    ...(page.layoutMode === 'template' && dynamicFormsEnabled ? [{
+      id: 'Field Section',
+      type: 'Field Section',
+      label: 'Field Section',
+      description: 'Group selected record fields into a one- or two-column section.',
+      categories: ['Layout'] as (typeof pageBuilderPaletteCategories)[number][]
+    }] : []),
+    ...libraryComponents.filter((component) => component.surfaces.includes('page')).map((component) => ({
+      id: `Custom:${component.apiName}`,
+      type: `Custom:${component.apiName}`,
+      label: component.label,
+      description: component.description,
+      categories: getPageBuilderComponentCategories(component.apiName, component.label, component.description)
+    }))
+  ];
+  const filteredPaletteComponents = paletteComponents.filter((component) => {
+    const inCategory = paletteCategory === 'All Components'
+      || (paletteCategory === 'Favourites'
+        ? favouriteComponents.includes(component.id)
+        : component.categories.includes(paletteCategory));
+    const searchContent = `${component.label} ${component.id} ${component.description} ${component.categories.join(' ')}`.toLowerCase();
+    return inCategory && searchContent.includes(paletteSearch.trim().toLowerCase());
+  });
+  const toggleFavourite = (componentId: string) => setFavouriteComponents((current) =>
+    current.includes(componentId) ? current.filter((item) => item !== componentId) : [...current, componentId]);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('metadrive:page-builder:favourites');
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
+          throw new Error('Saved favourites are not a list of component IDs.');
+        }
+        setFavouriteComponents(parsed);
+      }
+    } catch (failure) {
+      onNotify(`Unable to load component favourites: ${failure instanceof Error ? failure.message : 'Browser storage is unavailable.'}`);
+    } finally {
+      setFavouritesLoaded(true);
+    }
+  }, []);
+  useEffect(() => {
+    if (!favouritesLoaded) return;
+    try {
+      window.localStorage.setItem('metadrive:page-builder:favourites', JSON.stringify(favouriteComponents));
+    } catch (failure) {
+      onNotify(`Unable to save component favourites: ${failure instanceof Error ? failure.message : 'Browser storage is unavailable.'}`);
+    }
+  }, [favouriteComponents, favouritesLoaded]);
   useEffect(() => {
     const savedIdentityExists = pages.some((item) => item.apiName === savedPageApiName.current);
     const currentIdentityExists = pages.some((item) => item.apiName === page.apiName);
     if (!savedIdentityExists && currentIdentityExists) savedPageApiName.current = page.apiName;
   }, [page.apiName, pages]);
   useEffect(() => {
+    setCustomPropertiesDraft(selected?.type.startsWith('Custom:') ? JSON.stringify(selected.properties, null, 2) : '');
+    setCustomPropertiesError('');
+  }, [selected?.id, selected?.type]);
+  useEffect(() => {
     setSelectedId(page.components[0]?.id ?? '');
     setPaletteTab('Components');
     setDevice('Desktop');
-    setFitCanvas(false);
+    setFitCanvas(true);
     setUndoStack([]);
     setRedoStack([]);
     setPreviewMode(false);
@@ -6395,15 +6668,17 @@ function PageBuilder({
     setMigrationLayoutId('');
   }, []);
   useEffect(() => {
+    setFitCanvas(true);
+  }, [page.apiName]);
+  useEffect(() => {
     const previewArea = pagePreviewAreaRef.current;
     if (!fitCanvas || page.layoutMode !== 'free-canvas' || !previewArea) {
       setFitScale(1);
       return;
     }
     const updateScale = () => {
-      const availableWidth = Math.max(1, previewArea.clientWidth - 48);
-      const availableHeight = Math.max(1, previewArea.clientHeight - 80);
-      setFitScale(Math.min(1, availableWidth / page.canvasWidth, availableHeight / page.canvasHeight));
+      const availableWidth = Math.max(1, previewArea.clientWidth - 72);
+      setFitScale(canvasScaleToFitWidth(page.canvasWidth, availableWidth));
     };
     updateScale();
     const observer = new ResizeObserver(updateScale);
@@ -6437,6 +6712,32 @@ function PageBuilder({
   const updateComponent = (id: string, update: Partial<LightningPageMetadata['components'][number]>) => {
     applyPage({ ...page, components: page.components.map((component) => component.id === id ? { ...component, ...update } : component) });
   };
+  const startComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    paletteResizeStart.current = { pointerId: event.pointerId, pointerX: event.clientX, width: componentPanelWidth };
+  };
+  const moveComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = paletteResizeStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    setComponentPanelWidth(Math.min(440, Math.max(220, start.width + event.clientX - start.pointerX)));
+  };
+  const endComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (paletteResizeStart.current?.pointerId === event.pointerId) paletteResizeStart.current = null;
+  };
+  const updateCustomProperties = (value: string) => {
+    setCustomPropertiesDraft(value);
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Properties must be a JSON object.');
+      }
+      if (selected) updateComponent(selected.id, { properties: parsed as Record<string, unknown> });
+      setCustomPropertiesError('');
+    } catch (failure) {
+      setCustomPropertiesError(failure instanceof Error ? failure.message : 'Enter valid JSON properties.');
+    }
+  };
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata) => {
     if (!component.position) return;
     event.preventDefault();
@@ -6469,8 +6770,8 @@ function PageBuilder({
     const maxHeight = Math.max(0, page.canvasHeight - y);
     setCanvasResizePreview({
       id: component.id,
-      width: Math.min(maxWidth, Math.max(Math.min(minWidth, maxWidth), start.width + (event.clientX - start.pointerX) / fitScale)),
-      height: Math.min(maxHeight, Math.max(Math.min(minHeight, maxHeight), start.height + (event.clientY - start.pointerY) / fitScale))
+      width: Math.min(maxWidth, Math.max(Math.min(minWidth, maxWidth), start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale))),
+      height: Math.min(maxHeight, Math.max(Math.min(minHeight, maxHeight), start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale)))
     });
   };
   const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -6800,7 +7101,9 @@ function PageBuilder({
       apiName, label, targetObject: targetObject?.apiName ?? objects[0]?.apiName ?? 'Account',
       pageType: newPageLayoutMode === 'free-canvas' ? 'Home Page' : newPageType,
       layoutMode: newPageLayoutMode,
-      template: newPageTemplate, canvasWidth: 1920, canvasHeight: 1080,
+      template: newPageTemplate,
+      canvasWidth: newPageLayoutMode === 'free-canvas' ? 1080 : 1920,
+      canvasHeight: newPageLayoutMode === 'free-canvas' ? 1920 : 1080,
       status: 'Draft', devices: ['Desktop', 'Phone'], components: [], activationAssignments: []
     });
     savedPageApiName.current = apiName;
@@ -6917,32 +7220,56 @@ function PageBuilder({
       }
     }
   };
-  const renderPageComponent = (component: LightningPageMetadata['components'][number], index: number) => {
+  const renderPageComponent = (component: LightningPageMetadata['components'][number], index: number, libraryPreview = false) => {
     if (!component.visible) return null;
     const customDefinition = component.type.startsWith('Custom:')
       ? libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length))
       : undefined;
+    const previewProperties = createComponentPreviewProps(
+      customDefinition?.apiName ?? component.type,
+      component.label,
+      customDefinition?.description ?? selectedComponentDescription
+    );
+    const customPreviewProps = {
+      ...previewProperties,
+      ...component.properties,
+      label: component.label,
+      properties: component.properties,
+      object: page.pageType === 'Record Page' ? targetObject : undefined,
+      device,
+      preview: true,
+      disabled: true,
+      onAction: previewProperties.onAction,
+      onChange: previewProperties.onChange,
+      onNavigate: previewProperties.onNavigate
+    };
+    const accordionContent = typeof component.properties.content === 'string' && component.properties.content.trim()
+      ? component.properties.content
+      : 'Review account details to confirm renewal dates and billing preferences.';
     return <div
       key={component.id}
-      className={`record-component ${page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${selectedId === component.id && !previewMode ? 'selected' : ''} ${dragOverId === component.id ? 'drop-target' : ''}`}
-      style={page.layoutMode === 'free-canvas' ? {
+      ref={libraryPreview ? (element) => { if (element) element.inert = true; } : undefined}
+      className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      style={!libraryPreview && page.layoutMode === 'free-canvas' ? {
         left: component.position?.x ?? 0,
         top: component.position?.y ?? 0,
         width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
         height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
       } : undefined}
-      onClick={() => { if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } }}
-      onKeyDown={(event) => { if (!previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } }}
-      onDragOver={(event) => { event.preventDefault(); setDragOverId(component.id); }}
-      onDragLeave={() => setDragOverId('')}
-      onDrop={(event) => handleDrop(event, index, component.region ?? 'main')}
-      draggable={!previewMode}
-      data-component-id={component.id}
-      onDragStart={(event) => { event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); }}
-      onDragEnd={(event) => moveCanvasComponent(event, component)}
-      role="button" tabIndex={previewMode ? -1 : 0} aria-label={`${component.label} component`}
+      onClick={!libraryPreview ? () => { if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      onClickCapture={libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
+      onKeyDown={!libraryPreview ? (event) => { if (!previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      onDragOver={!libraryPreview ? (event) => { event.preventDefault(); setDragOverId(component.id); } : undefined}
+      onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
+      onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main') : undefined}
+      draggable={!previewMode && !libraryPreview}
+      data-component-id={libraryPreview ? undefined : component.id}
+      onDragStart={!libraryPreview ? (event) => { event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
+      onDragEnd={!libraryPreview ? (event) => moveCanvasComponent(event, component) : undefined}
+      role={libraryPreview ? undefined : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
+      aria-hidden={libraryPreview || undefined}
     >
-      {!previewMode && <div className="record-component-head"><GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} /></div>}
+      {!previewMode && !libraryPreview && <div className="record-component-head"><GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} /></div>}
       {component.type === 'Record Detail'
         ? <div className="record-detail-grid">{(Array.isArray(component.properties.fields) ? component.properties.fields : fields.slice(0, 6).map((field) => field.apiName)).map((apiName) => { const field = fields.find((item) => item.apiName === apiName); return field ? <div className="record-detail-field" key={apiName}><small>{field.label}</small><span>{field.apiName === 'Name' ? `${targetObject?.label ?? 'Sample'} record` : 'Sample value'}</span></div> : null; })}</div>
         : component.type === 'Field Section'
@@ -6957,15 +7284,34 @@ function PageBuilder({
           : component.type === 'Tabs'
             ? <div className="fake-tabs">{stringList(component.properties.tabs, ['Related', 'Details', 'News']).map((tab, tabIndex) => <span className={tabIndex === 0 ? 'selected-tab' : ''} key={`${tab}-${tabIndex}`}>{tab}</span>)}</div>
             : component.type === 'Highlights Panel'
-              ? <div className="component-content-hint">Record actions and key fields appear in the highlights panel.</div>
+              ? libraryPreview
+                ? <div className="component-demo-highlights"><strong>Northwind Traders</strong><div><span>Account owner <b>Alex Morgan</b></span><span>Industry <b>Technology</b></span><span>Annual revenue <b>$2.4M</b></span></div></div>
+                : <div className="component-content-hint">Record actions and key fields appear in the highlights panel.</div>
               : component.type === 'Report Chart'
-                ? <div className="report-chart-preview"><span /><span /><span /><span /><span /></div>
+                ? <div className="report-chart-preview">
+                  <strong>{reports.find((report) => report.apiName === component.properties.reportApiName)?.label ?? 'Opportunities by stage'}</strong>
+                  <div className="report-chart-bars"><span /><span /><span /><span /><span /></div>
+                </div>
                 : component.type === 'Accordion'
-                  ? <div className="component-content-hint">Collapsible page content sections.</div>
+                  ? libraryPreview
+                      ? <div className="component-demo-accordion"><strong>Account overview <ChevronDown size={12} /></strong><p>{accordionContent}</p><span>Billing and service details</span></div>
+                      : <div className="component-demo-accordion"><strong>{component.label} <ChevronDown size={12} /></strong><p>{accordionContent}</p></div>
+                  : component.type === 'Activities' && libraryPreview
+                    ? <div className="component-demo-activity"><strong>Recent activity</strong><span>Call with Jordan Lee <small>Today · 10:30 AM</small></span><span>Follow-up email sent <small>Yesterday</small></span></div>
+                    : component.type === 'Chatter' && libraryPreview
+                      ? <div className="component-demo-activity"><strong>Latest update</strong><span>Alex Morgan shared a project update.</span><small>2 comments · 4 likes</small></div>
                   : customDefinition
-                    ? <RegisteredComponent definition={customDefinition} props={{ label: component.label, properties: component.properties, object: page.pageType === 'Record Page' ? targetObject : undefined, device }} />
-                    : <div className="component-content-hint">This component is no longer in the global library.</div>}
-      {page.layoutMode === 'free-canvas' && customDefinition && selectedId === component.id && !previewMode
+                    ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
+                      ...component.properties,
+                      label: component.label,
+                      properties: component.properties,
+                      object: page.pageType === 'Record Page' ? targetObject : undefined,
+                      device
+                    }} />
+                    : libraryPreview
+                      ? <div className="component-demo-fallback"><strong>{component.label}</strong><span>{selectedComponentDescription || 'Preview of a reusable page component.'}</span><div><i /><i /><i /></div></div>
+                      : <div className="component-demo-fallback"><strong>{component.label}</strong><span>This component is no longer registered. Re-register it to restore its live preview.</span><div><i /><i /><i /></div></div>}
+      {!libraryPreview && page.layoutMode === 'free-canvas' && customDefinition && selectedId === component.id && !previewMode
         && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
           title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
           onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
@@ -6997,6 +7343,19 @@ function PageBuilder({
       .filter((name) => !relatedListOptions.some((option) => option.apiName === name))
       .map((apiName) => ({ apiName, label: apiName }))
   ];
+  const addPaletteComponent = (type: string) => {
+    const selectedIndex = page.components.findIndex((component) => component.id === selectedId);
+    const selectedRegion = page.components[selectedIndex]?.region ?? 'main';
+    addComponent(type, selectedIndex >= 0 ? selectedIndex + 1 : page.components.length, selectedRegion);
+  };
+  const renderPaletteComponentPreview = (component: typeof paletteComponents[number]) => renderPageComponent({
+    id: `palette-preview-${component.id}`,
+    type: component.type,
+    label: component.label,
+    properties: {},
+    visible: true,
+    region: 'main'
+  }, -1, true);
   return (
     <div className="builder-page">
       <div className="builder-titlebar">
@@ -7041,6 +7400,16 @@ function PageBuilder({
           <button aria-label="Tablet preview" className={device === 'Tablet' ? 'device-choice active' : 'device-choice'} onClick={() => setDevice('Tablet')}><Tablet size={14} /><span>Tablet</span></button>
           <button aria-label="Phone preview" className={device === 'Phone' ? 'device-choice active' : 'device-choice'} onClick={() => setDevice('Phone')}><Smartphone size={14} /><span>Phone</span></button>
         </div>
+        <div className="device-picker orientation-picker" role="group" aria-label="Canvas orientation">
+          <button aria-label="Portrait orientation" aria-pressed={orientation === 'Portrait'} className={orientation === 'Portrait' ? 'device-choice active' : 'device-choice'}
+            onClick={() => { const dimensions = canvasDimensionsForOrientation(page.canvasWidth, page.canvasHeight, 'Portrait'); applyPage({ ...page, canvasWidth: dimensions.width, canvasHeight: dimensions.height }); }}>
+            <span>Portrait</span>
+          </button>
+          <button aria-label="Landscape orientation" aria-pressed={orientation === 'Landscape'} className={orientation === 'Landscape' ? 'device-choice active' : 'device-choice'}
+            onClick={() => { const dimensions = canvasDimensionsForOrientation(page.canvasWidth, page.canvasHeight, 'Landscape'); applyPage({ ...page, canvasWidth: dimensions.width, canvasHeight: dimensions.height }); }}>
+            <span>Landscape</span>
+          </button>
+        </div>
         <button
           className={pageSettingsOpen ? 'text-action settings-active' : 'text-action'}
           aria-expanded={pageSettingsOpen || Boolean(selected)}
@@ -7067,7 +7436,7 @@ function PageBuilder({
           />
         </section>
       </div>}
-      <div className="page-builder-layout">
+      <div className="page-builder-layout" style={{ '--component-panel-width': `${componentPanelWidth}px` } as React.CSSProperties}>
         <aside className="component-panel">
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
@@ -7075,23 +7444,65 @@ function PageBuilder({
           </div>
           <div className="component-search"><Search size={14} /><input value={paletteSearch} onChange={(event) => setPaletteSearch(event.target.value)} placeholder={`Search ${paletteTab.toLowerCase()}…`} aria-label={`Search ${paletteTab.toLowerCase()}`} /></div>
           {paletteTab === 'Components' ? <>
-            {page.layoutMode === 'free-canvas' && <div className="palette-note">Free Canvas uses custom components from the Component Library.</div>}
-            {page.layoutMode === 'template' && <>
-              <div className="component-group-label">Standard Components</div>
-              {filteredStandardComponents.map((component) => <button className="component-option" draggable={!previewMode} key={component.apiName} title={component.description} onClick={() => addComponent(component.apiName)} onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:${component.apiName}`)}><span className="component-option-icon"><Grid2X2 size={14} /></span><span>{component.label}</span><Plus size={14} /></button>)}
-              {dynamicFormsEnabled && 'field section'.includes(paletteSearch.trim().toLocaleLowerCase()) && <button className="component-option" draggable={!previewMode} onClick={() => addComponent('Field Section')} onDragStart={(event) => event.dataTransfer.setData('text/plain', 'component:Field Section')}><span className="component-option-icon"><Grid2X2 size={14} /></span><span>Field Section</span><Plus size={14} /></button>}
-              {filteredStandardComponents.length === 0 && <div className="palette-empty">No matching components</div>}
-            </>}
-            {filteredLibraryComponents.length > 0 && <>
-              <div className="component-group-label">Custom Components</div>
-              {filteredLibraryComponents.map((component) => <button className="component-option" draggable={!previewMode} key={component.apiName} title={component.description} onClick={() => addComponent(`Custom:${component.apiName}`)} onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:Custom:${component.apiName}`)}><span className="component-option-icon"><Puzzle size={14} /></span><span>{component.label}</span><Plus size={14} /></button>)}
-            </>}
+            {page.layoutMode === 'free-canvas' && <div className="palette-note">Free Canvas uses registered components from the shared library.</div>}
+            <nav className="component-category-list" aria-label="Component categories">
+              {pageBuilderPaletteCategories.map((category) => {
+                const count = category === 'All Components' ? paletteComponents.length
+                  : category === 'Favourites' ? paletteComponents.filter((component) => favouriteComponents.includes(component.id)).length
+                    : paletteComponents.filter((component) => component.categories.includes(category)).length;
+                return <button type="button" key={category}
+                  className={paletteCategory === category ? 'component-category active' : 'component-category'}
+                  aria-pressed={paletteCategory === category} onClick={() => setPaletteCategory(category)}
+                  title={`Show ${category.toLowerCase()} components`}>
+                  <span>{category}</span><small>{count}</small>
+                </button>;
+              })}
+            </nav>
+            <div className="component-grid" aria-live="polite">
+              {filteredPaletteComponents.map((component) => {
+                const isFavourite = favouriteComponents.includes(component.id);
+                return <article className="component-library-card" key={component.id}
+                  draggable={!previewMode}
+                  title={`${component.label}: ${component.description}`}
+                  aria-label={`${component.label}: ${component.description}. Click to add or drag to the canvas.`}
+                  onClick={() => addPaletteComponent(component.type)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      addPaletteComponent(component.type);
+                    }
+                  }}
+                  onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:${component.type}`)}
+                  role="button" tabIndex={previewMode ? -1 : 0}>
+                  <div className="component-card-preview">{renderPaletteComponentPreview(component)}</div>
+                  <div className="component-card-copy">
+                    <strong>{component.label}</strong>
+                    <span>{component.description}</span>
+                  </div>
+                  <button type="button" className={isFavourite ? 'component-favourite active' : 'component-favourite'}
+                    aria-label={`${isFavourite ? 'Remove' : 'Add'} ${component.label} ${isFavourite ? 'from' : 'to'} favourites`}
+                    title={`${isFavourite ? 'Remove from' : 'Add to'} favourites`}
+                    onClick={(event) => { event.stopPropagation(); toggleFavourite(component.id); }}
+                    onKeyDown={(event) => event.stopPropagation()}>
+                    <Star size={14} fill={isFavourite ? 'currentColor' : 'none'} />
+                  </button>
+                </article>;
+              })}
+              {filteredPaletteComponents.length === 0 && <div className="palette-empty component-grid-empty">
+                <strong>No matching components</strong>
+                <span>Try another category or search by component name, description, or category.</span>
+              </div>}
+            </div>
             {availableComponents.length !== pageTypeComponents.length && <div className="palette-note">Some components require object features to be enabled.</div>}
           </> : <>
             <div className="component-group-label">{targetObject?.label ?? 'Object'} Fields</div>
             {fields.filter((field) => `${field.label} ${field.apiName} ${field.dataType}`.toLowerCase().includes(paletteSearch.trim().toLowerCase())).map((field) => <button className="component-option field-option" draggable={!previewMode} key={field.apiName} title={`${field.label} · ${field.dataType}`} onClick={() => addField(field.apiName)} onDragStart={(event) => event.dataTransfer.setData('text/plain', `field:${field.apiName}`)}><span className="component-option-icon"><Database size={13} /></span><span><strong>{field.label}</strong><small>{field.dataType}</small></span><Plus size={14} /></button>)}
             {fields.filter((field) => `${field.label} ${field.apiName} ${field.dataType}`.toLowerCase().includes(paletteSearch.trim().toLowerCase())).length === 0 && <div className="palette-empty">No matching fields</div>}
           </>}
+          <button type="button" className="component-panel-resize" aria-label="Resize component library panel"
+            title="Drag to resize this panel"
+            onPointerDown={startComponentPanelResize} onPointerMove={moveComponentPanelResize}
+            onPointerUp={endComponentPanelResize} onPointerCancel={endComponentPanelResize} />
         </aside>
         <div className="page-preview-area" ref={pagePreviewAreaRef}>
           <div className="preview-toolbar">
@@ -7160,7 +7571,22 @@ function PageBuilder({
           {selected && !pageSettingsOpen ? <>
             <div className="properties-section-title">Component</div>
             <label className="form-label" htmlFor="page-component-type">Component type</label><div className="form-display" id="page-component-type">{selected.type}</div>
+            <div className="selected-component-preview">
+              <div className="selected-component-preview-frame">{renderPageComponent(selected, -1, true)}</div>
+              <strong>{selected.label}</strong>
+              {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
+            </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
+            {selectedCustomDefinition && <>
+              <div className="properties-section-title">Component properties</div>
+              <label className="form-label" htmlFor="page-custom-component-properties">Properties (JSON)</label>
+              <textarea id="page-custom-component-properties" className="form-control component-properties-json"
+                aria-describedby="page-custom-component-properties-help"
+                aria-invalid={Boolean(customPropertiesError)} value={customPropertiesDraft}
+                onChange={(event) => updateCustomProperties(event.target.value)} />
+              <p className="properties-help" id="page-custom-component-properties-help">Edit component settings as JSON. Valid changes update the canvas immediately; existing metadata bindings are retained unless you change them.</p>
+              {customPropertiesError && <div className="auth-error component-properties-error" role="alert">{customPropertiesError}</div>}
+            </>}
             {selected.type === 'Related List' && <>
               <div className="properties-section-title">Related Lists</div>
               {componentRelatedListOptions.map((option) => <label className="checkbox-row property-check" key={option.apiName}><input type="checkbox" checked={selectedRelatedLists.includes(option.apiName)} onChange={(event) => {
@@ -7454,6 +7880,15 @@ function ReportBuilder({
   const [autoPreview, setAutoPreview] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [newReportFolderLabel, setNewReportFolderLabel] = useState('');
+  const [newBucketApiName, setNewBucketApiName] = useState('');
+  const [newBucketLabel, setNewBucketLabel] = useState('');
+  const [newBucketSourceField, setNewBucketSourceField] = useState('');
+  const [newBucketRanges, setNewBucketRanges] = useState([
+    { label: 'Small', upperBound: '' },
+    { label: 'Medium', upperBound: '' },
+    { label: 'Large', upperBound: '' }
+  ]);
+  const [newBucketBlanksAsZero, setNewBucketBlanksAsZero] = useState(false);
   const [newReportFolderVisibility, setNewReportFolderVisibility] = useState<ReportFolderInput['visibility']>('Private');
   const [reportFolderShareType, setReportFolderShareType] = useState<ReportFolderInput['shares'][number]['targetType']>('User');
   const [reportFolderShareTarget, setReportFolderShareTarget] = useState('');
@@ -7510,7 +7945,11 @@ function ReportBuilder({
         filters: report.filters.map((filter) => ({ ...filter, values: [...filter.values] })),
         standardFilters: { ...report.standardFilters },
         crossFilters: report.crossFilters.map((filter) => ({ ...filter, filters: filter.filters.map((subfilter) => ({ ...subfilter, values: [...subfilter.values] })) })),
-        rowLimit: { ...report.rowLimit }
+        rowLimit: { ...report.rowLimit },
+        bucketFields: (report.bucketFields ?? []).map((bucket) => ({
+          ...bucket,
+          ranges: bucket.ranges.map((range) => ({ ...range }))
+        }))
       });
       setSelectedApiName(report.apiName);
     }
@@ -7518,6 +7957,65 @@ function ReportBuilder({
 
   const updateReport = (update: Partial<ReportMetadata>) => {
     setDraft((value) => value ? { ...value, ...update } : value);
+  };
+  const updateNewBucketRange = (index: number, update: Partial<(typeof newBucketRanges)[number]>) => {
+    setNewBucketRanges((ranges) => ranges.map((range, rangeIndex) =>
+      rangeIndex === index ? { ...range, ...update } : range));
+  };
+  const addNewBucketRange = () => {
+    setNewBucketRanges((ranges) => [...ranges, { label: `Bucket ${ranges.length + 1}`, upperBound: '' }]);
+  };
+  const removeNewBucketRange = (index: number) => {
+    setNewBucketRanges((ranges) => {
+      if (ranges.length <= 2) return ranges;
+      const next = ranges.filter((_, rangeIndex) => rangeIndex !== index);
+      if (index > 0 && index < ranges.length - 1) {
+        next[index - 1] = { ...next[index - 1], upperBound: ranges[index].upperBound };
+      } else if (index === ranges.length - 1) {
+        next[next.length - 1] = { ...next[next.length - 1], upperBound: '' };
+      }
+      return next;
+    });
+  };
+  const addBucketField = () => {
+    if (!current) return;
+    const apiName = newBucketApiName.trim();
+    const label = newBucketLabel.trim();
+    const labels = newBucketRanges.map((range) => range.label.trim());
+    const boundaries = newBucketRanges.slice(0, -1).map((range) =>
+      range.upperBound.trim() === '' ? Number.NaN : Number(range.upperBound));
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(apiName) || !label || !newBucketSourceField
+      || newBucketRanges.length < 2 || labels.some((rangeLabel) => !rangeLabel)
+      || new Set(labels.map((rangeLabel) => rangeLabel.toLocaleLowerCase())).size !== labels.length
+      || boundaries.some((boundary) => !Number.isFinite(boundary))
+      || boundaries.some((boundary, index) => index > 0 && boundaries[index - 1] >= boundary)) {
+      onNotify('Enter a valid bucket name, unique category labels, and increasing range boundaries');
+      return;
+    }
+    if ((current.bucketFields ?? []).some((bucket) => bucket.apiName.toLocaleLowerCase() === apiName.toLocaleLowerCase())) {
+      onNotify('A bucket with this API name already exists');
+      return;
+    }
+    const bucket: ReportBucketMetadata = {
+      apiName,
+      label,
+      fieldApiName: newBucketSourceField,
+      ranges: newBucketRanges.map((range, index) => ({
+        label: range.label.trim(),
+        lowerBound: index === 0 ? null : boundaries[index - 1],
+        upperBound: index === newBucketRanges.length - 1 ? null : boundaries[index]
+      })),
+      treatBlanksAsZero: newBucketBlanksAsZero
+    };
+    updateReport({ bucketFields: [...(current.bucketFields ?? []), bucket] });
+    setNewBucketApiName('');
+    setNewBucketLabel('');
+    setNewBucketRanges([
+      { label: 'Small', upperBound: '' },
+      { label: 'Medium', upperBound: '' },
+      { label: 'Large', upperBound: '' }
+    ]);
+    setResult(null);
   };
   const refreshPreview = useCallback(async (offset = 0) => {
     if (!current) return;
@@ -7600,6 +8098,7 @@ function ReportBuilder({
       rowLimit: { limit: null, sortFieldApiName: null, sortDirection: 'Ascending' },
       summaryOperations: {},
       dateGroupings: {},
+      bucketFields: [],
       showDetails: true,
       showChart: false,
       folderName: 'My Reports',
@@ -7679,7 +8178,11 @@ function ReportBuilder({
       rowLimit: { ...current.rowLimit },
       summaryOperations: Object.fromEntries(Object.entries(current.summaryOperations).map(([fieldApiName, operations]) =>
         [fieldApiName, [...operations]])),
-      dateGroupings: { ...current.dateGroupings }
+      dateGroupings: { ...current.dateGroupings },
+      bucketFields: (current.bucketFields ?? []).map((bucket) => ({
+        ...bucket,
+        ranges: bucket.ranges.map((range) => ({ ...range }))
+      }))
     };
     setDraft(cloned);
     setSelectedApiName(cloned.apiName);
@@ -7730,6 +8233,7 @@ function ReportBuilder({
       rowLimit: { limit: null, sortFieldApiName: null, sortDirection: 'Ascending' },
       summaryOperations: {},
       dateGroupings: {},
+      bucketFields: [],
       showDetails: true,
       showChart: false,
       folderName: 'My Reports',
@@ -7894,6 +8398,10 @@ function ReportBuilder({
     (current?.groupByFieldApiNames.includes(field.apiName)
       || current?.columnGroupByFieldApiName === field.apiName)
     && /^(Date|DateTime)(\(|$)/.test(field.dataType)) ?? [];
+  const reportFieldLabel = (fieldApiName: string) =>
+    reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label
+    ?? current?.bucketFields?.find((bucket) => `Bucket_${bucket.apiName}` === fieldApiName)?.label
+    ?? fieldApiName;
   const matrixColumnField = result?.report.columnGroupByFieldApiName;
   const matrixColumns = result && matrixColumnField
     ? [...new Set(result.summaryRows.map((group) => group.groupValues[matrixColumnField]))]
@@ -8046,6 +8554,77 @@ function ReportBuilder({
             </div>;
           })}
         </div>}
+        {current && !runPage && builderTab === 'Outline' && <div className="report-panel-block">
+          <h3>BUCKET FIELDS</h3>
+          {(current.bucketFields ?? []).map((bucket) => {
+            const bucketFieldApiName = `Bucket_${bucket.apiName}`;
+            return <div className="report-cross-filter" key={bucket.apiName}>
+              <div className="report-cross-filter-heading"><strong>{bucket.label}</strong>
+                <button className="icon-button" aria-label={`Remove bucket ${bucket.label}`} onClick={() => {
+                  const bucketFields = (current.bucketFields ?? []).filter((item) => item.apiName !== bucket.apiName);
+                  updateReport({
+                    bucketFields,
+                    fieldApiNames: current.fieldApiNames.filter((item) => item !== bucketFieldApiName),
+                    groupByFieldApiNames: current.groupByFieldApiNames.filter((item) => item !== bucketFieldApiName),
+                    columnGroupByFieldApiName: current.columnGroupByFieldApiName === bucketFieldApiName ? null : current.columnGroupByFieldApiName
+                  });
+                  setResult(null);
+                }}><X size={13} /></button>
+              </div>
+              <small>{reportObject?.fields.find((field) => field.apiName === bucket.fieldApiName)?.label}: {bucket.ranges.map((range) => range.label).join(', ')}</small>
+              <label className="checkbox-row property-check"><input type="checkbox" checked={current.fieldApiNames.includes(bucketFieldApiName)}
+                onChange={(event) => toggleField(bucketFieldApiName, event.target.checked)} />Add bucket as a report column</label>
+            </div>;
+          })}
+          <label className="form-label" htmlFor="report-bucket-label">Bucket label</label>
+          <input id="report-bucket-label" className="form-control" value={newBucketLabel} onChange={(event) => setNewBucketLabel(event.target.value)} />
+          <label className="form-label" htmlFor="report-bucket-api-name">Bucket API name</label>
+          <input id="report-bucket-api-name" className="form-control" value={newBucketApiName} onChange={(event) => setNewBucketApiName(event.target.value)} />
+          <label className="form-label" htmlFor="report-bucket-source">Numeric source field</label>
+          <select id="report-bucket-source" className="form-control" value={newBucketSourceField}
+            onChange={(event) => setNewBucketSourceField(event.target.value)}>
+            <option value="">Select source field</option>
+            {reportObject?.fields.filter((field) => field.formula
+              ? /^(Number|Currency|Percent)$/.test(field.formula.returnType)
+              : /^(Number|Currency|Percent)(\(|$)/.test(field.dataType))
+              .map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+          </select>
+          {newBucketRanges.map((range, index) => <div className="report-cross-filter" key={`new-bucket-range-${index}`}>
+            <label className="form-label" htmlFor={`report-bucket-range-label-${index}`}>Category {index + 1} label</label>
+            <input id={`report-bucket-range-label-${index}`} className="form-control" value={range.label}
+              onChange={(event) => updateNewBucketRange(index, { label: event.target.value })} />
+            {index < newBucketRanges.length - 1 && <>
+              <label className="form-label" htmlFor={`report-bucket-range-upper-${index}`}>
+                Values below {newBucketRanges[index + 1].label || `Category ${index + 2}`}
+              </label>
+              <input id={`report-bucket-range-upper-${index}`} className="form-control" type="number" value={range.upperBound}
+                onChange={(event) => updateNewBucketRange(index, { upperBound: event.target.value })} />
+            </>}
+            {newBucketRanges.length > 2 && <button type="button" className="icon-button"
+              aria-label={`Remove bucket category ${index + 1}`} onClick={() => removeNewBucketRange(index)}><X size={13} /></button>}
+          </div>)}
+          <button type="button" className="outline-add" onClick={addNewBucketRange}><Plus size={12} />Add Category</button>
+          <label className="checkbox-row property-check"><input type="checkbox" checked={newBucketBlanksAsZero} onChange={(event) => setNewBucketBlanksAsZero(event.target.checked)} />Treat blank values as zero</label>
+          <button className="outline-add" onClick={addBucketField}><Plus size={12} />Add Bucket Field</button>
+          {(current.bucketFields ?? []).map((bucket) => {
+            const apiName = `Bucket_${bucket.apiName}`;
+            return <label className="checkbox-row property-check" key={`group-${bucket.apiName}`}>
+              <input type="checkbox" disabled={current.format === 'Tabular' || current.format === 'Matrix' && current.groupByFieldApiNames.length === 1 && current.groupByFieldApiNames.includes(apiName)}
+                checked={current.groupByFieldApiNames.includes(apiName)} onChange={(event) => {
+                  const groupByFieldApiNames = event.target.checked
+                    ? [...current.groupByFieldApiNames, apiName].slice(0, 3)
+                    : current.groupByFieldApiNames.filter((item) => item !== apiName);
+                  updateReport({
+                    groupByFieldApiNames,
+                    format: groupByFieldApiNames.length && current.format === 'Tabular' ? 'Summary'
+                      : !groupByFieldApiNames.length && current.format === 'Summary' ? 'Tabular' : current.format,
+                    showDetails: groupByFieldApiNames.length ? current.showDetails : true
+                  });
+                  setResult(null);
+                }} />Group rows by {bucket.label}
+            </label>;
+          })}
+        </div>}
         {current && !runPage && builderTab === 'Outline' && <div className="report-panel-block"><h3>FORMAT</h3>
           <label className="form-label" htmlFor="report-format">Report format</label>
           <select id="report-format" className="form-control" value={current.format} onChange={(event) => {
@@ -8087,6 +8666,8 @@ function ReportBuilder({
               <option value="">Select a column grouping</option>
               {reportObject?.fields.filter((field) => !current.groupByFieldApiNames.includes(field.apiName)).map((field) =>
                 <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+              {(current.bucketFields ?? []).filter((bucket) => !current.groupByFieldApiNames.includes(`Bucket_${bucket.apiName}`))
+              .map((bucket) => <option key={bucket.apiName} value={`Bucket_${bucket.apiName}`}>{bucket.label}</option>)}
             </select>
           </>}
         </div>}
@@ -8227,7 +8808,7 @@ function ReportBuilder({
             onChange={(event) => { updateReport({ sortFieldApiName: event.target.value || null }); setResult(null); }}>
             <option value="">Default order</option>
             {[...new Set([...current.fieldApiNames, ...current.groupByFieldApiNames, ...(current.columnGroupByFieldApiName ? [current.columnGroupByFieldApiName] : [])])].map((fieldApiName) => (
-              <option key={fieldApiName} value={fieldApiName}>{reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</option>
+              <option key={fieldApiName} value={fieldApiName}>{reportFieldLabel(fieldApiName)}</option>
             ))}
           </select>
           <label className="form-label" htmlFor="report-sort-direction">Direction</label>
@@ -8375,7 +8956,7 @@ function ReportBuilder({
             <label className="form-label" htmlFor="report-row-limit-sort">Sort by</label>
             <select id="report-row-limit-sort" className="form-control" value={current.rowLimit.sortFieldApiName ?? ''}
               onChange={(event) => { updateReport({ rowLimit: { ...current.rowLimit, sortFieldApiName: event.target.value || null } }); setResult(null); }}>
-              {current.fieldApiNames.map((fieldApiName) => <option key={fieldApiName} value={fieldApiName}>{reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</option>)}
+              {current.fieldApiNames.map((fieldApiName) => <option key={fieldApiName} value={fieldApiName}>{reportFieldLabel(fieldApiName)}</option>)}
             </select>
             <select className="form-control" aria-label="Row limit sort direction" value={current.rowLimit.sortDirection}
               onChange={(event) => { updateReport({ rowLimit: { ...current.rowLimit, sortDirection: event.target.value as 'Ascending' | 'Descending' } }); setResult(null); }}>
@@ -8440,20 +9021,20 @@ function ReportBuilder({
               <div className="permission-table-wrap"><table className="slds-table report-results">
                 <thead><tr>
                   {result.report.groupByFieldApiNames.map((fieldApiName) => (
-                    <th key={fieldApiName}>{reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</th>
+                    <th key={fieldApiName}>{reportFieldLabel(fieldApiName)}</th>
                   ))}
                   {result.report.format === 'Matrix' && result.report.columnGroupByFieldApiName && (
                     <th>{reportObject?.fields.find((field) => field.apiName === result.report.columnGroupByFieldApiName)?.label ?? result.report.columnGroupByFieldApiName}</th>
                   )}
                   <th>Record Count</th>
                   {summarySpecs.map(({ fieldApiName, operation }) => (
-                    <th key={`${fieldApiName}-${operation}`}>{operation} of {reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</th>
+                    <th key={`${fieldApiName}-${operation}`}>{operation} of {reportFieldLabel(fieldApiName)}</th>
                   ))}
                 </tr></thead>
                 <tbody>{result.subtotalRows.map((subtotal) => <tr key={`${subtotal.groupLevel}-${JSON.stringify(subtotal.groupValues)}`}>
                   {result.report.groupByFieldApiNames.map((fieldApiName, index) => (
                     <td key={fieldApiName}>{index === subtotal.groupLevel - 1
-                      ? `${reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName} subtotal`
+                      ? `${reportFieldLabel(fieldApiName)} subtotal`
                       : index < subtotal.groupLevel
                         ? groupedValueLabel(fieldApiName, subtotal.groupValues[fieldApiName])
                         : ''}</td>
@@ -8471,11 +9052,11 @@ function ReportBuilder({
             {result.report.format === 'Matrix' && matrixColumnField
               ? <div className="permission-table-wrap"><table className="slds-table report-results">
                 <thead><tr>
-                  {result.report.groupByFieldApiNames.map((fieldApiName) => <th key={fieldApiName}>{reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</th>)}
+                  {result.report.groupByFieldApiNames.map((fieldApiName) => <th key={fieldApiName}>{reportFieldLabel(fieldApiName)}</th>)}
                   {matrixColumns.flatMap((columnValue) => [
                     <th key={`${String(columnValue)}-count`}>{groupedValueLabel(matrixColumnField, columnValue)} · Count</th>,
                     ...summarySpecs.map(({ fieldApiName, operation }) => <th key={`${String(columnValue)}-${fieldApiName}-${operation}`}>
-                      {groupedValueLabel(matrixColumnField, columnValue)} · {operation} {reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}
+                      {groupedValueLabel(matrixColumnField, columnValue)} · {operation} {reportFieldLabel(fieldApiName)}
                     </th>)
                   ])}
                 </tr></thead>
@@ -8506,10 +9087,10 @@ function ReportBuilder({
               </table></div>
               : <div className="permission-table-wrap"><table className="slds-table report-results">
               <thead><tr>
-                {result.report.groupByFieldApiNames.map((fieldApiName) => <th key={fieldApiName}>{reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</th>)}
+                {result.report.groupByFieldApiNames.map((fieldApiName) => <th key={fieldApiName}>{reportFieldLabel(fieldApiName)}</th>)}
                 <th>Record Count</th>
                 {summarySpecs.map(({ fieldApiName, operation }) => (
-                  <th key={`${fieldApiName}-${operation}`}>{operation} of {reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</th>
+                  <th key={`${fieldApiName}-${operation}`}>{operation} of {reportFieldLabel(fieldApiName)}</th>
                 ))}
               </tr></thead>
               <tbody>{result.summaryRows.map((group) => <tr key={JSON.stringify(group.groupValues)}>
@@ -8528,12 +9109,12 @@ function ReportBuilder({
               </tr></tfoot>
             </table></div>}
           </section>}
-          {result && result.report.showDetails && <div className="permission-table-wrap"><table className="slds-table report-results"><thead><tr>{result.report.fieldApiNames.map((fieldApiName) => <th key={fieldApiName}>{reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName}</th>)}</tr></thead>
+          {result && result.report.showDetails && <div className="permission-table-wrap"><table className="slds-table report-results"><thead><tr>{result.report.fieldApiNames.map((fieldApiName) => <th key={fieldApiName}>{reportFieldLabel(fieldApiName)}</th>)}</tr></thead>
             <tbody>{result.rows.map((row, index) => <tr key={String(row.Id ?? index)}>{result.report.fieldApiNames.map((fieldApiName) => <td key={fieldApiName}>{row[fieldApiName] === null || row[fieldApiName] === undefined ? '—' : String(row[fieldApiName])}</td>)}</tr>)}</tbody>
           </table>{!result.rows.length && <p className="dashboard-no-data">No records match this report.</p>}
             <div className="report-footer"><span>Showing {result.totalRows ? result.offset + 1 : 0}–{result.offset + result.rows.length} of {result.totalRows.toLocaleString()} records</span><span><button className="icon-button subtle" aria-label="Previous report page" disabled={busy || previewBusy || result.offset === 0} onClick={() => void (runPage ? run(Math.max(0, pageOffset - result.pageSize)) : refreshPreview(Math.max(0, pageOffset - result.pageSize)))}><ChevronLeft size={14} /></button><button className="icon-button subtle" aria-label="Next report page" disabled={busy || previewBusy || !result.truncated} onClick={() => void (runPage ? run(pageOffset + result.pageSize) : refreshPreview(pageOffset + result.pageSize))}><ChevronRight size={14} /></button></span></div>
           </div>}
-          {current.groupByFieldApiNames.length > 0 && <div className="report-footer">Grouped by {current.groupByFieldApiNames.map((fieldApiName) => reportObject?.fields.find((field) => field.apiName === fieldApiName)?.label ?? fieldApiName).join(', ')}</div>}
+          {current.groupByFieldApiNames.length > 0 && <div className="report-footer">Grouped by {current.groupByFieldApiNames.map(reportFieldLabel).join(', ')}</div>}
         </>}
       </div>
     </div>

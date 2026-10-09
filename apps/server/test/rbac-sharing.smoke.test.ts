@@ -930,10 +930,13 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         type: 'Lookup',
         targetObject: 'Account',
         relationshipName: 'LifecycleItem',
-        childRelationshipName: 'LifecycleItems'
+        childRelationshipName: 'LifecycleItems',
+        deleteBehavior: 'Restrict'
       }
     });
     assert.equal(lifecycleRelationship.status, 201, JSON.stringify(lifecycleRelationship.data));
+    assert.equal(lifecycleRelationship.data.field.relationship.childRelationshipName, 'LifecycleItems',
+      'the configured child relationship name must round-trip for related-list setup');
     const uniqueLookup = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
       apiName: 'Unique_Account__c',
       label: 'Unique Account',
@@ -964,6 +967,21 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'related-list references must be removable before deleting their relationship');
     assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields/Parent_Account__c`, adminToken, 'DELETE')).status, 200,
       'unreferenced relationship fields must be deletable');
+    const recreatedLifecycleRelationship = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+      apiName: 'Parent_Account__c',
+      label: 'Parent Account',
+      dataType: 'Lookup(Account)',
+      required: false,
+      unique: false,
+      relationship: {
+        type: 'Lookup',
+        targetObject: 'Account',
+        relationshipName: 'LifecycleItem',
+        childRelationshipName: 'LifecycleItems',
+        deleteBehavior: 'Restrict'
+      }
+    });
+    assert.equal(recreatedLifecycleRelationship.status, 201, JSON.stringify(recreatedLifecycleRelationship.data));
     const currentLifecycleMetadata = (await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken)).data.object;
     const lifecycleLinkUpdate = await api.send(`/metadata/objects/${lifecycleObjectApiName}`, adminToken, 'PUT', {
       ...currentLifecycleMetadata,
@@ -1337,14 +1355,66 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal((await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
       Name: 'Invalid Missing Code'
     })).status, 422, 'required custom fields must be enforced by record creation');
+    const lifecycleExternalId = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+      apiName: 'External_Key__c',
+      label: 'External Key',
+      dataType: 'Text(80)',
+      required: false,
+      unique: true,
+      externalId: true,
+      caseSensitive: false
+    });
+    assert.equal(lifecycleExternalId.status, 201, JSON.stringify(lifecycleExternalId.data));
+    assert.equal(lifecycleExternalId.data.field.externalId, true, 'external ID metadata must persist on eligible field types');
+    assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+      apiName: 'Invalid_External_Id__c',
+      label: 'Invalid External ID',
+      dataType: 'Checkbox',
+      required: false,
+      unique: false,
+      externalId: true
+    })).status, 400, 'external IDs must reject unsupported field types');
+    assert.equal((await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+      apiName: 'Invalid_Case_Sensitivity__c',
+      label: 'Invalid Case Sensitivity',
+      dataType: 'Text(80)',
+      required: false,
+      unique: false,
+      caseSensitive: true
+    })).status, 400, 'case sensitivity can only be configured on unique supported text fields');
+    const lifecycleSensitiveKey = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+      apiName: 'Sensitive_Key__c',
+      label: 'Sensitive Key',
+      dataType: 'Text(80)',
+      required: false,
+      unique: true,
+      caseSensitive: true
+    });
+    assert.equal(lifecycleSensitiveKey.status, 201, JSON.stringify(lifecycleSensitiveKey.data));
+    const lifecycleLocation = await api.send(`/metadata/objects/${lifecycleObjectApiName}/fields`, adminToken, 'POST', {
+      apiName: 'Location__c',
+      label: 'Location',
+      dataType: 'Geolocation',
+      required: false,
+      unique: false
+    });
+    assert.equal(lifecycleLocation.status, 201, JSON.stringify(lifecycleLocation.data));
     assert.equal((await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
       Name: 'Invalid Picklist',
       External_Code__c: 'LIFE-INVALID',
       Lifecycle_Status__c: 'Unknown'
     })).status, 422, 'restricted picklist values must be enforced at runtime');
+    const restrictedLookupParent = await api.send('/records/Account', adminToken, 'POST', {
+      Name: 'Restricted Lookup Parent'
+    });
+    assert.equal(restrictedLookupParent.status, 201, JSON.stringify(restrictedLookupParent.data));
     const lifecycleRecord = await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
       Name: 'Lifecycle Record',
-      External_Code__c: 'LIFE-001'
+      External_Code__c: 'LIFE-001',
+      External_Key__c: 'MixedCaseKey',
+      Sensitive_Key__c: 'ABC',
+      Parent_Account__c: restrictedLookupParent.data.record.Id,
+      Location__c: { latitude: 37.7749, longitude: -122.4194 }
     });
     assert.equal(lifecycleRecord.status, 201, JSON.stringify(lifecycleRecord.data));
     assert.equal(lifecycleRecord.data.record.CreatedById, lifecycleAdminUserId,
@@ -1361,6 +1431,35 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     })).status, 422, 'clients must not set read-only audit system fields');
     assert.equal(lifecycleRecord.data.record.Lifecycle_Status__c, 'Open',
       'custom field defaults must be applied when the record is created');
+    const blockedLookupParentDelete = await api.send(`/records/Account/${restrictedLookupParent.data.record.Id}`, adminToken, 'DELETE');
+    assert.equal(blockedLookupParentDelete.status, 422, 'lookup delete behavior configured as Restrict must preserve referenced parents');
+    assert.match(String(blockedLookupParentDelete.data.error), /LifecycleItem/,
+      'blocked lookup deletion must identify the referencing relationship');
+    assert.deepEqual(lifecycleRecord.data.record.Location__c, { latitude: 37.7749, longitude: -122.4194 },
+      'geolocation coordinates must persist through record creation');
+    assert.equal((await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
+      Name: 'Invalid Geolocation',
+      External_Code__c: 'LIFE-GEO-INVALID',
+      Location__c: { latitude: 91, longitude: 0 }
+    })).status, 422, 'geolocation writes must reject coordinates outside latitude and longitude ranges');
+    assert.equal((await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
+      Name: 'Case Insensitive Duplicate External Key',
+      External_Code__c: 'LIFE-CASE-002',
+      External_Key__c: 'mixedcasekey',
+      Sensitive_Key__c: 'abc'
+    })).status, 422, 'case-insensitive unique external IDs must reject values that differ only by case');
+    assert.equal((await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
+      Name: 'Case Sensitive Duplicate',
+      External_Code__c: 'LIFE-CASE-003',
+      External_Key__c: 'OTHER-KEY',
+      Sensitive_Key__c: 'ABC'
+    })).status, 422, 'case-sensitive unique fields must still reject exact duplicate values');
+    assert.equal((await api.send(`/records/${lifecycleObjectApiName}`, adminToken, 'POST', {
+      Name: 'Case Insensitive Duplicate',
+      External_Code__c: 'LIFE-CASE-004',
+      External_Key__c: 'MIXEDCASEKEY',
+      Sensitive_Key__c: 'different'
+    })).status, 422, 'case-insensitive unique external IDs must reject values that differ only by case');
     assert.equal(lifecycleRecord.data.record.Name_Length__c, 'Lifecycle Record',
       'formula fields must calculate from the saved record values');
     const uniqueLookupParent = await api.send('/records/Account', adminToken, 'POST', {
@@ -4180,6 +4279,20 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
             relationshipName: 'MasterDetailAccessAccount',
             childRelationshipName: 'MasterDetailAccessRecords'
           }
+        },
+        {
+          apiName: 'Reparentable_Account__c',
+          label: 'Reparentable Account',
+          dataType: 'Master-Detail(Account)',
+          required: true,
+          unique: false,
+          relationship: {
+            type: 'Master-Detail',
+            targetObject: 'Account',
+            relationshipName: 'ReparentableMasterDetailAccessAccount',
+            childRelationshipName: 'ReparentableMasterDetailAccessRecords',
+            allowReparenting: true
+          }
         }
       ],
       settings: {
@@ -4197,23 +4310,37 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     standardUserProfile.objectPermissions[masterDetailObjectApiName] = objectPermissions;
     standardUserProfile.fieldPermissions[`${masterDetailObjectApiName}.Name`] = { read: true, edit: true };
     standardUserProfile.fieldPermissions[`${masterDetailObjectApiName}.Account__c`] = { read: true, edit: true };
+    standardUserProfile.fieldPermissions[`${masterDetailObjectApiName}.Reparentable_Account__c`] = { read: true, edit: true };
     const systemAdministratorProfile = permissions.profiles.find((profile: { id: string }) => profile.id === 'system-administrator');
     systemAdministratorProfile.objectPermissions[masterDetailObjectApiName] = {
       read: true, create: true, edit: true, delete: true, viewAll: true, modifyAll: true
     };
     systemAdministratorProfile.fieldPermissions[`${masterDetailObjectApiName}.Name`] = { read: true, edit: true };
     systemAdministratorProfile.fieldPermissions[`${masterDetailObjectApiName}.Account__c`] = { read: true, edit: true };
+    systemAdministratorProfile.fieldPermissions[`${masterDetailObjectApiName}.Reparentable_Account__c`] = { read: true, edit: true };
     assert.equal((await api.send('/metadata/permissions', adminToken, 'PUT', permissions)).status, 200,
       'standard users must have object and field permissions for the master-detail access fixture');
     const masterDetailParent = await api.send('/records/Account', adminToken, 'POST', {
       Name: 'Master Detail Shared Parent'
     });
     assert.equal(masterDetailParent.status, 201, JSON.stringify(masterDetailParent.data));
+    const reparentedMasterDetailParent = await api.send('/records/Account', adminToken, 'POST', {
+      Name: 'Reparented Master Detail Parent'
+    });
+    assert.equal(reparentedMasterDetailParent.status, 201, JSON.stringify(reparentedMasterDetailParent.data));
     const masterDetailChild = await api.send(`/records/${masterDetailObjectApiName}`, adminToken, 'POST', {
       Name: 'Master Detail Child',
-      Account__c: masterDetailParent.data.record.Id
+      Account__c: masterDetailParent.data.record.Id,
+      Reparentable_Account__c: masterDetailParent.data.record.Id
     });
     assert.equal(masterDetailChild.status, 201, JSON.stringify(masterDetailChild.data));
+    assert.equal((await api.send(`/records/${masterDetailObjectApiName}/${masterDetailChild.data.record.Id}`, adminToken, 'PUT', {
+      Account__c: reparentedMasterDetailParent.data.record.Id
+    })).status, 422, 'master-detail relationships must reject reparenting unless explicitly enabled');
+    const allowedMasterDetailReparenting = await api.send(`/records/${masterDetailObjectApiName}/${masterDetailChild.data.record.Id}`, adminToken, 'PUT', {
+      Reparentable_Account__c: reparentedMasterDetailParent.data.record.Id
+    });
+    assert.equal(allowedMasterDetailReparenting.status, 200, JSON.stringify(allowedMasterDetailReparenting.data));
     assert.equal((await api.send(`/records/Account/${masterDetailParent.data.record.Id}/shares`, adminToken, 'POST', {
       userId: outsiderId,
       accessLevel: 'Edit'
