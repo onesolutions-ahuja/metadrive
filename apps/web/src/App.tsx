@@ -510,6 +510,7 @@ function ConnectorSettingsWorkspace({
   const [connectionConfiguration, setConnectionConfiguration] = useState<Record<string, string>>({});
   const [connectionCredentials, setConnectionCredentials] = useState<Record<string, string>>({});
   const [savingConnection, setSavingConnection] = useState(false);
+  const [editingConnection, setEditingConnection] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionTestError, setConnectionTestError] = useState('');
   const [editingProvider, setEditingProvider] = useState(false);
@@ -533,7 +534,8 @@ function ConnectorSettingsWorkspace({
     setConnectionStatus(existing?.status ?? 'ACTIVE');
     setConnectionConfiguration(existing?.configuration ?? {});
     setConnectionCredentials({});
-  }, [provider.connectorKey]);
+    setEditingConnection(false);
+  }, [provider.connectorKey, integrationConnections]);
 
   useEffect(() => {
     setProviderName(provider.name);
@@ -584,6 +586,7 @@ function ConnectorSettingsWorkspace({
     setConnectionConfiguration(selected?.configuration ?? {});
     setConnectionCredentials({});
     setConnectionTestError('');
+    setEditingConnection(!selected);
   };
   const saveConnection = async () => {
     setSavingConnection(true);
@@ -597,6 +600,7 @@ function ConnectorSettingsWorkspace({
         status: connectionStatus
       });
       setSelectedConnectionId(saved.id);
+      setEditingConnection(false);
       setConnectionName(saved.name);
       setConnectionConfiguration(saved.configuration);
       setConnectionStatus(saved.status);
@@ -621,7 +625,7 @@ function ConnectorSettingsWorkspace({
   const testStatusClass = testStatusLabel === 'Connected' ? 'connected'
     : testStatusLabel === 'Failed' || testStatusLabel === 'Not configured' ? 'failed' : '';
   const testConnection = async () => {
-    if (!selectedConnectionId || connectionIsDirty || editingProvider) return;
+    if (!selectedConnectionId || connectionIsDirty || editingProvider || editingConnection) return;
     setTestingConnection(true);
     setConnectionTestError('');
     try {
@@ -675,7 +679,8 @@ function ConnectorSettingsWorkspace({
                 <label className="form-label">Max Attempts<input className="form-control" type="number" min={1} max={5} value={providerRetries} onChange={(event) => setProviderRetries(event.target.value)} /></label>
                 <label className="form-label">Status<select className="form-control" value={providerStatus} onChange={(event) => setProviderStatus(event.target.value as ConnectorProviderMetadata['status'])}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></label>
               </div>
-            </div> : <div className="connector-field-list">
+            </div> : <div className="connector-connection-actions">{selectedConnectionId && !editingConnection && <button className="btn btn-small" onClick={() => setEditingConnection(true)}><Pencil size={13} />Edit Connection</button>}{editingConnection && selectedConnectionId && <button className="btn btn-small" onClick={() => selectConnection(selectedConnectionId)}>Cancel</button>}</div>
+            <fieldset disabled={!editingConnection} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><div className="connector-field-list">
               <div className="connector-config-field"><div className="connector-config-label"><span>Connector Key</span></div><code>{provider.connectorKey}</code></div>
               <div className="connector-config-field"><div className="connector-config-label"><span>Authentication</span></div><div className="connector-config-value">{provider.authType}</div></div>
               {provider.authCredential && <div className="connector-config-field"><div className="connector-config-label"><span>Authentication Credential</span></div><div className="connector-config-value">{provider.authCredential}</div></div>}
@@ -694,7 +699,7 @@ function ConnectorSettingsWorkspace({
                   <option value="">New connection</option>
                   {providerConnections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <button className="btn btn-small" onClick={() => selectConnection('')}><Plus size={13} />New</button>
+                <button className="btn btn-small" onClick={() => { selectConnection(''); setEditingConnection(true); }}><Plus size={13} />New</button>
               </div>
             </div>
             <div className="connector-field-list">
@@ -714,6 +719,7 @@ function ConnectorSettingsWorkspace({
                 />
               </label>)}
             </div>
+            </fieldset>
             <div className="connector-save-footer">
               <div className="connector-test-state" aria-live="polite">
                 <span className={`connector-test-result ${testStatusClass}`}>{testStatusLabel}</span>
@@ -726,10 +732,10 @@ function ConnectorSettingsWorkspace({
                 <p className="connector-security-note">Credentials are encrypted at rest and are never returned to the browser. Leave a saved secret blank to keep it unchanged.</p>
               </div>
               <div className="connector-connection-actions">
-                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || savingConnection || testingConnection || editingProvider}>
+                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || savingConnection || testingConnection || editingProvider || editingConnection}>
                   {testingConnection ? 'Testing…' : 'Test Connection'}
                 </button>
-                <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}><Save size={14} />{savingConnection ? 'Saving…' : 'Save Connection'}</button>
+                {editingConnection && <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}><Save size={14} />{savingConnection ? 'Saving…' : 'Save Connection'}</button>}
               </div>
             </div>
           </div>
