@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [fix-missing-connector-test-module]
+    branches: [fix-render-server-tsc-emit]
   workflow_dispatch:
 
 permissions:
@@ -26,5 +26,7 @@ jobs:
           GITHUB_PAGES: 'true'
           VITE_API_BASE_URL: https://oneengine-6gas.onrender.com/api
         run: npm run build
+      - name: Verify emitted server entrypoint
+        run: test -f apps/server/dist/index.js
       - name: Test connector executor
         run: npm exec --workspace apps/server -- tsx --test test/connector-test.test.ts
