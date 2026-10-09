@@ -6,7 +6,10 @@ if (!connectionString) throw new Error('DATABASE_URL is required for persistent 
 
 const pool = new Pool({
   connectionString,
-  ssl: process.env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: true },
+  ssl: process.env.PGSSLMODE === 'disable' ? false : {
+    rejectUnauthorized: process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT !== 'true',
+    ...(process.env.METADRIVE_DB_CA_CERT ? { ca: process.env.METADRIVE_DB_CA_CERT.replace(/\\n/g, '\n') } : {})
+  },
   max: 3,
   connectionTimeoutMillis: 15000
 });
