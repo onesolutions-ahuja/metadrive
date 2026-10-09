@@ -1,4 +1,5 @@
 import cors from 'cors';
+import { readPersistedState, persistToPostgres } from './postgres-state.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -3726,8 +3727,19 @@ function persistState(next: PlatformState): void {
   const temporaryPath = `${dataPath}.tmp`;
   writeFileSync(temporaryPath, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
   renameSync(temporaryPath, dataPath);
+  void persistToPostgres(next);
+}
+const existingPostgresState = await readPersistedState();
+if (existingPostgresState !== null) {
+  mkdirSync(dirname(dataPath), { recursive: true });
+  writeFileSync(dataPath, JSON.stringify(existingPostgresState), { encoding: 'utf8', mode: 0o600 });
+} else {
+  // Never replace an existing database state with a new empty seed.
+  // On first deployment, seed from the existing local MetaDrive state when present.
+  console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
 }
 let state = loadState();
+await persistToPostgres(state);
 
 function credentialKeyRing(): CredentialKeyRing {
   const serializedKeys = process.env.METADRIVE_CREDENTIAL_KEYS;
