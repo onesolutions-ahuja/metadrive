@@ -1,0 +1,54 @@
+name: Deploy MetaDrive Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/metadrive-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check backend API URL
+        env:
+          VITE_API_BASE_URL: ${{ vars.METADRIVE_API_URL }}
+        run: |
+          if [[ ! "$VITE_API_BASE_URL" =~ ^https://[^/]+(/api)?/?$ ]]; then
+            echo "::error::Set repository variable METADRIVE_API_URL to your HTTPS Render API URL (with /api)."
+            exit 1
+          fi
+      - name: Build frontend
+        env:
+          GITHUB_PAGES: 'true'
+          VITE_API_BASE_URL: ${{ vars.METADRIVE_API_URL }}
+        run: npm run build --workspace apps/web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
