@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: metadrive_postgres
+    environment:
+      POSTGRES_USER: metadrive
+      POSTGRES_PASSWORD: metadrive_password
+      POSTGRES_DB: metadrive_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  temporal:
+    image: temporalio/auto-setup:1.24.2
+    container_name: metadrive_temporal
+    ports:
+      - "7233:7233"
+      - "8233:8233" # Temporal Web UI
+    environment:
+      - DB=postgresql
+      - DB_PORT=5432
+      - POSTGRES_USER=metadrive
+      - POSTGRES_PWD=metadrive_password
+      - POSTGRES_SEEDS=postgres
+
+volumes:
+  pgdata:
