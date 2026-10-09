@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [fix-render-server-tsc-emit]
+    branches: [feature-aiven-persistent-state]
   workflow_dispatch:
 
 permissions:
