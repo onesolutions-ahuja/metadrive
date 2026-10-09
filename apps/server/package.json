@@ -1,0 +1,33 @@
+{
+  "name": "@metadrive/server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test --test-concurrency=1 test/dashboard-access.test.ts test/flow-collection.test.ts test/rbac-sharing.smoke.test.ts test/report-builder.test.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "esbuild": "^0.28.2",
+    "express": "^4.21.1",
+    "jose": "^5.9.6",
+    "nodemailer": "^10.0.16",
+    "pg": "^8.13.0",
+    "postcss": "^8.5.29",
+    "postcss-selector-parser": "^7.1.6",
+    "sanitize-html": "^2.18.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.5",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/sanitize-html": "^2.16.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.6.2"
+  }
+}

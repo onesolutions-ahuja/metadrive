@@ -1,0 +1,516 @@
+{
+  "objects": [
+    {
+      "apiName": "Account",
+      "label": "Account",
+      "pluralLabel": "Accounts",
+      "kind": "Standard Object",
+      "description": "Companies and organizations that you do business with.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Account Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Account Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Industry",
+          "label": "Industry",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "AnnualRevenue",
+          "label": "Annual Revenue",
+          "dataType": "Currency(18, 0)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Phone",
+          "label": "Phone",
+          "dataType": "Phone",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Website",
+          "label": "Website",
+          "dataType": "URL",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "OwnerId",
+          "label": "Account Owner",
+          "dataType": "Lookup(User)",
+          "required": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Contact",
+      "label": "Contact",
+      "pluralLabel": "Contacts",
+      "kind": "Standard Object",
+      "description": "People associated with your accounts.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Contact Name",
+          "dataType": "Name",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Name",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Title",
+          "label": "Title",
+          "dataType": "Text(128)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Email",
+          "label": "Email",
+          "dataType": "Email",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Phone",
+          "label": "Phone",
+          "dataType": "Phone",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Opportunity",
+      "label": "Opportunity",
+      "pluralLabel": "Opportunities",
+      "kind": "Standard Object",
+      "description": "Potential revenue and deals in progress.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Opportunity Name",
+          "dataType": "Text(120)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Name",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "StageName",
+          "label": "Stage",
+          "dataType": "Picklist",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Amount",
+          "label": "Amount",
+          "dataType": "Currency(16, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CloseDate",
+          "label": "Close Date",
+          "dataType": "Date",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "OwnerId",
+          "label": "Opportunity Owner",
+          "dataType": "Lookup(User)",
+          "required": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Case",
+      "label": "Case",
+      "pluralLabel": "Cases",
+      "kind": "Standard Object",
+      "description": "Customer questions, feedback, and product issues.",
+      "fields": [
+        {
+          "apiName": "CaseNumber",
+          "label": "Case Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": true
+        },
+        {
+          "apiName": "Subject",
+          "label": "Subject",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Priority",
+          "label": "Case Priority",
+          "dataType": "Picklist",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Name",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Renewal__c",
+      "label": "Renewal",
+      "pluralLabel": "Renewals",
+      "kind": "Custom Object",
+      "description": "Tracks upcoming customer contract renewals.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Renewal Name",
+          "dataType": "Text(80)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Account__c",
+          "label": "Account",
+          "dataType": "Lookup(Account)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Renewal_Date__c",
+          "label": "Renewal Date",
+          "dataType": "Date",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ARR__c",
+          "label": "Annual Recurring Revenue",
+          "dataType": "Currency(16, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "apiName": "Renewal_Risk_Evaluation",
+      "label": "Renewal Risk Evaluation",
+      "flowType": "Record-Triggered Flow",
+      "status": "Draft",
+      "triggerObject": "Renewal__c",
+      "elements": [
+        {
+          "id": 1,
+          "type": "Start",
+          "label": "Record-Triggered Flow",
+          "config": {
+            "trigger": "created-or-updated",
+            "runWhen": "after-save"
+          }
+        },
+        {
+          "id": 2,
+          "type": "Decision",
+          "label": "Renewal at risk?",
+          "config": {
+            "outcomes": [
+              {
+                "name": "At_Risk",
+                "label": "At Risk"
+              },
+              {
+                "name": "Default",
+                "label": "Default Outcome"
+              }
+            ]
+          }
+        },
+        {
+          "id": 3,
+          "type": "Update Records",
+          "label": "Update Renewal Status",
+          "config": {
+            "object": "Renewal__c",
+            "field": "Status__c",
+            "value": "At Risk"
+          }
+        }
+      ],
+      "connectors": [
+        {
+          "from": 1,
+          "to": 2,
+          "label": ""
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "label": "At Risk"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "apiName": "Account_Record_Page",
+      "label": "Account Record Page",
+      "targetObject": "Account",
+      "pageType": "Record Page",
+      "status": "Draft",
+      "devices": [
+        "Desktop",
+        "Phone"
+      ],
+      "components": [
+        {
+          "id": "highlights-panel",
+          "type": "Highlights Panel",
+          "label": "Highlights Panel",
+          "properties": {
+            "variant": "compact"
+          },
+          "visible": true
+        },
+        {
+          "id": "record-tabs",
+          "type": "Tabs",
+          "label": "Tabs",
+          "properties": {
+            "tabs": [
+              "Related",
+              "Details",
+              "News"
+            ]
+          },
+          "visible": true
+        },
+        {
+          "id": "related-list",
+          "type": "Related List",
+          "label": "Related List",
+          "properties": {
+            "relatedLists": [
+              "Contacts",
+              "Opportunities",
+              "Cases"
+            ]
+          },
+          "visible": true
+        }
+      ]
+    }
+  ],
+  "accessControl": {
+    "permissionSets": [
+      {
+        "id": "system-administrator",
+        "label": "System Administrator",
+        "apiName": "System_Administrator",
+        "license": "Salesforce",
+        "description": "Full administrative access to platform setup and data.",
+        "objectPermissions": {
+          "Account": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Contact": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Opportunity": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Case": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Renewal__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          }
+        },
+        "fieldPermissions": {}
+      },
+      {
+        "id": "sales-user",
+        "label": "Sales User",
+        "apiName": "Sales_User",
+        "license": "Salesforce",
+        "description": "Manage accounts and opportunities for the sales team.",
+        "objectPermissions": {
+          "Account": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Contact": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Opportunity": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          }
+        },
+        "fieldPermissions": {
+          "Opportunity.Amount": {
+            "read": true,
+            "edit": true
+          },
+          "Opportunity.StageName": {
+            "read": true,
+            "edit": true
+          }
+        }
+      },
+      {
+        "id": "support-agent",
+        "label": "Support Agent",
+        "apiName": "Support_Agent",
+        "license": "Salesforce",
+        "description": "Work on customer cases and view account context.",
+        "objectPermissions": {
+          "Account": {
+            "read": true,
+            "create": false,
+            "edit": false,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Contact": {
+            "read": true,
+            "create": false,
+            "edit": false,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Case": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          }
+        },
+        "fieldPermissions": {
+          "Case.Priority": {
+            "read": true,
+            "edit": true
+          },
+          "Case.Status": {
+            "read": true,
+            "edit": true
+          }
+        }
+      }
+    ],
+    "users": [
+      {
+        "id": "alexandra-curtis",
+        "name": "Alexandra Curtis",
+        "username": "acurtis@metadrive.example",
+        "role": "System Administrator",
+        "permissionSetIds": [
+          "system-administrator"
+        ]
+      },
+      {
+        "id": "david-kim",
+        "name": "David Kim",
+        "username": "dkim@metadrive.example",
+        "role": "Sales Manager",
+        "permissionSetIds": [
+          "sales-user"
+        ]
+      },
+      {
+        "id": "jamie-taylor",
+        "name": "Jamie Taylor",
+        "username": "jtaylor@metadrive.example",
+        "role": "Support Agent",
+        "permissionSetIds": [
+          "support-agent"
+        ]
+      }
+    ]
+  }
+}
