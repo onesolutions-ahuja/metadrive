@@ -905,7 +905,7 @@ export const workspaces: WorkspaceMetadata[] = [
 export const setupNavigation = [
   { group: 'Company Settings', items: ['Company Information', 'Currencies'] },
   { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Lightning App Builder', 'App Manager', 'Component Library', 'AppExchange'] },
-  { group: 'Integrations', items: ['Une Connectors', 'Named Credentials'] },
+  { group: 'Integrations', items: ['Named Credentials'] },
   { group: 'Data', items: ['Objects', 'Fields & Relationships', 'Page Layouts', 'Record Types'] },
   { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Failed Flow Logs', 'Approval Processes', 'Process Automation Settings'] },
   { group: 'Analytics', items: ['Reports', 'Dashboards'] },
