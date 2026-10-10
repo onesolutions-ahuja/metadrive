@@ -1101,25 +1101,34 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     const loadMetadata = async () => {
+      const failures: string[] = [];
+      const recover = async <T,>(path: string, fallback: T): Promise<T> => {
+        try { return await apiRequest<T>(path); }
+        catch (error) {
+          if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
+          failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+          return fallback;
+        }
+      };
       try {
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
-          apiRequest<{ objects: ObjectMetadata[] }>('/metadata/objects'),
-          apiRequest<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows'),
-          apiRequest<{ platformEvents: PlatformEventMetadata[] }>('/metadata/platform-events'),
-          apiRequest<{ pages: LightningPageMetadata[] }>('/metadata/pages'),
-          apiRequest<{ apps: LightningAppMetadata[] }>('/metadata/apps'),
-          apiRequest<{ credentials: NamedCredentialMetadata[] }>('/named-credentials'),
-          apiRequest<{ emailAlerts: EmailAlertMetadata[] }>('/metadata/email-alerts'),
-          apiRequest<{ approvalProcesses: ApprovalProcessMetadata[] }>('/metadata/approval-processes'),
-          apiRequest<{ providers: ConnectorProviderMetadata[] }>('/connector-providers'),
-          apiRequest<{ connections: IntegrationConnectionMetadata[] }>('/integration-connections'),
-          apiRequest<{ components: LibraryComponentMetadata[]; canManage: boolean }>('/component-library'),
-          apiRequest<{ dashboards: DashboardMetadata[]; userId: string; runningUserIds: string[]; canCreate: boolean; canManageAll: boolean; canSchedule: boolean }>('/metadata/dashboards'),
-          apiRequest<{ folders: DashboardFolderMetadata[] }>('/metadata/dashboard-folders'),
-          apiRequest<{ territories: DashboardTerritoryMetadata[]; canManage: boolean }>('/metadata/dashboard-territories'),
-          apiRequest<{ folders: ReportFolderMetadata[]; canManageAll: boolean }>('/metadata/report-folders'),
-          apiRequest<{ reports: ReportMetadata[] }>('/metadata/reports'),
-          apiRequest<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me')
+          recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
+          recover<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows', { flows: [] }),
+          recover<{ platformEvents: PlatformEventMetadata[] }>('/metadata/platform-events', { platformEvents: [] }),
+          recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
+          recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
+          recover<{ credentials: NamedCredentialMetadata[] }>('/named-credentials', { credentials: [] }),
+          recover<{ emailAlerts: EmailAlertMetadata[] }>('/metadata/email-alerts', { emailAlerts: [] }),
+          recover<{ approvalProcesses: ApprovalProcessMetadata[] }>('/metadata/approval-processes', { approvalProcesses: [] }),
+          recover<{ providers: ConnectorProviderMetadata[] }>('/connector-providers', { providers: [] }),
+          recover<{ connections: IntegrationConnectionMetadata[] }>('/integration-connections', { connections: [] }),
+          recover<{ components: LibraryComponentMetadata[]; canManage: boolean }>('/component-library', { components: [], canManage: false }),
+          recover<{ dashboards: DashboardMetadata[]; userId: string; runningUserIds: string[]; canCreate: boolean; canManageAll: boolean; canSchedule: boolean }>('/metadata/dashboards', { dashboards: [], userId: '', runningUserIds: [], canCreate: false, canManageAll: false, canSchedule: false }),
+          recover<{ folders: DashboardFolderMetadata[] }>('/metadata/dashboard-folders', { folders: [] }),
+          recover<{ territories: DashboardTerritoryMetadata[]; canManage: boolean }>('/metadata/dashboard-territories', { territories: [], canManage: false }),
+          recover<{ folders: ReportFolderMetadata[]; canManageAll: boolean }>('/metadata/report-folders', { folders: [], canManageAll: false }),
+          recover<{ reports: ReportMetadata[] }>('/metadata/reports', { reports: [] }),
+          recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } })
         ]);
         // RBAC settings are optional for initial page rendering. Fetch them
         // independently so a slow permissions response cannot block all pages.
@@ -1178,6 +1187,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         setCanManageDashboards(dashboardPayload.canManageAll);
         setCanScheduleDashboards(dashboardPayload.canSchedule);
         setReports(reportPayload.reports);
+        if (failures.length) setToast(`Some metadata could not load: ${failures.join('; ')}`);
       } catch (error) {
         // 401 / session expiry just returns to Login via metadrive:session-expired —
         // don't spam a "Metadata API unavailable" toast for a normal logged-out state.
