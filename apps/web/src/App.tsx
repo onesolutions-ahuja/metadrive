@@ -1104,8 +1104,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         setDashboardUserId(dashboardPayload.userId);
         setDashboardRunningUserIds(dashboardPayload.runningUserIds);
         setCurrentProfileId(sessionPayload.user.profileId);
-        setCanManageNamedCredentials(sessionPayload.user.permissions.includes('namedCredentials:manage')
-          || sessionPayload.user.permissions.includes('metadata:write'));
+        setCanManageNamedCredentials(sessionPayload.user.permissions.includes('namedCredentials:manage'));
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
         setCanRunFlows(sessionPayload.user.permissions.includes('flows:run'));
