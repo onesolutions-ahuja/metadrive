@@ -6013,7 +6013,7 @@ function hasObjectWidePermission(principal: Principal, tenant: TenantData, objec
   if (profile && hasGrant(profile.objectPermissions)) return true;
   if (tenant.accessControl.permissionSets.some((set) =>
     (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && hasGrant(set.objectPermissions))) return true;
-  return user.permissionSetGroupIds.some((groupId) => {
+  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     return Boolean(group && tenant.accessControl.permissionSets.some((set) =>
       group.permissionSetIds.includes(set.id) && hasGrant(set.objectPermissions, group.mutedObjectPermissions[objectName])));
@@ -6178,7 +6178,7 @@ function hasFieldPermission(principal: Principal, tenant: TenantData, objectName
   };
   if (profile && grantsField(profile.fieldPermissions, profile.objectPermissions)) return true;
   if (sets.some((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && grantsField(set.fieldPermissions, set.objectPermissions))) return true;
-  return user.permissionSetGroupIds.some((groupId) => {
+  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     if (!group || group.mutedFieldPermissions[key]?.[action]) return false;
     return sets.some((set) => group.permissionSetIds.includes(set.id)
