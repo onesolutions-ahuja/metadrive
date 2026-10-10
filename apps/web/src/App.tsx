@@ -1146,7 +1146,10 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         setPlatformEvents(platformEventPayload.platformEvents);
         if (pagePayload.pages.length) {
           setPages(pagePayload.pages);
-          setPage(pagePayload.pages.find((item) => item.targetObject === 'Account' && item.pageType === 'Record Page') ?? pagePayload.pages[0]);
+          setPage(pagePayload.pages.find((item) =>
+            route.kind === 'setup' && route.workspace === 'page-builder' && item.apiName === route.resourceApiName)
+            ?? pagePayload.pages.find((item) => item.targetObject === 'Account' && item.pageType === 'Record Page')
+            ?? pagePayload.pages[0]);
         }
         setApps(appPayload.apps);
         if (!appPayload.apps.some((app) => app.apiName === currentAppId)) {
@@ -1304,12 +1307,14 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         flowHistory.current = { undo: [], redo: [] };
       }
     }
-    if (route.workspace === 'page-builder' && route.resourceApiName && pageRouteApiName.current !== route.resourceApiName) {
-      pageRouteApiName.current = route.resourceApiName;
+    if (route.workspace === 'page-builder' && route.resourceApiName) {
       const selectedPage = pages.find((item) => item.apiName === route.resourceApiName);
-      if (selectedPage) setPage(selectedPage);
+      if (selectedPage && (pageRouteApiName.current !== route.resourceApiName || page.apiName !== selectedPage.apiName)) {
+        pageRouteApiName.current = route.resourceApiName;
+        setPage(selectedPage);
+      }
     }
-  }, [route, objects, object.apiName, flows, flow.apiName, pages]);
+  }, [route, objects, object.apiName, flows, flow.apiName, pages, page.apiName]);
 
   useEffect(() => {
     const canonicalPath = appRoutePath(route);
@@ -6583,13 +6588,8 @@ function PageBuilder({
     : [];
   const pagePickerPages = builderApp
     ? [...appPages.filter((item) => item.apiName !== page.apiName), page]
-    : [
-      ...pages
-        .filter((item) => item.apiName !== page.apiName)
-        .sort((left, right) => (Date.parse(right.updatedAt ?? '') || 0) - (Date.parse(left.updatedAt ?? '') || 0))
-        .slice(0, 10),
-      page
-    ];
+    : [...pages.filter((item) => item.apiName !== page.apiName), page]
+      .sort((left, right) => (Date.parse(right.updatedAt ?? '') || 0) - (Date.parse(left.updatedAt ?? '') || 0));
   const currentPageIsAssignedToBuilderApp = appPages.some((item) => item.apiName === page.apiName);
   const targetObject = objects.find((object) => object.apiName === page.targetObject);
   const pageTypeComponents = page.pageType === 'Record Page'
@@ -7475,7 +7475,7 @@ function PageBuilder({
           <div className="builder-title-controls">
             <button className="btn btn-small" title="Return to Setup without saving" aria-label="Return to Setup without saving" onClick={onExit}><ArrowLeft size={13} />Setup</button>
             <select className="builder-app-select" aria-label="Select Lightning app context" value={builderAppApiName} onChange={(event) => setBuilderAppApiName(event.target.value)}>
-              <option value="">All recent pages</option>
+              <option value="">All pages</option>
               {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
             </select>
             <select aria-label="Select Lightning page" value={page.apiName} onChange={(event) => selectSavedPage(event.target.value)}>
