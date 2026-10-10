@@ -1,4 +1,4 @@
-/* MetaDrive standalone registerable component: KioskGrid. No external imports. */
+/* UNEEngine standalone registerable component: KioskGrid. No external imports. */
 export default function KioskGrid(props) {
   const p = props || {};
   const fire = (event, value) => { if (typeof p.onAction === 'function') p.onAction({ event, value }); if (typeof p.onChange === 'function' && event === 'change') p.onChange(value); };
