@@ -6583,13 +6583,8 @@ function PageBuilder({
     : [];
   const pagePickerPages = builderApp
     ? [...appPages.filter((item) => item.apiName !== page.apiName), page]
-    : [
-      ...pages
-        .filter((item) => item.apiName !== page.apiName)
-        .sort((left, right) => (Date.parse(right.updatedAt ?? '') || 0) - (Date.parse(left.updatedAt ?? '') || 0))
-        .slice(0, 10),
-      page
-    ];
+    : [...pages.filter((item) => item.apiName !== page.apiName), page]
+      .sort((left, right) => (Date.parse(right.updatedAt ?? '') || 0) - (Date.parse(left.updatedAt ?? '') || 0));
   const currentPageIsAssignedToBuilderApp = appPages.some((item) => item.apiName === page.apiName);
   const targetObject = objects.find((object) => object.apiName === page.targetObject);
   const pageTypeComponents = page.pageType === 'Record Page'
@@ -7475,7 +7470,7 @@ function PageBuilder({
           <div className="builder-title-controls">
             <button className="btn btn-small" title="Return to Setup without saving" aria-label="Return to Setup without saving" onClick={onExit}><ArrowLeft size={13} />Setup</button>
             <select className="builder-app-select" aria-label="Select Lightning app context" value={builderAppApiName} onChange={(event) => setBuilderAppApiName(event.target.value)}>
-              <option value="">All recent pages</option>
+              <option value="">All pages</option>
               {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
             </select>
             <select aria-label="Select Lightning page" value={page.apiName} onChange={(event) => selectSavedPage(event.target.value)}>
