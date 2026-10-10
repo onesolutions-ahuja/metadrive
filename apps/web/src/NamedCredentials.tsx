@@ -32,13 +32,15 @@ export default function NamedCredentials({
   canManage,
   onSave,
   onDelete,
-  onRotate
+  onRotate,
+  onTest
 }: {
   credentials: NamedCredentialMetadata[];
   canManage: boolean;
   onSave: (credential: CredentialInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
+  onTest: (id: string) => Promise<{ connected: boolean; status?: number; message: string }>;
 }) {
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
   const [viewing, setViewing] = useState(false);
@@ -46,6 +48,7 @@ export default function NamedCredentials({
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState('');
+  const [testResults, setTestResults] = useState<Record<string, string>>({});
 
   const updateDraft = (update: Partial<CredentialDraft>) => {
     setDraft((current) => current ? { ...current, ...update } : current);
@@ -109,6 +112,21 @@ export default function NamedCredentials({
     }
   };
 
+  const testCredential = async (credential: NamedCredentialMetadata) => {
+    if (busyId) return;
+    setBusyId(credential.id);
+    setError('');
+    setTestResults((current) => ({ ...current, [credential.id]: 'Testing connection…' }));
+    try {
+      const result = await onTest(credential.id);
+      setTestResults((current) => ({ ...current, [credential.id]: `${result.connected ? 'Connected' : 'Failed'}: ${result.message}` }));
+    } catch (testError) {
+      setTestResults((current) => ({ ...current, [credential.id]: `Failed: ${testError instanceof Error ? testError.message : 'Unable to test connection'}` }));
+    } finally {
+      setBusyId('');
+    }
+  };
+
   return <section className="surface object-setting-surface named-credentials-page">
     <div className="section-toolbar">
       <div><h2>Named Credentials</h2><p>Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts, Email Alerts, and supported delivery features.</p></div>
@@ -121,7 +139,7 @@ export default function NamedCredentials({
     {!canManage && <div className="info-callout">You can view credentials, but need Manage Named Credentials or metadata write permission to change them.</div>}
     <div className="table-scroll">
       <table className="slds-table">
-        <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th><th>Actions</th></tr></thead>
         <tbody>{visibleCredentials.map((credential) => <tr key={credential.id}>
           <td><button className="btn btn-link" onClick={() => editCredential(credential, true)}>{credential.label}</button></td>
           <td>{credential.name}</td>
@@ -130,7 +148,9 @@ export default function NamedCredentials({
           <td>{credential.authType}</td>
           <td>{credential.authType === 'None' ? 'Not required' : credential.hasSecret ? 'Stored · masked' : 'Not configured'}</td>
           <td>{new Date(credential.updatedAt).toLocaleString()}</td>
+          <td role="status">{testResults[credential.id] ?? 'Not tested'}</td>
           <td><div className="toolbar-actions">
+            <button className="btn btn-small" aria-label={`Test connection for ${credential.label}`} disabled={!canManage || credential.protocol !== 'HTTPS' || Boolean(busyId)} title={credential.protocol !== 'HTTPS' ? 'SMTP testing is not supported' : 'Test saved HTTPS base URL with stored authentication'} onClick={() => void testCredential(credential)}>{busyId === credential.id ? 'Testing…' : 'Test Connection'}</button>
             <button className="icon-button subtle" aria-label={`View ${credential.label}`} onClick={() => editCredential(credential, true)}><Eye size={14} /></button>
             <button className="icon-button subtle" aria-label={`Edit ${credential.label}`} title={!canManage ? 'Manage Named Credentials permission required' : 'Edit credential'} disabled={!canManage || Boolean(busyId)} onClick={() => editCredential(credential)}><Pencil size={14} /></button>
             <button className="icon-button subtle" aria-label={`Rotate key for ${credential.label}`} title="Rotate encryption key" disabled={!canManage || Boolean(busyId)} onClick={() => void performAction(credential, 'rotate')}><RotateCw size={14} /></button>
