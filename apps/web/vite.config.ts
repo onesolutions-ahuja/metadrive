@@ -5,6 +5,7 @@ const apiProxyTarget = process.env.METADRIVE_API_PROXY_TARGET ?? 'http://127.0.0
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.GITHUB_PAGES === 'true' ? '/metadrive/' : '/',
   server: {
     port: 5173,
     host: '0.0.0.0',
