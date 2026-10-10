@@ -113,36 +113,44 @@ app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
 });
 
 app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
+  const reject = (status: number, reason: string) => { console.warn('[WhatsApp webhook] rejected', { status, reason }); return res.sendStatus(status); };
+  console.info('[WhatsApp webhook] delivery received');
   const appSecret = process.env.METADRIVE_WHATSAPP_APP_SECRET;
   const signature = req.get('x-hub-signature-256');
   const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
-  if (!appSecret || !signature || !/^sha256=[a-f0-9]{64}$/i.test(signature) || !rawBody) return res.sendStatus(403);
+  if (!appSecret) return reject(503, 'app_secret_not_configured');
+  if (!signature || !/^sha256=[a-f0-9]{64}$/i.test(signature) || !rawBody) return reject(403, 'missing_or_invalid_signature');
   const digest = 'sha256=' + createHmac('sha256', appSecret).update(rawBody).digest('hex');
   const supplied = Buffer.from(signature.toLowerCase());
   const expected = Buffer.from(digest);
-  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return res.sendStatus(403);
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return reject(403, 'signature_mismatch');
 
   const tenantId = process.env.METADRIVE_WHATSAPP_TENANT_ID;
   const userId = process.env.METADRIVE_WHATSAPP_SYSTEM_USER_ID;
-  if (!tenantId || !userId) return res.status(503).json({ error: 'WhatsApp receiver is not configured' });
+  if (!tenantId || !userId) return reject(503, 'tenant_or_system_user_not_configured');
   const tenant = tenantData(tenantId);
   if (!tenant || !state.users.some(user => user.id === userId && user.tenantId === tenantId && !user.disabled)) {
-    return res.status(503).json({ error: 'WhatsApp receiver identity is unavailable' });
+    return reject(503, 'tenant_or_system_user_unavailable');
   }
   const payload = req.body as { object?: unknown; entry?: Array<{ changes?: Array<{ value?: { metadata?: { display_phone_number?: string }; messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }> } }> }> };
-  if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) return res.sendStatus(200);
+  if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) { console.info('[WhatsApp webhook] ignored unsupported payload'); return res.sendStatus(200); }
   const working = structuredClone(tenant);
   const object = working.objects.find(item => item.apiName === 'WhatsApp_Message__c');
-  if (!object) return res.status(503).json({ error: 'WhatsApp message metadata is missing' });
+  if (!object) return reject(503, 'message_object_missing');
+  let received = 0;
+  let saved = 0;
+  let duplicate = 0;
+  let unsupported = 0;
   try {
     for (const entry of payload.entry) {
       for (const change of entry.changes ?? []) {
         const value = change.value;
         for (const message of value?.messages ?? []) {
           if (!message.id || !message.from) continue;
-          if ((working.records[object.apiName] ?? []).some(item => item.Provider_Message_Id__c === message.id)) continue;
+          received++;
+          if ((working.records[object.apiName] ?? []).some(item => item.Provider_Message_Id__c === message.id)) { duplicate++; continue; }
           const body = message.type === 'text' ? message.text?.body : undefined;
-          if (!body) continue; // Unsupported message types are acknowledged, not turned into text.
+          if (!body) { unsupported++; continue; } // Unsupported message types are acknowledged.
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
             Direction__c: 'Incoming', From_Number__c: message.from,
             To_Number__c: value?.metadata?.display_phone_number ?? '',
@@ -158,14 +166,16 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
           record = calculateFormulaFields(object, record, formulaContextForUser(working, userId));
           working.records[object.apiName] = [...(working.records[object.apiName] ?? []), record];
+          saved++;
           await runRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
         }
       }
     }
     persistTenantRecords(tenantId, working);
+    console.info('[WhatsApp webhook] processed', { received, saved, duplicate, unsupported });
     return res.sendStatus(200);
   } catch (error) {
-    console.error('WhatsApp webhook processing failed:', error instanceof Error ? error.message : String(error));
+    console.error('[WhatsApp webhook] processing failed', { reason: error instanceof Error ? error.name : 'unknown_error', received, saved });
     return res.sendStatus(500); // Meta retries unsuccessful deliveries.
   }
 });
