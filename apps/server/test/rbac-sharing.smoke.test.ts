@@ -4630,7 +4630,7 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       elements: [
         { id: 1, type: 'Start', label: 'Start', config: {} },
         { id: 2, type: 'HTTP Callout', label: 'Resolve Missing Callout Value', config: {
-          namedCredentialId: calloutCredential.data.credential.id, method: 'GET',
+          namedCredentialResource: '{!CalloutCredentialId}', method: 'GET',
           path: 'v1/{MissingCalloutValue}', onError: 'FAULT_PATH'
         } },
         { id: 3, type: 'Assignment', label: 'Capture Callout Fault', config: {
@@ -4641,19 +4641,25 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         { id: 'start-callout', from: 1, to: 2, label: '', kind: 'normal' },
         { id: 'callout-fault', from: 2, to: 3, label: '', kind: 'fault' }
       ],
-      resources: [{
-        name: 'Result', label: 'Result', type: 'Variable', dataType: 'Text', isCollection: false,
-        availableForInput: false, availableForOutput: true, value: ''
-      }],
+      resources: [
+        {
+          name: 'CalloutCredentialId', label: 'Callout Credential Id', type: 'Variable', dataType: 'Text', isCollection: false,
+          availableForInput: true, availableForOutput: false, value: ''
+        },
+        {
+          name: 'Result', label: 'Result', type: 'Variable', dataType: 'Text', isCollection: false,
+          availableForInput: false, availableForOutput: true, value: ''
+        }
+      ],
       versions: []
     };
     const savedHttpCalloutFlow = await api.send('/metadata/flows/HTTP_Callout_Smoke', adminToken, 'PUT', httpCalloutFlow);
     assert.equal(savedHttpCalloutFlow.status, 200, JSON.stringify(savedHttpCalloutFlow.data));
-    const deniedCallout = await api.send('/flows/HTTP_Callout_Smoke/execute', ownerToken, 'POST', {});
+    const deniedCallout = await api.send('/flows/HTTP_Callout_Smoke/execute', ownerToken, 'POST', { CalloutCredentialId: calloutCredential.data.credential.id });
     assert.equal(deniedCallout.status, 200, JSON.stringify(deniedCallout.data));
     assert.match(deniedCallout.data.outputs.Result, /does not have permission to execute HTTP callouts/,
       'callout authorization must be enforced before performing network access and exposed to the fault path');
-    const failedCallout = await api.send('/flows/HTTP_Callout_Smoke/execute', adminToken, 'POST', {});
+    const failedCallout = await api.send('/flows/HTTP_Callout_Smoke/execute', adminToken, 'POST', { CalloutCredentialId: calloutCredential.data.credential.id });
     assert.equal(failedCallout.status, 200, JSON.stringify(failedCallout.data));
     assert.match(failedCallout.data.outputs.Result, /unavailable flow value "MissingCalloutValue"/,
       'HTTP Callout errors must route through the configured fault connector');
@@ -4729,7 +4735,7 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     ];
     const savedContinuedCallout = await api.send('/metadata/flows/HTTP_Callout_Continue_Smoke', adminToken, 'PUT', continuedCalloutFlow);
     assert.equal(savedContinuedCallout.status, 200, JSON.stringify(savedContinuedCallout.data));
-    const continuedCallout = await api.send('/flows/HTTP_Callout_Continue_Smoke/execute', adminToken, 'POST', {});
+    const continuedCallout = await api.send('/flows/HTTP_Callout_Continue_Smoke/execute', adminToken, 'POST', { CalloutCredentialId: calloutCredential.data.credential.id });
     assert.equal(continuedCallout.status, 200, JSON.stringify(continuedCallout.data));
     assert.equal(continuedCallout.data.outputs.CalloutStatus, 0);
     assert.match(continuedCallout.data.outputs.CalloutResponse.failure, /MissingCalloutValue/);
@@ -4739,7 +4745,7 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     failedCalloutFlow.elements[1].config.onError = 'FAIL';
     const savedFailedCallout = await api.send('/metadata/flows/HTTP_Callout_Fail_Smoke', adminToken, 'PUT', failedCalloutFlow);
     assert.equal(savedFailedCallout.status, 200, JSON.stringify(savedFailedCallout.data));
-    const failedCalloutResult = await api.send('/flows/HTTP_Callout_Fail_Smoke/execute', adminToken, 'POST', {});
+    const failedCalloutResult = await api.send('/flows/HTTP_Callout_Fail_Smoke/execute', adminToken, 'POST', { CalloutCredentialId: calloutCredential.data.credential.id });
     assert.equal(failedCalloutResult.status, 422);
     assert.match(failedCalloutResult.data.error, /unavailable flow value "MissingCalloutValue"/,
       'HTTP Callout FAIL behavior must stop execution rather than continue or take a fault path');
