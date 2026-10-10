@@ -11014,7 +11014,7 @@ async function performHttpCallout(
         if (item && typeof item === 'object') return Object.fromEntries(
           Object.entries(item).map(([key, value]) => [key, resolveBodyFields(value)]));
         if (typeof item !== 'string') return item;
-        const exactReference = /^\\{!?([A-Za-z_$][A-Za-z0-9_$.]*)\\}$/.exec(item);
+        const exactReference = /^\{!?([A-Za-z_$][A-Za-z0-9_$.]*)\}$/.exec(item);
         if (exactReference) {
           const resolved = resolveFlowValue(item, context);
           if (resolved === undefined) throw new Error(`Flow template references an unavailable value "${exactReference[1]}".`);
