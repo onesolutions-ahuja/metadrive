@@ -1943,6 +1943,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     notify('Named Credential deleted');
   };
 
+  const testNamedCredential = async (id: string): Promise<{ connected: boolean; status?: number; message: string }> => {
+    return apiRequest<{ connected: boolean; status?: number; message: string }>(
+      `/named-credentials/${encodeURIComponent(id)}/test`, { method: 'POST' }
+    );
+  };
+
   const rotateNamedCredential = async (id: string) => {
     const result = await apiRequest<{ credential: NamedCredentialMetadata }>(`/named-credentials/${encodeURIComponent(id)}/rotate`, { method: 'POST' });
     setNamedCredentials((current) => current.map((item) => item.id === id ? result.credential : item));
@@ -3050,6 +3056,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             onSave={saveNamedCredential}
             onDelete={deleteNamedCredential}
             onRotate={rotateNamedCredential}
+            onTest={testNamedCredential}
           />}
           {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange />}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
