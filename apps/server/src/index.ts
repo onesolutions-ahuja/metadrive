@@ -142,7 +142,17 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
     } catch { return false; }
   };
   const matches = Object.entries(state.tenants).filter(([, data]) =>
-    data.connectorSettings.some(setting => {
+    (data.records.UneConnector__c ?? []).some(record => {
+      if (String(record.ConnectorType__c ?? '').toLowerCase() !== 'whatsapp') return false;
+      if (typeof record.Configuration__c !== 'string') return false;
+      try {
+        const configuration: unknown = JSON.parse(record.Configuration__c);
+        if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) return false;
+        const values = configuration as Record<string, unknown>;
+        return values.PhoneNumberId === phoneId || (typeof values.ApiBaseUrl === 'string' && matchesMetaPhoneUrl(values.ApiBaseUrl));
+      } catch { return false; }
+    })
+    || data.connectorSettings.some(setting => {
       if (setting.apiName !== 'WhatsApp') return false;
       const fields = Object.fromEntries(setting.fields.map(field => [field.apiName, field.value.trim()]));
       return fields.PhoneNumberId === phoneId || matchesMetaPhoneUrl(fields.ApiBaseUrl);
