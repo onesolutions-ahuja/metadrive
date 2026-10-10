@@ -4213,7 +4213,7 @@ function RecordWorkspace({
     try {
       const path = `/records/${encodeURIComponent(object.apiName)}${editingId ? `/${encodeURIComponent(editingId)}` : ''}`;
       const writableValues = Object.fromEntries(Object.entries(formValues).filter(([apiName]) =>
-        apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit
+        apiName !== 'OwnerId' && (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit)
       ));
       const response = await apiRequest<{ record: RecordData }>(path, {
         method: editingId ? 'PUT' : 'POST',
