@@ -1040,6 +1040,27 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       : [{ key, label, route }, ...current.filter((item) => item.key !== key)].slice(0, 8));
   }, [route, objects, apps, pages]);
 
+  // Resolve credential permissions independently of unrelated metadata requests.
+  // A failed report/connector/dashboard request must not disable credential management.
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ user: { permissions: string[] } }>('/auth/me')
+      .then(({ user }) => {
+        if (active) setCanManageNamedCredentials(user.permissions.includes('namedCredentials:manage'));
+      })
+      .catch(() => {
+        if (active) setCanManageNamedCredentials(false);
+      });
+    void apiRequest<{ credentials: NamedCredentialMetadata[] }>('/named-credentials')
+      .then(({ credentials }) => {
+        if (active) setNamedCredentials(credentials);
+      })
+      .catch(() => {
+        // The main metadata loader reports errors; keep this permission check independent.
+      });
+    return () => { active = false; };
+  }, []);
+
   useEffect(() => {
     const loadMetadata = async () => {
       try {
