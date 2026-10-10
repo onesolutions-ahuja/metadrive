@@ -79,7 +79,7 @@ export default function HttpCalloutFieldEditor({ label, mode, value, onChange, r
         </select> : row.type === 'Boolean' && mode !== 'response' ? <select className="form-control" aria-label={`${label} value`} value={row.value} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))}><option value="false">False</option><option value="true">True</option></select> : row.type === 'Null' && mode !== 'response' ? <span>Null</span> : <input className="form-control" aria-label={`${label} value`} placeholder={mode === 'response' ? 'Response field path, e.g. messages[0].id' : 'Value'} value={row.value} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))} />}
         <button className="row-menu" type="button" aria-label="Remove field" onClick={() => update(rows.filter((_, i) => i !== index))}>×</button>
       </div>)}
-      <button className="text-action" type="button" onClick={() => update([...rows, { path: '', value: '', type: mode === 'response' ? 'Text' : 'Resource' }])}>+ Add Field</button>
+      <button className="text-action" type="button" onClick={() => update([...rows, { path: `field_${rows.length + 1}`, value: '', type: mode === 'response' ? 'Text' : 'Resource' }])}>+ Add Field</button>
     </>}
   </div>;
 }
