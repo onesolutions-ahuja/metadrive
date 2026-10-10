@@ -10648,14 +10648,20 @@ async function performHttpCallout(
   context: FlowRuntimeContext,
   elementLabel: string
 ): Promise<{ body: unknown; status: number }> {
-  const connectionId = typeof config.integrationConnectionId === 'string' ? config.integrationConnectionId : '';
+  const connectionSource = typeof config.integrationConnectionResource === 'string' && config.integrationConnectionResource.trim()
+    ? resolveFlowValue(config.integrationConnectionResource, context)
+    : config.integrationConnectionId;
+  const connectionId = typeof connectionSource === 'string' ? connectionSource.trim() : '';
   const connection = connectionId
     ? tenant.integrationConnections.find((item) => item.id === connectionId && item.status === 'ACTIVE')
     : undefined;
   const definition = connection
     ? tenant.connectorDefinitions.find((item) => item.connectorKey === connection.connectorKey && item.status === 'ACTIVE')
     : undefined;
-  const credentialId = typeof config.namedCredentialId === 'string' ? config.namedCredentialId : '';
+  const credentialSource = typeof config.namedCredentialResource === 'string' && config.namedCredentialResource.trim()
+    ? resolveFlowValue(config.namedCredentialResource, context)
+    : config.namedCredentialId;
+  const credentialId = typeof credentialSource === 'string' ? credentialSource.trim() : '';
   const namedCredential = !connectionId
     ? tenant.namedCredentials.find((item) => item.id === credentialId && item.protocol === 'HTTPS')
     : undefined;
@@ -14803,14 +14809,26 @@ function validateFlow(
     if (element.type === 'HTTP Callout') {
       const connectionId = typeof element.config.integrationConnectionId === 'string' ? element.config.integrationConnectionId : '';
       const credentialId = typeof element.config.namedCredentialId === 'string' ? element.config.namedCredentialId : '';
-      const selectedConnection = integrationConnections.find((connection) => connection.id === connectionId && connection.status === 'ACTIVE');
+      const connectionResource = typeof element.config.integrationConnectionResource === 'string' ? element.config.integrationConnectionResource.trim() : '';
+      const credentialResource = typeof element.config.namedCredentialResource === 'string' ? element.config.namedCredentialResource.trim() : '';
+      const resourceBindingPattern = /^\{!?[A-Za-z_$][A-Za-z0-9_$.]*\}$/;
+      if (connectionResource && !resourceBindingPattern.test(connectionResource)) {
+        errors.push(`Integration Connection resource on HTTP Callout "${element.label}" must be a Flow resource reference.`);
+      }
+      if (credentialResource && !resourceBindingPattern.test(credentialResource)) {
+        errors.push(`Named Credential resource on HTTP Callout "${element.label}" must be a Flow resource reference.`);
+      }
+      if (connectionResource && credentialResource) {
+        errors.push(`HTTP Callout "${element.label}" cannot use both dynamic Integration Connection and Named Credential resources.`);
+      }
+      const selectedConnection = connectionResource ? undefined : integrationConnections.find((connection) => connection.id === connectionId && connection.status === 'ACTIVE');
       const selectedDefinition = selectedConnection
         ? connectorDefinitions.find((definition) => definition.connectorKey === selectedConnection.connectorKey && definition.status === 'ACTIVE')
         : undefined;
-      if (connectionId && (!selectedConnection || !selectedDefinition)) {
+      if (!connectionResource && connectionId && (!selectedConnection || !selectedDefinition)) {
         errors.push(`Select an active Integration Connection for HTTP Callout "${element.label}".`);
-      } else if (!connectionId && !credentials.some((credential) => credential.id === credentialId)) {
-        errors.push(`Select an existing Named Credential for HTTP Callout "${element.label}".`);
+      } else if (!connectionResource && !credentialResource && !connectionId && !credentials.some((credential) => credential.id === credentialId)) {
+        errors.push(`Select an existing Named Credential or bind a credential resource for HTTP Callout "${element.label}".`);
       }
       const operationName = typeof element.config.operation === 'string' ? element.config.operation : '';
       const operation = operationName && selectedDefinition ? selectedDefinition.operations[operationName] : undefined;
