@@ -131,9 +131,28 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   if (!phoneIds.length) { console.info('[WhatsApp webhook] no inbound messages'); return res.sendStatus(200); }
   if (phoneIds.length !== 1) return reject(503, 'multiple_phone_ids_in_delivery');
   const phoneId = phoneIds[0];
+  // Match only the phone ID in a trusted Meta Graph API URL path, never a substring.
+  const matchesMetaPhoneUrl = (rawUrl: string | undefined): boolean => {
+    if (!rawUrl) return false;
+    try {
+      const url = new URL(rawUrl);
+      if (url.protocol !== 'https:' || url.hostname !== 'graph.facebook.com' || url.username || url.password || url.port) return false;
+      const segments = url.pathname.split('/').filter(Boolean);
+      return /^v\\d+\\.\\d+$/.test(segments[0] ?? '') && segments[1] === phoneId && (segments.length === 2 || (segments.length === 3 && segments[2] === 'messages'));
+    } catch { return false; }
+  };
   const matches = Object.entries(state.tenants).filter(([, data]) =>
-    data.connectorSettings.some(setting => setting.apiName === 'WhatsApp' && setting.fields.some(field => field.apiName === 'PhoneNumberId' && field.value.trim() === phoneId))
-    || data.integrationConnections.some(connection => connection.connectorKey.toUpperCase() === 'WHATSAPP' && connection.status === 'ACTIVE' && connection.configuration.phone_number_id?.trim() === phoneId)
+    data.connectorSettings.some(setting => {
+      if (setting.apiName !== 'WhatsApp') return false;
+      const fields = Object.fromEntries(setting.fields.map(field => [field.apiName, field.value.trim()]));
+      return fields.PhoneNumberId === phoneId || matchesMetaPhoneUrl(fields.ApiBaseUrl);
+    })
+    || data.integrationConnections.some(connection => {
+      if (connection.connectorKey.toUpperCase() !== 'WHATSAPP' || connection.status !== 'ACTIVE') return false;
+      return connection.configuration.phone_number_id?.trim() === phoneId
+        || matchesMetaPhoneUrl(connection.configuration.base_url)
+        || matchesMetaPhoneUrl(connection.configuration.api_base_url);
+    })
   );
   if (matches.length !== 1) return reject(503, matches.length ? 'ambiguous_phone_tenant_mapping' : 'phone_tenant_mapping_not_configured');
   const [tenantId, tenant] = matches[0];
