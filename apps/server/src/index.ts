@@ -5544,6 +5544,54 @@ app.delete('/api/named-credentials/:id', requireAnyPermission('metadata:write', 
   });
   return res.status(204).end();
 });
+app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:manage'), async (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const credential = tenantData(principal.tenantId)?.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
+  if (!credential) return res.status(404).json({ error: 'Named Credential was not found' });
+  if (credential.protocol !== 'HTTPS') return res.status(400).json({ error: 'SMTP connection testing is not supported by this HTTPS probe' });
+  const url = new URL(credential.baseUrl);
+  if (url.protocol !== 'https:' || isReservedHostname(url.hostname) || (isIP(url.hostname) && !isPublicAddress(url.hostname))) {
+    return res.status(400).json({ error: 'Test destination is not a public HTTPS host' });
+  }
+  try {
+    const payload = openCredentialPayload(principal.tenantId, credential);
+    if (credential.authType !== 'None' && !payload.secret) return res.status(400).json({ error: 'Authentication secret is not configured' });
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (credential.authType === 'Bearer') headers.Authorization = `Bearer ${payload.secret}`;
+    if (credential.authType === 'Basic') headers.Authorization = `Basic ${Buffer.from(`${payload.username ?? ''}:${payload.secret}`).toString('base64')}`;
+    if (credential.authType === 'API Key') headers[credential.headerName!] = payload.secret!;
+    const status = await new Promise<number>((resolve, reject) => {
+      const request = httpsRequest(url, {
+        method: 'GET', headers, timeout: 8000, maxHeaderSize: 16384,
+        lookup: (hostname, options, callback) => {
+          if (isReservedHostname(hostname)) return callback(new Error('Reserved destination'), '', 0);
+          void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
+            if (!addresses.length || addresses.some((address) => !isPublicAddress(address.address))) return callback(new Error('Non-public destination'), '', 0);
+            const selected = addresses[0];
+            if (options && typeof options === 'object' && 'all' in options && options.all) callback(null, [selected]);
+            else callback(null, selected.address, selected.family);
+          }).catch(() => callback(new Error('DNS resolution failed'), '', 0));
+        }
+      }, (incoming) => {
+        const code = incoming.statusCode ?? 0;
+        incoming.destroy();
+        resolve(code);
+      });
+      request.on('timeout', () => request.destroy(new Error('Connection timed out')));
+      request.on('error', reject);
+      request.end();
+    });
+    const connected = status >= 200 && status < 300;
+    return res.json({ connected, status, message: connected
+      ? 'HTTPS endpoint responded successfully.'
+      : status === 401 || status === 403 ? 'Endpoint responded but rejected authentication.'
+      : 'Endpoint responded with HTTP ' + status + '. Check the API path and permissions.' });
+  } catch {
+    return res.json({ connected: false, message: 'Unable to reach or authenticate with the HTTPS endpoint. Check the URL, DNS and credentials.' });
+  }
+});
+// A base-URL GET is a connectivity probe, not a provider-specific API health check.
+// Providers requiring an endpoint path or POST need a configurable test operation.
 app.post('/api/named-credentials/:id/rotate', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
