@@ -1,7 +1,7 @@
 # Salesforce Trailhead Feature Parity Matrix
 
 **Checked:** October 9, 2026  
-**Purpose:** Inventory features taught or demonstrated in the Trailhead learning paths, modules, and hands-on projects listed under “Evidence checked,” then compare them with the current MetaDrive implementation. This is a standalone comparison; it does not modify the project tracker or frozen scope. A Trailhead page title alone is not treated as proof that its body teaches a feature.
+**Purpose:** Inventory features taught or demonstrated in the Trailhead learning paths, modules, and hands-on projects listed under “Evidence checked,” then compare them with the current UNEEngine implementation. This is a standalone comparison; it does not modify the project tracker or frozen scope. A Trailhead page title alone is not treated as proof that its body teaches a feature.
 
 ## Status meanings
 
@@ -13,7 +13,7 @@
 
 ## Report Builder
 
-| Salesforce feature | Trailhead example | MetaDrive status | System evidence |
+| Salesforce feature | Trailhead example | UNEEngine status | System evidence |
 |---|---|---|---|
 | Translate a business question into report criteria; distinguish report, report type, and dashboard | “Opportunities with Products,” summarized by Product Family, filtered to Closed Won and active products | **Partial** — object-based standard reports are available; the demonstrated joined report type is not | [Report UI and model](./apps/web/src/App.tsx), [report schema/runtime](./apps/server/src/index.ts) |
 | Discover report types by category and search, select fields, then create, name, describe, save, edit, select, clone, run, and delete | Search Accounts or Opportunities, create “Direct Customer Accounts,” save, and run | **Partial** — lifecycle actions exist, but the report-type catalog is object-based rather than the taught combinations such as Opportunities with Products | [Report UI](./apps/web/src/App.tsx), [report tests](./apps/server/test/report-builder.test.ts) |
@@ -33,7 +33,7 @@
 
 ## Dashboard Builder
 
-| Salesforce feature | Trailhead example | MetaDrive status | System evidence |
+| Salesforce feature | Trailhead example | UNEEngine status | System evidence |
 |---|---|---|---|
 | Create, name, describe, save, edit, clone, run/view, and delete dashboards; preserve folder and widgets | Create “Leads Dashboard” or “Global Sales Dashboard” in a selected folder | **Yes** — dashboard lifecycle and persistence are implemented | [Dashboard Builder](./apps/web/src/DashboardBuilder.tsx), [dashboard runtime/tests](./apps/server/test/report-builder.test.ts) |
 | Add report-backed chart/table widgets; choose source report and visualization | Use “Leads by Lead Source” as a donut chart or a report as a Lightning Table | **Yes** — report-backed chart and table widgets are supported | [Dashboard Builder](./apps/web/src/DashboardBuilder.tsx), [dashboard metadata](./apps/web/src/metadata.ts), [report tests](./apps/server/test/report-builder.test.ts) |
@@ -48,7 +48,7 @@
 
 ## Lightning App Builder / Page Builder
 
-| Salesforce feature | Trailhead example | MetaDrive status | System evidence |
+| Salesforce feature | Trailhead example | UNEEngine status | System evidence |
 |---|---|---|---|
 | Create App, Home, and Record pages; label and save pages | Create a Home Page, Opportunity Record Page, and App Page | **Yes** — all three page types are represented and authored | [Page model](./apps/web/src/metadata.ts), [Page Builder](./apps/web/src/App.tsx) |
 | Template-defined regions, component palette, canvas, properties pane, page list, drag/reorder | Build a page from a template and arrange components in its regions | **Partial** — templates, regions, palette, canvas, and component properties exist; not every Salesforce template/toolbar behavior is reproduced | [Page model](./apps/web/src/metadata.ts), [component catalog](./apps/web/src/componentCatalog.ts), [Page Builder](./apps/web/src/App.tsx) |
@@ -65,7 +65,7 @@
 
 ## App Manager and Metadata-Driven Behavior
 
-| Salesforce feature | Trailhead example | MetaDrive status | System evidence |
+| Salesforce feature | Trailhead example | UNEEngine status | System evidence |
 |---|---|---|---|
 | Configure app label, branding, navigation items/order, app pages, and utility bar | Edit an app in App Manager / Lightning App Builder | **Partial** — app metadata supports branding, navigation, utility items, and app pages; the full Salesforce app settings model is not reproduced | [App Manager](./apps/web/src/AppManager.tsx), [app metadata](./apps/web/src/metadata.ts) |
 | Metadata-defined pages and components drive the saved runtime page | Arrange components, save, activate, then view the assigned page | **Partial** — saved page metadata is consumed at runtime; Trailhead component catalog, visibility, and assignment gaps remain | [Page Builder](./apps/web/src/App.tsx), [page metadata](./apps/web/src/metadata.ts) |
@@ -76,7 +76,7 @@
 
 ## Object Manager
 
-| Salesforce feature | Trailhead example | MetaDrive status | System evidence |
+| Salesforce feature | Trailhead example | UNEEngine status | System evidence |
 |---|---|---|---|
 | Setup navigation/Quick Find and Object Manager entry to standard/custom objects | Locate Object Manager and open an object’s Fields & Relationships | **Partial** — setup navigation and object selection exist; the full Salesforce Setup/Quick Find surface is not reproduced | [workspace/navigation metadata](./apps/web/src/metadata.ts), [live Object Manager](./apps/web/src/App.tsx) |
 | Create/edit custom objects; labels, plural labels, record-name configuration, descriptions, search, custom tab | Create Property, enable Allow Search, launch custom-tab wizard | **Partial** — custom objects, text/auto-number names, metadata, and tabs exist; not every Salesforce object property is supported | [Object Manager UI](./apps/web/src/App.tsx), [object schema/runtime](./apps/server/src/index.ts) |
@@ -95,7 +95,7 @@
 
 ## Evidence checked
 
-- Inspected the authenticated MetaDrive Object Manager page and its live field/lookup-filter UI.
+- Inspected the authenticated UNEEngine Object Manager page and its live field/lookup-filter UI.
 - Inspected current Report, Dashboard, Lightning Page, App Manager, Object Manager, metadata, and server implementation schemas.
 - Reviewed existing Report Builder, Dashboard access, and RBAC/sharing integration tests. Tests are evidence for the covered paths only; they do not establish parity for absent features.
 - Reporting sources: [Explore Lightning Experience Reports & Dashboards](https://trailhead.salesforce.com/content/learn/trails/explore-lightning-experience-reports-dashboards), [Reports & Dashboards for Lightning Experience](https://trailhead.salesforce.com/content/learn/modules/lex_implementation_reports_dashboards), [Create Reports and Dashboards for Sales and Marketing Managers](https://trailhead.salesforce.com/content/learn/projects/create-reports-and-dashboards-for-sales-and-marketing-managers), its [summary-formula unit](https://trailhead.salesforce.com/content/learn/projects/create-reports-and-dashboards-for-sales-and-marketing-managers/use-summary-formulas-in-your-reports), and the user-provided [Row-Level Formulas lesson](https://trailhead.salesforce.com/content/learn/projects/rd-summary-formulas/rd-row-level-formulas).
