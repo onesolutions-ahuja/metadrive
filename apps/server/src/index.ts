@@ -4677,10 +4677,17 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
       const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
       const data = tenantData(session.tenantId);
       if (latest && user && data) {
-        // Race, not theft: issue a fresh access token WITHOUT rotating.
-        // We only store hashes so we can't re-set the cookie to the latest raw
-        // token — but the racing tab still holds a cookie within grace, and it
-        // converges on the next refresh. State is left untouched.
+        // The old cookie has already been consumed by another tab. Return a
+        // fresh cookie as well as an access token, or the next page load will
+        // reuse the stale cookie and lose the authenticated session.
+        const replacement = issueRefreshSession(user, session.familyId);
+        const nextState = {
+          ...state,
+          refreshSessions: [...state.refreshSessions, replacement.session]
+        };
+        persistState(nextState);
+        state = nextState;
+        setRefreshCookie(res, replacement.token);
         const permissions = effectivePermissions(user, data);
         const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions });
         return res.json({
