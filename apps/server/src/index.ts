@@ -5976,9 +5976,9 @@ function hasObjectPermission(principal: Principal, tenant: TenantData, objectNam
   };
   if (profile) addGrants(profile.objectPermissions);
   tenant.accessControl.permissionSets
-    .filter((set) => user.permissionSetIds.includes(set.id))
+     .filter((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id))
     .forEach((set) => addGrants(set.objectPermissions));
-  user.permissionSetGroupIds.forEach((groupId) => {
+  (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).forEach((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     if (!group) return;
     tenant.accessControl.permissionSets
@@ -6012,7 +6012,7 @@ function hasObjectWidePermission(principal: Principal, tenant: TenantData, objec
   };
   if (profile && hasGrant(profile.objectPermissions)) return true;
   if (tenant.accessControl.permissionSets.some((set) =>
-    user.permissionSetIds.includes(set.id) && hasGrant(set.objectPermissions))) return true;
+    (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && hasGrant(set.objectPermissions))) return true;
   return user.permissionSetGroupIds.some((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     return Boolean(group && tenant.accessControl.permissionSets.some((set) =>
@@ -6177,7 +6177,7 @@ function hasFieldPermission(principal: Principal, tenant: TenantData, objectName
     ));
   };
   if (profile && grantsField(profile.fieldPermissions, profile.objectPermissions)) return true;
-  if (sets.some((set) => user.permissionSetIds.includes(set.id) && grantsField(set.fieldPermissions, set.objectPermissions))) return true;
+  if (sets.some((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && grantsField(set.fieldPermissions, set.objectPermissions))) return true;
   return user.permissionSetGroupIds.some((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     if (!group || group.mutedFieldPermissions[key]?.[action]) return false;
