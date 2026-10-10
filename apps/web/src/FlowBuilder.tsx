@@ -907,14 +907,6 @@ export default function FlowBuilder({
             setConfig('integrationConnectionResource', '');
           }
         }}><option value="">Select a credential</option>{namedCredentials.filter((credential) => credential.protocol === 'HTTPS').map((credential) => <option key={credential.id} value={credential.id}>{credential.label} · {credential.baseUrl}</option>)}</select></label>
-        <label className="form-label">Named Credential Resource<input className="form-control" value={displayValue(selected.config.namedCredentialResource)} onChange={(event) => {
-          setConfig('namedCredentialResource', event.target.value);
-          if (event.target.value) {
-            setConfig('namedCredentialId', '');
-            setConfig('integrationConnectionId', '');
-            setConfig('integrationConnectionResource', '');
-          }
-        }} placeholder="{!CredentialSettings.NamedCredentialId__c}" /></label>
         <label className="form-label">Provider / Integration Connection<select className="form-control" value={displayValue(selected.config.integrationConnectionId)} onChange={(event) => {
           setConfig('integrationConnectionId', event.target.value);
           if (event.target.value) {
@@ -929,15 +921,6 @@ export default function FlowBuilder({
           const provider = connectorProviders.find((item) => item.connectorKey === connection.connectorKey);
           return <option key={connection.id} value={connection.id}>{connection.name} · {provider?.name ?? connection.connectorKey}</option>;
         })}</select></label>
-        <label className="form-label">Integration Connection Resource<input className="form-control" value={displayValue(selected.config.integrationConnectionResource)} onChange={(event) => {
-          setConfig('integrationConnectionResource', event.target.value);
-          if (event.target.value) {
-            setConfig('integrationConnectionId', '');
-            setConfig('namedCredentialId', '');
-            setConfig('namedCredentialResource', '');
-            setConfig('operation', '');
-          }
-        }} placeholder="{!CredentialSettings.IntegrationConnectionId__c}" /></label>
         {selectedProvider && <label className="form-label">Operation<select className="form-control" value={displayValue(selected.config.operation)} onChange={(event) => {
           const operationName = event.target.value;
           setConfig('operation', operationName);
@@ -957,7 +940,28 @@ export default function FlowBuilder({
         <label className="form-label">Response Variable<select className="form-control" value={displayValue(selected.config.responseVariable)} onChange={(event) => setConfig('responseVariable', event.target.value)}><option value="">Do not store response</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
         <label className="form-label">Status Code Variable<select className="form-control" value={displayValue(selected.config.statusVariable)} onChange={(event) => setConfig('statusVariable', event.target.value)}><option value="">Do not store status</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
         <label className="form-label">On Error<select className="form-control" value={displayValue(selected.config.onError) || 'FAULT_PATH'} onChange={(event) => setConfig('onError', event.target.value)}><option value="FAULT_PATH">FAULT_PATH</option><option value="FAIL">FAIL</option><option value="CONTINUE">CONTINUE</option></select></label>
-        <div className="info-callout">Callouts can use a fixed tenant Integration Connection / HTTPS Named Credential or resolve its ID from a Flow resource returned by Get Records, for example a Credential Settings record. Private-network targets, redirects, raw URL credentials, and unsafe headers are blocked.</div>
+        <div className="info-callout">Select a tenant Named Credential or Integration Connection above. The Flow stores only the metadata reference; secrets, tokens, and authentication values remain protected in credential metadata and are never exposed as Flow variables.</div>
+        <details className="flow-advanced-settings">
+          <summary>Advanced credential binding</summary>
+          <p className="settings-panel-copy">Optional: resolve the credential or integration connection ID from a Flow resource. Normal Flows should select the credential directly above and do not need a Get Credentials step.</p>
+          <label className="form-label">Named Credential Resource<input className="form-control" value={displayValue(selected.config.namedCredentialResource)} onChange={(event) => {
+            setConfig('namedCredentialResource', event.target.value);
+            if (event.target.value) {
+              setConfig('namedCredentialId', '');
+              setConfig('integrationConnectionId', '');
+              setConfig('integrationConnectionResource', '');
+            }
+          }} placeholder="{!CredentialSettings.NamedCredentialId__c}" /></label>
+          <label className="form-label">Integration Connection Resource<input className="form-control" value={displayValue(selected.config.integrationConnectionResource)} onChange={(event) => {
+            setConfig('integrationConnectionResource', event.target.value);
+            if (event.target.value) {
+              setConfig('integrationConnectionId', '');
+              setConfig('namedCredentialId', '');
+              setConfig('namedCredentialResource', '');
+              setConfig('operation', '');
+            }
+          }} placeholder="{!CredentialSettings.IntegrationConnectionId__c}" /></label>
+        </details>
       </>;
     }
     if (selected.type === 'Subflow') return <>
