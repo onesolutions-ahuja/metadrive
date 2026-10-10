@@ -5742,7 +5742,43 @@ app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:
   const principal = getPrincipal(res);
   const credential = tenantData(principal.tenantId)?.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
   if (!credential) return res.status(404).json({ error: 'Named Credential was not found' });
-  if (credential.protocol !== 'HTTPS') return res.status(400).json({ error: 'SMTP connection testing is not supported by this HTTPS probe' });
+  if (credential.protocol === 'SMTP') {
+    try {
+      const target = new URL(credential.baseUrl);
+      const host = target.hostname;
+      if (target.protocol !== 'smtp:' || isReservedHostname(host) || (isIP(host) && !isPublicAddress(host))) {
+        return res.status(400).json({ error: 'SMTP test destination must be a public SMTP host' });
+      }
+      const addresses = await lookup(host, { all: true, verbatim: true });
+      if (!addresses.length || addresses.some((address) => !isPublicAddress(address.address))) {
+        return res.status(400).json({ connected: false, message: 'SMTP host did not resolve to public IP addresses.' });
+      }
+      const payload = namedCredentialPayloadSchema.parse(openCredentialPayload(principal.tenantId, credential));
+      if (credential.authType === 'Basic' && (!payload.username || !payload.secret)) {
+        return res.status(400).json({ error: 'SMTP username and password are required' });
+      }
+      const port = Number(target.port || 25);
+      const transporter = nodemailer.createTransport({
+        host: addresses[0].address,
+        port,
+        secure: port === 465,
+        requireTLS: port !== 465,
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 10000,
+        tls: { servername: host, minVersion: 'TLSv1.2' },
+        ...(credential.authType === 'Basic' ? { auth: { user: payload.username!, pass: payload.secret! } } : {})
+      });
+      try {
+        await transporter.verify();
+        return res.json({ connected: true, message: 'SMTP server connection, TLS and authentication verified. No email was sent.' });
+      } finally {
+        transporter.close();
+      }
+    } catch {
+      return res.json({ connected: false, message: 'SMTP connection or authentication failed. Check host, port, TLS and credentials.' });
+    }
+  }
   const url = new URL(credential.baseUrl);
   if (url.protocol !== 'https:' || isReservedHostname(url.hostname) || (isIP(url.hostname) && !isPublicAddress(url.hostname))) {
     return res.status(400).json({ error: 'Test destination is not a public HTTPS host' });
