@@ -3019,10 +3019,10 @@ const namedCredentialManagementPermissionSet = {
   recordTypePermissions: {},
   fieldPermissions: {}
 };
-const grantNamedCredentialSetToExistingAdministrator = <T extends { role: string; permissionSetIds: string[]; email?: string }>(user: T): T =>
+const grantNamedCredentialSetToExistingAdministrator = <T extends { role: string; permissionSetIds: string[]; email?: string; username?: string }>(user: T): T =>
   (user.role === 'System Administrator'
     || user.permissionSetIds.includes('system-administrator')
-    || user.email?.trim().toLowerCase() === 'support@unesolutions.co.uk')
+    || (user.email ?? user.username)?.trim().toLowerCase() === 'support@unesolutions.co.uk')
     && !user.permissionSetIds.includes(namedCredentialManagementPermissionSet.id)
     ? { ...user, permissionSetIds: [...user.permissionSetIds, namedCredentialManagementPermissionSet.id] }
     : user;
