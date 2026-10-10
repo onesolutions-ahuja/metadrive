@@ -7431,7 +7431,12 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (Object.hasOwn(parsed.data, 'OwnerId')) {
-    return res.status(403).json({ error: 'OwnerId cannot be changed through record updates; use a dedicated ownership operation to transfer ownership' });
+    if (parsed.data.OwnerId !== existing.OwnerId) {
+      return res.status(403).json({ error: 'OwnerId cannot be changed through record updates; use a dedicated ownership operation to transfer ownership' });
+    }
+    // Older clients include the unchanged owner in generic edit payloads.
+    // Ignore it without permitting ownership transfers through this endpoint.
+    delete parsed.data.OwnerId;
   }
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
