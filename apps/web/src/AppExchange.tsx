@@ -206,7 +206,7 @@ export default function AppExchange() {
 
       <section className="exchange-hero">
         <div className="exchange-hero-copy">
-          <div className="exchange-eyebrow"><Puzzle size={13} /> METADRIVE APP MARKETPLACE</div>
+          <div className="exchange-eyebrow"><Puzzle size={13} /> UNEENGINE APP MARKETPLACE</div>
           <h1>Find the right apps for your team</h1>
           <p>Discover trusted extensions that work with your metadata-driven workspace.</p>
           <label className="exchange-search">

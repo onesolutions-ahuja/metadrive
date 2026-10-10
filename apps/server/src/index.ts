@@ -3288,6 +3288,19 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'ro
     }, recordTypePermissions: {}, fieldPermissions: { 'Case.Priority': { read: true, edit: true }, 'Case.Status': { read: true, edit: true } }
     }
   ];
+  // Dedicated, assignable OneEngine permission set for credential administration.
+  // A flow author does not receive this permission merely by editing flows.
+  permissionSets.push({
+    id: 'oneengine-named-credentials',
+    label: 'OneEngine Named Credentials',
+    apiName: 'OneEngine_Named_Credentials',
+    license: 'UNEEngine',
+    description: 'Create, edit, rotate and delete Named Credentials and their protected configuration.',
+    systemPermissions: ['namedCredentials:manage'],
+    objectPermissions: {},
+    recordTypePermissions: {},
+    fieldPermissions: {}
+  });
   const profiles = buildDefaultProfiles(objects, permissionSets);
   const accessControl = accessControlSchema.parse({
     profiles,

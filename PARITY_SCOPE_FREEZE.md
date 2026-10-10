@@ -1,7 +1,7 @@
 # Salesforce Parity Scope — Frozen Source of Truth
 
 **Status:** Frozen October 9, 2026; Object Manager and Flow, Page, Report, and Dashboard coverage gates expanded at the user's explicit request on October 9, 2026.  
-**Authority:** This document is the one acceptance checklist for the MetaDrive Salesforce-parity effort. The subsystem scope notes listed under “Superseded notes” are historical material only; they cannot narrow, override, or independently declare completion of this scope.
+**Authority:** This document is the one acceptance checklist for the UNEEngine Salesforce-parity effort. The subsystem scope notes listed under “Superseded notes” are historical material only; they cannot narrow, override, or independently declare completion of this scope.
 
 ## Agreement and completion rule
 
