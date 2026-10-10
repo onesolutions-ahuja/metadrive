@@ -3387,7 +3387,7 @@ function seedWhatsappDummyCredential(tenantId: string, current: StoredNamedCrede
   })];
 }
 
-function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'role' | 'permissionSetIds'>): TenantData {
+function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 'email' | 'role' | 'permissionSetIds'>): TenantData {
   const objects = baseObjects.map(withObjectDefaults);
   const allAccess = Object.fromEntries(objects.map((object) => [object.apiName, { ...fullObjectPermissions }]));
   const permissionSets = [
