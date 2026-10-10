@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -34,10 +35,30 @@ jobs:
         run: npm run build --workspace apps/web
       - name: Verify client-side deep-link fallback
         run: test -f apps/web/dist/404.html
-      - name: Ensure GitHub Pages uses Actions
+      - name: Wait for legacy Pages deployment
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api --method PUT "/repos/${GITHUB_REPOSITORY}/pages" -f build_type=workflow
+        shell: bash
+        run: |
+          found_legacy=0
+          for attempt in {1..24}; do
+            status="$(gh api "/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&per_page=20" --jq '.workflow_runs[] | select(.name=="pages build and deployment") | .status' | head -n1)"
+            if [ -n "$status" ]; then
+              found_legacy=1
+              echo "Legacy Pages deployment status: $status"
+              if [ "$status" = "completed" ]; then
+                break
+              fi
+            elif [ "$attempt" -ge 3 ]; then
+              echo "No legacy Pages deployment found; continuing with Actions deployment."
+              break
+            fi
+            sleep 5
+          done
+          if [ "$found_legacy" = "1" ] && [ "$status" != "completed" ]; then
+            echo "Legacy Pages deployment did not complete in time."
+            exit 1
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
