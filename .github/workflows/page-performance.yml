@@ -1,0 +1,30 @@
+name: Measure MetaDrive page loading times
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/page-performance.mjs'
+      - '.github/workflows/page-performance.yml'
+permissions:
+  contents: read
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-package-lock playwright
+      - run: npx playwright install --with-deps chromium
+      - name: Measure live pages
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/page-performance.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metadrive-page-performance
+          path: page-performance.json
