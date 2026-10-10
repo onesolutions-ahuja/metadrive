@@ -4640,7 +4640,17 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   const limit = loginAttempts.get(key);
   if (limit && limit.resetAt > now && limit.count >= 8) return res.status(429).json({ error: 'Too many login attempts; try again later' });
   const user = state.users.find((item) => item.email.trim().toLowerCase() === parsed.data.email.toLowerCase());
-  const valid = user ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
+  const regularPasswordValid = user ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
+  // Temporary development recovery only: requires an explicitly configured secret,
+  // and is restricted to one account and one tenant. Never enabled by default.
+  const devPassword = process.env.METADRIVE_DEV_RECOVERY_PASSWORD;
+  const devRecoveryAllowed = process.env.METADRIVE_DEV_RECOVERY_ENABLED === 'true'
+    && process.env.NODE_ENV !== 'production'
+    && Boolean(devPassword)
+    && user?.email.trim().toLowerCase() === 'support@unesolutions.co.uk'
+    && user?.tenantId === 'unesolutions-dev';
+  const devPasswordValid = devRecoveryAllowed && parsed.data.password === devPassword;
+  const valid = regularPasswordValid || devPasswordValid;
   if (!user || user.disabled || !valid) {
     const attempts = limit && limit.resetAt > now ? limit.count + 1 : 1;
     loginAttempts.set(key, { count: attempts, resetAt: now + 15 * 60 * 1000 });
