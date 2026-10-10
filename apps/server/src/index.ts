@@ -138,7 +138,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
       const url = new URL(rawUrl);
       if (url.protocol !== 'https:' || url.hostname !== 'graph.facebook.com' || url.username || url.password || url.port) return false;
       const segments = url.pathname.split('/').filter(Boolean);
-      return /^v\\d+\\.\\d+$/.test(segments[0] ?? '') && segments[1] === phoneId && (segments.length === 2 || (segments.length === 3 && segments[2] === 'messages'));
+      return /^v\d+\.\d+$/.test(segments[0] ?? '') && segments[1] === phoneId && (segments.length === 2 || (segments.length === 3 && segments[2] === 'messages'));
     } catch { return false; }
   };
   const matches = Object.entries(state.tenants).filter(([, data]) =>
