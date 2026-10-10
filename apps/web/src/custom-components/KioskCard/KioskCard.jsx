@@ -1,4 +1,4 @@
-/* MetaDrive standalone registerable component: KioskCard. No external imports. */
+/* UNEEngine standalone registerable component: KioskCard. No external imports. */
 export default function KioskCard(props) {
   const p = props || {};
   const fire = (event, value) => { if (typeof p.onAction === 'function') p.onAction({ event, value }); if (typeof p.onChange === 'function' && event === 'change') p.onChange(value); };
