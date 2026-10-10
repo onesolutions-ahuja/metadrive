@@ -4066,9 +4066,13 @@ function effectivePermissions(user: LocalUser, data: TenantData): string[] {
   const accessUser = data.accessControl.users.find((item) => item.id === user.id);
   const profile = data.accessControl.profiles.find((item) =>
     item.id === (accessUser?.profileId ?? profileIdForRole(user.role, data.accessControl.profiles)));
-  const assigned = data.accessControl.permissionSets.filter((set) => user.permissionSetIds.includes(set.id));
+  // RBAC user assignments are authoritative; the login identity is only a
+  // fallback for legacy tenant data that has not yet been reconciled.
+  const assignedSetIds = accessUser?.permissionSetIds ?? user.permissionSetIds;
+  const assignedGroupIds = accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds;
+  const assigned = data.accessControl.permissionSets.filter((set) => assignedSetIds.includes(set.id));
   const permissions = new Set([...(profile?.systemPermissions ?? []), ...assigned.flatMap((set) => set.systemPermissions)]);
-  for (const groupId of user.permissionSetGroupIds) {
+  for (const groupId of assignedGroupIds) {
     const group = data.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     if (!group) continue;
     const groupPermissions = new Set(data.accessControl.permissionSets
