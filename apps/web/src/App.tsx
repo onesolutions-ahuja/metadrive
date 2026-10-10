@@ -923,6 +923,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [canManageApprovalProcesses, setCanManageApprovalProcesses] = useState(false);
   const [namedCredentials, setNamedCredentials] = useState<NamedCredentialMetadata[]>([]);
   const [canManageNamedCredentials, setCanManageNamedCredentials] = useState(false);
+  const [namedCredentialsEncryptionReady, setNamedCredentialsEncryptionReady] = useState<boolean | null>(null);
   const [emailAlerts, setEmailAlerts] = useState<EmailAlertMetadata[]>([]);
   const [connectorProviders, setConnectorProviders] = useState<ConnectorProviderMetadata[]>([]);
   const [integrationConnections, setIntegrationConnections] = useState<IntegrationConnectionMetadata[]>([]);
@@ -1044,12 +1045,15 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   // A failed report/connector/dashboard request must not disable credential management.
   useEffect(() => {
     let active = true;
-    void apiRequest<{ user: { permissions: string[] } }>('/auth/me')
-      .then(({ user }) => {
-        if (active) setCanManageNamedCredentials(user.permissions.includes('namedCredentials:manage'));
+    void apiRequest<{ canManage: boolean; encryptionReady: boolean }>('/named-credentials/readiness')
+      .then(({ canManage, encryptionReady }) => {
+        if (active) {
+          setCanManageNamedCredentials(canManage);
+          setNamedCredentialsEncryptionReady(encryptionReady);
+        }
       })
       .catch(() => {
-        if (active) setCanManageNamedCredentials(false);
+        if (active) setNamedCredentialsEncryptionReady(null);
       });
     void apiRequest<{ credentials: NamedCredentialMetadata[] }>('/named-credentials')
       .then(({ credentials }) => {
@@ -3073,6 +3077,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           {route.kind === 'setup' && workspace === 'named-credentials' && <NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
+            encryptionReady={namedCredentialsEncryptionReady}
             onSave={saveNamedCredential}
             onDelete={deleteNamedCredential}
             onRotate={rotateNamedCredential}
