@@ -1097,7 +1097,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         // The main metadata loader reports errors; keep this permission check independent.
       });
     return () => { active = false; };
-  }, []);
+  }, [workspace]);
 
   useEffect(() => {
     const loadMetadata = async () => {
