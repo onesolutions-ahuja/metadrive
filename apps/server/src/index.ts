@@ -4066,9 +4066,13 @@ function effectivePermissions(user: LocalUser, data: TenantData): string[] {
   const accessUser = data.accessControl.users.find((item) => item.id === user.id);
   const profile = data.accessControl.profiles.find((item) =>
     item.id === (accessUser?.profileId ?? profileIdForRole(user.role, data.accessControl.profiles)));
-  const assigned = data.accessControl.permissionSets.filter((set) => user.permissionSetIds.includes(set.id));
+  // RBAC user assignments are authoritative; the login identity is only a
+  // fallback for legacy tenant data that has not yet been reconciled.
+  const assignedSetIds = accessUser?.permissionSetIds ?? user.permissionSetIds;
+  const assignedGroupIds = accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds;
+  const assigned = data.accessControl.permissionSets.filter((set) => assignedSetIds.includes(set.id));
   const permissions = new Set([...(profile?.systemPermissions ?? []), ...assigned.flatMap((set) => set.systemPermissions)]);
-  for (const groupId of user.permissionSetGroupIds) {
+  for (const groupId of assignedGroupIds) {
     const group = data.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     if (!group) continue;
     const groupPermissions = new Set(data.accessControl.permissionSets
@@ -5972,9 +5976,9 @@ function hasObjectPermission(principal: Principal, tenant: TenantData, objectNam
   };
   if (profile) addGrants(profile.objectPermissions);
   tenant.accessControl.permissionSets
-    .filter((set) => user.permissionSetIds.includes(set.id))
+     .filter((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id))
     .forEach((set) => addGrants(set.objectPermissions));
-  user.permissionSetGroupIds.forEach((groupId) => {
+  (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).forEach((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     if (!group) return;
     tenant.accessControl.permissionSets
@@ -6008,8 +6012,8 @@ function hasObjectWidePermission(principal: Principal, tenant: TenantData, objec
   };
   if (profile && hasGrant(profile.objectPermissions)) return true;
   if (tenant.accessControl.permissionSets.some((set) =>
-    user.permissionSetIds.includes(set.id) && hasGrant(set.objectPermissions))) return true;
-  return user.permissionSetGroupIds.some((groupId) => {
+    (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && hasGrant(set.objectPermissions))) return true;
+  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     return Boolean(group && tenant.accessControl.permissionSets.some((set) =>
       group.permissionSetIds.includes(set.id) && hasGrant(set.objectPermissions, group.mutedObjectPermissions[objectName])));
@@ -6173,8 +6177,8 @@ function hasFieldPermission(principal: Principal, tenant: TenantData, objectName
     ));
   };
   if (profile && grantsField(profile.fieldPermissions, profile.objectPermissions)) return true;
-  if (sets.some((set) => user.permissionSetIds.includes(set.id) && grantsField(set.fieldPermissions, set.objectPermissions))) return true;
-  return user.permissionSetGroupIds.some((groupId) => {
+  if (sets.some((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && grantsField(set.fieldPermissions, set.objectPermissions))) return true;
+  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
     const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
     if (!group || group.mutedFieldPermissions[key]?.[action]) return false;
     return sets.some((set) => group.permissionSetIds.includes(set.id)
