@@ -403,6 +403,8 @@ function matchesLookupFilterGroup(
 }
 
 function parseAppRoute(pathname: string, search = ''): AppRoute {
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+  if (basePath && pathname.startsWith(basePath + '/')) pathname = pathname.slice(basePath.length);
   const pathSegments = pathname.split('/').filter(Boolean);
   const segments = pathSegments[0] === 'une' ? pathSegments.slice(1) : [];
   const appId = new URLSearchParams(search).get('appId') || 'Records';
@@ -456,6 +458,12 @@ function parseAppRoute(pathname: string, search = ''): AppRoute {
 }
 
 function appRoutePath(route: AppRoute): string {
+  const path = appRoutePathWithoutBase(route);
+  const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+  return basePath + path;
+}
+
+function appRoutePathWithoutBase(route: AppRoute): string {
   if (route.kind === 'setup') {
     if (route.dashboardView && route.resourceApiName) {
       return `/une/dashboards/${encodeURIComponent(route.resourceApiName)}`;
