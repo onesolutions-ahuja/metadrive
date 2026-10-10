@@ -1,6 +1,6 @@
 {
-  "apiName": "Kiosk",
-  "label": "Kiosk",
+  "apiName": "UNE_KIOSK",
+  "label": "UNE kiosk",
   "targetObject": "",
   "pageType": "Home Page",
   "layoutMode": "free-canvas",
@@ -33,7 +33,7 @@
       "type": "Custom:KioskText",
       "label": "Kiosk Text",
       "properties": {
-        "text": "What would you like today?",
+        "text": "What are you craving?",
         "fontSize": 46,
         "weight": 700,
         "align": "center"
@@ -51,7 +51,7 @@
       "type": "Custom:KioskText",
       "label": "Kiosk Text",
       "properties": {
-        "text": "Choose a category to start your order",
+        "text": "Choose your favourites, customise and checkout",
         "fontSize": 24,
         "align": "center"
       },
@@ -111,14 +111,19 @@
             "price": 4.99
           },
           {
-            "id": "chicken-burger",
-            "name": "Chicken Burger",
-            "price": 5.49
+            "id": "double-cheeseburger",
+            "name": "Double Cheeseburger",
+            "price": 6.49
           },
           {
-            "id": "double-burger",
-            "name": "Double Burger",
-            "price": 6.99
+            "id": "crispy-chicken",
+            "name": "Crispy Chicken Burger",
+            "price": 5.99
+          },
+          {
+            "id": "chicken-nuggets",
+            "name": "Chicken Nuggets",
+            "price": 4.49
           },
           {
             "id": "fries",
@@ -129,11 +134,6 @@
             "id": "soft-drink",
             "name": "Soft Drink",
             "price": 1.99
-          },
-          {
-            "id": "ice-cream",
-            "name": "Ice Cream",
-            "price": 2.99
           }
         ]
       },
@@ -184,7 +184,7 @@
       "properties": {
         "backLabel": "Back",
         "nextLabel": "View basket",
-        "message": "Review your selection"
+        "message": "Freshly prepared • Made for you"
       },
       "visible": true,
       "position": {
