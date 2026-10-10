@@ -164,7 +164,43 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
         || matchesMetaPhoneUrl(connection.configuration.api_base_url);
     })
   );
-  if (matches.length !== 1) return reject(503, matches.length ? 'ambiguous_phone_tenant_mapping' : 'phone_tenant_mapping_not_configured');
+  if (matches.length !== 1) {
+    // Structural diagnostics only: never log IDs, phone numbers, URLs, tokens, or credentials.
+    const connectorDiagnostics = Object.values(state.tenants).map(data => {
+      const records = data.records.UneConnector__c ?? [];
+      const whatsappRecords = records.filter(record => String(record.ConnectorType__c ?? '').trim().toLowerCase() === 'whatsapp');
+      const shapes = whatsappRecords.map(record => {
+        if (typeof record.Configuration__c !== 'string') return 'configuration_not_string';
+        try {
+          const parsed: unknown = JSON.parse(record.Configuration__c);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'configuration_not_object';
+          const config = parsed as Record<string, unknown>;
+          const rawUrl = typeof config.ApiBaseUrl === 'string' ? config.ApiBaseUrl : '';
+          let urlShape = 'missing';
+          if (rawUrl) {
+            try {
+              const url = new URL(rawUrl);
+              const segments = url.pathname.split('/').filter(Boolean);
+              urlShape = url.hostname === 'graph.facebook.com'
+                ? (segments.length === 2 ? 'graph_two_segments' : segments.length === 3 ? 'graph_three_segments' : 'graph_other_segments')
+                : 'non_graph_host';
+            } catch { urlShape = 'invalid_url'; }
+          }
+          return {
+            hasPhoneNumberId: typeof config.PhoneNumberId === 'string' && Boolean(config.PhoneNumberId.trim()),
+            urlShape,
+            matchesPhoneNumberId: typeof config.PhoneNumberId === 'string' && config.PhoneNumberId.trim() === phoneId,
+            matchesApiBaseUrl: matchesMetaPhoneUrl(rawUrl)
+          };
+        } catch { return 'invalid_configuration_json'; }
+      });
+      return { connectorRecords: records.length, whatsappRecords: whatsappRecords.length, shapes,
+        legacyWhatsAppSettings: data.connectorSettings.filter(item => item.apiName === 'WhatsApp').length,
+        activeIntegrationConnections: data.integrationConnections.filter(item => item.connectorKey.toUpperCase() === 'WHATSAPP' && item.status === 'ACTIVE').length };
+    });
+    console.warn('[WhatsApp webhook] tenant mapping diagnostics', { tenantCount: connectorDiagnostics.length, matchCount: matches.length, connectors: connectorDiagnostics });
+    return reject(503, matches.length ? 'ambiguous_phone_tenant_mapping' : 'phone_tenant_mapping_not_configured');
+  }
   const [tenantId, tenant] = matches[0];
   const users = state.users.filter(user => user.tenantId === tenantId && !user.disabled);
   const systemUser = users.find(user => user.role === 'System Administrator') ?? users.find(user => user.permissionSetIds.includes('system-administrator'));
