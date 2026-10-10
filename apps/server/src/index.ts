@@ -108,7 +108,7 @@ app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
   const right = Buffer.from(supplied);
   if (left.length !== right.length || !timingSafeEqual(left, right)) return res.sendStatus(403);
   const challenge = req.query['hub.challenge'];
-  if (typeof challenge !== 'string' || !/^\\d+$/.test(challenge)) return res.sendStatus(400);
+  if (typeof challenge !== 'string' || !/^\d+$/.test(challenge)) return res.sendStatus(400);
   return res.status(200).type('text/plain').send(challenge);
 });
 
