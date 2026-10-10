@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyRound, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react';
+import { Eye, KeyRound, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react';
 import type { NamedCredentialMetadata } from './metadata';
 
 type CredentialInput = {
@@ -41,6 +41,7 @@ export default function NamedCredentials({
   onRotate: (id: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
+  const [viewing, setViewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -51,8 +52,9 @@ export default function NamedCredentials({
     setError('');
   };
 
-  const editCredential = (credential?: NamedCredentialMetadata) => {
+  const editCredential = (credential?: NamedCredentialMetadata, readOnly = false) => {
     setError('');
+    setViewing(readOnly);
     setDraft(credential ? {
       id: credential.id,
       name: credential.name,
@@ -110,7 +112,7 @@ export default function NamedCredentials({
   return <section className="surface object-setting-surface named-credentials-page">
     <div className="section-toolbar">
       <div><h2>Named Credentials</h2><p>Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts, Email Alerts, and supported delivery features.</p></div>
-      {canManage && <button className="btn btn-brand" onClick={() => editCredential()}><Plus size={14} />New Named Credential</button>}
+      <button className="btn btn-brand" disabled={!canManage} title={!canManage ? 'Requires namedCredentials:manage or metadata:write permission' : undefined} onClick={() => editCredential()}><Plus size={14} />New Named Credential</button>
     </div>
     <div className="record-type-create">
       <input className="form-control" type="search" aria-label="Search Named Credentials" placeholder="Search credentials…" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -121,26 +123,28 @@ export default function NamedCredentials({
       <table className="slds-table">
         <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Actions</th></tr></thead>
         <tbody>{visibleCredentials.map((credential) => <tr key={credential.id}>
-          <td><strong>{credential.label}</strong></td>
+          <td><button className="btn btn-link" onClick={() => editCredential(credential, true)}>{credential.label}</button></td>
           <td>{credential.name}</td>
           <td>{credential.protocol}</td>
           <td>{credential.baseUrl}</td>
           <td>{credential.authType}</td>
           <td>{credential.authType === 'None' ? 'Not required' : credential.hasSecret ? 'Stored · masked' : 'Not configured'}</td>
           <td>{new Date(credential.updatedAt).toLocaleString()}</td>
-          <td>{canManage && <div className="toolbar-actions">
-            <button className="icon-button subtle" aria-label={`Edit ${credential.label}`} disabled={Boolean(busyId)} onClick={() => editCredential(credential)}><Pencil size={14} /></button>
-            <button className="icon-button subtle" aria-label={`Rotate key for ${credential.label}`} title="Rotate encryption key" disabled={Boolean(busyId)} onClick={() => void performAction(credential, 'rotate')}><RotateCw size={14} /></button>
-            <button className="icon-button subtle" aria-label={`Delete ${credential.label}`} disabled={Boolean(busyId)} onClick={() => void performAction(credential, 'delete')}><Trash2 size={14} /></button>
-          </div>}</td>
+          <td><div className="toolbar-actions">
+            <button className="icon-button subtle" aria-label={`View ${credential.label}`} onClick={() => editCredential(credential, true)}><Eye size={14} /></button>
+            <button className="icon-button subtle" aria-label={`Edit ${credential.label}`} title={!canManage ? 'Manage Named Credentials permission required' : 'Edit credential'} disabled={!canManage || Boolean(busyId)} onClick={() => editCredential(credential)}><Pencil size={14} /></button>
+            <button className="icon-button subtle" aria-label={`Rotate key for ${credential.label}`} title="Rotate encryption key" disabled={!canManage || Boolean(busyId)} onClick={() => void performAction(credential, 'rotate')}><RotateCw size={14} /></button>
+            <button className="icon-button subtle" aria-label={`Delete ${credential.label}`} disabled={!canManage || Boolean(busyId)} onClick={() => void performAction(credential, 'delete')}><Trash2 size={14} /></button>
+          </div></td>
         </tr>)}</tbody>
       </table>
     </div>
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
-        <div className="modal-header"><h2 id="named-credential-title">{draft.id ? 'Edit Named Credential' : 'New Named Credential'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
+        <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Named Credential Details' : draft.id ? 'Edit Named Credential' : 'New Named Credential'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
+        <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
         <label className="form-label">API Name<input className="form-control" autoComplete="off" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" /></label>
         <label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" /></label>
         <label className="form-label">Protocol<select className="form-control" value={draft.protocol} onChange={(event) => {
@@ -156,7 +160,8 @@ export default function NamedCredentials({
         {draft.authType !== 'None' && <label className="form-label">{draft.authType === 'Basic' ? 'Password' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
         {draft.id && <div className="info-callout">Leave the secret blank to keep the existing secret. Changing authentication type requires a new secret.</div>}
         {error && <div className="records-message" role="alert">{error}</div>}
-        <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>Cancel</button><button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button></div>
+        </fieldset>
+        <div className="modal-actions"><button className="btn" disabled={saving} onClick={() => setDraft(null)}>{viewing ? 'Close' : 'Cancel'}</button>{!viewing && <button className="btn btn-brand" disabled={saving || !draft.name.trim() || !draft.label.trim() || !draft.baseUrl.trim() || (draft.authType !== 'None' && !draft.id && !draft.secret) || (draft.authType === 'Basic' && !draft.id && !draft.username?.trim())} onClick={() => void submit()}>{saving ? 'Saving…' : draft.id ? 'Save Changes' : 'Save Named Credential'}</button>}{viewing && canManage && <button className="btn btn-brand" onClick={() => setViewing(false)}><Pencil size={14} />Edit</button>}</div>
       </section>
     </div>}
   </section>;
