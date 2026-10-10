@@ -1191,7 +1191,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const flowHasUnsavedChanges = () => {
     if (route.kind !== 'setup' || route.workspace !== 'flow-builder') return false;
     const savedSnapshot = flowSnapshots.current.get(flow.apiName);
-    return savedSnapshot === undefined || savedSnapshot !== JSON.stringify(flow);
+    return savedSnapshot !== undefined && savedSnapshot !== JSON.stringify(flow);
   };
   const confirmDiscardFlowChanges = () => !flowHasUnsavedChanges()
     || window.confirm('This flow has unsaved changes. Leave without saving them?');
