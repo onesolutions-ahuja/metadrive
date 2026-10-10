@@ -115,7 +115,7 @@ app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
 app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const reject = (status: number, reason: string) => { console.warn('[WhatsApp webhook] rejected', { status, reason }); return res.sendStatus(status); };
   console.info('[WhatsApp webhook] delivery received');
-  const appSecret = process.env.METADRIVE_WHATSAPP_APP_SECRET;
+  const appSecret = process.env.WHATSAPP_APP_SECRET || process.env.METADRIVE_WHATSAPP_APP_SECRET;
   const signature = req.get('x-hub-signature-256');
   const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
   if (!appSecret) return reject(503, 'app_secret_not_configured');
