@@ -63,7 +63,7 @@ import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
 import ApprovalProcessManager from './ApprovalProcessManager';
-import kioskPagePreset from './page-presets/kiosk.page.json';
+import kioskPagePreset from './page-presets/kiosk.editable.json';
 import { standardPageComponents } from './componentCatalog';
 import {
   canvasDimensionsForOrientation,
