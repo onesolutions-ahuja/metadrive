@@ -125,18 +125,25 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const expected = Buffer.from(digest);
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return reject(403, 'signature_mismatch');
 
-  const tenantId = process.env.METADRIVE_WHATSAPP_TENANT_ID;
-  const userId = process.env.METADRIVE_WHATSAPP_SYSTEM_USER_ID;
-  if (!tenantId || !userId) return reject(503, 'tenant_or_system_user_not_configured');
-  const tenant = tenantData(tenantId);
-  if (!tenant || !state.users.some(user => user.id === userId && user.tenantId === tenantId && !user.disabled)) {
-    return reject(503, 'tenant_or_system_user_unavailable');
-  }
-  const payload = req.body as { object?: unknown; entry?: Array<{ changes?: Array<{ value?: { metadata?: { display_phone_number?: string }; messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }> } }> }> };
+  const payload = req.body as { object?: unknown; entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string; display_phone_number?: string }; messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }> } }> }> };
   if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) { console.info('[WhatsApp webhook] ignored unsupported payload'); return res.sendStatus(200); }
-  const working = structuredClone(tenant);
-  const object = working.objects.find(item => item.apiName === 'WhatsApp_Message__c');
+  const phoneIds = [...new Set(payload.entry.flatMap(entry => (entry.changes ?? []).filter(change => (change.value?.messages?.length ?? 0) > 0).map(change => change.value?.metadata?.phone_number_id?.trim()).filter((id): id is string => Boolean(id))))];
+  if (!phoneIds.length) { console.info('[WhatsApp webhook] no inbound messages'); return res.sendStatus(200); }
+  if (phoneIds.length !== 1) return reject(503, 'multiple_phone_ids_in_delivery');
+  const phoneId = phoneIds[0];
+  const matches = Object.entries(state.tenants).filter(([, data]) =>
+    data.connectorSettings.some(setting => setting.apiName === 'WhatsApp' && setting.fields.some(field => field.apiName === 'PhoneNumberId' && field.value.trim() === phoneId))
+    || data.integrationConnections.some(connection => connection.connectorKey.toUpperCase() === 'WHATSAPP' && connection.status === 'ACTIVE' && connection.configuration.phone_number_id?.trim() === phoneId)
+  );
+  if (matches.length !== 1) return reject(503, matches.length ? 'ambiguous_phone_tenant_mapping' : 'phone_tenant_mapping_not_configured');
+  const [tenantId, tenant] = matches[0];
+  const users = state.users.filter(user => user.tenantId === tenantId && !user.disabled);
+  const systemUser = users.find(user => user.role === 'System Administrator') ?? users.find(user => user.permissionSetIds.includes('system-administrator'));
+  if (!systemUser) return reject(503, 'tenant_system_administrator_unavailable');
+  const userId = systemUser.id;
+  const object = tenant.objects.find(item => item.apiName === 'WhatsApp_Message__c');
   if (!object) return reject(503, 'message_object_missing');
+  const working = structuredClone(tenant);
   let received = 0;
   let saved = 0;
   let duplicate = 0;
