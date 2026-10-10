@@ -3113,6 +3113,20 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'Renewal_Date__c', label: 'Renewal Date', dataType: 'Date', required: true, unique: false },
     { apiName: 'ARR__c', label: 'Annual Recurring Revenue', dataType: 'Currency(16, 2)', required: false, unique: false }
   ] },
+  { apiName: 'WhatsApp_Message__c', label: 'WhatsApp Message', pluralLabel: 'WhatsApp Messages', kind: 'Custom Object', description: 'Editable WhatsApp inbound/outbound message records used by metadata-driven Flows.', fields: [
+    { apiName: 'Name', label: 'Message Reference', dataType: 'AutoNumber', required: true, unique: false },
+    { apiName: 'Direction__c', label: 'Direction', dataType: 'Picklist', required: true, unique: false, picklistValues: ['Incoming', 'Outgoing'], picklistRestricted: true },
+    { apiName: 'From_Number__c', label: 'From Number', dataType: 'Phone', required: false, unique: false },
+    { apiName: 'To_Number__c', label: 'To Number', dataType: 'Phone', required: false, unique: false },
+    { apiName: 'Message_Body__c', label: 'Message Body', dataType: 'Long Text Area', required: true, unique: false },
+    { apiName: 'Conversation_Key__c', label: 'Conversation Key', dataType: 'Text(120)', required: false, unique: false },
+    { apiName: 'Status__c', label: 'Status', dataType: 'Picklist', required: true, unique: false, picklistValues: ['Received', 'Pending', 'Sent', 'Failed'], picklistRestricted: true, defaultValue: 'Received' },
+    { apiName: 'Provider_Message_Id__c', label: 'Provider Message ID', dataType: 'Text(255)', required: false, unique: false },
+    { apiName: 'Occurred_At__c', label: 'Occurred At', dataType: 'Date/Time', required: false, unique: false }
+  ], settings: {
+    allowReports: true, allowActivities: false, trackFieldHistory: true, allowInChatter: false,
+    deploymentStatus: 'Deployed', recordNameType: 'Auto Number', recordNameFormat: 'WAM-{000000}'
+  } },
   { apiName: 'Communication_Records__c', label: 'Communication Records', pluralLabel: 'Communication Records', kind: 'Custom Object', description: 'Audit log of incoming API requests and outgoing external API callouts.', fields: [
     { apiName: 'Name', label: 'Communication ID', dataType: 'AutoNumber', required: true, unique: false },
     { apiName: 'Api_Id__c', label: 'API ID', dataType: 'Text(255)', required: false, unique: false },
@@ -3286,7 +3300,79 @@ function integrationConnectionRecord(connection: IntegrationConnection, ownerId:
   }, ownerId, connection.updatedAt);
 }
 
-function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'role' | 'permissionSetIds'>): TenantData {
+const whatsappDummyCredentialId = '11111111-1111-4111-8111-111111111111';
+
+function whatsappRouterFlow(): FlowMetadata {
+  return flowSchema.parse({
+    apiName: 'WA_ROUTER', label: 'WhatsApp Router',
+    description: 'Editable starter WhatsApp router. Change keywords, replies, record actions and credential in Flow Builder.',
+    flowType: 'Record-Triggered Flow', status: 'Draft', versionNumber: 1, activeVersion: null,
+    triggerObject: 'WhatsApp_Message__c',
+    startConfig: { trigger: 'created', runWhen: 'after-save', conditionLogic: 'All', entryConditions: [{ field: 'Direction__c', operator: 'Equals', value: 'Incoming' }] },
+    elements: [
+      { id: 1, type: 'Start', label: 'Incoming WhatsApp Message', config: { trigger: 'created', runWhen: 'after-save' } },
+      { id: 2, type: 'Decision', label: 'Route by Keyword', config: { outcomes: [
+        { name: 'Beauty', label: 'Beauty', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'BARBER' }] },
+        { name: 'Roof', label: 'Roof', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ROOF' }] },
+        { name: 'Accounts', label: 'Accounts', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ACCOUNTANT' }] },
+        { name: 'Legal', label: 'Legal', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'LAWYER' }] },
+        { name: 'Default', label: 'Default Outcome', conditions: [] }
+      ] } },
+      { id: 3, type: 'Assignment', label: 'Set Beauty Reply', config: { variable: 'ReplyText', operator: 'Assign', value: 'Welcome to Beauty. Edit this reply and next steps in Flow Builder.' } },
+      { id: 4, type: 'Assignment', label: 'Set Roof Reply', config: { variable: 'ReplyText', operator: 'Assign', value: 'Welcome to Roof Cleaning. Edit this reply and next steps in Flow Builder.' } },
+      { id: 5, type: 'Assignment', label: 'Set Accounts Reply', config: { variable: 'ReplyText', operator: 'Assign', value: 'Welcome to Accounts. Edit this reply and next steps in Flow Builder.' } },
+      { id: 6, type: 'Assignment', label: 'Set Legal Reply', config: { variable: 'ReplyText', operator: 'Assign', value: 'Welcome to Legal. Edit this reply and next steps in Flow Builder.' } },
+      { id: 7, type: 'Assignment', label: 'Set Default Reply', config: { variable: 'ReplyText', operator: 'Assign', value: 'Please reply BARBER, ROOF, ACCOUNTANT or LAWYER.' } },
+      { id: 8, type: 'HTTP Callout', label: 'Send WhatsApp Reply', config: {
+        namedCredentialId: whatsappDummyCredentialId, method: 'POST', path: 'messages',
+        headers: 'Content-Type: application/json',
+        body: '{"messaging_product":"whatsapp","to":"{!$Record.From_Number__c}","type":"text","text":{"body":"{!ReplyText}"}}',
+        statusVariable: 'CalloutStatus', onError: 'FAULT_PATH'
+      } },
+      { id: 9, type: 'Create Records', label: 'Log Outgoing WhatsApp Message', config: { object: 'WhatsApp_Message__c', fieldValues: [
+        { field: 'Direction__c', value: 'Outgoing' }, { field: 'From_Number__c', value: '{!$Record.To_Number__c}' },
+        { field: 'To_Number__c', value: '{!$Record.From_Number__c}' }, { field: 'Message_Body__c', value: '{!ReplyText}' },
+        { field: 'Conversation_Key__c', value: '{!$Record.Conversation_Key__c}' }, { field: 'Status__c', value: 'Sent' }
+      ] } },
+      { id: 10, type: 'Update Records', label: 'Mark Incoming Message Processed', config: { object: 'WhatsApp_Message__c', conditions: [{ field: 'Id', operator: 'Equals', value: '{!$Record.Id}' }], fieldValues: [{ field: 'Status__c', value: 'Sent' }] } },
+      { id: 11, type: 'Assignment', label: 'Capture Callout Error', config: { variable: 'FlowError', operator: 'Assign', value: '{!$Flow.FaultMessage}' } }
+    ],
+    connectors: [
+      { id: 'wa-start-route', from: 1, to: 2, label: '', kind: 'normal' },
+      { id: 'wa-route-beauty', from: 2, to: 3, label: 'Beauty', kind: 'normal' },
+      { id: 'wa-route-roof', from: 2, to: 4, label: 'Roof', kind: 'normal' },
+      { id: 'wa-route-accounts', from: 2, to: 5, label: 'Accounts', kind: 'normal' },
+      { id: 'wa-route-legal', from: 2, to: 6, label: 'Legal', kind: 'normal' },
+      { id: 'wa-route-default', from: 2, to: 7, label: 'Default Outcome', kind: 'normal' },
+      { id: 'wa-beauty-send', from: 3, to: 8, label: '', kind: 'normal' },
+      { id: 'wa-roof-send', from: 4, to: 8, label: '', kind: 'normal' },
+      { id: 'wa-accounts-send', from: 5, to: 8, label: '', kind: 'normal' },
+      { id: 'wa-legal-send', from: 6, to: 8, label: '', kind: 'normal' },
+      { id: 'wa-default-send', from: 7, to: 8, label: '', kind: 'normal' },
+      { id: 'wa-send-log', from: 8, to: 9, label: '', kind: 'normal' },
+      { id: 'wa-log-update', from: 9, to: 10, label: '', kind: 'normal' },
+      { id: 'wa-send-fault', from: 8, to: 11, label: '', kind: 'fault' }
+    ],
+    resources: [
+      { name: 'ReplyText', label: 'Reply Text', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: false, availableForOutput: false, value: '' },
+      { name: 'CalloutStatus', label: 'Callout Status', type: 'Variable', dataType: 'Number', isCollection: false, availableForInput: false, availableForOutput: false, value: 0 },
+      { name: 'FlowError', label: 'Flow Error', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: false, availableForOutput: true, value: '' }
+    ], versions: []
+  });
+}
+
+function seedWhatsappDummyCredential(tenantId: string, current: StoredNamedCredential[]): StoredNamedCredential[] {
+  if (current.some((credential) => credential.id === whatsappDummyCredentialId || credential.name === 'WhatsApp_Dummy')) return current;
+  if (!process.env.METADRIVE_CREDENTIAL_KEYS || !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID) return current;
+  const now = new Date().toISOString();
+  return [...current, namedCredentialSchema.parse({
+    id: whatsappDummyCredentialId, name: 'WhatsApp_Dummy', label: 'WhatsApp Dummy — update before activation',
+    protocol: 'HTTPS', baseUrl: 'https://graph.facebook.com/v22.0/000000000000000/', authType: 'None',
+    ...sealCredentialPayload(tenantId, whatsappDummyCredentialId, {}), createdAt: now, updatedAt: now
+  })];
+}
+
+function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 'email' | 'role' | 'permissionSetIds'>): TenantData {
   const objects = baseObjects.map(withObjectDefaults);
   const allAccess = Object.fromEntries(objects.map((object) => [object.apiName, { ...fullObjectPermissions }]));
   const permissionSets = [
@@ -3348,7 +3434,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'ro
     ]
   });
   return {
-    objects, flows: [flow], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
+    objects, flows: [flow, whatsappRouterFlow()], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
@@ -3357,10 +3443,11 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'ro
     records: {
       UneConnector__c: connectorRecords(defaultConnectorSettings, admin?.id ?? 'system'),
       ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
-      IntegrationConnection__c: []
+      IntegrationConnection__c: [],
+      WhatsApp_Message__c: []
     },
     autoNumberSequences: {},
-    fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, namedCredentials: [], emailAlerts: [],
+    fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, namedCredentials: seedWhatsappDummyCredential(admin?.tenantId ?? 'bootstrap', []), emailAlerts: [],
     connectorSettings: structuredClone(defaultConnectorSettings),
     connectorDefinitions: structuredClone(defaultConnectorDefinitions),
     integrationConnections: []
@@ -3548,11 +3635,12 @@ function loadState(): PlatformState {
       });
       const objects = [
         ...storedObjects,
-        ...baseObjects.filter((object) => ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'].includes(object.apiName)
+        ...baseObjects.filter((object) => ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'].includes(object.apiName)
           && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(withObjectDefaults)
       ];
       const records = tenant.records ?? {};
       if (!records.Communication_Records__c) records.Communication_Records__c = [];
+      if (!records.WhatsApp_Message__c) records.WhatsApp_Message__c = [];
       const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
       if (!(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
       const previousProviderRecords = records.ConnectorProvider__c ?? [];
@@ -3578,7 +3666,7 @@ function loadState(): PlatformState {
       records.IntegrationConnection__c = (tenant.integrationConnections ?? []).map((connection) =>
         integrationConnectionRecord(connection, String(previousConnections.find((record) => record.Id === connection.id)?.OwnerId ?? ownerId)));
       const defaultProfiles = buildDefaultProfiles(objects, tenant.accessControl.permissionSets);
-      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'];
+      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'];
       const connectorObjectPermissions = Object.fromEntries(connectorObjectNames.map((apiName) => [apiName, { ...fullObjectPermissions }]));
       const connectorFieldPermissions = Object.fromEntries(objects
         .filter((object) => connectorObjectNames.includes(object.apiName))
@@ -3665,7 +3753,7 @@ function loadState(): PlatformState {
       notifications: tenant.notifications ?? [],
       approvalRequests: tenant.approvalRequests ?? [],
       approvalProcesses: tenant.approvalProcesses ?? [],
-      namedCredentials: tenant.namedCredentials ?? [],
+      namedCredentials: seedWhatsappDummyCredential(tenantId, tenant.namedCredentials ?? []),
       connectorDefinitions,
       integrationConnections: tenant.integrationConnections ?? [],
       dashboards,
@@ -3703,6 +3791,7 @@ function loadState(): PlatformState {
             : set),
       },
       objects,
+      flows: tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? tenant.flows : [...tenant.flows, whatsappRouterFlow()],
       pages: tenant.pages.map((page) => ({
         ...page,
         activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
