@@ -130,13 +130,13 @@ export default function NamedCredentials({
   return <section className="surface object-setting-surface named-credentials-page">
     <div className="section-toolbar">
       <div><h2>Named Credentials</h2><p>Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts, Email Alerts, and supported delivery features.</p></div>
-      <button className="btn btn-brand" disabled={!canManage} title={!canManage ? 'Requires namedCredentials:manage or metadata:write permission' : undefined} onClick={() => editCredential()}><Plus size={14} />New Named Credential</button>
+      <button className="btn btn-brand" disabled={!canManage} title={!canManage ? 'Requires OneEngine Named Credentials permission' : undefined} onClick={() => editCredential()}><Plus size={14} />New Named Credential</button>
     </div>
     <div className="record-type-create">
       <input className="form-control" type="search" aria-label="Search Named Credentials" placeholder="Search credentials…" value={query} onChange={(event) => setQuery(event.target.value)} />
     </div>
     {error && <div className="records-message" role="alert">{error}</div>}
-    {!canManage && <div className="info-callout">You can view credentials, but need Manage Named Credentials or metadata write permission to change them.</div>}
+    {!canManage && <div className="info-callout">You can view credentials, but need the OneEngine Named Credentials permission set to change them.</div>}
     <div className="table-scroll">
       <table className="slds-table">
         <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th><th>Actions</th></tr></thead>
