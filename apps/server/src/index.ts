@@ -10848,6 +10848,9 @@ function resolveCalloutUrl(credential: Pick<StoredNamedCredential, 'baseUrl'>, p
   });
   if (expandedPath.split(/[/?#]/).some((segment) => segment === '..')) throw new Error('HTTP Callout path cannot traverse outside the Named Credential base path.');
   const base = new URL(credential.baseUrl);
+  // Named Credential base URLs represent a directory, even when configured without
+  // a trailing slash (for example the WhatsApp phone-number endpoint).
+  if (!base.pathname.endsWith('/')) base.pathname += '/';
   const target = new URL(expandedPath, base);
   if (target.origin !== base.origin || !target.pathname.startsWith(base.pathname)) {
     throw new Error('HTTP Callout target must remain within its Named Credential base URL.');
@@ -10998,7 +11001,32 @@ async function performHttpCallout(
     if (!credential.headerName || !secretPayload.secret) throw new Error(`Named Credential "${credential.name}" has incomplete API Key authentication data.`);
     headers[credential.headerName] = secretPayload.secret;
   }
-  const body = config.body === undefined || config.body === null ? '' : resolveFlowTemplate(String(config.body), context);
+  // Resolve JSON fields individually instead of substituting inside serialized JSON:
+  // recipient names, quotes and line breaks must remain valid JSON after mapping.
+  const rawBody = config.body === undefined || config.body === null ? '' : String(config.body);
+  let body = '';
+  if (rawBody) {
+    let parsedBody: unknown;
+    try { parsedBody = JSON.parse(rawBody); } catch { parsedBody = undefined; }
+    if (parsedBody !== undefined && parsedBody !== null && typeof parsedBody === 'object') {
+      const resolveBodyFields = (item: unknown): unknown => {
+        if (Array.isArray(item)) return item.map(resolveBodyFields);
+        if (item && typeof item === 'object') return Object.fromEntries(
+          Object.entries(item).map(([key, value]) => [key, resolveBodyFields(value)]));
+        if (typeof item !== 'string') return item;
+        const exactReference = /^\{!?([A-Za-z_$][A-Za-z0-9_$.]*)\}$/.exec(item);
+        if (exactReference) {
+          const resolved = resolveFlowValue(item, context);
+          if (resolved === undefined) throw new Error(`Flow template references an unavailable value "${exactReference[1]}".`);
+          return resolved;
+        }
+        return resolveFlowTemplate(item, context);
+      };
+      body = JSON.stringify(resolveBodyFields(parsedBody));
+    } else {
+      body = resolveFlowTemplate(rawBody, context);
+    }
+  }
   if (Buffer.byteLength(body, 'utf8') > 256 * 1024) throw new Error(`HTTP Callout "${elementLabel}" request body exceeded the 256 KB limit.`);
   if (body && !Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
   if (context.debug) return { body: { debugExecution: true, requestBody: communicationPayload(body) }, status: 200 };
