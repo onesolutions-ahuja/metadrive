@@ -3860,8 +3860,13 @@ try {
   credentialKeyRing();
   console.info('Named Credentials encryption readiness: configured');
 } catch (error) {
-  const missing = !process.env.METADRIVE_CREDENTIAL_KEYS || !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID;
-  console.warn('Named Credentials encryption readiness: ' + (missing ? 'missing environment configuration' : 'invalid environment configuration'));
+  const missingKeys = !process.env.METADRIVE_CREDENTIAL_KEYS;
+  const missingActiveId = !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID;
+  const status = missingKeys && missingActiveId ? 'both variables missing'
+    : missingKeys ? 'METADRIVE_CREDENTIAL_KEYS missing'
+    : missingActiveId ? 'METADRIVE_CREDENTIAL_ACTIVE_KEY_ID missing'
+    : 'invalid environment configuration';
+  console.warn('Named Credentials encryption readiness: ' + status);
 }
 
 await persistToPostgres(state);
