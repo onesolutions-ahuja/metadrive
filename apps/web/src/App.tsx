@@ -1121,12 +1121,16 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           apiRequest<{ reports: ReportMetadata[] }>('/metadata/reports'),
           apiRequest<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me')
         ]);
-        try {
-          setAccessControl(await apiRequest<AccessControlMetadata>('/metadata/permissions'));
-          setAccessControlError('');
-        } catch (error) {
-          setAccessControlError(error instanceof Error ? error.message : String(error));
-        }
+        // RBAC settings are optional for initial page rendering. Fetch them
+        // independently so a slow permissions response cannot block all pages.
+        void apiRequest<AccessControlMetadata>('/metadata/permissions')
+          .then((permissions) => {
+            setAccessControl(permissions);
+            setAccessControlError('');
+          })
+          .catch((error) => {
+            setAccessControlError(error instanceof Error ? error.message : String(error));
+          });
         if (objectPayload.objects.length) {
           setObjects(objectPayload.objects);
           setObject(objectPayload.objects.find((item) => item.apiName === object.apiName) ?? objectPayload.objects[0]);
