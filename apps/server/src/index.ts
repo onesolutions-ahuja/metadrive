@@ -3691,6 +3691,8 @@ function loadState(): PlatformState {
           id: identity.id,
           name: identity.name,
           username: identity.email,
+          locale: 'en-GB',
+          timeZone: 'Europe/London',
           role: identity.role,
           roleId: roleIdForName(identity.role, roles),
           profileId: profileIdForRole(identity.role, profiles),
