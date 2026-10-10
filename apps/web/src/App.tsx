@@ -934,6 +934,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [objectSearch, setObjectSearch] = useState('');
   const [objects, setObjects] = useState(objectMetadata);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [metadataLoadError, setMetadataLoadError] = useState('');
   const [object, setObject] = useState<ObjectMetadata>(() =>
     (route.kind === 'setup' && route.objectApiName ? objectMetadata.find((item) => item.apiName === route.objectApiName) : undefined)
       ?? objectMetadata.find((item) => item.apiName === 'Account')
@@ -1187,6 +1188,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         // don't spam a "Metadata API unavailable" toast for a normal logged-out state.
         const message = error instanceof Error ? error.message : String(error);
         if (!isAuthErrorMessage(message)) {
+          setMetadataLoadError(message);
           setToast(`Metadata API unavailable: ${message}`);
         }
       } finally {
@@ -3066,13 +3068,13 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           )}
           {route.kind === 'setup' && workspace === 'page-builder' && metadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
             <section className="setup-card" role="alert" style={{ padding: 24 }}>
-              <h2>Lightning page not found</h2>
-              <p>The page "{route.resourceApiName}" was not returned by the metadata API. No other page has been substituted.</p>
+              <h2>{metadataLoadError ? "Unable to load Lightning pages" : "Lightning page not found"}</h2>
+              <p>{metadataLoadError ? `Metadata API error: ${metadataLoadError}` : `The page "${route.resourceApiName}" was not returned by the metadata API. No other page has been substituted.`}</p>
               <p>Check that the page exists in this tenant and that your account can access it.</p>
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || pages.some((item) => item.apiName === route.resourceApiName)) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
