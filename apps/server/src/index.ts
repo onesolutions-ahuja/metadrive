@@ -3,7 +3,7 @@ import { readPersistedState, persistToPostgres } from './postgres-state.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15502,6 +15502,19 @@ async function dispatchScheduledFlows(): Promise<void> {
   } finally {
     scheduledDispatchRunning = false;
   }
+}
+
+// Serve the production React SPA from the same origin as the API.
+const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
+if (existsSync(resolve(frontendDist, 'index.html'))) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req: Request, res: Response, next: NextFunction) => {
+    if (req.path === '/api' || req.path.startsWith('/api/')) {
+      return res.status(404).json({ error: 'API route not found' });
+    }
+    if (!req.accepts('html')) return next();
+    return res.sendFile(resolve(frontendDist, 'index.html'));
+  });
 }
 
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "npm run build --prefix ../web && tsc -p tsconfig.json",
     "test": "tsx --test --test-concurrency=1 test/connector-test.test.ts test/dashboard-access.test.ts test/flow-collection.test.ts test/platform-events.test.ts test/rbac-sharing.smoke.test.ts test/report-builder.test.ts",
     "start": "node dist/index.js"
   },
