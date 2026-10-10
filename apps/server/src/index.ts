@@ -5552,7 +5552,7 @@ app.put('/api/connector-settings/:apiName', requireAnyPermission('metadata:write
   return res.json({ connector: parsed.data });
 });
 // Report credential readiness without exposing encryption keys or other tenants' data.
-app.get('/api/named-credentials/readiness', (req: Request, res: Response) => {
+app.get('/api/named-credentials/readiness', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
   const user = principalUser(principal);
