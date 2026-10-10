@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import postcss from 'postcss';
@@ -54,7 +54,7 @@ app.use(cors({
   },
   credentials: true
 }));
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app') return next();
   const startedAt = Date.now();
@@ -94,6 +94,80 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     }
   });
   next();
+});
+
+// Meta webhook transport is a platform primitive; routing and replies remain in editable Flows.
+// Configure these four values on Render before enabling the callback.
+app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
+  const expected = process.env.METADRIVE_WHATSAPP_VERIFY_TOKEN;
+  const supplied = req.query['hub.verify_token'];
+  if (!expected || typeof supplied !== 'string' || req.query['hub.mode'] !== 'subscribe') {
+    return res.sendStatus(403);
+  }
+  const left = Buffer.from(expected);
+  const right = Buffer.from(supplied);
+  if (left.length !== right.length || !timingSafeEqual(left, right)) return res.sendStatus(403);
+  const challenge = req.query['hub.challenge'];
+  if (typeof challenge !== 'string' || !/^\\d+$/.test(challenge)) return res.sendStatus(400);
+  return res.status(200).type('text/plain').send(challenge);
+});
+
+app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
+  const appSecret = process.env.METADRIVE_WHATSAPP_APP_SECRET;
+  const signature = req.get('x-hub-signature-256');
+  const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+  if (!appSecret || !signature || !/^sha256=[a-f0-9]{64}$/i.test(signature) || !rawBody) return res.sendStatus(403);
+  const digest = 'sha256=' + createHmac('sha256', appSecret).update(rawBody).digest('hex');
+  const supplied = Buffer.from(signature.toLowerCase());
+  const expected = Buffer.from(digest);
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return res.sendStatus(403);
+
+  const tenantId = process.env.METADRIVE_WHATSAPP_TENANT_ID;
+  const userId = process.env.METADRIVE_WHATSAPP_SYSTEM_USER_ID;
+  if (!tenantId || !userId) return res.status(503).json({ error: 'WhatsApp receiver is not configured' });
+  const tenant = tenantData(tenantId);
+  if (!tenant || !state.users.some(user => user.id === userId && user.tenantId === tenantId && !user.disabled)) {
+    return res.status(503).json({ error: 'WhatsApp receiver identity is unavailable' });
+  }
+  const payload = req.body as { object?: unknown; entry?: Array<{ changes?: Array<{ value?: { metadata?: { display_phone_number?: string }; messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }> } }> }> };
+  if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) return res.sendStatus(200);
+  const working = structuredClone(tenant);
+  const object = working.objects.find(item => item.apiName === 'WhatsApp_Message__c');
+  if (!object) return res.status(503).json({ error: 'WhatsApp message metadata is missing' });
+  try {
+    for (const entry of payload.entry) {
+      for (const change of entry.changes ?? []) {
+        const value = change.value;
+        for (const message of value?.messages ?? []) {
+          if (!message.id || !message.from) continue;
+          if ((working.records[object.apiName] ?? []).some(item => item.Provider_Message_Id__c === message.id)) continue;
+          const body = message.type === 'text' ? message.text?.body : undefined;
+          if (!body) continue; // Unsupported message types are acknowledged, not turned into text.
+          const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
+            Direction__c: 'Incoming', From_Number__c: message.from,
+            To_Number__c: value?.metadata?.display_phone_number ?? '',
+            Message_Body__c: body, Conversation_Key__c: message.from,
+            Status__c: 'Received', Provider_Message_Id__c: message.id,
+            ...(message.timestamp && /^\\d+$/.test(message.timestamp) ? { Occurred_At__c: new Date(Number(message.timestamp) * 1000).toISOString() } : {})
+          }), userId);
+          validateRuntimeRecord(tenantId, working, object, values);
+          const now = new Date().toISOString();
+          let record = calculateFormulaFields(object, stampRecordAuditFields({
+            ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now
+          }, userId, now), formulaContextForUser(working, userId));
+          await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
+          record = calculateFormulaFields(object, record, formulaContextForUser(working, userId));
+          working.records[object.apiName] = [...(working.records[object.apiName] ?? []), record];
+          await runRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
+        }
+      }
+    }
+    persistTenantRecords(tenantId, working);
+    return res.sendStatus(200);
+  } catch (error) {
+    console.error('WhatsApp webhook processing failed:', error instanceof Error ? error.message : String(error));
+    return res.sendStatus(500); // Meta retries unsuccessful deliveries.
+  }
 });
 
 function numericFieldValueError(dataType: string, value: number): string | null {
