@@ -63,6 +63,7 @@ import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
 import ApprovalProcessManager from './ApprovalProcessManager';
+import kioskPagePreset from './page-presets/kiosk.page.json';
 import { standardPageComponents } from './componentCatalog';
 import {
   canvasDimensionsForOrientation,
@@ -7130,6 +7131,39 @@ function PageBuilder({
       setSaving(false);
     }
   };
+  const applyKioskPreset = async () => {
+    if (page.apiName !== 'Kiosk') return;
+    const preset = kioskPagePreset as LightningPageMetadata;
+    const missing = preset.components.filter((component) =>
+      !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
+    if (missing.length) {
+      onNotify(`Register kiosk components first: ${missing.map((item) => item.type).join(', ')}`);
+      return;
+    }
+    if (page.components.length && !window.confirm('Replace the current Kiosk layout with the editable starter layout?')) return;
+    const nextPage: LightningPageMetadata = {
+      ...page,
+      layoutMode: 'free-canvas',
+      canvasWidth: preset.canvasWidth,
+      canvasHeight: preset.canvasHeight,
+      components: preset.components.map((component) => ({
+        ...component,
+        properties: { ...component.properties },
+        position: component.position ? { ...component.position } : undefined
+      }))
+    };
+    setSaving(true);
+    try {
+      const saved = await onSave(nextPage, savedPageApiName.current, 'Kiosk layout saved. You can now edit every component.');
+      if (saved) {
+        setSelectedId(nextPage.components[0]?.id ?? '');
+        setUndoStack([]);
+        setRedoStack([]);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
   const clonePage = async () => {
     const baseApiName = `${page.apiName}_Copy`;
     let apiName = baseApiName;
@@ -7460,6 +7494,7 @@ function PageBuilder({
         <div className="toolbar-actions">
           <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
+          {page.apiName === 'Kiosk' && <button className="btn" disabled={saving} onClick={() => void applyKioskPreset()}>Load Kiosk Layout</button>}
           <button className="btn" disabled={saving} onClick={() => void clonePage()}><Copy size={14} />Clone</button>
           <button className={previewMode ? 'btn active' : 'btn'} onClick={() => setPreviewMode((current) => !current)}><Eye size={14} />{previewMode ? 'Exit preview' : 'Preview'}</button>
           <button className="btn" disabled={saving} onClick={() => void savePage()}><Save size={14} />{saving ? 'Saving…' : 'Save'}</button>
