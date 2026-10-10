@@ -3680,7 +3680,7 @@ function loadState(): PlatformState {
         ...user,
         roleId: user.roleId && roles.some((role) => role.id === user.roleId)
           ? user.roleId : roleIdForName(user.role, roles),
-        profileId: user.profileId && profileIds.has(user.profileId) ? user.profileId : profileIdForRole(user.role, profiles)
+        profileId: user.role === 'System Administrator' ? 'system-administrator' : user.profileId && profileIds.has(user.profileId) ? user.profileId : profileIdForRole(user.role, profiles)
       }));
       const dashboardFolders = [...(tenant.dashboardFolders ?? [])];
       const reportFolders = [...(tenant.reportFolders ?? [])];
@@ -4003,7 +4003,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
   const admin: LocalUser = {
     id: userId, tenantId, name: adminName, email: normalizedEmail,
     passwordSalt: credentials.salt, passwordHash: credentials.hash,
-    role: 'System Administrator', permissionSetIds: ['system-administrator', 'oneengine-named-credentials'],
+    role: 'System Administrator', permissionSetIds: ['system-administrator'],
     permissionSetGroupIds: [],
     disabled: false, createdAt: new Date().toISOString()
   };
