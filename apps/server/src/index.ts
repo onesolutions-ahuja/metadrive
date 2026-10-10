@@ -3856,6 +3856,14 @@ if (existingPostgresState !== null) {
   console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
 }
 let state = loadState();
+try {
+  credentialKeyRing();
+  console.info('Named Credentials encryption readiness: configured');
+} catch (error) {
+  const missing = !process.env.METADRIVE_CREDENTIAL_KEYS || !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID;
+  console.warn('Named Credentials encryption readiness: ' + (missing ? 'missing environment configuration' : 'invalid environment configuration'));
+}
+
 await persistToPostgres(state);
 
 function credentialKeyRing(): CredentialKeyRing {
