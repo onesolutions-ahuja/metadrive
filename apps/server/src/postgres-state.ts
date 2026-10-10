@@ -4,8 +4,12 @@ const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is required for persistent MetaDrive state');
 
+// Keep SSL configuration in one place: pg URL sslmode options otherwise override the trusted CA.
+const databaseUrl = new URL(connectionString);
+for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) databaseUrl.searchParams.delete(key);
+
 const pool = new Pool({
-  connectionString,
+  connectionString: databaseUrl.toString(),
   ssl: process.env.PGSSLMODE === 'disable' ? false : {
     rejectUnauthorized: process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT !== 'true',
     ...(process.env.METADRIVE_DB_CA_CERT ? { ca: process.env.METADRIVE_DB_CA_CERT.replace(/\\n/g, '\n') } : {})
