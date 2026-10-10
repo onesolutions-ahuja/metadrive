@@ -5535,6 +5535,22 @@ app.put('/api/connector-settings/:apiName', requireAnyPermission('metadata:write
   persistTenantRecords(principal.tenantId, updatedTenant);
   return res.json({ connector: parsed.data });
 });
+// Report credential readiness without exposing encryption keys or other tenants' data.
+app.get('/api/named-credentials/readiness', (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  const user = principalUser(principal);
+  if (!tenant || !user) return res.status(403).json({ error: 'Tenant membership is no longer active' });
+  const canManage = effectivePermissions(user, tenant).includes('namedCredentials:manage');
+  let encryptionReady = false;
+  try {
+    credentialKeyRing();
+    encryptionReady = true;
+  } catch {
+    // Missing or invalid encryption configuration is reported without key material.
+  }
+  return res.json({ canManage, encryptionReady });
+});
 app.get('/api/named-credentials', requireAnyPermission('metadata:read', 'namedCredentials:manage'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId)!;
   res.json({ credentials: tenant.namedCredentials.map(publicNamedCredential) });
