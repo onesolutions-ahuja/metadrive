@@ -6,7 +6,7 @@ This is a historical subsystem checklist, superseded as an independent source of
 
 ## Scope and reference
 
-Parity means a complete, working MetaDrive implementation of the Lightning App Builder authoring experience described by Salesforce Trailhead, plus the user's explicit requirement for registering reusable custom components from files and exposing those components consistently in builders. It includes the Builder's user experience and the resulting page behavior—not just visual resemblance.
+Parity means a complete, working UNEEngine implementation of the Lightning App Builder authoring experience described by Salesforce Trailhead, plus the user's explicit requirement for registering reusable custom components from files and exposing those components consistently in builders. It includes the Builder's user experience and the resulting page behavior—not just visual resemblance.
 
 The fixed references are:
 
@@ -53,7 +53,7 @@ Each item is mandatory. A feature counts as complete only when its stated behavi
 
 ### D. Component palette, canvas, and component configuration
 
-- [ ] The palette exposes the MetaDrive standard Lightning page components: Accordion, Activities, Chatter, Highlights Panel, Related List, Tabs, Record Detail, and Report Chart, subject to page-type and object-feature compatibility.
+- [ ] The palette exposes the UNEEngine standard Lightning page components: Accordion, Activities, Chatter, Highlights Panel, Related List, Tabs, Record Detail, and Report Chart, subject to page-type and object-feature compatibility.
 - [ ] On Record Pages, a Fields palette lists fields for the selected target object and supports adding them to Record Detail configuration.
 - [ ] Record Page Dynamic Forms support upgrading the existing record-detail layout into individually configurable field/field-section components, arranging fields/sections on the canvas, and saving/rendering the resulting configuration.
 - [ ] Palette search filters available standard and registered custom page components.
