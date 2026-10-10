@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>UNEEngine | Setup</title>
     <meta name="description" content="Metadata-driven CRM setup and builder workspace" />
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var spaPath = params.get('__spa');
+        if (!spaPath) return;
+        params.delete('__spa');
+        var restored = spaPath;
+        var remainingQuery = params.toString();
+        if (remainingQuery) restored += (restored.indexOf('?') >= 0 ? '&' : '?') + remainingQuery;
+        window.history.replaceState({}, '', '/metadrive' + restored);
+      }());
+    </script>
   </head>
   <body>
     <div id="root"></div>
