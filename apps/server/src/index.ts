@@ -198,7 +198,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
         legacyWhatsAppSettings: data.connectorSettings.filter(item => item.apiName === 'WhatsApp').length,
         activeIntegrationConnections: data.integrationConnections.filter(item => item.connectorKey.toUpperCase() === 'WHATSAPP' && item.status === 'ACTIVE').length };
     });
-    console.warn('[WhatsApp webhook] tenant mapping diagnostics', { tenantCount: connectorDiagnostics.length, matchCount: matches.length, connectors: connectorDiagnostics });
+    console.warn('[WhatsApp webhook] tenant mapping diagnostics', JSON.stringify({ tenantCount: connectorDiagnostics.length, matchCount: matches.length, connectors: connectorDiagnostics }));
     return reject(503, matches.length ? 'ambiguous_phone_tenant_mapping' : 'phone_tenant_mapping_not_configured');
   }
   const [tenantId, tenant] = matches[0];
