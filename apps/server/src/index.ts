@@ -3008,6 +3008,22 @@ const systemAdminPermissions = [
   'objects:manage', 'flows:manage', 'flows:run', 'namedCredentials:manage', 'reports:manage', 'pages:manage',
   'components:manage', 'dashboards:manage', 'dashboards:viewTeam', 'data:viewAll', 'email:send', 'callouts:execute', 'notifications:send', 'approvals:manage'
 ];
+const namedCredentialManagementPermissionSet = {
+  id: 'oneengine-named-credentials',
+  label: 'OneEngine Named Credentials',
+  apiName: 'OneEngine_Named_Credentials',
+  license: 'UNEEngine',
+  description: 'Manage and test tenant Named Credentials without exposing saved secrets.',
+  systemPermissions: ['namedCredentials:manage'],
+  objectPermissions: {},
+  recordTypePermissions: {},
+  fieldPermissions: {}
+};
+const grantNamedCredentialSetToExistingAdministrator = <T extends { role: string; permissionSetIds: string[] }>(user: T): T =>
+  (user.role === 'System Administrator' || user.permissionSetIds.includes('system-administrator'))
+    && !user.permissionSetIds.includes(namedCredentialManagementPermissionSet.id)
+    ? { ...user, permissionSetIds: [...user.permissionSetIds, namedCredentialManagementPermissionSet.id] }
+    : user;
 const salesPermissions = ['metadata:read'];
 const supportPermissions = ['metadata:read'];
 
@@ -3290,17 +3306,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'name' | 'email' | 'ro
   ];
   // Dedicated, assignable OneEngine permission set for credential administration.
   // A flow author does not receive this permission merely by editing flows.
-  permissionSets.push({
-    id: 'oneengine-named-credentials',
-    label: 'OneEngine Named Credentials',
-    apiName: 'OneEngine_Named_Credentials',
-    license: 'UNEEngine',
-    description: 'Create, edit, rotate and delete Named Credentials and their protected configuration.',
-    systemPermissions: ['namedCredentials:manage'],
-    objectPermissions: {},
-    recordTypePermissions: {},
-    fieldPermissions: {}
-  });
+  permissionSets.push({ ...namedCredentialManagementPermissionSet });
   const profiles = buildDefaultProfiles(objects, permissionSets);
   const accessControl = accessControlSchema.parse({
     profiles,
@@ -3709,6 +3715,7 @@ function loadState(): PlatformState {
       ...tenant,
       accessControl: {
         ...tenant.accessControl,
+        users: tenant.accessControl.users.map(grantNamedCredentialSetToExistingAdministrator),
         permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
           ? {
             ...set,
@@ -3721,10 +3728,16 @@ function loadState(): PlatformState {
               ...set.fieldPermissions
             }
           }
-          : set)
+          : set).concat(tenant.accessControl.permissionSets.some((set) => set.id === namedCredentialManagementPermissionSet.id)
+          ? [] : [{ ...namedCredentialManagementPermissionSet }])
       }
     }]));
-    const migrated = { ...parsed, tenants: tenantsWithLibraryManagement, libraryComponents: parsed.libraryComponents ?? [] };
+    const migrated = {
+      ...parsed,
+      users: parsed.users.map(grantNamedCredentialSetToExistingAdministrator),
+      tenants: tenantsWithLibraryManagement,
+      libraryComponents: parsed.libraryComponents ?? []
+    };
     if (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed)) persistState(migrated);
     return migrated;
   } catch (error) {
@@ -3905,7 +3918,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
   const admin: LocalUser = {
     id: userId, tenantId, name: adminName, email: normalizedEmail,
     passwordSalt: credentials.salt, passwordHash: credentials.hash,
-    role: 'System Administrator', permissionSetIds: ['system-administrator'],
+    role: 'System Administrator', permissionSetIds: ['system-administrator', 'oneengine-named-credentials'],
     permissionSetGroupIds: [],
     disabled: false, createdAt: new Date().toISOString()
   };
