@@ -30,6 +30,7 @@ const blankCredential = (): CredentialDraft => ({
 export default function NamedCredentials({
   credentials,
   canManage,
+  encryptionReady,
   onSave,
   onDelete,
   onRotate,
@@ -37,6 +38,7 @@ export default function NamedCredentials({
 }: {
   credentials: NamedCredentialMetadata[];
   canManage: boolean;
+  encryptionReady: boolean | null;
   onSave: (credential: CredentialInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
@@ -130,13 +132,14 @@ export default function NamedCredentials({
   return <section className="surface object-setting-surface named-credentials-page">
     <div className="section-toolbar">
       <div><h2>Named Credentials</h2><p>Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts, Email Alerts, and supported delivery features.</p></div>
-      <button className="btn btn-brand" disabled={!canManage} title={!canManage ? 'Requires OneEngine Named Credentials permission' : undefined} onClick={() => editCredential()}><Plus size={14} />New Named Credential</button>
+      <button className="btn btn-brand" disabled={!canManage || encryptionReady === false} title={!canManage ? 'Requires OneEngine Named Credentials permission' : encryptionReady === false ? 'Credential encryption is not configured on the server' : undefined} onClick={() => editCredential()}><Plus size={14} />New Named Credential</button>
     </div>
     <div className="record-type-create">
       <input className="form-control" type="search" aria-label="Search Named Credentials" placeholder="Search credentials…" value={query} onChange={(event) => setQuery(event.target.value)} />
     </div>
     {error && <div className="records-message" role="alert">{error}</div>}
-    {!canManage && <div className="info-callout">You can view credentials, but need the OneEngine Named Credentials permission set to change them.</div>}
+    {!canManage && <div className="info-callout" role="alert">This account cannot create credentials. Assign the OneEngine Named Credentials permission set to your user in Settings → Permission Sets.</div>}
+    {encryptionReady === false && <div className="records-message" role="alert">Credential encryption is not configured on the server. Set METADRIVE_CREDENTIAL_KEYS and METADRIVE_CREDENTIAL_ACTIVE_KEY_ID in Render before creating or testing credentials. Existing encrypted keys must be preserved.</div>}
     <div className="table-scroll">
       <table className="slds-table">
         <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th><th>Actions</th></tr></thead>
