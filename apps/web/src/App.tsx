@@ -860,7 +860,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
   if (showPasswordReset) return <main className="auth-screen">
     <section className="auth-card" aria-labelledby="password-reset-heading">
       <span className="auth-brand-mark">M</span>
-      <div className="eyebrow">METADRIVE WORKSPACE</div>
+      <div className="eyebrow">UNEENGINE WORKSPACE</div>
       <h1 id="password-reset-heading">Reset your password</h1>
       <p>Enter your account email to request a password reset.</p>
       <label className="form-label" htmlFor="reset-email">Email</label>
@@ -873,7 +873,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
   return <main className="auth-screen">
     <form className="auth-card" onSubmit={(event) => void signIn(event)}>
       <span className="auth-brand-mark">M</span>
-      <div className="eyebrow">METADRIVE WORKSPACE</div>
+      <div className="eyebrow">UNEENGINE WORKSPACE</div>
       <h1>Welcome back</h1>
       <p>Sign in to manage your organization’s metadata and workflows.</p>
       {message && <div className="auth-error" role="alert">{message}{onRetry && <button type="button" className="text-action" onClick={onRetry}>Retry connection</button>}</div>}
@@ -2774,7 +2774,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
         <button className="icon-button app-launcher" aria-label="App Launcher"><Grid2X2 size={18} /></button>
-        <div className="brand"><span className="brand-cloud">M</span><span>MetaDrive</span></div>
+        <div className="brand"><span className="brand-cloud">M</span><span>UNEEngine</span></div>
         <div className="global-search">
           <Search size={15} />
           <input
