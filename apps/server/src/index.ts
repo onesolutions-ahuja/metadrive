@@ -3394,7 +3394,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
   ];
   // Dedicated, assignable OneEngine permission set for credential administration.
   // A flow author does not receive this permission merely by editing flows.
-  permissionSets.push({ ...namedCredentialManagementPermissionSet });
+  // Named Credentials uses existing RBAC system permissions.
   const profiles = buildDefaultProfiles(objects, permissionSets);
   const accessControl = accessControlSchema.parse({
     profiles,
@@ -3806,7 +3806,7 @@ function loadState(): PlatformState {
       ...tenant,
       accessControl: {
         ...tenant.accessControl,
-        users: tenant.accessControl.users.map(grantNamedCredentialSetToExistingAdministrator),
+        users: tenant.accessControl.users.map((user) => ({ ...user, permissionSetIds: user.permissionSetIds.filter((id) => id !== namedCredentialManagementPermissionSet.id) })),
         permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
           ? {
             ...set,
@@ -3819,13 +3819,12 @@ function loadState(): PlatformState {
               ...set.fieldPermissions
             }
           }
-          : set).concat(tenant.accessControl.permissionSets.some((set) => set.id === namedCredentialManagementPermissionSet.id)
-          ? [] : [{ ...namedCredentialManagementPermissionSet }])
+          : set).filter((set) => set.id !== namedCredentialManagementPermissionSet.id)
       }
     }]));
     const migrated = {
       ...parsed,
-      users: parsed.users.map(grantNamedCredentialSetToExistingAdministrator),
+      users: parsed.users.map((user) => ({ ...user, permissionSetIds: user.permissionSetIds.filter((id) => id !== namedCredentialManagementPermissionSet.id) })),
       tenants: tenantsWithLibraryManagement,
       libraryComponents: parsed.libraryComponents ?? []
     };
@@ -4541,7 +4540,7 @@ app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
   const recordTypeAccess = Object.fromEntries(tenant.objects.flatMap((object) => (object.recordTypes ?? [])
     .filter((recordType) => recordType.active)
     .map((recordType) => [`${object.apiName}.${recordType.id}`, hasRecordTypeAccessForUser(user.id, tenant, object.apiName, recordType.id)])));
-  return res.json({ user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, profileId, permissions: principal.permissions, fieldAccess, recordTypeAccess } });
+  return res.json({ user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, profileId, permissions: effectivePermissions(user, tenant), fieldAccess, recordTypeAccess } });
 });
 
 app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
