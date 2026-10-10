@@ -1,6 +1,6 @@
-# MetaDrive
+# UNEEngine
 
-MetaDrive is a metadata-driven CRM and setup workspace. Its interface follows the Salesforce Lightning Setup interaction model: an app header and workspace tabs, Setup Quick Find and navigation, Object Manager configuration, and focused report, dashboard, page, flow, and permissions builders.
+UNEEngine is a metadata-driven CRM and setup workspace. Its interface follows the Salesforce Lightning Setup interaction model: an app header and workspace tabs, Setup Quick Find and navigation, Object Manager configuration, and focused report, dashboard, page, flow, and permissions builders.
 
 The frozen Salesforce parity checklist, including Dashboard Builder criteria, is in [PARITY_SCOPE_FREEZE.md](./PARITY_SCOPE_FREEZE.md).
 
