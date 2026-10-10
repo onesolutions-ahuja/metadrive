@@ -3682,6 +3682,24 @@ function loadState(): PlatformState {
           ? user.roleId : roleIdForName(user.role, roles),
         profileId: user.role === 'System Administrator' ? 'system-administrator' : user.profileId && profileIds.has(user.profileId) ? user.profileId : profileIdForRole(user.role, profiles)
       }));
+      // The login identity store is authoritative for tenant membership. Keep every
+      // authenticated tenant identity represented in RBAC without replacing existing grants.
+      const syncedAccessUsers = [
+        ...accessUsers,
+        ...parsed.users.filter((identity) => identity.tenantId === tenantId
+          && !accessUsers.some((entry) => entry.id === identity.id)).map((identity) => ({
+          id: identity.id,
+          name: identity.name,
+          username: identity.email,
+          locale: 'en-GB',
+          timeZone: 'Europe/London',
+          role: identity.role,
+          roleId: roleIdForName(identity.role, roles),
+          profileId: profileIdForRole(identity.role, profiles),
+          permissionSetIds: identity.permissionSetIds.filter((id) => tenant.accessControl.permissionSets.some((set) => set.id === id)),
+          permissionSetGroupIds: identity.permissionSetGroupIds,
+        }))
+      ];
       const dashboardFolders = [...(tenant.dashboardFolders ?? [])];
       const reportFolders = [...(tenant.reportFolders ?? [])];
       const legacyReportFolderId = tenant.reports.length
@@ -3763,7 +3781,7 @@ function loadState(): PlatformState {
             ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
             : profile),
         roles,
-        users: accessUsers,
+        users: syncedAccessUsers,
         permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
           ? {
             ...set,
