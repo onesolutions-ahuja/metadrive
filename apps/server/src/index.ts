@@ -5533,7 +5533,7 @@ app.put('/api/connector-settings/:apiName', requireAnyPermission('metadata:write
   persistTenantRecords(principal.tenantId, updatedTenant);
   return res.json({ connector: parsed.data });
 });
-app.get('/api/named-credentials', requirePermission('metadata:read'), (_req: Request, res: Response) => {
+app.get('/api/named-credentials', requireAnyPermission('metadata:read', 'namedCredentials:manage'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId)!;
   res.json({ credentials: tenant.namedCredentials.map(publicNamedCredential) });
 });
