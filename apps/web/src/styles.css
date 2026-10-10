@@ -1801,3 +1801,11 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .approval-process-layout { grid-template-columns: 1fr; }
   .approval-process-manager .workspace-heading { align-items: flex-start; flex-direction: column; }
 }
+
+/* Keep Setup form captions separate from their controls at all viewport sizes. */
+.app-manager .form-label { display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-width: 0; margin: 0 0 16px; line-height: 1.45; font-size: 12px; }
+.app-manager .form-label > .form-control { margin: 0; min-width: 0; box-sizing: border-box; font-size: 13px; line-height: 1.4; }
+.app-manager .permission-form-grid { gap: 0 16px; }
+.app-manager .app-manager-fieldset { min-width: 0; }
+.app-manager .app-manager-fieldset legend { max-width: 100%; }
+@media (max-width: 680px) { .app-manager .permission-form-grid { grid-template-columns: minmax(0,1fr); } }
