@@ -141,6 +141,15 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
       return /^v\d+\.\d+$/.test(segments[0] ?? '') && segments[1] === phoneId && (segments.length === 2 || (segments.length === 3 && segments[2] === 'messages'));
     } catch { return false; }
   };
+  const matchesNamedCredential = (data: TenantData, credentialRef: unknown): boolean => {
+    if (typeof credentialRef !== 'string' || !credentialRef.trim()) return false;
+    const ref = credentialRef.trim();
+    return data.namedCredentials.some(credential =>
+      (credential.id === ref || credential.name === ref)
+      && credential.protocol === 'HTTPS'
+      && matchesMetaPhoneUrl(credential.baseUrl)
+    );
+  };
   const matches = Object.entries(state.tenants).filter(([, data]) =>
     (data.records.UneConnector__c ?? []).some(record => {
       if (String(record.ConnectorType__c ?? '').toLowerCase() !== 'whatsapp') return false;
@@ -149,13 +158,13 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
         const configuration: unknown = JSON.parse(record.Configuration__c);
         if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) return false;
         const values = configuration as Record<string, unknown>;
-        return values.PhoneNumberId === phoneId || (typeof values.ApiBaseUrl === 'string' && matchesMetaPhoneUrl(values.ApiBaseUrl));
+        return values.PhoneNumberId === phoneId || (typeof values.ApiBaseUrl === 'string' && matchesMetaPhoneUrl(values.ApiBaseUrl)) || matchesNamedCredential(data, values.NamedCredential);
       } catch { return false; }
     })
     || data.connectorSettings.some(setting => {
       if (setting.apiName !== 'WhatsApp') return false;
       const fields = Object.fromEntries(setting.fields.map(field => [field.apiName, field.value.trim()]));
-      return fields.PhoneNumberId === phoneId || matchesMetaPhoneUrl(fields.ApiBaseUrl);
+      return fields.PhoneNumberId === phoneId || matchesMetaPhoneUrl(fields.ApiBaseUrl) || matchesNamedCredential(data, fields.NamedCredential);
     })
     || data.integrationConnections.some(connection => {
       if (connection.connectorKey.toUpperCase() !== 'WHATSAPP' || connection.status !== 'ACTIVE') return false;
