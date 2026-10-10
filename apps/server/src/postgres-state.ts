@@ -2,7 +2,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error('DATABASE_URL is required for persistent MetaDrive state');
+if (!connectionString) throw new Error('DATABASE_URL is required for persistent UNEEngine state');
 
 // Keep SSL configuration in one place: pg URL sslmode options otherwise override the trusted CA.
 const databaseUrl = new URL(connectionString);
@@ -37,7 +37,7 @@ export function persistToPostgres(state: unknown): Promise<unknown> {
     [payload]
   ));
   pending = operation.catch(error => {
-    console.error('CRITICAL: MetaDrive PostgreSQL persistence failed', error);
+    console.error('CRITICAL: UNEEngine PostgreSQL persistence failed', error);
     process.exitCode = 1;
     throw error;
   });
