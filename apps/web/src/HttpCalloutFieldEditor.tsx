@@ -49,6 +49,7 @@ function toObject(rows: Row[], mode: Mode): Record<string, unknown> {
 
 export default function HttpCalloutFieldEditor({ label, mode, value, onChange, resources, fields }: Props) {
   const [search, setSearch] = useState('');
+  const [advanced, setAdvanced] = useState(false);
   let rows: Row[] = [];
   let legacy = false;
   try {
@@ -63,13 +64,14 @@ export default function HttpCalloutFieldEditor({ label, mode, value, onChange, r
   ].filter((choice) => choice.label.toLowerCase().includes(search.toLowerCase()));
   return <div className="flow-config-list">
     <strong>{label}</strong>
+    {mode !== 'response' && <label className="form-label"><input type="checkbox" checked={advanced} onChange={(event) => setAdvanced(event.target.checked)} /> Advanced value types</label>}
     {legacy ? <div className="info-callout" role="alert">This saved callout uses an older request format. Its existing value is preserved. Select Replace with field mapping to edit it using fields; this will replace that value.
       <button className="text-action" type="button" onClick={() => onChange('{}')}>Replace with field mapping</button>
     </div> : <>
-      <input className="form-control" aria-label={`Search ${label} fields`} placeholder="Search available record fields and resources" value={search} onChange={(event) => setSearch(event.target.value)} />
+      {advanced && <input className="form-control" aria-label={`Search ${label} fields`} placeholder="Search available record fields and resources" value={search} onChange={(event) => setSearch(event.target.value)} />}
       {rows.map((row, index) => <div className="flow-config-row" key={index}>
-        <input className="form-control" aria-label={`${label} field path`} placeholder={mode === 'body' ? 'message.text or items[0].id' : 'Field name'} value={row.path} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, path: event.target.value } : item))} />
-        {mode !== 'response' && <select className="form-control" aria-label={`${label} value type`} value={row.type} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, type: event.target.value as Row['type'], value: event.target.value === 'Boolean' ? 'false' : item.value } : item))}>
+        <input className="form-control" aria-label={`${label} field path`} placeholder="Key" value={row.path} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, path: event.target.value } : item))} />
+        {advanced && mode !== 'response' && <select className="form-control" aria-label={`${label} value type`} value={row.type} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, type: event.target.value as Row['type'], value: event.target.value === 'Boolean' ? 'false' : item.value } : item))}>
           {['Text', 'Number', 'Boolean', 'Null', 'Resource'].map((type) => <option key={type}>{type}</option>)}
         </select>}
         {row.type === 'Resource' && mode !== 'response' ? <select className="form-control" aria-label={`${label} resource`} value={row.value} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))}>
@@ -79,7 +81,7 @@ export default function HttpCalloutFieldEditor({ label, mode, value, onChange, r
         </select> : row.type === 'Boolean' && mode !== 'response' ? <select className="form-control" aria-label={`${label} value`} value={row.value} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))}><option value="false">False</option><option value="true">True</option></select> : row.type === 'Null' && mode !== 'response' ? <span>Null</span> : <input className="form-control" aria-label={`${label} value`} placeholder={mode === 'response' ? 'Response field path, e.g. messages[0].id' : 'Value'} value={row.value} onChange={(event) => update(rows.map((item, i) => i === index ? { ...item, value: event.target.value } : item))} />}
         <button className="row-menu" type="button" aria-label="Remove field" onClick={() => update(rows.filter((_, i) => i !== index))}>×</button>
       </div>)}
-      <button className="text-action" type="button" onClick={() => update([...rows, { path: `field_${rows.length + 1}`, value: '', type: mode === 'response' ? 'Text' : 'Resource' }])}>+ Add Field</button>
+      <button className="text-action" type="button" onClick={() => update([...rows, { path: `field_${rows.length + 1}`, value: '', type: 'Text' }])}>+ Add Field</button>
     </>}
   </div>;
 }
