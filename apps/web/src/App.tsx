@@ -803,22 +803,56 @@ function App() {
   }, []);
 
   const restoreSession = async () => {
-    try {
-      const response = await withAuthRefreshLock(() =>
-        fetch(`${apiBase}/auth/refresh`, { method: 'POST', credentials: 'include' })
-      );
-      if (response.status === 401) {
-        accessToken = undefined;
-        setAuthState('anonymous');
-        return;
+    const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
+    const retryDelaysMs = [1500, 3000, 5000, 7000];
+
+    for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 12000);
+      try {
+        const response = await withAuthRefreshLock(() =>
+          fetch(`${apiBase}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include',
+            signal: controller.signal
+          })
+        );
+
+        if (response.status === 401) {
+          accessToken = undefined;
+          setAuthError('');
+          setAuthState('anonymous');
+          return;
+        }
+
+        if (response.ok) {
+          const session = await response.json() as { access_token: string };
+          accessToken = session.access_token;
+          setAuthError('');
+          setAuthState('authenticated');
+          return;
+        }
+
+        if (!retryableStatuses.has(response.status) || attempt === retryDelaysMs.length) {
+          throw new Error(`Session restore failed (${response.status})`);
+        }
+      } catch (error) {
+        const retryableNetworkFailure =
+          error instanceof DOMException && error.name === 'AbortError'
+          || error instanceof TypeError;
+
+        if (!retryableNetworkFailure || attempt === retryDelaysMs.length) {
+          setAuthError(error instanceof DOMException && error.name === 'AbortError'
+            ? 'The workspace API took too long to start. Please retry.'
+            : error instanceof Error ? error.message : String(error));
+          setAuthState('error');
+          return;
+        }
+      } finally {
+        window.clearTimeout(timeout);
       }
-      if (!response.ok) throw new Error(`Session restore failed (${response.status})`);
-      const session = await response.json() as { access_token: string };
-      accessToken = session.access_token;
-      setAuthState('authenticated');
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : String(error));
-      setAuthState('error');
+
+      await new Promise((resolve) => window.setTimeout(resolve, retryDelaysMs[attempt]));
     }
   };
 
