@@ -3009,7 +3009,7 @@ const systemAdminPermissions = [
   'components:manage', 'dashboards:manage', 'dashboards:viewTeam', 'data:viewAll', 'email:send', 'callouts:execute', 'notifications:send', 'approvals:manage'
 ];
 const salesPermissions = ['metadata:read'];
-const supportPermissions = ['metadata:read'];
+const supportPermissions = ['metadata:read', 'namedCredentials:manage'];
 
 const baseObjects: ObjectMetadata[] = [
   { apiName: 'User', label: 'User', pluralLabel: 'Users', kind: 'Standard Object', description: 'Platform users who belong to this tenant.', fields: [
@@ -3790,6 +3790,8 @@ function loadState(): PlatformState {
           }
           : set.id === 'sales-user'
             ? { ...set, objectPermissions: { ...set.objectPermissions, Campaign: set.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
+            : set.id === 'support-agent'
+              ? { ...set, systemPermissions: [...new Set([...set.systemPermissions, ...supportPermissions])] }
             : set),
       },
       objects,
@@ -3819,6 +3821,8 @@ function loadState(): PlatformState {
               ...set.fieldPermissions
             }
           }
+          : set.id === 'support-agent'
+            ? { ...set, systemPermissions: [...new Set([...set.systemPermissions, ...supportPermissions])] }
           : set).filter((set) => set.id !== 'oneengine-named-credentials')
       }
     }]));
@@ -4037,7 +4041,6 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
 }
 
 async function bootstrapTenant(): Promise<void> {
-  if (state.users.length) return;
   const tenantId = process.env.METADRIVE_BOOTSTRAP_TENANT_ID;
   const tenantName = process.env.METADRIVE_BOOTSTRAP_TENANT_NAME;
   const adminName = process.env.METADRIVE_BOOTSTRAP_ADMIN_NAME ?? 'Organization Administrator';
@@ -4047,7 +4050,62 @@ async function bootstrapTenant(): Promise<void> {
   if (!tenantId || !tenantName || !email || !password) {
     throw new Error('Set METADRIVE_BOOTSTRAP_TENANT_ID, METADRIVE_BOOTSTRAP_TENANT_NAME, METADRIVE_BOOTSTRAP_ADMIN_EMAIL, and METADRIVE_BOOTSTRAP_ADMIN_PASSWORD together');
   }
-  await createTenant(tenantId, tenantName, adminName, email, password);
+  const tenant = state.tenants[tenantId];
+  const normalizedEmail = email.trim().toLowerCase();
+  const existingUser = state.users.find((user) => user.email.trim().toLowerCase() === normalizedEmail);
+  if (!tenant) {
+    await createTenant(tenantId, tenantName, adminName, email, password);
+    return;
+  }
+
+  const credentials = await hashPassword(password);
+  const user = existingUser && existingUser.tenantId === tenantId
+    ? {
+        ...existingUser,
+        name: existingUser.name || adminName,
+        passwordSalt: credentials.salt,
+        passwordHash: credentials.hash,
+        disabled: false
+      }
+    : {
+        id: randomUUID(), tenantId, name: adminName, email: normalizedEmail,
+        passwordSalt: credentials.salt, passwordHash: credentials.hash,
+        role: 'System Administrator', permissionSetIds: ['system-administrator'],
+        permissionSetGroupIds: [],
+        disabled: false, createdAt: new Date().toISOString()
+      };
+
+  if (existingUser && existingUser.tenantId !== tenantId) {
+    throw new Error('Bootstrap administrator email already belongs to another tenant');
+  }
+
+  const accessUser = {
+    id: user.id, name: user.name, username: user.email, role: user.role,
+    roleId: roleIdForName(user.role, tenant.accessControl.roles),
+    profileId: profileIdForRole(user.role, tenant.accessControl.profiles),
+    permissionSetIds: user.permissionSetIds,
+    permissionSetGroupIds: user.permissionSetGroupIds,
+    timeZone: 'UTC',
+    locale: 'en-US'
+  };
+  const nextTenant = {
+    ...tenant,
+    accessControl: {
+      ...tenant.accessControl,
+      users: tenant.accessControl.users.some((item) => item.id === user.id)
+        ? tenant.accessControl.users.map((item) => item.id === user.id ? { ...item, ...accessUser } : item)
+        : [...tenant.accessControl.users, accessUser]
+    }
+  };
+  const nextState = {
+    ...state,
+    tenants: { ...state.tenants, [tenantId]: nextTenant },
+    users: state.users.some((item) => item.id === user.id)
+      ? state.users.map((item) => item.id === user.id ? user : item)
+      : [...state.users, user]
+  };
+  persistState(nextState);
+  state = nextState;
 }
 await bootstrapTenant();
 

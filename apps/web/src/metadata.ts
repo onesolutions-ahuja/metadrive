@@ -1203,7 +1203,7 @@ export const defaultAccessControl: AccessControlMetadata = {
       license: 'MetaDrive',
       description: 'Customer support baseline access.',
       isStandard: false,
-      systemPermissions: ['metadata:read'],
+      systemPermissions: ['metadata:read', 'namedCredentials:manage'],
       objectPermissions: {
         Account: { read: true, create: false, edit: false, delete: false, viewAll: false, modifyAll: false },
         Contact: { read: true, create: false, edit: false, delete: false, viewAll: false, modifyAll: false },
@@ -1246,7 +1246,7 @@ export const defaultAccessControl: AccessControlMetadata = {
       apiName: 'Support_Agent',
       license: 'Salesforce',
       description: 'Work on customer cases and view account context.',
-      systemPermissions: ['metadata:read'],
+      systemPermissions: ['metadata:read', 'namedCredentials:manage'],
       objectPermissions: {
         Account: { read: true, create: false, edit: false, delete: false, viewAll: false, modifyAll: false },
         Contact: { read: true, create: false, edit: false, delete: false, viewAll: false, modifyAll: false },
