@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UNEEngine</title>
+    <script>
+      (function () {
+        var base = '/metadrive/';
+        var fullPath = window.location.pathname + window.location.search + window.location.hash;
+        var relative = fullPath.indexOf(base) === 0 ? fullPath.slice(base.length - 1) : fullPath;
+        window.location.replace(base + '?__spa=' + encodeURIComponent(relative));
+      }());
+    </script>
+  </head>
+  <body></body>
+</html>
