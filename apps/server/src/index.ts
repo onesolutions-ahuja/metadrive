@@ -4193,10 +4193,10 @@ function cookieValue(req: Request, name: string): string | undefined {
 }
 function setRefreshCookie(res: Response, token: string): void {
   const age = jwtService.config.refreshTokenTtlSeconds;
-  res.setHeader('Set-Cookie', `${refreshCookieName}=${encodeURIComponent(token)}; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=${age}${isProduction ? '; Secure' : ''}`);
+  res.setHeader('Set-Cookie', `${refreshCookieName}=${encodeURIComponent(token)}; Path=/api/auth; HttpOnly; SameSite=${isProduction ? 'None' : 'Lax'}; Max-Age=${age}${isProduction ? '; Secure' : ''}`);
 }
 function clearRefreshCookie(res: Response): void {
-  res.setHeader('Set-Cookie', `${refreshCookieName}=; Path=/api/auth; HttpOnly; SameSite=Strict; Max-Age=0${isProduction ? '; Secure' : ''}`);
+  res.setHeader('Set-Cookie', `${refreshCookieName}=; Path=/api/auth; HttpOnly; SameSite=${isProduction ? 'None' : 'Lax'}; Max-Age=0${isProduction ? '; Secure' : ''}`);
 }
 function issueRefreshSession(user: LocalUser, previousFamilyId?: string): { token: string; session: RefreshSession } {
   const token = createRefreshToken();
