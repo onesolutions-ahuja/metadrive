@@ -32,8 +32,8 @@ jobs:
           GITHUB_PAGES: 'true'
           VITE_API_BASE_URL: https://oneengine-6gas.onrender.com/api
         run: npm run build --workspace apps/web
-      - name: Support client-side deep links
-        run: cp apps/web/dist/index.html apps/web/dist/404.html
+      - name: Verify client-side deep-link fallback
+        run: test -f apps/web/dist/404.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
