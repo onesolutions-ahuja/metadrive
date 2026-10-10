@@ -394,7 +394,27 @@
             "modifyAll": true
           }
         },
-        "fieldPermissions": {}
+        "fieldPermissions": {},
+        "systemPermissions": [
+          "metadata:read",
+          "metadata:write",
+          "security:read",
+          "security:manage",
+          "objects:manage",
+          "flows:manage",
+          "flows:run",
+          "namedCredentials:manage",
+          "reports:manage",
+          "pages:manage",
+          "components:manage",
+          "dashboards:manage",
+          "dashboards:viewTeam",
+          "data:viewAll",
+          "email:send",
+          "callouts:execute",
+          "notifications:send",
+          "approvals:manage"
+        ]
       },
       {
         "id": "sales-user",
