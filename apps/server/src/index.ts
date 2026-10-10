@@ -5448,7 +5448,7 @@ app.get('/api/named-credentials', requirePermission('metadata:read'), (_req: Req
   const tenant = tenantData(getPrincipal(res).tenantId)!;
   res.json({ credentials: tenant.namedCredentials.map(publicNamedCredential) });
 });
-app.post('/api/named-credentials', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
+app.post('/api/named-credentials', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
@@ -5482,7 +5482,7 @@ app.post('/api/named-credentials', requireAnyPermission('metadata:write', 'named
     return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to create Named Credential' });
   }
 });
-app.put('/api/named-credentials/:id', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
+app.put('/api/named-credentials/:id', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
@@ -5536,7 +5536,7 @@ app.put('/api/named-credentials/:id', requireAnyPermission('metadata:write', 'na
     return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to update Named Credential' });
   }
 });
-app.delete('/api/named-credentials/:id', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
+app.delete('/api/named-credentials/:id', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const id = routeParam(req, 'id');
@@ -5605,7 +5605,7 @@ app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:
 });
 // A base-URL GET is a connectivity probe, not a provider-specific API health check.
 // Providers requiring an endpoint path or POST need a configurable test operation.
-app.post('/api/named-credentials/:id/rotate', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
+app.post('/api/named-credentials/:id/rotate', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const credential = tenant.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
