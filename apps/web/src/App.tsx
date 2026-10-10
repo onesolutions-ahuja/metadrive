@@ -3071,6 +3071,28 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               <h2>{metadataLoadError ? "Unable to load Lightning pages" : "Lightning page not found"}</h2>
               <p>{metadataLoadError ? `Metadata API error: ${metadataLoadError}` : `The page "${route.resourceApiName}" was not returned by the metadata API. No other page has been substituted.`}</p>
               <p>Check that the page exists in this tenant and that your account can access it.</p>
+              {!metadataLoadError && route.resourceApiName === 'Kiosk' && (
+                <button className="btn btn-brand" onClick={async () => {
+                  const preset = kioskPagePreset as LightningPageMetadata;
+                  const missing = preset.components.filter((component) =>
+                    !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
+                  if (missing.length) {
+                    notify(`Register kiosk components first: ${missing.map((item) => item.type).join(', ')}`);
+                    return;
+                  }
+                  const targetObject = objects[0]?.apiName;
+                  if (!targetObject) {
+                    notify('No objects available for the Kiosk page target');
+                    return;
+                  }
+                  await savePageFromBuilder({
+                    ...preset,
+                    targetObject,
+                    template: 'one-region',
+                    activationAssignments: []
+                  }, 'Kiosk', 'Kiosk page created with editable layout');
+                }}>Create Kiosk page with editable layout</button>
+              )}
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
