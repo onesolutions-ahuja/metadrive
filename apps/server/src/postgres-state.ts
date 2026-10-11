@@ -33,25 +33,32 @@ export async function readPersistedState(): Promise<unknown | null> {
   return result.rows[0]?.payload ?? null;
 }
 
-let pending: Promise<unknown> = Promise.resolve();
+let pending: Promise<void> = Promise.resolve();
+let lastWriteFailure: Error | null = null;
 export function persistToPostgres(state: unknown, preSerialized?: string): Promise<unknown> {
   if (!pool) return Promise.resolve();
   const payload = preSerialized ?? JSON.stringify(state);
+  // An earlier connection failure must not poison every later database write.
+  // Keep the queue ordered, catch the failure on the queue itself, and let callers
+  // use waitForPersistedState to prevent outbound effects before durable storage.
   const operation = pending.then(() => pool.query(
     `INSERT INTO metadrive_platform_state (id, payload) VALUES (1, $1::jsonb)
      ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
     [payload]
   ));
-  pending = operation.catch(error => {
-    console.error('CRITICAL: UNEEngine PostgreSQL persistence failed', error);
-    process.exitCode = 1;
-    throw error;
-  });
+  pending = operation.then(
+    () => { lastWriteFailure = null; },
+    (error: unknown) => {
+      lastWriteFailure = error instanceof Error ? error : new Error(String(error));
+      console.error('CRITICAL: MetaDrive PostgreSQL persistence failed', lastWriteFailure);
+    }
+  );
   return operation;
 }
 
 export async function waitForPersistedState(): Promise<void> {
   await pending;
+  if (lastWriteFailure) throw lastWriteFailure;
 }
 
 export async function closeStateStore(): Promise<void> {
