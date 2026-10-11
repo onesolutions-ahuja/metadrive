@@ -1,0 +1,37 @@
+name: MetaDrive full audit (manual only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install temporary audit tools
+        run: npm install --no-save --no-package-lock playwright @axe-core/playwright
+      - run: npx playwright install --with-deps chromium
+      - name: Run read-only browser checks
+        env:
+          METADRIVE_BASE_URL: https://onesolutions-ahuja.github.io/metadrive/
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/manual-full-audit.mjs
+      - name: Lighthouse login (mobile and desktop)
+        run: |
+          mkdir -p audit-results/lighthouse
+          npx --yes lighthouse@12 https://onesolutions-ahuja.github.io/metadrive/ --chrome-flags="--headless --no-sandbox" --output=json --output-path=audit-results/lighthouse/mobile.json --quiet || true
+          npx --yes lighthouse@12 https://onesolutions-ahuja.github.io/metadrive/ --preset=desktop --chrome-flags="--headless --no-sandbox" --output=json --output-path=audit-results/lighthouse/desktop.json --quiet || true
+      - name: Upload private audit artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadrive-full-audit
+          path: audit-results/
+          retention-days: 7
