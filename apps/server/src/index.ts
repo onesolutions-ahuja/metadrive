@@ -97,7 +97,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app') return next();
+  // Only explicitly identified external API traffic belongs in Communication Records.
+  // Browser, internal automation and platform API requests must not be logged here.
+  if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app'
+    || req.get('x-metadrive-external-api') !== 'true') return next();
   const startedAt = Date.now();
   let responseBody: unknown;
   const sendJson = res.json.bind(res);
