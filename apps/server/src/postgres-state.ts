@@ -28,23 +28,53 @@ export async function readPersistedState(): Promise<unknown | null> {
   return result.rows[0]?.payload ?? null;
 }
 
-let pending: Promise<unknown> = Promise.resolve();
+// At most one in-flight and one pending complete-state snapshot are retained.
+// Older snapshots can be superseded by the newest state within one process.
+// Every caller resolves only after a snapshot at least as new has been committed.
+type PersistWaiter = { resolve: () => void; reject: (error: unknown) => void };
+let newestPayload: string | null = null;
+let drainActive = false;
+let writeFailure: unknown = null;
+let waiting: PersistWaiter[] = [];
+let idleWaiters: Array<() => void> = [];
+const upsertStateSql = `INSERT INTO metadrive_platform_state (id, payload) VALUES (1, $1::jsonb)
+  ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`;
+
+async function drainStateWrites(): Promise<void> {
+  while (newestPayload !== null) {
+    const payload = newestPayload;
+    newestPayload = null;
+    const batch = waiting.splice(0);
+    try {
+      await pool.query(upsertStateSql, [payload]);
+      for (const waiter of batch) waiter.resolve();
+    } catch (error) {
+      writeFailure = error;
+      console.error('CRITICAL: MetaDrive PostgreSQL persistence failed', error);
+      process.exitCode = 1;
+      for (const waiter of [...batch, ...waiting.splice(0)]) waiter.reject(error);
+      newestPayload = null;
+      break;
+    }
+  }
+  drainActive = false;
+  for (const done of idleWaiters.splice(0)) done();
+}
 export function persistToPostgres(state: unknown): Promise<unknown> {
+  if (writeFailure !== null) return Promise.reject(writeFailure);
   const payload = JSON.stringify(state);
-  const operation = pending.then(() => pool.query(
-    `INSERT INTO metadrive_platform_state (id, payload) VALUES (1, $1::jsonb)
-     ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
-    [payload]
-  ));
-  pending = operation.catch(error => {
-    console.error('CRITICAL: UNEEngine PostgreSQL persistence failed', error);
-    process.exitCode = 1;
-    throw error;
+  return new Promise<void>((resolve, reject) => {
+    newestPayload = payload;
+    waiting.push({ resolve, reject });
+    if (!drainActive) {
+      drainActive = true;
+      void drainStateWrites();
+    }
   });
-  return operation;
 }
 
 export async function closeStateStore(): Promise<void> {
-  await pending;
+  if (drainActive) await new Promise<void>((resolve) => idleWaiters.push(resolve));
+  if (writeFailure !== null) throw writeFailure;
   await pool.end();
 }
