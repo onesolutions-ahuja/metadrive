@@ -3374,7 +3374,10 @@ function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId
         && values.RecordObject__c === '' && values.RecordFilterField__c === '';
       existing[position] = runtimeRecordSchema.parse({
         ...previous, ...added,
-        ...(legacyPlaceholder ? { RecordObject__c: '', RecordFilterField__c: '', RecordFilterValue__c: '' } : {})
+        ...(legacyPlaceholder ? { RecordObject__c: '', RecordFilterField__c: '', RecordFilterValue__c: '' } : {}),
+        // Upgrade only the shipped legacy WhatsApp probe; keep custom tenant test paths.
+        ...(previous.AppKey__c === 'whatsapp' && previous.TestPath__c === '{!PhoneNumberId}'
+          ? { TestPath__c: values.TestPath__c } : {})
       });
       continue;
     }
