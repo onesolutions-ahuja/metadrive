@@ -1,3 +1,5 @@
+import ConnectorAppWorkspace, { type ConnectorApp, type CommunicationPage } from './ConnectorAppWorkspace';
+import type { NamedCredentialMetadata } from './metadata';
 import { useMemo, useState } from 'react';
 import {
   Activity,
@@ -40,9 +42,14 @@ type MarketplaceApp = {
   highlights: string[];
   permissions: string[];
   dataFootprint: string;
+  connector?: ConnectorApp;
 };
 
 const marketplaceApps: MarketplaceApp[] = [
+  { id: 'whatsapp', name: 'WhatsApp', publisher: 'Official connector', description: 'Configure credentials and view communication history for WhatsApp.', category: 'Messaging', rating: '—', reviews: '0', installs: '—', price: 'Connector', version: '1.0', icon: MessageSquare, color: 'green', highlights: ['Tenant-scoped Named Credentials', 'Permission-filtered communication history'], permissions: ['Uses existing user and field permissions'], dataFootprint: 'Uses the existing Communication Records object.', connector: {id:'whatsapp',name:'WhatsApp',credentialName:'WHATSAPP',source:'WhatsApp'} },
+  { id: 'uber-eats', name: 'Uber Eats', publisher: 'Official connector', description: 'Configure credentials and view communication history for Uber Eats.', category: 'Productivity', rating: '—', reviews: '0', installs: '—', price: 'Connector', version: '1.0', icon: Cloud, color: 'slate', highlights: ['Tenant-scoped Named Credentials', 'Permission-filtered communication history'], permissions: ['Uses existing user and field permissions'], dataFootprint: 'Uses the existing Communication Records object.', connector: {id:'uber-eats',name:'Uber Eats',credentialName:'UBER_EATS',source:'Uber Eats'} },
+  { id: 'deliveroo', name: 'Deliveroo', publisher: 'Official connector', description: 'Configure credentials and view communication history for Deliveroo.', category: 'Productivity', rating: '—', reviews: '0', installs: '—', price: 'Connector', version: '1.0', icon: Cloud, color: 'teal', highlights: ['Tenant-scoped Named Credentials', 'Permission-filtered communication history'], permissions: ['Uses existing user and field permissions'], dataFootprint: 'Uses the existing Communication Records object.', connector: {id:'deliveroo',name:'Deliveroo',credentialName:'DELIVEROO',source:'Deliveroo'} },
+  { id: 'smsgate', name: 'SMSGate', publisher: 'Official connector', description: 'Configure credentials and view communication history for SMSGate.', category: 'Messaging', rating: '—', reviews: '0', installs: '—', price: 'Connector', version: '1.0', icon: FileText, color: 'blue', highlights: ['Tenant-scoped Named Credentials', 'Permission-filtered communication history'], permissions: ['Uses existing user and field permissions'], dataFootprint: 'Uses the existing Communication Records object.', connector: {id:'smsgate',name:'SMSGate',credentialName:'SMSGATE',source:'SMSGate'} },
   {
     id: 'insight-board',
     name: 'Insight Board',
@@ -149,15 +156,26 @@ const marketplaceApps: MarketplaceApp[] = [
   }
 ];
 
-const categories = ['All apps', 'Sales', 'Service', 'Analytics', 'Productivity', 'Security'];
+const categories = ['All apps', 'Sales', 'Service', 'Analytics', 'Productivity', 'Security', 'Messaging'];
 type DialogState = { kind: 'install' | 'uninstall'; app: MarketplaceApp } | null;
 
-export default function AppExchange() {
+export default function AppExchange({ credentials, canManageCredentials, encryptionReady, onSave, onDelete, onRotate, onTest, loadHistory, onOpenRecord }: {
+  credentials: NamedCredentialMetadata[];
+  canManageCredentials: boolean;
+  encryptionReady: boolean | null;
+  onSave: (credential: Parameters<typeof ConnectorAppWorkspace>[0]['onSave'] extends (value: infer T) => Promise<void> ? T : never) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onRotate: (id: string) => Promise<void>;
+  onTest: (id: string) => Promise<{connected: boolean; status?: number; message: string}>;
+  loadHistory: (source: string, offset: number, search: string) => Promise<CommunicationPage>;
+  onOpenRecord: (id: string) => void;
+}) {
   const [installedIds, setInstalledIds] = useState(() => new Set(['insight-board', 'service-pulse']));
   const [activeCategory, setActiveCategory] = useState('All apps');
   const [activeView, setActiveView] = useState<'discover' | 'installed'>('discover');
   const [search, setSearch] = useState('');
   const [selectedApp, setSelectedApp] = useState<MarketplaceApp | null>(null);
+  const [openedApp, setOpenedApp] = useState<ConnectorApp | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [installScope, setInstallScope] = useState<'admins' | 'all-users'>('admins');
 
@@ -196,6 +214,11 @@ export default function AppExchange() {
     setDialog(null);
     setSelectedApp(null);
   };
+
+  if (openedApp) return <ConnectorAppWorkspace app={openedApp} credentials={credentials}
+    canManageCredentials={canManageCredentials} encryptionReady={encryptionReady}
+    onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest}
+    loadHistory={loadHistory} onOpenRecord={onOpenRecord} onBack={() => setOpenedApp(null)}/>;
 
   return (
     <div className="app-exchange">
@@ -256,8 +279,8 @@ export default function AppExchange() {
                     <strong>{app.name}</strong><span>{app.publisher}</span><small>{app.description}</small>
                   </button>
                   <div className="exchange-featured-rating"><Star size={13} fill="currentColor" /> {app.rating} <span>({app.reviews})</span></div>
-                  <button className={installedIds.has(app.id) ? 'btn exchange-installed-button' : 'btn btn-brand'} onClick={() => installedIds.has(app.id) ? setSelectedApp(app) : requestInstall(app)}>
-                    {installedIds.has(app.id) ? <><Check size={14} /> Installed</> : 'View app'}
+                  <button className={installedIds.has(app.id) ? 'btn exchange-installed-button' : 'btn btn-brand'} onClick={() => installedIds.has(app.id) && app.connector ? setOpenedApp(app.connector) : installedIds.has(app.id) ? setSelectedApp(app) : requestInstall(app)}>
+                    {installedIds.has(app.id) ? app.connector ? 'Open' : <><Check size={14} /> Installed</> : 'View app'}
                   </button>
                 </article>
               );
@@ -289,7 +312,7 @@ export default function AppExchange() {
                   <div className="exchange-card-footer">
                     <span className="exchange-category-label">{app.category}</span>
                     {isInstalled
-                      ? <button className="btn btn-small" onClick={() => setSelectedApp(app)}>Manage</button>
+                      ? <button className="btn btn-small" onClick={() => app.connector ? setOpenedApp(app.connector) : setSelectedApp(app)}>{app.connector ? 'Open' : 'Manage'}</button>
                       : <button className="btn btn-brand btn-small" onClick={() => setSelectedApp(app)}>View app <ArrowRight size={12} /></button>}
                   </div>
                 </article>
@@ -325,6 +348,7 @@ export default function AppExchange() {
             <div className="exchange-data-note"><Database size={17} /><span><strong>Data and uninstall behavior</strong>{selectedApp.dataFootprint} Uninstalling disables this package; it does not delete your organization’s records.</span></div>
             <div className="exchange-detail-footer">
               <span><Download size={14} /> {selectedApp.price}</span>
+              {installedIds.has(selectedApp.id) && selectedApp.connector && <button className="btn btn-brand" onClick={() => {setOpenedApp(selectedApp.connector!);setSelectedApp(null);}}>Open</button>}
               {installedIds.has(selectedApp.id)
                 ? <button className="btn" onClick={() => setDialog({ kind: 'uninstall', app: selectedApp })}>Uninstall</button>
                 : <button className="btn btn-brand" onClick={() => requestInstall(selectedApp)}>Review and install <ArrowRight size={14} /></button>}
