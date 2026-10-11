@@ -4588,10 +4588,15 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.match(smtpRelay.messages[1], /An email alert ran for Email Alert Trigger Record\./);
     assert.equal((await api.send(`/metadata/email-alerts/${emailAlert.data.emailAlert.id}`, adminToken, 'DELETE')).status, 409,
       'a saved Email Alert cannot be deleted while an active flow references it');
-    assert.equal((await api.send('/metadata/flows/Email_Alert_Delivery_Smoke', adminToken, 'PUT', {
+    const savedEmailAlertDraft = await api.send('/metadata/flows/Email_Alert_Delivery_Smoke', adminToken, 'PUT', {
       ...savedEmailAlertFlow.data.flow,
       status: 'Draft'
-    })).status, 200, 'the Email Alert smoke flow must be deactivated so later record tests remain isolated');
+    });
+    assert.equal(savedEmailAlertDraft.status, 200, JSON.stringify(savedEmailAlertDraft.data));
+    assert.equal(savedEmailAlertDraft.data.flow.activeVersion, savedEmailAlertFlow.data.flow.activeVersion,
+      'saving a draft must not silently deactivate its published email alert');
+    assert.equal((await api.send('/metadata/flows/Email_Alert_Delivery_Smoke/deactivate', adminToken, 'POST')).status, 200,
+      'explicit deactivation is required before subsequent record-sharing tests');
     const invalidRecipientFlow = {
       apiName: 'Send_Email_Fault_Smoke', label: 'Send Email Fault Smoke', flowType: 'Autolaunched Flow',
       status: 'Active', versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},

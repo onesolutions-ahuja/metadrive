@@ -90,6 +90,21 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     const login = await send('/auth/login', undefined, 'POST', { email: adminEmail, password });
     assert.equal(login.status, 200, JSON.stringify(login.data));
     const token = login.data.access_token as string;
+    // Broken literal picklist assignments are caught before a flow is activated.
+    const starterFlows = await send('/metadata/flows', token);
+    assert.equal(starterFlows.status, 200, JSON.stringify(starterFlows.data));
+    const starterRouter = starterFlows.data.flows.find((candidate: any) => candidate.apiName === 'WA_ROUTER');
+    assert.ok(starterRouter);
+    const invalidRouter = {
+      ...starterRouter,
+      elements: starterRouter.elements.map((element: any) => element.label === 'Mark Incoming Message Processed'
+        ? { ...element, config: { ...element.config, fieldValues: [{ field: 'Status__c', value: 'Processed' }] } }
+        : element)
+    };
+    const rejectedRouter = await send('/metadata/flows/WA_ROUTER/validate', token, 'POST', invalidRouter);
+    assert.equal(rejectedRouter.status, 200, JSON.stringify(rejectedRouter.data));
+    assert.ok(rejectedRouter.data.errors.some((message: string) => message.includes('inactive picklist value')),
+      'Flow Builder validation should reject the legacy WhatsApp status before activation');
     const scheduledPathAccountMetadata = await send('/metadata/objects/Account', token);
     assert.equal(scheduledPathAccountMetadata.status, 200, JSON.stringify(scheduledPathAccountMetadata.data));
     const scheduledPathObject = {
@@ -2402,12 +2417,14 @@ test('Collection Filter and Collection Sort execute and validate record collecti
       JSON.stringify(invalidBounds.data));
     const defaultsInterview = await send('/flows/Screen_Defaults_Smoke/execute', token, 'POST', {});
     assert.equal(defaultsInterview.status, 202, JSON.stringify(defaultsInterview.data));
-    const blockedInterviewEdit = await send('/metadata/flows/Screen_Defaults_Smoke', token, 'PUT', {
+    const savedWhileInterviewPending = await send('/metadata/flows/Screen_Defaults_Smoke', token, 'PUT', {
       ...defaultsFlow.data.flow,
       status: 'Draft'
     });
-    assert.equal(blockedInterviewEdit.status, 409,
-      'an active flow with a pending screen interview cannot be edited into a new version');
+    assert.equal(savedWhileInterviewPending.status, 200, JSON.stringify(savedWhileInterviewPending.data));
+    assert.equal(savedWhileInterviewPending.data.flow.status, 'Draft');
+    assert.equal(savedWhileInterviewPending.data.flow.activeVersion, defaultsFlow.data.flow.activeVersion,
+      'saving a draft must preserve the published version for pending screen interviews');
     const blockedInterviewDeactivation = await send('/metadata/flows/Screen_Defaults_Smoke/deactivate', token, 'POST');
     assert.equal(blockedInterviewDeactivation.status, 409,
       'a flow with a pending screen interview cannot be deactivated');
@@ -2492,6 +2509,44 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     assert.equal(restoredDefaultsVersion.data.flow.versions.length, deactivatedDefaultsFlow.data.flow.versions.length + 1,
       'restoring a historical definition creates a new version without discarding history');
 
+    // Version lifecycle: drafts preserve the previously published revision.
+    const versionOnly = await send('/metadata/flows/Single_Active_Version_Smoke', token, 'PUT', {
+      apiName: 'Single_Active_Version_Smoke', label: 'Version Lifecycle Smoke',
+      flowType: 'Autolaunched Flow', status: 'Active', versionNumber: 1, activeVersion: null,
+      triggerObject: null, startConfig: {},
+      elements: [{ id: 1, type: 'Start', label: 'Start', config: {} }],
+      connectors: [], resources: [], versions: []
+    });
+    assert.equal(versionOnly.status, 200, JSON.stringify(versionOnly.data));
+    assert.equal(versionOnly.data.flow.activeVersion, 1);
+    const savedDraft = await send('/metadata/flows/Single_Active_Version_Smoke', token, 'PUT', {
+      ...versionOnly.data.flow, status: 'Draft'
+    });
+    assert.equal(savedDraft.status, 200, JSON.stringify(savedDraft.data));
+    assert.equal(savedDraft.data.flow.status, 'Draft');
+    assert.equal(savedDraft.data.flow.activeVersion, 1, 'saving a draft does not unpublish active v1');
+    assert.equal(savedDraft.data.flow.versions.filter((version: any) => version.status === 'Active').length, 1);
+    const savedAnotherDraft = await send('/metadata/flows/Single_Active_Version_Smoke', token, 'PUT', {
+      ...savedDraft.data.flow, status: 'Draft'
+    });
+    assert.equal(savedAnotherDraft.status, 200, JSON.stringify(savedAnotherDraft.data));
+    assert.equal(savedAnotherDraft.data.flow.activeVersion, 1);
+    const nextActivated = await send('/metadata/flows/Single_Active_Version_Smoke', token, 'PUT', {
+      ...savedAnotherDraft.data.flow, status: 'Active'
+    });
+    assert.equal(nextActivated.status, 200, JSON.stringify(nextActivated.data));
+    assert.equal(nextActivated.data.flow.activeVersion, nextActivated.data.flow.versionNumber);
+    assert.equal(nextActivated.data.flow.versions.filter((version: any) => version.status === 'Active').length, 1);
+    assert.equal(nextActivated.data.flow.versions.find((version: any) => version.versionNumber === 1)?.status, 'Obsolete');
+    assert.equal(new Set(nextActivated.data.flow.versions.map((version: any) => version.versionNumber)).size,
+      nextActivated.data.flow.versions.length, 'a flow version must appear only once in history');
+    const moreActivated = await send('/metadata/flows/Single_Active_Version_Smoke', token, 'PUT', {
+      ...nextActivated.data.flow, status: 'Active'
+    });
+    assert.equal(moreActivated.status, 200, JSON.stringify(moreActivated.data));
+    assert.equal(moreActivated.data.flow.versions.filter((version: any) => version.status === 'Active').length, 1);
+    assert.equal(moreActivated.data.flow.activeVersion, moreActivated.data.flow.versionNumber);
+
     const failingFlow = await send('/metadata/flows/Failed_Execution_Smoke', token, 'PUT', {
       apiName: 'Failed_Execution_Smoke', label: 'Failed Execution Smoke', flowType: 'Autolaunched Flow',
       status: 'Active', versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},
@@ -2557,6 +2612,17 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     assert.equal(mappedSubflowRun.status, 200, JSON.stringify(mappedSubflowRun.data));
     assert.equal(mappedSubflowRun.data.outputs.ParentOutput, 'mapped-child-result',
       'Subflow input and output mappings transfer values between differently named parent and child resources');
+    const childDraft = await send('/metadata/flows/Subflow_Child_Mapping_Smoke', token, 'PUT', {
+      ...subflowChild.data.flow, status: 'Draft', resources: []
+    });
+    assert.equal(childDraft.status, 200, JSON.stringify(childDraft.data));
+    assert.equal(childDraft.data.flow.activeVersion, subflowChild.data.flow.activeVersion);
+    const stillPublishedSubflow = await send('/flows/Subflow_Parent_Mapping_Smoke/execute', token, 'POST', {
+      ParentInput: 'published-version-survives-draft'
+    });
+    assert.equal(stillPublishedSubflow.status, 200, JSON.stringify(stillPublishedSubflow.data));
+    assert.equal(stillPublishedSubflow.data.outputs.ParentOutput, 'published-version-survives-draft',
+      'the published child must continue running even when an incomplete draft is saved');
     const invalidSubflowMapping = await send('/metadata/flows/Subflow_Parent_Mapping_Smoke/validate', token, 'POST', {
       ...subflowParentDefinition,
       elements: subflowParentDefinition.elements.map((element) => element.type === 'Subflow'
@@ -2596,7 +2662,7 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     assert.equal(deactivatedFlow.data.flow.status, 'Draft');
     assert.equal(deactivatedFlow.data.flow.activeVersion, null);
     assert.equal(deactivatedFlow.data.flow.versionNumber, failingFlow.data.flow.versionNumber + 1);
-    assert.equal(deactivatedFlow.data.flow.versions.at(-1).status, 'Active');
+    assert.equal(deactivatedFlow.data.flow.versions.at(-1).status, 'Obsolete');
     assert.equal((await send('/metadata/flows/Failed_Execution_Smoke/deactivate', token, 'POST')).status, 409,
       'deactivating an already inactive flow must return a conflict');
     assert.equal((await send('/metadata/flows/Subflow_Reference_Smoke', token, 'DELETE')).status, 204);
