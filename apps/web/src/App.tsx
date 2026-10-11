@@ -5294,10 +5294,10 @@ function RecordWorkspace({
       </section>
     </div>}
     {formOpen && <RecordFormDialog object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
-      fieldAccess={fieldAccess}
+      fieldAccess={fieldAccess} userRoles={userRoles}
       formValues={formValues} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
       actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
-      onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value }))}
+      onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
       onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />}
   </div>;
 }
