@@ -63,7 +63,7 @@ export function planNormalizedObjectTable(object, registry) {
   // All SQL identifiers have the fixed md_(obj|fld)_<hex> form. No metadata value is interpolated as an identifier.
   return {
     table,
-    createTable:'CREATE TABLE IF NOT EXISTS '+table+' (tenant_id TEXT NOT NULL, record_id TEXT NOT NULL, PRIMARY KEY (tenant_id,record_id))',
+    createTable:'CREATE TABLE IF NOT EXISTS '+table+' (tenant_id TEXT NOT NULL, record_id TEXT NOT NULL, record_version BIGINT NOT NULL DEFAULT 1 CHECK (record_version>0), PRIMARY KEY (tenant_id,record_id))',
     addColumns:columns.map(item=>'ALTER TABLE '+table+' ADD COLUMN IF NOT EXISTS '+item.column+' '+item.sqlType),
     columns
   };
