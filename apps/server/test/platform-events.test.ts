@@ -93,6 +93,14 @@ test('Platform Events dispatch to matching subscribers and recover pending deliv
     const login = await send('/auth/login', undefined, 'POST', { email: adminEmail, password });
     assert.equal(login.status, 200, JSON.stringify(login.data));
     let token = login.data.access_token as string;
+    const policy = await send('/metadata/automation-settings', token);
+    assert.equal(policy.status, 200, JSON.stringify(policy.data));
+    assert.equal(policy.data.autoRetryFailedFlows, false, 'automatic retries must default OFF');
+    assert.equal(policy.data.conversationIdleMinutes, 15, 'conversation idle expiry defaults to 15 minutes');
+    const optedIn = await send('/metadata/automation-settings', token, 'PUT', {
+      autoRetryFailedFlows: true, conversationIdleMinutes: 15
+    });
+    assert.equal(optedIn.status, 200, JSON.stringify(optedIn.data));
     assert.equal((await send('/metadata/platform-events')).status, 401,
       'event metadata APIs require an authenticated tenant principal');
     const authenticatedUser = await send('/auth/me', token);
