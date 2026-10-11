@@ -977,6 +977,26 @@ function App() {
     void restoreSession();
   }, []);
 
+  // Generic metadata-directed landing: when a profile has an active Home Page
+  // for its app, honour that assignment after login or session restoration.
+  // Never override explicit record, app page or Setup navigation.
+  useEffect(() => {
+    if (authState !== 'authenticated') return;
+    const currentRoute = parseAppRoute(window.location.pathname, window.location.search);
+    if (currentRoute.kind !== 'setup' || currentRoute.workspace !== 'home') return;
+    const appId = new URLSearchParams(window.location.search).get('appId') || 'Records';
+    const formFactor = window.matchMedia('(max-width: 600px)').matches ? 'Phone' : 'Desktop';
+    let cancelled = false;
+    void apiRequest<{ page: { apiName: string } | null }>(
+      '/apps/' + encodeURIComponent(appId) + '/home-page?formFactor=' + formFactor
+    ).then(({ page }) => {
+      if (cancelled || !page || parseAppRoute(window.location.pathname, window.location.search).kind !== 'setup') return;
+      window.history.replaceState({}, '', appRoutePath({ kind: 'app-home', appId }));
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }).catch(() => { /* No assigned Home Page: preserve the normal workspace. */ });
+    return () => { cancelled = true; };
+  }, [authState]);
+
   if (authState === 'loading') return <div className="auth-loading">Loading your workspace…</div>;
   if (authState === 'anonymous') return <Login onSuccess={() => setAuthState('authenticated')} />;
   if (authState === 'error') return <Login error={authError} onSuccess={() => setAuthState('authenticated')} onRetry={() => { setAuthState('loading'); void restoreSession(); }} />;
