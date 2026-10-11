@@ -1806,3 +1806,17 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .free-canvas-component > .registered-component.metadrive-component-kioskorderingexperience { height: calc(100% - 39px); }
 .free-canvas-component:not(:has(> .record-component-head)) > .registered-component.metadrive-component-kioskorderingexperience { height: 100%; }
 .free-canvas-runtime-component > .registered-component.metadrive-component-kioskorderingexperience { height: 100%; }
+
+
+/* Compact object record lists; keep wide JSON/text values from expanding rows. */
+.records-table.slds-table tbody td { height: 38px; max-height: 38px; padding-top: 5px; padding-bottom: 5px; line-height: 18px; vertical-align: middle; }
+.records-table.slds-table tbody td > * { max-width: 100%; }
+.records-table.slds-table tbody td { overflow: hidden; text-overflow: ellipsis; }
+.records-table.slds-table tbody td button { line-height: 18px; }
+.connector-config-fields { border: 0; padding: 0; margin: 10px 0; min-width: 0; }
+.connector-config-fields legend { margin-bottom: 10px; font-weight: 700; font-size: 12px; }
+.connector-config-row { display: grid; grid-template-columns: minmax(130px, 35%) minmax(0, 1fr); align-items: center; gap: 14px; margin-bottom: 10px; font-size: 12px; }
+.connector-config-row > span { overflow-wrap: anywhere; }
+.connector-config-row .form-control { width: 100%; min-width: 0; }
+.connector-config-empty { color: var(--muted); font-size: 12px; }
+@media (max-width: 600px) { .connector-config-row { grid-template-columns: 1fr; gap: 5px; } }
