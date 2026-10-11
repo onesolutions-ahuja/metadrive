@@ -3932,14 +3932,18 @@ function MetadataBoundPageComponent({
           method: 'POST', body: JSON.stringify(inputs)
         });
       if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
-      if (action.event === 'reset') {
+      if (binding.resetSessionOnSuccess === true) {
         const key = 'metadrive-page-session:' + component.id;
         const newSession = crypto.randomUUID();
         try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
         setSessionId(newSession);
       }
       setRevision((value) => value + 1);
-      return response;
+      return {
+        ...response,
+        completed: typeof binding.successOutput === 'string'
+          && response.outputs?.[binding.successOutput] === binding.successValue
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Flow action failed';
       setActionError(message);
