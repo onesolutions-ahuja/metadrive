@@ -90,10 +90,11 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
       field('Name', 'Modifier', 'Text', true), field('Product__c', 'Product', 'Text', true),
       field('Price__c', 'Price', 'Currency'), field('Available__c', 'Available', 'Checkbox')
     ], 'Product customisations and extras');
-    ensureObject('Cart__c', 'Cart', [
+    const cartHeaderFields = [
       field('Name', 'Cart Name', 'Text', true), field('Session__c', 'Session ID', 'Text', true),
       field('Status__c', 'Status', 'Text'), field('Order_Type__c', 'Order Type', 'Text')
-    ], 'Temporary session header; can be linked to Sale at checkout');
+    ];
+    ensureObject('Cart__c', 'Cart', cartHeaderFields, 'Temporary session header; can be linked to Sale at checkout');
     ensureObject('PaymentTransaction__c', 'Payment Transaction', [
       field('Name', 'Payment Reference', 'Text', true), field('Sale__c', 'Sale', 'Text'),
       field('Device__c', 'Named Device', 'Text'), field('Provider_Reference__c', 'Provider Reference', 'Text'),
@@ -144,11 +145,13 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         objectPermissions: {
           Product__c: { ...grants },
           CartLine__c: { ...grants, create: true, edit: true, delete: true },
+          Cart__c: { ...grants, create: true, edit: true },
           Sale__c: { ...grants, create: true, edit: true }
         },
         fieldPermissions: Object.fromEntries([
           ...productFields.map((f) => ['Product__c.' + f.apiName, { read: true, edit: false }]),
           ...cartFields.map((f) => ['CartLine__c.' + f.apiName, { read: true, edit: true }]),
+          ...cartHeaderFields.map((f) => ['Cart__c.' + f.apiName, { read: true, edit: true }]),
           ...saleFields.map((f) => ['Sale__c.' + f.apiName, { read: true, edit: true }])
         ])
       });
@@ -163,8 +166,10 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
       if (!profile) continue;
       profile.objectPermissions ??= {};
       profile.objectPermissions.CartLine__c = { ...grants, create: true, edit: true, delete: true };
+      profile.objectPermissions.Cart__c = { ...grants, create: true, edit: true };
       profile.fieldPermissions ??= {};
       for (const f of cartFields) profile.fieldPermissions['CartLine__c.' + f.apiName] = { read: true, edit: true };
+      for (const f of cartHeaderFields) profile.fieldPermissions['Cart__c.' + f.apiName] = { read: true, edit: true };
       profile.objectPermissions.Product__c ??= { ...grants };
       for (const f of productFields) profile.fieldPermissions['Product__c.' + f.apiName] ??= { read: true, edit: false };
     }
@@ -237,6 +242,28 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
     } };
     const cartInputs = [resource('SessionId', 'Text'), resource('LineId', 'Text')];
     const kioskFlows = [
+      flow('KIOSK_SESSION_START', 'Kiosk - Start session', [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Get Records', label: 'Find session', config: {
+          object: 'Cart__c', conditions: [{ field: 'Session__c', operator: 'Equals', value: '{!SessionId}' }],
+          outputVariable: 'CartHeader'
+        } },
+        { id: 3, type: 'Decision', label: 'Create session if missing', config: {
+          outcomes: [{ name: 'Missing', label: 'Missing', conditions: [
+            { field: '{!CartHeader.Id}', operator: 'Is Null' }
+          ] }]
+        } },
+        { id: 4, type: 'Create Records', label: 'Create session header', config: {
+          object: 'Cart__c', fieldValues: [
+            { field: 'Name', value: 'Kiosk Cart' },
+            { field: 'Session__c', value: '{!SessionId}' },
+            { field: 'Status__c', value: 'Open' }
+          ]
+        } },
+        { id: 5, type: 'End', label: 'End', config: {} }
+      ],[connector(1,2),connector(2,3),connector(3,4,'Missing'),connector(3,5,'Default Outcome'),connector(4,5)],[
+        resource('SessionId','Text'),resource('CartHeader','Cart__c','internal','Record')
+      ]),
       flow('KIOSK_CART_ADD', 'Kiosk - Add product', [
         { id: 1, type: 'Start', label: 'Add', config: {} },
         getProduct,
@@ -355,7 +382,8 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
           add: { flowApiName: 'KIOSK_CART_ADD', inputs: { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' } },
           quantity: { flowApiName: 'KIOSK_CART_QUANTITY', inputs: { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' } },
           remove: { flowApiName: 'KIOSK_CART_REMOVE', inputs: { SessionId: '$session', LineId: '$event.lineId' } },
-          reset: { flowApiName: 'KIOSK_CART_RESET', inputs: { SessionId: '$session' }, resetSessionOnSuccess: true }
+          reset: { flowApiName: 'KIOSK_CART_RESET', inputs: { SessionId: '$session' }, resetSessionOnSuccess: true },
+          start: { flowApiName: 'KIOSK_SESSION_START', inputs: { SessionId: '$session' } }
         },
         brandName: 'Your Restaurant', tagline: 'Made fresh for you',
         accentColor: '#ffca26', inkColor: '#202124', currency: '£'
