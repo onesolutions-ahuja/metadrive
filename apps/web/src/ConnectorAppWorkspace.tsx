@@ -103,7 +103,7 @@ export default function ConnectorAppWorkspace({
     let mounted = true;
     setLoading(true);
     setError('');
-    void loadHistory(objectName, field, app.RecordFilterValue__c || app.Name, page * 50, search)
+    void loadHistory(objectName, field || '', app.RecordFilterValue__c || app.Name, page * 50, search)
       .then((result) => { if (mounted) setData(result); })
       .catch((reason: unknown) => { if (mounted) { setData({ records: [], total: 0 }); setError(reason instanceof Error ? reason.message : 'Unable to load history'); } })
       .finally(() => { if (mounted) setLoading(false); });
@@ -202,7 +202,7 @@ export default function ConnectorAppWorkspace({
       <div className="table-scroll"><table className="slds-table"><thead><tr>{columns.map(([key,label]) => <th key={key}>{label}</th>)}<th>Action</th></tr></thead>
         <tbody>{data.records.map((record) => <tr key={record.Id}>{columns.map(([key]) => <td key={key}>{Object.prototype.hasOwnProperty.call(record,key)
           ? String(record[key] ?? '') : '********'}</td>)}<td>
-          <button className="btn btn-small" onClick={() => onOpenRecord(app.RecordObject__c,record.Id)}>View</button></td></tr>)}</tbody>
+          <button className="btn btn-small" onClick={() => onOpenRecord(app.RecordObject__c || '',record.Id)}>View</button></td></tr>)}</tbody>
       </table></div>
       {!loading && !!app.RecordObject__c && data.records.length === 0 && <p>No matching records.</p>}
       <div className="section-toolbar" style={{marginTop:14}}><span>{data.total} records · Page {page+1}</span>
