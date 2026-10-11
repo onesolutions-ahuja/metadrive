@@ -1,0 +1,30 @@
+name: MetaDrive normalized SQL compatibility safety
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/server/src/normalized-cutover-gate.mjs'
+      - 'apps/server/scripts/verify-normalized-cutover-preflight.mjs'
+      - 'apps/server/test/normalized-cutover-gate.test.mjs'
+      - '.github/workflows/metadrive-normalization-safety.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Test strict record/Flow/RBAC/page/credential compatibility
+        run: node --test apps/server/test/normalized-cutover-gate.test.mjs
+      - name: Compile backend and frontend without deployment
+        run: npm run build
+      - name: Verify emitted server entrypoint
+        run: test -f apps/server/dist/index.js
