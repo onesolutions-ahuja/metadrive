@@ -367,6 +367,12 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
     else if (existingComponent.jsxSource !== jsxSource || existingComponent.cssSource !== cssSource) {
       Object.assign(existingComponent, componentMetadata, { updatedAt: new Date().toISOString() });
     }
+    const alreadyObjectBound = kiosk.components.some((component) =>
+      component.type === 'Custom:KioskOrderingExperience'
+      && component.properties?.objectApiName === 'Product__c'
+      && component.properties?.cartObjectApiName === 'CartLine__c'
+      && component.properties?.actionFlows?.start);
+    if (!alreadyObjectBound) {
     kiosk.layoutMode = 'free-canvas';
     kiosk.canvasWidth = kiosk.canvasWidth || 1080;
     kiosk.canvasHeight = kiosk.canvasHeight || 1920;
@@ -393,6 +399,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         accentColor: '#ffca26', inkColor: '#202124', currency: '£'
       }
     }];
+    }
     await writeRelationalState(pool, state, previous);
     console.log('Kiosk test accounts, profiles and editable metadata configured');
   } finally {
