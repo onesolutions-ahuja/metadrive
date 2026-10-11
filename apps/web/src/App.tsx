@@ -6675,7 +6675,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     return Array.isArray(value) ? value : [];
   };
   const sourceKeys = new Set(['libraryComponentId', 'objectApiName', 'targetObject', 'flowApiName', 'filters',
-    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName']);
+    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName', 'checkoutFlowApiName']);
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
@@ -6723,10 +6723,11 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
     <label className="form-label">Flow API Name
-      <input className="form-control" list="metadata-component-flows" value={String(properties.flowApiName ?? '')}
-        onChange={(event) => update('flowApiName', event.target.value)} placeholder="Select a configured flow…" />
-      <datalist id="metadata-component-flows">{flows.map((flow) =>
-        <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}</datalist>
+      <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
+        onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
+        <option value="">No flow selected</option>
+        {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+      </select>
     </label>
     <div className="properties-section-title">Appearance and Settings</div>
     {Object.entries(properties).filter(([key]) => !sourceKeys.has(key)).map(([key, value]) => {
