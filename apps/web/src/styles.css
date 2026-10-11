@@ -2008,3 +2008,7 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .named-credential-activation { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .named-credential-activation strong { margin-right: auto; }
 @media (max-width: 640px) { .named-credential-form-grid { grid-template-columns: minmax(0, 1fr); } .named-credential-modal { padding: 14px; } }
+
+/* Compact, stable page-load duration immediately before Help */
+.navigation-load-time { display: inline-flex; align-items: center; justify-content: flex-end; min-width: 94px; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; color: #54657a; }
+@media (max-width: 600px) { .navigation-load-time { font-size: 11px; min-width: 70px; } }
