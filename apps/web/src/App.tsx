@@ -274,7 +274,7 @@ class ApiRequestError extends Error {
 
 async function loadAppCommunicationHistory(objectName: string, field: string, source: string, offset: number, search: string) {
   const params = new URLSearchParams({
-    limit: '50', offset: String(offset), filterField: field, filterValue: source,
+    limit: '50', offset: String(offset), ...(field ? {filterField:field, filterValue:source} : {}),
     ...(search ? { search } : {})
   });
   return apiRequest<{ records: Array<{ Id: string; [key: string]: unknown }>; total: number }>(
