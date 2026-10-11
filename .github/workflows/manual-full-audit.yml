@@ -1,6 +1,10 @@
 name: MetaDrive full audit (manual only)
 on:
   workflow_dispatch:
+  push:
+    branches: [audit/run-ui-audit-20261012]
+    paths:
+      - '.github/workflows/manual-full-audit.yml'
 permissions:
   contents: read
 jobs:
