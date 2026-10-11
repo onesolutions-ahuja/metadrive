@@ -1,0 +1,42 @@
+name: Aiven production cutover preflight (read-only)
+on:
+  push:
+    branches: [migration/aiven-cutover-guarded-20261011]
+    paths:
+      - '.github/workflows/metadrive-aiven-cutover-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: metadrive-aiven-cutover-preflight
+  cancel-in-progress: false
+jobs:
+  source-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate Aiven secret and endpoint
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          test -n "${DATABASE_URL:-}" || { echo "::error::Aiven connection secret missing"; exit 1; }
+          node --input-type=module <<'NODE'
+          const u = new URL(process.env.DATABASE_URL);
+          if (!['postgres:', 'postgresql:'].includes(u.protocol) || !u.hostname.endsWith('.aivencloud.com') || u.searchParams.get('sslmode') !== 'require') throw Error('Invalid Aiven TLS connection configuration');
+          console.log('Aiven connection configuration validated without exposing credentials');
+          NODE
+      - name: Verify live source state without writes
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: node apps/server/scripts/verify-aiven-state.mjs
+      - name: Check production migration script preflight without applying
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_DB_ALLOW_SELF_SIGNED_CERT: 'true'
+        run: node apps/server/scripts/migrate-relational-in-place.mjs
