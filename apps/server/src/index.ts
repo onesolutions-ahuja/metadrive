@@ -58,6 +58,16 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
+
+// Explicit maintenance barrier for Aiven cutover; no API traffic or scheduled
+// dispatch may modify the DB while the in-place migration is running.
+const maintenanceMode = process.env.METADRIVE_MAINTENANCE_MODE === 'true';
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!maintenanceMode || req.path === '/health') return next();
+  res.setHeader('Retry-After', '120');
+  return res.status(503).json({ error: 'MetaDrive database maintenance in progress' });
+});
+
 // In relational mode, acknowledge an API response only after the latest
 // database transaction commits. JSONB mode is deliberately unchanged.
 let latestStateCommit: Promise<unknown> = Promise.resolve();
@@ -4112,6 +4122,7 @@ function loadState(): PlatformState {
   }
 }
 function persistState(next: PlatformState): void {
+  if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
   mkdirSync(dirname(dataPath), { recursive: true });
   const temporaryPath = `${dataPath}.tmp`;
   // Serialize once: pretty-printing plus a second JSON stringify doubled large
@@ -4147,7 +4158,7 @@ try {
   console.warn('Named Credentials encryption readiness: ' + status);
 }
 
-await persistToPostgres(state);
+if (!maintenanceMode) await persistToPostgres(state);
 
 function credentialKeyRing(): CredentialKeyRing {
   const serializedKeys = process.env.METADRIVE_CREDENTIAL_KEYS;
@@ -4712,7 +4723,7 @@ const provisioningSchema = z.object({
   password: z.string().min(12).max(256)
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'metadrive-api', authMode: jwtService.config.mode }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'metadrive-api', authMode: jwtService.config.mode, maintenance: maintenanceMode }));
 app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
 app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
 app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
@@ -16193,6 +16204,7 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
 
 let scheduledDispatchRunning = false;
 async function dispatchScheduledFlows(): Promise<void> {
+  if (maintenanceMode) return;
   if (scheduledDispatchRunning) return;
   scheduledDispatchRunning = true;
   try {
