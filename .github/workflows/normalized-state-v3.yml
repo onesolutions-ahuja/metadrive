@@ -1,7 +1,7 @@
 name: Validate lossless SQL normalization v3
 on:
   push:
-    branches: [migration/normalized-v3-all-state-20261011]
+    branches: [migration/normalized-v3-all-state-20261011, migration/sql-only-shadow-proof-20261011]
   pull_request:
     branches: [main]
     paths:
