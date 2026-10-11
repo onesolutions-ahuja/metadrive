@@ -591,7 +591,7 @@ export default function FlowBuilder({
       return <>
       <label className="form-label">Variable<select className="form-control" value={displayValue(selected.config.variable)} onChange={(event) => setConfig('variable', event.target.value)}><option value="">Select variable</option>{flow.resources.length > 0 && <optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</optgroup>}{beforeSave && triggerObject && <optgroup label="$Record Fields">{triggerObject.fields.filter((field) => !field.formula && !['AutoNumber', 'Auto Number'].includes(field.dataType)).map((field) => <option key={field.apiName} value={`$Record.${field.apiName}`}>{field.label}</option>)}</optgroup>}</select></label>
       <label className="form-label">Operator<select className="form-control" value={displayValue(selected.config.operator) || 'Assign'} onChange={(event) => setConfig('operator', event.target.value)}>{['Assign', 'Add', 'Subtract', 'Multiply', 'Divide', 'Add At Beginning', 'Add At End', 'Remove All'].map((operator) => <option key={operator}>{operator}</option>)}</select></label>
-      <label className="form-label">Value<input className="form-control" value={displayValue(selected.config.value)} onChange={(event) => setConfig('value', event.target.value)} /></label>
+      <label className="form-label">Value<textarea className="form-control" rows={5} style={{ resize: 'vertical', minHeight: 100, whiteSpace: 'pre-wrap' }} value={displayValue(selected.config.value)} onChange={(event) => setConfig('value', event.target.value)} /></label>
     </>;
     }
     if (selected.type === 'Loop') return <>
