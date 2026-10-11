@@ -175,7 +175,7 @@ defaultApiUrl.pathname = '/api';
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? defaultApiUrl.toString().replace(/\/$/, '');
 let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
-function ProfilePasswordMenu({ onLogout }: { onLogout: () => Promise<void> | void }) {
+function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => Promise<void> | void; onPasswordChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -193,7 +193,7 @@ function ProfilePasswordMenu({ onLogout }: { onLogout: () => Promise<void> | voi
       await apiRequest('/auth/change-password', { method: 'POST',
         body: JSON.stringify({ currentPassword, newPassword }) });
       reset(); setEditing(false); setOpen(false);
-      await onLogout();
+      onPasswordChanged();
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not change password'); }
     finally { setBusy(false); }
   };
@@ -3058,7 +3058,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               </>}
             </section>}
           </div>
-          <ProfilePasswordMenu onLogout={logout} />
+          <ProfilePasswordMenu onLogout={logout} onPasswordChanged={onLogout} />
         </div>
       </header>
 
