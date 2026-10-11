@@ -1508,9 +1508,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       return;
     }
     if (item === 'Une Connectors') {
-      const firstProvider = connectorProviders[0];
-      if (firstProvider) navigateRoute({ kind: 'setup', workspace: 'connector-settings', resourceApiName: firstProvider.connectorKey });
-      else openSetupWorkspace('connector-settings');
+      // Existing navigation aliases use the credential store actually consumed by flows.
+      openSetupWorkspace('named-credentials');
       return;
     }
     if (item === 'Company Information' || item === 'Currencies') {
@@ -3012,16 +3011,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                         <span>{item}</span>
                         <ChevronRight size={13} />
                       </button>
-                      {item === 'Une Connectors' && filteredConnectorProviders.map((provider) => (
-                        <button
-                          key={provider.connectorKey}
-                          className={`tree-item connector-subitem${workspace === 'connector-settings' && route.kind === 'setup' && route.resourceApiName === provider.connectorKey ? ' selected' : ''}`}
-                          onClick={() => navigateSetupItem(provider.connectorKey)}
-                        >
-                          <span>{provider.name}</span>
-                          <ChevronRight size={13} />
-                        </button>
-                      ))}
+
                     </React.Fragment>
                   ))}
                 </div>
