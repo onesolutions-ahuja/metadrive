@@ -4619,6 +4619,18 @@ function RecordWorkspace({
       const related = lookupRecords[field.relationship.targetObject]?.find((item) => item.Id === value);
       if (related) return String(related.Name ?? related.Email ?? value);
     }
+    if (field.dataType === 'Date/Time' && typeof value === 'string' && value) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) {
+        // Persist timestamps in UTC; display using the viewer's actual local clock,
+        // including daylight-saving transitions.
+        return new Intl.DateTimeFormat(undefined, {
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+        }).format(date);
+      }
+    }
     return formatRecordValue(value);
   };
   const activeRecordTypes = object?.recordTypes?.filter((item) =>
@@ -5224,7 +5236,7 @@ function RecordWorkspace({
   const listFields = hasConfiguredSearchResults
     ? configuredListFields ?? []
     : [...readableFields].sort((left, right) => Number(right.apiName === 'Name') - Number(left.apiName === 'Name'))
-      .filter((field) => records.length === 0 || records.some((item) => field.apiName in item)).slice(0, 5);
+      .filter((field) => records.length === 0 || records.some((item) => field.apiName in item));
   const selectableRecordIds = (canMassDelete || canAddToCampaign) ? visibleRecords.flatMap((item) => {
     const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
     const recordLayout = pageLayoutForRecord(object, recordTypeId, profileId);
@@ -5283,7 +5295,7 @@ function RecordWorkspace({
       {error && <div className="records-message" role="alert">{error}</div>}
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
-      {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflow: 'auto' }}><table className="slds-table records-table">
+      {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
         <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName}>{field.label}</th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
         <tbody>{visibleRecords.map((item) => {
           const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
