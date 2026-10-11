@@ -1516,6 +1516,10 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       openSetupWorkspace('company-settings');
       return;
     }
+    if (item === 'Named Devices') {
+      navigateRoute({ kind: 'record-list', objectApiName: 'NamedDevice__c' });
+      return;
+    }
     if (item === 'Named Credentials') {
       openSetupWorkspace('named-credentials');
       return;
@@ -6929,6 +6933,10 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
   const [advancedError, setAdvancedError] = useState('');
   const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
   const selectedObject = objects.find((candidate) => candidate.apiName === objectApiName);
+  const cartObjectApiName = String(properties.cartObjectApiName ?? '');
+  const cartObject = objects.find((candidate) => candidate.apiName === cartObjectApiName);
+  const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
+    ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
   const update = (key: string, value: unknown) => onChange({ ...properties, [key]: value });
   const listProperty = (key: string) => {
@@ -6936,7 +6944,8 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     return Array.isArray(value) ? value : [];
   };
   const sourceKeys = new Set(['libraryComponentId', 'objectApiName', 'targetObject', 'flowApiName', 'filters',
-    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName', 'checkoutFlowApiName']);
+    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName', 'checkoutFlowApiName',
+    'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows']);
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
@@ -6957,6 +6966,27 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     {['nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName']
       .filter((key) => key in properties || (objectApiName && ['nameField', 'priceField', 'imageField', 'categoryField'].includes(key)))
       .map((key) => fieldPicker(key, properties[key]))}
+    {actionFlows && <>
+      <div className="properties-section-title">Temporary Cart Object</div>
+      <label className="form-label">Cart line object
+        <select className="form-control" value={cartObjectApiName}
+          onChange={(event) => update('cartObjectApiName', event.target.value)}>
+          <option value="">Select cart object…</option>
+          {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+        </select>
+      </label>
+      {([
+        ['cartSessionField', 'Session field'], ['cartProductField', 'Product reference'],
+        ['cartQuantityField', 'Quantity field'], ['cartPriceField', 'Unit price field']
+      ] as const).map(([key, label]) => <label className="form-label" key={key}>{label}
+        <select className="form-control" value={String(properties[key] ?? '')}
+          onChange={(event) => update(key, event.target.value)}>
+          <option value="">Select field…</option>
+          {(cartObject?.fields ?? []).map((field) =>
+            <option value={field.apiName} key={field.apiName}>{field.label}</option>)}
+        </select>
+      </label>)}
+    </>}
     <div className="properties-section-title">Record Filters</div>
     {listProperty('filters').map((raw, index) => {
       const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
@@ -6983,13 +7013,39 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
-    <label className="form-label">Flow API Name
+    {actionFlows && (['add', 'quantity', 'remove', 'reset', 'checkout'] as const).map((eventName) => {
+      const binding = actionFlows[eventName] && typeof actionFlows[eventName] === 'object'
+        ? actionFlows[eventName] as Record<string, unknown> : {};
+      return <label className="form-label" key={eventName}>{eventName.charAt(0).toUpperCase() + eventName.slice(1)} Flow
+        <select className="form-control" value={String(binding.flowApiName ?? '')} onChange={(event) => {
+          const next = { ...actionFlows };
+          if (!event.target.value) delete next[eventName];
+          else next[eventName] = {
+            flowApiName: event.target.value,
+            inputs: binding.inputs ?? (eventName === 'checkout'
+              ? { SessionId: '$session', OrderType: '$event.orderType' }
+              : eventName === 'add'
+                ? { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' }
+                : eventName === 'quantity'
+                  ? { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' }
+                  : eventName === 'remove'
+                    ? { SessionId: '$session', LineId: '$event.lineId' }
+                    : { SessionId: '$session' })
+          };
+          update('actionFlows', next);
+        }}>
+          <option value="">Not configured</option>
+          {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+        </select>
+      </label>;
+    })}
+    {!actionFlows && <label className="form-label">Flow API Name
       <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
         onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
         <option value="">No flow selected</option>
         {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
       </select>
-    </label>
+    </label>}
     <div className="properties-section-title">Appearance and Settings</div>
     {Object.entries(properties).filter(([key]) => !sourceKeys.has(key)).map(([key, value]) => {
       if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
