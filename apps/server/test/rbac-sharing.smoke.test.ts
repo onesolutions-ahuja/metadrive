@@ -437,14 +437,15 @@ test('dashboard Includes and Excludes filters match configured multi-select valu
 
 function client(port: number) {
   const root = `http://127.0.0.1:${port}/api`;
-  const send = async (pathName: string, token?: string, method = 'GET', body?: unknown, requestSource?: 'web-app') => {
+  const send = async (pathName: string, token?: string, method = 'GET', body?: unknown, requestSource?: 'web-app' | 'external-api') => {
     let response: Response;
     try {
       response = await fetch(`${root}${pathName}`, {
         method,
         headers: {
           ...(token ? { authorization: `Bearer ${token}` } : {}),
-          ...(requestSource ? { 'x-metadrive-request-source': requestSource } : {}),
+          ...(requestSource === 'web-app' ? { 'x-metadrive-request-source': 'web-app' } : {}),
+          ...(requestSource === 'external-api' ? { 'x-metadrive-external-api': 'true' } : {}),
           ...(body ? { 'content-type': 'application/json' } : {})
         },
         ...(body ? { body: JSON.stringify(body) } : {})
@@ -1708,6 +1709,8 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'Communication Records must be available in Object Manager metadata');
     assert.equal((await api.send('/connector-providers', adminToken, 'GET', undefined, 'web-app')).status, 200,
       'web app requests must continue to work when marked as internal');
+    assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'external-api')).status, 200,
+      'explicitly identified external API requests must remain auditable');
     const communicationRecordsResponse = await api.send('/records/Communication_Records__c', adminToken, 'GET', undefined, 'web-app');
     assert.equal(communicationRecordsResponse.status, 200, 'Communication Records must be readable through the standard Records API');
     const communicationRecords = communicationRecordsResponse.data.records as Array<Record<string, unknown>>;
@@ -1717,7 +1720,9 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       && record.Auth_Type__c === 'Bearer'
       && typeof record.Response_Body__c === 'string'
       && record.Response_Body__c.includes('Communication_Records__c')),
-    'authenticated incoming API requests must be recorded with method, auth type, and response body');
+    'explicitly marked external incoming requests must be recorded with method, auth type, and response body');
+    assert.equal(communicationRecords.filter((record) => record.Api_Id__c === 'GET /api/metadata/objects').length, 1,
+      'unmarked internal metadata requests must not generate communication records');
     assert.ok(!communicationRecords.some((record) => record.Api_Id__c === 'GET /api/connector-providers'),
       'web app API requests must not be recorded as external incoming API requests');
     const connectorRecordsResponse = await api.send('/records/UneConnector__c', adminToken);
