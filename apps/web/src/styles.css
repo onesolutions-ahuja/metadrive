@@ -1996,3 +1996,7 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .salesforce-header { position: sticky; top: 0; z-index: 80; }
 .app-strip { position: sticky; top: 50px; z-index: 70; }
 .kiosk-mode .salesforce-header, .kiosk-mode .app-strip { display: none; }
+
+/* Compact, stable page-load duration immediately before Help */
+.navigation-load-time { display: inline-flex; align-items: center; justify-content: flex-end; min-width: 94px; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; color: #54657a; }
+@media (max-width: 600px) { .navigation-load-time { font-size: 11px; min-width: 70px; } }
