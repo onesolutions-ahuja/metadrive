@@ -137,7 +137,10 @@ export default function AppManager({
             <input className="form-control" required disabled={!creating} pattern="[A-Za-z][A-Za-z0-9_]*" value={draft.apiName} onChange={(event) => update('apiName', event.target.value)} />
           </label>
           <label className="form-label">Brand Color
-            <input className="form-control app-brand-color" type="color" value={draft.brandColor} onChange={(event) => update('brandColor', event.target.value)} />
+            <span className="app-manager-color-control">
+              <input aria-label="Choose brand colour" type="color" value={draft.brandColor} onChange={(event) => update('brandColor', event.target.value)} />
+              <input aria-label="Brand colour HEX" className="form-control" type="text" maxLength={7} pattern="#[0-9a-fA-F]{6}" value={draft.brandColor} onChange={(event) => update('brandColor', event.target.value)} />
+            </span>
           </label>
         </div>
         <label className="form-label">Description
