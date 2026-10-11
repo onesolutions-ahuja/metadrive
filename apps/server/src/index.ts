@@ -6607,8 +6607,12 @@ app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentia
     ? expandedTestPath.slice(pathPart.length) || '?fields=id'
     : expandedTestPath;
   const url = new URL(resolvedTestPath, credential.baseUrl);
+  // Graph-style resource endpoints commonly require /resource?fields=..., not
+  // /resource/?fields=.... Normalize only the exact already-targeted resource.
+  if (alreadyAtTarget && url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1);
+  const basePathWithoutSlash = credentialBase.pathname.replace(/\/$/, '');
   if (url.origin !== credentialBase.origin
-    || !url.pathname.startsWith(credentialBase.pathname))
+    || !(url.pathname === basePathWithoutSlash || url.pathname.startsWith(credentialBase.pathname)))
     return res.status(400).json({ error: 'Test endpoint must remain inside the configured base URL.' });
   if (url.protocol !== 'https:' || isReservedHostname(url.hostname) || (isIP(url.hostname) && !isPublicAddress(url.hostname))) {
     return res.status(400).json({ error: 'Test destination is not a public HTTPS host' });
