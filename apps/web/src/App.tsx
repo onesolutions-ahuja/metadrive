@@ -6743,6 +6743,31 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
       if (typeof value === 'string') return fieldPicker(key, value);
       return null;
     })}
+    {Object.entries(properties).filter(([key, value]) => !sourceKeys.has(key) && Array.isArray(value)).map(([key, value]) => {
+      const items = value as unknown[];
+      const template = items.find((item) => item && typeof item === 'object' && !Array.isArray(item));
+      const keys = template ? Object.keys(template) : [];
+      return <div key={key} className="metadata-array-property">
+        <div className="properties-section-title">{labelFor(key)}</div>
+        {items.map((item, index) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const record = item as ComponentPropertyRecord;
+          return <div className="home-page-assignment" key={index}>
+            <strong>{labelFor(key)} {index + 1}</strong>
+            {Object.entries(record).filter(([, fieldValue]) => ['string', 'number', 'boolean'].includes(typeof fieldValue)).map(([fieldKey, fieldValue]) =>
+              <label className="form-label" key={fieldKey}>{labelFor(fieldKey)}
+                {typeof fieldValue === 'boolean'
+                  ? <input type="checkbox" checked={fieldValue} onChange={(event) => update(key, items.map((entry, i) => i === index ? { ...record, [fieldKey]: event.target.checked } : entry))} />
+                  : <input className="form-control" type={typeof fieldValue === 'number' ? 'number' : 'text'} value={String(fieldValue)}
+                      onChange={(event) => update(key, items.map((entry, i) => i === index ? { ...record, [fieldKey]: typeof fieldValue === 'number' ? Number(event.target.value) : event.target.value } : entry))} />}
+              </label>)}
+            <button className="btn" type="button" onClick={() => update(key, items.filter((_, i) => i !== index))}>Remove</button>
+          </div>;
+        })}
+        {keys.length > 0 && <button className="btn" type="button" onClick={() => update(key, [...items, Object.fromEntries(keys.map((fieldKey) =>
+          [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
+      </div>;
+    })}
     <button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);
