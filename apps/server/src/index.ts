@@ -7673,6 +7673,9 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
     return res.status(403).json({ error: 'Manage connector definitions and Integration Connections in Une Connectors Setup' });
   }
   if (objectName === 'User') return res.status(403).json({ error: 'Users must be provisioned through the security workspace' });
+  if (objectName === 'Connector_App__c' && !principal.permissions.includes('licence:manage')) {
+    return res.status(403).json({error:'Connector app catalogue creation/deletion requires platform licence permission.'});
+  }
   if (!hasObjectPermission(principal, tenant, objectName, 'create')) return res.status(403).json({ error: `Missing create permission for object "${objectName}"` });
   const parsed = z.record(z.unknown()).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
@@ -7905,6 +7908,9 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
     return res.status(403).json({ error: 'Manage connector definitions and Integration Connections in Une Connectors Setup' });
   }
   if (objectName === 'User') return res.status(403).json({ error: 'Users must be managed through the security workspace' });
+  if (objectName === 'Connector_App__c' && !principal.permissions.includes('licence:manage')) {
+    return res.status(403).json({error:'Connector app catalogue creation/deletion requires platform licence permission.'});
+  }
   if (!hasObjectPermission(principal, tenant, objectName, 'delete')) return res.status(403).json({ error: `Missing delete permission for object "${objectName}"` });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Delete')) return res.status(404).json({ error: 'Record was not found' });
@@ -14057,6 +14063,11 @@ async function executeFlow(
         const objectName = typeof config.object === 'string' ? config.object : '';
         const object = tenant.objects.find((candidate) => candidate.apiName === objectName);
         if (!object) throw new Error(`${element.type} "${element.label}" references an unknown object.`);
+        if (objectName === 'Connector_App__c'
+          && (element.type === 'Create Records' || element.type === 'Delete Records')
+          && !runningPrincipal.permissions.includes('licence:manage')) {
+          throw new Error('Creating or deleting app catalogue records requires the platform licence permission.');
+        }
         const objectAction = element.type === 'Get Records' ? 'read'
           : element.type === 'Create Records' ? 'create'
             : element.type === 'Update Records' ? 'edit' : 'delete';
