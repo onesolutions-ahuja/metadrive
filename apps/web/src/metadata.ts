@@ -167,6 +167,7 @@ export type ObjectMetadata = {
   };
   relatedLookupFilters?: RelatedLookupFilterMetadata[];
   relatedLookupFilterLogic?: Record<string, 'All' | 'Any'>;
+  listViewFilter?: { fieldApiName: string; value: string };
   listViewButtons?: string[];
   actions?: ObjectActionMetadata[];
   customTab?: { style: 'Blue' | 'Green' | 'Orange' | 'Purple' | 'Red' | 'Teal' | 'Yellow' };
