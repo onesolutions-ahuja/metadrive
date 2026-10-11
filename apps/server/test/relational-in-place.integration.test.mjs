@@ -7,7 +7,7 @@ import { mkdtempSync,writeFileSync,rmSync } from 'node:fs';
 import { join,resolve,dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { readRelationalState } from '../src/relational-runtime.mjs';
+import { readRelationalState, writeRelationalState } from '../src/relational-runtime.mjs';
 import { stateDigest } from '../src/relational-projection.mjs';
 
 const base=process.env.METADRIVE_TEST_DATABASE_URL;
@@ -71,6 +71,25 @@ test('in-place Aiven backfill is additive, backup-gated and refuses stale JSONB 
       await assert.rejects(readRelationalState(pool),/Legacy state changed after relational migration/);
       await pool.query('UPDATE metadrive_platform_state SET payload=$1::jsonb WHERE id=1',[JSON.stringify(state)]);
       assert.equal((await readRelationalState(pool)).digest,stateDigest(state));
+      // Simulate records created AFTER switching to relational mode.
+      const beforeRollback=await readRelationalState(pool);
+      const latest=structuredClone(beforeRollback.state);
+      latest.tenants.tenant.records.Custom__c.push({Id:'record2',Name:'Created after cutover'});
+      await writeRelationalState(pool,latest,beforeRollback);
+      const rollbackScript=resolve(dirname(fileURLToPath(import.meta.url)),'../scripts/restore-relational-to-legacy.mjs');
+      const rollback=(flags=[],overrides={})=>spawnSync(process.execPath,[rollbackScript,...flags],{
+        cwd:process.cwd(),encoding:'utf8',timeout:75000,
+        env:{...env,METADRIVE_PERSISTENCE_MODE:'relational',METADRIVE_ROLLBACK_CONFIRMED:'true',...overrides}
+      });
+      assert.equal(rollback().status,0,'Rollback preflight must be read-only');
+      assert.notEqual(rollback(['--apply'],{METADRIVE_ROLLBACK_CONFIRMED:'false'}).status,0);
+      assert.equal(rollback(['--apply']).status,0,'Rollback export must succeed with verified offline backup');
+      const restoredLegacy=(await pool.query('SELECT payload FROM metadrive_platform_state WHERE id=1')).rows[0].payload;
+      assert.equal(restoredLegacy.tenants.tenant.records.Custom__c.length,2,
+        'Rollback must preserve records written after relational cutover');
+      assert.equal(restoredLegacy.tenants.tenant.records.Custom__c[1].Name,'Created after cutover');
+      await assert.rejects(readRelationalState(pool),/Legacy state changed after relational migration/,
+        'Relational restart must refuse mismatched baseline after rollback');
     } finally {await pool.end();}
   } finally {
     await admin.query('DROP DATABASE IF EXISTS '+db+' WITH (FORCE)');
