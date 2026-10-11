@@ -2930,16 +2930,14 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
 
       {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         <div className="app-title">
-          <span className="app-icon">{route.kind === 'setup' ? <Settings2 size={18} /> : <Database size={18} />}</span>
-          {route.kind === 'setup'
-            ? <><strong>{route.dashboardView ? 'Dashboard' : 'Setup'}</strong><ChevronDown size={14} /></>
-            : <select aria-label="Current app" value={currentApp?.apiName ?? ''} onChange={(event) => {
-              const nextAppId = event.target.value;
-              setCurrentAppId(nextAppId);
-              navigateRoute(route.kind === 'app-home' || route.kind === 'app-page'
-                ? { kind: 'app-home', appId: nextAppId }
-                : { ...route, appId: nextAppId });
-            }}>{apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}</select>}
+          <span className="app-icon"><Database size={18} /></span>
+          <select aria-label="Current app" value={currentApp?.apiName ?? ''} onChange={(event) => {
+            const nextAppId = event.target.value;
+            setCurrentAppId(nextAppId);
+            navigateRoute(route.kind === 'app-home' || route.kind === 'app-page'
+              ? { kind: 'app-home', appId: nextAppId }
+              : { ...route, appId: nextAppId });
+          }}>{apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}</select>
         </div>
         <nav className="primary-tabs" aria-label="Workspace navigation">
           {(() => {
@@ -2964,8 +2962,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             return <button className={route.kind === 'app-page' && route.pageApiName === apiName ? 'primary-tab active' : 'primary-tab'}
               key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp?.apiName ?? '', pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
           })}
-          <button className={route.kind === 'app-home' || (route.kind === 'setup' && workspace === 'home') ? 'primary-tab active' : 'primary-tab'}
-            onClick={() => route.kind === 'setup' ? openSetupWorkspace('home') : navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
+          <button className={route.kind === 'app-home' ? 'primary-tab active' : 'primary-tab'}
+            onClick={() => navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
             <Monitor className="rail-icon" size={17} />Home
           </button>
         </nav>
