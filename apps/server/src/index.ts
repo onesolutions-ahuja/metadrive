@@ -6263,6 +6263,8 @@ app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:
   const principal = getPrincipal(res);
   const credential = tenantData(principal.tenantId)?.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
   if (!credential) return res.status(404).json({ error: 'Named Credential was not found' });
+  const entitlement = connectorEntitlement(tenantData(principal.tenantId)?.records.Connector_App__c ?? [], credential);
+  if (!entitlement.allowed) return res.status(403).json({ error: entitlement.message });
   if (credential.protocol === 'SMTP') {
     try {
       const target = new URL(credential.baseUrl);
@@ -7863,7 +7865,11 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
       }
     }
     const now = new Date().toISOString();
-    let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...existing, ...values, LastModifiedDate: now }, principal.userId, now, existing), formulaContextForUser(working, principal.userId));
+    const nextRecord = objectName === 'Connector_App__c'
+      ? applyConnectorLifecycle(existing, { ...existing, ...values }, tenant.namedCredentials, tenant.flows,
+          new Date(now), principal.permissions.includes('security:manage'))
+      : { ...existing, ...values };
+    let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...nextRecord, LastModifiedDate: now }, principal.userId, now, existing), formulaContextForUser(working, principal.userId));
     await runBeforeSaveRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     const beforeSaveValues = normalizeFlowRecordAssignments(object, updated, existing);
     updated = calculateFormulaFields(object, updated, formulaContextForUser(working, principal.userId));
@@ -11477,6 +11483,10 @@ async function performHttpCallout(
     : undefined;
   if (!connectionId && !namedCredential) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Named Credential or Integration Connection.`);
   if (connectionId && (!connection || !definition)) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Integration Connection or provider.`);
+  if (namedCredential) {
+    const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], namedCredential);
+    if (!entitlement.allowed) throw new Error(entitlement.message);
+  }
   const ring = credentialKeyRing();
   let credential: Pick<StoredNamedCredential, 'baseUrl' | 'authType' | 'headerName' | 'name'>;
   let secretPayload: NamedCredentialPayload;
@@ -14130,7 +14140,11 @@ async function executeFlow(
           const updates = new Map<string, RuntimeRecord>();
           for (const previous of editableCandidates) {
             const now = new Date().toISOString();
-            let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...previous, ...values, LastModifiedDate: now }, currentUserId, now, previous), context);
+            const nextRecord = objectName === 'Connector_App__c'
+              ? applyConnectorLifecycle(previous, { ...previous, ...values }, tenant.namedCredentials, tenant.flows,
+                  new Date(now), runningPrincipal.permissions.includes('security:manage'))
+              : { ...previous, ...values };
+            let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...nextRecord, LastModifiedDate: now }, currentUserId, now, previous), context);
             await runBeforeSaveRecordTriggeredFlows(
               tenantId, tenant, currentUserId, objectName, 'updated', updated, previous,
               triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
