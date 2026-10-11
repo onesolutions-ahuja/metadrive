@@ -14,14 +14,16 @@ const appName = (app: ConnectorAppRecord) => text(app.Name) || text(app.AppKey__
 export function activeConnectorFlowReferences(
   app: ConnectorAppRecord, credentials: CredentialIdentity[], flows: ReferencingFlow[]
 ): string[] {
-  const credential = credentials.find((item) => item.name === text(app.CredentialName__c));
-  if (!credential) return [];
+  const configuredName = text(app.CredentialName__c);
+  const credential = credentials.find((item) => item.name === configuredName);
   return flows.filter((flow) => flow.status === 'Active' && flow.elements.some((element) => {
     if (element.type !== 'HTTP Callout' && element.type !== 'Action') return false;
     const config = element.config ?? {};
     const selected = text(config.namedCredentialId);
     // A dynamic binding could resolve to any app credential; fail closed.
-    return selected === credential.id || selected === credential.name
+    // Also check the configured API name before a Named Credential exists.
+    return (Boolean(configuredName) && selected === configuredName)
+      || (Boolean(credential) && selected === credential?.id)
       || Boolean(text(config.namedCredentialResource));
   })).map((flow) => flow.label || flow.apiName);
 }
