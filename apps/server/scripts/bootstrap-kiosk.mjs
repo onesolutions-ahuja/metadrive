@@ -100,6 +100,13 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
       field('Device__c', 'Named Device', 'Text'), field('Provider_Reference__c', 'Provider Reference', 'Text'),
       field('Amount__c', 'Amount', 'Currency'), field('Status__c', 'Status', 'Text')
     ], 'Provider-verified payment events, not kiosk client claims');
+    // Published catalogue is readable by kiosk users. Cart and devices stay Private.
+    tenant.sharingSettings ??= {};
+    tenant.sharingSettings.Product__c = {
+      ...tenant.sharingSettings.Product__c,
+      defaultAccess: 'Public Read Only',
+      grantAccessUsingHierarchies: true
+    };
     tenant.records ??= {};
     if (!Array.isArray(tenant.records.Product__c)) tenant.records.Product__c = [];
     // Demonstration catalogue is ordinary records, never embedded inside the page or component code.
