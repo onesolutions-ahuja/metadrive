@@ -63,6 +63,7 @@ export default function NamedCredentials({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
   const [busyId, setBusyId] = useState('');
   const [testResults, setTestResults] = useState<Record<string, string>>({});
 
@@ -113,6 +114,9 @@ export default function NamedCredentials({
   const visibleCredentials = credentials.filter((credential) =>
     `${credential.label} ${credential.name} ${credential.protocol} ${credential.baseUrl}`
       .toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  const totalPages = Math.max(1, Math.ceil(visibleCredentials.length / 50));
+  const currentPage = Math.min(page, totalPages - 1);
+  const pagedCredentials = visibleCredentials.slice(currentPage * 50, (currentPage + 1) * 50);
 
   const performAction = async (credential: NamedCredentialMetadata, action: 'delete' | 'rotate') => {
     if (busyId) return;
@@ -150,7 +154,7 @@ export default function NamedCredentials({
       <button className="btn btn-brand" disabled={!canManage || encryptionReady === false} title={!canManage ? 'Requires namedCredentials:manage permission' : encryptionReady === false ? 'Credential encryption is not configured on the server' : undefined} onClick={() => editCredential()}><Plus size={14} />{embedded ? 'Configure Connection' : 'New Named Credential'}</button>
     </div>
     {!embedded && <div className="record-type-create">
-      <input className="form-control" type="search" aria-label="Search Named Credentials" placeholder="Search credentials…" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <input className="form-control" type="search" aria-label="Search Named Credentials" placeholder="Search credentials…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} />
     </div>}
     {error && <div className="records-message" role="alert">{error}</div>}
     {!canManage && <div className="info-callout" role="alert">This account cannot edit connector configuration. Ask an administrator for connectorApps:edit.</div>}
@@ -158,7 +162,7 @@ export default function NamedCredentials({
     <div className="table-scroll">
       <table className="slds-table">
         <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th><th>Actions</th></tr></thead>
-        <tbody>{visibleCredentials.map((credential) => <tr key={credential.id}>
+        <tbody>{pagedCredentials.map((credential) => <tr key={credential.id}>
           <td><button className="btn btn-link" onClick={() => editCredential(credential, true)}>{credential.label}</button></td>
           <td>{credential.name}</td>
           <td>{credential.protocol}</td>
@@ -177,6 +181,15 @@ export default function NamedCredentials({
         </tr>)}</tbody>
       </table>
     </div>
+    {!embedded && <div className="section-toolbar" style={{marginTop:14}}>
+      <span>{visibleCredentials.length} credentials · Page {currentPage + 1} of {totalPages}</span>
+      <div className="toolbar-actions">
+        <button className="btn btn-small" disabled={currentPage === 0} onClick={() => setPage(0)}>First</button>
+        <button className="btn btn-small" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button>
+        <button className="btn btn-small" disabled={currentPage + 1 >= totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
+        <button className="btn btn-small" disabled={currentPage + 1 >= totalPages} onClick={() => setPage(totalPages - 1)}>Last</button>
+      </div>
+    </div>}
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
