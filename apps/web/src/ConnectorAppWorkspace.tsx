@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import NamedCredentials from './NamedCredentials';
 import type { NamedCredentialMetadata } from './metadata';
 
-export type ConnectorApp = { id: string; name: string; credentialName: string; source: string };
+export type ConnectorApp = { id: string; name: string; credentialName: string; source: string; filterField?: string };
 export type CommunicationRow = { Id: string; [key: string]: unknown };
 export type CommunicationPage = { records: CommunicationRow[]; total: number };
 
@@ -20,7 +20,7 @@ export default function ConnectorAppWorkspace({
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{ connected: boolean; status?: number; message: string }>;
-  loadHistory: (source: string, offset: number, search: string) => Promise<CommunicationPage>;
+  loadHistory: (field: string, source: string, offset: number, search: string) => Promise<CommunicationPage>;
   onOpenRecord: (id: string) => void;
 }) {
   const [section, setSection] = useState<'credentials' | 'history'>('credentials');
@@ -34,13 +34,13 @@ export default function ConnectorAppWorkspace({
     if (section !== 'history') return;
     let active = true;
     setLoading(true); setError('');
-    void loadHistory(app.source, page * 50, search).then((result) => {
+    void loadHistory(app.filterField ?? 'Source__c', app.source, page * 50, search).then((result) => {
       if (active) setData(result);
     }).catch((reason: unknown) => {
       if (active) { setData({records:[], total:0}); setError(reason instanceof Error ? reason.message : 'Unable to load communication records'); }
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [app.source, page, search, section, loadHistory]);
+  }, [app.source, app.filterField, page, search, section, loadHistory]);
   const matched = credentials.filter((item) => item.name.toUpperCase() === app.credentialName.toUpperCase());
   const columns = [
     ['CreatedDate', 'Date'], ['Communication_Mode__c', 'Mode'], ['Direction__c', 'Direction'],
