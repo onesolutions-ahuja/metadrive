@@ -26,7 +26,7 @@ jobs:
       - name: Build web and server
         env:
           GITHUB_PAGES: 'true'
-          VITE_API_BASE_URL: https://oneengine-6gas.onrender.com/api
+          VITE_API_BASE_URL: https://metadrive.onrender.com/api
         run: npm run build
       - name: Validate Pages UI navigation, branding and layout artifact
         run: node scripts/verify-pages-release.mjs
