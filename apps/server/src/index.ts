@@ -14876,7 +14876,7 @@ function validateFlow(
       const fieldName = typeof condition.field === 'string' ? condition.field : '';
       const resourceReference = /^\{!?([A-Za-z_$][A-Za-z0-9_.$]*)\}$/.exec(fieldName);
       if (!fieldName) errors.push(`A condition on "${elementLabel}" is missing its field.`);
-      else if (!resourceReference && object && !object.fields.some((field) => field.apiName === fieldName)) errors.push(`Field "${fieldName}" on "${elementLabel}" does not exist on "${object.apiName}".`);
+      else if (!resourceReference && fieldName !== 'Id' && object && !object.fields.some((field) => field.apiName === fieldName)) errors.push(`Field "${fieldName}" on "${elementLabel}" does not exist on "${object.apiName}".`);
       const operator = String(condition.operator ?? 'Equals');
       if (!['Equals', 'Not Equals', 'Not Equal To', 'Is Null', 'Is Not Null', 'Greater Than', 'Less Than', 'Contains', 'Starts With'].includes(operator)) {
         errors.push(`Condition operator "${operator}" on "${elementLabel}" is not supported.`);

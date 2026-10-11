@@ -1518,6 +1518,10 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       openSetupWorkspace('company-settings');
       return;
     }
+    if (item === 'Named Devices') {
+      navigateRoute({ kind: 'record-list', objectApiName: 'NamedDevice__c' });
+      return;
+    }
     if (item === 'Named Credentials') {
       openSetupWorkspace('named-credentials');
       return;
@@ -2242,7 +2246,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     const hasUnsavedChanges = savedSnapshot !== JSON.stringify(selectedFlow);
     if (hasUnsavedChanges) notify('Running the most recently saved version; unsaved changes are not included.');
     const inputResources = selectedFlow.resources.filter((resource) => resource.availableForInput);
-    if (inputResources.length) {
+    if (inputResources.length && Object.keys(inputs).length === 0) {
       const defaultInputs = Object.fromEntries(inputResources.map((resource) => [resource.name, resource.value === undefined
         ? ''
         : typeof resource.value === 'string' ? resource.value : JSON.stringify(resource.value)]));
@@ -3036,12 +3040,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} onNavigate={navigateRoute} />}
           {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} reports={reports}
-            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
+            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} reports={reports}
-            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
+            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
@@ -3797,7 +3801,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow
+  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -3807,24 +3811,51 @@ function MetadataBoundPageComponent({
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  disableActions?: boolean;
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
+  const cartObjectApiName = String(properties.cartObjectApiName ?? '');
+  const [sessionId, setSessionId] = useState(() => {
+    const key = 'metadrive-page-session:' + component.id;
+    try {
+      let value = window.sessionStorage.getItem(key);
+      if (!value) {
+        value = crypto.randomUUID();
+        window.sessionStorage.setItem(key, value);
+      }
+      return value;
+    } catch {
+      return crypto.randomUUID();
+    }
+  });
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [cartRecords, setCartRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const initializedSessions = useRef<Set<string>>(new Set());
   useEffect(() => {
     let active = true;
-    setRecords([]); setDataError('');
-    if (!objectApiName) return () => { active = false; };
+    setRecords([]); setCartRecords([]); setDataError('');
+    const tasks: Array<Promise<Record<string, unknown>[]>> = [
+      objectApiName ? loadFlowScreenRecords(objectApiName) : Promise.resolve([]),
+      cartObjectApiName ? apiRequest<{ records: Record<string, unknown>[] }>(
+        '/records/' + encodeURIComponent(cartObjectApiName)
+        + '?filterField=' + encodeURIComponent(String(properties.cartSessionField ?? 'Session__c'))
+        + '&filterValue=' + encodeURIComponent(sessionId)
+        + '&limit=200'
+      ).then((response) => response.records) : Promise.resolve([])
+    ];
     setDataLoading(true);
-    void loadFlowScreenRecords(objectApiName).then((items) => {
-      if (active) setRecords(items);
+    void Promise.all(tasks).then(([products, basket]) => {
+      if (active) { setRecords(products); setCartRecords(basket); }
     }).catch((error: unknown) => {
-      if (active) setDataError(error instanceof Error ? error.message : 'Unable to read records');
+      if (active) setDataError(error instanceof Error ? error.message : 'Unable to load page records');
     }).finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
-  }, [objectApiName]);
+  }, [objectApiName, cartObjectApiName, sessionId, revision]);
   const matchFilters = (record: Record<string, unknown>) => {
     const filters = Array.isArray(properties.filters) ? properties.filters : [];
     return filters.every((item) => {
@@ -3855,11 +3886,96 @@ function MetadataBoundPageComponent({
   }));
   const categories = [...new Set(mappedProducts.map((item) => item.categoryId).filter(Boolean))]
     .map((id) => ({ id, name: id, icon: '🍽️' }));
+  const cartSessionField = String(properties.cartSessionField ?? 'Session__c');
+  const cartProductField = String(properties.cartProductField ?? 'Product__c');
+  const cartQuantityField = String(properties.cartQuantityField ?? 'Quantity__c');
+  const cartPriceField = String(properties.cartPriceField ?? 'Unit_Price__c');
+  const cartLines = cartRecords.filter((record) => String(record[cartSessionField] ?? '') === sessionId)
+    .map((record) => {
+      const product = mappedProducts.find((item) => item.id === String(record[cartProductField] ?? ''));
+      return {
+        id: String(record.Id ?? ''), productId: String(record[cartProductField] ?? ''),
+        name: String(record.Name ?? product?.name ?? 'Product'),
+        quantity: Number(record[cartQuantityField] ?? 0),
+        unitPrice: Number(record[cartPriceField] ?? 0),
+        image: product?.image ?? '', emoji: '🍽️'
+      };
+    });
+  const rawActions = properties.actionFlows;
+  const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
+    ? rawActions as Record<string, unknown> : {};
+  const resolveInput = (source: unknown, eventPayload: Record<string, unknown>): unknown => {
+    if (source === '$session') return sessionId;
+    if (source === '$event') return eventPayload;
+    if (typeof source === 'string' && source.startsWith('$event.')) {
+      return source.slice(7).split('.').reduce<unknown>((current, key) =>
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+    }
+    return source;
+  };
+  const onAction = async (action: { event: string; value?: unknown }) => {
+    if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test checkout.');
+    const config = actionFlows[action.event];
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new Error('No Flow is configured for the "' + action.event + '" kiosk action.');
+    }
+    const binding = config as Record<string, unknown>;
+    const flowApiName = String(binding.flowApiName ?? '');
+    const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
+    if (!selected || selected.status !== 'Active') {
+      throw new Error('Choose an active Flow for the "' + action.event + '" action in Page Builder.');
+    }
+    const payload = action.value && typeof action.value === 'object' && !Array.isArray(action.value)
+      ? action.value as Record<string, unknown> : { value: action.value };
+    const inputs = Object.fromEntries(Object.entries(
+      binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs)
+        ? binding.inputs as Record<string, unknown> : {}
+    ).map(([key, source]) => [key, resolveInput(source, payload)]));
+    setActionError('');
+    if (selected.flowType === 'Screen Flow') {
+      onLaunchFlow(flowApiName, inputs);
+      return { interviewStarted: true };
+    }
+    if (selected.flowType !== 'Autolaunched Flow') {
+      throw new Error('Kiosk action Flow must be Screen or Autolaunched.');
+    }
+    try {
+      const response = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string }>(
+        '/flows/' + encodeURIComponent(flowApiName) + '/execute', {
+          method: 'POST', body: JSON.stringify(inputs)
+        });
+      if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
+      if (binding.resetSessionOnSuccess === true) {
+        const key = 'metadrive-page-session:' + component.id;
+        const newSession = crypto.randomUUID();
+        try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
+        setSessionId(newSession);
+      }
+      setRevision((value) => value + 1);
+      return {
+        ...response,
+        completed: typeof binding.successOutput === 'string'
+          && response.outputs?.[binding.successOutput] === binding.successValue
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Flow action failed';
+      setActionError(message);
+      throw error;
+    }
+  };
+  useEffect(() => {
+    if (disableActions || !actionFlows.start || initializedSessions.current.has(sessionId)) return;
+    initializedSessions.current.add(sessionId);
+    void onAction({ event: 'start', value: {} }).catch(() => {
+      initializedSessions.current.delete(sessionId);
+    });
+  }, [sessionId, disableActions]);
   return <div>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...properties, label: component.label, properties, objects, reports, flows: availableFlows,
-      device: formFactor, onNavigate, onLaunchFlow, loading: dataLoading,
+      device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
+      loading: dataLoading, cartLines, sessionId,
       ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
     }} />
   </div>;
@@ -6846,6 +6962,10 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
   const [advancedError, setAdvancedError] = useState('');
   const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
   const selectedObject = objects.find((candidate) => candidate.apiName === objectApiName);
+  const cartObjectApiName = String(properties.cartObjectApiName ?? '');
+  const cartObject = objects.find((candidate) => candidate.apiName === cartObjectApiName);
+  const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
+    ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
   const update = (key: string, value: unknown) => onChange({ ...properties, [key]: value });
   const listProperty = (key: string) => {
@@ -6853,7 +6973,8 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     return Array.isArray(value) ? value : [];
   };
   const sourceKeys = new Set(['libraryComponentId', 'objectApiName', 'targetObject', 'flowApiName', 'filters',
-    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName', 'checkoutFlowApiName']);
+    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName', 'checkoutFlowApiName',
+    'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows']);
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
@@ -6874,6 +6995,27 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     {['nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName']
       .filter((key) => key in properties || (objectApiName && ['nameField', 'priceField', 'imageField', 'categoryField'].includes(key)))
       .map((key) => fieldPicker(key, properties[key]))}
+    {actionFlows && <>
+      <div className="properties-section-title">Temporary Cart Object</div>
+      <label className="form-label">Cart line object
+        <select className="form-control" value={cartObjectApiName}
+          onChange={(event) => update('cartObjectApiName', event.target.value)}>
+          <option value="">Select cart object…</option>
+          {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+        </select>
+      </label>
+      {([
+        ['cartSessionField', 'Session field'], ['cartProductField', 'Product reference'],
+        ['cartQuantityField', 'Quantity field'], ['cartPriceField', 'Unit price field']
+      ] as const).map(([key, label]) => <label className="form-label" key={key}>{label}
+        <select className="form-control" value={String(properties[key] ?? '')}
+          onChange={(event) => update(key, event.target.value)}>
+          <option value="">Select field…</option>
+          {(cartObject?.fields ?? []).map((field) =>
+            <option value={field.apiName} key={field.apiName}>{field.label}</option>)}
+        </select>
+      </label>)}
+    </>}
     <div className="properties-section-title">Record Filters</div>
     {listProperty('filters').map((raw, index) => {
       const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
@@ -6900,13 +7042,39 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
-    <label className="form-label">Flow API Name
+    {actionFlows && (['start', 'add', 'quantity', 'remove', 'reset', 'checkout'] as const).map((eventName) => {
+      const binding = actionFlows[eventName] && typeof actionFlows[eventName] === 'object'
+        ? actionFlows[eventName] as Record<string, unknown> : {};
+      return <label className="form-label" key={eventName}>{eventName.charAt(0).toUpperCase() + eventName.slice(1)} Flow
+        <select className="form-control" value={String(binding.flowApiName ?? '')} onChange={(event) => {
+          const next = { ...actionFlows };
+          if (!event.target.value) delete next[eventName];
+          else next[eventName] = {
+            flowApiName: event.target.value,
+            inputs: binding.inputs ?? (eventName === 'checkout'
+              ? { SessionId: '$session', OrderType: '$event.orderType' }
+              : eventName === 'add'
+                ? { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' }
+                : eventName === 'quantity'
+                  ? { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' }
+                  : eventName === 'remove'
+                    ? { SessionId: '$session', LineId: '$event.lineId' }
+                    : { SessionId: '$session' })
+          };
+          update('actionFlows', next);
+        }}>
+          <option value="">Not configured</option>
+          {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+        </select>
+      </label>;
+    })}
+    {!actionFlows && <label className="form-label">Flow API Name
       <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
         onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
         <option value="">No flow selected</option>
         {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
       </select>
-    </label>
+    </label>}
     <div className="properties-section-title">Appearance and Settings</div>
     {Object.entries(properties).filter(([key]) => !sourceKeys.has(key)).map(([key, value]) => {
       if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
@@ -7826,6 +7994,12 @@ function PageBuilder({
                     ? <div className="component-demo-activity"><strong>Recent activity</strong><span>Call with Jordan Lee <small>Today · 10:30 AM</small></span><span>Follow-up email sent <small>Yesterday</small></span></div>
                     : component.type === 'Chatter' && libraryPreview
                       ? <div className="component-demo-activity"><strong>Latest update</strong><span>Alex Morgan shared a project update.</span><small>2 comments · 4 likes</small></div>
+                  : customDefinition && !libraryPreview && typeof component.properties.objectApiName === 'string'
+                    && component.properties.objectApiName
+                    ? <MetadataBoundPageComponent definition={customDefinition} component={component}
+                        objects={objects} reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
+                        availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
+                        onNavigate={() => {}} onLaunchFlow={() => {}} disableActions />
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
