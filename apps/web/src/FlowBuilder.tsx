@@ -1060,6 +1060,14 @@ export default function FlowBuilder({
         <span>{totalFlowCount} flow{totalFlowCount === 1 ? '' : 's'} · Page {safeFlowPage} of {flowPageCount}</span>
         <button className="btn" disabled={safeFlowPage === 1} onClick={() => setExistingFlowPage(1)}>First</button>
         <button className="btn" disabled={safeFlowPage === 1} onClick={() => setExistingFlowPage(safeFlowPage - 1)}>Previous</button>
+        {Array.from({ length: Math.min(5, flowPageCount) }, (_, index) => {
+          const firstPage = Math.max(1, Math.min(flowPageCount - 4, safeFlowPage - 2));
+          const pageNumber = firstPage + index;
+          return <button key={pageNumber} type="button" aria-label={`Page ${pageNumber}`}
+            aria-current={safeFlowPage === pageNumber ? 'page' : undefined}
+            className={safeFlowPage === pageNumber ? 'btn active' : 'btn'}
+            onClick={() => { setExistingFlowPage(pageNumber); setRemoteFlowResults(null); }}>{pageNumber}</button>;
+        })}
         <button className="btn" disabled={safeFlowPage === flowPageCount} onClick={() => setExistingFlowPage(safeFlowPage + 1)}>Next</button>
         <button className="btn" disabled={safeFlowPage === flowPageCount} onClick={() => setExistingFlowPage(flowPageCount)}>Last</button>
       </nav>
