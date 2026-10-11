@@ -29,4 +29,7 @@ jobs:
       - name: Verify emitted server entrypoint
         run: test -f apps/server/dist/index.js
       - name: Test server workflows and automation policy
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
         run: npm run test --workspace apps/server
