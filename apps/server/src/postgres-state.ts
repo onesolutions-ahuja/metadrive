@@ -1,6 +1,11 @@
 import pg from 'pg';
+import { readRelationalState, writeRelationalState, type RelationalSnapshot } from './relational-runtime.mjs';
 
 const { Pool } = pg;
+// Production remains JSONB until explicit, verified relational cutover.
+export const persistenceMode = process.env.METADRIVE_PERSISTENCE_MODE ?? 'jsonb';
+if (!['jsonb', 'relational'].includes(persistenceMode)) throw new Error('Invalid METADRIVE_PERSISTENCE_MODE');
+let relationalSnapshot: RelationalSnapshot | null = null;
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error('DATABASE_URL is required for persistent UNEEngine state');
 
@@ -19,6 +24,11 @@ const pool = new Pool({
 });
 
 export async function readPersistedState(): Promise<unknown | null> {
+  if (persistenceMode === 'relational') {
+    // Never silently fall back to a stale JSONB blob or empty seed.
+    relationalSnapshot = await readRelationalState(pool as unknown as Parameters<typeof readRelationalState>[0]);
+    return relationalSnapshot.state;
+  }
   await pool.query(`CREATE TABLE IF NOT EXISTS metadrive_platform_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     payload JSONB NOT NULL,
@@ -46,7 +56,14 @@ async function drainStateWrites(): Promise<void> {
     newestPayload = null;
     const batch = waiting.splice(0);
     try {
-      await pool.query(upsertStateSql, [payload]);
+      if (persistenceMode === 'relational') {
+        if (!relationalSnapshot) throw new Error('Relational database must be verified before first write');
+        relationalSnapshot = await writeRelationalState(
+          pool as unknown as Parameters<typeof writeRelationalState>[0], JSON.parse(payload), relationalSnapshot
+        );
+      } else {
+        await pool.query(upsertStateSql, [payload]);
+      }
       for (const waiter of batch) waiter.resolve();
     } catch (error) {
       writeFailure = error;
