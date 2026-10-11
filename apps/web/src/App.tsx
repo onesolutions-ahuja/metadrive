@@ -3289,7 +3289,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -7358,7 +7358,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
 }
 
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify
+  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow
 }: {
   page: LightningPageMetadata;
   pages: LightningPageMetadata[];
@@ -7376,6 +7376,7 @@ function PageBuilder({
   onDeleteApp: (apiName: string) => Promise<void>;
   onExit: () => void;
   onNotify: (message: string) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
 }) {
   const [builderAppApiName, setBuilderAppApiName] = useState('');
   const pageTemplates: Array<{ id: LightningPageTemplate; label: string; regions: Array<'header' | 'main' | 'sidebar'> }> = [
@@ -8253,7 +8254,7 @@ function PageBuilder({
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
                         objects={objects} reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
-                        onNavigate={() => {}} onLaunchFlow={() => {}} disableActions={!interactivePreview} />
+                        onNavigate={() => {}} onLaunchFlow={(flowApiName, inputs) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
