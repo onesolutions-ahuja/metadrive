@@ -28,6 +28,7 @@ const blankCredential = (): CredentialDraft => ({
 });
 
 const providerPresets: Array<{ label: string; name: string; baseUrl: string; authType: CredentialDraft['authType']; headerName?: string }> = [
+  { label: 'WhatsApp', name: 'WHATSAPP', baseUrl: 'https://graph.facebook.com', authType: 'Bearer' },
   { label: 'SMSGate', name: 'SMSGATE', baseUrl: 'https://api.sms-gate.app', authType: 'Basic' },
   { label: 'SumUp', name: 'SUMUP', baseUrl: 'https://api.sumup.com', authType: 'Bearer' },
   { label: 'Brevo', name: 'BREVO', baseUrl: 'https://api.brevo.com/v3', authType: 'API Key', headerName: 'api-key' },
@@ -39,6 +40,7 @@ export default function NamedCredentials({
   credentials,
   canManage,
   encryptionReady,
+  providerName,
   onSave,
   onDelete,
   onRotate,
@@ -47,6 +49,7 @@ export default function NamedCredentials({
   credentials: NamedCredentialMetadata[];
   canManage: boolean;
   encryptionReady: boolean | null;
+  providerName?: string;
   onSave: (credential: CredentialInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
@@ -78,7 +81,7 @@ export default function NamedCredentials({
       headerName: credential.headerName,
       username: '',
       secret: ''
-    } : blankCredential());
+    } : providerName ? { ...blankCredential(), ...providerPresets.find((item) => item.name === providerName), name: providerName } : blankCredential());
   };
 
   const submit = async () => {
@@ -177,7 +180,7 @@ export default function NamedCredentials({
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
         <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
         {!draft.id && !viewing && <label className="form-label">Provider template
-          <select className="form-control" defaultValue="" onChange={(event) => {
+          <select className="form-control" defaultValue={providerName || ''} disabled={Boolean(providerName)} onChange={(event) => {
             const preset = providerPresets.find((item) => item.name === event.target.value);
             if (preset) updateDraft({ ...blankCredential(), ...preset, protocol: 'HTTPS' });
           }}>
@@ -186,7 +189,7 @@ export default function NamedCredentials({
           </select>
           <small>Optional defaults only. Verify provider-specific API URL and enter your own secret before saving.</small>
         </label>}
-        <label className="form-label">API Name<input className="form-control" autoComplete="off" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" /></label>
+        <label className="form-label">API Name<input className="form-control" autoComplete="off" disabled={Boolean(providerName)} value={draft.name} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" /></label>
         <label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" /></label>
         <label className="form-label">Protocol<select className="form-control" value={draft.protocol} onChange={(event) => {
           const protocol = event.target.value as NamedCredentialMetadata['protocol'];
