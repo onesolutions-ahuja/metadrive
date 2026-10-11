@@ -1,0 +1,91 @@
+name: Validate kiosk against isolated Aiven restore
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/server/scripts/bootstrap-kiosk.mjs'
+      - 'apps/server/scripts/verify-kiosk-contract.mjs'
+      - 'apps/web/src/custom-components/KioskOrderingExperience/**'
+      - 'apps/web/src/page-presets/kiosk*.json'
+      - '.github/workflows/kiosk-isolated-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kiosk-restored-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node apps/server/scripts/verify-kiosk-contract.mjs
+      - name: Read-only Aiven backup
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          test -n "${DATABASE_URL:-}" || { echo "::error::Missing Aiven secret"; exit 1; }
+          node --input-type=module <<'NODE'
+          import {writeFileSync} from 'node:fs';
+          const u=new URL(process.env.DATABASE_URL);
+          if(!u.hostname.endsWith('.aivencloud.com')) throw Error('Unexpected source host');
+          const kv={PGHOST:u.hostname,PGPORT:u.port||'5432',PGUSER:decodeURIComponent(u.username),PGPASSWORD:decodeURIComponent(u.password),PGDATABASE:decodeURIComponent(u.pathname.slice(1)),PGSSLMODE:'require'};
+          writeFileSync(process.env.RUNNER_TEMP+'/source.env',Object.entries(kv).map(([k,v])=>k+'='+v).join('\n')+'\n',{mode:0o600});
+          NODE
+          docker run --rm --network host --env-file "${RUNNER_TEMP}/source.env" -v "${RUNNER_TEMP}:/private" --entrypoint pg_dump postgres:18 --format=custom --no-owner --no-acl --file=/private/kiosk.dump
+          test -s "${RUNNER_TEMP}/kiosk.dump"
+      - name: Restore only to isolated local PostgreSQL
+        run: |
+          PGPASSWORD=postgres createdb -h 127.0.0.1 -U postgres kiosk_validation
+          docker run --rm --network host -e PGPASSWORD=postgres -v "${RUNNER_TEMP}:/private" --entrypoint pg_restore postgres:18 -h 127.0.0.1 -U postgres -d kiosk_validation --no-owner --no-acl --exit-on-error /private/kiosk.dump
+      - name: Verify two idempotent installs on restored copy
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/kiosk_validation
+          PGSSLMODE: disable
+          METADRIVE_PERSISTENCE_MODE: relational
+          METADRIVE_KIOSK_BOOTSTRAP: 'true'
+        run: |
+          export METADRIVE_KIOSK_TEST_PASSWORD="$(openssl rand -hex 24)"
+          node apps/server/scripts/bootstrap-kiosk.mjs
+          node apps/server/scripts/bootstrap-kiosk.mjs
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          import assert from 'node:assert/strict';
+          import {readRelationalState} from './apps/server/src/relational-runtime.mjs';
+          const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false});
+          try {
+            const snapshot=await readRelationalState(pool);
+            const admin=snapshot.state.users.find(u=>u.email.toLowerCase()==='support@unesolutions.co.uk');
+            assert(admin,'Original administrator not found');
+            const tenant=snapshot.state.tenants[admin.tenantId];
+            const objects=new Set(tenant.objects.map(o=>o.apiName));
+            for(const name of ['Product__c','Cart__c','CartLine__c','NamedDevice__c','PaymentTransaction__c']) assert(objects.has(name),name);
+            const flows=new Map(tenant.flows.map(f=>[f.apiName,f]));
+            for(const name of ['KIOSK_SESSION_START','KIOSK_CART_ADD','KIOSK_CART_QUANTITY','KIOSK_CART_REMOVE','KIOSK_CART_RESET']) assert.equal(flows.get(name)?.status,'Active');
+            assert.equal(flows.get('KIOSK_CHECKOUT')?.status,'Draft','Never enable payment without a configured device');
+            const page=tenant.pages.find(p=>p.apiName==='UNE_KIOSK');
+            assert.equal(page?.components?.[0]?.properties?.objectApiName,'Product__c');
+            assert.equal(page?.components?.[0]?.properties?.cartObjectApiName,'CartLine__c');
+            assert(snapshot.state.libraryComponents.some(c=>c.apiName==='KioskOrderingExperience'));
+            console.log('Idempotent kiosk install verified on restored snapshot, no production writes.');
+          } finally {await pool.end();}
+          NODE
+      - name: Delete private database backup
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/source.env" "${RUNNER_TEMP}/kiosk.dump"
