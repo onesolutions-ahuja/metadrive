@@ -127,7 +127,7 @@ function displayValue(value: unknown): string {
 }
 
 export default function FlowBuilder({
-  landing = false, flow, flows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
+  landing = false, flow, flows, onListFlows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
   onAdd, onUpdateLabel, onUpdateConfig, onRemove, onValidate, onSave, onActivate, onRun, onDebug, onNotify,
   onSaveNamedCredential, onDeleteNamedCredential, onRotateNamedCredential, onSaveEmailAlert, onDeleteEmailAlert, onSavePlatformEvent, onDeletePlatformEvent
