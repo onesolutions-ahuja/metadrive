@@ -30,12 +30,14 @@ export function conversationKeyForIncoming(
   existingMessages: Array<Record<string, unknown>>,
   fromNumber: string,
   nowMs: number,
-  idleMinutes: number
+  idleMinutes: number,
+  context = ''
 ): string {
   let latest: Record<string, unknown> | undefined;
   let lastAt = -Infinity;
   for (const item of existingMessages) {
     if (item.Direction__c !== 'Incoming' || item.From_Number__c !== fromNumber) continue;
+    if (context && item.Conversation_Context__c !== context) continue;
     const at = typeof item.CreatedDate === 'string' ? Date.parse(item.CreatedDate) : NaN;
     if (Number.isFinite(at) && at <= nowMs && at > lastAt) {
       latest = item;
@@ -60,4 +62,22 @@ export function shouldTriggerInboundMessage(timestampSeconds: unknown, nowMs: nu
   const ageMs = nowMs - eventAt;
   return Number.isFinite(eventAt) && Number.isFinite(nowMs)
     && ageMs >= -60_000 && ageMs < idleMinutes * 60_000;
+}
+
+/** Session selection is metadata-driven; retain the last active customer context. */
+export function activeConversationContext(
+  records: Array<Record<string, unknown>>, fromNumber: string, nowMs: number, idleMinutes: number
+): string {
+  let lastAt = -Infinity;
+  let context = '';
+  for (const record of records) {
+    if (record.Direction__c !== 'Incoming' || record.From_Number__c !== fromNumber) continue;
+    if (typeof record.Conversation_Context__c !== 'string' || !record.Conversation_Context__c.trim()) continue;
+    const at = typeof record.CreatedDate === 'string' ? Date.parse(record.CreatedDate) : NaN;
+    if (Number.isFinite(at) && at <= nowMs && nowMs - at < idleMinutes * 60_000 && at > lastAt) {
+      lastAt = at;
+      context = record.Conversation_Context__c;
+    }
+  }
+  return context;
 }

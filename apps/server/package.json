@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "npm run build --prefix ../web && tsc -p tsconfig.json",
-    "test": "tsx --test --test-concurrency=1 test/automation-policy.test.ts test/communication-unification.test.ts test/outbound-callout-policy.test.ts test/connector-test.test.ts test/dashboard-access.test.ts test/flow-collection.test.ts test/platform-events.test.ts test/rbac-sharing.smoke.test.ts test/report-builder.test.ts",
+    "test": "tsx --test --test-concurrency=1 test/automation-policy.test.ts test/communication-unification.test.ts test/whatsapp-context.smoke.test.ts test/outbound-callout-policy.test.ts test/connector-test.test.ts test/dashboard-access.test.ts test/flow-collection.test.ts test/platform-events.test.ts test/rbac-sharing.smoke.test.ts test/report-builder.test.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {
