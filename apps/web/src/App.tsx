@@ -1134,6 +1134,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [approvalBusyId, setApprovalBusyId] = useState('');
   const [approvalProcesses, setApprovalProcesses] = useState<ApprovalProcessMetadata[]>([]);
   const [canManageApprovalProcesses, setCanManageApprovalProcesses] = useState(false);
+  const [canManageUserIdentities, setCanManageUserIdentities] = useState(false);
   const [namedCredentials, setNamedCredentials] = useState<NamedCredentialMetadata[]>([]);
   const [canManageNamedCredentials, setCanManageNamedCredentials] = useState(false);
   const [connectorRights, setConnectorRights] = useState({
@@ -1365,6 +1366,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         setDashboardUserId(dashboardPayload.userId);
         setDashboardRunningUserIds(dashboardPayload.runningUserIds);
         setCurrentProfileId(sessionPayload.user.profileId);
+        setCanManageUserIdentities(sessionPayload.user.permissions.includes('security:manage'));
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
         setCanManagePlatformLicences(sessionPayload.user.permissions.includes('licence:manage'));
@@ -3204,7 +3206,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         )}
 
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
-          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId}
+          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} onNavigate={navigateRoute} />}
           {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
@@ -3474,6 +3476,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             })}
             onSave={saveAccessControl}
             onNotify={notify}
+            onOpenUserRecords={() => navigateRoute({kind:'record-list',objectApiName:'User'})}
           />}
         </section>
       </main>
@@ -4297,6 +4300,8 @@ function RecordWorkspace({
   reports,
   metadataLoaded,
   profileId,
+  canManageUserIdentities,
+  userRoles,
   fieldAccess,
   recordTypeAccess,
   libraryComponents,
@@ -4307,6 +4312,8 @@ function RecordWorkspace({
   reports: ReportMetadata[];
   metadataLoaded: boolean;
   profileId: string;
+  canManageUserIdentities: boolean;
+  userRoles: Array<{id:string;name:string}>;
   fieldAccess: Record<string, { read: boolean; edit: boolean }>;
   recordTypeAccess: Record<string, boolean>;
   libraryComponents: LibraryComponentMetadata[];
@@ -4616,11 +4623,11 @@ function RecordWorkspace({
   const defaultRecordTypeId = activeRecordTypes.find((item) => item.isDefault)?.id ?? activeRecordTypes[0]?.id ?? '';
   const selectedRecordTypeId = String(formValues.RecordTypeId ?? defaultRecordTypeId);
   const selectedLayout = object ? pageLayoutForRecord(object, selectedRecordTypeId, profileId) : undefined;
-  const canCreate = object?.apiName !== 'User' && object?.listViewButtons?.includes('New') !== false
+  const canCreate = (object?.apiName !== 'User' || canManageUserIdentities) && object?.listViewButtons?.includes('New') !== false
     && object?.actions?.some((action) => action.label === 'New' && action.enabled) !== false
     && (!selectedLayout || selectedLayout.actions.includes('New'));
-  const canEdit = object?.apiName !== 'User' && object?.actions?.some((action) => action.label === 'Edit' && action.enabled) !== false;
-  const canDelete = object?.apiName !== 'User' && object?.actions?.some((action) => action.label === 'Delete' && action.enabled) !== false;
+  const canEdit = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Edit' && action.enabled) !== false;
+  const canDelete = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Delete' && action.enabled) !== false;
   const canMassDelete = canDelete && object?.listViewButtons?.includes('Mass Delete') === true;
   const ownerField = object?.fields.find((field) => field.apiName === 'OwnerId' && field.relationship?.targetObject === 'User');
   const canChangeOwner = Boolean(ownerField && canEdit && fieldAccess[`${object?.apiName}.OwnerId`]?.edit && object?.listViewButtons?.includes('Change Owner'));
@@ -4630,7 +4637,7 @@ function RecordWorkspace({
     && object.listViewButtons?.includes('Add to Campaign') === true;
   const openCreateForm = () => {
     setEditingId(null);
-    setFormValues({ RecordTypeId: defaultRecordTypeId });
+    setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '' } : { RecordTypeId: defaultRecordTypeId });
     setFormError('');
     setFormOpen(true);
   };
@@ -4658,6 +4665,15 @@ function RecordWorkspace({
       const writableValues = Object.fromEntries(Object.entries(formValues).filter(([apiName]) =>
         apiName !== 'OwnerId' && (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit)
       ));
+      if (object.apiName === 'User') {
+        if (!editingId) {
+          if (typeof formValues.Password !== 'string' || formValues.Password.length < 12) throw new Error('Set an initial password of at least 12 characters.');
+          writableValues.Password = formValues.Password;
+        }
+        // The identity API accepts only these explicit fields. No arbitrary metadata fields or password edits.
+        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'UserRoleId', 'Password']);
+        Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
+      }
       const response = await apiRequest<{ record: RecordData }>(path, {
         method: editingId ? 'PUT' : 'POST',
         body: JSON.stringify(writableValues)
@@ -4691,7 +4707,7 @@ function RecordWorkspace({
   };
   const deleteCurrentRecord = async () => {
     if (!object) return;
-    if (route.kind !== 'record-detail' || !record || !window.confirm(`Delete ${String(record.Name ?? record.Id)}? This cannot be undone.`)) return;
+    if (route.kind !== 'record-detail' || !record || !window.confirm(object.apiName === 'User' ? `Deactivate ${String(record.Name ?? record.Id)} and revoke their sessions? Identity and audit records are retained.` : `Delete ${String(record.Name ?? record.Id)}? This cannot be undone.`)) return;
     setError('');
     try {
       await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, { method: 'DELETE' });
@@ -5108,7 +5124,7 @@ function RecordWorkspace({
           <div><div className="eyebrow">{object.label}</div><h1>{recordName}</h1><p>Record ID: <code>{record.Id}</code></p></div>
           <div className="record-detail-actions">
             {canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && <button className="btn btn-brand" onClick={() => openEditForm(record)}><Pencil size={14} />Edit</button>}
-            {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />Delete</button>}
+            {canDelete && (!recordLayout || recordLayout.actions.includes('Delete')) && <button className="btn btn-danger" onClick={() => void deleteCurrentRecord()}><Trash2 size={14} />{object.apiName === 'User' ? 'Deactivate' : 'Delete'}</button>}
             {(recordLayout?.customLinks ?? []).map((link) => <a key={link.id} className="btn" href={link.url.replace(/\{!Record\.([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, fieldName: string) => encodeURIComponent(String(record[fieldName] ?? '')))}
               target={link.openInNewWindow ? '_blank' : undefined} rel={link.openInNewWindow ? 'noopener noreferrer' : undefined}>{link.label}</a>)}
             {canEdit && (!recordLayout || recordLayout.actions.includes('Edit')) && (object.actions ?? []).filter((action) =>
@@ -5188,10 +5204,10 @@ function RecordWorkspace({
         {lookupError && <div className="records-message surface" role="alert">Some related record names could not be resolved: {lookupError}</div>}
       </>}
       {formOpen && <RecordFormDialog object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
-        fieldAccess={fieldAccess}
+        fieldAccess={fieldAccess} userRoles={userRoles}
         formValues={formValues} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
         actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
-        onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value }))}
+        onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
         onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />}
     </div>;
   }
@@ -5335,10 +5351,10 @@ function RecordWorkspace({
       </section>
     </div>}
     {formOpen && <RecordFormDialog object={object} objects={objects} activeRecordTypes={activeRecordTypes} selectedRecordTypeId={selectedRecordTypeId} profileId={profileId} selectedLayout={selectedLayout}
-      fieldAccess={fieldAccess}
+      fieldAccess={fieldAccess} userRoles={userRoles}
       formValues={formValues} lookupRecords={lookupRecords} formError={formError} saving={saving} editing={Boolean(editingId)}
       actionAllowed={!selectedLayout || selectedLayout.actions.includes(editingId ? 'Edit' : 'New')}
-      onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value }))}
+      onChange={(apiName, value) => setFormValues((current) => ({ ...current, [apiName]: value, ...(object.apiName === 'User' && apiName === 'Email' ? { Username: value } : {}) }))}
       onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />}
   </div>;
 }
@@ -5351,6 +5367,7 @@ function RecordFormDialog({
   profileId,
   selectedLayout,
   fieldAccess,
+  userRoles,
   formValues,
   lookupRecords,
   formError,
@@ -5368,6 +5385,7 @@ function RecordFormDialog({
   profileId: string;
   selectedLayout: PageLayoutMetadata | undefined;
   fieldAccess: Record<string, { read: boolean; edit: boolean }>;
+  userRoles: Array<{id:string;name:string}>;
   formValues: Record<string, unknown>;
   lookupRecords: Record<string, RecordData[]>;
   formError: string;
@@ -5536,6 +5554,10 @@ function RecordFormDialog({
         {helpText}
       </div>;
     }
+    if (object.apiName === 'User' && field.apiName === 'UserRoleId') return <label className="form-label" key={field.apiName}>User Role
+      <select className="form-control" value={value} required disabled={common.disabled} onChange={(event) => onChange('UserRoleId',event.target.value)}>
+        <option value="">Select role…</option>{userRoles.map((role) => <option key={role.id} value={role.name}>{role.name}</option>)}
+      </select></label>;
     if (dataType === 'picklist') return <label className="form-label" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
       <select className="form-control" {...common} value={value} onChange={(event) => changeFieldValue(field.apiName, event.target.value)}>
         <option value="" disabled={field.required}>{field.required ? 'Select a value…' : '— None —'}</option>
@@ -5651,6 +5673,11 @@ function RecordFormDialog({
           })}
           {unplacedRequiredFields.length > 0 && <section className="record-form-section"><h3>Required Fields</h3><div className="record-form-grid">{unplacedRequiredFields.map(renderField)}</div></section>}
         </> : <div className="record-form-grid">{visibleFields.map(renderField)}</div>}
+        {object.apiName === 'User' && !editing && <label className="form-label">Initial Password (12+ characters)
+          <input className="form-control" type="password" autoComplete="new-password" minLength={12} maxLength={256} required disabled={saving}
+            value={String(formValues.Password ?? '')} onChange={(event) => onChange('Password',event.target.value)} />
+          <small>Stored as a password hash. Never shown in records.</small>
+        </label>}
         {formError && <div className="records-message" role="alert">{formError}</div>}
         {!actionAllowed && <div className="records-message" role="alert">This action is not enabled for the selected page layout.</div>}
         <footer><button type="button" className="btn" onClick={onClose} disabled={saving}>Cancel</button><button type="submit" className="btn btn-brand" disabled={saving || !actionAllowed}>{saving ? 'Saving…' : 'Save'}</button></footer>
@@ -10100,6 +10127,7 @@ function Permissions({
   routeResourceApiName,
   routeResourceId,
   onRouteResourceChange,
+  onOpenUserRecords,
   onSave,
   onNotify
 }: {
@@ -10109,6 +10137,7 @@ function Permissions({
   routeResourceApiName?: string;
   routeResourceId?: string;
   onRouteResourceChange: (resourceApiName: string, resourceId?: string) => void;
+  onOpenUserRecords: () => void;
   onSave: (accessControl: AccessControlMetadata) => Promise<void>;
   onNotify: (message: string) => void;
 }) {
@@ -10678,7 +10707,7 @@ function Permissions({
           })}</tbody></table></div></details>)}
         </>}
         {tab === 'users' && <>
-          <div className="section-toolbar"><div><h2>User Assignments</h2><p>Direct permission-set and permission-set-group memberships for this tenant.</p></div></div>
+          <div className="section-toolbar"><div><h2>User Assignments</h2><p>Direct permission-set and permission-set-group memberships for this tenant.</p></div><button className="btn btn-brand" onClick={onOpenUserRecords}>Manage Users (CRUD)</button></div>
           {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label><h3 className="permission-section-heading">Permission Sets</h3><div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={user.permissionSetIds.includes(permissionSet.id)} onChange={() => patchUser(user.id, { permissionSetIds: toggleString(user.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div><h3 className="permission-section-heading">Permission Set Groups</h3><div className="permission-check-grid">{draft.permissionSetGroups.map((group) => <label className="checkbox-row" key={group.id}><input type="checkbox" checked={user.permissionSetGroupIds.includes(group.id)} onChange={() => patchUser(user.id, { permissionSetGroupIds: toggleString(user.permissionSetGroupIds, group.id) })} />{group.label}</label>)}</div></details>)}
         </>}
         {tab === 'profiles' && !selectedProfile && <div className="empty-state">Select a profile or create one to get started.</div>}
