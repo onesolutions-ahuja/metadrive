@@ -1417,12 +1417,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
-    const allowedGroups = setupNavigation.map((group) => ({
-      ...group,
-      items: group.items.filter((item) => canManagePlatformLicences || item !== 'Named Credentials')
-    }));
-    if (!query) return allowedGroups;
-    return allowedGroups
+    if (!query) return setupNavigation;
+    return setupNavigation
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => item.toLowerCase().includes(query)
@@ -1430,7 +1426,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             `${provider.name} ${provider.connectorKey}`.toLowerCase().includes(query))))
       }))
       .filter((group) => group.items.length);
-  }, [quickFind, connectorProviders, canManagePlatformLicences]);
+  }, [quickFind, connectorProviders]);
   const filteredConnectorProviders = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     return query
@@ -1546,7 +1542,6 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       return;
     }
     if (item === 'Named Credentials') {
-      if (!canManagePlatformLicences) { openSetupWorkspace('app-exchange'); return; }
       openSetupWorkspace('named-credentials');
       return;
     }
@@ -3043,6 +3038,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                           || (workspace === 'app-manager' && item === 'App Manager')
                           || (workspace === 'component-library' && item === 'Component Library')
                           || (workspace === 'app-exchange' && item === 'AppExchange')
+                          || (workspace === 'named-credentials' && item === 'Named Credentials')
                           || (workspace === 'connector-settings' && item === 'Une Connectors')
                           || (workspace === 'flow-interviews' && item === 'Paused and Waiting Interviews')
                           || (workspace === 'scheduled-flows' && item === 'Scheduled Flows')
@@ -3200,7 +3196,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             onDelete={deleteApprovalProcess}
             onNotify={notify}
           />}
-          {route.kind === 'setup' && workspace === 'named-credentials' && canManagePlatformLicences && <NamedCredentials
+          {route.kind === 'setup' && workspace === 'named-credentials' && <NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
             encryptionReady={namedCredentialsEncryptionReady}
