@@ -48,7 +48,7 @@ export default function KioskOrderingExperience(props) {
   };
   const checkout = async () => {
     const response = await emit('checkout', { orderType });
-    if (response && response.outputs && response.outputs.PaymentStatus === 'Paid') setScreen('done');
+    if (response && response.completed === true) setScreen('done');
   };
   const actions = p.actionFlows && typeof p.actionFlows === 'object' ? p.actionFlows : {};
   return <div className="une-kiosk-demo" style={{ '--une-kiosk-accent': p.accentColor || '#ffca26', '--une-kiosk-ink': p.inkColor || '#202124' }}>
