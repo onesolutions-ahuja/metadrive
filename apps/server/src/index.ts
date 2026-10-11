@@ -13009,7 +13009,7 @@ function scheduledPathTimestamp(
 function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract<FlowExecutionResult, { status: 'waiting' }>): FlowInterview {
   const createdAt = result.interviewStartTime;
   const tenantId = state.users.find(user => user.id === userId)?.tenantId;
-  const idleMinutes = (tenantId && tenantData(tenantId)?.automationSettings.conversationIdleMinutes)
+  const idleMinutes = (tenantId ? tenantData(tenantId)?.automationSettings.conversationIdleMinutes : undefined)
     ?? defaultAutomationSettings.conversationIdleMinutes;
   const conversationExpiry = typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
     ? new Date(Date.parse(createdAt) + idleMinutes * 60_000).toISOString()
