@@ -10,6 +10,7 @@ type CredentialInput = {
   baseUrl: string;
   authType: NamedCredentialMetadata['authType'];
   headerName?: string;
+  configuration?: Record<string, string>;
   username?: string;
   secret?: string;
 };
@@ -23,6 +24,7 @@ const blankCredential = (): CredentialDraft => ({
   baseUrl: '',
   authType: 'None',
   headerName: '',
+  configuration: {},
   username: '',
   secret: ''
 });
@@ -79,6 +81,7 @@ export default function NamedCredentials({
       baseUrl: credential.baseUrl,
       authType: credential.authType,
       headerName: credential.headerName,
+      configuration: credential.configuration ?? {},
       username: '',
       secret: ''
     } : providerName ? { ...blankCredential(), ...providerPresets.find((item) => item.name === providerName), name: providerName } : blankCredential());
@@ -199,6 +202,19 @@ export default function NamedCredentials({
         <label className="form-label">Authentication<select className="form-control" value={draft.authType} onChange={(event) => updateDraft({ authType: event.target.value as NamedCredentialMetadata['authType'] })}>
           {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key']).map((authType) => <option key={authType}>{authType}</option>)}
         </select></label>
+        <fieldset className="connector-config-fields" style={{ border: 0, padding: 0, margin: '12px 0' }}>
+          <legend>Configuration variables</legend>
+          {Object.entries(draft.configuration ?? {}).map(([key, value]) => (
+            <label key={key} className="connector-config-row" style={{ display: 'grid', gridTemplateColumns: '40% 1fr', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+              <span>{key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</span>
+              <input className="form-control" value={value} onChange={(event) => updateDraft({ configuration: { ...draft.configuration, [key]: event.target.value } })} />
+            </label>
+          ))}
+          {!viewing && <button type="button" className="btn btn-small" onClick={() => {
+            const key = window.prompt('Variable name (letters, numbers, underscore)');
+            if (key && /^[A-Za-z][A-Za-z0-9_]*$/.test(key)) updateDraft({ configuration: { ...draft.configuration, [key]: '' } });
+          }}>Add variable</button>}
+        </fieldset>
         {draft.authType === 'API Key' && <label className="form-label">API Key Header<input className="form-control" value={draft.headerName ?? ''} onChange={(event) => updateDraft({ headerName: event.target.value })} placeholder="X-API-Key" /></label>}
         {draft.authType === 'Basic' && <label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label>}
         {draft.authType !== 'None' && <label className="form-label">{draft.authType === 'Basic' ? 'Password' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
