@@ -3374,7 +3374,10 @@ function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId
         && values.RecordObject__c === '' && values.RecordFilterField__c === '';
       existing[position] = runtimeRecordSchema.parse({
         ...previous, ...added,
-        ...(legacyPlaceholder ? { RecordObject__c: '', RecordFilterField__c: '', RecordFilterValue__c: '' } : {})
+        ...(legacyPlaceholder ? { RecordObject__c: '', RecordFilterField__c: '', RecordFilterValue__c: '' } : {}),
+        // Upgrade only the shipped legacy WhatsApp probe; keep custom tenant test paths.
+        ...(previous.AppKey__c === 'whatsapp' && previous.TestPath__c === '{!PhoneNumberId}'
+          ? { TestPath__c: values.TestPath__c } : {})
       });
       continue;
     }
@@ -6590,9 +6593,26 @@ app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentia
     encodeURIComponent(credential.configuration?.[field] ?? ''));
   if (expandedTestPath.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(expandedTestPath) || expandedTestPath.includes('..'))
     return res.status(400).json({ error: 'Test endpoint must be a safe relative path.' });
-  const url = new URL(expandedTestPath, credential.baseUrl);
-  if (url.origin !== new URL(credential.baseUrl).origin
-    || !url.pathname.startsWith(new URL(credential.baseUrl).pathname))
+  // A saved credential may already point at the resource named in the connector's
+  // metadata test path. Avoid appending the same final segment twice (e.g. phone ID).
+  const credentialBase = new URL(credential.baseUrl);
+  const baseSegments = credentialBase.pathname.split('/').filter(Boolean);
+  const pathPart = expandedTestPath.split(/[?#]/, 1)[0];
+  const relativeSegments = pathPart.split('/').filter(Boolean);
+  const alreadyAtTarget = relativeSegments.length > 0
+    && relativeSegments.length <= baseSegments.length
+    && relativeSegments.every((segment, index) =>
+      segment === baseSegments[baseSegments.length - relativeSegments.length + index]);
+  const resolvedTestPath = alreadyAtTarget
+    ? expandedTestPath.slice(pathPart.length) || '?fields=id'
+    : expandedTestPath;
+  const url = new URL(resolvedTestPath, credential.baseUrl);
+  // Graph-style resource endpoints commonly require /resource?fields=..., not
+  // /resource/?fields=.... Normalize only the exact already-targeted resource.
+  if (alreadyAtTarget && url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1);
+  const basePathWithoutSlash = credentialBase.pathname.replace(/\/$/, '');
+  if (url.origin !== credentialBase.origin
+    || !(url.pathname === basePathWithoutSlash || url.pathname.startsWith(credentialBase.pathname)))
     return res.status(400).json({ error: 'Test endpoint must remain inside the configured base URL.' });
   if (url.protocol !== 'https:' || isReservedHostname(url.hostname) || (isIP(url.hostname) && !isPublicAddress(url.hostname))) {
     return res.status(400).json({ error: 'Test destination is not a public HTTPS host' });
