@@ -53,7 +53,7 @@ jobs:
       - name: Verify projections and staging migration in real PostgreSQL
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
-        run: node --test apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs
+        run: node --test --test-concurrency=1 apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs apps/server/test/relational-api.integration.test.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
