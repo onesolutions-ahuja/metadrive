@@ -2225,7 +2225,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       const defaultInputs = Object.fromEntries(inputResources.map((resource) => [resource.name, resource.value === undefined
         ? ''
         : typeof resource.value === 'string' ? resource.value : JSON.stringify(resource.value)]));
-      setFlowDebug({ flow: selectedFlow, mode: 'run', inputs: { ...defaultInputs, ...inputs }, error: '', running: false });
+      setFlowDebug({ flow: selectedFlow, mode: 'run', inputs: { ...defaultInputs, ...Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)])) }, error: '', running: false });
       return;
     }
     try {
