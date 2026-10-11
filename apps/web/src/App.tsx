@@ -878,6 +878,8 @@ function App() {
   return <SetupApp onLogout={() => { accessToken = undefined; setAuthState('anonymous'); }} />;
 }
 
+const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`;
+
 function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () => void; onRetry?: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -903,7 +905,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
   };
   if (showPasswordReset) return <main className="auth-screen">
     <section className="auth-card" aria-labelledby="password-reset-heading">
-      <span className="auth-brand-mark">M</span>
+      <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
       <div className="eyebrow">UNEENGINE WORKSPACE</div>
       <h1 id="password-reset-heading">Reset your password</h1>
       <p>Enter your account email to request a password reset.</p>
@@ -916,7 +918,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
   </main>;
   return <main className="auth-screen">
     <form className="auth-card" onSubmit={(event) => void signIn(event)}>
-      <span className="auth-brand-mark">M</span>
+      <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
       <div className="eyebrow">UNEENGINE WORKSPACE</div>
       <h1>Welcome back</h1>
       <p>Sign in to manage your organization’s metadata and workflows.</p>
@@ -2885,7 +2887,13 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             }}><Database size={16} />Records</button>
           </nav>}
         </div>
-        <div className="brand"><span className="brand-cloud">M</span><span>UNEEngine</span></div>
+        <div className="brand"><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /><span>UNEEngine</span></div>
+        <button type="button" className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
+          disabled={objects.length === 0}
+          onClick={() => {
+            const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName)) ?? objects[0]?.apiName;
+            if (targetObject) navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
+          }}><Database size={16} />Records</button>
         <div className="global-search">
           <Search size={15} />
           <input
@@ -2944,22 +2952,6 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           }}>{apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}</select>
         </div>
         <nav className="primary-tabs" aria-label="Workspace navigation">
-          {(() => {
-            const recordObjects = (currentApp?.navigationItems ?? [])
-              .map((apiName) => objects.find((candidate) => candidate.apiName === apiName))
-              .filter((item): item is NonNullable<typeof item> => Boolean(item));
-            if (!recordObjects.length) return null;
-            const selectedObject = route.kind === 'record-list' && recordObjects.some((item) => item.apiName === route.objectApiName)
-              ? route.objectApiName : recordObjects[0].apiName;
-            return (
-              <button
-                className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'primary-tab active' : 'primary-tab'}
-                onClick={() => navigateRoute({ kind: 'record-list', objectApiName: selectedObject, appId: currentApp?.apiName })}
-              >
-                <Database className="rail-icon" size={17} />Records
-              </button>
-            );
-          })()}
           {(currentApp?.navigationPageApiNames ?? []).map((apiName) => {
             const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page');
             if (!appPage) return null;
