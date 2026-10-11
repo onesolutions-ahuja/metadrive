@@ -53,7 +53,7 @@ function configFields(metadata?: string): { values: Record<string, string>; labe
 
 export default function ConnectorAppWorkspace({
   app, credentials, flows, canManageCredentials, canView, canManageSecrets, canTest,
-  canInstall, canLicenceAdmin, onToggleCredential, onGrantLicence, canManageFlows, encryptionReady, onBack,
+  canInstall, canLicenceAdmin, onGrantLicence, canManageFlows, encryptionReady, onBack,
   onSave, onDelete, onRotate, onTest, loadHistory, onOpenRecord, onOpenFlow, onLifecycle
 }: {
   app: ConnectorApp;
@@ -65,7 +65,6 @@ export default function ConnectorAppWorkspace({
   canTest: boolean;
   canInstall: boolean;
   canLicenceAdmin: boolean;
-  onToggleCredential: (appKey: string, enabled: boolean) => Promise<void>;
   onGrantLicence: (appKey: string) => Promise<void>;
   canManageFlows: boolean;
   encryptionReady: boolean | null;
@@ -151,13 +150,7 @@ export default function ConnectorAppWorkspace({
     {section === 'settings' && <>
       {!licensed && <div className="info-callout"><ShieldCheck size={15}/> Start your free trial or activate a licence to configure or test this connection.</div>}
       {!canView && <div className="info-callout">******** · Missing connector configuration View permission.</div>}
-      {credential && <div className="section-toolbar" style={{marginBottom:12}}>
-        <strong>Connection: {credential.enabled !== false && licensed ? 'Enabled' : 'Disabled'}</strong>
-        <button className="btn btn-small" disabled={!canManageCredentials || !licensed || acting}
-          onClick={() => void withAction(() => onToggleCredential(app.AppKey__c, credential.enabled === false))}>
-          {credential.enabled === false ? 'Enable connection' : 'Disable connection'}
-        </button>
-      </div>}
+      {credential && <div className="section-toolbar" style={{marginBottom:12}}><strong>Connection: {credential.enabled !== false && licensed ? 'Enabled' : 'Disabled'}</strong><span>Activation is managed in Setup &gt; Named Credentials.</span></div>}
       <NamedCredentials embedded providerName={app.CredentialName__c}
         preset={{name:app.CredentialName__c,label:app.Name,baseUrl:app.DefaultBaseUrl__c || '',authType:app.AuthType__c || 'None',configuration:configFields(app.ConfigFields__c).values}}
         fieldLabels={configFields(app.ConfigFields__c).labels}
