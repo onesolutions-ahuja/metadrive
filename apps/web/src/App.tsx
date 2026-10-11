@@ -1032,6 +1032,13 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
   </main>;
 }
 
+async function fetchFlowListPage(page: number, search: string) {
+  return apiRequest<{
+    flows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status' | 'versionNumber' | 'activeVersion' | 'createdAt' | 'createdBy' | 'lastModifiedAt' | 'lastModifiedBy'>>;
+    total: number; page: number; pageSize: number;
+  }>(`/metadata/flows/list?page=${encodeURIComponent(String(page))}&search=${encodeURIComponent(search)}`);
+}
+
 function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppRoute(window.location.pathname, window.location.search));
   const [currentAppId, setCurrentAppId] = useState(() => new URLSearchParams(window.location.search).get('appId') || 'Records');
@@ -3346,6 +3353,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               landing={!route.resourceApiName}
               flow={flow}
               flows={flows}
+              onListFlows={fetchFlowListPage}
               libraryComponents={libraryComponents}
               platformEvents={platformEvents}
               objects={objects}
