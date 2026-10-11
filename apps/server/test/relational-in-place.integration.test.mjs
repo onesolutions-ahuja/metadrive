@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { readRelationalState, writeRelationalState } from '../src/relational-runtime.mjs';
 import { stateDigest } from '../src/relational-projection.mjs';
+import { resetRelationalAccount } from '../src/relational-account-recovery.mjs';
 
 const base=process.env.METADRIVE_TEST_DATABASE_URL;
 test('in-place Aiven backfill is additive, backup-gated and refuses stale JSONB cutover',{skip:!base,timeout:120000},async()=>{
@@ -34,7 +35,7 @@ test('in-place Aiven backfill is additive, backup-gated and refuses stale JSONB 
         },
         libraryComponents:[],
         users:[{id:'user',tenantId:'tenant',name:'Support',email:'support@example.test',passwordSalt:'salt',passwordHash:'hash',role:'Admin',permissionSetIds:[],permissionSetGroupIds:[],disabled:false,createdAt:'2026-10-11T00:00:00.000Z'}],
-        refreshSessions:[],revokedAccessTokens:{}
+        refreshSessions:[{tokenHash:'token',familyId:'family',userId:'user',tenantId:'tenant',expiresAt:9999999999,usedAt:null,revokedAt:null}],revokedAccessTokens:{}
       };
       await pool.query('CREATE TABLE metadrive_platform_state (id INTEGER PRIMARY KEY,payload JSONB NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
       await pool.query('INSERT INTO metadrive_platform_state (id,payload) VALUES (1,$1::jsonb)',[JSON.stringify(state)]);
@@ -71,6 +72,15 @@ test('in-place Aiven backfill is additive, backup-gated and refuses stale JSONB 
       await assert.rejects(readRelationalState(pool),/Legacy state changed after relational migration/);
       await pool.query('UPDATE metadrive_platform_state SET payload=$1::jsonb WHERE id=1',[JSON.stringify(state)]);
       assert.equal((await readRelationalState(pool)).digest,stateDigest(state));
+      // Password recovery invalidates both refresh sessions and pre-reset JWT access tokens.
+      const reset=await resetRelationalAccount(pool,{
+        email:'support@example.test',salt:'new-salt',hash:'new-password-hash',revokedAt:10000
+      });
+      assert.equal(reset.revokedSessions,1);
+      const afterReset=await readRelationalState(pool);
+      assert.equal(afterReset.state.users[0].passwordHash,'new-password-hash');
+      assert.equal(afterReset.state.users[0].authRevokedBefore,10000);
+      assert.equal(afterReset.state.refreshSessions[0].revokedAt,10000);
       // Simulate records created AFTER switching to relational mode.
       const beforeRollback=await readRelationalState(pool);
       const latest=structuredClone(beforeRollback.state);

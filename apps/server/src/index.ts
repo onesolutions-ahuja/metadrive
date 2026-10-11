@@ -3178,6 +3178,7 @@ type LocalUser = {
   permissionSetGroupIds: string[];
   disabled: boolean;
   createdAt: string;
+  authRevokedBefore?: number;
 };
 type RefreshSession = {
   tokenHash: string;
@@ -3239,7 +3240,8 @@ const stateSchema = z.object({
     id: z.string(), tenantId: z.string(), name: z.string(), email: z.string().email(),
     passwordSalt: z.string(), passwordHash: z.string(), role: z.string(),
     permissionSetIds: z.array(z.string()), permissionSetGroupIds: z.array(z.string()).default([]),
-    disabled: z.boolean(), createdAt: z.string().datetime()
+    disabled: z.boolean(), createdAt: z.string().datetime(),
+    authRevokedBefore: z.number().int().nonnegative().optional()
   })),
   refreshSessions: z.array(z.object({
     tokenHash: z.string(), familyId: z.string(), userId: z.string(), tenantId: z.string(),
@@ -4644,6 +4646,11 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
     const user = state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
     if (!user || !state.tenants[tenantId]) {
       res.status(401).json({ error: 'Tenant membership is no longer active' });
+      return;
+    }
+    if (user.authRevokedBefore !== undefined &&
+        (typeof claims.iat !== 'number' || claims.iat <= user.authRevokedBefore)) {
+      res.status(401).json({ error: 'Access token was issued before credentials changed' });
       return;
     }
     res.locals.principal = {

@@ -23,7 +23,13 @@ export async function resetRelationalAccount(client,{email,salt,hash,revokedAt=D
     const lookup=await client.query('SELECT user_id,disabled FROM metadrive_rel_users WHERE lower(btrim(email))=$1 FOR UPDATE',[email.trim().toLowerCase()]);
     if(lookup.rowCount!==1||lookup.rows[0].disabled) throw Error('Exactly one enabled account must match');
     const userId=lookup.rows[0].user_id;
-    await client.query('UPDATE metadrive_rel_users SET password_salt=$1,password_hash=$2 WHERE user_id=$3',[salt,hash,userId]);
+    // All previously issued access JWTs, not just refresh sessions, are now invalid.
+    // Issuance seconds equal to the reset second are also blocked.
+    const authRevokedBefore=Math.floor(revokedAt);
+    await client.query(
+      "UPDATE metadrive_rel_users SET password_salt=$1,password_hash=$2, extra=coalesce(extra,'{}'::jsonb) || jsonb_build_object('authRevokedBefore',$4::bigint) WHERE user_id=$3",
+      [salt,hash,userId,authRevokedBefore]
+    );
     const revoke=await client.query('UPDATE metadrive_rel_refresh_sessions SET revoked_at=$1 WHERE user_id=$2 AND revoked_at IS NULL',[revokedAt,userId]);
     const after=restoreState(await readRelationalRows(client));
     const digest=stateDigest(after);
