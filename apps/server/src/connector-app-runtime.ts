@@ -54,8 +54,14 @@ export function applyConnectorLifecycle<T extends ConnectorAppRecord>(
   for (const name of protectedFields) {
     if (app[name] !== previous[name]) throw new Error(name + ' is managed by the licence engine.');
   }
-  if (!allowLicenceAdministration && app.LicenceExpiresAt__c !== previous.LicenceExpiresAt__c) {
-    throw new Error('Only licensed platform administrators may change paid licence expiry.');
+  if (!allowLicenceAdministration) {
+    const platformFields = ['LicenceExpiresAt__c', 'TrialDays__c', 'AppKey__c',
+      'CredentialName__c', 'InstallFlow__c', 'UninstallFlow__c', 'TrialFlow__c'];
+    for (const field of platformFields) {
+      if (app[field] !== previous[field]) {
+        throw new Error(field + ' is managed by a platform licence administrator.');
+      }
+    }
   }
   // The install/uninstall actions are metadata Flows; the core guard protects
   // the resulting record mutation regardless of its API entrypoint.
