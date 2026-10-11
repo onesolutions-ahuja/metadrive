@@ -4796,7 +4796,7 @@ const provisioningSchema = z.object({
   password: z.string().min(12).max(256)
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'metadrive-api', authMode: jwtService.config.mode, maintenance: maintenanceMode }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'metadrive-api', authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode }));
 app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
 app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
 app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
