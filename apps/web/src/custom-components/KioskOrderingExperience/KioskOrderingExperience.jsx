@@ -109,7 +109,7 @@ export default function KioskOrderingExperience(props) {
           {!actions.checkout && <p role="status">Payment is unavailable until a checkout Flow and payment device are configured.</p>}
         </>}
       </div>
-    </div> : <div className="une-kiosk-done"><span>✓</span><h2>Order complete</h2><p>Your receipt and collection number will be provided by the configured checkout Flow.</p><button onClick={() => { setScreen('menu'); setDetail(null); void emit('reset', {}); }} className="une-kiosk-primary">Start a new order →</button></div>}
+    </div> : <div className="une-kiosk-done"><span>✓</span><h2>Order complete</h2><p>Your receipt and collection number will be provided by the configured checkout Flow.</p><button onClick={async () => { const result = await emit('reset', {}); if (result) { setScreen('menu'); setDetail(null); } }} className="une-kiosk-primary">Start a new order →</button></div>}
     {detail && <div className="une-detail-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetail(null); }}>
       <section className="une-detail-card" role="dialog" aria-modal="true" aria-label={'Add ' + detail.name}>
         <button className="une-detail-close" onClick={() => setDetail(null)} aria-label="Close product details">×</button>
