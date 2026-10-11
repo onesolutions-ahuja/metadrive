@@ -174,6 +174,55 @@ defaultApiUrl.pathname = '/api';
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? defaultApiUrl.toString().replace(/\/$/, '');
 let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
+function ProfilePasswordMenu({ onLogout }: { onLogout: () => Promise<void> | void }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const reset = () => { setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setError(''); };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) { setError('New passwords do not match'); return; }
+    if (newPassword.length < 12) { setError('Use at least 12 characters'); return; }
+    setBusy(true); setError('');
+    try {
+      await apiRequest('/auth/change-password', { method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }) });
+      reset(); setEditing(false); setOpen(false);
+      await onLogout();
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not change password'); }
+    finally { setBusy(false); }
+  };
+  return <div className="profile-menu-wrap">
+    <button type="button" className="user-menu" aria-label="User profile" aria-expanded={open}
+      onClick={() => setOpen((state) => !state)}>Profile <ChevronDown size={13} /></button>
+    {open && <div className="profile-menu-panel">
+      <button type="button" onClick={() => { setEditing(true); setOpen(false); reset(); }}>Change Password</button>
+      <button type="button" onClick={() => void onLogout()}>Sign Out</button>
+    </div>}
+    {editing && <div className="profile-password-backdrop" role="presentation">
+      <section className="profile-password-dialog" role="dialog" aria-modal="true" aria-labelledby="change-password-heading">
+        <div className="profile-password-heading"><h2 id="change-password-heading">Change Password</h2>
+          <button type="button" className="icon-button" aria-label="Close" onClick={() => { setEditing(false); reset(); }}><X size={18} /></button></div>
+        <form onSubmit={(event) => void submit(event)}>
+          <label className="form-label">Current Password<input autoComplete="current-password" className="form-control" type="password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+          <label className="form-label">New Password<input autoComplete="new-password" className="form-control" type="password" minLength={12} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+          <label className="form-label">Confirm New Password<input autoComplete="new-password" className="form-control" type="password" minLength={12} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+          <p className="settings-panel-copy">After changing your password, all sessions will be signed out.</p>
+          {error && <p role="alert" className="form-error">{error}</p>}
+          <div className="toolbar-actions">
+            <button type="button" className="btn" disabled={busy} onClick={() => { setEditing(false); reset(); }}>Cancel</button>
+            <button type="submit" className="btn btn-brand" disabled={busy}>{busy ? 'Updating…' : 'Change Password'}</button>
+          </div>
+        </form>
+      </section>
+    </div>}
+  </div>;
+}
+
 function ConnectionHealthIndicator() {
   const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; latency: number | null; checked: string }>({ status: 'checking', latency: null, checked: '' });
   const [expanded, setExpanded] = useState(false);
@@ -3001,7 +3050,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               </>}
             </section>}
           </div>
-          <button className="user-menu" aria-label="Sign out" onClick={() => void logout()}>Sign out<ChevronDown size={12} /></button>
+          <ProfilePasswordMenu onLogout={logout} />
         </div>
       </header>
 
