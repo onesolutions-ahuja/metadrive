@@ -7140,11 +7140,12 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-function MetadataComponentProperties({ properties, objects, flows, onChange }: {
+function MetadataComponentProperties({ properties, objects, flows, onChange, kioskMode = false }: {
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
   flows: Array<{ apiName: string; label: string }>;
   onChange: (next: ComponentPropertyRecord) => void;
+  kioskMode?: boolean;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedDraft, setAdvancedDraft] = useState('');
@@ -7205,6 +7206,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
         </select>
       </label>)}
     </>}
+    {kioskMode && <p className="properties-help">Products come from the selected object and filters. Static product cards are not used. Checkout requires a verified, active Flow that creates the Sale record.</p>}
     <div className="properties-section-title">Record Filters</div>
     {listProperty('filters').map((raw, index) => {
       const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
@@ -7265,7 +7267,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
       </select>
     </label>}
     <div className="properties-section-title">Appearance and Settings</div>
-    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key)).map(([key, value]) => {
+    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && (!kioskMode || !/^products(?:[0-9]+)?$|^categories$/i.test(key))).map(([key, value]) => {
       if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
         <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{labelFor(key)}
       </label>;
@@ -8522,6 +8524,7 @@ function PageBuilder({
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <MetadataComponentProperties
+                kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
                 properties={selected.properties}
                 objects={objects}
                 flows={flows}
