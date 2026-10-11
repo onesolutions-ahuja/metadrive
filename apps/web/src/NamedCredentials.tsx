@@ -42,7 +42,8 @@ export default function NamedCredentials({
   onSave,
   onDelete,
   onRotate,
-  onTest
+  onTest,
+  onToggleEnabled
 }: {
   credentials: NamedCredentialMetadata[];
   canManage: boolean;
@@ -57,6 +58,7 @@ export default function NamedCredentials({
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{ connected: boolean; status?: number; message: string }>;
+  onToggleEnabled?: (id: string, enabled: boolean) => Promise<void>;
 }) {
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
   const [viewing, setViewing] = useState(false);
@@ -65,6 +67,7 @@ export default function NamedCredentials({
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const [busyId, setBusyId] = useState('');
+  const [toggleBusyId, setToggleBusyId] = useState('');
   const [testResults, setTestResults] = useState<Record<string, string>>({});
   // A test result belongs to one persisted credential revision, not to the label.
   // In particular, never display a pre-activation 409 after the connection is enabled.
@@ -137,6 +140,19 @@ export default function NamedCredentials({
     }
   };
 
+  const toggleEnabled = async (credential: NamedCredentialMetadata) => {
+    if (!onToggleEnabled || toggleBusyId) return;
+    setToggleBusyId(credential.id);
+    setError('');
+    try {
+      await onToggleEnabled(credential.id, credential.enabled === false);
+    } catch (toggleError) {
+      setError(toggleError instanceof Error ? toggleError.message : 'Unable to change connection status');
+    } finally {
+      setToggleBusyId('');
+    }
+  };
+
   const testCredential = async (credential: NamedCredentialMetadata) => {
     if (busyId) return;
     setBusyId(credential.id);
@@ -165,7 +181,7 @@ export default function NamedCredentials({
     {encryptionReady === false && <div className="records-message" role="alert">Credential encryption is not configured on the server. Set METADRIVE_CREDENTIAL_KEYS and METADRIVE_CREDENTIAL_ACTIVE_KEY_ID in Render before creating or testing credentials. Existing encrypted keys must be preserved.</div>}
     <div className="table-scroll">
       <table className="slds-table">
-        <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th>{!embedded && <th>Status</th>}<th>Actions</th></tr></thead>
         <tbody>{pagedCredentials.map((credential) => <tr key={credential.id}>
           <td><button className="btn btn-link" onClick={() => editCredential(credential, true)}>{credential.label}</button></td>
           <td>{credential.name}</td>
@@ -175,6 +191,7 @@ export default function NamedCredentials({
           <td>{credential.authType === 'None' ? 'Not required' : credential.hasSecret ? 'Stored · masked' : 'Not configured'}</td>
           <td>{new Date(credential.updatedAt).toLocaleString()}</td>
           <td role="status">{testResults[credential.id] ?? 'Not tested'}</td>
+          {!embedded && <td><button type="button" className="btn btn-small" aria-label={`${credential.enabled === false ? 'Enable' : 'Disable'} ${credential.label}`} disabled={!canManage || !onToggleEnabled || Boolean(toggleBusyId)} onClick={() => void toggleEnabled(credential)}>{toggleBusyId === credential.id ? 'Updating…' : credential.enabled === false ? 'Disabled · Enable' : 'Enabled · Disable'}</button></td>}
           <td><div className="toolbar-actions">
             <button className="btn btn-small" aria-label={`Test connection for ${credential.label}`} disabled={!(canTest ?? canManage) || credential.enabled === false || Boolean(busyId)} title={credential.protocol === 'SMTP' ? 'Verify SMTP connection, TLS and authentication without sending email' : 'Test saved HTTPS base URL with stored authentication'} onClick={() => void testCredential(credential)}>{busyId === credential.id ? 'Testing…' : 'Test Connection'}</button>
             <button className="icon-button subtle" aria-label={`View ${credential.label}`} onClick={() => editCredential(credential, true)}><Eye size={14} /></button>
@@ -196,10 +213,11 @@ export default function NamedCredentials({
     </div>}
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
+      <section className="modal named-credential-modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
         <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Connection Details' : draft.id ? 'Edit Connection' : 'Configure Connection'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
         <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
+        <div className="named-credential-form-grid">
         <label className="form-label">API Name<input className="form-control" autoComplete="off" disabled={Boolean(providerName)} value={draft.name} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" /></label>
         <label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" /></label>
         <label className="form-label">Protocol<select className="form-control" value={draft.protocol} onChange={(event) => {
@@ -210,7 +228,7 @@ export default function NamedCredentials({
         <label className="form-label">Authentication<select className="form-control" value={draft.authType} onChange={(event) => updateDraft({ authType: event.target.value as NamedCredentialMetadata['authType'] })}>
           {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key']).map((authType) => <option key={authType}>{authType}</option>)}
         </select></label>
-        <fieldset className="connector-config-fields" style={{ border: 0, padding: 0, margin: '12px 0' }}>
+        <fieldset className="connector-config-fields named-credential-span-full" style={{ border: 0, padding: 0, margin: '12px 0' }}>
           <legend>Configuration variables</legend>
           {Object.entries(draft.configuration ?? {}).map(([key, value]) => (
             <label key={key} className="connector-config-row" style={{ display: 'grid', gridTemplateColumns: '40% 1fr', gap: 12, alignItems: 'center', marginBottom: 8 }}>
@@ -226,6 +244,8 @@ export default function NamedCredentials({
         {draft.authType === 'API Key' && <label className="form-label">API Key Header<input className="form-control" value={draft.headerName ?? ''} onChange={(event) => updateDraft({ headerName: event.target.value })} placeholder="X-API-Key" /></label>}
         {draft.authType === 'Basic' && canManageSecrets && <label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label>}
         {draft.authType !== 'None' && canManageSecrets && <label className="form-label">{draft.authType === 'Basic' ? 'Password' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
+        </div>
+        {draft.id && !embedded && <div className="named-credential-activation"><strong>Connection status</strong><span>{credentials.find((item) => item.id === draft.id)?.enabled === false ? 'Disabled' : 'Enabled'}</span><button type="button" className="btn btn-small" disabled={viewing || !canManage || !onToggleEnabled || Boolean(toggleBusyId)} onClick={() => { const credential = credentials.find((item) => item.id === draft.id); if (credential) void toggleEnabled(credential); }}>{toggleBusyId ? 'Updating…' : credentials.find((item) => item.id === draft.id)?.enabled === false ? 'Enable connection' : 'Disable connection'}</button></div>}
         {draft.id && <div className="info-callout">Leave the secret blank to keep the existing secret. Changing authentication type requires a new secret.</div>}
         {error && <div className="records-message" role="alert">{error}</div>}
         </fieldset>
