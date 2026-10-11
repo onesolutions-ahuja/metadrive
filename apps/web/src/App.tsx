@@ -7334,7 +7334,7 @@ function PageBuilder({
     }
   };
   const applyKioskPreset = async () => {
-    if (page.apiName !== 'Kiosk') return;
+    if (!['Kiosk', 'UNE_KIOSK'].includes(page.apiName)) return;
     const preset = kioskPagePreset as LightningPageMetadata;
     const missing = preset.components.filter((component) =>
       !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
@@ -7696,7 +7696,7 @@ function PageBuilder({
         <div className="toolbar-actions">
           <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
-          {page.apiName === 'Kiosk' && <button className="btn" disabled={saving} onClick={() => void applyKioskPreset()}>Load Kiosk Layout</button>}
+          {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyKioskPreset()}>Load Kiosk Layout</button>}
           <button className="btn" disabled={saving} onClick={() => void clonePage()}><Copy size={14} />Clone</button>
           <button className={previewMode ? 'btn active' : 'btn'} onClick={() => setPreviewMode((current) => !current)}><Eye size={14} />{previewMode ? 'Exit preview' : 'Preview'}</button>
           <button className="btn" disabled={saving} onClick={() => void savePage()}><Save size={14} />{saving ? 'Saving…' : 'Save'}</button>
