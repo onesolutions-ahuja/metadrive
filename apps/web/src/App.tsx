@@ -2154,10 +2154,10 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     notify(`Named Credential ${id ? 'updated' : 'created'}`);
   };
 
-  const toggleConnectorCredential = async (appKey: string, enabled: boolean) => {
+  const toggleNamedCredentialEnabled = async (id: string, enabled: boolean) => {
     const result = await apiRequest<{ credential: NamedCredentialMetadata }>(
-      `/connector-apps/${encodeURIComponent(appKey)}/credential-enabled`,
-      { method: 'PATCH', body: JSON.stringify({enabled}) }
+      `/named-credentials/${encodeURIComponent(id)}/enabled`,
+      { method: 'PATCH', body: JSON.stringify({ enabled }) }
     );
     setNamedCredentials((current) => current.map((item) => item.id === result.credential.id ? result.credential : item));
     notify(enabled ? 'Connection enabled' : 'Connection disabled');
@@ -3291,6 +3291,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             onDelete={deleteNamedCredential}
             onRotate={rotateNamedCredential}
             onTest={testNamedCredential}
+            onToggleEnabled={toggleNamedCredentialEnabled}
           />}
           {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange
             credentials={namedCredentials}
@@ -3306,7 +3307,6 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             canInstall={connectorRights.install}
             canLicenceAdmin={connectorRights.licence}
             encryptionReady={namedCredentialsEncryptionReady}
-            onToggleCredential={toggleConnectorCredential}
             onGrantLicence={grantConnectorLicence}
             loadApps={loadConnectorMarketplaceApps}
             executeLifecycleFlow={executeConnectorAppLifecycleFlow}
