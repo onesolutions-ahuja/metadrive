@@ -2012,7 +2012,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
 
   const saveNamedCredential = async (credential: {
     id?: string; name: string; label: string; protocol: NamedCredentialMetadata['protocol']; baseUrl: string;
-    authType: NamedCredentialMetadata['authType']; headerName?: string; username?: string; secret?: string;
+    authType: NamedCredentialMetadata['authType']; headerName?: string; configuration?: Record<string, string>; username?: string; secret?: string;
   }) => {
     const { id, ...body } = credential;
     const result = await apiRequest<{ credential: NamedCredentialMetadata }>(
