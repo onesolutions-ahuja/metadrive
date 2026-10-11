@@ -86,3 +86,5 @@ jobs:
       - name: Clean private files
         if: always()
         run: rm -f "${RUNNER_TEMP}/aiven.env" "${RUNNER_TEMP}/cutover.dump"
+
+# Trigger guarded cutover after verified maintenance deployment 2026-10-11
