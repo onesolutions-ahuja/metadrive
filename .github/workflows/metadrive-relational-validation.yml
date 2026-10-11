@@ -8,6 +8,7 @@ on:
       - 'apps/server/sql/relational-state-v1.sql'
       - 'apps/server/scripts/migrate-relational-state.mjs'
       - 'apps/server/test/relational-*.test.mjs'
+      - 'apps/server/test/isolated-postgres-preload.mjs'
       - '.github/workflows/metadrive-relational-validation.yml'
   workflow_dispatch:
 
@@ -44,7 +45,11 @@ jobs:
         run: npm ci
       - name: Compile application (web and server)
         run: npm run build
-      - name: Run existing backend tests
+      - name: Run existing backend tests in independently isolated PostgreSQL schemas
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          METADRIVE_TEST_ISOLATION: 'true'
+          NODE_OPTIONS: '--import=${{ github.workspace }}/apps/server/test/isolated-postgres-preload.mjs'
         run: npm test --workspace apps/server
       - name: Verify projections and staging migration in real PostgreSQL
         run: node --test apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs
