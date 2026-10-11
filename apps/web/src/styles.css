@@ -1820,3 +1820,97 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .connector-config-row .form-control { width: 100%; min-width: 0; }
 .connector-config-empty { color: var(--muted); font-size: 12px; }
 @media (max-width: 600px) { .connector-config-row { grid-template-columns: 1fr; gap: 5px; } }
+
+
+/* Keep global identity, search and Records navigation in view while the page scrolls. */
+.salesforce-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.brand-logo {
+  display: block;
+  width: auto;
+  height: 40px;
+  max-width: 72px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.header-records-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.header-records-link:hover, .header-records-link.active { background: #eeece8; color: var(--brand-dark); }
+.header-records-link:disabled { opacity: .45; cursor: default; }
+.salesforce-header .global-search { min-width: 90px; }
+.salesforce-header .header-tools { flex: 0 0 auto; }
+.auth-brand-logo {
+  display: block;
+  width: min(220px, 100%);
+  height: auto;
+  margin: 0 auto 20px;
+  object-fit: contain;
+}
+
+/* Setup's search and footer remain accessible; only the long menu scrolls. */
+.setup-sidebar {
+  position: sticky;
+  top: 54px;
+  height: calc(100dvh - 54px);
+  max-height: calc(100dvh - 54px);
+  min-height: 0;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+  overflow: hidden;
+}
+.setup-sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding-left: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.setup-sidebar-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  background: transparent;
+}
+.setup-sidebar .quick-find { flex: 0 0 auto; }
+.setup-sidebar .setup-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+}
+.setup-sidebar .sidebar-footer {
+  position: relative;
+  flex: 0 0 auto;
+}
+@media (max-width: 600px) {
+  .brand-logo { height: 32px; max-width: 48px; }
+  .salesforce-header .brand > span { display: none; }
+  .header-records-link { width: 34px; min-width: 34px; padding: 0; font-size: 0; gap: 0; }
+  .setup-sidebar { top: 47px; height: calc(100dvh - 47px); max-height: calc(100dvh - 47px); padding-bottom: 0; }
+  .setup-sidebar-toolbar { padding-left: 0; justify-content: center; }
+  .setup-sidebar-toolbar > strong { display: none; }
+}
