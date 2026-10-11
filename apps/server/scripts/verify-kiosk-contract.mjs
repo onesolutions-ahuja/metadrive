@@ -19,7 +19,7 @@ for (const page of pages) {
   assert.equal(p.objectApiName, 'Product__c');
   assert.equal(p.cartObjectApiName, 'CartLine__c');
   assert(!Object.hasOwn(p, 'products'), 'Products cannot be stored as per-card page properties');
-  for (const event of ['add', 'remove', 'quantity', 'reset'])
+  for (const event of ['start', 'add', 'remove', 'quantity', 'reset'])
     assert.match(p.actionFlows[event]?.flowApiName ?? '', /^KIOSK_/);
   assert(!p.actionFlows.checkout, 'Checkout must not activate without a verified payment provider');
 }
@@ -31,7 +31,7 @@ assert(start > 0 && end > start, 'Flow bootstrap missing');
 const code = src.slice(start, end);
 const tenant = { flows: [] };
 new Function('tenant', code)(tenant);
-for (const name of ['KIOSK_CART_ADD','KIOSK_CART_QUANTITY','KIOSK_CART_REMOVE','KIOSK_CART_RESET','KIOSK_CHECKOUT']) {
+for (const name of ['KIOSK_SESSION_START','KIOSK_CART_ADD','KIOSK_CART_QUANTITY','KIOSK_CART_REMOVE','KIOSK_CART_RESET','KIOSK_CHECKOUT']) {
   const flow = tenant.flows.find((item) => item.apiName === name);
   assert(flow, name + ' not created');
   assert.equal(flow.elements[0].type, 'Start');
