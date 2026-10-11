@@ -189,6 +189,7 @@ export type NamedCredentialMetadata = {
   authType: 'None' | 'Bearer' | 'Basic' | 'API Key';
   headerName: string;
   hasSecret: boolean;
+  enabled?: boolean;
   configuration?: Record<string, string>;
   keyId: string;
   updatedAt: string;
