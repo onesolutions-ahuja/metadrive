@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity,
@@ -7327,6 +7328,36 @@ function PageBuilder({
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
   const [customPropertiesError, setCustomPropertiesError] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+  const externalPreviewWindowRef = useRef<Window | null>(null);
+  const [externalPreviewTarget, setExternalPreviewTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    return () => { externalPreviewWindowRef.current?.close(); externalPreviewWindowRef.current = null; };
+  }, []);
+  const openExternalPreview = () => {
+    if (externalPreviewWindowRef.current && !externalPreviewWindowRef.current.closed) {
+      externalPreviewWindowRef.current.focus();
+      return;
+    }
+    const popup = window.open('', 'metadrive-page-preview', 'popup=yes,width=1280,height=860,resizable=yes,scrollbars=yes');
+    if (!popup) { onNotify('Please allow the page preview popup in your browser.'); return; }
+    externalPreviewWindowRef.current = popup;
+    popup.document.title = `${page.label} — Preview`;
+    for (const sheet of Array.from(document.querySelectorAll('link[rel="stylesheet"],style'))) {
+      popup.document.head.appendChild(sheet.cloneNode(true));
+    }
+    popup.document.body.style.margin = '0';
+    const container = popup.document.createElement('main');
+    container.id = 'metadrive-popup-preview';
+    popup.document.body.appendChild(container);
+    popup.addEventListener('beforeunload', () => {
+      if (externalPreviewWindowRef.current === popup) {
+        externalPreviewWindowRef.current = null;
+        setExternalPreviewTarget(null);
+      }
+    });
+    setExternalPreviewTarget(container);
+  };
+
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const [dynamicFormsUpgradeOpen, setDynamicFormsUpgradeOpen] = useState(false);
@@ -8179,6 +8210,34 @@ function PageBuilder({
   }, -1, true);
   return (
     <div className="builder-page">
+      {externalPreviewTarget && createPortal(
+        <div className="external-page-preview">
+          <div className="external-preview-toolbar"><strong>{page.label}</strong><span>Live draft preview · {page.pageType}</span>
+            <div className="external-preview-device-choices">
+              {(['Desktop', 'Tablet', 'Phone'] as const).map((choice) => <button key={choice} type="button" className={device === choice ? 'btn active' : 'btn'} onClick={() => setDevice(choice)}>{choice}</button>)}
+            </div>
+            <button type="button" className="btn" onClick={() => { externalPreviewWindowRef.current?.close(); externalPreviewWindowRef.current = null; setExternalPreviewTarget(null); }}>Close</button>
+          </div>
+          <div className={`external-preview-viewport ${device.toLowerCase()}`}>
+            <div className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : 'record-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}>
+              {page.layoutMode === 'free-canvas'
+                ? <div className="free-canvas-stage" style={{ width: page.canvasWidth, height: page.canvasHeight, position: 'relative' }}>
+                    {page.components.map((component, index) => renderPageComponent(component, index, true))}
+                  </div>
+                : <>
+                    {page.components.filter((component) => (component.region ?? 'main') === 'header').map((component, index) => renderPageComponent(component, index, true))}
+                    <div className={page.template === 'main-sidebar' || page.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
+                      <main className="record-runtime-main">{page.components.filter((component) => (component.region ?? 'main') === 'main').map((component, index) => renderPageComponent(component, index, true))}</main>
+                      {(page.template === 'main-sidebar' || page.template === 'header-main-sidebar') &&
+                        <aside className="record-runtime-sidebar">{page.components.filter((component) => component.region === 'sidebar').map((component, index) => renderPageComponent(component, index, true))}</aside>}
+                    </div>
+                  </>}
+            </div>
+          </div>
+        </div>,
+        externalPreviewTarget
+      )}
+
       <div className="builder-titlebar">
         <div className="builder-page-select">
           <div className="eyebrow">Lightning App Builder</div>
@@ -8206,7 +8265,7 @@ function PageBuilder({
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
           {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyKioskPreset()}>Load Kiosk Layout</button>}
           <button className="btn" disabled={saving} onClick={() => void clonePage()}><Copy size={14} />Clone</button>
-          <button className={previewMode ? 'btn active' : 'btn'} onClick={() => setPreviewMode((current) => !current)}><Eye size={14} />{previewMode ? 'Exit preview' : 'Preview'}</button>
+          <button className="btn" onClick={openExternalPreview}><ExternalLink size={14} />Preview</button>
           <button className="btn" disabled={saving} onClick={() => void savePage()}><Save size={14} />{saving ? 'Saving…' : 'Save'}</button>
           {page.status === 'Active'
             ? <button className="btn" disabled={saving} onClick={() => void savePage('Draft')}><Check size={14} />Deactivate</button>
@@ -8342,7 +8401,7 @@ function PageBuilder({
               <button className="icon-button subtle" aria-label="Cut component" title="Cut" disabled={!selected || previewMode} onClick={cutSelected}><Scissors size={14} /></button>
               <button className="icon-button subtle" aria-label="Copy component" title="Copy" disabled={!selected || previewMode} onClick={copySelected}><Copy size={14} /></button>
               <button className="icon-button subtle" aria-label="Paste component" title="Paste" disabled={!componentClipboard || previewMode} onClick={pasteComponent}><ClipboardPaste size={14} /></button>
-              <button className={previewMode ? 'icon-button subtle active' : 'icon-button subtle'} aria-label="Preview" title="Preview" onClick={() => setPreviewMode((current) => !current)}><Eye size={15} /></button>
+              <button className="icon-button subtle" aria-label="Open preview in a separate window" title="Open preview window" onClick={openExternalPreview}><ExternalLink size={15} /></button>
               <a className="icon-button subtle" aria-label="Lightning App Builder help" title="Lightning App Builder help" href="https://trailhead.salesforce.com/content/learn/modules/lightning_app_builder/lightning_app_builder_intro" target="_blank" rel="noreferrer"><CircleHelp size={14} /></a>
             </div>
           </div>
