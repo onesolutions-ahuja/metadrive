@@ -1852,3 +1852,39 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   min-width: max-content;
 }
 .app-strip .app-utility-button { flex: 0 0 auto; }
+
+
+/* Single Setup navigation: only the global header remains above Setup workspaces. */
+.setup-layout.setup-no-tabs { min-height: calc(100vh - 54px); }
+.setup-no-tabs .builder-page { height: calc(100vh - 54px); }
+
+/* Workspace launcher replaces Setup shortcuts previously duplicated in the app bar. */
+.launcher-menu-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; }
+.launcher-menu {
+  position: absolute; top: calc(100% + 9px); left: 0; z-index: 130;
+  display: grid; width: 175px; padding: 5px; border: 1px solid var(--border);
+  border-radius: 7px; background: #fff; box-shadow: 0 7px 20px rgb(0 0 0 / 16%);
+}
+.launcher-menu button {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  border: 0; border-radius: 4px; padding: 10px; background: transparent;
+  color: var(--text); text-align: left; cursor: pointer;
+}
+.launcher-menu button:hover, .launcher-menu button:focus-visible { background: #eef4ff; }
+
+/* The Setup sidebar remains the only Setup navigation and can be collapsed. */
+.setup-sidebar-toolbar { display: flex; align-items: center; justify-content: space-between; min-height: 39px; padding: 7px 10px 5px 13px; }
+.setup-sidebar-toolbar strong { font-size: 12px; }
+.setup-sidebar-toggle { display: inline-flex; align-items: center; justify-content: center; width: 27px; height: 27px; padding: 0; border: 1px solid var(--border); border-radius: 5px; background: #fff; color: var(--text); cursor: pointer; }
+.setup-sidebar-toggle:hover { background: #e6e2dc; }
+.setup-sidebar.setup-sidebar-collapsed { width: 46px; min-width: 46px; padding-bottom: 0; }
+.setup-sidebar-collapsed .setup-sidebar-toolbar { justify-content: center; padding: 7px 0; }
+.setup-sidebar-collapsed .setup-sidebar-toolbar strong, .setup-sidebar-collapsed .quick-find,
+.setup-sidebar-collapsed .setup-tree, .setup-sidebar-collapsed .sidebar-footer { display: none; }
+
+@media (max-width: 600px) {
+  .setup-layout.setup-no-tabs { min-height: calc(100vh - 47px); }
+  .setup-no-tabs .builder-page { height: calc(100vh - 47px); }
+  .setup-sidebar-toolbar { justify-content: center; padding: 7px 0; }
+  .setup-sidebar-toolbar strong { display: none; }
+}
