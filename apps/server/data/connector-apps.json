@@ -178,6 +178,39 @@
           "all-users"
         ],
         "picklistRestricted": true
+      },
+      {
+        "apiName": "RecordColumns__c",
+        "label": "Record List Columns",
+        "dataType": "Long Text Area",
+        "required": false,
+        "unique": false
+      },
+      {
+        "apiName": "TestPath__c",
+        "label": "Test Endpoint Path",
+        "dataType": "Text(255)",
+        "required": false,
+        "unique": false
+      },
+      {
+        "apiName": "TestMethod__c",
+        "label": "Test HTTP Method",
+        "dataType": "Picklist",
+        "required": false,
+        "unique": false,
+        "picklistValues": [
+          "GET",
+          "HEAD"
+        ],
+        "picklistRestricted": true
+      },
+      {
+        "apiName": "LicenceTermDays__c",
+        "label": "Paid Licence Term Days",
+        "dataType": "Number(4,0)",
+        "required": false,
+        "unique": false
       }
     ],
     "searchLayouts": {
@@ -210,7 +243,11 @@
       "TrialUsed__c": false,
       "TrialDays__c": 21,
       "LicenceStatus__c": "Not Activated",
-      "AccessScope__c": "admins"
+      "AccessScope__c": "admins",
+      "TestMethod__c": "GET",
+      "TestPath__c": "{!PhoneNumberId}",
+      "LicenceTermDays__c": 30,
+      "RecordColumns__c": "[\"CreatedDate\",\"Recipient__c\",\"Communication_Mode__c\",\"Status__c\",\"Source__c\"]"
     },
     {
       "Name": "Uber Eats",
@@ -221,9 +258,9 @@
       "DefaultBaseUrl__c": "",
       "AuthType__c": "Bearer",
       "ConfigFields__c": "[{\"apiName\":\"StoreId\",\"label\":\"Store ID\"},{\"apiName\":\"ClientId\",\"label\":\"Client ID\"}]",
-      "RecordObject__c": "Communication_Records__c",
-      "RecordFilterField__c": "Source__c",
-      "RecordFilterValue__c": "Uber Eats",
+      "RecordObject__c": "",
+      "RecordFilterField__c": "",
+      "RecordFilterValue__c": "",
       "InstallFlow__c": "ONE_Install_Connector",
       "UninstallFlow__c": "ONE_Uninstall_Connector",
       "TrialFlow__c": "ONE_Start_Connector_Trial",
@@ -232,7 +269,11 @@
       "TrialUsed__c": false,
       "TrialDays__c": 21,
       "LicenceStatus__c": "Not Activated",
-      "AccessScope__c": "admins"
+      "AccessScope__c": "admins",
+      "TestMethod__c": "GET",
+      "TestPath__c": "",
+      "LicenceTermDays__c": 30,
+      "RecordColumns__c": "[]"
     },
     {
       "Name": "Deliveroo",
@@ -243,9 +284,9 @@
       "DefaultBaseUrl__c": "",
       "AuthType__c": "Bearer",
       "ConfigFields__c": "[{\"apiName\":\"MerchantId\",\"label\":\"Merchant ID\"},{\"apiName\":\"ClientId\",\"label\":\"Client ID\"}]",
-      "RecordObject__c": "Communication_Records__c",
-      "RecordFilterField__c": "Source__c",
-      "RecordFilterValue__c": "Deliveroo",
+      "RecordObject__c": "",
+      "RecordFilterField__c": "",
+      "RecordFilterValue__c": "",
       "InstallFlow__c": "ONE_Install_Connector",
       "UninstallFlow__c": "ONE_Uninstall_Connector",
       "TrialFlow__c": "ONE_Start_Connector_Trial",
@@ -254,7 +295,11 @@
       "TrialUsed__c": false,
       "TrialDays__c": 21,
       "LicenceStatus__c": "Not Activated",
-      "AccessScope__c": "admins"
+      "AccessScope__c": "admins",
+      "TestMethod__c": "GET",
+      "TestPath__c": "",
+      "LicenceTermDays__c": 30,
+      "RecordColumns__c": "[]"
     },
     {
       "Name": "SMSGate",
@@ -276,7 +321,11 @@
       "TrialUsed__c": false,
       "TrialDays__c": 21,
       "LicenceStatus__c": "Not Activated",
-      "AccessScope__c": "admins"
+      "AccessScope__c": "admins",
+      "TestMethod__c": "GET",
+      "TestPath__c": "",
+      "LicenceTermDays__c": 30,
+      "RecordColumns__c": "[\"CreatedDate\",\"Recipient__c\",\"Communication_Mode__c\",\"Status__c\",\"Source__c\"]"
     },
     {
       "Name": "Xero",
@@ -287,9 +336,9 @@
       "DefaultBaseUrl__c": "",
       "AuthType__c": "Bearer",
       "ConfigFields__c": "[{\"apiName\":\"TenantId\",\"label\":\"Xero Tenant ID\"},{\"apiName\":\"ClientId\",\"label\":\"Client ID\"}]",
-      "RecordObject__c": "Communication_Records__c",
-      "RecordFilterField__c": "Source__c",
-      "RecordFilterValue__c": "Xero",
+      "RecordObject__c": "",
+      "RecordFilterField__c": "",
+      "RecordFilterValue__c": "",
       "InstallFlow__c": "ONE_Install_Connector",
       "UninstallFlow__c": "ONE_Uninstall_Connector",
       "TrialFlow__c": "ONE_Start_Connector_Trial",
@@ -298,7 +347,11 @@
       "TrialUsed__c": false,
       "TrialDays__c": 21,
       "LicenceStatus__c": "Not Activated",
-      "AccessScope__c": "admins"
+      "AccessScope__c": "admins",
+      "TestMethod__c": "GET",
+      "TestPath__c": "",
+      "LicenceTermDays__c": 30,
+      "RecordColumns__c": "[]"
     }
   ],
   "flows": [
