@@ -6153,6 +6153,9 @@ app.post('/api/named-credentials', requirePermission('namedCredentials:manage'),
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
+  const packageEntitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [],
+    {id: '', name: parsed.data.name});
+  if (!packageEntitlement.allowed) return res.status(403).json({error:packageEntitlement.message});
   if (tenant.namedCredentials.some((credential) => credential.name === parsed.data.name)) {
     return res.status(409).json({ error: `Named Credential "${parsed.data.name}" already exists` });
   }
@@ -6190,6 +6193,11 @@ app.put('/api/named-credentials/:id', requirePermission('namedCredentials:manage
   const tenant = tenantData(principal.tenantId)!;
   const existing = tenant.namedCredentials.find((credential) => credential.id === routeParam(req, 'id'));
   if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
+  if (existing.name !== parsed.data.name && (tenant.records.Connector_App__c ?? []).some((app) => app.CredentialName__c === existing.name)) {
+    return res.status(403).json({error:'Managed connector credential API names cannot be changed.'});
+  }
+  const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], existing);
+  if (!entitlement.allowed) return res.status(403).json({error:entitlement.message});
   if (tenant.dashboardSubscriptions.some((subscription) =>
     subscription.namedCredentialId === existing.id && parsed.data.protocol !== 'SMTP')) {
     return res.status(409).json({ error: 'Named Credential is used by a dashboard subscription and must remain SMTP' });
@@ -6244,6 +6252,9 @@ app.delete('/api/named-credentials/:id', requirePermission('namedCredentials:man
   const id = routeParam(req, 'id');
   const existing = tenant.namedCredentials.find((credential) => credential.id === id);
   if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
+  if ((tenant.records.Connector_App__c ?? []).some((app) => app.CredentialName__c === existing.name)) {
+    return res.status(409).json({error:'Connector credentials are retained on uninstall and cannot be deleted from this endpoint.'});
+  }
   const references = tenant.flows.flatMap((flow) => flow.elements
     .filter((element) => ['HTTP Callout', 'Action'].includes(element.type) && element.config.namedCredentialId === id)
     .map((element) => `${flow.label} / ${element.label}`));
@@ -7867,7 +7878,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
     const now = new Date().toISOString();
     const nextRecord = objectName === 'Connector_App__c'
       ? applyConnectorLifecycle(existing, { ...existing, ...values }, tenant.namedCredentials, tenant.flows,
-          new Date(now), principal.permissions.includes('security:manage'))
+          new Date(now), principal.permissions.includes('licence:manage'))
       : { ...existing, ...values };
     let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...nextRecord, LastModifiedDate: now }, principal.userId, now, existing), formulaContextForUser(working, principal.userId));
     await runBeforeSaveRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
@@ -14142,7 +14153,7 @@ async function executeFlow(
             const now = new Date().toISOString();
             const nextRecord = objectName === 'Connector_App__c'
               ? applyConnectorLifecycle(previous, { ...previous, ...values }, tenant.namedCredentials, tenant.flows,
-                  new Date(now), runningPrincipal.permissions.includes('security:manage'))
+                  new Date(now), runningPrincipal.permissions.includes('licence:manage'))
               : { ...previous, ...values };
             let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...nextRecord, LastModifiedDate: now }, currentUserId, now, previous), context);
             await runBeforeSaveRecordTriggeredFlows(
