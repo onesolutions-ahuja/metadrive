@@ -1991,3 +1991,8 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .external-preview-viewport .free-canvas-stage { transform-origin: top left; }
 .external-preview-viewport .component-rendered-preview { pointer-events: auto; }
 @media (max-width: 540px) { .external-preview-toolbar { padding: 10px; gap: 8px; } .external-preview-viewport { padding: 10px; } .external-preview-device-choices { margin-left: 0; } }
+
+/* Keep shared navigation visible while scrolling without covering page content */
+.salesforce-header { position: sticky; top: 0; z-index: 80; }
+.app-strip { position: sticky; top: 50px; z-index: 70; }
+.kiosk-mode .salesforce-header, .kiosk-mode .app-strip { display: none; }
