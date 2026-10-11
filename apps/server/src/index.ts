@@ -252,6 +252,13 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
           record = calculateFormulaFields(object, record, formulaContextForUser(working, userId));
           working.records[object.apiName] = [...(working.records[object.apiName] ?? []), record];
+          // Each inbound message refreshes active conversational interviews; 15 minutes is inactivity, not total age.
+          const renewedExpiry = new Date(Date.now() + working.automationSettings.conversationIdleMinutes * 60_000).toISOString();
+          working.interviews = working.interviews.map(interview =>
+            interview.record?.Conversation_Key__c === conversationKey
+              && (interview.kind === 'wait' || interview.kind === 'scheduled')
+              ? { ...interview, expiresAt: renewedExpiry } : interview
+          );
           saved++;
           // Commit inbound identity BEFORE external flow callouts. Meta redeliveries must never resend replies.
           persistTenantRecords(tenantId, working);
@@ -14163,8 +14170,18 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
     for (const interview of [...tenant.interviews]) {
       if (!['wait', 'scheduled'].includes(interview.kind) || !interview.waitUntil) continue;
       const settings = tenant.automationSettings ?? defaultAutomationSettings;
-      const expired = Date.parse(interview.expiresAt) <= now.getTime()
-        || expiredConversationInterview(interview.record, interview.createdAt, now.getTime(), settings.conversationIdleMinutes);
+      const conversationKey = interview.record?.Conversation_Key__c;
+      const conversational = typeof conversationKey === 'string' && Boolean(conversationKey);
+      const owningFlow = conversational ? tenant.flows.find(flow => flow.apiName === interview.flowApiName) : undefined;
+      const sessionRecords = owningFlow?.triggerObject ? (tenant.records[owningFlow.triggerObject] ?? []) : [];
+      const lastActivityAt = sessionRecords.reduce((latest, item) => {
+        if (item.Conversation_Key__c !== conversationKey || item.Direction__c !== 'Incoming') return latest;
+        const timestamp = typeof item.CreatedDate === 'string' ? Date.parse(item.CreatedDate) : NaN;
+        return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+      }, Date.parse(interview.createdAt));
+      const expired = conversational
+        ? expiredConversationInterview(interview.record, new Date(lastActivityAt).toISOString(), now.getTime(), settings.conversationIdleMinutes)
+        : Date.parse(interview.expiresAt) <= now.getTime();
       if (expired || (!settings.autoRetryFailedFlows && interview.attempts > 0)) {
         const current = tenantData(tenantId);
         if (current) persistTenantRecords(tenantId, {
@@ -14181,7 +14198,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
           || (interview.allowDraft && item.status === 'Draft' && item.versionNumber === interview.versionNumber)));
       const working = structuredClone(currentTenant);
       try {
-        if (interview.kind === 'wait' && Date.parse(interview.expiresAt) <= now.getTime()) {
+        if (interview.kind === 'wait' && !conversational && Date.parse(interview.expiresAt) <= now.getTime()) {
           throw new Error('Wait interview expired before it could resume.');
         }
         if (!flow) throw new Error('Wait interview flow version is no longer active.');
