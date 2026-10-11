@@ -1968,3 +1968,12 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .profile-password-dialog .form-label { display: grid; gap: 7px; }
 .profile-password-dialog .form-control { width: 100%; box-sizing: border-box; }
 .profile-password-dialog .toolbar-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Builder component gallery: recognisable live thumbnails and readable labels */
+.builder-page .component-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; padding: 0 12px 16px; }
+.builder-page .component-library-card { grid-template-rows: 125px minmax(62px, auto); min-height: 190px; }
+.builder-page .component-card-preview { height: 125px; background: #fff; border-bottom: 1px solid #e5e9ef; }
+.builder-page .component-card-preview .component-rendered-preview { width: 125%; height: 157px; min-height: 157px; transform: scale(.8); }
+.builder-page .component-card-copy { padding: 10px 12px; gap: 5px; }
+.builder-page .component-card-copy strong { font-size: 13px; white-space: normal; line-height: 1.3; }
+.builder-page .component-card-copy span { font-size: 11px; line-height: 1.45; }
