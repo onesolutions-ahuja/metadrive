@@ -14,211 +14,77 @@
   "template": "header-main-sidebar",
   "components": [
     {
-      "id": "kiosk-full-ordering-demo",
+      "id": "kiosk-ordering-experience",
       "type": "Custom:KioskOrderingExperience",
-      "label": "Interactive Food Ordering Kiosk",
+      "label": "Object-bound Ordering Kiosk",
       "region": "main",
-      "properties": {
-        "libraryComponentId": "KioskOrderingExperience",
-        "brandName": "Your Restaurant",
-        "tagline": "Freshly made, just for you",
-        "accentColor": "#ffca26",
-        "inkColor": "#202124",
-        "language": "English",
-        "currency": "£",
-        "heroTitle": "Big flavour. Great food.",
-        "heroSubtitle": "Choose your favourites, customise and enjoy.",
-        "heroImage": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1200&q=85",
-        "menuTitle": "What are you craving?",
-        "categories": [
-          {
-            "id": "burgers",
-            "name": "Burgers",
-            "icon": "🍔"
-          },
-          {
-            "id": "chicken",
-            "name": "Chicken",
-            "icon": "🍗"
-          },
-          {
-            "id": "sides",
-            "name": "Sides",
-            "icon": "🍟"
-          },
-          {
-            "id": "drinks",
-            "name": "Drinks",
-            "icon": "🥤"
-          },
-          {
-            "id": "desserts",
-            "name": "Desserts",
-            "icon": "🍦"
-          },
-          {
-            "id": "salads",
-            "name": "Wraps & salads",
-            "icon": "🌯"
-          }
-        ],
-        "products": [
-          {
-            "id": "classic-burger",
-            "name": "Classic Beef Burger",
-            "categoryId": "burgers",
-            "price": 4.99,
-            "description": "Beef patty, cheese and fresh salad",
-            "emoji": "🍔",
-            "badge": "Popular",
-            "extras": [
-              {
-                "id": "cheese",
-                "name": "Extra cheese",
-                "price": 0.6
-              },
-              {
-                "id": "bacon",
-                "name": "Crispy bacon",
-                "price": 1.2
-              }
-            ],
-            "image": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "double-burger",
-            "name": "Double Cheeseburger",
-            "categoryId": "burgers",
-            "price": 6.49,
-            "description": "Two beef patties and melted cheese",
-            "emoji": "🍔",
-            "extras": [
-              {
-                "id": "cheese",
-                "name": "Extra cheese",
-                "price": 0.6
-              }
-            ],
-            "image": "https://images.unsplash.com/photo-1550547660-d9450f859349?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "smoky-burger",
-            "name": "Smoky BBQ Burger",
-            "categoryId": "burgers",
-            "price": 6.99,
-            "description": "Barbecue sauce and crisp onions",
-            "emoji": "🍔",
-            "badge": "Favourite",
-            "image": "https://images.unsplash.com/photo-1553979459-d2229ba7433a?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "veggie-burger",
-            "name": "Garden Veggie Burger",
-            "categoryId": "burgers",
-            "price": 5.49,
-            "description": "Crisp veggie patty with salad",
-            "emoji": "🥬",
-            "image": "https://images.unsplash.com/photo-1520072959219-c595dc870360?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "crispy-chicken",
-            "name": "Crispy Chicken Burger",
-            "categoryId": "chicken",
-            "price": 5.99,
-            "description": "Golden crispy chicken fillet",
-            "emoji": "🍗",
-            "image": "https://images.unsplash.com/photo-1606755962773-d324e0a13086?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "chicken-nuggets",
-            "name": "Chicken Bites · 6",
-            "categoryId": "chicken",
-            "price": 3.99,
-            "description": "Six tender chicken bites",
-            "emoji": "🍗",
-            "image": "https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "hot-chicken",
-            "name": "Spicy Chicken Burger",
-            "categoryId": "chicken",
-            "price": 6.29,
-            "description": "Spicy coating with a cooling mayo",
-            "emoji": "🌶️",
-            "badge": "Spicy",
-            "image": "https://images.unsplash.com/photo-1553979459-d2229ba7433a?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "fries",
-            "name": "Golden Fries",
-            "categoryId": "sides",
-            "price": 2.49,
-            "description": "Crispy, lightly salted fries",
-            "emoji": "🍟",
-            "image": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "loaded-fries",
-            "name": "Loaded Cheese Fries",
-            "categoryId": "sides",
-            "price": 3.99,
-            "description": "Fries with rich cheese sauce",
-            "emoji": "🍟",
-            "image": "https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "cola",
-            "name": "Chilled Cola",
-            "categoryId": "drinks",
-            "price": 1.99,
-            "description": "Refreshing fizzy drink",
-            "emoji": "🥤",
-            "image": "https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "milkshake",
-            "name": "Strawberry Shake",
-            "categoryId": "drinks",
-            "price": 3.49,
-            "description": "Cold and creamy shake",
-            "emoji": "🥤",
-            "image": "https://images.unsplash.com/photo-1572490122747-3968b75cc699?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "icecream",
-            "name": "Vanilla Ice Cream",
-            "categoryId": "desserts",
-            "price": 2.79,
-            "description": "Soft and creamy vanilla swirl",
-            "emoji": "🍦",
-            "image": "https://images.unsplash.com/photo-1563805042-7684c019e1cb?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "salad",
-            "name": "Fresh Garden Salad",
-            "categoryId": "salads",
-            "price": 4.29,
-            "description": "Mixed greens and crisp vegetables",
-            "emoji": "🥗",
-            "image": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=620&q=80"
-          },
-          {
-            "id": "wrap",
-            "name": "Grilled Chicken Wrap",
-            "categoryId": "salads",
-            "price": 5.29,
-            "description": "Warm tortilla with grilled chicken",
-            "emoji": "🌯",
-            "image": "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?auto=format&fit=crop&w=620&q=80"
-          }
-        ]
-      },
       "visible": true,
       "position": {
         "x": 0,
         "y": 0,
         "width": 1080,
         "height": 1920
+      },
+      "properties": {
+        "libraryComponentId": "KioskOrderingExperience",
+        "objectApiName": "Product__c",
+        "nameField": "Name",
+        "priceField": "Price__c",
+        "imageField": "Image__c",
+        "categoryField": "Category__c",
+        "descriptionField": "Description__c",
+        "filters": [
+          {
+            "field": "Available__c",
+            "operator": "Equals",
+            "value": "true"
+          }
+        ],
+        "cartObjectApiName": "CartLine__c",
+        "cartSessionField": "Session__c",
+        "cartProductField": "Product__c",
+        "cartQuantityField": "Quantity__c",
+        "cartPriceField": "Unit_Price__c",
+        "actionFlows": {
+          "add": {
+            "flowApiName": "KIOSK_CART_ADD",
+            "inputs": {
+              "SessionId": "$session",
+              "ProductId": "$event.productId",
+              "Quantity": "$event.quantity"
+            }
+          },
+          "quantity": {
+            "flowApiName": "KIOSK_CART_QUANTITY",
+            "inputs": {
+              "SessionId": "$session",
+              "LineId": "$event.lineId",
+              "Quantity": "$event.quantity"
+            }
+          },
+          "remove": {
+            "flowApiName": "KIOSK_CART_REMOVE",
+            "inputs": {
+              "SessionId": "$session",
+              "LineId": "$event.lineId"
+            }
+          },
+          "reset": {
+            "flowApiName": "KIOSK_CART_RESET",
+            "inputs": {
+              "SessionId": "$session"
+            }
+          }
+        },
+        "brandName": "Your Restaurant",
+        "tagline": "Made fresh for you",
+        "accentColor": "#ffca26",
+        "inkColor": "#202124",
+        "currency": "£",
+        "language": "English",
+        "heroTitle": "Big flavour. Great food.",
+        "heroSubtitle": "Choose your favourites, customise and enjoy.",
+        "menuTitle": "What are you craving?"
       }
     }
   ]
