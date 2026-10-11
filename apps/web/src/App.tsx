@@ -3791,7 +3791,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow
+  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -3801,6 +3801,7 @@ function MetadataBoundPageComponent({
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  disableActions?: boolean;
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
@@ -3902,6 +3903,7 @@ function MetadataBoundPageComponent({
     return source;
   };
   const onAction = async (action: { event: string; value?: unknown }) => {
+    if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test checkout.');
     const config = actionFlows[action.event];
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       throw new Error('No Flow is configured for the "' + action.event + '" kiosk action.');
@@ -7974,6 +7976,12 @@ function PageBuilder({
                     ? <div className="component-demo-activity"><strong>Recent activity</strong><span>Call with Jordan Lee <small>Today · 10:30 AM</small></span><span>Follow-up email sent <small>Yesterday</small></span></div>
                     : component.type === 'Chatter' && libraryPreview
                       ? <div className="component-demo-activity"><strong>Latest update</strong><span>Alex Morgan shared a project update.</span><small>2 comments · 4 likes</small></div>
+                  : customDefinition && !libraryPreview && typeof component.properties.objectApiName === 'string'
+                    && component.properties.objectApiName
+                    ? <MetadataBoundPageComponent definition={customDefinition} component={component}
+                        objects={objects} reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
+                        availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
+                        onNavigate={() => {}} onLaunchFlow={() => {}} disableActions />
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
