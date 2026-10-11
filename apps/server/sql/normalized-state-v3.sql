@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS md_v3_state_nodes (
     ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,
   CHECK (
     (kind = 'string' AND string_value IS NOT NULL AND number_value IS NULL AND bool_value IS NULL) OR
-    (kind = 'number' AND string_value IS NULL AND number_value IS NOT NULL AND isfinite(number_value) AND bool_value IS NULL) OR
+    (kind = 'number' AND string_value IS NULL AND number_value IS NOT NULL AND bool_value IS NULL) OR
     (kind = 'boolean' AND string_value IS NULL AND number_value IS NULL AND bool_value IS NOT NULL) OR
     (kind IN ('object','array','null') AND string_value IS NULL AND number_value IS NULL AND bool_value IS NULL)
   ),
