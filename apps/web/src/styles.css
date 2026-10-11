@@ -1914,3 +1914,19 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .setup-sidebar-toolbar { padding-left: 0; justify-content: center; }
   .setup-sidebar-toolbar > strong { display: none; }
 }
+
+/* App Manager: scoped, responsive form alignment */
+.app-manager { width: min(100%, 1100px); max-width: 1100px; box-sizing: border-box; }
+.app-manager form { display: grid; gap: 16px; }
+.app-manager .permission-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: end; }
+.app-manager .form-label { display: flex; flex-direction: column; align-items: stretch; gap: 7px; margin: 0; min-width: 0; font-size: 13px; font-weight: 600; }
+.app-manager .form-control { box-sizing: border-box; width: 100%; min-height: 38px; font-size: 14px; line-height: 1.4; padding: 8px 11px; }
+.app-manager textarea.form-control { min-height: 86px; resize: vertical; }
+.app-manager-color-control { display: flex; align-items: center; gap: 10px; }
+.app-manager-color-control input[type="color"] { flex: none; width: 46px; height: 38px; padding: 3px; border: 1px solid #d8dde5; background: white; border-radius: 5px; cursor: pointer; }
+.app-manager-color-control .form-control { max-width: 128px; font-family: monospace; }
+.app-manager .app-manager-fieldset { box-sizing: border-box; width: 100%; min-width: 0; margin: 0; padding: 16px; }
+.app-manager .app-manager-fieldset legend { padding: 0 7px; font-weight: 650; }
+.app-manager .app-manager-fieldset p { margin: 0 0 12px; }
+.app-manager .app-manager-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 720px) { .app-manager .permission-form-grid { grid-template-columns: minmax(0, 1fr); } }
