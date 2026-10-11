@@ -30,7 +30,7 @@ export default function AppExchange(props: Props) {
   const [view, setView] = useState<'discover'|'installed'>('discover');
   const [selected, setSelected] = useState<string | null>(null);
   const [openedKey, setOpenedKey] = useState<string | null>(null);
-  const [scope, setScope] = useState<'admins'|'all-users'>('admins');
+
   const refresh = useCallback(async () => {
     const rows = await props.loadApps();
     setApps(rows);
@@ -142,10 +142,8 @@ export default function AppExchange(props: Props) {
           <div><h3>Access</h3><p>Uses existing object, field and Named Credential permissions within this tenant.</p></div>
         </div>
         <div className="exchange-data-note"><ShieldCheck size={15}/><span>Trial starts only when you press Start Trial. Reinstallation never resets a previous trial.</span></div>
-        {!details.Installed__c && <div className="exchange-install-scope"><h3>Access scope</h3>
-          <label><input type="radio" checked={scope === 'admins'} onChange={() => setScope('admins')}/> Administrators only (default)</label>
-          <label><input type="radio" checked={scope === 'all-users'} onChange={() => setScope('all-users')}/> All users with permissions</label>
-          <p>Scope is controlled by RBAC in the user profile and permission sets.</p>
+        {!details.Installed__c && <div className="exchange-data-note"><LockKeyhole size={15}/>
+          <span>Access is granted through user profiles and permission sets. Installation does not grant credentials access to every user.</span>
         </div>}
         <div className="exchange-detail-footer"><span><PackageCheck size={14}/> Connector</span>
           {details.Installed__c
