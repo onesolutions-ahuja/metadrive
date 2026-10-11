@@ -4,6 +4,8 @@ import pg from 'pg';
 import { randomUUID, randomBytes, scrypt as scryptCallback } from 'node:crypto';
 import { promisify } from 'node:util';
 import { readRelationalState, writeRelationalState } from '../src/relational-runtime.mjs';
+import { readFileSync } from 'node:fs';
+import { transform } from 'esbuild';
 
 if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
   if (process.env.METADRIVE_PERSISTENCE_MODE !== 'relational') throw Error('Kiosk bootstrap requires relational persistence');
@@ -169,20 +171,45 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         profileId: 'kiosk-user', recordTypeId: null, formFactors: ['Desktop', 'Phone']
       });
     }
-    for (const component of kiosk.components) {
-      if (component.type !== 'Custom:KioskOrderingExperience') continue;
-      component.properties = {
-        ...component.properties,
-        objectApiName: 'Product__c',
-        nameField: 'Name', priceField: 'Price__c', imageField: 'Image__c',
+    const componentApiName = 'KioskOrderingExperience';
+    const sourceFile = new URL('../../web/src/custom-components/KioskOrderingExperience/KioskOrderingExperience.jsx', import.meta.url);
+    const stylesheetFile = new URL('../../web/src/custom-components/KioskOrderingExperience/KioskOrderingExperience.css', import.meta.url);
+    const jsxSource = readFileSync(sourceFile, 'utf8');
+    const cssSource = readFileSync(stylesheetFile, 'utf8');
+    const compiledJs = (await transform(jsxSource, { loader: 'jsx', format: 'cjs', jsx: 'transform', target: 'es2020' })).code;
+    state.libraryComponents ??= [];
+    const existingComponent = state.libraryComponents.find((c) => c.apiName === componentApiName);
+    const componentMetadata = {
+      apiName: componentApiName, label: 'Kiosk Ordering Experience',
+      description: 'Object- and field-bound product ordering with editable checkout Flow',
+      surfaces: ['page', 'dashboard', 'flow'],
+      resize: { defaultWidth: 1080, defaultHeight: 1920, minWidth: 320, minHeight: 600 },
+      jsxSource, cssSource, compiledJs, scopedCss: cssSource,
+      version: existingComponent ? existingComponent.version + (existingComponent.jsxSource === jsxSource ? 0 : 1) : 1,
+      updatedAt: existingComponent?.updatedAt ?? new Date().toISOString()
+    };
+    if (!existingComponent) state.libraryComponents.push(componentMetadata);
+    else if (existingComponent.jsxSource !== jsxSource || existingComponent.cssSource !== cssSource) {
+      Object.assign(existingComponent, componentMetadata, { updatedAt: new Date().toISOString() });
+    }
+    kiosk.layoutMode = 'free-canvas';
+    kiosk.canvasWidth = kiosk.canvasWidth || 1080;
+    kiosk.canvasHeight = kiosk.canvasHeight || 1920;
+    kiosk.components = [{
+      id: 'kiosk-ordering-experience', type: 'Custom:KioskOrderingExperience',
+      label: 'Interactive Ordering Kiosk', region: 'main', visible: true,
+      position: { x: 0, y: 0, width: kiosk.canvasWidth, height: kiosk.canvasHeight },
+      properties: {
+        libraryComponentId: componentApiName,
+        objectApiName: 'Product__c', nameField: 'Name',
+        priceField: 'Price__c', imageField: 'Image__c',
         categoryField: 'Category__c', descriptionField: 'Description__c',
         filters: [{ field: 'Available__c', operator: 'Equals', value: 'true' }],
-        checkoutFlowApiName: 'KIOSK_BILLING'
-      };
-      // Prevent fallback to the embedded demo catalogue; runtime now resolves records via metadata.
-      delete component.properties.products;
-      delete component.properties.categories;
-    }
+        checkoutFlowApiName: 'KIOSK_BILLING',
+        brandName: 'Your Restaurant', tagline: 'Made fresh for you',
+        accentColor: '#ffca26', inkColor: '#202124', currency: '£'
+      }
+    }];
     await writeRelationalState(pool, state, previous);
     console.log('Kiosk test accounts, profiles and editable metadata configured');
   } finally {
