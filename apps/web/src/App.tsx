@@ -2911,18 +2911,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   return (
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
-        <div className="launcher-menu-wrap">
-          <button type="button" className="icon-button app-launcher" aria-label="App Launcher" aria-expanded={launcherOpen} aria-controls="launcher-menu" onClick={() => setLauncherOpen((open) => !open)}><Grid2X2 size={18} /></button>
-          {launcherOpen && <nav className="launcher-menu" id="launcher-menu" aria-label="Switch workspace">
-            <button type="button" onClick={() => { openSetupWorkspace('home'); setLauncherOpen(false); }}><Settings2 size={16} />Setup</button>
-            <button type="button" onClick={() => {
-              const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName)) ?? 'Account';
-              navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
-              setLauncherOpen(false);
-            }}><Database size={16} />Records</button>
-          </nav>}
-        </div>
-        <div className="brand"><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /><span>UNEEngine</span></div>
+        <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
         <button type="button" className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
           onClick={() => {
             const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName))
@@ -2941,7 +2930,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         </div>
         <div className="header-tools">
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
-          <button className="icon-button" aria-label="Setup"><Settings2 size={17} /></button>
+          
           <div className="notification-center">
             <button className="icon-button notification-button" aria-label={`Notifications${notificationsUnreadCount ? `, ${notificationsUnreadCount} unread` : ''}`} aria-expanded={notificationsOpen} aria-controls="notification-panel" onClick={toggleNotifications}>
               <Bell size={17} />{notificationsUnreadCount > 0 && <span className="notification-count">{notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}</span>}
@@ -2978,13 +2967,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         <div className="app-title">
           <span className="app-icon"><Database size={18} /></span>
-          <select aria-label="Current app" value={currentApp?.apiName ?? ''} onChange={(event) => {
-            const nextAppId = event.target.value;
-            setCurrentAppId(nextAppId);
-            navigateRoute(route.kind === 'app-home' || route.kind === 'app-page'
-              ? { kind: 'app-home', appId: nextAppId }
-              : { ...route, appId: nextAppId });
-          }}>{apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}</select>
+          <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>
         </div>
         <nav className="primary-tabs" aria-label="Workspace navigation">
           {(currentApp?.navigationPageApiNames ?? []).map((apiName) => {
