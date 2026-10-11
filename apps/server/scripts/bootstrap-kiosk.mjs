@@ -314,13 +314,17 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         } },
         { id: 3, type: 'End', label: 'End', config: {} }
       ],[connector(1,2),connector(2,3)],cartInputs),
-      flow('KIOSK_CART_RESET', 'Kiosk - Clear session', [
+      flow('KIOSK_CART_RESET', 'Kiosk - Close session', [
         { id: 1, type: 'Start', label: 'Clear', config: {} },
         { id: 2, type: 'Delete Records', label: 'Remove all session lines', config: {
           object: 'CartLine__c', conditions: [{ field: 'Session__c', operator: 'Equals', value: '{!SessionId}' }]
         } },
-        { id: 3, type: 'End', label: 'End', config: {} }
-      ],[connector(1,2),connector(2,3)],[resource('SessionId','Text')]),
+        { id: 3, type: 'Update Records', label: 'Close session header', config: {
+          object: 'Cart__c', conditions: [{ field: 'Session__c', operator: 'Equals', value: '{!SessionId}' }],
+          fieldValues: [{ field: 'Status__c', value: 'Completed' }]
+        } },
+        { id: 4, type: 'End', label: 'End', config: {} }
+      ],[connector(1,2),connector(2,3),connector(3,4)],[resource('SessionId','Text')]),
       flow('KIOSK_CHECKOUT', 'Kiosk - Payment and receipt (configure device)', [
         { id: 1, type: 'Start', label: 'Start checkout', config: {} },
         { id: 2, type: 'Screen', label: 'Payment provider required', config: {
