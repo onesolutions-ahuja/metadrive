@@ -16,7 +16,7 @@ export default function ConnectorAppWorkspace({
   canManageCredentials: boolean;
   encryptionReady: boolean | null;
   onBack: () => void;
-  onSave: (value: Parameters<typeof NamedCredentials>[0]['onSave'] extends (value: infer T) => Promise<void> ? T : never) => Promise<void>;
+  onSave: (value: Parameters<Parameters<typeof NamedCredentials>[0]['onSave']>[0]) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{ connected: boolean; status?: number; message: string }>;
