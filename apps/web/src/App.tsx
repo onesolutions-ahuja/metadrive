@@ -8133,7 +8133,7 @@ function PageBuilder({
       }
     }
   };
-  const renderPageComponent = (component: LightningPageMetadata['components'][number], index: number, libraryPreview = false) => {
+  const renderPageComponent = (component: LightningPageMetadata['components'][number], index: number, libraryPreview = false, interactivePreview = false) => {
     if (!component.visible) return null;
     const customDefinition = component.type.startsWith('Custom:')
       ? libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length))
@@ -8161,7 +8161,7 @@ function PageBuilder({
       : 'Review account details to confirm renewal dates and billing preferences.';
     return <div
       key={component.id}
-      ref={libraryPreview ? (element) => { if (element) element.inert = true; } : undefined}
+      ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
       className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
       style={!libraryPreview && page.layoutMode === 'free-canvas' ? {
         left: component.position?.x ?? 0,
@@ -8279,24 +8279,18 @@ function PageBuilder({
     <div className="builder-page">
       {externalPreviewTarget && createPortal(
         <div className="external-page-preview">
-          <div className="external-preview-toolbar"><strong>{page.label}</strong><span>Live draft preview · {page.pageType}</span>
-            <div className="external-preview-device-choices">
-              {(['Desktop', 'Tablet', 'Phone'] as const).map((choice) => <button key={choice} type="button" className={device === choice ? 'btn active' : 'btn'} onClick={() => setDevice(choice)}>{choice}</button>)}
-            </div>
-            <button type="button" className="btn" onClick={() => { externalPreviewWindowRef.current?.close(); externalPreviewWindowRef.current = null; setExternalPreviewTarget(null); }}>Close</button>
-          </div>
           <div className={`external-preview-viewport ${device.toLowerCase()}`}>
             <div className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : 'record-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}>
               {page.layoutMode === 'free-canvas'
                 ? <div className="free-canvas-stage" style={{ width: page.canvasWidth, height: page.canvasHeight, position: 'relative' }}>
-                    {page.components.map((component, index) => renderPageComponent(component, index, true))}
+                    {page.components.map((component, index) => renderPageComponent(component, index, true, true))}
                   </div>
                 : <>
-                    {page.components.filter((component) => (component.region ?? 'main') === 'header').map((component, index) => renderPageComponent(component, index, true))}
+                    {page.components.filter((component) => (component.region ?? 'main') === 'header').map((component, index) => renderPageComponent(component, index, true, true))}
                     <div className={page.template === 'main-sidebar' || page.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
-                      <main className="record-runtime-main">{page.components.filter((component) => (component.region ?? 'main') === 'main').map((component, index) => renderPageComponent(component, index, true))}</main>
+                      <main className="record-runtime-main">{page.components.filter((component) => (component.region ?? 'main') === 'main').map((component, index) => renderPageComponent(component, index, true, true))}</main>
                       {(page.template === 'main-sidebar' || page.template === 'header-main-sidebar') &&
-                        <aside className="record-runtime-sidebar">{page.components.filter((component) => component.region === 'sidebar').map((component, index) => renderPageComponent(component, index, true))}</aside>}
+                        <aside className="record-runtime-sidebar">{page.components.filter((component) => component.region === 'sidebar').map((component, index) => renderPageComponent(component, index, true, true))}</aside>}
                     </div>
                   </>}
             </div>
