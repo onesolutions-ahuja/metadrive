@@ -8,6 +8,7 @@ on:
       - 'apps/server/test/normalized-cutover-gate.test.mjs'
       - 'apps/server/src/normalized-object-schema.mjs'
       - 'apps/server/test/normalized-object-schema.test.mjs'
+      - 'apps/server/test/normalized-sql-schema.integration.test.mjs'
       - 'apps/server/sql/normalized-registry-v2.sql'
       - '.github/workflows/metadrive-normalization-safety.yml'
   workflow_dispatch:
@@ -17,6 +18,22 @@ jobs:
   compatibility:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,7 +43,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Test strict record/Flow/RBAC/page/credential compatibility
-        run: node --test apps/server/test/normalized-cutover-gate.test.mjs apps/server/test/normalized-object-schema.test.mjs
+        run: node --test apps/server/test/normalized-cutover-gate.test.mjs apps/server/test/normalized-object-schema.test.mjs apps/server/test/normalized-sql-schema.integration.test.mjs
       - name: Compile backend and frontend without deployment
         run: npm run build
       - name: Verify emitted server entrypoint
