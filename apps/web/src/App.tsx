@@ -5103,6 +5103,36 @@ function RecordFormDialog({
       <small>Select multiple values with Ctrl or Command.</small>
       {helpText}
     </label>;
+    // Render legacy connector configuration as editable key/value fields, never raw JSON.
+    // Field names come from the saved configuration metadata, not provider-specific code.
+    if (object.apiName === 'UneConnector__c' && field.apiName === 'Configuration__c') {
+      let configuration: Record<string, unknown> = {};
+      try {
+        const decoded: unknown = value.trim() ? JSON.parse(value) : {};
+        if (!decoded || Array.isArray(decoded) || typeof decoded !== 'object') throw new Error('Invalid connector configuration');
+        configuration = decoded as Record<string, unknown>;
+      } catch {
+        return <div className="form-label record-form-wide" key={field.apiName} role="alert">
+          Configuration cannot be edited because its saved format is invalid. No values have been changed.
+        </div>;
+      }
+      const entries = Object.entries(configuration);
+      const updateConfiguration = (key: string, nextValue: string) => {
+        onChange(field.apiName, JSON.stringify({ ...configuration, [key]: nextValue }));
+      };
+      return <fieldset className="connector-config-fields record-form-wide" key={field.apiName} disabled={common.disabled}>
+        <legend>{field.label}</legend>
+        {entries.length ? entries.map(([key, fieldValue]) => {
+          const label = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+          return <label className="connector-config-row" key={key}>
+            <span>{label}</span>
+            <input className="form-control" type="text" value={fieldValue == null ? '' : String(fieldValue)}
+              onChange={(event) => updateConfiguration(key, event.target.value)} />
+          </label>;
+        }) : <p className="connector-config-empty">No configuration fields have been defined for this connector.</p>}
+        {helpText}
+      </fieldset>;
+    }
     if (dataType.includes('text area') || dataType.includes('long text')) return <label className="form-label record-form-wide" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
       <textarea className="form-control" {...common} maxLength={dataType === 'long text area' ? 131072 : undefined} value={value} onChange={(event) => onChange(field.apiName, event.target.value)} />
       {helpText}
