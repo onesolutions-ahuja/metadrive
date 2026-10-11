@@ -2009,6 +2009,25 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .named-credential-activation strong { margin-right: auto; }
 @media (max-width: 640px) { .named-credential-form-grid { grid-template-columns: minmax(0, 1fr); } .named-credential-modal { padding: 14px; } }
 
+/* Flow landing screen: 30/70 master-detail layout, using all available width. */
+.flow-start-page.flow-start-page-split { width: 100%; max-width: none; margin: 0; padding: 20px clamp(16px, 2vw, 30px) 28px; box-sizing: border-box; }
+.flow-start-page-split .flow-start-heading { margin-bottom: 16px; }
+.flow-start-panels { display: grid; grid-template-columns: minmax(260px, 3fr) minmax(0, 7fr); gap: 18px; align-items: start; }
+.flow-start-page-split .flow-start-panels > .surface { min-width: 0; margin: 0; padding: 18px; border-radius: 10px; }
+.flow-start-page-split .flow-start-create { position: sticky; top: 72px; }
+.flow-start-page-split .flow-start-types { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; margin-bottom: 14px; }
+.flow-start-page-split .flow-start-type { min-height: 59px; padding: 10px 12px; border-radius: 7px; }
+.flow-start-page-split .flow-start-name-step { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.flow-start-page-split .flow-start-name-step .btn { align-self: flex-start; }
+.flow-start-page-split .flow-existing-controls .form-label { display: block; width: min(100%, 420px); }
+.flow-start-page-split .flow-existing-table-scroll { max-height: min(70vh, 760px); overflow: auto; }
+.flow-start-page-split .flow-existing-table { min-width: 870px; }
+.flow-start-page-split .flow-existing-table th, .flow-start-page-split .flow-existing-table td { padding: 10px 9px; vertical-align: middle; }
+.flow-start-page-split .flow-existing-table td:first-child { min-width: 150px; }
+.flow-start-page-split .flow-existing-pagination { position: sticky; bottom: 0; background: #fff; padding-top: 12px; }
+@media (max-width: 920px) { .flow-start-panels { grid-template-columns: minmax(0, 1fr); } .flow-start-page-split .flow-start-create { position: static; } .flow-start-page-split .flow-start-types { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .flow-start-page-split .flow-start-types { grid-template-columns: minmax(0,1fr); } .flow-start-page-split .flow-existing-pagination { gap: 5px; } }
+
 /* Compact, stable page-load duration immediately before Help */
 .navigation-load-time { display: inline-flex; align-items: center; justify-content: flex-end; min-width: 94px; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; color: #54657a; }
 @media (max-width: 600px) { .navigation-load-time { font-size: 11px; min-width: 70px; } }

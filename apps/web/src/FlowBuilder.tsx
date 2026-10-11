@@ -998,14 +998,15 @@ export default function FlowBuilder({
     return <label className="form-label">Configuration<textarea className="form-control" rows={4} value={JSON.stringify(selected.config, null, 2)} readOnly /></label>;
   };
 
-  if (landing) return <div className="flow-start-page">
+  if (landing) return <div className="flow-start-page flow-start-page-split">
     <div className="flow-start-heading">
       <div className="eyebrow">AUTOMATION</div>
-      <h1>Start a Flow</h1>
-      <p>Choose a flow type to create, or open an existing flow.</p>
+      <h1>Flows</h1>
+      <p>Create a flow or find an existing automation.</p>
     </div>
+    <div className="flow-start-panels">
     <section className="flow-start-create surface" aria-labelledby="flow-start-types">
-      <h2 id="flow-start-types">Choose a flow type</h2>
+      <h2 id="flow-start-types">Create a flow</h2>
       <div className="flow-start-types">
         {flowTypeOptions.map((option) => <button type="button" key={option.type}
           className={newFlowType === option.type ? 'flow-start-type selected' : 'flow-start-type'}
@@ -1034,7 +1035,7 @@ export default function FlowBuilder({
       </div>}
     </section>
     <section className="flow-start-existing surface" aria-labelledby="flow-start-existing-title">
-      <h2 id="flow-start-existing-title">Open an existing flow</h2>
+      <h2 id="flow-start-existing-title">Existing flows</h2>
       <div className="flow-existing-controls">
         <label className="form-label" htmlFor="existing-flow-search">Search Flows
           <input id="existing-flow-search" className="form-control" type="search" placeholder="Search by flow name, type or status"
@@ -1072,6 +1073,7 @@ export default function FlowBuilder({
         <button className="btn" disabled={safeFlowPage === flowPageCount} onClick={() => setExistingFlowPage(flowPageCount)}>Last</button>
       </nav>
     </section>
+    </div>
   </div>;
 
   return <div className="flow-builder">
