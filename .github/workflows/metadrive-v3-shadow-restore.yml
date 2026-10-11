@@ -2,7 +2,7 @@ name: Verify SQL v3 against isolated Aiven restore
 
 on:
   push:
-    branches: [migration/normalized-v3-all-state-20261011]
+    branches: [migration/normalized-v3-all-state-20261011, migration/sql-only-shadow-proof-20261011]
     paths:
       - .github/workflows/metadrive-v3-shadow-restore.yml
       - apps/server/src/normalized-state-runtime.mjs
