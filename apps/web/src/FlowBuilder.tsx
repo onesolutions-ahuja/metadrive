@@ -1,5 +1,5 @@
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -34,10 +34,14 @@ import {
   type LibraryComponentMetadata
 } from './metadata';
 
+type FlowListRow = Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status' | 'versionNumber' | 'activeVersion' | 'createdAt' | 'createdBy' | 'lastModifiedAt' | 'lastModifiedBy'>;
+type FlowListResponse = { flows: FlowListRow[]; total: number; page: number; pageSize: number };
+
 type FlowBuilderProps = {
   landing?: boolean;
   flow: FlowDefinitionMetadata;
   flows: FlowDefinitionMetadata[];
+  onListFlows?: (page: number, search: string) => Promise<FlowListResponse>;
   libraryComponents: LibraryComponentMetadata[];
   platformEvents: PlatformEventMetadata[];
   objects: ObjectMetadata[];
@@ -134,9 +138,23 @@ export default function FlowBuilder({
   const [newFlowType, setNewFlowType] = useState<FlowDefinitionMetadata['flowType'] | null>(null);
   const [existingFlowSearch, setExistingFlowSearch] = useState('');
   const [existingFlowPage, setExistingFlowPage] = useState(1);
+  const [remoteFlowResults, setRemoteFlowResults] = useState<FlowListResponse | null>(null);
+  const [remoteFlowLoading, setRemoteFlowLoading] = useState(false);
+  useEffect(() => {
+    if (!landing || !onListFlows) return;
+    let cancelled = false;
+    setRemoteFlowLoading(true);
+    void onListFlows(existingFlowPage, existingFlowSearch)
+      .then((response) => { if (!cancelled) setRemoteFlowResults(response); })
+      .catch(() => { if (!cancelled) setRemoteFlowResults(null); })
+      .finally(() => { if (!cancelled) setRemoteFlowLoading(false); });
+    return () => { cancelled = true; };
+  }, [landing, onListFlows, existingFlowPage, existingFlowSearch]);
   const matchingFlows = flows.filter((candidate) => `${candidate.label} ${candidate.apiName} ${candidate.flowType} ${candidate.status}`.toLowerCase().includes(existingFlowSearch.trim().toLowerCase()));
-  const flowPageCount = Math.max(1, Math.ceil(matchingFlows.length / 50));
+  const totalFlowCount = remoteFlowResults?.total ?? matchingFlows.length;
+  const flowPageCount = Math.max(1, Math.ceil(totalFlowCount / 50));
   const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
+  const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
   const flowTypeOptions: Array<{ type: FlowDefinitionMetadata['flowType']; description: string }> = [
     { type: 'Screen Flow', description: 'Guide a user through screens and actions.' },
     { type: 'Record-Triggered Flow', description: 'Run when a record is created or updated.' },
@@ -1020,13 +1038,14 @@ export default function FlowBuilder({
       <div className="flow-existing-controls">
         <label className="form-label" htmlFor="existing-flow-search">Search Flows
           <input id="existing-flow-search" className="form-control" type="search" placeholder="Search by flow name, type or status"
-            value={existingFlowSearch} onChange={(event) => { setExistingFlowSearch(event.target.value); setExistingFlowPage(1); }} />
+            value={existingFlowSearch} onChange={(event) => { setExistingFlowSearch(event.target.value); setExistingFlowPage(1); setRemoteFlowResults(null); }} />
         </label>
       </div>
-      {matchingFlows.length ? <div className="flow-existing-table-scroll">
+      {remoteFlowLoading && <p role="status" className="settings-panel-copy">Loading flows…</p>}
+      {totalFlowCount ? <div className="flow-existing-table-scroll">
         <table className="flow-existing-table">
           <thead><tr><th>Flow Name</th><th>Flow Type</th><th>Status</th><th>Version</th><th>Created By</th><th>Created Date</th><th>Modified By</th><th>Modified Date</th><th>Actions</th></tr></thead>
-          <tbody>{matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50).map((candidate) =>
+          <tbody>{displayedFlows.map((candidate) =>
             <tr key={candidate.apiName}>
               <td><button type="button" className="text-action" onClick={() => onSelectFlow(candidate.apiName)}>{candidate.label}</button></td>
               <td>{candidate.flowType}</td><td>{candidate.status}</td><td>v{candidate.versionNumber}</td>
@@ -1038,7 +1057,7 @@ export default function FlowBuilder({
         </table>
       </div> : <p className="settings-panel-copy">No matching flows found.</p>}
       <nav aria-label="Flow list pagination" className="flow-existing-pagination">
-        <span>{matchingFlows.length} flow{matchingFlows.length === 1 ? '' : 's'} · Page {safeFlowPage} of {flowPageCount}</span>
+        <span>{totalFlowCount} flow{totalFlowCount === 1 ? '' : 's'} · Page {safeFlowPage} of {flowPageCount}</span>
         <button className="btn" disabled={safeFlowPage === 1} onClick={() => setExistingFlowPage(1)}>First</button>
         <button className="btn" disabled={safeFlowPage === 1} onClick={() => setExistingFlowPage(safeFlowPage - 1)}>Previous</button>
         <button className="btn" disabled={safeFlowPage === flowPageCount} onClick={() => setExistingFlowPage(safeFlowPage + 1)}>Next</button>
