@@ -4111,11 +4111,11 @@ function loadState(): PlatformState {
       tenants: tenantsWithLibraryManagement,
       libraryComponents: parsed.libraryComponents ?? []
     };
-    if (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed)) persistState(migrated);
+    if (!maintenanceMode && (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
     return migrated;
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      persistState(initialState);
+      if (!maintenanceMode) persistState(initialState);
       return structuredClone(initialState);
     }
     throw new Error(`Cannot load platform state from ${dataPath}: ${error instanceof Error ? error.message : String(error)}`);
