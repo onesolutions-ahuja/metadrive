@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths:
       - 'apps/server/src/relational-projection.mjs'
+      - 'apps/server/src/relational-runtime.mjs'
+      - 'apps/server/src/relational-runtime.d.mts'
+      - 'apps/server/src/relational-tables.mjs'
+      - 'apps/server/src/postgres-state.ts'
+      - 'apps/server/src/index.ts'
       - 'apps/server/sql/relational-state-v1.sql'
       - 'apps/server/scripts/migrate-relational-state.mjs'
       - 'apps/server/test/relational-*.test.mjs'
@@ -46,7 +51,9 @@ jobs:
       - name: Compile application (web and server)
         run: npm run build
       - name: Verify projections and staging migration in real PostgreSQL
-        run: node --test apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs
+        env:
+          METADRIVE_REL_VERIFY_WRITES: 'true'
+        run: node --test apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
