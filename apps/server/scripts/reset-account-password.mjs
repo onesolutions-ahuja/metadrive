@@ -29,6 +29,10 @@ const client = new pg.Client({connectionString:url.toString(),ssl:process.env.PG
 await client.connect();
 try {
   await client.query('BEGIN');
+  // Once SQL backfill exists, updating only JSONB would create a split-brain
+  // password. Fail safely and use the controlled relational reset instead.
+  const relational=await client.query("SELECT to_regclass('metadrive_rel_runtime') AS table_name");
+  if(relational.rows[0].table_name) throw Error('Relational migration present; use reset-relational-password.mjs while API is offline');
   const result=await client.query('SELECT payload FROM metadrive_platform_state WHERE id=1 FOR UPDATE');
   if(result.rowCount!==1) throw Error('Platform state missing');
   const state=result.rows[0].payload;

@@ -1,17 +1,21 @@
 import pg from 'pg';
+import { readRelationalState, writeRelationalState, type RelationalSnapshot } from './relational-runtime.mjs';
 
 const { Pool } = pg;
+// Production remains JSONB until explicit, verified relational cutover.
+export const persistenceMode = process.env.METADRIVE_PERSISTENCE_MODE ?? 'jsonb';
+if (!['jsonb', 'relational'].includes(persistenceMode)) throw new Error('Invalid METADRIVE_PERSISTENCE_MODE');
+let relationalSnapshot: RelationalSnapshot | null = null;
 const connectionString = process.env.DATABASE_URL;
-// Test harnesses use isolated METADRIVE_DATA_PATH files, never a shared external database.
-// This double gate cannot activate for normal production/server runs.
+// Preserve the explicit no-DB test harness from the latest main branch.
 const testOnlyLocalState = process.env.NODE_ENV === 'test' && process.env.METADRIVE_TEST_MODE === 'true';
 if (!connectionString && !testOnlyLocalState) throw new Error('DATABASE_URL is required for persistent UNEEngine state');
+if (persistenceMode === 'relational' && !connectionString) throw new Error('Relational mode requires DATABASE_URL');
 
 // Keep SSL configuration in one place: pg URL sslmode options otherwise override the trusted CA.
 const databaseUrl = connectionString ? new URL(connectionString) : null;
-if (databaseUrl) {
-  for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) databaseUrl.searchParams.delete(key);
-}
+if (databaseUrl) for (const key of ['sslmode','sslcert','sslkey','sslrootcert']) databaseUrl.searchParams.delete(key);
+
 const pool = databaseUrl ? new Pool({
   connectionString: databaseUrl.toString(),
   ssl: process.env.PGSSLMODE === 'disable' ? false : {
@@ -24,6 +28,11 @@ const pool = databaseUrl ? new Pool({
 
 export async function readPersistedState(): Promise<unknown | null> {
   if (!pool) return null;
+  if (persistenceMode === 'relational') {
+    // Never silently fall back to a stale JSONB blob or empty seed.
+    relationalSnapshot = await readRelationalState(pool as unknown as Parameters<typeof readRelationalState>[0]);
+    return relationalSnapshot.state;
+  }
   await pool.query(`CREATE TABLE IF NOT EXISTS metadrive_platform_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     payload JSONB NOT NULL,
@@ -33,35 +42,69 @@ export async function readPersistedState(): Promise<unknown | null> {
   return result.rows[0]?.payload ?? null;
 }
 
-let pending: Promise<void> = Promise.resolve();
-let lastWriteFailure: Error | null = null;
+// At most one in-flight and one pending complete-state snapshot are retained.
+// Older snapshots can be superseded by the newest state within one process.
+// Every caller resolves only after a snapshot at least as new has been committed.
+type PersistWaiter = { resolve: () => void; reject: (error: unknown) => void };
+let newestPayload: string | null = null;
+let drainActive = false;
+let writeFailure: unknown = null;
+let waiting: PersistWaiter[] = [];
+let idleWaiters: Array<() => void> = [];
+const upsertStateSql = `INSERT INTO metadrive_platform_state (id, payload) VALUES (1, $1::jsonb)
+  ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`;
+
+async function drainStateWrites(): Promise<void> {
+  while (newestPayload !== null) {
+    const payload = newestPayload;
+    newestPayload = null;
+    const batch = waiting.splice(0);
+    try {
+      if (!pool) throw new Error('Database pool not available');
+      if (persistenceMode === 'relational') {
+        if (!relationalSnapshot) throw new Error('Relational database must be verified before first write');
+        relationalSnapshot = await writeRelationalState(
+          pool as unknown as Parameters<typeof writeRelationalState>[0], JSON.parse(payload), relationalSnapshot
+        );
+      } else {
+        await pool.query(upsertStateSql, [payload]);
+      }
+      writeFailure = null;
+      for (const waiter of batch) waiter.resolve();
+    } catch (error) {
+      writeFailure = error;
+      console.error('CRITICAL: MetaDrive PostgreSQL persistence failed', error);
+      if (persistenceMode === 'relational') process.exitCode = 1;
+      for (const waiter of [...batch, ...waiting.splice(0)]) waiter.reject(error);
+      newestPayload = null;
+      break;
+    }
+  }
+  drainActive = false;
+  for (const done of idleWaiters.splice(0)) done();
+}
 export function persistToPostgres(state: unknown, preSerialized?: string): Promise<unknown> {
   if (!pool) return Promise.resolve();
+  if (writeFailure !== null && persistenceMode === 'relational') return Promise.reject(writeFailure);
   const payload = preSerialized ?? JSON.stringify(state);
-  // An earlier connection failure must not poison every later database write.
-  // Keep the queue ordered, catch the failure on the queue itself, and let callers
-  // use waitForPersistedState to prevent outbound effects before durable storage.
-  const operation = pending.then(() => pool.query(
-    `INSERT INTO metadrive_platform_state (id, payload) VALUES (1, $1::jsonb)
-     ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
-    [payload]
-  ));
-  pending = operation.then(
-    () => { lastWriteFailure = null; },
-    (error: unknown) => {
-      lastWriteFailure = error instanceof Error ? error : new Error(String(error));
-      console.error('CRITICAL: MetaDrive PostgreSQL persistence failed', lastWriteFailure);
+  return new Promise<void>((resolve, reject) => {
+    newestPayload = payload;
+    waiting.push({ resolve, reject });
+    if (!drainActive) {
+      drainActive = true;
+      void drainStateWrites();
     }
-  );
-  return operation;
+  });
 }
 
+// Await both the pending snapshot and any active durable PostgreSQL commit.
 export async function waitForPersistedState(): Promise<void> {
-  await pending;
-  if (lastWriteFailure) throw lastWriteFailure;
+  if (drainActive) await new Promise<void>((resolve) => idleWaiters.push(resolve));
+  if (writeFailure !== null) throw writeFailure;
 }
 
 export async function closeStateStore(): Promise<void> {
-  await pending;
+  if (drainActive) await new Promise<void>((resolve) => idleWaiters.push(resolve));
+  if (writeFailure !== null) throw writeFailure;
   if (pool) await pool.end();
 }

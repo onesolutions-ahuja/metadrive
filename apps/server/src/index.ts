@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres, waitForPersistedState } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode } from './postgres-state.js';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
@@ -58,6 +58,44 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
+// Explicit maintenance barrier for Aiven cutover; no API traffic or scheduled
+// dispatch may modify the DB while the in-place migration is running.
+const maintenanceMode = process.env.METADRIVE_MAINTENANCE_MODE === 'true';
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!maintenanceMode || req.path === '/health') return next();
+  res.setHeader('Retry-After', '120');
+  return res.status(503).json({ error: 'MetaDrive database maintenance in progress' });
+});
+
+// In relational mode, acknowledge an API response only after the latest
+// database transaction commits. JSONB mode is deliberately unchanged.
+let latestStateCommit: Promise<unknown> = Promise.resolve();
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (persistenceMode !== 'relational' || !req.path.startsWith('/api')) return next();
+  const end = res.end;
+  let ending = false;
+  res.end = ((...args: unknown[]) => {
+    if (ending) return res;
+    ending = true;
+    const commit = latestStateCommit;
+    void commit.then(() => {
+      Reflect.apply(end, res, args);
+    }).catch((error: unknown) => {
+      console.error('MetaDrive API transaction not acknowledged:', error);
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : new Error('Database persistence failed'));
+        return;
+      }
+      res.statusCode = 503;
+      res.removeHeader('Content-Length');
+      res.removeHeader('ETag');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      Reflect.apply(end, res, [JSON.stringify({ error: 'Database persistence unavailable' })]);
+    });
+    return res;
+  }) as typeof res.end;
+  next();
+});
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app') return next();
   const startedAt = Date.now();
@@ -3151,6 +3189,7 @@ type LocalUser = {
   permissionSetGroupIds: string[];
   disabled: boolean;
   createdAt: string;
+  authRevokedBefore?: number;
 };
 type RefreshSession = {
   tokenHash: string;
@@ -3212,7 +3251,8 @@ const stateSchema = z.object({
     id: z.string(), tenantId: z.string(), name: z.string(), email: z.string().email(),
     passwordSalt: z.string(), passwordHash: z.string(), role: z.string(),
     permissionSetIds: z.array(z.string()), permissionSetGroupIds: z.array(z.string()).default([]),
-    disabled: z.boolean(), createdAt: z.string().datetime()
+    disabled: z.boolean(), createdAt: z.string().datetime(),
+    authRevokedBefore: z.number().int().nonnegative().optional()
   })),
   refreshSessions: z.array(z.object({
     tokenHash: z.string(), familyId: z.string(), userId: z.string(), tenantId: z.string(),
@@ -4139,17 +4179,18 @@ function loadState(): PlatformState {
       tenants: tenantsWithLibraryManagement,
       libraryComponents: parsed.libraryComponents ?? []
     };
-    if (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed)) persistState(migrated);
+    if (!maintenanceMode && (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
     return migrated;
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      persistState(initialState);
+      if (!maintenanceMode) persistState(initialState);
       return structuredClone(initialState);
     }
     throw new Error(`Cannot load platform state from ${dataPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 function persistState(next: PlatformState): void {
+  if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
   mkdirSync(dirname(dataPath), { recursive: true });
   const temporaryPath = `${dataPath}.tmp`;
   // Serialize once: pretty-printing plus a second JSON stringify doubled large
@@ -4157,8 +4198,10 @@ function persistState(next: PlatformState): void {
   const serialized = JSON.stringify(next);
   writeFileSync(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
   renameSync(temporaryPath, dataPath);
-  // Failures are logged and surfaced to durability barriers without unhandled rejections.
-  void persistToPostgres(next, serialized).catch(() => {});
+  latestStateCommit = persistToPostgres(next, serialized);
+  void latestStateCommit.catch((error: unknown) => {
+    console.error('CRITICAL: MetaDrive state commit failed', error);
+  });
 }
 const existingPostgresState = await readPersistedState();
 if (existingPostgresState !== null) {
@@ -4183,7 +4226,7 @@ try {
   console.warn('Named Credentials encryption readiness: ' + status);
 }
 
-await persistToPostgres(state);
+if (!maintenanceMode) await persistToPostgres(state);
 
 function credentialKeyRing(): CredentialKeyRing {
   const serializedKeys = process.env.METADRIVE_CREDENTIAL_KEYS;
@@ -4671,6 +4714,11 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
+    if (user.authRevokedBefore !== undefined &&
+        (typeof claims.iat !== 'number' || claims.iat <= user.authRevokedBefore)) {
+      res.status(401).json({ error: 'Access token was issued before credentials changed' });
+      return;
+    }
     res.locals.principal = {
       userId: user.id,
       tenantId: user.tenantId,
@@ -4748,7 +4796,7 @@ const provisioningSchema = z.object({
   password: z.string().min(12).max(256)
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'metadrive-api', authMode: jwtService.config.mode }));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'metadrive-api', authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode }));
 app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
 app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
 app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
@@ -16229,6 +16277,7 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
 
 let scheduledDispatchRunning = false;
 async function dispatchScheduledFlows(): Promise<void> {
+  if (maintenanceMode) return;
   if (scheduledDispatchRunning) return;
   scheduledDispatchRunning = true;
   try {
