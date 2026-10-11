@@ -67,9 +67,10 @@ test('one WhatsApp number can switch legal and beauty context without extra mess
     const login = await send('/auth/login', 'POST', undefined, { email, password });
     assert.equal(login.status, 200, JSON.stringify(login.result));
     const token = login.result.access_token as string;
-    const contextFlow = await send('/metadata/flows/WA_CONTEXT', 'GET', token);
-    assert.equal(contextFlow.status, 200, JSON.stringify(contextFlow.result));
-    assert.equal(contextFlow.result.flow.status, 'Active');
+    const flows = await send('/metadata/flows', 'GET', token);
+    assert.equal(flows.status, 200, JSON.stringify(flows.result));
+    const contextFlow = flows.result.flows.find((flow: Record<string, any>) => flow.apiName === 'WA_CONTEXT');
+    assert.equal(contextFlow?.status, 'Active');
     const common = { Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
       Direction__c: 'Incoming', From_Number__c: '447000000001' };
     for (const [message, expected] of [['LAWYER', 'Legal'], ['BEAUTY', 'Beauty'], ['BARBER', 'Beauty'], ['LAWYER', 'Legal']] as const) {
