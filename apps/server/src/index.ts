@@ -4412,18 +4412,14 @@ async function bootstrapTenant(): Promise<void> {
     return;
   }
 
-  const credentials = await hashPassword(password);
+  // Bootstrap credentials are only for first-time provisioning. Never reset an
+  // existing administrator's password on application startup or redeployment.
+  const credentials = existingUser ? null : await hashPassword(password);
   const user = existingUser && existingUser.tenantId === tenantId
-    ? {
-        ...existingUser,
-        name: existingUser.name || adminName,
-        passwordSalt: credentials.salt,
-        passwordHash: credentials.hash,
-        disabled: false
-      }
+    ? existingUser
     : {
         id: randomUUID(), tenantId, name: adminName, email: normalizedEmail,
-        passwordSalt: credentials.salt, passwordHash: credentials.hash,
+        passwordSalt: credentials!.salt, passwordHash: credentials!.hash,
         role: 'System Administrator', permissionSetIds: ['system-administrator'],
         permissionSetGroupIds: [],
         disabled: false, createdAt: new Date().toISOString()
