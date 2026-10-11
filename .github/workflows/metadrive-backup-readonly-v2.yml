@@ -5,6 +5,9 @@ on:
     branches: [migration/safe-normalized-sql-preflight-20261011]
     paths:
       - .github/workflows/metadrive-backup-readonly-v2.yml
+      - apps/server/scripts/copy-typed-sql-on-restored-db.mjs
+      - apps/server/sql/normalized-registry-v2.sql
+      - apps/server/src/normalized-object-schema.mjs
   workflow_dispatch:
 
 permissions:
@@ -84,6 +87,11 @@ jobs:
             PGSSLMODE=disable METADRIVE_DIGEST_FILE="${RUNNER_TEMP}/restored.sha" \
             node apps/server/scripts/verify-aiven-state.mjs
           echo "Independent PostgreSQL restore verified. No backup or customer data uploaded to GitHub."
+      - name: Verify complete typed business-record copy on disposable restored database
+        run: |
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
+            node apps/server/scripts/copy-typed-sql-on-restored-db.mjs --apply
+          echo "Typed SQL shadow backfill and field-by-field readback passed on isolated restore only"
       - name: Encrypt full backup, decrypt and verify identical contents
         env:
           METADRIVE_BACKUP_ENCRYPTION_KEY: ${{ secrets.METADRIVE_BACKUP_ENCRYPTION_KEY }}
@@ -98,7 +106,7 @@ jobs:
       - name: Retain encrypted backup for guarded production rollback
         uses: actions/upload-artifact@v4
         with:
-          name: metadrive-aiven-normalization-fresh-encrypted-backup
+          name: metadrive-aiven-normalization-fresh-shadow-verified-backup
           path: |
             ${{ runner.temp }}/metadrive-verified.dump.enc
             ${{ runner.temp }}/restored.sha
