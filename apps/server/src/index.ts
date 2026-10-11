@@ -7208,6 +7208,13 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
     || !Number.isSafeInteger(rawOffset) || rawOffset < 0)) {
     return res.status(400).json({ error: 'Invalid pagination: limit must be 1–200 and offset must be non-negative' });
   }
+  const relatedField = req.query.relatedField;
+  const relatedId = req.query.relatedId;
+  if ((relatedField !== undefined || relatedId !== undefined)
+    && (typeof relatedField !== 'string' || typeof relatedId !== 'string'
+      || !object.fields.some((field) => field.apiName === relatedField && field.relationship))) {
+    return res.status(400).json({ error: 'Invalid related-list filter' });
+  }
   const rawSearch = req.query.search;
   if (rawSearch !== undefined && (typeof rawSearch !== 'string' || rawSearch.length > 250)) {
     return res.status(400).json({ error: 'Invalid search query' });
@@ -7226,11 +7233,14 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
     ? object.fields.filter((field) => configuredFields.includes(field.apiName))
     : object.fields;
   const needle = typeof rawSearch === 'string' ? rawSearch.trim().toLocaleLowerCase() : '';
+  const scopedRecords = typeof relatedField === 'string' && typeof relatedId === 'string'
+    ? records.filter((record) => record[relatedField] === relatedId)
+    : records;
   const filtered = needle
-    ? records.filter((record) => searchFields.some((field) =>
+    ? scopedRecords.filter((record) => searchFields.some((field) =>
         Object.prototype.hasOwnProperty.call(record, field.apiName)
         && String(record[field.apiName] ?? '').toLocaleLowerCase().includes(needle)))
-    : records;
+    : scopedRecords;
   if (!paginated) return res.json({ records: filtered });
   return res.json({
     records: filtered.slice(rawOffset, rawOffset + rawLimit),
