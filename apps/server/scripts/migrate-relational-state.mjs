@@ -5,8 +5,8 @@ import { readFileSync, writeFileSync, mkdirSync, openSync, closeSync } from 'nod
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
-import { projectState, restoreState, verifyProjection } from '../src/relational-projection.mjs';
-import { relationalTables, readRelationalRows } from '../src/relational-tables.mjs';
+import { projectState, verifyProjection } from '../src/relational-projection.mjs';
+import { insertProjectedRows, verifyRelationalCopy } from '../src/relational-copy.mjs';
 
 const args=process.argv.slice(2);
 const apply=args.includes('--apply');
@@ -77,21 +77,8 @@ if(apply) {
     await target.query(readFileSync(sql,'utf8'));
 
     // All identifiers are fixed, code-owned names. Metadata is always a parameter.
-    const tables=relationalTables;
-    for(const [key,table,columnList,values] of tables) {
-      const columns=columnList.split(',');
-      const input=rows[key];
-      const size=Math.min(200,Math.floor(60000/columns.length));
-      for(let start=0;start<input.length;start+=size) {
-        const slice=input.slice(start,start+size);
-        const placeholders=slice.map((_,i)=>'('+columns.map((_,j)=>'$'+(i*columns.length+j+1)).join(',')+')').join(',');
-        await target.query('INSERT INTO '+table+' ('+columnList+') VALUES '+placeholders,slice.flatMap(values));
-      }
-    }
-    const actual=await readRelationalRows(target);
-    // Round-trip verification occurs BEFORE commit, allowing a complete rollback.
-    assert.deepStrictEqual(restoreState(actual),state);
-    assert.equal(verifyProjection(state,actual).digest,checked.digest);
+    await insertProjectedRows(target,rows);
+    await verifyRelationalCopy(target,state,rows);
     await target.query('INSERT INTO metadrive_rel_migrations (revision,source_sha256) VALUES (1,$1)',[checked.digest]);
     await target.query('INSERT INTO metadrive_rel_runtime (id,version,state_sha256) VALUES (1,0,$1)',[checked.digest]);
     await target.query('COMMIT');
