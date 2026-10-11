@@ -1820,3 +1820,35 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .connector-config-row .form-control { width: 100%; min-width: 0; }
 .connector-config-empty { color: var(--muted); font-size: 12px; }
 @media (max-width: 600px) { .connector-config-row { grid-template-columns: 1fr; gap: 5px; } }
+
+/* Prevent crowded app tabs from overlapping and keep both navigation rows visible. */
+.salesforce-header {
+  position: sticky;
+  top: 0;
+  z-index: 101;
+}
+.app-strip {
+  position: sticky;
+  top: 50px;
+  z-index: 100;
+  gap: 12px;
+  min-width: 0;
+}
+.app-strip .app-title { flex: 0 0 auto; }
+.app-strip .primary-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+.app-strip .primary-tab {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: max-content;
+}
+.app-strip .app-utility-button { flex: 0 0 auto; }
