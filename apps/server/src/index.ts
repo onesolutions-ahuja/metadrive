@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
+import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -3298,7 +3299,26 @@ const systemAdminPermissions = [
 const salesPermissions = ['metadata:read'];
 const supportPermissions = ['metadata:read', 'namedCredentials:manage'];
 
+const connectorAppCatalog = z.object({
+  object: objectSchema,
+  packages: z.array(z.record(z.unknown())),
+  flows: z.array(flowSchema)
+}).parse(JSON.parse(readFileSync(new URL('../data/connector-apps.json', import.meta.url), 'utf8')));
+function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId: string): RuntimeRecord[] {
+  const existing = [...(records ?? [])];
+  const now = new Date().toISOString();
+  for (const values of connectorAppCatalog.packages) {
+    if (existing.some((record) => record.AppKey__c === values.AppKey__c)) continue;
+    existing.push(runtimeRecordSchema.parse({
+      ...values, Id: randomUUID(), OwnerId: ownerId, RecordTypeId: 'master',
+      CreatedDate: now, LastModifiedDate: now
+    }));
+  }
+  return existing;
+}
+
 const baseObjects: ObjectMetadata[] = [
+  connectorAppCatalog.object,
   { apiName: 'User', label: 'User', pluralLabel: 'Users', kind: 'Standard Object', description: 'Platform users who belong to this tenant.', fields: [
     { apiName: 'Name', label: 'Full Name', dataType: 'Text(121)', required: true, unique: false },
     { apiName: 'Email', label: 'Email', dataType: 'Email', required: true, unique: true },
@@ -3830,7 +3850,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     ]
   });
   return {
-    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow()], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
+    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
@@ -3842,7 +3862,8 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
         ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
         IntegrationConnection__c: []
       }),
-      WhatsApp_Message__c: []
+      WhatsApp_Message__c: [],
+      Connector_App__c: ensureConnectorAppRecords([], admin?.id ?? 'system')
     },
     autoNumberSequences: {},
     fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, automationSettings: { ...defaultAutomationSettings }, namedCredentials: seedWhatsappDummyCredential(admin?.tenantId ?? 'bootstrap', []), emailAlerts: [],
@@ -4043,12 +4064,13 @@ function loadState(): PlatformState {
       });
       const objects = [
         ...storedObjects,
-        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'] : ['Campaign', 'Communication_Records__c', 'WhatsApp_Message__c']).includes(object.apiName)
+        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'] : ['Campaign', 'Communication_Records__c', 'WhatsApp_Message__c', 'Connector_App__c']).includes(object.apiName)
           && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(withObjectDefaults)
       ];
       const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
       if (!records.WhatsApp_Message__c) records.WhatsApp_Message__c = [];
       const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
+      records.Connector_App__c = ensureConnectorAppRecords(records.Connector_App__c, ownerId);
       if (!consolidationReady && !(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
       const previousProviderRecords = records.ConnectorProvider__c ?? [];
       const connectorDefinitions = (tenant.connectorDefinitions ?? structuredClone(defaultConnectorDefinitions)).map((definition) => {
@@ -4093,7 +4115,7 @@ function loadState(): PlatformState {
         }
       }
       const defaultProfiles = buildDefaultProfiles(objects, tenant.accessControl.permissionSets);
-      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'];
+      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c', 'Connector_App__c'];
       const connectorObjectPermissions = Object.fromEntries(connectorObjectNames.map((apiName) => [apiName, { ...fullObjectPermissions }]));
       const connectorFieldPermissions = Object.fromEntries(objects
         .filter((object) => connectorObjectNames.includes(object.apiName))
@@ -4240,6 +4262,7 @@ function loadState(): PlatformState {
       },
       objects,
       flows: [...tenant.flows,
+        ...connectorAppCatalog.flows.filter((definition) => !tenant.flows.some((existingFlow) => existingFlow.apiName === definition.apiName)),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
       ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
