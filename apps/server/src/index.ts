@@ -1,6 +1,7 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState } from './postgres-state.js';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs } from './automation-policy.js';
+import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
@@ -4068,9 +4069,12 @@ function loadState(): PlatformState {
 function persistState(next: PlatformState): void {
   mkdirSync(dirname(dataPath), { recursive: true });
   const temporaryPath = `${dataPath}.tmp`;
-  writeFileSync(temporaryPath, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
+  // Serialize once: pretty-printing plus a second JSON stringify doubled large
+  // platform-state allocations and could exhaust the 512 MB Render instance.
+  const serialized = JSON.stringify(next);
+  writeFileSync(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
   renameSync(temporaryPath, dataPath);
-  void persistToPostgres(next);
+  void persistToPostgres(next, serialized);
 }
 const existingPostgresState = await readPersistedState();
 if (existingPostgresState !== null) {
@@ -11193,6 +11197,7 @@ async function performHttpCallout(
       Object.hasOwn(connection.configuration, key) ? encodeURIComponent(connection.configuration[key]) : match)
     : relativePath;
   const target = resolveCalloutUrl(credential, path, context);
+  assertCalloutHostAllowed(target.hostname, process.env.METADRIVE_PAUSED_CALLOUT_HOSTS);
   const method = typeof config.method === 'string' ? config.method : operationMethod ?? 'GET';
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) throw new Error(`HTTP Callout "${elementLabel}" uses an unsupported method.`);
   const queryParametersValue = config.queryParameters;
