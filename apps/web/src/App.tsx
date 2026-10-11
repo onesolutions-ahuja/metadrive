@@ -2905,10 +2905,10 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         </div>
         <div className="brand"><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /><span>UNEEngine</span></div>
         <button type="button" className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
-          disabled={objects.length === 0}
           onClick={() => {
-            const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName)) ?? objects[0]?.apiName;
-            if (targetObject) navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
+            const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName))
+              ?? objects[0]?.apiName ?? 'Account';
+            navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
           }}><Database size={16} />Records</button>
         <div className="global-search">
           <Search size={15} />
