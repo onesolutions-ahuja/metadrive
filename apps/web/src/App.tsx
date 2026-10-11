@@ -272,15 +272,24 @@ class ApiRequestError extends Error {
   }
 }
 
-async function loadAppCommunicationHistory(field: string, source: string, offset: number, search: string) {
+async function loadAppCommunicationHistory(objectName: string, field: string, source: string, offset: number, search: string) {
   const params = new URLSearchParams({
     limit: '50', offset: String(offset), filterField: field, filterValue: source,
     ...(search ? { search } : {})
   });
   return apiRequest<{ records: Array<{ Id: string; [key: string]: unknown }>; total: number }>(
-    `/records/Communication_Records__c?${params.toString()}`);
+    `/records/${encodeURIComponent(objectName)}?${params.toString()}`);
 }
 
+async function loadConnectorMarketplaceApps() {
+  const result = await apiRequest<{records: import('./ConnectorAppWorkspace').ConnectorApp[]}>(`/records/Connector_App__c?limit=100&offset=0`);
+  return result.records;
+}
+async function executeConnectorAppLifecycleFlow(apiName: string, appKey: string): Promise<void> {
+  await apiRequest(`/flows/${encodeURIComponent(apiName)}/execute`, {
+    method: 'POST', body: JSON.stringify({AppKey:appKey})
+  });
+}
 async function loadFlowScreenRecords(objectApiName: string): Promise<Record<string, unknown>[]> {
   const result = await apiRequest<{ records: Record<string, unknown>[] }>(`/records/${encodeURIComponent(objectApiName)}`);
   return result.records;
@@ -972,6 +981,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [canManageApprovalProcesses, setCanManageApprovalProcesses] = useState(false);
   const [namedCredentials, setNamedCredentials] = useState<NamedCredentialMetadata[]>([]);
   const [canManageNamedCredentials, setCanManageNamedCredentials] = useState(false);
+  const [canManagePlatformLicences, setCanManagePlatformLicences] = useState(false);
   const [namedCredentialsEncryptionReady, setNamedCredentialsEncryptionReady] = useState<boolean | null>(null);
   const [emailAlerts, setEmailAlerts] = useState<EmailAlertMetadata[]>([]);
   const [connectorProviders, setConnectorProviders] = useState<ConnectorProviderMetadata[]>([]);
@@ -1196,6 +1206,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         setCurrentProfileId(sessionPayload.user.profileId);
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
+        setCanManagePlatformLicences(sessionPayload.user.permissions.includes('licence:manage'));
         setCanRunFlows(sessionPayload.user.permissions.includes('flows:run'));
         setCanManageFlows(sessionPayload.user.permissions.includes('flows:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
@@ -1400,8 +1411,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
-    if (!query) return setupNavigation;
-    return setupNavigation
+    const allowedGroups = setupNavigation.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canManagePlatformLicences || item !== 'Named Credentials')
+    }));
+    if (!query) return allowedGroups;
+    return allowedGroups
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => item.toLowerCase().includes(query)
@@ -1409,7 +1424,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             `${provider.name} ${provider.connectorKey}`.toLowerCase().includes(query))))
       }))
       .filter((group) => group.items.length);
-  }, [quickFind, connectorProviders]);
+  }, [quickFind, connectorProviders, canManagePlatformLicences]);
   const filteredConnectorProviders = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     return query
@@ -1525,6 +1540,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       return;
     }
     if (item === 'Named Credentials') {
+      if (!canManagePlatformLicences) { openSetupWorkspace('app-exchange'); return; }
       openSetupWorkspace('named-credentials');
       return;
     }
@@ -3165,7 +3181,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             onDelete={deleteApprovalProcess}
             onNotify={notify}
           />}
-          {route.kind === 'setup' && workspace === 'named-credentials' && <NamedCredentials
+          {route.kind === 'setup' && workspace === 'named-credentials' && canManagePlatformLicences && <NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
             encryptionReady={namedCredentialsEncryptionReady}
@@ -3176,14 +3192,22 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           />}
           {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange
             credentials={namedCredentials}
+            flows={flows.map(({apiName,label,status,elements}) => ({
+              apiName, label, status,
+              elements: elements.map((element) => ({type:element.type,config:element.config as Record<string,unknown>}))
+            }))}
+            canManageFlows={canManageFlows}
             canManageCredentials={canManageNamedCredentials}
             encryptionReady={namedCredentialsEncryptionReady}
+            loadApps={loadConnectorMarketplaceApps}
+            executeLifecycleFlow={executeConnectorAppLifecycleFlow}
             onSave={saveNamedCredential}
             onDelete={deleteNamedCredential}
             onRotate={rotateNamedCredential}
             onTest={testNamedCredential}
             loadHistory={loadAppCommunicationHistory}
-            onOpenRecord={(id) => navigateRoute({kind:'record-detail', objectApiName:'Communication_Records__c', recordId:id})}
+            onOpenFlow={selectFlow}
+            onOpenRecord={(objectName,id) => navigateRoute({kind:'record-detail', objectApiName:objectName, recordId:id})}
           />}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
             const provider = connectorProviders.find((item) => item.connectorKey === route.resourceApiName) ?? connectorProviders[0];
