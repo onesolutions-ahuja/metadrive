@@ -1045,8 +1045,60 @@ async function fetchFlowListPage(page: number, search: string) {
   }>(`/metadata/flows/list?page=${encodeURIComponent(String(page))}&search=${encodeURIComponent(search)}`);
 }
 
+function NavigationLoadTime({ routeKey, startedAt }: { routeKey: string; startedAt: number }) {
+  const [result, setResult] = useState<{ routeKey: string; milliseconds: number } | null>(null);
+  useEffect(() => {
+    let idleTimer: number | undefined;
+    let guardTimer: number | undefined;
+    let observer: MutationObserver | undefined;
+    let cancelled = false;
+    const complete = () => {
+      if (cancelled) return;
+      cancelled = true;
+      observer?.disconnect();
+      window.clearTimeout(idleTimer);
+      window.clearTimeout(guardTimer);
+      setResult({ routeKey, milliseconds: Math.max(0, performance.now() - startedAt) });
+    };
+    const schedule = () => {
+      window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => {
+        // Wait for visible async loading indicators before recording a final time.
+        const content = document.querySelector('.lightning');
+        const stillLoading = content?.querySelector('[aria-busy="true"], [role="progressbar"], .records-loading, .loading-spinner');
+        if (stillLoading && performance.now() - startedAt < 20000) schedule();
+        else complete();
+      }, 550);
+    };
+    const animation = window.requestAnimationFrame(() => {
+      const content = document.querySelector('.lightning');
+      if (content) {
+        observer = new MutationObserver(schedule);
+        observer.observe(content, { childList: true, subtree: true, characterData: true });
+      }
+      schedule();
+    });
+    guardTimer = window.setTimeout(complete, 22000);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animation);
+      observer?.disconnect();
+      window.clearTimeout(idleTimer);
+      window.clearTimeout(guardTimer);
+    };
+  }, [routeKey, startedAt]);
+  return <span className="navigation-load-time" role="status" aria-label="Page load time"
+    title="Elapsed time from URL navigation until page content stops updating">
+    {result?.routeKey === routeKey ? `Load: ${(result.milliseconds / 1000).toFixed(2)}s` : 'Loading…'}
+  </span>;
+}
+
 function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppRoute(window.location.pathname, window.location.search));
+  const [routeTiming, setRouteTiming] = useState(() => ({
+    routeKey: window.location.pathname + window.location.search,
+    startedAt: 0
+  }));
   const [currentAppId, setCurrentAppId] = useState(() => new URLSearchParams(window.location.search).get('appId') || 'Records');
   const [apps, setApps] = useState<LightningAppMetadata[]>([]);
   const [runtimeFormFactor, setRuntimeFormFactor] = useState<'Desktop' | 'Phone'>(() =>
@@ -1419,6 +1471,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         window.history.pushState({}, '', appRoutePath(route));
         return;
       }
+      setRouteTiming({ routeKey: window.location.pathname + window.location.search, startedAt: performance.now() });
       setRoute(nextRoute);
       setCurrentAppId(new URLSearchParams(window.location.search).get('appId') || 'Records');
     };
@@ -1472,7 +1525,10 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     if (!skipFlowConfirmation && !confirmFlowNavigation(nextRoute)) return false;
     const routeWithApp = nextRoute.kind === 'setup' ? nextRoute : { ...nextRoute, appId: nextRoute.appId ?? currentAppId };
     const path = appRoutePath(routeWithApp);
-    if (`${window.location.pathname}${window.location.search}` !== path) window.history.pushState({}, '', path);
+    if (`${window.location.pathname}${window.location.search}` !== path) {
+      setRouteTiming({ routeKey: path, startedAt: performance.now() });
+      window.history.pushState({}, '', path);
+    }
     setRoute(routeWithApp);
     if (routeWithApp.kind !== 'setup') setCurrentAppId(routeWithApp.appId ?? 'Records');
     return true;
@@ -3027,6 +3083,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           <kbd>⌘ K</kbd>
         </div>
         <div className="header-tools">
+          <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt} />
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
           <ConnectionHealthIndicator />
