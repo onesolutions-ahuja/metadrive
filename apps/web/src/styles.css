@@ -1942,3 +1942,15 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .flow-existing-table th { position: sticky; top: 0; background: #f8fafc; font-size: 12px; z-index: 1; }
 .flow-existing-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
 .flow-existing-pagination span { margin-right: auto; }
+
+/* Shared header: logo navigation and live connectivity indicator */
+.brand-home-button { border: 0; background: none; padding: 4px 10px; cursor: pointer; display: inline-flex; align-items: center; flex-shrink: 0; }
+.brand-home-button:focus-visible { outline: 2px solid #0176d3; outline-offset: 2px; border-radius: 5px; }
+.app-current-label { font-size: 14px; font-weight: 650; white-space: nowrap; }
+.connection-health-wrap { position: relative; }
+.connection-health-healthy { color: #2e844a; }
+.connection-health-slow { color: #a76a00; }
+.connection-health-offline { color: #ba0517; }
+.connection-health-checking { color: #637381; }
+.connection-health-popover { position: absolute; z-index: 100; top: calc(100% + 8px); right: 0; width: 235px; background: #fff; border: 1px solid #d8dde5; box-shadow: 0 8px 24px #0002; border-radius: 8px; padding: 14px; color: #252a35; }
+.connection-health-popover p { font-size: 13px; margin: 8px 0 0; }
