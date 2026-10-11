@@ -6149,8 +6149,8 @@ app.put('/api/connector-settings/:apiName', requireAnyPermission('metadata:write
 type ConnectorRight = 'view' | 'edit' | 'secrets' | 'test' | 'install';
 function connectorRight(principal: Principal, right: ConnectorRight): boolean {
   // Legacy installations retain access; new profiles can grant each permission independently.
-  return principal.permissions.includes('namedCredentials:manage')
-    || principal.permissions.includes('connectorApps:' + right);
+  return principal.permissions.includes('connectorApps:' + right)
+    || (principal.permissions.includes('namedCredentials:manage') && principal.permissions.includes('security:manage'));
 }
 function managedConnector(tenant: TenantData, credentialName: string): RuntimeRecord | undefined {
   return (tenant.records.Connector_App__c ?? []).find((item) => item.CredentialName__c === credentialName);
