@@ -132,6 +132,17 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.equal(saved.status,201,JSON.stringify(saved.data));
     assert.equal(saved.data.credential.enabled,false,'New managed credentials start disabled');
     assert.equal(saved.data.credential.hasSecret,true);
+    // Edits with a blank secret retain the encrypted stored value rather than returning 400.
+    const retainedSecret = await fetch('http://127.0.0.1:'+portNumber+'/api/named-credentials/'+saved.data.credential.id,{
+      method:'PUT', headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({ name:'XERO',label:'Xero Renamed',protocol:'HTTPS',
+        baseUrl:'https://api.example.org/',authType:'Bearer',secret:'' })
+    });
+    assert.equal(retainedSecret.status,200,await retainedSecret.text());
+    const editedMetadata=(await api(portNumber,'/named-credentials',token)).data.credentials
+      .find((item:Record<string,any>)=>item.id===saved.data.credential.id);
+    assert.equal(editedMetadata.hasSecret,true,'Blank secret must preserve encrypted secret');
+
     assert.equal(JSON.stringify(saved.data).includes('test-token-only-not-real'),false,'Secrets must not leave the server');
     const testBlocked=await api(portNumber,'/named-credentials/'+saved.data.credential.id+'/test',token,{});
     assert.equal(testBlocked.status,409,'A disabled connection cannot be tested');

@@ -6478,9 +6478,6 @@ app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:man
     if (parsed.data.authType !== 'None' && !parsed.data.secret && !shouldPreserveSecret) {
       return res.status(400).json({ error: 'Provide a new secret when changing the authentication type' });
     }
-    if (parsed.data.authType !== 'None' && parsed.data.secret === '') {
-      return res.status(400).json({ error: 'Secret cannot be empty' });
-    }
     const payload = shouldPreserveSecret
       ? {
           ...openCredentialPayload(principal.tenantId, existing),
