@@ -2226,7 +2226,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const runFlow = async (apiName = flow.apiName) => {
+  const runFlow = async (apiName = flow.apiName, inputs: Record<string, unknown> = {}) => {
     const selectedFlow = flows.find((item) => item.apiName === apiName);
     if (!selectedFlow) {
       notify(`Flow "${apiName}" was not found`);
@@ -2241,16 +2241,16 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     if (hasUnsavedChanges) notify('Running the most recently saved version; unsaved changes are not included.');
     const inputResources = selectedFlow.resources.filter((resource) => resource.availableForInput);
     if (inputResources.length) {
-      const inputs = Object.fromEntries(inputResources.map((resource) => [resource.name, resource.value === undefined
+      const defaultInputs = Object.fromEntries(inputResources.map((resource) => [resource.name, resource.value === undefined
         ? ''
         : typeof resource.value === 'string' ? resource.value : JSON.stringify(resource.value)]));
-      setFlowDebug({ flow: selectedFlow, mode: 'run', inputs, error: '', running: false });
+      setFlowDebug({ flow: selectedFlow, mode: 'run', inputs: { ...defaultInputs, ...Object.fromEntries(Object.entries(inputs).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)])) }, error: '', running: false });
       return;
     }
     try {
       const result = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string; screen?: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; values?: Record<string, unknown> }>(`/flows/${encodeURIComponent(selectedFlow.apiName)}/execute`, {
         method: 'POST',
-        body: JSON.stringify({})
+        body: JSON.stringify(inputs)
       });
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
@@ -3039,12 +3039,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName) => void runFlow(apiName)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName) => void runFlow(apiName)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
@@ -3116,7 +3116,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -3796,6 +3796,75 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
   </div>;
 }
 
+function MetadataBoundPageComponent({
+  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow
+}: {
+  definition: LibraryComponentMetadata;
+  component: PageComponentMetadata;
+  objects: ObjectMetadata[];
+  reports: ReportMetadata[];
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  formFactor: 'Desktop' | 'Phone';
+  onNavigate: (route: AppRoute) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+}) {
+  const properties = component.properties;
+  const objectApiName = String(properties.objectApiName ?? '');
+  const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [dataError, setDataError] = useState('');
+  const [dataLoading, setDataLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setRecords([]); setDataError('');
+    if (!objectApiName) return () => { active = false; };
+    setDataLoading(true);
+    void loadFlowScreenRecords(objectApiName).then((items) => {
+      if (active) setRecords(items);
+    }).catch((error: unknown) => {
+      if (active) setDataError(error instanceof Error ? error.message : 'Unable to read records');
+    }).finally(() => { if (active) setDataLoading(false); });
+    return () => { active = false; };
+  }, [objectApiName]);
+  const matchFilters = (record: Record<string, unknown>) => {
+    const filters = Array.isArray(properties.filters) ? properties.filters : [];
+    return filters.every((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return true;
+      const filter = item as Record<string, unknown>;
+      const field = String(filter.field ?? '');
+      if (!field) return true;
+      const actual = record[field];
+      const expected = String(filter.value ?? '');
+      const value = String(actual ?? '');
+      switch (String(filter.operator ?? 'Equals')) {
+        case 'Not Equals': return value !== expected;
+        case 'Contains': return value.toLowerCase().includes(expected.toLowerCase());
+        case 'Greater Than': return Number(actual) > Number(expected);
+        case 'Less Than': return Number(actual) < Number(expected);
+        default: return value === expected;
+      }
+    });
+  };
+  const visibleRecords = records.filter(matchFilters);
+  const mappedProducts = visibleRecords.map((record) => ({
+    id: String(record.Id ?? ''),
+    name: String(record[String(properties.nameField ?? 'Name')] ?? ''),
+    price: Number(record[String(properties.priceField ?? 'Price__c')] ?? 0),
+    image: String(record[String(properties.imageField ?? 'Image__c')] ?? ''),
+    description: String(record[String(properties.descriptionField ?? 'Description__c')] ?? ''),
+    categoryId: String(record[String(properties.categoryField ?? 'Category__c')] ?? '')
+  }));
+  const categories = [...new Set(mappedProducts.map((item) => item.categoryId).filter(Boolean))]
+    .map((id) => ({ id, name: id, icon: '🍽️' }));
+  return <div>
+    {dataError && <div className="records-message" role="alert">{dataError}</div>}
+    <RegisteredComponent definition={definition} props={{
+      ...properties, label: component.label, properties, objects, reports, flows: availableFlows,
+      device: formFactor, onNavigate, onLaunchFlow, loading: dataLoading,
+      ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
+    }} />
+  </div>;
+}
+
 function LightningAppRuntime({
   appId,
   pageApiName,
@@ -3816,7 +3885,7 @@ function LightningAppRuntime({
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
-  onLaunchFlow: (flowApiName: string) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   onKioskModeChange: (enabled: boolean) => void;
 }) {
   const [page, setPage] = useState<LightningPageMetadata | null>(null);
@@ -3857,8 +3926,9 @@ function LightningAppRuntime({
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
       return definition
-        ? <RegisteredComponent key={component.id} definition={definition}
-          props={{ ...component.properties, label: component.label, properties: component.properties, objects, reports, flows: availableFlows, device: formFactor, onNavigate, onLaunchFlow }} />
+        ? <MetadataBoundPageComponent key={component.id} definition={definition} component={component}
+          objects={objects} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+          onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <div className="records-message" role="status" key={component.id}>Component is no longer registered: {component.label}</div>;
     }
     if (component.type === 'Report Chart') {
@@ -6763,8 +6833,140 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
   return <div className="field-selector-list">{fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={selected.includes(field.apiName)} onChange={() => onToggle(field.apiName)} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>;
 }
 
+type ComponentPropertyRecord = Record<string, unknown>;
+
+function MetadataComponentProperties({ properties, objects, flows, onChange }: {
+  properties: ComponentPropertyRecord;
+  objects: ObjectMetadata[];
+  flows: Array<{ apiName: string; label: string }>;
+  onChange: (next: ComponentPropertyRecord) => void;
+}) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedDraft, setAdvancedDraft] = useState('');
+  const [advancedError, setAdvancedError] = useState('');
+  const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
+  const selectedObject = objects.find((candidate) => candidate.apiName === objectApiName);
+  const fields = selectedObject?.fields ?? [];
+  const update = (key: string, value: unknown) => onChange({ ...properties, [key]: value });
+  const listProperty = (key: string) => {
+    const value = properties[key];
+    return Array.isArray(value) ? value : [];
+  };
+  const sourceKeys = new Set(['libraryComponentId', 'objectApiName', 'targetObject', 'flowApiName', 'filters',
+    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName', 'checkoutFlowApiName']);
+  const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
+  const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
+  const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
+    <select className="form-control" value={String(value ?? '')} onChange={(event) => update(key, event.target.value)}>
+      <option value="">Select field…</option>
+      {fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+    </select>
+  </label>;
+  return <div className="metadata-component-properties">
+    <label className="form-label">Data Object
+      <select className="form-control" value={objectApiName} onChange={(event) => onChange({
+        ...properties, objectApiName: event.target.value
+      })}>
+        <option value="">No object selected</option>
+        {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+      </select>
+    </label>
+    {['nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName']
+      .filter((key) => key in properties || (objectApiName && ['nameField', 'priceField', 'imageField', 'categoryField'].includes(key)))
+      .map((key) => fieldPicker(key, properties[key]))}
+    <div className="properties-section-title">Record Filters</div>
+    {listProperty('filters').map((raw, index) => {
+      const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
+      const changeFilter = (key: string, value: string) => update('filters', listProperty('filters').map((item, i) =>
+        i === index ? { ...filter, [key]: value } : item));
+      return <div key={index} className="home-page-assignment">
+        <label className="form-label">Field
+          <select className="form-control" value={String(filter.field ?? '')} onChange={(event) => changeFilter('field', event.target.value)}>
+            <option value="">Select field…</option>
+            {fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+          </select>
+        </label>
+        <label className="form-label">Operator
+          <select className="form-control" value={String(filter.operator ?? 'Equals')} onChange={(event) => changeFilter('operator', event.target.value)}>
+            {['Equals', 'Not Equals', 'Contains', 'Greater Than', 'Less Than'].map((operator) => <option key={operator}>{operator}</option>)}
+          </select>
+        </label>
+        <label className="form-label">Value
+          <input className="form-control" value={String(filter.value ?? '')} onChange={(event) => changeFilter('value', event.target.value)} />
+        </label>
+        <button className="btn" type="button" onClick={() => update('filters', listProperty('filters').filter((_, i) => i !== index))}>Remove filter</button>
+      </div>;
+    })}
+    <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
+      [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
+    <div className="properties-section-title">Actions</div>
+    <label className="form-label">Flow API Name
+      <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
+        onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
+        <option value="">No flow selected</option>
+        {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+      </select>
+    </label>
+    <div className="properties-section-title">Appearance and Settings</div>
+    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key)).map(([key, value]) => {
+      if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
+        <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{labelFor(key)}
+      </label>;
+      if (typeof value === 'number') return <label className="form-label" key={key}>{labelFor(key)}
+        <input className="form-control" type="number" value={value} onChange={(event) =>
+          update(key, Number(event.target.value))} /></label>;
+      if (typeof value === 'string' && !isField(key)) return <label className="form-label" key={key}>{labelFor(key)}
+        <input className="form-control" type={/color/i.test(key) ? 'color' : 'text'} value={value}
+          onChange={(event) => update(key, event.target.value)} /></label>;
+      if (typeof value === 'string') return fieldPicker(key, value);
+      return null;
+    })}
+    {Object.entries(properties).filter(([key, value]) => !sourceKeys.has(key) && Array.isArray(value)).map(([key, value]) => {
+      const items = value as unknown[];
+      const template = items.find((item) => item && typeof item === 'object' && !Array.isArray(item));
+      const keys = template ? Object.keys(template) : [];
+      return <div key={key} className="metadata-array-property">
+        <div className="properties-section-title">{labelFor(key)}</div>
+        {items.map((item, index) => {
+          if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+          const record = item as ComponentPropertyRecord;
+          return <div className="home-page-assignment" key={index}>
+            <strong>{labelFor(key)} {index + 1}</strong>
+            {Object.entries(record).filter(([, fieldValue]) => ['string', 'number', 'boolean'].includes(typeof fieldValue)).map(([fieldKey, fieldValue]) =>
+              <label className="form-label" key={fieldKey}>{labelFor(fieldKey)}
+                {typeof fieldValue === 'boolean'
+                  ? <input type="checkbox" checked={fieldValue} onChange={(event) => update(key, items.map((entry, i) => i === index ? { ...record, [fieldKey]: event.target.checked } : entry))} />
+                  : <input className="form-control" type={typeof fieldValue === 'number' ? 'number' : 'text'} value={String(fieldValue)}
+                      onChange={(event) => update(key, items.map((entry, i) => i === index ? { ...record, [fieldKey]: typeof fieldValue === 'number' ? Number(event.target.value) : event.target.value } : entry))} />}
+              </label>)}
+            <button className="btn" type="button" onClick={() => update(key, items.filter((_, i) => i !== index))}>Remove</button>
+          </div>;
+        })}
+        {keys.length > 0 && <button className="btn" type="button" onClick={() => update(key, [...items, Object.fromEntries(keys.map((fieldKey) =>
+          [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
+      </div>;
+    })}
+    <button className="btn" type="button" onClick={() => {
+      if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
+      setAdvancedOpen(!advancedOpen);
+    }}>{advancedOpen ? 'Hide advanced metadata' : 'Advanced metadata'}</button>
+    {advancedOpen && <>
+      <textarea className="form-control component-properties-json" aria-label="Advanced component metadata"
+        value={advancedDraft} onChange={(event) => setAdvancedDraft(event.target.value)} />
+      <button type="button" className="btn" onClick={() => {
+        try {
+          const parsed: unknown = JSON.parse(advancedDraft);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error('Expected a properties object');
+          onChange(parsed as ComponentPropertyRecord); setAdvancedError('');
+        } catch (error) { setAdvancedError(error instanceof Error ? error.message : 'Invalid metadata'); }
+      }}>Apply advanced metadata</button>
+      {advancedError && <div className="auth-error" role="alert">{advancedError}</div>}
+    </>}
+  </div>;
+}
+
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify
+  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify
 }: {
   page: LightningPageMetadata;
   pages: LightningPageMetadata[];
@@ -6773,6 +6975,7 @@ function PageBuilder({
   profiles: ProfileMetadata[];
   reports: ReportMetadata[];
   libraryComponents: LibraryComponentMetadata[];
+  flows: FlowDefinitionMetadata[];
   onChange: (page: LightningPageMetadata) => void;
   onSelectPage: (apiName: string) => void;
   onTargetObjectChange: (targetObject: string) => void;
@@ -7903,13 +8106,12 @@ function PageBuilder({
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
-              <label className="form-label" htmlFor="page-custom-component-properties">Properties (JSON)</label>
-              <textarea id="page-custom-component-properties" className="form-control component-properties-json"
-                aria-describedby="page-custom-component-properties-help"
-                aria-invalid={Boolean(customPropertiesError)} value={customPropertiesDraft}
-                onChange={(event) => updateCustomProperties(event.target.value)} />
-              <p className="properties-help" id="page-custom-component-properties-help">Edit component settings as JSON. Valid changes update the canvas immediately; existing metadata bindings are retained unless you change them.</p>
-              {customPropertiesError && <div className="auth-error component-properties-error" role="alert">{customPropertiesError}</div>}
+              <MetadataComponentProperties
+                properties={selected.properties}
+                objects={objects}
+                flows={flows}
+                onChange={(properties) => updateComponent(selected.id, { properties })}
+              />
             </>}
             {selected.type === 'Related List' && <>
               <div className="properties-section-title">Related Lists</div>
