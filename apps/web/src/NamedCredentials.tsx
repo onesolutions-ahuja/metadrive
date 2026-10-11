@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Eye, KeyRound, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react';
 import type { NamedCredentialMetadata } from './metadata';
 
@@ -66,6 +66,10 @@ export default function NamedCredentials({
   const [page, setPage] = useState(0);
   const [busyId, setBusyId] = useState('');
   const [testResults, setTestResults] = useState<Record<string, string>>({});
+  // A test result belongs to one persisted credential revision, not to the label.
+  // In particular, never display a pre-activation 409 after the connection is enabled.
+  const credentialRevisions = credentials.map(({ id, enabled, updatedAt }) => `${id}:${enabled}:${updatedAt}`).join('|');
+  useEffect(() => { setTestResults({}); }, [credentialRevisions]);
 
   const updateDraft = (update: Partial<CredentialDraft>) => {
     setDraft((current) => current ? { ...current, ...update } : current);
