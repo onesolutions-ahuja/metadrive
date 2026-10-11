@@ -35,6 +35,7 @@ export default function NamedCredentials({
   encryptionReady,
   providerName,
   preset,
+  fieldLabels,
   embedded = false,
   onSave,
   onDelete,
@@ -47,6 +48,7 @@ export default function NamedCredentials({
   providerName?: string;
   preset?: { name: string; label: string; baseUrl: string; authType: CredentialDraft['authType']; configuration: Record<string, string> };
   embedded?: boolean;
+  fieldLabels?: Record<string,string>;
   onSave: (credential: CredentialInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
@@ -76,7 +78,7 @@ export default function NamedCredentials({
       baseUrl: credential.baseUrl,
       authType: credential.authType,
       headerName: credential.headerName,
-      configuration: credential.configuration ?? {},
+      configuration: { ...preset?.configuration, ...credential.configuration },
       username: '',
       secret: ''
     } : preset ? { ...blankCredential(), ...preset, protocol: 'HTTPS' } : blankCredential());
@@ -191,7 +193,7 @@ export default function NamedCredentials({
           <legend>Configuration variables</legend>
           {Object.entries(draft.configuration ?? {}).map(([key, value]) => (
             <label key={key} className="connector-config-row" style={{ display: 'grid', gridTemplateColumns: '40% 1fr', gap: 12, alignItems: 'center', marginBottom: 8 }}>
-              <span>{key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</span>
+              <span>{fieldLabels?.[key] || key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ')}</span>
               <input className="form-control" value={value} onChange={(event) => updateDraft({ configuration: { ...draft.configuration, [key]: event.target.value } })} />
             </label>
           ))}
