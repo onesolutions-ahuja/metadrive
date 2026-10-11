@@ -2239,7 +2239,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     const hasUnsavedChanges = savedSnapshot !== JSON.stringify(selectedFlow);
     if (hasUnsavedChanges) notify('Running the most recently saved version; unsaved changes are not included.');
     const inputResources = selectedFlow.resources.filter((resource) => resource.availableForInput);
-    if (inputResources.length) {
+    if (inputResources.length && Object.keys(inputs).length === 0) {
       const defaultInputs = Object.fromEntries(inputResources.map((resource) => [resource.name, resource.value === undefined
         ? ''
         : typeof resource.value === 'string' ? resource.value : JSON.stringify(resource.value)]));
@@ -3800,21 +3800,41 @@ function MetadataBoundPageComponent({
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
+  const cartObjectApiName = String(properties.cartObjectApiName ?? '');
+  const [sessionId, setSessionId] = useState(() => {
+    const key = 'metadrive-page-session:' + component.id;
+    try {
+      let value = window.sessionStorage.getItem(key);
+      if (!value) {
+        value = crypto.randomUUID();
+        window.sessionStorage.setItem(key, value);
+      }
+      return value;
+    } catch {
+      return crypto.randomUUID();
+    }
+  });
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [cartRecords, setCartRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
   useEffect(() => {
     let active = true;
-    setRecords([]); setDataError('');
-    if (!objectApiName) return () => { active = false; };
+    setRecords([]); setCartRecords([]); setDataError('');
+    const tasks: Array<Promise<Record<string, unknown>[]>> = [
+      objectApiName ? loadFlowScreenRecords(objectApiName) : Promise.resolve([]),
+      cartObjectApiName ? loadFlowScreenRecords(cartObjectApiName) : Promise.resolve([])
+    ];
     setDataLoading(true);
-    void loadFlowScreenRecords(objectApiName).then((items) => {
-      if (active) setRecords(items);
+    void Promise.all(tasks).then(([products, basket]) => {
+      if (active) { setRecords(products); setCartRecords(basket); }
     }).catch((error: unknown) => {
-      if (active) setDataError(error instanceof Error ? error.message : 'Unable to read records');
+      if (active) setDataError(error instanceof Error ? error.message : 'Unable to load page records');
     }).finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
-  }, [objectApiName]);
+  }, [objectApiName, cartObjectApiName, revision]);
   const matchFilters = (record: Record<string, unknown>) => {
     const filters = Array.isArray(properties.filters) ? properties.filters : [];
     return filters.every((item) => {
@@ -3845,11 +3865,84 @@ function MetadataBoundPageComponent({
   }));
   const categories = [...new Set(mappedProducts.map((item) => item.categoryId).filter(Boolean))]
     .map((id) => ({ id, name: id, icon: '🍽️' }));
+  const cartSessionField = String(properties.cartSessionField ?? 'Session__c');
+  const cartProductField = String(properties.cartProductField ?? 'Product__c');
+  const cartQuantityField = String(properties.cartQuantityField ?? 'Quantity__c');
+  const cartPriceField = String(properties.cartPriceField ?? 'Unit_Price__c');
+  const cartLines = cartRecords.filter((record) => String(record[cartSessionField] ?? '') === sessionId)
+    .map((record) => {
+      const product = mappedProducts.find((item) => item.id === String(record[cartProductField] ?? ''));
+      return {
+        id: String(record.Id ?? ''), productId: String(record[cartProductField] ?? ''),
+        name: String(record.Name ?? product?.name ?? 'Product'),
+        quantity: Number(record[cartQuantityField] ?? 0),
+        unitPrice: Number(record[cartPriceField] ?? 0),
+        image: product?.image ?? '', emoji: '🍽️'
+      };
+    });
+  const rawActions = properties.actionFlows;
+  const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
+    ? rawActions as Record<string, unknown> : {};
+  const resolveInput = (source: unknown, eventPayload: Record<string, unknown>): unknown => {
+    if (source === '$session') return sessionId;
+    if (source === '$event') return eventPayload;
+    if (typeof source === 'string' && source.startsWith('$event.')) {
+      return source.slice(7).split('.').reduce<unknown>((current, key) =>
+        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+    }
+    return source;
+  };
+  const onAction = async (action: { event: string; value?: unknown }) => {
+    const config = actionFlows[action.event];
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new Error('No Flow is configured for the "' + action.event + '" kiosk action.');
+    }
+    const binding = config as Record<string, unknown>;
+    const flowApiName = String(binding.flowApiName ?? '');
+    const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
+    if (!selected || selected.status !== 'Active') {
+      throw new Error('Choose an active Flow for the "' + action.event + '" action in Page Builder.');
+    }
+    const payload = action.value && typeof action.value === 'object' && !Array.isArray(action.value)
+      ? action.value as Record<string, unknown> : { value: action.value };
+    const inputs = Object.fromEntries(Object.entries(
+      binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs)
+        ? binding.inputs as Record<string, unknown> : {}
+    ).map(([key, source]) => [key, resolveInput(source, payload)]));
+    setActionError('');
+    if (selected.flowType === 'Screen Flow') {
+      onLaunchFlow(flowApiName, inputs);
+      return { interviewStarted: true };
+    }
+    if (selected.flowType !== 'Autolaunched Flow') {
+      throw new Error('Kiosk action Flow must be Screen or Autolaunched.');
+    }
+    try {
+      const response = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string }>(
+        '/flows/' + encodeURIComponent(flowApiName) + '/execute', {
+          method: 'POST', body: JSON.stringify(inputs)
+        });
+      if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
+      if (action.event === 'reset') {
+        const key = 'metadrive-page-session:' + component.id;
+        const newSession = crypto.randomUUID();
+        try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
+        setSessionId(newSession);
+      }
+      setRevision((value) => value + 1);
+      return response;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Flow action failed';
+      setActionError(message);
+      throw error;
+    }
+  };
   return <div>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...properties, label: component.label, properties, objects, reports, flows: availableFlows,
-      device: formFactor, onNavigate, onLaunchFlow, loading: dataLoading,
+      device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
+      loading: dataLoading, cartLines, sessionId,
       ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
     }} />
   </div>;
