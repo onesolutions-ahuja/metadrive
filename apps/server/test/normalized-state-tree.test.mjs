@@ -48,6 +48,6 @@ test('restores empty arrays, false/zero/null, Unicode and user-controlled proper
 test('rejects duplicate identities, orphaned nodes, incorrect cardinality and non-contiguous array order',()=>{
   const s={a:[1,2]},nodes=projectNormalizedTree(s).nodes;
   assert.throws(()=>restoreNormalizedTree([...nodes,nodes[0]]),/Duplicate/);
-  assert.throws(()=>restoreNormalizedTree(nodes.slice(0,-1)),/Noncontiguous|Orphaned/);
+  assert.throws(()=>restoreNormalizedTree(nodes.filter(n=>!(n.kind==='number'&&n.numberValue===1))),/Noncontiguous|Orphaned/);
   assert.throws(()=>restoreNormalizedTree(nodes.map(n=>n.kind==='number'?{...n,parentId:999}:n)),/Orphaned/);
 });
