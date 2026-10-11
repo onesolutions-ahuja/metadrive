@@ -69,11 +69,12 @@ async function drainStateWrites(): Promise<void> {
       } else {
         await pool.query(upsertStateSql, [payload]);
       }
+      writeFailure = null;
       for (const waiter of batch) waiter.resolve();
     } catch (error) {
       writeFailure = error;
       console.error('CRITICAL: MetaDrive PostgreSQL persistence failed', error);
-      process.exitCode = 1;
+      if (persistenceMode === 'relational') process.exitCode = 1;
       for (const waiter of [...batch, ...waiting.splice(0)]) waiter.reject(error);
       newestPayload = null;
       break;
@@ -82,10 +83,10 @@ async function drainStateWrites(): Promise<void> {
   drainActive = false;
   for (const done of idleWaiters.splice(0)) done();
 }
-export function persistToPostgres(state: unknown): Promise<unknown> {
+export function persistToPostgres(state: unknown, preSerialized?: string): Promise<unknown> {
   if (!pool) return Promise.resolve();
-  if (writeFailure !== null) return Promise.reject(writeFailure);
-  const payload = JSON.stringify(state);
+  if (writeFailure !== null && persistenceMode === 'relational') return Promise.reject(writeFailure);
+  const payload = preSerialized ?? JSON.stringify(state);
   return new Promise<void>((resolve, reject) => {
     newestPayload = payload;
     waiting.push({ resolve, reject });

@@ -1,6 +1,7 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode } from './postgres-state.js';
-import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs } from './automation-policy.js';
+import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage } from './automation-policy.js';
+import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
@@ -248,7 +249,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const userId = systemUser.id;
   const object = tenant.objects.find(item => item.apiName === communicationObjectApiName);
   if (!object) return reject(503, 'message_object_missing');
-  let working = structuredClone(tenant);
+  let working = tenant;
   let received = 0;
   let saved = 0;
   let duplicate = 0;
@@ -263,6 +264,12 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           if ((working.records[object.apiName] ?? []).some(item => item.Event_Type__c === 'Message' && item.Communication_Mode__c === 'WhatsApp' && item.Provider_Message_Id__c === message.id)) { duplicate++; continue; }
           const body = message.type === 'text' ? message.text?.body : undefined;
           if (!body) { unsupported++; continue; } // Unsupported message types are acknowledged.
+          // Do not re-execute an old delivery after an outage or redelivery.
+          // Keep the event as an Expired record for audit, without running its Flow.
+          const fresh = shouldTriggerInboundMessage(
+            message.timestamp, Date.now(), working.automationSettings.conversationIdleMinutes
+          );
+          working = structuredClone(tenantData(tenantId) ?? working);
           const conversationKey = conversationKeyForIncoming(
             working.records[object.apiName] ?? [], message.from, Date.now(),
             working.automationSettings.conversationIdleMinutes
@@ -273,7 +280,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
             Direction__c: 'Incoming', From_Number__c: message.from,
             To_Number__c: value?.metadata?.display_phone_number ?? '',
             Message_Body__c: body, Conversation_Key__c: conversationKey,
-            Status__c: 'Received', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
+            Status__c: fresh ? 'Received' : 'Expired', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
             ...(message.timestamp && /^\\d+$/.test(message.timestamp) ? { Occurred_At__c: new Date(Number(message.timestamp) * 1000).toISOString() } : {})
           }), userId);
           validateRuntimeRecord(tenantId, working, object, values);
@@ -281,7 +288,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           let record = calculateFormulaFields(object, stampRecordAuditFields({
             ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now
           }, userId, now), formulaContextForUser(working, userId));
-          await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
+          if (fresh) await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
           record = calculateFormulaFields(object, record, formulaContextForUser(working, userId));
           working.records[object.apiName] = [...(working.records[object.apiName] ?? []), record];
           // Each inbound message refreshes active conversational interviews; 15 minutes is inactivity, not total age.
@@ -295,6 +302,11 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           // Commit inbound identity BEFORE external flow callouts. Meta redeliveries must never resend replies.
           persistTenantRecords(tenantId, working);
           await waitForPersistedState();
+          if (!fresh) {
+            console.info('[WhatsApp webhook] stale inbound delivery archived without executing flow');
+            working = tenantData(tenantId) ?? working;
+            continue;
+          }
           try {
             await runRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
             const latestRecords = tenantData(tenantId)?.records[communicationObjectApiName] ?? [];
@@ -315,7 +327,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
               reason: flowError instanceof Error ? flowError.message : String(flowError)
             });
           }
-          working = structuredClone(tenantData(tenantId) ?? working);
+          working = tenantData(tenantId) ?? working;
         }
       }
     }
@@ -3363,7 +3375,7 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'From_Number__c', label: 'From Number', dataType: 'Phone', required: false, unique: false },
     { apiName: 'To_Number__c', label: 'To Number', dataType: 'Phone', required: false, unique: false },
     { apiName: 'Conversation_Key__c', label: 'Conversation Key', dataType: 'Text(120)', required: false, unique: false },
-    { apiName: 'Status__c', label: 'Processing Status', dataType: 'Picklist', required: false, unique: false, picklistValues: ['Received', 'Pending', 'Processing', 'Sent', 'Completed', 'Failed'], picklistRestricted: true },
+    { apiName: 'Status__c', label: 'Processing Status', dataType: 'Picklist', required: false, unique: false, picklistValues: ['Received', 'Pending', 'Processing', 'Sent', 'Completed', 'Failed', 'Expired'], picklistRestricted: true },
     { apiName: 'Provider_Message_Id__c', label: 'Provider Message ID', dataType: 'Text(255)', required: false, unique: false },
     { apiName: 'Status_Code__c', label: 'HTTP Status Code', dataType: 'Number(3, 0)', required: false, unique: false },
     { apiName: 'Error__c', label: 'Error', dataType: 'Long Text Area', required: false, unique: false },
@@ -3801,8 +3813,13 @@ function ensureCommunicationFields(object: ObjectMetadata): ObjectMetadata {
   const defaults = baseObjects.find((item) => item.apiName === object.apiName)!;
   const existingFields = new Set(object.fields.map((field) => field.apiName));
   const addedFields = defaults.fields.filter((field) => !existingFields.has(field.apiName));
-  const updatedFields = object.fields.map(field => field.apiName === 'Occurred_At__c' && field.required
-    ? { ...field, required: false } : field);
+  const updatedFields = object.fields.map(field => {
+    if (field.apiName === 'Occurred_At__c' && field.required) return { ...field, required: false };
+    if (field.apiName === 'Status__c' && field.picklistValues && !field.picklistValues.includes('Expired')) {
+      return { ...field, picklistValues: [...field.picklistValues, 'Expired'] };
+    }
+    return field;
+  });
   if (!addedFields.length && updatedFields.every((field, index) => field === object.fields[index])) return object;
   const fieldApiNames = addedFields.map((field) => field.apiName);
   return {
@@ -4097,9 +4114,12 @@ function loadState(): PlatformState {
 function persistState(next: PlatformState): void {
   mkdirSync(dirname(dataPath), { recursive: true });
   const temporaryPath = `${dataPath}.tmp`;
-  writeFileSync(temporaryPath, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
+  // Serialize once: pretty-printing plus a second JSON stringify doubled large
+  // platform-state allocations and could exhaust the 512 MB Render instance.
+  const serialized = JSON.stringify(next);
+  writeFileSync(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
   renameSync(temporaryPath, dataPath);
-  latestStateCommit = persistToPostgres(next);
+  latestStateCommit = persistToPostgres(next, serialized);
   void latestStateCommit.catch((error: unknown) => {
     console.error('CRITICAL: MetaDrive state commit failed', error);
   });
@@ -11225,6 +11245,7 @@ async function performHttpCallout(
       Object.hasOwn(connection.configuration, key) ? encodeURIComponent(connection.configuration[key]) : match)
     : relativePath;
   const target = resolveCalloutUrl(credential, path, context);
+  assertCalloutHostAllowed(target.hostname, process.env.METADRIVE_PAUSED_CALLOUT_HOSTS);
   const method = typeof config.method === 'string' ? config.method : operationMethod ?? 'GET';
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) throw new Error(`HTTP Callout "${elementLabel}" uses an unsupported method.`);
   const queryParametersValue = config.queryParameters;
@@ -13380,6 +13401,23 @@ function performSubmitForApproval(
   tenant.notifications.push(...notifications);
 }
 
+function flowNeedsRollbackSnapshot(
+  flow: FlowMetadata,
+  knownFlows: FlowMetadata[],
+  visited: Set<string> = new Set()
+): boolean {
+  if (visited.has(flow.apiName)) return false;
+  visited.add(flow.apiName);
+  return flow.elements.some(element => {
+    if (element.type === 'Roll Back Records') return true;
+    if (element.type !== 'Subflow') return false;
+    const target = element.config.flowApiName;
+    if (typeof target !== 'string') return false;
+    const subflow = knownFlows.find(candidate => candidate.apiName === target);
+    return Boolean(subflow && flowNeedsRollbackSnapshot(subflow, knownFlows, visited));
+  });
+}
+
 async function executeFlow(
   flow: FlowMetadata,
   tenant: TenantData,
@@ -13397,7 +13435,10 @@ async function executeFlow(
   allowDraftExecution = false,
   debugExecution = false,
   debugTrace: FlowDebugTraceEntry[] = [],
-  rollbackSnapshot: TenantData = structuredClone(tenant)
+  // Rollback inside a subflow must restore parent DML, so take a single snapshot
+  // when the executed flow or any referenced child contains Roll Back Records.
+  rollbackSnapshot: TenantData | undefined = flowNeedsRollbackSnapshot(flow, tenant.flows)
+    ? structuredClone(tenant) : undefined
 ): Promise<FlowExecutionResult> {
   if (depth > 10) throw new Error('Flow subflow nesting exceeded the 10-level limit.');
   if (flow.status !== 'Active' && !allowDraftExecution) throw new Error(`Flow "${flow.label}" is not active.`);

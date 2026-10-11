@@ -48,3 +48,16 @@ export function conversationKeyForIncoming(
   }
   return randomUUID();
 }
+
+/**
+ * Meta's event timestamp is seconds since epoch. Only a recent inbound event
+ * can start an interactive conversation: old retry deliveries remain archived
+ * instead of sending another response after the idle session has expired.
+ */
+export function shouldTriggerInboundMessage(timestampSeconds: unknown, nowMs: number, idleMinutes: number): boolean {
+  if (typeof timestampSeconds !== 'string' || !/^[0-9]{10}$/.test(timestampSeconds)) return false;
+  const eventAt = Number(timestampSeconds) * 1000;
+  const ageMs = nowMs - eventAt;
+  return Number.isFinite(eventAt) && Number.isFinite(nowMs)
+    && ageMs >= -60_000 && ageMs < idleMinutes * 60_000;
+}
