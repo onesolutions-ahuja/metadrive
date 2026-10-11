@@ -62,7 +62,7 @@ test('User CRUD enforces security and User object RBAC while preserving identity
     assert.equal(security.status,200);
     const admin=security.data.users.find((user:Record<string,any>)=>user.username===email);
     assert.ok(admin);
-    const role=security.data.roles[0];
+    const role=security.data.roles.find((row:Record<string,any>)=>row.name==='Standard User') ?? security.data.roles.find((row:Record<string,any>)=>row.name!=='System Administrator');
     assert.ok(role,'tenant must seed at least one role');
     const userInput={Name:'Cashier Example',Email:'cashier-rbac@example.test',
       Username:'cashier-rbac@example.test',IsActive:true,UserRoleId:role.name,
