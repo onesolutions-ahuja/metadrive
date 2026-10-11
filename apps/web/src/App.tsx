@@ -940,6 +940,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [workspace, setWorkspace] = useState<WorkspaceId>(() => route.kind === 'setup' ? route.workspace : 'home');
   const [quickFind, setQuickFind] = useState('');
   const [globalSearch, setGlobalSearch] = useState('');
+  const [launcherOpen, setLauncherOpen] = useState(false);
+  const [setupSidebarCollapsed, setSetupSidebarCollapsed] = useState(false);
   const [objectSearch, setObjectSearch] = useState('');
   const [objects, setObjects] = useState(objectMetadata);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
@@ -1536,6 +1538,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     if (item === 'Lightning App Builder') openSetupWorkspace('page-builder');
     else if (item === 'App Manager') openSetupWorkspace('app-manager');
     else if (item === 'Component Library') openSetupWorkspace('component-library');
+    else if (item === 'AppExchange') openSetupWorkspace('app-exchange');
     else if (item === 'Flows') openSetupWorkspace('flow-builder');
     else if (item === 'Paused and Waiting Interviews') openSetupWorkspace('flow-interviews');
     else if (item === 'Scheduled Flows') openSetupWorkspace('scheduled-flows');
@@ -2867,7 +2870,17 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   return (
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
-        <button className="icon-button app-launcher" aria-label="App Launcher"><Grid2X2 size={18} /></button>
+        <div className="launcher-menu-wrap">
+          <button type="button" className="icon-button app-launcher" aria-label="App Launcher" aria-expanded={launcherOpen} aria-controls="launcher-menu" onClick={() => setLauncherOpen((open) => !open)}><Grid2X2 size={18} /></button>
+          {launcherOpen && <nav className="launcher-menu" id="launcher-menu" aria-label="Switch workspace">
+            <button type="button" onClick={() => { openSetupWorkspace('home'); setLauncherOpen(false); }}><Settings2 size={16} />Setup</button>
+            <button type="button" onClick={() => {
+              const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName)) ?? 'Account';
+              navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
+              setLauncherOpen(false);
+            }}><Database size={16} />Records</button>
+          </nav>}
+        </div>
         <div className="brand"><span className="brand-cloud">M</span><span>UNEEngine</span></div>
         <div className="global-search">
           <Search size={15} />
@@ -2915,7 +2928,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         </div>
       </header>
 
-      <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
+      {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         <div className="app-title">
           <span className="app-icon">{route.kind === 'setup' ? <Settings2 size={18} /> : <Database size={18} />}</span>
           {route.kind === 'setup'
@@ -2955,14 +2968,6 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             onClick={() => route.kind === 'setup' ? openSetupWorkspace('home') : navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
             <Monitor className="rail-icon" size={17} />Home
           </button>
-          <button className={route.kind === 'setup' && workspace === 'object-manager' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('object-manager')}><Database className="rail-icon" size={17} />Object Manager</button>
-          <button className={route.kind === 'setup' && workspace === 'flow-builder' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('flow-builder')}><Workflow className="rail-icon" size={17} />Flows</button>
-          <button className={route.kind === 'setup' && workspace === 'report-builder' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('report-builder')}><FileText className="rail-icon" size={17} />Reports</button>
-          <button className={route.kind === 'setup' && workspace === 'dashboard-builder' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('dashboard-builder')}><Activity className="rail-icon" size={17} />Dashboards</button>
-          <button className={route.kind === 'setup' && workspace === 'page-builder' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('page-builder')}><Grid2X2 className="rail-icon" size={17} />App Builder</button>
-          <button className={route.kind === 'setup' && workspace === 'app-manager' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('app-manager')}><Puzzle className="rail-icon" size={17} />App Manager</button>
-          <button className={route.kind === 'setup' && workspace === 'component-library' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('component-library')}><ClipboardList className="rail-icon" size={17} />Component Library</button>
-          <button className={route.kind === 'setup' && workspace === 'app-exchange' ? 'primary-tab active' : 'primary-tab'} onClick={() => openSetupWorkspace('app-exchange')}><ExternalLink className="rail-icon" size={17} />AppExchange</button>
         </nav>
         {currentApp?.utilityItems.map((utility) => <button className="app-utility-button" key={utility}
           aria-expanded={activeUtility === utility} onClick={() => setActiveUtility((current) => current === utility ? null : utility)}>{utility}</button>)}
@@ -2978,9 +2983,17 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         </section>}
       </div>
 
-      <main className="setup-layout">
+      }
+
+      <main className={route.kind === 'setup' ? 'setup-layout setup-no-tabs' : 'setup-layout'}>
         {route.kind === 'setup' && !route.dashboardView && workspace !== 'flow-builder' && (
-          <aside className="setup-sidebar">
+          <aside className={setupSidebarCollapsed ? 'setup-sidebar setup-sidebar-collapsed' : 'setup-sidebar'}>
+            <div className="setup-sidebar-toolbar">
+              <strong>Setup</strong>
+              <button type="button" className="setup-sidebar-toggle" aria-label={setupSidebarCollapsed ? 'Expand Setup menu' : 'Collapse Setup menu'} aria-expanded={!setupSidebarCollapsed} onClick={() => setSetupSidebarCollapsed((collapsed) => !collapsed)}>
+                {setupSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+              </button>
+            </div>
             <div className="quick-find">
               <div className="quick-find-title">Quick Find</div>
               <div className="quick-find-input">
