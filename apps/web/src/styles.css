@@ -1801,3 +1801,8 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .approval-process-layout { grid-template-columns: 1fr; }
   .approval-process-manager .workspace-heading { align-items: flex-start; flex-direction: column; }
 }
+
+/* UNE KIOSK: allow the interactive registered component to fill its canvas viewport. */
+.free-canvas-component > .registered-component.metadrive-component-kioskorderingexperience { height: calc(100% - 39px); }
+.free-canvas-component:not(:has(> .record-component-head)) > .registered-component.metadrive-component-kioskorderingexperience { height: 100%; }
+.free-canvas-runtime-component > .registered-component.metadrive-component-kioskorderingexperience { height: 100%; }
