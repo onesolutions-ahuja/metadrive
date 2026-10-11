@@ -798,5 +798,25 @@
       "minWidth": 320,
       "minHeight": 600
     }
+  },
+  {
+    "apiName": "TillSalesWorkspace",
+    "label": "Till Sales Workspace",
+    "category": "Till",
+    "description": "15.6-inch cashier workspace with barcode lookup, Products, Customers and basket bound to objects; all mutations and checkout delegated to configured Flows.",
+    "surfaces": [
+      "page",
+      "dashboard",
+      "flow"
+    ],
+    "defaults": {},
+    "jsx": "TillSalesWorkspace/TillSalesWorkspace.jsx",
+    "css": "TillSalesWorkspace/TillSalesWorkspace.css",
+    "resize": {
+      "defaultWidth": 1366,
+      "defaultHeight": 768,
+      "minWidth": 640,
+      "minHeight": 480
+    }
   }
 ]
