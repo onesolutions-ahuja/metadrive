@@ -3943,8 +3943,25 @@ function RecordWorkspace({
   const listPageSize = 50;
   const [refreshKey, setRefreshKey] = useState(0);
   const [fieldHistory, setFieldHistory] = useState<Array<Record<string, unknown>>>([]);
-  const [relatedRecords, setRelatedRecords] = useState<Record<string, { objectApiName: string; fieldApiName: string; records: RecordData[] }>>({});
+  const [relatedRecords, setRelatedRecords] = useState<Record<string, { objectApiName: string; fieldApiName: string; records: RecordData[]; total: number }>>({});
   const [relatedError, setRelatedError] = useState('');
+  const [relatedOffsets, setRelatedOffsets] = useState<Record<string, number>>({});
+  const changeRelatedPage = (name: string, offset: number) =>
+    setRelatedOffsets((current) => ({ ...current, [name]: Math.max(0, offset) }));
+  const renderRelatedPagination = (name: string, total: number, loaded: number) => {
+    const offset = relatedOffsets[name] ?? 0;
+    if (total === 0) return null;
+    return <nav aria-label={`${name} pagination`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, padding: 12 }}>
+      <span>{offset + 1}–{Math.min(offset + loaded, total)} of {total}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button className="btn" disabled={offset === 0} onClick={() => changeRelatedPage(name, 0)}>First</button>
+        <button className="btn" disabled={offset === 0} onClick={() => changeRelatedPage(name, offset - 50)}>Previous</button>
+        <span>Page {Math.floor(offset / 50) + 1} of {Math.ceil(total / 50)}</span>
+        <button className="btn" disabled={offset + 50 >= total} onClick={() => changeRelatedPage(name, offset + 50)}>Next</button>
+        <button className="btn" disabled={offset + 50 >= total} onClick={() => changeRelatedPage(name, Math.floor((total - 1) / 50) * 50)}>Last</button>
+      </div>
+    </nav>;
+  };
   const [customActionPendingId, setCustomActionPendingId] = useState('');
   const [customActionMessage, setCustomActionMessage] = useState('');
   const [formOpen, setFormOpen] = useState(false);
@@ -4070,11 +4087,14 @@ function RecordWorkspace({
     setRelatedRecords({});
     const loadRelatedRecords = async () => {
       const results = await Promise.allSettled(relations.map(async ({ childObject, fieldApiName, relationshipName }) => {
-          const payload = await apiRequest<{ records: RecordData[] }>(`/records/${encodeURIComponent(childObject.apiName)}`);
+          const params = new URLSearchParams({
+            limit: '50', offset: String(relatedOffsets[relationshipName] ?? 0),
+            relatedField: fieldApiName, relatedId: record.Id
+          });
+          const payload = await apiRequest<{ records: RecordData[]; total: number }>(
+            `/records/${encodeURIComponent(childObject.apiName)}?${params.toString()}`);
           return [relationshipName, {
-            objectApiName: childObject.apiName,
-            fieldApiName,
-            records: payload.records.filter((child) => child[fieldApiName] === record.Id)
+            objectApiName: childObject.apiName, fieldApiName, records: payload.records, total: payload.total
           }] as const;
       }));
       if (!active) return;
@@ -4087,7 +4107,7 @@ function RecordWorkspace({
     };
     void loadRelatedRecords();
     return () => { active = false; };
-  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', object?.apiName, objects, record?.Id, record?.RecordTypeId, activeLightningPage, refreshKey]);
+  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', object?.apiName, objects, record?.Id, record?.RecordTypeId, activeLightningPage, refreshKey, relatedOffsets]);
 
   useEffect(() => {
     const pageComponents = activeLightningPage?.components ?? [];
@@ -4509,14 +4529,15 @@ function RecordWorkspace({
         && fieldAccess[`${childObject.apiName}.${field.apiName}`]?.read
         && related.records.some((item) => field.apiName in item)).slice(0, 4) ?? [];
       return <section className="record-fields-card surface related-records-card" key={relationshipName}>
-        <div className="record-fields-heading"><h2>{relationshipName}</h2><span>{related.records.length} record{related.records.length === 1 ? '' : 's'}</span></div>
+        <div className="record-fields-heading"><h2>{relationshipName}</h2><span>{related.total} record{related.total === 1 ? '' : 's'}</span></div>
         {related.records.length === 0 ? <div className="records-empty">No related {childObject?.pluralLabel.toLocaleLowerCase() ?? 'records'}.</div>
-          : <div className="records-table-wrap"><table className="slds-table records-table"><thead><tr>{displayFields.map((field) => <th key={field.apiName}>{field.label}</th>)}</tr></thead>
+          : <div className="records-table-wrap" style={{ maxHeight: "65vh", overflow: "auto" }}><table className="slds-table records-table"><thead><tr>{displayFields.map((field) => <th key={field.apiName}>{field.label}</th>)}</tr></thead>
             <tbody>{related.records.map((child) => <tr key={child.Id}>{displayFields.map((field, index) => <td key={field.apiName}>
               {index === 0 && childObject
                 ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })}>{formatRecordValue(child[field.apiName] ?? child.Id)}</a>
                 : formatRecordValue(child[field.apiName])}
             </td>)}</tr>)}</tbody></table></div>}
+        {renderRelatedPagination(relationshipName, related.total, related.records.length)}
       </section>;
     };
     const renderRuntimeComponent = (component: PageComponentMetadata) => {
@@ -4753,15 +4774,16 @@ function RecordWorkspace({
               && fieldAccess[`${childObject.apiName}.${field.apiName}`]?.read
               && related.records.some((item) => field.apiName in item)).slice(0, 4) ?? [];
             return <section className="record-fields-card surface related-records-card" key={relationshipName}>
-              <div className="record-fields-heading"><h2>{relationshipName}</h2><span>{related.records.length} record{related.records.length === 1 ? '' : 's'}</span></div>
+              <div className="record-fields-heading"><h2>{relationshipName}</h2><span>{related.total} record{related.total === 1 ? '' : 's'}</span></div>
               {related.records.length === 0 ? <div className="records-empty">No related {childObject?.pluralLabel.toLocaleLowerCase() ?? 'records'}.</div>
-                : <div className="records-table-wrap"><table className="slds-table records-table"><thead><tr>{displayFields.map((field) => <th key={field.apiName}>{field.label}</th>)}</tr></thead>
+                : <div className="records-table-wrap" style={{ maxHeight: "65vh", overflow: "auto" }}><table className="slds-table records-table"><thead><tr>{displayFields.map((field) => <th key={field.apiName}>{field.label}</th>)}</tr></thead>
                   <tbody>{related.records.map((child) => <tr key={child.Id}>{displayFields.map((field, index) => <td key={field.apiName}>
                     {index === 0 && childObject
                       ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: childObject.apiName, recordId: child.Id, appId: route.appId })}>{formatRecordValue(child[field.apiName] ?? child.Id)}</a>
                       : formatRecordValue(child[field.apiName])}
                   </td>)}</tr>)}</tbody>
                 </table></div>}
+              {renderRelatedPagination(relationshipName, related.total, related.records.length)}
             </section>;
         })}
         {relatedError && <div className="records-message surface" role="alert">{relatedError}</div>}
