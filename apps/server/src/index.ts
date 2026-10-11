@@ -1020,6 +1020,7 @@ const namedCredentialSchema = z.object({
   iv: z.string().min(1),
   authTag: z.string().min(1),
   ciphertext: z.string().min(1),
+  enabled: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 }).superRefine((credential, context) => {
@@ -3294,7 +3295,9 @@ const stateSchema = z.object({
 const fullObjectPermissions = { read: true, create: true, edit: true, delete: true, viewAll: true, modifyAll: true };
 const systemAdminPermissions = [
   'metadata:read', 'metadata:write', 'security:read', 'security:manage',
-  'objects:manage', 'flows:manage', 'flows:run', 'namedCredentials:manage', 'reports:manage', 'pages:manage',
+  'objects:manage', 'flows:manage', 'flows:run', 'namedCredentials:manage',
+  'connectorApps:view', 'connectorApps:edit', 'connectorApps:secrets', 'connectorApps:test', 'connectorApps:install',
+  'reports:manage', 'pages:manage',
   'components:manage', 'dashboards:manage', 'dashboards:viewTeam', 'data:viewAll', 'email:send', 'callouts:execute', 'notifications:send', 'approvals:manage'
 ];
 const salesPermissions = ['metadata:read'];
@@ -3309,7 +3312,20 @@ function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId
   const existing = [...(records ?? [])];
   const now = new Date().toISOString();
   for (const values of connectorAppCatalog.packages) {
-    if (existing.some((record) => record.AppKey__c === values.AppKey__c)) continue;
+    const position = existing.findIndex((record) => record.AppKey__c === values.AppKey__c);
+    if (position >= 0) {
+      const previous = existing[position];
+      const added = Object.fromEntries(Object.entries(values).filter(([key]) => previous[key] === undefined));
+      // Upgrade only the original placeholder history mapping, never tenant-customised views.
+      const legacyPlaceholder = previous.RecordObject__c === 'Communication_Records__c'
+        && previous.RecordFilterField__c === 'Source__c'
+        && values.RecordObject__c === '' && values.RecordFilterField__c === '';
+      existing[position] = runtimeRecordSchema.parse({
+        ...previous, ...added,
+        ...(legacyPlaceholder ? { RecordObject__c: '', RecordFilterField__c: '', RecordFilterValue__c: '' } : {})
+      });
+      continue;
+    }
     existing.push(runtimeRecordSchema.parse({
       ...values, Id: randomUUID(), OwnerId: ownerId, RecordTypeId: 'master',
       CreatedDate: now, LastModifiedDate: now
@@ -4054,7 +4070,7 @@ function loadState(): PlatformState {
       const storedObjects = tenant.objects.filter((object) => !consolidationReady || !retiredConnectorObjects.has(object.apiName)).map((object) => {
         const ensured = withObjectDefaults(ensureLeadStreetField(ensureCommunicationFields(object)));
         const baseline = baseObjects.find((candidate) => candidate.apiName === object.apiName);
-        if (!baseline || !['ConnectorProvider__c', 'IntegrationConnection__c'].includes(object.apiName)) return ensured;
+        if (!baseline || !['ConnectorProvider__c', 'IntegrationConnection__c', 'Connector_App__c'].includes(object.apiName)) return ensured;
         return {
           ...ensured,
           fields: [
@@ -4505,6 +4521,7 @@ function publicNamedCredential(credential: StoredNamedCredential) {
     headerName: credential.headerName ?? '',
     configuration: credential.configuration ?? {},
     hasSecret: credential.authType !== 'None',
+    enabled: credential.enabled !== false,
     keyId: credential.keyId,
     updatedAt: credential.updatedAt
   };
@@ -6129,6 +6146,88 @@ app.put('/api/connector-settings/:apiName', requireAnyPermission('metadata:write
   persistTenantRecords(principal.tenantId, updatedTenant);
   return res.json({ connector: parsed.data });
 });
+
+type ConnectorRight = 'view' | 'edit' | 'secrets' | 'test' | 'install';
+function connectorRight(principal: Principal, right: ConnectorRight): boolean {
+  // Legacy installations retain access; new profiles can grant each permission independently.
+  return principal.permissions.includes('connectorApps:' + right)
+    || (principal.permissions.includes('namedCredentials:manage') && principal.permissions.includes('security:manage'));
+}
+function managedConnector(tenant: TenantData, credentialName: string): RuntimeRecord | undefined {
+  return (tenant.records.Connector_App__c ?? []).find((item) => item.CredentialName__c === credentialName);
+}
+function disableOnConnectorUninstall(tenant: TenantData, previous: RuntimeRecord, next: RuntimeRecord) {
+  // Every installation transition, including reinstall, starts with callouts disabled.
+  // Configuration and encrypted secret bytes are preserved.
+  if (previous.Installed__c !== next.Installed__c) {
+    tenant.namedCredentials = tenant.namedCredentials.map((credential) =>
+      credential.name === previous.CredentialName__c ? { ...credential, enabled: false } : credential);
+  }
+}
+function assertConnectorLifecycleAccess(previous: RuntimeRecord, requested: RuntimeRecord, principal: Principal) {
+  if ((previous.Installed__c !== requested.Installed__c || requested.TrialRequested__c === true)
+    && !connectorRight(principal, 'install')) {
+    throw new Error('Missing connectorApps:install permission to install, uninstall or start a trial.');
+  }
+}
+app.get('/api/connector-apps/capabilities', accessAuthentication, (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  res.json({
+    view: connectorRight(principal, 'view'),
+    edit: connectorRight(principal, 'edit'),
+    secrets: connectorRight(principal, 'secrets'),
+    test: connectorRight(principal, 'test'),
+    install: connectorRight(principal, 'install'),
+    licence: principal.permissions.includes('licence:manage')
+  });
+});
+// A platform licence operator explicitly grants or renews a paid term.
+// This endpoint never processes payment and is deliberately distinct from trial activation.
+app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePermission('licence:manage'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const key = routeParam(req, 'appKey');
+  const previous = (tenant.records.Connector_App__c ?? []).find((row) => row.AppKey__c === key);
+  if (!previous) return res.status(404).json({ error: 'Connector not found' });
+  if (previous.Installed__c !== true) return res.status(409).json({ error: 'Install the connector before granting a licence.' });
+  const days = Number(previous.LicenceTermDays__c ?? 30);
+  if (!Number.isInteger(days) || days < 1 || days > 365) return res.status(422).json({ error: 'Invalid licence term metadata.' });
+  const now = new Date();
+  const priorExpiry = Date.parse(String(previous.LicenceExpiresAt__c ?? ''));
+  const from = Number.isFinite(priorExpiry) && priorExpiry > now.getTime() ? priorExpiry : now.getTime();
+  const expiresAt = new Date(from + days * 86400000).toISOString();
+  const next = applyConnectorLifecycle(previous, { ...previous, LicenceExpiresAt__c: expiresAt },
+    tenant.namedCredentials, tenant.flows, now, true);
+  persistTenantRecords(principal.tenantId, {
+    ...tenant, records: {
+      ...tenant.records,
+      Connector_App__c: tenant.records.Connector_App__c.map((row) => row.Id === previous.Id ? next : row)
+    }
+  });
+  return res.json({ app: next });
+});
+// Enabling is separate from saving configuration. Installation and valid entitlement are mandatory.
+app.patch('/api/connector-apps/:appKey/credential-enabled', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  if (!connectorRight(principal, 'edit')) return res.status(403).json({ error: 'Missing connectorApps:edit permission.' });
+  const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'enabled must be boolean.' });
+  const tenant = tenantData(principal.tenantId)!;
+  const appRecord = (tenant.records.Connector_App__c ?? []).find((row) => row.AppKey__c === routeParam(req, 'appKey'));
+  if (!appRecord) return res.status(404).json({ error: 'Connector not found.' });
+  const credential = tenant.namedCredentials.find((row) => row.name === appRecord.CredentialName__c);
+  if (!credential) return res.status(404).json({ error: 'Configure the connection first.' });
+  if (parsed.data.enabled) {
+    const entitled = connectorEntitlement(tenant.records.Connector_App__c ?? [], credential);
+    if (!entitled.allowed) return res.status(403).json({ error: entitled.message });
+  }
+  const updated = namedCredentialSchema.parse({ ...credential, enabled: parsed.data.enabled, updatedAt: new Date().toISOString() });
+  persistTenantRecords(principal.tenantId, {
+    ...tenant, namedCredentials: tenant.namedCredentials.map((row) => row.id === credential.id ? updated : row)
+  });
+  return res.json({ credential: publicNamedCredential(updated) });
+});
+
 // Report credential readiness without exposing encryption keys or other tenants' data.
 app.get('/api/named-credentials/readiness', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -6145,15 +6244,30 @@ app.get('/api/named-credentials/readiness', accessAuthentication, (req: Request,
   }
   return res.json({ canManage, encryptionReady });
 });
-app.get('/api/named-credentials', requireAnyPermission('metadata:read', 'namedCredentials:manage'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
-  res.json({ credentials: tenant.namedCredentials.map(publicNamedCredential) });
+app.get('/api/named-credentials', requireAnyPermission('metadata:read', 'namedCredentials:manage', 'connectorApps:view'), (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  res.json({ credentials: tenant.namedCredentials.map((credential) => {
+    const managed = managedConnector(tenant, credential.name);
+    if (!managed || connectorRight(principal, 'view')) return publicNamedCredential(credential);
+    // Preserve only matching identity: never leak configuration without explicit view access.
+    return { id: credential.id, name: credential.name, label: '********',
+      protocol: credential.protocol, baseUrl: '********', authType: credential.authType,
+      headerName: '********', configuration: {}, hasSecret: false,
+      enabled: false, keyId: '', updatedAt: credential.updatedAt };
+  }) });
 });
-app.post('/api/named-credentials', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
+app.post('/api/named-credentials', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
+  const managed = managedConnector(tenant, parsed.data.name);
+  if (managed && (!connectorRight(principal, 'edit')
+    || (parsed.data.secret && !connectorRight(principal, 'secrets'))))
+    return res.status(403).json({ error: 'Missing connector configuration or Manage Secrets permission.' });
+  if (!managed && !principal.permissions.includes('namedCredentials:manage'))
+    return res.status(403).json({ error: 'Missing Named Credentials management permission.' });
   const packageEntitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [],
     {id: '', name: parsed.data.name});
   if (!packageEntitlement.allowed) return res.status(403).json({error:packageEntitlement.message});
@@ -6178,6 +6292,7 @@ app.post('/api/named-credentials', requirePermission('namedCredentials:manage'),
       baseUrl: parsed.data.baseUrl.endsWith('/') ? parsed.data.baseUrl : `${parsed.data.baseUrl}/`,
       authType, headerName: parsed.data.headerName?.trim() || undefined,
       configuration: parsed.data.configuration ?? {},
+      enabled: !managed,
       ...sealed, createdAt: now, updatedAt: now
     });
     const updatedTenant = { ...tenant, namedCredentials: [...tenant.namedCredentials, credential] };
@@ -6187,13 +6302,19 @@ app.post('/api/named-credentials', requirePermission('namedCredentials:manage'),
     return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to create Named Credential' });
   }
 });
-app.put('/api/named-credentials/:id', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
+app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const existing = tenant.namedCredentials.find((credential) => credential.id === routeParam(req, 'id'));
   if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
+  const managedExisting = managedConnector(tenant, existing.name);
+  if (managedExisting && (!connectorRight(principal, 'edit')
+    || ((parsed.data.secret || parsed.data.username || parsed.data.authType !== existing.authType) && !connectorRight(principal, 'secrets'))))
+    return res.status(403).json({ error: 'Missing connector configuration or Manage Secrets permission.' });
+  if (!managedExisting && !principal.permissions.includes('namedCredentials:manage'))
+    return res.status(403).json({ error: 'Missing Named Credentials management permission.' });
   if (existing.name !== parsed.data.name && (tenant.records.Connector_App__c ?? []).some((app) => app.CredentialName__c === existing.name)) {
     return res.status(403).json({error:'Managed connector credential API names cannot be changed.'});
   }
@@ -6271,12 +6392,19 @@ app.delete('/api/named-credentials/:id', requirePermission('namedCredentials:man
   });
   return res.status(204).end();
 });
-app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:manage'), async (req: Request, res: Response) => {
+app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentials:manage', 'connectorApps:test'), async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const credential = tenantData(principal.tenantId)?.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
   if (!credential) return res.status(404).json({ error: 'Named Credential was not found' });
+  const currentTenant = tenantData(principal.tenantId)!;
+  const testApp = managedConnector(currentTenant, credential.name);
+  if (testApp && !connectorRight(principal, 'test'))
+    return res.status(403).json({ error: 'Missing connectorApps:test permission.' });
+  if (!testApp && !principal.permissions.includes('namedCredentials:manage'))
+    return res.status(403).json({ error: 'Missing Named Credentials management permission.' });
   const entitlement = connectorEntitlement(tenantData(principal.tenantId)?.records.Connector_App__c ?? [], credential);
   if (!entitlement.allowed) return res.status(403).json({ error: entitlement.message });
+  if (credential.enabled === false) return res.status(409).json({ error: 'Enable the saved connection before testing.' });
   if (credential.protocol === 'SMTP') {
     try {
       const target = new URL(credential.baseUrl);
@@ -6314,7 +6442,19 @@ app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:
       return res.json({ connected: false, message: 'SMTP connection or authentication failed. Check host, port, TLS and credentials.' });
     }
   }
-  const url = new URL(credential.baseUrl);
+  const rawTestPath = typeof testApp?.TestPath__c === 'string' ? testApp.TestPath__c : '';
+  const missingTestVariable = [...rawTestPath.matchAll(/\{!([A-Za-z][A-Za-z0-9_]*)\}/g)]
+    .find((match) => !credential.configuration?.[match[1]]);
+  if (missingTestVariable)
+    return res.status(400).json({ error: 'Test endpoint needs a configured ' + missingTestVariable[1] + '.' });
+  const expandedTestPath = rawTestPath.replace(/\{!([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, field: string) =>
+    encodeURIComponent(credential.configuration?.[field] ?? ''));
+  if (expandedTestPath.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(expandedTestPath) || expandedTestPath.includes('..'))
+    return res.status(400).json({ error: 'Test endpoint must be a safe relative path.' });
+  const url = new URL(expandedTestPath, credential.baseUrl);
+  if (url.origin !== new URL(credential.baseUrl).origin
+    || !url.pathname.startsWith(new URL(credential.baseUrl).pathname))
+    return res.status(400).json({ error: 'Test endpoint must remain inside the configured base URL.' });
   if (url.protocol !== 'https:' || isReservedHostname(url.hostname) || (isIP(url.hostname) && !isPublicAddress(url.hostname))) {
     return res.status(400).json({ error: 'Test destination is not a public HTTPS host' });
   }
@@ -6327,7 +6467,7 @@ app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:
     if (credential.authType === 'API Key') headers[credential.headerName!] = payload.secret!;
     const status = await new Promise<number>((resolve, reject) => {
       const request = httpsRequest(url, {
-        method: 'GET', headers, timeout: 8000, maxHeaderSize: 16384,
+        method: testApp?.TestMethod__c === 'HEAD' ? 'HEAD' : 'GET', headers, timeout: 8000, maxHeaderSize: 16384,
         lookup: (hostname, options, callback) => {
           if (isReservedHostname(hostname)) return callback(new Error('Reserved destination'), '', 0);
           void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
@@ -7832,6 +7972,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     validateRuntimeRecord(principal.tenantId, working, object, { ...values, ...beforeSaveValues }, updated);
     appendFieldHistory(working, object, existing, updated, principal.userId);
     working.records[objectName] = (working.records[objectName] ?? []).map((item) => item.Id === existing.Id ? updated : item);
+    if (objectName === 'Connector_App__c') disableOnConnectorUninstall(working, existing, updated);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     persistTenantRecords(principal.tenantId, working);
     return res.json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === existing.Id) ?? updated) });
@@ -7880,6 +8021,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
       }
     }
     const now = new Date().toISOString();
+    if (objectName === 'Connector_App__c') assertConnectorLifecycleAccess(existing, { ...existing, ...values }, principal);
     const nextRecord = objectName === 'Connector_App__c'
       ? applyConnectorLifecycle(existing, { ...existing, ...values }, tenant.namedCredentials, tenant.flows,
           new Date(now), principal.permissions.includes('licence:manage'))
@@ -11504,6 +11646,7 @@ async function performHttpCallout(
   if (namedCredential) {
     const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], namedCredential);
     if (!entitlement.allowed) throw new Error(entitlement.message);
+    if (namedCredential.enabled === false) throw new Error('Named Credential is disabled. Enable it in AppExchange.');
   }
   const ring = credentialKeyRing();
   let credential: Pick<StoredNamedCredential, 'baseUrl' | 'authType' | 'headerName' | 'name'>;
@@ -14163,6 +14306,8 @@ async function executeFlow(
           const updates = new Map<string, RuntimeRecord>();
           for (const previous of editableCandidates) {
             const now = new Date().toISOString();
+            if (objectName === 'Connector_App__c')
+              assertConnectorLifecycleAccess(previous, { ...previous, ...values }, runningPrincipal);
             const nextRecord = objectName === 'Connector_App__c'
               ? applyConnectorLifecycle(previous, { ...previous, ...values }, tenant.namedCredentials, tenant.flows,
                   new Date(now), runningPrincipal.permissions.includes('licence:manage'))
@@ -14183,6 +14328,12 @@ async function executeFlow(
             if (updated) appendFieldHistory(tenant, object, previous, updated, currentUserId);
           }
           tenant.records[objectName] = records.map((item) => updates.get(item.Id) ?? item);
+          if (objectName === 'Connector_App__c') {
+            for (const previous of editableCandidates) {
+              const updated = updates.get(previous.Id);
+              if (updated) disableOnConnectorUninstall(tenant, previous, updated);
+            }
+          }
           for (const previous of editableCandidates) {
             const updated = updates.get(previous.Id);
             if (updated) {

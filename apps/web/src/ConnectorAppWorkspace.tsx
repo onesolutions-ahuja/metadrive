@@ -24,6 +24,10 @@ export type ConnectorApp = {
   TrialStartedAt__c?: string;
   TrialExpiresAt__c?: string;
   TrialDays__c?: number;
+  LicenceTermDays__c?: number;
+  RecordColumns__c?: string;
+  TestPath__c?: string;
+  TestMethod__c?: string;
   LicenceExpiresAt__c?: string;
   LicenceStatus__c?: string;
   AccessScope__c?: string;
@@ -48,13 +52,21 @@ function configFields(metadata?: string): { values: Record<string, string>; labe
 }
 
 export default function ConnectorAppWorkspace({
-  app, credentials, flows, canManageCredentials, canManageFlows, encryptionReady, onBack,
+  app, credentials, flows, canManageCredentials, canView, canManageSecrets, canTest,
+  canInstall, canLicenceAdmin, onToggleCredential, onGrantLicence, canManageFlows, encryptionReady, onBack,
   onSave, onDelete, onRotate, onTest, loadHistory, onOpenRecord, onOpenFlow, onLifecycle
 }: {
   app: ConnectorApp;
   credentials: NamedCredentialMetadata[];
   flows: ConnectorFlowSummary[];
   canManageCredentials: boolean;
+  canView: boolean;
+  canManageSecrets: boolean;
+  canTest: boolean;
+  canInstall: boolean;
+  canLicenceAdmin: boolean;
+  onToggleCredential: (appKey: string, enabled: boolean) => Promise<void>;
+  onGrantLicence: (appKey: string) => Promise<void>;
   canManageFlows: boolean;
   encryptionReady: boolean | null;
   onBack: () => void;
@@ -77,18 +89,21 @@ export default function ConnectorAppWorkspace({
   const licensed = appLicensed(app);
   const matched = credentials.filter((item) => item.name === app.CredentialName__c);
   const credential = matched[0];
-  const dependencyFlows = flows.filter((flow) => flow.elements.some((element) => element.type === 'HTTP Callout'
-    && (element.config.namedCredentialId === credential?.id || element.config.namedCredentialId === app.CredentialName__c)));
+  const dependencyFlows = flows.filter((flow) => flow.elements.some((element) =>
+    ['HTTP Callout','Action'].includes(element.type)
+    && (element.config.namedCredentialId === credential?.id
+      || element.config.namedCredentialId === app.CredentialName__c
+      || Boolean(element.config.namedCredentialResource))));
   useEffect(() => { setPage(0); setSearch(''); setSection('settings'); }, [app.AppKey__c]);
   useEffect(() => {
     if (section !== 'history') return;
     const objectName = app.RecordObject__c;
     const field = app.RecordFilterField__c;
-    if (!objectName || !field) return;
+    if (!objectName) { setData({records:[],total:0}); return; }
     let mounted = true;
     setLoading(true);
     setError('');
-    void loadHistory(objectName, field, app.RecordFilterValue__c || app.Name, page * 50, search)
+    void loadHistory(objectName, field || '', app.RecordFilterValue__c || app.Name, page * 50, search)
       .then((result) => { if (mounted) setData(result); })
       .catch((reason: unknown) => { if (mounted) { setData({ records: [], total: 0 }); setError(reason instanceof Error ? reason.message : 'Unable to load history'); } })
       .finally(() => { if (mounted) setLoading(false); });
@@ -103,10 +118,22 @@ export default function ConnectorAppWorkspace({
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to update app'); }
     finally { setActing(false); }
   };
-  const columns = [
-    ['CreatedDate', 'Date'], ['Communication_Mode__c', 'Mode'], ['Direction__c', 'Direction'],
-    ['Recipient__c', 'Recipient'], ['Message_Body__c', 'Message'], ['Status__c', 'Status'], ['Source__c', 'Source']
-  ] as const;
+  const columns: [string,string][] = (() => {
+    try {
+      const fields: unknown = JSON.parse(app.RecordColumns__c || '[]');
+      if (Array.isArray(fields)) return fields.filter((name): name is string =>
+        typeof name === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(name))
+        .map((name) => [name, name.replace(/__c$/, '').replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2')]);
+    } catch { /* invalid optional metadata */ }
+    return [];
+  })();
+  const withAction = async (task: () => Promise<void>) => {
+    if (acting) return;
+    setActing(true); setError('');
+    try { await task(); } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to update connection');
+    } finally { setActing(false); }
+  };
   return <div className="app-exchange connector-open-page">
     <div className="exchange-topline"><button className="btn" onClick={onBack}><ArrowLeft size={14}/> AppExchange</button><strong>{app.Name}</strong></div>
     <section className="surface" style={{padding:18,marginBottom:16}}>
@@ -123,10 +150,19 @@ export default function ConnectorAppWorkspace({
     {error && <div className="records-message" role="alert">{error}</div>}
     {section === 'settings' && <>
       {!licensed && <div className="info-callout"><ShieldCheck size={15}/> Start your free trial or activate a licence to configure or test this connection.</div>}
+      {!canView && <div className="info-callout">******** · Missing connector configuration View permission.</div>}
+      {credential && <div className="section-toolbar" style={{marginBottom:12}}>
+        <strong>Connection: {credential.enabled !== false && licensed ? 'Enabled' : 'Disabled'}</strong>
+        <button className="btn btn-small" disabled={!canManageCredentials || !licensed || acting}
+          onClick={() => void withAction(() => onToggleCredential(app.AppKey__c, credential.enabled === false))}>
+          {credential.enabled === false ? 'Enable connection' : 'Disable connection'}
+        </button>
+      </div>}
       <NamedCredentials embedded providerName={app.CredentialName__c}
         preset={{name:app.CredentialName__c,label:app.Name,baseUrl:app.DefaultBaseUrl__c || '',authType:app.AuthType__c || 'None',configuration:configFields(app.ConfigFields__c).values}}
         fieldLabels={configFields(app.ConfigFields__c).labels}
         credentials={matched} canManage={canManageCredentials && licensed}
+        canManageSecrets={canManageSecrets} canTest={canTest && licensed}
         encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest}/>
     </>}
     {section === 'licence' && <section className="surface" style={{padding:18}}>
@@ -136,11 +172,15 @@ export default function ConnectorAppWorkspace({
       <p>Trial started: {app.TrialStartedAt__c ? new Date(app.TrialStartedAt__c).toLocaleString() : 'Not started'}</p>
       <p>Trial expires: {app.TrialExpiresAt__c ? new Date(app.TrialExpiresAt__c).toLocaleString() : '—'}</p>
       <p>Paid licence expires: {app.LicenceExpiresAt__c ? new Date(app.LicenceExpiresAt__c).toLocaleString() : 'Not configured'}</p>
-      {!app.TrialUsed__c && <button className="btn btn-brand" disabled={acting || !canManageCredentials}
+      {canLicenceAdmin && <button className="btn btn-brand" disabled={acting || !app.Installed__c}
+        onClick={() => void withAction(() => onGrantLicence(app.AppKey__c))}>
+        Activate / Renew paid licence ({app.LicenceTermDays__c || 30} days)
+      </button>}
+      {!app.TrialUsed__c && <button className="btn btn-brand" disabled={acting || !canInstall}
         onClick={() => void perform('trial')}>{acting ? 'Activating…' : 'Start free trial'}</button>}
       {app.TrialUsed__c && !licensed && <div className="records-message">This tenant's free trial cannot be restarted. Contact your licence administrator.</div>}
       <hr style={{margin:'18px 0'}}/>
-      <button className="btn btn-danger" disabled={acting || !canManageCredentials} onClick={() => void perform('uninstall')}>Uninstall app</button>
+      <button className="btn btn-danger" disabled={acting || !canInstall} onClick={() => void perform('uninstall')}>Uninstall app</button>
       <p>Uninstall disables connector execution, but keeps configuration and records. Active Flow dependencies will prevent uninstall.</p>
     </section>}
     {section === 'flows' && <section className="surface" style={{padding:18}}>
@@ -155,15 +195,16 @@ export default function ConnectorAppWorkspace({
       <div className="section-toolbar"><div><h2>{app.RecordObject__c ? 'App Records' : 'Records'}</h2>
         <p>RBAC-filtered records for {app.Name}. Page size: 50.</p></div>
         <button className="btn" disabled={loading} onClick={() => setPage(0)}><RefreshCw size={14}/> Refresh</button></div>
-      <input className="form-control" style={{maxWidth:360,marginBottom:14}} type="search" value={search}
-        aria-label="Search app records" placeholder="Search app records" onChange={(event) => {setSearch(event.target.value);setPage(0);}}/>
+      {!app.RecordObject__c && <p>No history object is configured for this connector. Choose an existing object and filter in Connector App metadata.</p>}
+      {!!app.RecordObject__c && <input className="form-control" style={{maxWidth:360,marginBottom:14}} type="search" value={search}
+        aria-label="Search app records" placeholder="Search app records" onChange={(event) => {setSearch(event.target.value);setPage(0);}}/>}
       {loading && <p>Loading…</p>}
       <div className="table-scroll"><table className="slds-table"><thead><tr>{columns.map(([key,label]) => <th key={key}>{label}</th>)}<th>Action</th></tr></thead>
         <tbody>{data.records.map((record) => <tr key={record.Id}>{columns.map(([key]) => <td key={key}>{Object.prototype.hasOwnProperty.call(record,key)
           ? String(record[key] ?? '') : '********'}</td>)}<td>
-          <button className="btn btn-small" onClick={() => onOpenRecord(app.RecordObject__c || 'Communication_Records__c',record.Id)}>View</button></td></tr>)}</tbody>
+          <button className="btn btn-small" onClick={() => onOpenRecord(app.RecordObject__c || '',record.Id)}>View</button></td></tr>)}</tbody>
       </table></div>
-      {!loading && data.records.length === 0 && <p>No matching records.</p>}
+      {!loading && !!app.RecordObject__c && data.records.length === 0 && <p>No matching records.</p>}
       <div className="section-toolbar" style={{marginTop:14}}><span>{data.total} records · Page {page+1}</span>
         <div className="toolbar-actions">
           <button className="btn btn-small" disabled={page===0 || loading} onClick={() => setPage(0)}>First</button>

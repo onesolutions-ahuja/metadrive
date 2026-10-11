@@ -97,6 +97,11 @@ test('AppExchange installation and trial run using stored metadata flows', async
     const auth=await api(portNumber,'/auth/login',undefined,{email:user,password});
     assert.equal(auth.status,200,JSON.stringify(auth.data));
     const token=auth.data.access_token as string;
+    const caps=await api(portNumber,'/connector-apps/capabilities',token);
+    assert.equal(caps.status,200);
+    assert.equal(caps.data.install,true);
+    assert.equal(caps.data.test,true);
+    assert.equal(caps.data.licence,false);
     const list=()=>api(portNumber,'/records/Connector_App__c?limit=50',token);
     const before=await list();
     assert.equal(before.status,200,JSON.stringify(before.data));
@@ -118,14 +123,46 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.ok(Date.parse(active.TrialExpiresAt__c)>Date.parse(active.TrialStartedAt__c));
     const secondTrial=await run(app.TrialFlow__c);
     assert.ok(secondTrial.status>=400,'Trial must be one-time');
+    const notOperator=await api(portNumber,'/connector-apps/xero/licence',token,{});
+    assert.equal(notOperator.status,403,'Only an explicit platform licence operator can issue a paid term');
+    const saved=await api(portNumber,'/named-credentials',token,{
+      name:'XERO', label:'Xero Test', protocol:'HTTPS',
+      baseUrl:'https://api.example.org/', authType:'Bearer', secret:'test-token-only-not-real'
+    });
+    assert.equal(saved.status,201,JSON.stringify(saved.data));
+    assert.equal(saved.data.credential.enabled,false,'New managed credentials start disabled');
+    assert.equal(saved.data.credential.hasSecret,true);
+    assert.equal(JSON.stringify(saved.data).includes('test-token-only-not-real'),false,'Secrets must not leave the server');
+    const testBlocked=await api(portNumber,'/named-credentials/'+saved.data.credential.id+'/test',token,{});
+    assert.equal(testBlocked.status,409,'A disabled connection cannot be tested');
+    const enabledResponse=await fetch('http://127.0.0.1:'+portNumber+'/api/connector-apps/xero/credential-enabled',{
+      method:'PATCH',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({enabled:true})
+    });
+    assert.equal(enabledResponse.status,200);
+    assert.equal((await enabledResponse.json()).credential.enabled,true);
     const uninstall=await run(app.UninstallFlow__c);
     assert.equal(uninstall.status,200,JSON.stringify(uninstall.data));
     const removed=(await list()).data.records.find((x:Record<string,any>)=>x.AppKey__c==='xero');
     assert.equal(removed.Installed__c,false);
     assert.equal(removed.TrialStartedAt__c,active.TrialStartedAt__c);
+    const disabledAfterRemoval=await api(portNumber,'/named-credentials',token);
+    assert.equal(disabledAfterRemoval.data.credentials.find((value:Record<string,any>)=>value.name==='XERO').enabled,false);
+    const enableWhenUninstalled=await fetch('http://127.0.0.1:'+portNumber+'/api/connector-apps/xero/credential-enabled',{
+      method:'PATCH',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({enabled:true})
+    });
+    assert.equal(enableWhenUninstalled.status,403);
     assert.equal((await run(app.InstallFlow__c)).status,200);
     const restored=(await list()).data.records.find((x:Record<string,any>)=>x.AppKey__c==='xero');
     assert.equal(restored.TrialStartedAt__c,active.TrialStartedAt__c);
+    const preserved=await api(portNumber,'/named-credentials',token);
+    const retainedCredential=preserved.data.credentials.find((value:Record<string,any>)=>value.name==='XERO');
+    assert.equal(retainedCredential.enabled,false);
+    assert.equal(retainedCredential.id,saved.data.credential.id,'Reinstall must preserve credential identity');
+    assert.equal(retainedCredential.hasSecret,true,'Reinstall must preserve encrypted authentication configuration');
   } finally {
     await stop(child);
     await rm(dir,{recursive:true,force:true});
