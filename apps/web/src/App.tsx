@@ -4580,7 +4580,7 @@ function RecordWorkspace({
     && object.listViewButtons?.includes('Add to Campaign') === true;
   const openCreateForm = () => {
     setEditingId(null);
-    setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: userRoles[0]?.name ?? '' } : { RecordTypeId: defaultRecordTypeId });
+    setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '' } : { RecordTypeId: defaultRecordTypeId });
     setFormError('');
     setFormOpen(true);
   };
@@ -5498,7 +5498,7 @@ function RecordFormDialog({
       </div>;
     }
     if (object.apiName === 'User' && field.apiName === 'UserRoleId') return <label className="form-label" key={field.apiName}>User Role
-      <select className="form-control" value={value} disabled={common.disabled} onChange={(event) => onChange('UserRoleId',event.target.value)}>
+      <select className="form-control" value={value} required disabled={common.disabled} onChange={(event) => onChange('UserRoleId',event.target.value)}>
         <option value="">Select role…</option>{userRoles.map((role) => <option key={role.id} value={role.name}>{role.name}</option>)}
       </select></label>;
     if (dataType === 'picklist') return <label className="form-label" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
