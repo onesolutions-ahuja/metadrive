@@ -51,6 +51,14 @@ test('connector licence and flow uninstall guard are enforced independently of U
   assert.throws(() => applyConnectorLifecycle(activated, { ...activated, TrialRequested__c: true }, credentials, [], now));
   const flows = [{ apiName: 'ONE_UsesApp', label: 'ONE Uses App', status: 'Active', elements: [{ type:'HTTP Callout', config: {namedCredentialId:'cred-id'} }] }];
   assert.deepEqual(activeConnectorFlowReferences(activated, credentials, flows), ['ONE Uses App']);
+  assert.deepEqual(activeConnectorFlowReferences(activated, [], [{
+    apiName: 'ONE_PendingCredential', label: 'Pending Credential Flow', status: 'Active',
+    elements: [{ type: 'HTTP Callout', config: { namedCredentialId: 'EXAMPLE' } }]
+  }]), ['Pending Credential Flow']);
+  assert.throws(() => applyConnectorLifecycle(activated, { ...activated, Installed__c: false }, [], [{
+    apiName: 'ONE_PendingCredential', label: 'Pending Credential Flow', status: 'Active',
+    elements: [{ type: 'HTTP Callout', config: { namedCredentialId: 'EXAMPLE' } }]
+  }], now), /Pending Credential Flow/);
   assert.throws(() => applyConnectorLifecycle(activated, { ...activated, Installed__c:false }, credentials, flows, now), /ONE Uses App/);
   const uninstalled = applyConnectorLifecycle(activated, { ...activated, Installed__c:false }, credentials, [], now);
   assert.equal(connectorEntitlement([uninstalled], credentials[0], now).allowed, false);
