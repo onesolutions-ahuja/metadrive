@@ -6,6 +6,9 @@ on:
       - 'apps/server/src/normalized-cutover-gate.mjs'
       - 'apps/server/scripts/verify-normalized-cutover-preflight.mjs'
       - 'apps/server/test/normalized-cutover-gate.test.mjs'
+      - 'apps/server/src/normalized-object-schema.mjs'
+      - 'apps/server/test/normalized-object-schema.test.mjs'
+      - 'apps/server/sql/normalized-registry-v2.sql'
       - '.github/workflows/metadrive-normalization-safety.yml'
   workflow_dispatch:
 permissions:
@@ -23,7 +26,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Test strict record/Flow/RBAC/page/credential compatibility
-        run: node --test apps/server/test/normalized-cutover-gate.test.mjs
+        run: node --test apps/server/test/normalized-cutover-gate.test.mjs apps/server/test/normalized-object-schema.test.mjs
       - name: Compile backend and frontend without deployment
         run: npm run build
       - name: Verify emitted server entrypoint
