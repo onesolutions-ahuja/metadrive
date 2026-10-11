@@ -3030,12 +3030,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} onNavigate={navigateRoute} />}
           {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} reports={reports}
-            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
+            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} reports={reports}
-            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
+            libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
