@@ -69,3 +69,18 @@ test('do not change unrelated/customised flow configurations', () => {
   assert.equal(repaired.flow.elements[3].config.fieldValues[0].value, 'Completed');
   assert.equal(repaired.flow.elements[2].config.fieldValues.find((item) => item.field === 'Source__c').value, 'Other');
 });
+
+test('WhatsApp repair refuses legacy JSONB and JSONB-backed relational persistence', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  const script = fileURLToPath(new URL('../scripts/repair-whatsapp-router.mjs', import.meta.url));
+  for (const mode of ['jsonb', 'relational']) {
+    const result = spawnSync(process.execPath, [script], {
+      env: { ...process.env, METADRIVE_PERSISTENCE_MODE: mode,
+        METADRIVE_WHATSAPP_REPAIR_TENANT_ID: 'test-tenant' },
+      encoding: 'utf8', timeout: 10000
+    });
+    assert.notEqual(result.status, 0, 'unsafe persistence mode must not be accepted');
+    assert.match(result.stderr, /SQL-only normalized mode is required/);
+  }
+});
