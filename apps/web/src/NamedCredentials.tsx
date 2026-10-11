@@ -29,20 +29,13 @@ const blankCredential = (): CredentialDraft => ({
   secret: ''
 });
 
-const providerPresets: Array<{ label: string; name: string; baseUrl: string; authType: CredentialDraft['authType']; headerName?: string }> = [
-  { label: 'WhatsApp', name: 'WHATSAPP', baseUrl: 'https://graph.facebook.com', authType: 'Bearer' },
-  { label: 'SMSGate', name: 'SMSGATE', baseUrl: 'https://api.sms-gate.app', authType: 'Basic' },
-  { label: 'SumUp', name: 'SUMUP', baseUrl: 'https://api.sumup.com', authType: 'Bearer' },
-  { label: 'Brevo', name: 'BREVO', baseUrl: 'https://api.brevo.com/v3', authType: 'API Key', headerName: 'api-key' },
-  { label: 'Deliveroo', name: 'DELIVEROO', baseUrl: '', authType: 'Bearer' },
-  { label: 'Uber Eats', name: 'UBER_EATS', baseUrl: 'https://api.uber.com', authType: 'Bearer' }
-];
-
 export default function NamedCredentials({
   credentials,
   canManage,
   encryptionReady,
   providerName,
+  preset,
+  embedded = false,
   onSave,
   onDelete,
   onRotate,
@@ -52,6 +45,8 @@ export default function NamedCredentials({
   canManage: boolean;
   encryptionReady: boolean | null;
   providerName?: string;
+  preset?: { name: string; label: string; baseUrl: string; authType: CredentialDraft['authType']; configuration: Record<string, string> };
+  embedded?: boolean;
   onSave: (credential: CredentialInput) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
@@ -84,7 +79,7 @@ export default function NamedCredentials({
       configuration: credential.configuration ?? {},
       username: '',
       secret: ''
-    } : providerName ? { ...blankCredential(), ...providerPresets.find((item) => item.name === providerName), name: providerName } : blankCredential());
+    } : preset ? { ...blankCredential(), ...preset, protocol: 'HTTPS' } : blankCredential());
   };
 
   const submit = async () => {
@@ -145,12 +140,12 @@ export default function NamedCredentials({
 
   return <section className="surface object-setting-surface named-credentials-page">
     <div className="section-toolbar">
-      <div><h2>Named Credentials</h2><p>Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts, Email Alerts, and supported delivery features.</p></div>
-      <button className="btn btn-brand" disabled={!canManage || encryptionReady === false} title={!canManage ? 'Requires namedCredentials:manage permission' : encryptionReady === false ? 'Credential encryption is not configured on the server' : undefined} onClick={() => editCredential()}><Plus size={14} />New Named Credential</button>
+      <div><h2>{embedded ? 'Connection Settings' : 'Named Credentials'}</h2><p>{embedded ? 'Tenant-specific connection configuration. Secrets remain encrypted and masked.' : 'Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts and delivery features.'}</p></div>
+      <button className="btn btn-brand" disabled={!canManage || encryptionReady === false} title={!canManage ? 'Requires namedCredentials:manage permission' : encryptionReady === false ? 'Credential encryption is not configured on the server' : undefined} onClick={() => editCredential()}><Plus size={14} />{embedded ? 'Configure Connection' : 'New Named Credential'}</button>
     </div>
-    <div className="record-type-create">
+    {!embedded && <div className="record-type-create">
       <input className="form-control" type="search" aria-label="Search Named Credentials" placeholder="Search credentials…" value={query} onChange={(event) => setQuery(event.target.value)} />
-    </div>
+    </div>}
     {error && <div className="records-message" role="alert">{error}</div>}
     {!canManage && <div className="info-callout" role="alert">This account cannot create credentials. Grant namedCredentials:manage through your existing profile or permission set in Settings → Permission Sets.</div>}
     {encryptionReady === false && <div className="records-message" role="alert">Credential encryption is not configured on the server. Set METADRIVE_CREDENTIAL_KEYS and METADRIVE_CREDENTIAL_ACTIVE_KEY_ID in Render before creating or testing credentials. Existing encrypted keys must be preserved.</div>}
@@ -171,7 +166,7 @@ export default function NamedCredentials({
             <button className="icon-button subtle" aria-label={`View ${credential.label}`} onClick={() => editCredential(credential, true)}><Eye size={14} /></button>
             <button className="icon-button subtle" aria-label={`Edit ${credential.label}`} title={!canManage ? 'Manage Named Credentials permission required' : 'Edit credential'} disabled={!canManage || Boolean(busyId)} onClick={() => editCredential(credential)}><Pencil size={14} /></button>
             <button className="icon-button subtle" aria-label={`Rotate key for ${credential.label}`} title="Rotate encryption key" disabled={!canManage || Boolean(busyId)} onClick={() => void performAction(credential, 'rotate')}><RotateCw size={14} /></button>
-            <button className="icon-button subtle" aria-label={`Delete ${credential.label}`} disabled={!canManage || Boolean(busyId)} onClick={() => void performAction(credential, 'delete')}><Trash2 size={14} /></button>
+            {!embedded && <button className="icon-button subtle" aria-label={`Delete ${credential.label}`} disabled={!canManage || Boolean(busyId)} onClick={() => void performAction(credential, 'delete')}><Trash2 size={14} /></button>}
           </div></td>
         </tr>)}</tbody>
       </table>
@@ -179,19 +174,9 @@ export default function NamedCredentials({
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
-        <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Named Credential Details' : draft.id ? 'Edit Named Credential' : 'New Named Credential'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
+        <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Connection Details' : draft.id ? 'Edit Connection' : 'Configure Connection'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
         <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
-        {!draft.id && !viewing && <label className="form-label">Provider template
-          <select className="form-control" defaultValue={providerName || ''} disabled={Boolean(providerName)} onChange={(event) => {
-            const preset = providerPresets.find((item) => item.name === event.target.value);
-            if (preset) updateDraft({ ...blankCredential(), ...preset, protocol: 'HTTPS' });
-          }}>
-            <option value="">Custom (blank)</option>
-            {providerPresets.map((preset) => <option key={preset.name} value={preset.name}>{preset.label}</option>)}
-          </select>
-          <small>Optional defaults only. Verify provider-specific API URL and enter your own secret before saving.</small>
-        </label>}
         <label className="form-label">API Name<input className="form-control" autoComplete="off" disabled={Boolean(providerName)} value={draft.name} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" /></label>
         <label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" /></label>
         <label className="form-label">Protocol<select className="form-control" value={draft.protocol} onChange={(event) => {
