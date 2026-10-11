@@ -6334,7 +6334,7 @@ app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePer
 // Enabling is separate from saving configuration. Installation and valid entitlement are mandatory.
 app.patch('/api/connector-apps/:appKey/credential-enabled', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
-  if (!connectorRight(principal, 'edit')) return res.status(403).json({ error: 'Missing connectorApps:edit permission.' });
+  if (!principal.permissions.includes('namedCredentials:manage')) return res.status(403).json({ error: 'Only Named Credential administrators can change activation.' });
   const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'enabled must be boolean.' });
   const tenant = tenantData(principal.tenantId)!;
@@ -6350,6 +6350,23 @@ app.patch('/api/connector-apps/:appKey/credential-enabled', accessAuthentication
   persistTenantRecords(principal.tenantId, {
     ...tenant, namedCredentials: tenant.namedCredentials.map((row) => row.id === credential.id ? updated : row)
   });
+  return res.json({ credential: publicNamedCredential(updated) });
+});
+
+// Operator-controlled activation: connectorApps:edit grants configuration access, not activation.
+app.patch('/api/named-credentials/:id/enabled', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
+  const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'enabled must be boolean.' });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const credential = tenant.namedCredentials.find((row) => row.id === routeParam(req, 'id'));
+  if (!credential) return res.status(404).json({ error: 'Named Credential was not found.' });
+  if (parsed.data.enabled) {
+    const entitled = connectorEntitlement(tenant.records.Connector_App__c ?? [], credential);
+    if (!entitled.allowed) return res.status(403).json({ error: entitled.message });
+  }
+  const updated = namedCredentialSchema.parse({ ...credential, enabled: parsed.data.enabled, updatedAt: new Date().toISOString() });
+  persistTenantRecords(principal.tenantId, { ...tenant, namedCredentials: tenant.namedCredentials.map((row) => row.id === credential.id ? updated : row) });
   return res.json({ credential: publicNamedCredential(updated) });
 });
 

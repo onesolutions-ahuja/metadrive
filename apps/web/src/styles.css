@@ -1996,3 +1996,15 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .salesforce-header { position: sticky; top: 0; z-index: 80; }
 .app-strip { position: sticky; top: 50px; z-index: 70; }
 .kiosk-mode .salesforce-header, .kiosk-mode .app-strip { display: none; }
+
+/* Named Credentials: compact, readable administration dialog. */
+.named-credential-modal { width: min(820px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.named-credential-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; }
+.named-credential-form-grid > .form-label { min-width: 0; margin: 0; }
+.named-credential-form-grid .form-control { min-width: 0; width: 100%; }
+.named-credential-form-grid .named-credential-span-full { grid-column: 1 / -1; }
+.named-credential-form-grid .connector-config-fields { margin: 4px 0 !important; }
+.named-credential-form-grid .connector-config-fields .connector-config-row { grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr) !important; }
+.named-credential-activation { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.named-credential-activation strong { margin-right: auto; }
+@media (max-width: 640px) { .named-credential-form-grid { grid-template-columns: minmax(0, 1fr); } .named-credential-modal { padding: 14px; } }
