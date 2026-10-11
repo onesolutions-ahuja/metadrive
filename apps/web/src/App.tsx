@@ -3207,7 +3207,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
 
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
-            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} onNavigate={navigateRoute} />}
+            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={globalSearch} onNavigate={navigateRoute} />}
           {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
@@ -4305,6 +4305,7 @@ function RecordWorkspace({
   fieldAccess,
   recordTypeAccess,
   libraryComponents,
+  headerSearch,
   onNavigate
 }: {
   route: Extract<AppRoute, { kind: 'record-list' | 'record-detail' }>;
@@ -4317,6 +4318,7 @@ function RecordWorkspace({
   fieldAccess: Record<string, { read: boolean; edit: boolean }>;
   recordTypeAccess: Record<string, boolean>;
   libraryComponents: LibraryComponentMetadata[];
+  headerSearch: string;
   onNavigate: (route: AppRoute) => void;
 }) {
   const object = objects.find((item) => item.apiName === route.objectApiName);
@@ -4342,7 +4344,9 @@ function RecordWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [objectPickerSearch, setObjectPickerSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => { if (route.kind === 'record-list') { setSearch(headerSearch); setListOffset(0); } }, [headerSearch, route.kind]);
   const [listOffset, setListOffset] = useState(0);
   const [listTotal, setListTotal] = useState(0);
   const listPageSize = 50;
@@ -5244,13 +5248,15 @@ function RecordWorkspace({
       <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
       <div className="records-heading-actions">
         <div className="records-object-combobox">
-          <input key={object.apiName} className="form-control records-object-select" aria-label="Search or choose object"
-            list="records-object-options" defaultValue={object.pluralLabel} placeholder="Search objects…"
-            onChange={(event) => {
-              const selection = objects.find((item) => item.pluralLabel.toLowerCase() === event.target.value.trim().toLowerCase());
-              if (selection && selection.apiName !== object.apiName) onNavigate({ kind: 'record-list', objectApiName: selection.apiName });
-            }} />
-          <datalist id="records-object-options">{objects.map((item) => <option key={item.apiName} value={item.pluralLabel} />)}</datalist>
+          <input className="form-control" aria-label="Filter objects" value={objectPickerSearch}
+            onChange={(event) => setObjectPickerSearch(event.target.value)} placeholder="Find object…" />
+          <select className="form-control records-object-select" aria-label="Choose object" value={object.apiName}
+            onChange={(event) => { setObjectPickerSearch(''); onNavigate({ kind: 'record-list', objectApiName: event.target.value, appId: route.appId }); }}>
+            {!objects.some((item) => item.apiName === object.apiName && item.pluralLabel.toLowerCase().includes(objectPickerSearch.trim().toLowerCase())) &&
+              <option value={object.apiName}>{object.pluralLabel}</option>}
+            {objects.filter((item) => item.pluralLabel.toLowerCase().includes(objectPickerSearch.trim().toLowerCase()) || item.apiName.toLowerCase().includes(objectPickerSearch.trim().toLowerCase()))
+              .map((item) => <option key={item.apiName} value={item.apiName}>{item.pluralLabel}</option>)}
+          </select>
         </div>
         <button className="btn" onClick={() => setRefreshKey((current) => current + 1)}><RefreshCw size={14} />Refresh</button>
       </div>
@@ -8199,7 +8205,7 @@ function PageBuilder({
         height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
       } : undefined}
       onClick={!libraryPreview ? () => { if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
-      onClickCapture={libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
+      onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
       onKeyDown={!libraryPreview ? (event) => { if (!previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); setDragOverId(component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
@@ -8209,7 +8215,7 @@ function PageBuilder({
       onDragStart={!libraryPreview ? (event) => { event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       onDragEnd={!libraryPreview ? (event) => moveCanvasComponent(event, component) : undefined}
       role={libraryPreview ? undefined : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
-      aria-hidden={libraryPreview || undefined}
+      aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
       {!previewMode && !libraryPreview && <div className="record-component-head"><GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} /></div>}
       {component.type === 'Record Detail'
@@ -8247,7 +8253,7 @@ function PageBuilder({
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
                         objects={objects} reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
-                        onNavigate={() => {}} onLaunchFlow={() => {}} disableActions />
+                        onNavigate={() => {}} onLaunchFlow={() => {}} disableActions={!interactivePreview} />
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
