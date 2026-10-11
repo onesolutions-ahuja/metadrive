@@ -2929,23 +2929,22 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             }}>{apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}</select>}
         </div>
         <nav className="primary-tabs" aria-label="Workspace navigation">
-          {(currentApp?.navigationItems ?? []).map((apiName) => {
-            const item = objects.find((candidate) => candidate.apiName === apiName);
-            if (!item) return null;
-            const style = customTabStyles.find((candidate) => candidate.name === item.customTab?.style);
-            const Icon = style?.icon ?? Database;
+          {(() => {
+            const recordObjects = (currentApp?.navigationItems ?? [])
+              .map((apiName) => objects.find((candidate) => candidate.apiName === apiName))
+              .filter((item): item is NonNullable<typeof item> => Boolean(item));
+            if (!recordObjects.length) return null;
+            const selectedObject = route.kind === 'record-list' && recordObjects.some((item) => item.apiName === route.objectApiName)
+              ? route.objectApiName : recordObjects[0].apiName;
             return (
               <button
-                className={route.kind === 'record-list' && route.objectApiName === item.apiName ? 'primary-tab active custom-object-tab' : 'primary-tab custom-object-tab'}
-                key={item.apiName}
-                onClick={() => navigateRoute({ kind: 'record-list', objectApiName: item.apiName, appId: currentApp?.apiName })}
+                className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'primary-tab active' : 'primary-tab'}
+                onClick={() => navigateRoute({ kind: 'record-list', objectApiName: selectedObject, appId: currentApp?.apiName })}
               >
-                {item.customTab && <span className="custom-tab-icon" style={{ backgroundColor: style?.color }}><Icon size={12} /></span>}
-                {!item.customTab && <Database className="rail-icon" size={17} />}
-                {item.pluralLabel}
+                <Database className="rail-icon" size={17} />Records
               </button>
             );
-          })}
+          })()}
           {(currentApp?.navigationPageApiNames ?? []).map((apiName) => {
             const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page');
             if (!appPage) return null;
