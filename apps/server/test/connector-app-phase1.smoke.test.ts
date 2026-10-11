@@ -127,10 +127,12 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.equal(notOperator.status,403,'Only an explicit platform licence operator can issue a paid term');
     const saved=await api(portNumber,'/named-credentials',token,{
       name:'XERO', label:'Xero Test', protocol:'HTTPS',
-      baseUrl:'https://api.example.org/', authType:'None'
+      baseUrl:'https://api.example.org/', authType:'Bearer', secret:'test-token-only-not-real'
     });
     assert.equal(saved.status,201,JSON.stringify(saved.data));
     assert.equal(saved.data.credential.enabled,false,'New managed credentials start disabled');
+    assert.equal(saved.data.credential.hasSecret,true);
+    assert.equal(JSON.stringify(saved.data).includes('test-token-only-not-real'),false,'Secrets must not leave the server');
     const testBlocked=await api(portNumber,'/named-credentials/'+saved.data.credential.id+'/test',token,{});
     assert.equal(testBlocked.status,409,'A disabled connection cannot be tested');
     const enabledResponse=await fetch('http://127.0.0.1:'+portNumber+'/api/connector-apps/xero/credential-enabled',{
@@ -157,7 +159,10 @@ test('AppExchange installation and trial run using stored metadata flows', async
     const restored=(await list()).data.records.find((x:Record<string,any>)=>x.AppKey__c==='xero');
     assert.equal(restored.TrialStartedAt__c,active.TrialStartedAt__c);
     const preserved=await api(portNumber,'/named-credentials',token);
-    assert.equal(preserved.data.credentials.find((value:Record<string,any>)=>value.name==='XERO').enabled,false);
+    const retainedCredential=preserved.data.credentials.find((value:Record<string,any>)=>value.name==='XERO');
+    assert.equal(retainedCredential.enabled,false);
+    assert.equal(retainedCredential.id,saved.data.credential.id,'Reinstall must preserve credential identity');
+    assert.equal(retainedCredential.hasSecret,true,'Reinstall must preserve encrypted authentication configuration');
   } finally {
     await stop(child);
     await rm(dir,{recursive:true,force:true});
