@@ -164,7 +164,7 @@ export default function AppExchange({ credentials, canManageCredentials, encrypt
   credentials: NamedCredentialMetadata[];
   canManageCredentials: boolean;
   encryptionReady: boolean | null;
-  onSave: (credential: Parameters<typeof ConnectorAppWorkspace>[0]['onSave'] extends (value: infer T) => Promise<void> ? T : never) => Promise<void>;
+  onSave: (credential: Parameters<Parameters<typeof ConnectorAppWorkspace>[0]['onSave']>[0]) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{connected: boolean; status?: number; message: string}>;
