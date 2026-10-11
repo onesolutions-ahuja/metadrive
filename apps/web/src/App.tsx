@@ -2035,7 +2035,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         ? current.map((item) => item.apiName === payload.flow.apiName ? payload.flow : item)
         : [...current, payload.flow]);
       setFlowValidation(null);
-      notify('Flow saved');
+      notify(nextFlow.status === 'Active' ? 'Flow activated; previous active version is now obsolete' : 'Flow saved as inactive draft');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Unable to save flow');
     }
@@ -3307,7 +3307,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               onUpdateConfig={updateFlowConfig}
               onRemove={removeFlowElement}
               onValidate={() => void validateFlow(flow)}
-              onSave={() => void saveFlow(flow)}
+              onSave={() => void saveFlow({ ...flow, status: 'Draft' })}
               onActivate={() => void saveFlow({ ...flow, status: 'Active' })}
               onRun={() => void runFlow()}
               onDebug={openFlowDebug}
