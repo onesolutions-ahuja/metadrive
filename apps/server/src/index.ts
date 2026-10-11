@@ -1142,6 +1142,10 @@ const flowSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
   description: z.string().default(''),
+  createdAt: z.string().optional(),
+  createdBy: z.string().optional(),
+  lastModifiedAt: z.string().optional(),
+  lastModifiedBy: z.string().optional(),
   flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']),
   status: z.enum(['Draft', 'Active']),
   versionNumber: z.number().int().positive(),
@@ -6702,8 +6706,13 @@ app.put('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', '
     ? Math.max(existing.versionNumber, ...history.map((version) => version.versionNumber)) + 1
     : 1;
   // Draft saves never publish an edited graph. Keep the old published version running.
+  const author = state.users.find((item) => item.id === principal.userId && item.tenantId === principal.tenantId);
   const nextFlow: FlowMetadata = {
     ...requested,
+    createdAt: existing?.createdAt ?? now,
+    createdBy: existing?.createdBy ?? author?.name ?? principal.email,
+    lastModifiedAt: now,
+    lastModifiedBy: author?.name ?? principal.email,
     versionNumber,
     activeVersion: requested.status === 'Active' ? versionNumber : previousActive,
     versions: history
