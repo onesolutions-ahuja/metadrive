@@ -1,6 +1,7 @@
 // CI ONLY: isolate each integration test's MetaDrive state in its own PostgreSQL
 // schema, keyed by its existing METADRIVE_DATA_PATH. Production never loads this.
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 
 if (process.env.METADRIVE_TEST_ISOLATION==='true' && process.env.METADRIVE_DATA_PATH) {
   const databaseUrl=process.env.DATABASE_URL;
@@ -15,6 +16,15 @@ if (process.env.METADRIVE_TEST_ISOLATION==='true' && process.env.METADRIVE_DATA_
   try {
     // Identifier is entirely generated from a fixed prefix and hex digest.
     await admin.query('CREATE SCHEMA IF NOT EXISTS '+schema);
+    // Existing API regression tests create and deliberately edit their JSON
+    // fixture between restarts. Import that isolated test fixture BEFORE the
+    // server starts; only the separate relational test verifies SQL durability.
+    if (existsSync(process.env.METADRIVE_DATA_PATH)) {
+      const fixture=JSON.parse(readFileSync(process.env.METADRIVE_DATA_PATH,'utf8'));
+      await admin.query('SET search_path TO '+schema);
+      await admin.query("CREATE TABLE IF NOT EXISTS metadrive_platform_state (id INTEGER PRIMARY KEY CHECK(id=1), payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())");
+      await admin.query("INSERT INTO metadrive_platform_state (id,payload) VALUES(1,$1::jsonb) ON CONFLICT(id) DO UPDATE SET payload=EXCLUDED.payload, updated_at=now()",[JSON.stringify(fixture)]);
+    }
   } finally {
     await admin.end();
   }
