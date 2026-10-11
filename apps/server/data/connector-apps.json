@@ -349,14 +349,14 @@
       ],
       "connectors": [
         {
-          "id": 1,
+          "id": "connector-1",
           "from": 1,
           "to": 2,
           "label": "",
           "kind": "normal"
         },
         {
-          "id": 2,
+          "id": "connector-2",
           "from": 2,
           "to": 3,
           "label": "",
@@ -423,14 +423,14 @@
       ],
       "connectors": [
         {
-          "id": 1,
+          "id": "connector-1",
           "from": 1,
           "to": 2,
           "label": "",
           "kind": "normal"
         },
         {
-          "id": 2,
+          "id": "connector-2",
           "from": 2,
           "to": 3,
           "label": "",
@@ -497,14 +497,14 @@
       ],
       "connectors": [
         {
-          "id": 1,
+          "id": "connector-1",
           "from": 1,
           "to": 2,
           "label": "",
           "kind": "normal"
         },
         {
-          "id": 2,
+          "id": "connector-2",
           "from": 2,
           "to": 3,
           "label": "",
