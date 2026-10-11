@@ -1166,7 +1166,7 @@ export const defaultAccessControl: AccessControlMetadata = {
       license: 'MetaDrive',
       description: 'Full administrative access to platform setup and tenant data.',
       isStandard: true,
-      systemPermissions: ['metadata:read', 'metadata:write', 'security:read', 'security:manage', 'objects:manage', 'flows:manage', 'flows:run', 'namedCredentials:manage', 'reports:manage', 'pages:manage', 'components:manage', 'dashboards:manage', 'dashboards:viewTeam', 'data:viewAll', 'email:send', 'callouts:execute', 'notifications:send', 'approvals:manage'],
+      systemPermissions: ['metadata:read', 'metadata:write', 'security:read', 'security:manage', 'objects:manage', 'flows:manage', 'flows:run', 'namedCredentials:manage', 'connectorApps:view', 'connectorApps:edit', 'connectorApps:secrets', 'connectorApps:test', 'connectorApps:install', 'reports:manage', 'pages:manage', 'components:manage', 'dashboards:manage', 'dashboards:viewTeam', 'data:viewAll', 'email:send', 'callouts:execute', 'notifications:send', 'approvals:manage'],
       objectPermissions: Object.fromEntries(objectMetadata.map((object) => [object.apiName, { ...fullObjectAccess }])),
       recordTypePermissions: {},
       fieldPermissions: Object.fromEntries(objectMetadata.flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }])))
@@ -1223,7 +1223,7 @@ export const defaultAccessControl: AccessControlMetadata = {
       apiName: 'System_Administrator',
       license: 'Salesforce',
       description: 'Full administrative access to platform setup and data.',
-      systemPermissions: ['metadata:read', 'metadata:write', 'security:read', 'security:manage', 'objects:manage', 'flows:manage', 'flows:run', 'namedCredentials:manage', 'reports:manage', 'pages:manage', 'components:manage', 'dashboards:manage', 'dashboards:viewTeam', 'data:viewAll', 'email:send', 'callouts:execute', 'notifications:send', 'approvals:manage'],
+      systemPermissions: ['metadata:read', 'metadata:write', 'security:read', 'security:manage', 'objects:manage', 'flows:manage', 'flows:run', 'namedCredentials:manage', 'connectorApps:view', 'connectorApps:edit', 'connectorApps:secrets', 'connectorApps:test', 'connectorApps:install', 'reports:manage', 'pages:manage', 'components:manage', 'dashboards:manage', 'dashboards:viewTeam', 'data:viewAll', 'email:send', 'callouts:execute', 'notifications:send', 'approvals:manage'],
       objectPermissions: Object.fromEntries(objectMetadata.map((object) => [object.apiName, { ...fullObjectAccess }])),
       recordTypePermissions: {},
       fieldPermissions: {}
