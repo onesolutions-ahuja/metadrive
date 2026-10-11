@@ -3937,6 +3937,10 @@ function RecordWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [listOffset, setListOffset] = useState(0);
+  const [listTotal, setListTotal] = useState(0);
+  const listPageSize = 50;
   const [refreshKey, setRefreshKey] = useState(0);
   const [fieldHistory, setFieldHistory] = useState<Array<Record<string, unknown>>>([]);
   const [relatedRecords, setRelatedRecords] = useState<Record<string, { objectApiName: string; fieldApiName: string; records: RecordData[] }>>({});
@@ -3971,6 +3975,16 @@ function RecordWorkspace({
   const [listNotice, setListNotice] = useState('');
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setListOffset(0);
+    setSelectedRecordIds([]);
+  }, [route.objectApiName, debouncedSearch]);
+
+  useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
   }, [object?.apiName]);
 
@@ -3995,8 +4009,17 @@ function RecordWorkspace({
       }
       try {
         if (route.kind === 'record-list') {
-          const payload = await apiRequest<{ records: RecordData[] }>(`/records/${encodeURIComponent(route.objectApiName)}`);
-          if (active) setRecords(payload.records);
+          const params = new URLSearchParams({
+            limit: String(listPageSize),
+            offset: String(listOffset),
+            ...(debouncedSearch ? { search: debouncedSearch } : {})
+          });
+          const payload = await apiRequest<{ records: RecordData[]; total: number }>(
+            `/records/${encodeURIComponent(route.objectApiName)}?${params.toString()}`);
+          if (active) {
+            setRecords(payload.records);
+            setListTotal(payload.total);
+          }
         } else {
           const recordQuery = new URLSearchParams({
             appId: route.appId ?? 'Records',
@@ -4021,7 +4044,7 @@ function RecordWorkspace({
     };
     void loadRecords();
     return () => { active = false; };
-  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey]);
+  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch]);
 
   useEffect(() => {
     if (route.kind !== 'record-detail' || !object || !record || record.Id !== route.recordId) {
@@ -4759,9 +4782,7 @@ function RecordWorkspace({
     .filter((field): field is FieldMetadata => Boolean(field && fieldAccess[`${object.apiName}.${field.apiName}`]?.read)) ?? [];
   const hasConfiguredSearchResults = object.searchLayouts?.searchResults !== undefined;
   const searchableFields = hasConfiguredSearchResults ? configuredSearchableFields : readableFields;
-  const visibleRecords = records.filter((item) => !query || searchableFields.some((field) =>
-    String(item[field.apiName] ?? '').toLocaleLowerCase().includes(query)
-  ));
+  const visibleRecords = records; // Search and pagination are applied by the API.
   const configuredListFields = object.searchLayouts?.searchResults?.map((name) => object.fields.find((field) => field.apiName === name))
     .filter((field): field is FieldMetadata => Boolean(field && fieldAccess[`${object.apiName}.${field.apiName}`]?.read));
   const listFields = hasConfiguredSearchResults
@@ -4798,7 +4819,7 @@ function RecordWorkspace({
     </div>
     <section className="records-list-card surface">
       <div className="records-list-toolbar">
-        <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${visibleRecords.length} record${visibleRecords.length === 1 ? '' : 's'}`}</span></div>
+        <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
         <div className="records-list-actions">
           <label className="records-search"><Search size={14} /><input aria-label={`Search ${object.pluralLabel}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this list…" /></label>
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
@@ -4816,9 +4837,9 @@ function RecordWorkspace({
       </div>
       {listNotice && <div className="records-notice" role="status">{listNotice}</div>}
       {error && <div className="records-message" role="alert">{error}</div>}
-      {!error && !loading && records.length === 0 && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
-      {!error && !loading && records.length > 0 && visibleRecords.length === 0 && <div className="records-empty">No records match “{search}”.</div>}
-      {!error && (loading || records.length > 0) && <div className="records-table-wrap"><table className="slds-table records-table">
+      {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
+      {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
+      {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflow: 'auto' }}><table className="slds-table records-table">
         <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName}>{field.label}</th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
         <tbody>{visibleRecords.map((item) => {
           const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
@@ -4836,6 +4857,16 @@ function RecordWorkspace({
           </div>}</td>}</tr>;
         })}</tbody>
       </table></div>}
+      {!error && listTotal > 0 && <nav aria-label="Record list pagination" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px' }}>
+        <span>{listOffset + 1}–{Math.min(listOffset + records.length, listTotal)} of {listTotal}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="btn" aria-label="First page" disabled={loading || listOffset === 0} onClick={() => setListOffset(0)}>First</button>
+          <button className="btn" aria-label="Previous page" disabled={loading || listOffset === 0} onClick={() => setListOffset((v) => Math.max(0, v - listPageSize))}>Previous</button>
+          <span>Page {Math.floor(listOffset / listPageSize) + 1} of {Math.max(1, Math.ceil(listTotal / listPageSize))}</span>
+          <button className="btn" aria-label="Next page" disabled={loading || listOffset + listPageSize >= listTotal} onClick={() => setListOffset((v) => v + listPageSize)}>Next</button>
+          <button className="btn" aria-label="Last page" disabled={loading || listOffset + listPageSize >= listTotal} onClick={() => setListOffset(Math.floor((listTotal - 1) / listPageSize) * listPageSize)}>Last</button>
+        </div>
+      </nav>}
     </section>
     {importFileName && <div className="record-form-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !importSaving) { setImportFileName(''); setImportRows([]); setImportError(''); } }}>
       <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="import-records-title">
