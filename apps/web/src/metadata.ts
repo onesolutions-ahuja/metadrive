@@ -326,6 +326,10 @@ export type FlowDefinitionMetadata = {
   apiName: string;
   label: string;
   description?: string;
+  createdAt?: string;
+  createdBy?: string;
+  lastModifiedAt?: string;
+  lastModifiedBy?: string;
   flowType: 'Record-Triggered Flow' | 'Screen Flow' | 'Autolaunched Flow' | 'Schedule-Triggered Flow' | 'Platform Event-Triggered Flow';
   status: 'Draft' | 'Active';
   versionNumber: number;

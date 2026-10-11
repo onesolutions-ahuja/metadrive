@@ -1942,3 +1942,57 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .flow-existing-table th { position: sticky; top: 0; background: #f8fafc; font-size: 12px; z-index: 1; }
 .flow-existing-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
 .flow-existing-pagination span { margin-right: auto; }
+
+/* Shared header: logo navigation and live connectivity indicator */
+.brand-home-button { border: 0; background: none; padding: 4px 10px; cursor: pointer; display: inline-flex; align-items: center; flex-shrink: 0; }
+.brand-home-button:focus-visible { outline: 2px solid #0176d3; outline-offset: 2px; border-radius: 5px; }
+.app-current-label { font-size: 14px; font-weight: 650; white-space: nowrap; }
+.connection-health-wrap { position: relative; }
+.connection-health-healthy { color: #2e844a; }
+.connection-health-slow { color: #a76a00; }
+.connection-health-offline { color: #ba0517; }
+.connection-health-checking { color: #637381; }
+.connection-health-popover { position: absolute; z-index: 100; top: calc(100% + 8px); right: 0; width: 235px; background: #fff; border: 1px solid #d8dde5; box-shadow: 0 8px 24px #0002; border-radius: 8px; padding: 14px; color: #252a35; }
+.connection-health-popover p { font-size: 13px; margin: 8px 0 0; }
+
+/* Profile menu and accessible password dialog */
+.profile-menu-wrap { position: relative; }
+.profile-menu-panel { position: absolute; z-index: 105; right: 0; top: calc(100% + 8px); min-width: 175px; background: #fff; padding: 6px; border: 1px solid #d8dde5; border-radius: 7px; box-shadow: 0 10px 28px #0002; }
+.profile-menu-panel > button { display: block; width: 100%; padding: 10px; text-align: left; border: 0; border-radius: 4px; background: transparent; cursor: pointer; }
+.profile-menu-panel > button:hover { background: #f0f5fa; }
+.profile-password-backdrop { position: fixed; inset: 0; background: #0007; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.profile-password-dialog { width: min(100%, 440px); background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 20px 70px #0004; }
+.profile-password-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.profile-password-heading h2 { margin: 0; font-size: 19px; }
+.profile-password-dialog form { display: grid; gap: 14px; }
+.profile-password-dialog .form-label { display: grid; gap: 7px; }
+.profile-password-dialog .form-control { width: 100%; box-sizing: border-box; }
+.profile-password-dialog .toolbar-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Builder component gallery: recognisable live thumbnails and readable labels */
+.builder-page .component-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 12px; padding: 0 12px 16px; }
+.builder-page .component-library-card { grid-template-rows: 125px minmax(62px, auto); min-height: 190px; }
+.builder-page .component-card-preview { height: 125px; background: #fff; border-bottom: 1px solid #e5e9ef; }
+.builder-page .component-card-preview .component-rendered-preview { width: 125%; height: 157px; min-height: 157px; transform: scale(.8); }
+.builder-page .component-card-copy { padding: 10px 12px; gap: 5px; }
+.builder-page .component-card-copy strong { font-size: 13px; white-space: normal; line-height: 1.3; }
+.builder-page .component-card-copy span { font-size: 11px; line-height: 1.45; }
+
+/* Isolated external Page Builder draft-preview window */
+.external-page-preview { min-height: 100vh; background: #f4f6f9; font-family: inherit; }
+.external-preview-toolbar { position: sticky; top: 0; z-index: 10; background: #fff; box-shadow: 0 2px 7px #0001; border-bottom: 1px solid #dbe1e8; padding: 12px 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.external-preview-toolbar strong { font-size: 15px; }
+.external-preview-toolbar span { color: #5b6473; font-size: 12px; }
+.external-preview-device-choices { margin-left: auto; display: flex; gap: 6px; }
+.external-preview-viewport { padding: 22px; margin: 0 auto; overflow: auto; }
+.external-preview-viewport.tablet { width: min(100%, 820px); }
+.external-preview-viewport.phone { width: min(100%, 420px); }
+.external-preview-viewport .record-preview { margin: 0 auto; min-height: 65vh; background: #fff; box-shadow: 0 6px 22px #0001; }
+.external-preview-viewport .free-canvas-stage { transform-origin: top left; }
+.external-preview-viewport .component-rendered-preview { pointer-events: auto; }
+@media (max-width: 540px) { .external-preview-toolbar { padding: 10px; gap: 8px; } .external-preview-viewport { padding: 10px; } .external-preview-device-choices { margin-left: 0; } }
+
+/* Keep shared navigation visible while scrolling without covering page content */
+.salesforce-header { position: sticky; top: 0; z-index: 80; }
+.app-strip { position: sticky; top: 50px; z-index: 70; }
+.kiosk-mode .salesforce-header, .kiosk-mode .app-strip { display: none; }

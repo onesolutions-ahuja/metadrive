@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   Activity,
@@ -49,7 +50,9 @@ import {
   Tablet,
   UsersRound,
   X,
-  Workflow
+  Workflow,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import FlowBuilderWorkspace from './FlowBuilder';
 import FlowScreenContent from './FlowScreenContent';
@@ -172,6 +175,99 @@ defaultApiUrl.pathname = '/api';
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? defaultApiUrl.toString().replace(/\/$/, '');
 let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
+function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => Promise<void> | void; onPasswordChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const reset = () => { setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setError(''); };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) { setError('New passwords do not match'); return; }
+    if (newPassword.length < 12) { setError('Use at least 12 characters'); return; }
+    setBusy(true); setError('');
+    try {
+      await apiRequest('/auth/change-password', { method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }) });
+      reset(); setEditing(false); setOpen(false);
+      onPasswordChanged();
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not change password'); }
+    finally { setBusy(false); }
+  };
+  return <div className="profile-menu-wrap">
+    <button type="button" className="user-menu" aria-label="User profile" aria-expanded={open}
+      onClick={() => setOpen((state) => !state)}>Profile <ChevronDown size={13} /></button>
+    {open && <div className="profile-menu-panel">
+      <button type="button" onClick={() => { setEditing(true); setOpen(false); reset(); }}>Change Password</button>
+      <button type="button" onClick={() => void onLogout()}>Sign Out</button>
+    </div>}
+    {editing && <div className="profile-password-backdrop" role="presentation">
+      <section className="profile-password-dialog" role="dialog" aria-modal="true" aria-labelledby="change-password-heading">
+        <div className="profile-password-heading"><h2 id="change-password-heading">Change Password</h2>
+          <button type="button" className="icon-button" aria-label="Close" onClick={() => { setEditing(false); reset(); }}><X size={18} /></button></div>
+        <form onSubmit={(event) => void submit(event)}>
+          <label className="form-label">Current Password<input autoComplete="current-password" className="form-control" type="password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></label>
+          <label className="form-label">New Password<input autoComplete="new-password" className="form-control" type="password" minLength={12} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></label>
+          <label className="form-label">Confirm New Password<input autoComplete="new-password" className="form-control" type="password" minLength={12} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+          <p className="settings-panel-copy">After changing your password, all sessions will be signed out.</p>
+          {error && <p role="alert" className="form-error">{error}</p>}
+          <div className="toolbar-actions">
+            <button type="button" className="btn" disabled={busy} onClick={() => { setEditing(false); reset(); }}>Cancel</button>
+            <button type="submit" className="btn btn-brand" disabled={busy}>{busy ? 'Updating…' : 'Change Password'}</button>
+          </div>
+        </form>
+      </section>
+    </div>}
+  </div>;
+}
+
+function ConnectionHealthIndicator() {
+  const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; database: string; latency: number | null; checked: string }>({ status: 'checking', database: 'checking', latency: null, checked: '' });
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      const started = performance.now();
+      try {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 8000);
+        try {
+          const response = await fetch(`${apiBase.replace(/\/api\/?$/, '')}/health`, { cache: 'no-store', signal: controller.signal });
+          const latency = Math.round(performance.now() - started);
+          const result = response.ok ? await response.json() as { database?: string } : null;
+          const database = result?.database ?? 'unknown';
+          if (alive) setHealth({
+            status: !response.ok || database === 'unavailable' ? 'offline'
+              : database !== 'healthy' || latency > 2500 ? 'slow' : 'healthy',
+            database, latency, checked: new Date().toLocaleTimeString()
+          });
+        } finally { window.clearTimeout(timeout); }
+      } catch {
+        if (alive) setHealth({ status: 'offline', database: 'unreachable', latency: null, checked: new Date().toLocaleTimeString() });
+      }
+    };
+    void check();
+    const interval = window.setInterval(() => void check(), 30000);
+    return () => { alive = false; window.clearInterval(interval); };
+  }, []);
+  return <div className="connection-health-wrap">
+    <button type="button" className={`icon-button connection-health-${health.status}`} onClick={() => setExpanded((value) => !value)}
+      aria-label={`API connection: ${health.status}`} aria-expanded={expanded} title={`API connection: ${health.status}`}>
+      {health.status === 'offline' ? <WifiOff size={18} /> : <Wifi size={18} />}
+    </button>
+    {expanded && <div className="connection-health-popover" role="status">
+      <strong>Connection health</strong>
+      <p>API: {health.status}</p>
+      <p>Response: {health.latency === null ? 'Unavailable' : `${health.latency} ms`}</p>
+      <p>Checked: {health.checked || 'Checking…'}</p>
+      <p>Database: {health.database}</p>
+    </div>}
+  </div>;
+}
+
 
 function isAuthErrorMessage(message: string): boolean {
   const text = message.toLowerCase();
@@ -940,6 +1036,13 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
       <button className="btn btn-brand auth-submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
     </form>
   </main>;
+}
+
+async function fetchFlowListPage(page: number, search: string) {
+  return apiRequest<{
+    flows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status' | 'versionNumber' | 'activeVersion' | 'createdAt' | 'createdBy' | 'lastModifiedAt' | 'lastModifiedBy'>>;
+    total: number; page: number; pageSize: number;
+  }>(`/metadata/flows/list?page=${encodeURIComponent(String(page))}&search=${encodeURIComponent(search)}`);
 }
 
 function SetupApp({ onLogout }: { onLogout: () => void }) {
@@ -2906,18 +3009,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   return (
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
-        <div className="launcher-menu-wrap">
-          <button type="button" className="icon-button app-launcher" aria-label="App Launcher" aria-expanded={launcherOpen} aria-controls="launcher-menu" onClick={() => setLauncherOpen((open) => !open)}><Grid2X2 size={18} /></button>
-          {launcherOpen && <nav className="launcher-menu" id="launcher-menu" aria-label="Switch workspace">
-            <button type="button" onClick={() => { openSetupWorkspace('home'); setLauncherOpen(false); }}><Settings2 size={16} />Setup</button>
-            <button type="button" onClick={() => {
-              const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName)) ?? 'Account';
-              navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
-              setLauncherOpen(false);
-            }}><Database size={16} />Records</button>
-          </nav>}
-        </div>
-        <div className="brand"><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /><span>UNEEngine</span></div>
+        <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
         <button type="button" className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
           onClick={() => {
             const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName))
@@ -2936,7 +3028,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         </div>
         <div className="header-tools">
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
-          <button className="icon-button" aria-label="Setup"><Settings2 size={17} /></button>
+          
+          <ConnectionHealthIndicator />
           <div className="notification-center">
             <button className="icon-button notification-button" aria-label={`Notifications${notificationsUnreadCount ? `, ${notificationsUnreadCount} unread` : ''}`} aria-expanded={notificationsOpen} aria-controls="notification-panel" onClick={toggleNotifications}>
               <Bell size={17} />{notificationsUnreadCount > 0 && <span className="notification-count">{notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}</span>}
@@ -2966,20 +3059,14 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               </>}
             </section>}
           </div>
-          <button className="user-menu" aria-label="Sign out" onClick={() => void logout()}>Sign out<ChevronDown size={12} /></button>
+          <ProfilePasswordMenu onLogout={logout} onPasswordChanged={onLogout} />
         </div>
       </header>
 
       {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         <div className="app-title">
           <span className="app-icon"><Database size={18} /></span>
-          <select aria-label="Current app" value={currentApp?.apiName ?? ''} onChange={(event) => {
-            const nextAppId = event.target.value;
-            setCurrentAppId(nextAppId);
-            navigateRoute(route.kind === 'app-home' || route.kind === 'app-page'
-              ? { kind: 'app-home', appId: nextAppId }
-              : { ...route, appId: nextAppId });
-          }}>{apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}</select>
+          <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>
         </div>
         <nav className="primary-tabs" aria-label="Workspace navigation">
           {(currentApp?.navigationPageApiNames ?? []).map((apiName) => {
@@ -3268,6 +3355,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               landing={!route.resourceApiName}
               flow={flow}
               flows={flows}
+              onListFlows={fetchFlowListPage}
               libraryComponents={libraryComponents}
               platformEvents={platformEvents}
               objects={objects}
@@ -5082,9 +5170,15 @@ function RecordWorkspace({
       <div className="record-object-icon"><Database size={18} /></div>
       <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
       <div className="records-heading-actions">
-        <select className="form-control records-object-select" aria-label="Choose object" value={object.apiName} onChange={(event) => onNavigate({ kind: 'record-list', objectApiName: event.target.value })}>
-          {objects.map((item) => <option key={item.apiName} value={item.apiName}>{item.pluralLabel}</option>)}
-        </select>
+        <div className="records-object-combobox">
+          <input key={object.apiName} className="form-control records-object-select" aria-label="Search or choose object"
+            list="records-object-options" defaultValue={object.pluralLabel} placeholder="Search objects…"
+            onChange={(event) => {
+              const selection = objects.find((item) => item.pluralLabel.toLowerCase() === event.target.value.trim().toLowerCase());
+              if (selection && selection.apiName !== object.apiName) onNavigate({ kind: 'record-list', objectApiName: selection.apiName });
+            }} />
+          <datalist id="records-object-options">{objects.map((item) => <option key={item.apiName} value={item.pluralLabel} />)}</datalist>
+        </div>
         <button className="btn" onClick={() => setRefreshKey((current) => current + 1)}><RefreshCw size={14} />Refresh</button>
       </div>
     </div>
@@ -7244,6 +7338,36 @@ function PageBuilder({
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
   const [customPropertiesError, setCustomPropertiesError] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+  const externalPreviewWindowRef = useRef<Window | null>(null);
+  const [externalPreviewTarget, setExternalPreviewTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    return () => { externalPreviewWindowRef.current?.close(); externalPreviewWindowRef.current = null; };
+  }, []);
+  const openExternalPreview = () => {
+    if (externalPreviewWindowRef.current && !externalPreviewWindowRef.current.closed) {
+      externalPreviewWindowRef.current.focus();
+      return;
+    }
+    const popup = window.open('', 'metadrive-page-preview', 'popup=yes,width=1280,height=860,resizable=yes,scrollbars=yes');
+    if (!popup) { onNotify('Please allow the page preview popup in your browser.'); return; }
+    externalPreviewWindowRef.current = popup;
+    popup.document.title = `${page.label} — Preview`;
+    for (const sheet of Array.from(document.querySelectorAll('link[rel="stylesheet"],style'))) {
+      popup.document.head.appendChild(sheet.cloneNode(true));
+    }
+    popup.document.body.style.margin = '0';
+    const container = popup.document.createElement('main');
+    container.id = 'metadrive-popup-preview';
+    popup.document.body.appendChild(container);
+    popup.addEventListener('beforeunload', () => {
+      if (externalPreviewWindowRef.current === popup) {
+        externalPreviewWindowRef.current = null;
+        setExternalPreviewTarget(null);
+      }
+    });
+    setExternalPreviewTarget(container);
+  };
+
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const [dynamicFormsUpgradeOpen, setDynamicFormsUpgradeOpen] = useState(false);
@@ -8096,6 +8220,34 @@ function PageBuilder({
   }, -1, true);
   return (
     <div className="builder-page">
+      {externalPreviewTarget && createPortal(
+        <div className="external-page-preview">
+          <div className="external-preview-toolbar"><strong>{page.label}</strong><span>Live draft preview · {page.pageType}</span>
+            <div className="external-preview-device-choices">
+              {(['Desktop', 'Tablet', 'Phone'] as const).map((choice) => <button key={choice} type="button" className={device === choice ? 'btn active' : 'btn'} onClick={() => setDevice(choice)}>{choice}</button>)}
+            </div>
+            <button type="button" className="btn" onClick={() => { externalPreviewWindowRef.current?.close(); externalPreviewWindowRef.current = null; setExternalPreviewTarget(null); }}>Close</button>
+          </div>
+          <div className={`external-preview-viewport ${device.toLowerCase()}`}>
+            <div className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : 'record-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}>
+              {page.layoutMode === 'free-canvas'
+                ? <div className="free-canvas-stage" style={{ width: page.canvasWidth, height: page.canvasHeight, position: 'relative' }}>
+                    {page.components.map((component, index) => renderPageComponent(component, index, true))}
+                  </div>
+                : <>
+                    {page.components.filter((component) => (component.region ?? 'main') === 'header').map((component, index) => renderPageComponent(component, index, true))}
+                    <div className={page.template === 'main-sidebar' || page.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
+                      <main className="record-runtime-main">{page.components.filter((component) => (component.region ?? 'main') === 'main').map((component, index) => renderPageComponent(component, index, true))}</main>
+                      {(page.template === 'main-sidebar' || page.template === 'header-main-sidebar') &&
+                        <aside className="record-runtime-sidebar">{page.components.filter((component) => component.region === 'sidebar').map((component, index) => renderPageComponent(component, index, true))}</aside>}
+                    </div>
+                  </>}
+            </div>
+          </div>
+        </div>,
+        externalPreviewTarget
+      )}
+
       <div className="builder-titlebar">
         <div className="builder-page-select">
           <div className="eyebrow">Lightning App Builder</div>
@@ -8123,7 +8275,7 @@ function PageBuilder({
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
           {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyKioskPreset()}>Load Kiosk Layout</button>}
           <button className="btn" disabled={saving} onClick={() => void clonePage()}><Copy size={14} />Clone</button>
-          <button className={previewMode ? 'btn active' : 'btn'} onClick={() => setPreviewMode((current) => !current)}><Eye size={14} />{previewMode ? 'Exit preview' : 'Preview'}</button>
+          <button className="btn" onClick={openExternalPreview}><ExternalLink size={14} />Preview</button>
           <button className="btn" disabled={saving} onClick={() => void savePage()}><Save size={14} />{saving ? 'Saving…' : 'Save'}</button>
           {page.status === 'Active'
             ? <button className="btn" disabled={saving} onClick={() => void savePage('Draft')}><Check size={14} />Deactivate</button>
@@ -8259,7 +8411,7 @@ function PageBuilder({
               <button className="icon-button subtle" aria-label="Cut component" title="Cut" disabled={!selected || previewMode} onClick={cutSelected}><Scissors size={14} /></button>
               <button className="icon-button subtle" aria-label="Copy component" title="Copy" disabled={!selected || previewMode} onClick={copySelected}><Copy size={14} /></button>
               <button className="icon-button subtle" aria-label="Paste component" title="Paste" disabled={!componentClipboard || previewMode} onClick={pasteComponent}><ClipboardPaste size={14} /></button>
-              <button className={previewMode ? 'icon-button subtle active' : 'icon-button subtle'} aria-label="Preview" title="Preview" onClick={() => setPreviewMode((current) => !current)}><Eye size={15} /></button>
+              <button className="icon-button subtle" aria-label="Open preview in a separate window" title="Open preview window" onClick={openExternalPreview}><ExternalLink size={15} /></button>
               <a className="icon-button subtle" aria-label="Lightning App Builder help" title="Lightning App Builder help" href="https://trailhead.salesforce.com/content/learn/modules/lightning_app_builder/lightning_app_builder_intro" target="_blank" rel="noreferrer"><CircleHelp size={14} /></a>
             </div>
           </div>

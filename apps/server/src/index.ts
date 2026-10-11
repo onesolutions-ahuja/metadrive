@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection } from './postgres-state.js';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
@@ -1142,6 +1142,10 @@ const flowSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
   description: z.string().default(''),
+  createdAt: z.string().optional(),
+  createdBy: z.string().optional(),
+  lastModifiedAt: z.string().optional(),
+  lastModifiedBy: z.string().optional(),
   flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']),
   status: z.enum(['Draft', 'Active']),
   versionNumber: z.number().int().positive(),
@@ -5011,7 +5015,10 @@ const provisioningSchema = z.object({
   password: z.string().min(12).max(256)
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, service: 'metadrive-api', authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode }));
+app.get('/health', async (_req, res) => {
+  const database = await checkDatabaseConnection();
+  return res.json({ ok: true, service: 'metadrive-api', database, authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode });
+});
 app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
 app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
 app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
@@ -5163,6 +5170,45 @@ app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response)
     clearRefreshCookie(res);
     return res.status(204).end();
   }).catch(() => res.status(401).json({ error: 'Access token is invalid or expired' }));
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: z.string().min(12).max(256)
+});
+const passwordChangeAttempts = new Map<string, { count: number; resetAt: number }>();
+app.post('/api/auth/change-password', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Password changes are managed by the identity provider' });
+  const principal = getPrincipal(res);
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid password request; new password must have at least 12 characters' });
+  if (parsed.data.currentPassword === parsed.data.newPassword) return res.status(400).json({ error: 'Choose a different new password' });
+  const key = principal.userId;
+  const now = Date.now();
+  const attempts = passwordChangeAttempts.get(key);
+  if (attempts && attempts.resetAt > now && attempts.count >= 5) return res.status(429).json({ error: 'Too many attempts; try again later' });
+  const user = principalUser(principal);
+  if (!user) return res.status(401).json({ error: 'User not available' });
+  const verified = await verifyPassword(parsed.data.currentPassword, user.passwordSalt, user.passwordHash);
+  if (!verified) {
+    passwordChangeAttempts.set(key, { count: attempts && attempts.resetAt > now ? attempts.count + 1 : 1, resetAt: now + 15 * 60 * 1000 });
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  passwordChangeAttempts.delete(key);
+  const hashed = await hashPassword(parsed.data.newPassword);
+  const changedAt = Math.floor(Date.now() / 1000);
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash, authRevokedBefore: changedAt }
+      : item),
+    refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
+      ? { ...session, revokedAt: changedAt } : session)
+  };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Could not save new password. Please retry.' }); }
+  clearRefreshCookie(res);
+  return res.status(200).json({ changed: true, signedOut: true });
 });
 
 app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
@@ -5840,6 +5886,25 @@ app.delete('/api/metadata/approval-processes/:apiName', requireAnyPermission('me
     approvalProcesses: tenant.approvalProcesses.filter((item) => item.apiName !== apiName)
   });
   return res.status(204).end();
+});
+app.get('/api/metadata/flows/list', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
+  const query = typeof req.query.search === 'string' ? req.query.search.trim().toLocaleLowerCase().slice(0, 160) : '';
+  const page = Math.max(1, Math.min(100000, Number.parseInt(String(req.query.page ?? '1'), 10) || 1));
+  const pageSize = 50;
+  const matches = tenant.flows
+    .filter((flow) => !query || [flow.label, flow.apiName, flow.flowType, flow.status].some((value) => value.toLocaleLowerCase().includes(query)))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const offset = (page - 1) * pageSize;
+  const list = matches.slice(offset, offset + pageSize).map((flow) => ({
+    apiName: flow.apiName, label: flow.label, flowType: flow.flowType, status: flow.status,
+    versionNumber: flow.versionNumber, activeVersion: flow.activeVersion,
+    createdAt: flow.createdAt, createdBy: flow.createdBy,
+    lastModifiedAt: flow.lastModifiedAt, lastModifiedBy: flow.lastModifiedBy
+  }));
+  return res.json({ flows: list, total: matches.length, page, pageSize });
 });
 app.get('/api/metadata/flows', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   res.json({ flows: tenantData(getPrincipal(res).tenantId)?.flows ?? [] });
@@ -6663,8 +6728,13 @@ app.put('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', '
     ? Math.max(existing.versionNumber, ...history.map((version) => version.versionNumber)) + 1
     : 1;
   // Draft saves never publish an edited graph. Keep the old published version running.
+  const author = state.users.find((item) => item.id === principal.userId && item.tenantId === principal.tenantId);
   const nextFlow: FlowMetadata = {
     ...requested,
+    createdAt: existing?.createdAt ?? now,
+    createdBy: existing?.createdBy ?? author?.name ?? principal.email,
+    lastModifiedAt: now,
+    lastModifiedBy: author?.name ?? principal.email,
     versionNumber,
     activeVersion: requested.status === 'Active' ? versionNumber : previousActive,
     versions: history
