@@ -3318,7 +3318,7 @@ function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId
       // Upgrade only the original placeholder history mapping, never tenant-customised views.
       const legacyPlaceholder = previous.RecordObject__c === 'Communication_Records__c'
         && previous.RecordFilterField__c === 'Source__c'
-        && ['uber-eats', 'deliveroo', 'xero'].includes(String(values.AppKey__c));
+        && values.RecordObject__c === '' && values.RecordFilterField__c === '';
       existing[position] = runtimeRecordSchema.parse({
         ...previous, ...added,
         ...(legacyPlaceholder ? { RecordObject__c: '', RecordFilterField__c: '', RecordFilterValue__c: '' } : {})
