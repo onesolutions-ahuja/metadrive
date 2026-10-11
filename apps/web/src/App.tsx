@@ -225,7 +225,7 @@ function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => 
 }
 
 function ConnectionHealthIndicator() {
-  const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; latency: number | null; checked: string }>({ status: 'checking', latency: null, checked: '' });
+  const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; database: string; latency: number | null; checked: string }>({ status: 'checking', database: 'checking', latency: null, checked: '' });
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -237,10 +237,16 @@ function ConnectionHealthIndicator() {
         try {
           const response = await fetch(`${apiBase.replace(/\/api\/?$/, '')}/health`, { cache: 'no-store', signal: controller.signal });
           const latency = Math.round(performance.now() - started);
-          if (alive) setHealth({ status: response.ok ? (latency > 2500 ? 'slow' : 'healthy') : 'offline', latency, checked: new Date().toLocaleTimeString() });
+          const result = response.ok ? await response.json() as { database?: string } : null;
+          const database = result?.database ?? 'unknown';
+          if (alive) setHealth({
+            status: !response.ok || database === 'unavailable' ? 'offline'
+              : database !== 'healthy' || latency > 2500 ? 'slow' : 'healthy',
+            database, latency, checked: new Date().toLocaleTimeString()
+          });
         } finally { window.clearTimeout(timeout); }
       } catch {
-        if (alive) setHealth({ status: 'offline', latency: null, checked: new Date().toLocaleTimeString() });
+        if (alive) setHealth({ status: 'offline', database: 'unreachable', latency: null, checked: new Date().toLocaleTimeString() });
       }
     };
     void check();
@@ -257,7 +263,7 @@ function ConnectionHealthIndicator() {
       <p>API: {health.status}</p>
       <p>Response: {health.latency === null ? 'Unavailable' : `${health.latency} ms`}</p>
       <p>Checked: {health.checked || 'Checking…'}</p>
-      <p>Database: Not independently verified</p>
+      <p>Database: {health.database}</p>
     </div>}
   </div>;
 }
