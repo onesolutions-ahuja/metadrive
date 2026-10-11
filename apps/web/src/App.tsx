@@ -272,15 +272,24 @@ class ApiRequestError extends Error {
   }
 }
 
-async function loadAppCommunicationHistory(field: string, source: string, offset: number, search: string) {
+async function loadAppCommunicationHistory(objectName: string, field: string, source: string, offset: number, search: string) {
   const params = new URLSearchParams({
     limit: '50', offset: String(offset), filterField: field, filterValue: source,
     ...(search ? { search } : {})
   });
   return apiRequest<{ records: Array<{ Id: string; [key: string]: unknown }>; total: number }>(
-    `/records/Communication_Records__c?${params.toString()}`);
+    `/records/${encodeURIComponent(objectName)}?${params.toString()}`);
 }
 
+async function loadConnectorMarketplaceApps() {
+  const result = await apiRequest<{records: import('./ConnectorAppWorkspace').ConnectorApp[]}>(`/records/Connector_App__c?limit=100&offset=0`);
+  return result.records;
+}
+async function executeConnectorAppLifecycleFlow(apiName: string, appKey: string): Promise<void> {
+  await apiRequest(`/flows/${encodeURIComponent(apiName)}/execute`, {
+    method: 'POST', body: JSON.stringify({AppKey:appKey})
+  });
+}
 async function loadFlowScreenRecords(objectApiName: string): Promise<Record<string, unknown>[]> {
   const result = await apiRequest<{ records: Record<string, unknown>[] }>(`/records/${encodeURIComponent(objectApiName)}`);
   return result.records;
@@ -3180,14 +3189,22 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           />}
           {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange
             credentials={namedCredentials}
+            flows={flows.map(({apiName,label,status,elements}) => ({
+              apiName, label, status,
+              elements: elements.map((element) => ({type:element.type,config:element.config as Record<string,unknown>}))
+            }))}
+            canManageFlows={canManageFlows}
             canManageCredentials={canManageNamedCredentials}
             encryptionReady={namedCredentialsEncryptionReady}
+            loadApps={loadConnectorMarketplaceApps}
+            executeLifecycleFlow={executeConnectorAppLifecycleFlow}
             onSave={saveNamedCredential}
             onDelete={deleteNamedCredential}
             onRotate={rotateNamedCredential}
             onTest={testNamedCredential}
             loadHistory={loadAppCommunicationHistory}
-            onOpenRecord={(id) => navigateRoute({kind:'record-detail', objectApiName:'Communication_Records__c', recordId:id})}
+            onOpenFlow={selectFlow}
+            onOpenRecord={(objectName,id) => navigateRoute({kind:'record-detail', objectApiName:objectName, recordId:id})}
           />}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
             const provider = connectorProviders.find((item) => item.connectorKey === route.resourceApiName) ?? connectorProviders[0];
