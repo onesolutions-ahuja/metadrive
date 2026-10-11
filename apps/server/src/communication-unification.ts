@@ -53,3 +53,33 @@ function migrateParts<T extends FlowParts>(part: T): T {
 export function migrateLegacyWhatsappFlow<T extends FlowParts & { versions: FlowParts[] }>(flow: T): T {
   return { ...migrateParts(flow), versions: flow.versions.map(version => migrateParts(version)) } as T;
 }
+
+/**
+ * Upgrade only the unchanged starter router's Beauty keyword metadata.
+ * Customised routing remains untouched; users can still edit outcomes in Flow Builder.
+ */
+export function addStarterBeautyAlias<T extends {
+  apiName: string;
+  elements: Array<{ type: string; label: string; config: Record<string, unknown> }>;
+}>(flow: T): T {
+  if (flow.apiName !== 'WA_ROUTER') return flow;
+  let changed = false;
+  const elements = flow.elements.map(element => {
+    if (element.type !== 'Decision' || element.label !== 'Route by Keyword') return element;
+    const outcomes = Array.isArray(element.config.outcomes)
+      ? element.config.outcomes as Array<Record<string, unknown>> : [];
+    const migrated = outcomes.map(outcome => {
+      if (outcome.name !== 'Beauty') return outcome;
+      const conditions = Array.isArray(outcome.conditions)
+        ? outcome.conditions as Array<Record<string, unknown>> : [];
+      if (conditions.length !== 1 || conditions[0].field !== 'Message_Body__c'
+        || conditions[0].operator !== 'Starts With' || conditions[0].value !== 'BARBER') return outcome;
+      changed = true;
+      return { ...outcome, conditionLogic: 'Any', conditions: [
+        ...conditions, { field: 'Message_Body__c', operator: 'Starts With', value: 'BEAUTY' }
+      ] };
+    });
+    return changed ? { ...element, config: { ...element.config, outcomes: migrated } } : element;
+  });
+  return changed ? { ...flow, elements } : flow;
+}
