@@ -29,3 +29,20 @@ CREATE TABLE IF NOT EXISTS md_v2_relationship_registry (
   target_object_id UUID NOT NULL REFERENCES md_v2_object_registry(object_id) ON DELETE RESTRICT,
   on_delete TEXT NOT NULL DEFAULT 'RESTRICT' CHECK (on_delete IN ('RESTRICT','SET NULL','CASCADE'))
 );
+
+-- Preserve distinction between an absent field and an explicitly null field.
+-- All values themselves live in typed physical object columns.
+CREATE TABLE IF NOT EXISTS md_v2_field_presence (
+  object_id UUID NOT NULL REFERENCES md_v2_object_registry(object_id) ON DELETE RESTRICT,
+  tenant_id TEXT NOT NULL REFERENCES metadrive_rel_tenants(tenant_id),
+  record_id TEXT NOT NULL,
+  field_id UUID NOT NULL REFERENCES md_v2_field_registry(field_id) ON DELETE RESTRICT,
+  PRIMARY KEY (object_id,tenant_id,record_id,field_id)
+);
+CREATE TABLE IF NOT EXISTS md_v2_shadow_run (
+  id SMALLINT PRIMARY KEY CHECK (id=1),
+  source_sha256 CHAR(64) NOT NULL,
+  object_count BIGINT NOT NULL,
+  record_count BIGINT NOT NULL,
+  copied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
