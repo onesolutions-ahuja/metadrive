@@ -1930,3 +1930,15 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .app-manager .app-manager-fieldset p { margin: 0 0 12px; }
 .app-manager .app-manager-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 @media (max-width: 720px) { .app-manager .permission-form-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Flow landing: searchable, paginated and accessible existing-flow table */
+.flow-start-name-step { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 18px; }
+.flow-start-name-step .form-control { width: min(100%, 440px); }
+.flow-existing-controls { margin: 14px 0; }
+.flow-existing-controls .form-label { display: flex; flex-direction: column; gap: 6px; max-width: 420px; }
+.flow-existing-table-scroll { max-height: 480px; overflow: auto; border: 1px solid #dde2e8; border-radius: 6px; }
+.flow-existing-table { width: 100%; min-width: 640px; border-collapse: collapse; text-align: left; }
+.flow-existing-table th, .flow-existing-table td { padding: 12px; border-bottom: 1px solid #e8eaf0; }
+.flow-existing-table th { position: sticky; top: 0; background: #f8fafc; font-size: 12px; z-index: 1; }
+.flow-existing-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.flow-existing-pagination span { margin-right: auto; }
