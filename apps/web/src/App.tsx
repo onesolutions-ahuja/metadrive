@@ -67,6 +67,7 @@ import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
+import tillPagePreset from './page-presets/till.editable.json';
 import { standardPageComponents } from './componentCatalog';
 import {
   canvasDimensionsForOrientation,
@@ -3305,6 +3306,19 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                     activationAssignments: []
                   }, 'Kiosk', 'Kiosk page created with editable layout');
                 }}>Create Kiosk page with editable layout</button>
+              )}
+              {!metadataLoadError && route.resourceApiName === 'UNE_TILL' && (
+                <button className="btn btn-brand" onClick={async () => {
+                  const preset = tillPagePreset as LightningPageMetadata;
+                  const missing = preset.components.filter((component) =>
+                    !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
+                  if (missing.length) { notify('Register the Till Sales Workspace component first.'); return; }
+                  if (!objects.some((object) => object.apiName === preset.targetObject)) {
+                    notify('Create or select the Sales object before creating the Till page.');
+                    return;
+                  }
+                  await savePageFromBuilder({ ...preset, activationAssignments: [] }, preset.apiName, 'Editable Till page created as a draft.');
+                }}>Create UNE TILL page</button>
               )}
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
@@ -8052,16 +8066,18 @@ function PageBuilder({
       setSaving(false);
     }
   };
-  const applyKioskPreset = async () => {
-    if (!['Kiosk', 'UNE_KIOSK'].includes(page.apiName)) return;
-    const preset = kioskPagePreset as LightningPageMetadata;
+  const applyRetailPreset = async (variant: 'kiosk' | 'till') => {
+    const allowed = variant === 'till' ? ['UNE_TILL'] : ['Kiosk', 'UNE_KIOSK'];
+    if (!allowed.includes(page.apiName)) return;
+    const preset = (variant === 'till' ? tillPagePreset : kioskPagePreset) as LightningPageMetadata;
+    const name = variant === 'till' ? 'Till' : 'Kiosk';
     const missing = preset.components.filter((component) =>
       !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
     if (missing.length) {
-      onNotify(`Register kiosk components first: ${missing.map((item) => item.type).join(', ')}`);
+      onNotify(`Register ${name} components first: ${missing.map((item) => item.type).join(', ')}`);
       return;
     }
-    if (page.components.length && !window.confirm('Replace the current Kiosk layout with the editable starter layout?')) return;
+    if (page.components.length && !window.confirm(`Replace the current ${name} layout with the editable starter layout?`)) return;
     const nextPage: LightningPageMetadata = {
       ...page,
       layoutMode: 'free-canvas',
@@ -8075,7 +8091,7 @@ function PageBuilder({
     };
     setSaving(true);
     try {
-      const saved = await onSave(nextPage, savedPageApiName.current, 'Kiosk layout saved. You can now edit every component.');
+      const saved = await onSave(nextPage, savedPageApiName.current, `${name} layout saved. You can now edit every component.`);
       if (saved) {
         setSelectedId(nextPage.components[0]?.id ?? '');
         setUndoStack([]);
@@ -8443,7 +8459,8 @@ function PageBuilder({
         <div className="toolbar-actions">
           <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
-          {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyKioskPreset()}>Load Kiosk Layout</button>}
+          {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('kiosk')}>Load Kiosk Layout</button>}
+          {page.apiName === 'UNE_TILL' && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('till')}>Load Till Layout</button>}
           <button className="btn" disabled={saving} onClick={() => void clonePage()}><Copy size={14} />Clone</button>
           <button className="btn" onClick={openExternalPreview}><ExternalLink size={14} />Preview</button>
           <button className="btn" disabled={saving} onClick={() => void savePage()}><Save size={14} />{saving ? 'Saving…' : 'Save'}</button>
