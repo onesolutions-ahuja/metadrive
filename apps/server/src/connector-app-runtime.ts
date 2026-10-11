@@ -17,7 +17,7 @@ export function activeConnectorFlowReferences(
   const credential = credentials.find((item) => item.name === text(app.CredentialName__c));
   if (!credential) return [];
   return flows.filter((flow) => flow.status === 'Active' && flow.elements.some((element) => {
-    if (element.type !== 'HTTP Callout') return false;
+    if (element.type !== 'HTTP Callout' && element.type !== 'Action') return false;
     const config = element.config ?? {};
     const selected = text(config.namedCredentialId);
     // A dynamic binding could resolve to any app credential; fail closed.
