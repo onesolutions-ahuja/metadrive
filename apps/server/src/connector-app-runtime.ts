@@ -41,15 +41,15 @@ export function connectorEntitlement(
   return { allowed: true, message: '', managed: true };
 }
 
-export function applyConnectorLifecycle(
-  previous: ConnectorAppRecord,
-  requested: ConnectorAppRecord,
+export function applyConnectorLifecycle<T extends ConnectorAppRecord>(
+  previous: T,
+  requested: T,
   credentials: CredentialIdentity[],
   flows: ReferencingFlow[],
   now = new Date(),
   allowLicenceAdministration = false
-): ConnectorAppRecord {
-  const app = { ...requested };
+): T {
+  const app = { ...requested } as T;
   const protectedFields = ['TrialStartedAt__c', 'TrialExpiresAt__c', 'TrialUsed__c'];
   for (const name of protectedFields) {
     if (app[name] !== previous[name]) throw new Error(name + ' is managed by the licence engine.');
