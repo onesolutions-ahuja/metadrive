@@ -36,13 +36,15 @@ export type CredentialInput = Parameters<Parameters<typeof NamedCredentials>[0][
 const validUntil = (date?: string) => Boolean(date && Number.isFinite(Date.parse(date)) && Date.parse(date) > Date.now());
 export const appLicensed = (app: ConnectorApp) => Boolean(app.Installed__c && (validUntil(app.LicenceExpiresAt__c) || (app.TrialUsed__c && validUntil(app.TrialExpiresAt__c))));
 
-function configVariables(metadata?: string): Record<string, string> {
+function configFields(metadata?: string): { values: Record<string, string>; labels: Record<string, string> } {
   try {
     const parsed: unknown = JSON.parse(metadata || '[]');
-    if (!Array.isArray(parsed)) return {};
-    return Object.fromEntries(parsed.filter((entry) => entry && typeof entry.apiName === 'string'
-      && /^[A-Za-z][A-Za-z0-9_]*$/.test(entry.apiName)).map((entry) => [entry.apiName, '']));
-  } catch { return {}; }
+    if (!Array.isArray(parsed)) return { values: {}, labels: {} };
+    const rows = parsed.filter((entry) => entry && typeof entry.apiName === 'string'
+      && /^[A-Za-z][A-Za-z0-9_]*$/.test(entry.apiName));
+    return { values: Object.fromEntries(rows.map((entry) => [entry.apiName, ''])),
+      labels: Object.fromEntries(rows.map((entry) => [entry.apiName, typeof entry.label === 'string' ? entry.label : entry.apiName])) };
+  } catch { return { values: {}, labels: {} }; }
 }
 
 export default function ConnectorAppWorkspace({
@@ -122,7 +124,8 @@ export default function ConnectorAppWorkspace({
     {section === 'settings' && <>
       {!licensed && <div className="info-callout"><ShieldCheck size={15}/> Start your free trial or activate a licence to configure or test this connection.</div>}
       <NamedCredentials embedded providerName={app.CredentialName__c}
-        preset={{name:app.CredentialName__c,label:app.Name,baseUrl:app.DefaultBaseUrl__c || '',authType:app.AuthType__c || 'None',configuration:configVariables(app.ConfigFields__c)}}
+        preset={{name:app.CredentialName__c,label:app.Name,baseUrl:app.DefaultBaseUrl__c || '',authType:app.AuthType__c || 'None',configuration:configFields(app.ConfigFields__c).values}}
+        fieldLabels={configFields(app.ConfigFields__c).labels}
         credentials={matched} canManage={canManageCredentials && licensed}
         encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest}/>
     </>}
