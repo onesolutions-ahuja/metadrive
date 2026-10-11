@@ -6155,6 +6155,12 @@ function connectorRight(principal: Principal, right: ConnectorRight): boolean {
 function managedConnector(tenant: TenantData, credentialName: string): RuntimeRecord | undefined {
   return (tenant.records.Connector_App__c ?? []).find((item) => item.CredentialName__c === credentialName);
 }
+function disableOnConnectorUninstall(tenant: TenantData, previous: RuntimeRecord, next: RuntimeRecord) {
+  if (previous.Installed__c === true && next.Installed__c === false) {
+    tenant.namedCredentials = tenant.namedCredentials.map((credential) =>
+      credential.name === previous.CredentialName__c ? { ...credential, enabled: false } : credential);
+  }
+}
 function assertConnectorLifecycleAccess(previous: RuntimeRecord, requested: RuntimeRecord, principal: Principal) {
   if ((previous.Installed__c !== requested.Installed__c || requested.TrialRequested__c === true)
     && !connectorRight(principal, 'install')) {
@@ -6302,7 +6308,7 @@ app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:man
   if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
   const managedExisting = managedConnector(tenant, existing.name);
   if (managedExisting && (!connectorRight(principal, 'edit')
-    || ((parsed.data.secret || parsed.data.username) && !connectorRight(principal, 'secrets'))))
+    || ((parsed.data.secret || parsed.data.username || parsed.data.authType !== existing.authType) && !connectorRight(principal, 'secrets'))))
     return res.status(403).json({ error: 'Missing connector configuration or Manage Secrets permission.' });
   if (!managedExisting && !principal.permissions.includes('namedCredentials:manage'))
     return res.status(403).json({ error: 'Missing Named Credentials management permission.' });
@@ -6434,11 +6440,12 @@ app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentia
     }
   }
   const rawTestPath = typeof testApp?.TestPath__c === 'string' ? testApp.TestPath__c : '';
-  const expandedTestPath = rawTestPath.replace(/\\{!([A-Za-z][A-Za-z0-9_]*)\\}/g, (_match, field: string) => {
-    const value = credential.configuration?.[field];
-    if (!value) throw new Error('Test endpoint needs a configured ' + field + '.');
-    return encodeURIComponent(value);
-  });
+  const missingTestVariable = [...rawTestPath.matchAll(/\{!([A-Za-z][A-Za-z0-9_]*)\}/g)]
+    .find((match) => !credential.configuration?.[match[1]]);
+  if (missingTestVariable)
+    return res.status(400).json({ error: 'Test endpoint needs a configured ' + missingTestVariable[1] + '.' });
+  const expandedTestPath = rawTestPath.replace(/\{!([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, field: string) =>
+    encodeURIComponent(credential.configuration?.[field] ?? ''));
   if (expandedTestPath.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(expandedTestPath) || expandedTestPath.includes('..'))
     return res.status(400).json({ error: 'Test endpoint must be a safe relative path.' });
   const url = new URL(expandedTestPath, credential.baseUrl);
@@ -7962,6 +7969,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     validateRuntimeRecord(principal.tenantId, working, object, { ...values, ...beforeSaveValues }, updated);
     appendFieldHistory(working, object, existing, updated, principal.userId);
     working.records[objectName] = (working.records[objectName] ?? []).map((item) => item.Id === existing.Id ? updated : item);
+    if (objectName === 'Connector_App__c') disableOnConnectorUninstall(working, existing, updated);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     persistTenantRecords(principal.tenantId, working);
     return res.json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === existing.Id) ?? updated) });
@@ -14317,6 +14325,12 @@ async function executeFlow(
             if (updated) appendFieldHistory(tenant, object, previous, updated, currentUserId);
           }
           tenant.records[objectName] = records.map((item) => updates.get(item.Id) ?? item);
+          if (objectName === 'Connector_App__c') {
+            for (const previous of editableCandidates) {
+              const updated = updates.get(previous.Id);
+              if (updated) disableOnConnectorUninstall(tenant, previous, updated);
+            }
+          }
           for (const previous of editableCandidates) {
             const updated = updates.get(previous.Id);
             if (updated) {
