@@ -75,6 +75,12 @@
               "SessionId": "$session"
             },
             "resetSessionOnSuccess": true
+          },
+          "start": {
+            "flowApiName": "KIOSK_SESSION_START",
+            "inputs": {
+              "SessionId": "$session"
+            }
           }
         },
         "brandName": "Your Restaurant",
