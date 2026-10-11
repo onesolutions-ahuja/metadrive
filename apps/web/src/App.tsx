@@ -3825,6 +3825,7 @@ function MetadataBoundPageComponent({
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
+  const initializedSessions = useRef<Set<string>>(new Set());
   useEffect(() => {
     let active = true;
     setRecords([]); setCartRecords([]); setDataError('');
@@ -3952,6 +3953,13 @@ function MetadataBoundPageComponent({
       throw error;
     }
   };
+  useEffect(() => {
+    if (disableActions || !actionFlows.start || initializedSessions.current.has(sessionId)) return;
+    initializedSessions.current.add(sessionId);
+    void onAction({ event: 'start', value: {} }).catch(() => {
+      initializedSessions.current.delete(sessionId);
+    });
+  }, [sessionId, disableActions]);
   return <div>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
@@ -7024,7 +7032,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
     <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
-    {actionFlows && (['add', 'quantity', 'remove', 'reset', 'checkout'] as const).map((eventName) => {
+    {actionFlows && (['start', 'add', 'quantity', 'remove', 'reset', 'checkout'] as const).map((eventName) => {
       const binding = actionFlows[eventName] && typeof actionFlows[eventName] === 'object'
         ? actionFlows[eventName] as Record<string, unknown> : {};
       return <label className="form-label" key={eventName}>{eventName.charAt(0).toUpperCase() + eventName.slice(1)} Flow
