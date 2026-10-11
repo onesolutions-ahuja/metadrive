@@ -31,6 +31,16 @@ const pool = databaseUrl ? new Pool({
   connectionTimeoutMillis: 15000
 }) : null;
 
+export async function checkDatabaseConnection(): Promise<'healthy' | 'unavailable' | 'not_configured'> {
+  if (!pool) return 'not_configured';
+  try {
+    await pool.query('SELECT 1');
+    return 'healthy';
+  } catch {
+    return 'unavailable';
+  }
+}
+
 export async function readPersistedState(): Promise<unknown | null> {
   if (!pool) return null;
   if (persistenceMode === 'normalized') {
