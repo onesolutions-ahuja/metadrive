@@ -34,9 +34,9 @@ export async function readPersistedState(): Promise<unknown | null> {
 }
 
 let pending: Promise<unknown> = Promise.resolve();
-export function persistToPostgres(state: unknown): Promise<unknown> {
+export function persistToPostgres(state: unknown, preSerialized?: string): Promise<unknown> {
   if (!pool) return Promise.resolve();
-  const payload = JSON.stringify(state);
+  const payload = preSerialized ?? JSON.stringify(state);
   const operation = pending.then(() => pool.query(
     `INSERT INTO metadrive_platform_state (id, payload) VALUES (1, $1::jsonb)
      ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`,
