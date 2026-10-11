@@ -185,7 +185,7 @@ function ConnectionHealthIndicator() {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 8000);
         try {
-          const response = await fetch(`${apiBase.replace(/\\/api\\/?$/, '')}/health`, { cache: 'no-store', signal: controller.signal });
+          const response = await fetch(`${apiBase.replace(/\/api\/?$/, '')}/health`, { cache: 'no-store', signal: controller.signal });
           const latency = Math.round(performance.now() - started);
           if (alive) setHealth({ status: response.ok ? (latency > 2500 ? 'slow' : 'healthy') : 'offline', latency, checked: new Date().toLocaleTimeString() });
         } finally { window.clearTimeout(timeout); }
