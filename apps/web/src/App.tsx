@@ -4438,7 +4438,11 @@ function RecordWorkspace({
           const params = new URLSearchParams({
             limit: String(listPageSize),
             offset: String(listOffset),
-            ...(debouncedSearch ? { search: debouncedSearch } : {})
+            ...(debouncedSearch ? { search: debouncedSearch } : {}),
+            ...(object?.listViewFilter ? {
+              filterField: object.listViewFilter.fieldApiName,
+              filterValue: object.listViewFilter.value
+            } : {})
           });
           const payload = await apiRequest<{ records: RecordData[]; total: number }>(
             `/records/${encodeURIComponent(route.objectApiName)}?${params.toString()}`);
