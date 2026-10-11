@@ -4461,7 +4461,9 @@ async function bootstrapTenant(): Promise<void> {
   persistState(nextState);
   state = nextState;
 }
-await bootstrapTenant();
+// During guarded database maintenance, bootstrap must never mutate persisted state.
+// Existing users and tenants are loaded read-only; bootstrap resumes after maintenance.
+if (!maintenanceMode) await bootstrapTenant();
 
 function tenantData(tenantId: string): TenantData | undefined {
   return state.tenants[tenantId];
