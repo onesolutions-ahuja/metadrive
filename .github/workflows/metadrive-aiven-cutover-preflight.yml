@@ -10,6 +10,7 @@ permissions:
 concurrency:
   group: metadrive-aiven-cutover-preflight
   cancel-in-progress: false
+# Read-only verification only; production writes require a separate approved cutover.
 jobs:
   source-preflight:
     runs-on: ubuntu-latest
