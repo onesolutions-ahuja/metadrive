@@ -7910,6 +7910,132 @@ app.post('/api/campaigns/:campaignId/members', accessAuthentication, (req: Reque
   persistTenantRecords(principal.tenantId, { ...tenant, campaignMembers: [...tenant.campaignMembers, ...newMembers] });
   return res.status(201).json({ addedCount: newMembers.length, alreadyMemberCount: contactIds.length - newMembers.length });
 });
+
+/**
+ * User is a security identity backed by state.users and accessControl.users,
+ * not an ordinary tenant record. Keep these identities in sync and never
+ * let generic record writes bypass authentication and security controls.
+ */
+const userRecordWriteSchema = z.object({
+  Name: z.string().trim().min(1).max(121),
+  Email: z.string().email(),
+  Username: z.string().email(),
+  IsActive: z.boolean().default(true),
+  UserRoleId: z.string().min(1),
+  Password: z.string().min(12).max(256)
+}).strict();
+const userRecordEditSchema = userRecordWriteSchema.omit({ Password: true }).partial().strict();
+function userWriteRight(principal: Principal, tenant: TenantData, operation: 'create' | 'edit' | 'delete') {
+  return principal.permissions.includes('security:manage') && hasObjectPermission(principal, tenant, 'User', operation);
+}
+function userRoleFromValue(tenant: TenantData, value: string) {
+  return tenant.accessControl.roles.find((role) => role.id === value || role.name === value);
+}
+function safeUserIdentity(record: LocalUser) {
+  return { Id: record.id, Name: record.name, Email: record.email, Username: record.email,
+    IsActive: !record.disabled, UserRoleId: record.role, CreatedDate: record.createdAt, LastModifiedDate: record.createdAt };
+}
+app.post('/api/records/User', accessAuthentication, async (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (!userWriteRight(principal, tenant, 'create')) return res.status(403).json({ error: 'Missing User create and security management permission' });
+  const parsed = userRecordWriteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid user input', details: parsed.error.flatten() });
+  const input = parsed.data;
+  if (input.Username.trim().toLowerCase() !== input.Email.trim().toLowerCase())
+    return res.status(400).json({ error: 'Username must equal Email for tenant login' });
+  const email = input.Email.trim().toLowerCase();
+  if (state.users.some((item) => item.email.toLowerCase() === email))
+    return res.status(409).json({ error: 'Email is already registered' });
+  const role = userRoleFromValue(tenant, input.UserRoleId);
+  if (!role) return res.status(400).json({ error: 'Select an existing tenant role' });
+  const profileId = profileIdForRole(role.name, tenant.accessControl.profiles);
+  if (!tenant.accessControl.profiles.some((profile) => profile.id === profileId))
+    return res.status(409).json({ error: 'No valid profile for selected role' });
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  const identity: LocalUser = {
+    id, tenantId: principal.tenantId, name: input.Name, email,
+    ...(await hashPassword(input.Password).then(({salt,hash}) => ({passwordSalt:salt,passwordHash:hash}))),
+    role: role.name, permissionSetIds: [], permissionSetGroupIds: [],
+    disabled: !input.IsActive, createdAt: now
+  };
+  const accessUser = {
+    id, name: input.Name, username: email, role: role.name, roleId: role.id,
+    profileId, permissionSetIds: [], permissionSetGroupIds: [], timeZone: 'UTC', locale: 'en-GB'
+  };
+  const nextAccess = { ...tenant.accessControl, users: [...tenant.accessControl.users, accessUser] };
+  const validation = accessControlSchema.safeParse(nextAccess);
+  if (!validation.success) return res.status(400).json({ error: 'Invalid User RBAC assignment', details: validation.error.flatten() });
+  const nextState: PlatformState = { ...state, users: [...state.users, identity],
+    tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, accessControl: validation.data } } };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to persist user' }); }
+  return res.status(201).json({ record: safeUserIdentity(identity) });
+});
+app.put('/api/records/User/:recordId', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (!userWriteRight(principal, tenant, 'edit')) return res.status(403).json({ error: 'Missing User edit and security management permission' });
+  const id = routeParam(req, 'recordId');
+  const existing = state.users.find((item) => item.id === id && item.tenantId === principal.tenantId);
+  const existingAccess = tenant.accessControl.users.find((item) => item.id === id);
+  if (!existing || !existingAccess) return res.status(404).json({ error: 'Tenant user was not found' });
+  const parsed = userRecordEditSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid user changes', details: parsed.error.flatten() });
+  const values = parsed.data;
+  const email = (values.Email ?? existing.email).trim().toLowerCase();
+  if (values.Username && values.Username.trim().toLowerCase() !== email)
+    return res.status(400).json({ error: 'Username must equal Email for tenant login' });
+  if (state.users.some((item) => item.id !== id && item.email.toLowerCase() === email))
+    return res.status(409).json({ error: 'Email is already registered' });
+  const role = userRoleFromValue(tenant, values.UserRoleId ?? existing.role);
+  if (!role) return res.status(400).json({ error: 'Select an existing tenant role' });
+  const disabling = values.IsActive === false;
+  const revocation = Math.floor(Date.now() / 1000);
+  const changedIdentity: LocalUser = { ...existing, name: values.Name ?? existing.name, email, role: role.name,
+    disabled: values.IsActive === undefined ? existing.disabled : !values.IsActive,
+    ...(disabling || email !== existing.email || role.name !== existing.role ? {authRevokedBefore:revocation}: {}) };
+  const updatedAccess = { ...existingAccess, name: changedIdentity.name, username: email,
+    role: role.name, roleId: role.id,
+    profileId: role.name === existing.role ? existingAccess.profileId : profileIdForRole(role.name, tenant.accessControl.profiles) };
+  const nextAccess = { ...tenant.accessControl,
+    users: tenant.accessControl.users.map((item) => item.id === id ? updatedAccess : item) };
+  const validation = accessControlSchema.safeParse(nextAccess);
+  if (!validation.success) return res.status(400).json({ error: 'Invalid user access configuration', details: validation.error.flatten() });
+  const updatedTenant = { ...tenant, accessControl: validation.data };
+  const updatedUsers = state.users.map((item) => item.id === id ? changedIdentity : item);
+  if (!updatedUsers.some((item) => item.tenantId === principal.tenantId && !item.disabled
+    && effectivePermissions(item, updatedTenant).includes('security:manage')))
+    return res.status(409).json({ error: 'At least one active security administrator must remain' });
+  const nextState: PlatformState = { ...state, users: updatedUsers,
+    tenants: { ...state.tenants, [principal.tenantId]: updatedTenant },
+    refreshSessions: state.refreshSessions.map((session) => session.userId === id && (disabling || email !== existing.email || role.name !== existing.role)
+      ? { ...session, revokedAt: revocation } : session) };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to persist user changes' }); }
+  return res.json({ record: safeUserIdentity(changedIdentity) });
+});
+// Identity records are retained for audit integrity; Delete deactivates and revokes sessions.
+app.delete('/api/records/User/:recordId', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (!userWriteRight(principal, tenant, 'delete')) return res.status(403).json({ error: 'Missing User delete and security management permission' });
+  const id = routeParam(req, 'recordId');
+  const existing = state.users.find((item) => item.id === id && item.tenantId === principal.tenantId);
+  if (!existing) return res.status(404).json({ error: 'Tenant user was not found' });
+  if (existing.disabled) return res.status(409).json({ error: 'User is already inactive' });
+  const revocation = Math.floor(Date.now() / 1000);
+  const updatedUsers = state.users.map((item) => item.id === id ? { ...item, disabled:true, authRevokedBefore:revocation } : item);
+  if (!updatedUsers.some((item) => item.tenantId === principal.tenantId && !item.disabled
+    && effectivePermissions(item, tenant).includes('security:manage')))
+    return res.status(409).json({ error: 'At least one active security administrator must remain' });
+  const nextState: PlatformState = { ...state, users:updatedUsers, refreshSessions:state.refreshSessions.map((session) =>
+    session.userId === id ? { ...session, revokedAt:revocation } : session) };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to deactivate user' }); }
+  return res.status(204).end();
+});
 app.post('/api/records/:objectName', accessAuthentication, async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
