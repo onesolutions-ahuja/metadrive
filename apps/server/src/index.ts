@@ -6156,7 +6156,9 @@ function managedConnector(tenant: TenantData, credentialName: string): RuntimeRe
   return (tenant.records.Connector_App__c ?? []).find((item) => item.CredentialName__c === credentialName);
 }
 function disableOnConnectorUninstall(tenant: TenantData, previous: RuntimeRecord, next: RuntimeRecord) {
-  if (previous.Installed__c === true && next.Installed__c === false) {
+  // Every installation transition, including reinstall, starts with callouts disabled.
+  // Configuration and encrypted secret bytes are preserved.
+  if (previous.Installed__c !== next.Installed__c) {
     tenant.namedCredentials = tenant.namedCredentials.map((credential) =>
       credential.name === previous.CredentialName__c ? { ...credential, enabled: false } : credential);
   }
