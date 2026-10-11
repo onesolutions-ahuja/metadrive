@@ -245,7 +245,7 @@
       "LicenceStatus__c": "Not Activated",
       "AccessScope__c": "admins",
       "TestMethod__c": "GET",
-      "TestPath__c": "{!PhoneNumberId}",
+      "TestPath__c": "{!PhoneNumberId}?fields=id,display_phone_number,verified_name",
       "LicenceTermDays__c": 30,
       "RecordColumns__c": "[\"CreatedDate\",\"Recipient__c\",\"Communication_Mode__c\",\"Status__c\",\"Source__c\"]"
     },
