@@ -1,6 +1,6 @@
 export const pageBuilderPaletteCategories = [
   'All Components', 'Favourites', 'Layout', 'Display', 'Inputs',
-  'Data', 'Navigation', 'Kiosk'
+  'Data', 'Navigation', 'Kiosk', 'Till'
 ] as const;
 
 export type PageBuilderPaletteCategory = (typeof pageBuilderPaletteCategories)[number];
@@ -13,7 +13,8 @@ export function getPageBuilderComponentCategories(
 ): PageBuilderPaletteCategory[] {
   const name = `${apiName} ${label} ${description}`.toLowerCase();
   const categories: PageBuilderPaletteCategory[] = [];
-  if (/kiosk|till|checkout|product tile/.test(name)) categories.push('Kiosk');
+  if (/kiosk|self-order|product tile/.test(name)) categories.push('Kiosk');
+  if (/till|cashier|checkout|sales workspace/.test(name)) categories.push('Till');
   if (/container|section|column|grid|layout|tab|accordion|split/.test(name)) categories.push('Layout');
   if (/form|input|checkbox|radio|select|dropdown|picker|slider|toggle/.test(name)) categories.push('Inputs');
   if (/record|table|list|chart|report|dashboard|related/.test(name)) categories.push('Data');
