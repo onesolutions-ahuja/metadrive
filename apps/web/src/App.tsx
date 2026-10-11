@@ -49,7 +49,9 @@ import {
   Tablet,
   UsersRound,
   X,
-  Workflow
+  Workflow,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import FlowBuilderWorkspace from './FlowBuilder';
 import FlowScreenContent from './FlowScreenContent';
@@ -172,6 +174,44 @@ defaultApiUrl.pathname = '/api';
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? defaultApiUrl.toString().replace(/\/$/, '');
 let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
+function ConnectionHealthIndicator() {
+  const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; latency: number | null; checked: string }>({ status: 'checking', latency: null, checked: '' });
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      const started = performance.now();
+      try {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 8000);
+        try {
+          const response = await fetch(`${apiBase.replace(/\\/api\\/?$/, '')}/health`, { cache: 'no-store', signal: controller.signal });
+          const latency = Math.round(performance.now() - started);
+          if (alive) setHealth({ status: response.ok ? (latency > 2500 ? 'slow' : 'healthy') : 'offline', latency, checked: new Date().toLocaleTimeString() });
+        } finally { window.clearTimeout(timeout); }
+      } catch {
+        if (alive) setHealth({ status: 'offline', latency: null, checked: new Date().toLocaleTimeString() });
+      }
+    };
+    void check();
+    const interval = window.setInterval(() => void check(), 30000);
+    return () => { alive = false; window.clearInterval(interval); };
+  }, []);
+  return <div className="connection-health-wrap">
+    <button type="button" className={`icon-button connection-health-${health.status}`} onClick={() => setExpanded((value) => !value)}
+      aria-label={`API connection: ${health.status}`} aria-expanded={expanded} title={`API connection: ${health.status}`}>
+      {health.status === 'offline' ? <WifiOff size={18} /> : <Wifi size={18} />}
+    </button>
+    {expanded && <div className="connection-health-popover" role="status">
+      <strong>Connection health</strong>
+      <p>API: {health.status}</p>
+      <p>Response: {health.latency === null ? 'Unavailable' : `${health.latency} ms`}</p>
+      <p>Checked: {health.checked || 'Checking…'}</p>
+      <p>Database: Not independently verified</p>
+    </div>}
+  </div>;
+}
+
 
 function isAuthErrorMessage(message: string): boolean {
   const text = message.toLowerCase();
@@ -2931,6 +2971,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         <div className="header-tools">
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
+          <ConnectionHealthIndicator />
           <div className="notification-center">
             <button className="icon-button notification-button" aria-label={`Notifications${notificationsUnreadCount ? `, ${notificationsUnreadCount} unread` : ''}`} aria-expanded={notificationsOpen} aria-controls="notification-panel" onClick={toggleNotifications}>
               <Bell size={17} />{notificationsUnreadCount > 0 && <span className="notification-count">{notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}</span>}
