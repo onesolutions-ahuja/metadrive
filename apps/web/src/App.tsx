@@ -981,6 +981,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [canManageApprovalProcesses, setCanManageApprovalProcesses] = useState(false);
   const [namedCredentials, setNamedCredentials] = useState<NamedCredentialMetadata[]>([]);
   const [canManageNamedCredentials, setCanManageNamedCredentials] = useState(false);
+  const [connectorRights, setConnectorRights] = useState({
+    view: false, edit: false, secrets: false, test: false, install: false, licence: false
+  });
   const [canManagePlatformLicences, setCanManagePlatformLicences] = useState(false);
   const [namedCredentialsEncryptionReady, setNamedCredentialsEncryptionReady] = useState<boolean | null>(null);
   const [emailAlerts, setEmailAlerts] = useState<EmailAlertMetadata[]>([]);
@@ -1114,6 +1117,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       .catch(() => {
         if (active) setNamedCredentialsEncryptionReady(null);
       });
+    void apiRequest<{ view: boolean; edit: boolean; secrets: boolean; test: boolean; install: boolean; licence: boolean }>('/connector-apps/capabilities')
+      .then((rights) => { if (active) setConnectorRights(rights); })
+      .catch(() => { if (active) setConnectorRights({view:false,edit:false,secrets:false,test:false,install:false,licence:false}); });
     void apiRequest<{ credentials: NamedCredentialMetadata[] }>('/named-credentials')
       .then(({ credentials }) => {
         if (active) setNamedCredentials(credentials);
@@ -2048,6 +2054,19 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
       ? current.map((item) => item.id === result.credential.id ? result.credential : item)
       : [...current, result.credential]);
     notify(`Named Credential ${id ? 'updated' : 'created'}`);
+  };
+
+  const toggleConnectorCredential = async (appKey: string, enabled: boolean) => {
+    const result = await apiRequest<{ credential: NamedCredentialMetadata }>(
+      `/connector-apps/${encodeURIComponent(appKey)}/credential-enabled`,
+      { method: 'PATCH', body: JSON.stringify({enabled}) }
+    );
+    setNamedCredentials((current) => current.map((item) => item.id === result.credential.id ? result.credential : item));
+    notify(enabled ? 'Connection enabled' : 'Connection disabled');
+  };
+  const grantConnectorLicence = async (appKey: string) => {
+    await apiRequest(`/connector-apps/${encodeURIComponent(appKey)}/licence`, { method: 'POST', body: '{}' });
+    notify('Connector licence granted or renewed');
   };
 
   const deleteNamedCredential = async (id: string) => {
@@ -3197,8 +3216,15 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               elements: elements.map((element) => ({type:element.type,config:element.config as Record<string,unknown>}))
             }))}
             canManageFlows={canManageFlows}
-            canManageCredentials={canManageNamedCredentials}
+            canManageCredentials={connectorRights.edit}
+            canView={connectorRights.view}
+            canManageSecrets={connectorRights.secrets}
+            canTest={connectorRights.test}
+            canInstall={connectorRights.install}
+            canLicenceAdmin={connectorRights.licence}
             encryptionReady={namedCredentialsEncryptionReady}
+            onToggleCredential={toggleConnectorCredential}
+            onGrantLicence={grantConnectorLicence}
             loadApps={loadConnectorMarketplaceApps}
             executeLifecycleFlow={executeConnectorAppLifecycleFlow}
             onSave={saveNamedCredential}
