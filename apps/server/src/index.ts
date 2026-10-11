@@ -1,8 +1,8 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode } from './postgres-state.js';
-import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage } from './automation-policy.js';
+import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
-import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords } from './communication-unification.js';
+import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -58,7 +58,6 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
-
 // Explicit maintenance barrier for Aiven cutover; no API traffic or scheduled
 // dispatch may modify the DB while the in-place migration is running.
 const maintenanceMode = process.env.METADRIVE_MAINTENANCE_MODE === 'true';
@@ -280,9 +279,13 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
             message.timestamp, Date.now(), working.automationSettings.conversationIdleMinutes
           );
           working = structuredClone(tenantData(tenantId) ?? working);
-          const conversationKey = conversationKeyForIncoming(
+          const currentContext = activeConversationContext(
             working.records[object.apiName] ?? [], message.from, Date.now(),
             working.automationSettings.conversationIdleMinutes
+          );
+          const conversationKey = conversationKeyForIncoming(
+            working.records[object.apiName] ?? [], message.from, Date.now(),
+            working.automationSettings.conversationIdleMinutes, currentContext
           );
           const nowForIncoming = new Date().toISOString();
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
@@ -290,6 +293,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
             Direction__c: 'Incoming', From_Number__c: message.from,
             To_Number__c: value?.metadata?.display_phone_number ?? '',
             Message_Body__c: body, Conversation_Key__c: conversationKey,
+            Conversation_Context__c: currentContext,
             Status__c: fresh ? 'Received' : 'Expired', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
             ...(message.timestamp && /^\\d+$/.test(message.timestamp) ? { Occurred_At__c: new Date(Number(message.timestamp) * 1000).toISOString() } : {})
           }), userId);
@@ -299,12 +303,19 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
             ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now
           }, userId, now), formulaContextForUser(working, userId));
           if (fresh) await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
+          const selectedContext = typeof record.Conversation_Context__c === 'string' ? record.Conversation_Context__c : '';
+          if (fresh && selectedContext && selectedContext !== currentContext) {
+            record.Conversation_Key__c = conversationKeyForIncoming(
+              working.records[object.apiName] ?? [], message.from, Date.now(),
+              working.automationSettings.conversationIdleMinutes, selectedContext
+            );
+          }
           record = calculateFormulaFields(object, record, formulaContextForUser(working, userId));
           working.records[object.apiName] = [...(working.records[object.apiName] ?? []), record];
           // Each inbound message refreshes active conversational interviews; 15 minutes is inactivity, not total age.
           const renewedExpiry = new Date(Date.now() + working.automationSettings.conversationIdleMinutes * 60_000).toISOString();
           working.interviews = working.interviews.map(interview =>
-            interview.record?.Conversation_Key__c === conversationKey
+            sameConversationSession(interview.record, record)
               && (interview.kind === 'wait' || interview.kind === 'scheduled')
               ? { ...interview, expiresAt: renewedExpiry } : interview
           );
@@ -3387,6 +3398,7 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'From_Number__c', label: 'From Number', dataType: 'Phone', required: false, unique: false },
     { apiName: 'To_Number__c', label: 'To Number', dataType: 'Phone', required: false, unique: false },
     { apiName: 'Conversation_Key__c', label: 'Conversation Key', dataType: 'Text(120)', required: false, unique: false },
+    { apiName: 'Conversation_Context__c', label: 'Conversation Context', dataType: 'Text(80)', required: false, unique: false },
     { apiName: 'Status__c', label: 'Processing Status', dataType: 'Picklist', required: false, unique: false, picklistValues: ['Received', 'Pending', 'Processing', 'Sent', 'Completed', 'Failed', 'Expired'], picklistRestricted: true },
     { apiName: 'Provider_Message_Id__c', label: 'Provider Message ID', dataType: 'Text(255)', required: false, unique: false },
     { apiName: 'Status_Code__c', label: 'HTTP Status Code', dataType: 'Number(3, 0)', required: false, unique: false },
@@ -3568,7 +3580,10 @@ function whatsappRouterFlow(): FlowMetadata {
     elements: [
       { id: 1, type: 'Start', label: 'Incoming WhatsApp Message', config: { trigger: 'created', runWhen: 'after-save' } },
       { id: 2, type: 'Decision', label: 'Route by Keyword', config: { outcomes: [
-        { name: 'Beauty', label: 'Beauty', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'BARBER' }] },
+        { name: 'Beauty', label: 'Beauty', conditionLogic: 'Any', conditions: [
+          { field: 'Message_Body__c', operator: 'Starts With', value: 'BARBER' },
+          { field: 'Message_Body__c', operator: 'Starts With', value: 'BEAUTY' }
+        ] },
         { name: 'Roof', label: 'Roof', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ROOF' }] },
         { name: 'Accounts', label: 'Accounts', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ACCOUNTANT' }] },
         { name: 'Legal', label: 'Legal', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'LAWYER' }] },
@@ -3616,6 +3631,54 @@ function whatsappRouterFlow(): FlowMetadata {
       { name: 'CalloutStatus', label: 'Callout Status', type: 'Variable', dataType: 'Number', isCollection: false, availableForInput: false, availableForOutput: false, value: 0 },
       { name: 'FlowError', label: 'Flow Error', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: false, availableForOutput: true, value: '' }
     ], versions: []
+  });
+}
+
+
+function whatsappContextFlow(): FlowMetadata {
+  return flowSchema.parse({
+    apiName: 'WA_CONTEXT', label: 'WhatsApp Conversation Context',
+    description: 'Editable session selection. New keywords change the active topic without deleting other topics.',
+    flowType: 'Record-Triggered Flow', status: 'Active', versionNumber: 1, activeVersion: 1,
+    triggerObject: communicationObjectApiName,
+    startConfig: { trigger: 'created', runWhen: 'before-save', conditionLogic: 'All',
+      entryConditions: [
+        { field: 'Event_Type__c', operator: 'Equals', value: 'Message' },
+        { field: 'Communication_Mode__c', operator: 'Equals', value: 'WhatsApp' },
+        { field: 'Source__c', operator: 'Equals', value: 'Webhook' },
+        { field: 'Direction__c', operator: 'Equals', value: 'Incoming' }
+      ] },
+    elements: [
+      { id: 1, type: 'Start', label: 'Inbound WhatsApp', config: { trigger: 'created', runWhen: 'before-save' } },
+      { id: 2, type: 'Decision', label: 'Choose Context', config: { outcomes: [
+        { name: 'Beauty', label: 'Beauty', conditionLogic: 'Any', conditions: [
+          { field: 'Message_Body__c', operator: 'Starts With', value: 'BEAUTY' },
+          { field: 'Message_Body__c', operator: 'Starts With', value: 'BARBER' }
+        ] },
+        { name: 'Legal', label: 'Legal', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'LAWYER' }] },
+        { name: 'Roof', label: 'Roof', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ROOF' }] },
+        { name: 'Accounts', label: 'Accounts', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ACCOUNTANT' }] },
+        { name: 'Default', label: 'Keep Current Context', conditions: [] }
+      ] } },
+      { id: 3, type: 'Assignment', label: 'Use Beauty', config: { variable: '$Record.Conversation_Context__c', operator: 'Assign', value: 'Beauty' } },
+      { id: 4, type: 'Assignment', label: 'Use Legal', config: { variable: '$Record.Conversation_Context__c', operator: 'Assign', value: 'Legal' } },
+      { id: 5, type: 'Assignment', label: 'Use Roof', config: { variable: '$Record.Conversation_Context__c', operator: 'Assign', value: 'Roof' } },
+      { id: 6, type: 'Assignment', label: 'Use Accounts', config: { variable: '$Record.Conversation_Context__c', operator: 'Assign', value: 'Accounts' } },
+      { id: 7, type: 'End', label: 'Keep Session', config: {} }
+    ],
+    connectors: [
+      { id: 'c-start', from: 1, to: 2, label: '', kind: 'normal' },
+      { id: 'c-beauty', from: 2, to: 3, label: 'Beauty', kind: 'normal' },
+      { id: 'c-legal', from: 2, to: 4, label: 'Legal', kind: 'normal' },
+      { id: 'c-roof', from: 2, to: 5, label: 'Roof', kind: 'normal' },
+      { id: 'c-accounts', from: 2, to: 6, label: 'Accounts', kind: 'normal' },
+      { id: 'c-default', from: 2, to: 7, label: 'Default Outcome', kind: 'normal' },
+      { id: 'c-beauty-end', from: 3, to: 7, label: '', kind: 'normal' },
+      { id: 'c-legal-end', from: 4, to: 7, label: '', kind: 'normal' },
+      { id: 'c-roof-end', from: 5, to: 7, label: '', kind: 'normal' },
+      { id: 'c-accounts-end', from: 6, to: 7, label: '', kind: 'normal' }
+    ],
+    resources: [], versions: []
   });
 }
 
@@ -3692,7 +3755,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     ]
   });
   return {
-    objects, flows: [flow, whatsappRouterFlow()], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
+    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow()], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
@@ -4076,7 +4139,10 @@ function loadState(): PlatformState {
             : set),
       },
       objects,
-      flows: (tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? tenant.flows : [...tenant.flows, whatsappRouterFlow()]).map(migrateLegacyWhatsappFlow),
+      flows: [...tenant.flows,
+        ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
+        ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
+      ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
       pages: tenant.pages.map((page) => ({
         ...page,
         activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
