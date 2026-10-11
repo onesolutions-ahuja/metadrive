@@ -1,5 +1,6 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres } from './postgres-state.js';
+import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs } from './automation-policy.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -217,7 +218,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const userId = systemUser.id;
   const object = tenant.objects.find(item => item.apiName === 'WhatsApp_Message__c');
   if (!object) return reject(503, 'message_object_missing');
-  const working = structuredClone(tenant);
+  let working = structuredClone(tenant);
   let received = 0;
   let saved = 0;
   let duplicate = 0;
@@ -232,10 +233,14 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           if ((working.records[object.apiName] ?? []).some(item => item.Provider_Message_Id__c === message.id)) { duplicate++; continue; }
           const body = message.type === 'text' ? message.text?.body : undefined;
           if (!body) { unsupported++; continue; } // Unsupported message types are acknowledged.
+          const conversationKey = conversationKeyForIncoming(
+            working.records[object.apiName] ?? [], message.from, Date.now(),
+            working.automationSettings.conversationIdleMinutes
+          );
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
             Direction__c: 'Incoming', From_Number__c: message.from,
             To_Number__c: value?.metadata?.display_phone_number ?? '',
-            Message_Body__c: body, Conversation_Key__c: message.from,
+            Message_Body__c: body, Conversation_Key__c: conversationKey,
             Status__c: 'Received', Provider_Message_Id__c: message.id,
             ...(message.timestamp && /^\\d+$/.test(message.timestamp) ? { Occurred_At__c: new Date(Number(message.timestamp) * 1000).toISOString() } : {})
           }), userId);
@@ -247,12 +252,34 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
           record = calculateFormulaFields(object, record, formulaContextForUser(working, userId));
           working.records[object.apiName] = [...(working.records[object.apiName] ?? []), record];
+          // Each inbound message refreshes active conversational interviews; 15 minutes is inactivity, not total age.
+          const renewedExpiry = new Date(Date.now() + working.automationSettings.conversationIdleMinutes * 60_000).toISOString();
+          working.interviews = working.interviews.map(interview =>
+            interview.record?.Conversation_Key__c === conversationKey
+              && (interview.kind === 'wait' || interview.kind === 'scheduled')
+              ? { ...interview, expiresAt: renewedExpiry } : interview
+          );
           saved++;
-          await runRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
+          // Commit inbound identity BEFORE external flow callouts. Meta redeliveries must never resend replies.
+          persistTenantRecords(tenantId, working);
+          try {
+            await runRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
+            persistTenantRecords(tenantId, working);
+          } catch (flowError) {
+            // The triggered flow already writes a Failed Flow Log; keep it rather than
+            // returning 500 to Meta and replaying a previously successful outbound callout.
+            const latest = structuredClone(tenantData(tenantId) ?? working);
+            latest.records[object.apiName] = (latest.records[object.apiName] ?? []).map(item =>
+              item.Id === record.Id ? { ...item, Status__c: 'Failed' } : item);
+            persistTenantRecords(tenantId, latest);
+            console.error('[WhatsApp webhook] flow failed after inbound was saved', {
+              reason: flowError instanceof Error ? flowError.message : String(flowError)
+            });
+          }
+          working = structuredClone(tenantData(tenantId) ?? working);
         }
       }
     }
-    persistTenantRecords(tenantId, working);
     console.info('[WhatsApp webhook] processed', { received, saved, duplicate, unsupported });
     return res.sendStatus(200);
   } catch (error) {
@@ -1108,6 +1135,10 @@ const flowInterviewSchema = z.object({
   retryAt: z.string().datetime().nullable().default(null),
   attempts: z.number().int().nonnegative().default(0),
   allowDraft: z.boolean().default(false)
+});
+const automationSettingsSchema = z.object({
+  autoRetryFailedFlows: z.boolean().default(false),
+  conversationIdleMinutes: z.number().int().min(1).max(1440).default(15)
 });
 const scheduleRetrySchema = z.object({
   occurrenceAt: z.string().datetime(),
@@ -2659,7 +2690,7 @@ const integrationConnectionRequestSchema = z.object({
 const connectorDefinitionRequestSchema = connectorDefinitionSchema;
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
-type TenantData = { objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type TenantData = { objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -3136,6 +3167,7 @@ const stateSchema = z.object({
     flowLogs: z.array(flowExecutionLogSchema).default([]),
     scheduleRuns: z.record(z.string().datetime()).default({}),
     scheduleRetries: z.record(scheduleRetrySchema).default({}),
+    automationSettings: automationSettingsSchema.default(defaultAutomationSettings),
     namedCredentials: z.array(namedCredentialSchema).default([]),
     emailAlerts: z.array(emailAlertSchema).default([]),
     connectorSettings: z.array(connectorSettingsSchema).default(defaultConnectorSettings),
@@ -3596,7 +3628,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
       WhatsApp_Message__c: []
     },
     autoNumberSequences: {},
-    fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, namedCredentials: seedWhatsappDummyCredential(admin?.tenantId ?? 'bootstrap', []), emailAlerts: [],
+    fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, automationSettings: { ...defaultAutomationSettings }, namedCredentials: seedWhatsappDummyCredential(admin?.tenantId ?? 'bootstrap', []), emailAlerts: [],
     connectorSettings: structuredClone(defaultConnectorSettings),
     connectorDefinitions: structuredClone(defaultConnectorDefinitions),
     integrationConnections: []
@@ -3917,6 +3949,7 @@ function loadState(): PlatformState {
       flowLogs: tenant.flowLogs ?? [],
       scheduleRuns: tenant.scheduleRuns ?? {},
       scheduleRetries: tenant.scheduleRetries ?? {},
+      automationSettings: tenant.automationSettings ?? { ...defaultAutomationSettings },
       notifications: tenant.notifications ?? [],
       approvalRequests: tenant.approvalRequests ?? [],
       approvalProcesses: tenant.approvalProcesses ?? [],
@@ -5433,6 +5466,18 @@ app.delete('/api/metadata/approval-processes/:apiName', requireAnyPermission('me
 });
 app.get('/api/metadata/flows', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   res.json({ flows: tenantData(getPrincipal(res).tenantId)?.flows ?? [] });
+});
+app.get('/api/metadata/automation-settings', requirePermission('metadata:read'), (_req: Request, res: Response) => {
+  res.json(tenantData(getPrincipal(res).tenantId)?.automationSettings ?? defaultAutomationSettings);
+});
+app.put('/api/metadata/automation-settings', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
+  const parsed = automationSettingsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid automation settings', details: parsed.error.flatten() });
+  const tenantId = getPrincipal(res).tenantId;
+  const tenant = tenantData(tenantId);
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+  persistTenantRecords(tenantId, { ...tenant, automationSettings: parsed.data });
+  return res.json(parsed.data);
 });
 app.get('/api/metadata/flow-logs', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   const logs = tenantData(getPrincipal(res).tenantId)?.flowLogs ?? [];
@@ -12970,11 +13015,17 @@ function scheduledPathTimestamp(
 
 function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract<FlowExecutionResult, { status: 'waiting' }>): FlowInterview {
   const createdAt = result.interviewStartTime;
-  const expiresAt = result.kind === 'screen'
+  const tenantId = state.users.find(user => user.id === userId)?.tenantId;
+  const idleMinutes = (tenantId ? tenantData(tenantId)?.automationSettings.conversationIdleMinutes : undefined)
+    ?? defaultAutomationSettings.conversationIdleMinutes;
+  const conversationExpiry = typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
+    ? new Date(Date.parse(createdAt) + idleMinutes * 60_000).toISOString()
+    : null;
+  const expiresAt = conversationExpiry ?? (result.kind === 'screen'
     ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
     : result.kind === 'scheduled'
       ? '9999-12-31T23:59:59.999Z'
-      : new Date(Date.parse(result.waitUntil) + 7 * 24 * 60 * 60 * 1000).toISOString();
+      : new Date(Date.parse(result.waitUntil) + 7 * 24 * 60 * 60 * 1000).toISOString());
   return {
     id: result.interviewGuid,
     flowApiName: flow.apiName,
@@ -12997,7 +13048,7 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
 }
 
 function flowRetryDelayMs(attempt: number): number {
-  return Math.min(60 * 60_000, 60_000 * 2 ** Math.min(attempt - 1, 6));
+  return retryDelayMs(attempt);
 }
 
 async function sendTenantEmail(
@@ -14117,8 +14168,28 @@ function nextScheduledOccurrence(flow: FlowMetadata, previous: Date, now: Date):
 async function resumeDueFlowInterviews(now: Date): Promise<void> {
   for (const [tenantId, tenant] of Object.entries(state.tenants)) {
     for (const interview of [...tenant.interviews]) {
-      if (!['wait', 'scheduled'].includes(interview.kind) || !interview.waitUntil
-        || Date.parse(interview.waitUntil) > now.getTime()
+      if (!['wait', 'scheduled'].includes(interview.kind) || !interview.waitUntil) continue;
+      const settings = tenant.automationSettings ?? defaultAutomationSettings;
+      const conversationKey = interview.record?.Conversation_Key__c;
+      const conversational = typeof conversationKey === 'string' && Boolean(conversationKey);
+      const owningFlow = conversational ? tenant.flows.find(flow => flow.apiName === interview.flowApiName) : undefined;
+      const sessionRecords = owningFlow?.triggerObject ? (tenant.records[owningFlow.triggerObject] ?? []) : [];
+      const lastActivityAt = sessionRecords.reduce((latest, item) => {
+        if (item.Conversation_Key__c !== conversationKey || item.Direction__c !== 'Incoming') return latest;
+        const timestamp = typeof item.CreatedDate === 'string' ? Date.parse(item.CreatedDate) : NaN;
+        return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+      }, Date.parse(interview.createdAt));
+      const expired = conversational
+        ? expiredConversationInterview(interview.record, new Date(lastActivityAt).toISOString(), now.getTime(), settings.conversationIdleMinutes)
+        : Date.parse(interview.expiresAt) <= now.getTime();
+      if (expired || (!settings.autoRetryFailedFlows && interview.attempts > 0)) {
+        const current = tenantData(tenantId);
+        if (current) persistTenantRecords(tenantId, {
+          ...current, interviews: current.interviews.filter(item => item.id !== interview.id)
+        });
+        continue;
+      }
+      if (Date.parse(interview.waitUntil) > now.getTime()
         || (interview.retryAt && Date.parse(interview.retryAt) > now.getTime())) continue;
       const currentTenant = tenantData(tenantId);
       if (!currentTenant) continue;
@@ -14127,7 +14198,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
           || (interview.allowDraft && item.status === 'Draft' && item.versionNumber === interview.versionNumber)));
       const working = structuredClone(currentTenant);
       try {
-        if (interview.kind === 'wait' && Date.parse(interview.expiresAt) <= now.getTime()) {
+        if (interview.kind === 'wait' && !conversational && Date.parse(interview.expiresAt) <= now.getTime()) {
           throw new Error('Wait interview expired before it could resume.');
         }
         if (!flow) throw new Error('Wait interview flow version is no longer active.');
@@ -14154,7 +14225,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
         const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
         const failedInterview = failedTenant.interviews.find((item) => item.id === interview.id);
         const expired = Date.parse(interview.expiresAt) <= now.getTime();
-        if (expired) {
+        if (expired || !settings.autoRetryFailedFlows) {
           failedTenant.interviews = failedTenant.interviews.filter((item) => item.id !== interview.id);
         } else if (failedInterview) {
           failedInterview.attempts += 1;
@@ -14182,6 +14253,14 @@ async function executeDueScheduledFlows(now = new Date()): Promise<void> {
       const runKey = `${flow.apiName}@${flow.activeVersion ?? flow.versionNumber}`;
       const latestOccurrence = scheduledOccurrence(flow, now);
       const pendingRetry = currentTenant.scheduleRetries[runKey];
+      const autoRetry = (currentTenant.automationSettings ?? defaultAutomationSettings).autoRetryFailedFlows;
+      if (pendingRetry && !autoRetry) {
+        const updated = structuredClone(currentTenant);
+        updated.scheduleRuns[runKey] = pendingRetry.occurrenceAt;
+        delete updated.scheduleRetries[runKey];
+        persistTenantRecords(tenantId, updated);
+        continue;
+      }
       const lastRun = currentTenant.scheduleRuns[runKey];
       const pendingOccurrence = pendingRetry && (!lastRun || Date.parse(pendingRetry.occurrenceAt) > Date.parse(lastRun))
         ? new Date(pendingRetry.occurrenceAt)
@@ -14224,11 +14303,17 @@ async function executeDueScheduledFlows(now = new Date()): Promise<void> {
         console.error(`Scheduled flow "${flow.apiName}" failed for tenant "${tenantId}": ${error instanceof Error ? error.message : String(error)}`);
         const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
         const attempts = (pendingRetry?.occurrenceAt === occurrence.toISOString() ? pendingRetry.attempts : 0) + 1;
-        failedTenant.scheduleRetries[runKey] = {
-          occurrenceAt: occurrence.toISOString(),
-          attempts,
-          retryAt: new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString()
-        };
+        if (autoRetry) {
+          failedTenant.scheduleRetries[runKey] = {
+            occurrenceAt: occurrence.toISOString(),
+            attempts,
+            retryAt: new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString()
+          };
+        } else {
+          // Mark the failed occurrence handled; a later scheduled occurrence may still run.
+          failedTenant.scheduleRuns[runKey] = occurrence.toISOString();
+          delete failedTenant.scheduleRetries[runKey];
+        }
         failedTenant.flowLogs.push(createFlowFailureLog(flow, 'Scheduled', error, null));
         persistTenantRecords(tenantId, failedTenant);
       }
@@ -14272,6 +14357,15 @@ async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
       let currentTenant = tenantData(tenantId);
       let message = currentTenant?.platformEventMessages.find((item) => item.id === queuedMessage.id);
       if (!currentTenant || !message || message.processedAt || message.deadLettered) continue;
+      const autoRetry = (currentTenant.automationSettings ?? defaultAutomationSettings).autoRetryFailedFlows;
+      if (!autoRetry && message.attempts > 0) {
+        persistTenantRecords(tenantId, {
+          ...currentTenant,
+          platformEventMessages: currentTenant.platformEventMessages.map(item =>
+            item.id === message?.id ? { ...item, deadLettered: true, retryAt: null } : item)
+        });
+        continue;
+      }
       const subscriberTenant = currentTenant;
       const eventMessage = message;
       const subscribers = subscriberTenant.flows.filter((flow) =>
@@ -14328,7 +14422,7 @@ async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
           const failedMessage = failedTenant.platformEventMessages.find((item) => item.id === queuedMessage.id);
           if (!failedMessage) continue;
           const attempts = failedMessage.attempts + 1;
-          const deadLettered = attempts >= 10;
+          const deadLettered = !autoRetry || attempts >= 10;
           const retryAt = deadLettered ? null : new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString();
           const failure = error instanceof Error ? error.message : String(error);
           persistTenantRecords(tenantId, {

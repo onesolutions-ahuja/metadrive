@@ -28,5 +28,8 @@ jobs:
         run: npm run build
       - name: Verify emitted server entrypoint
         run: test -f apps/server/dist/index.js
-      - name: Test connector executor
-        run: npm exec --workspace apps/server -- tsx --test test/connector-test.test.ts
+      - name: Test server workflows and automation policy
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: npm run test --workspace apps/server
