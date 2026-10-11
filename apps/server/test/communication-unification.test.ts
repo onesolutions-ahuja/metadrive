@@ -41,3 +41,15 @@ test('existing WhatsApp flow and versions retarget records and preserve OR condi
   assert.equal(changed.versions[0].elements[0].config.object, 'Communication_Records__c');
   assert.deepEqual(migrateLegacyWhatsappFlow(changed), changed);
 });
+
+test('conditionless legacy flows require every message origin filter', () => {
+  const flow = { triggerObject: 'WhatsApp_Message__c',
+    startConfig: { conditionLogic: 'Any', entryConditions: [] as Array<Record<string, unknown>> },
+    elements: [{ config: {} as Record<string, unknown> }], versions: [] };
+  const changed = migrateLegacyWhatsappFlow(flow);
+  assert.equal(changed.startConfig.conditionLogic, 'All');
+  assert.equal(changed.startConfig.entryConditions.length, 3);
+  assert.equal(changed.startConfig.entryConditions[0].field, 'Event_Type__c');
+  assert.equal(changed.startConfig.entryConditions[1].field, 'Communication_Mode__c');
+  assert.equal(changed.startConfig.entryConditions[2].field, 'Source__c');
+});

@@ -34,7 +34,7 @@ function migrateParts<T extends FlowParts>(part: T): T {
     { field: 'Source__c', operator: 'Equals', value: 'Webhook' }
   ].filter(filter => !conditions.some(row => row.field === filter.field));
   const oldLogic = String(initial.conditionLogic ?? 'All');
-  let conditionLogic = oldLogic;
+  let conditionLogic = conditions.length ? oldLogic : 'All';
   if (filters.length && conditions.length && oldLogic.toLowerCase() !== 'all') {
     const expression = oldLogic.toLowerCase() === 'any'
       ? conditions.map((_row, index) => String(index + 1)).join(' OR ')
