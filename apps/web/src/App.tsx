@@ -4776,12 +4776,8 @@ function RecordWorkspace({
     </div>;
   }
 
-  const query = search.trim().toLocaleLowerCase();
   const readableFields = object.fields.filter((field) => fieldAccess[`${object.apiName}.${field.apiName}`]?.read);
-  const configuredSearchableFields = object.searchLayouts?.searchResults?.map((name) => object.fields.find((field) => field.apiName === name))
-    .filter((field): field is FieldMetadata => Boolean(field && fieldAccess[`${object.apiName}.${field.apiName}`]?.read)) ?? [];
   const hasConfiguredSearchResults = object.searchLayouts?.searchResults !== undefined;
-  const searchableFields = hasConfiguredSearchResults ? configuredSearchableFields : readableFields;
   const visibleRecords = records; // Search and pagination are applied by the API.
   const configuredListFields = object.searchLayouts?.searchResults?.map((name) => object.fields.find((field) => field.apiName === name))
     .filter((field): field is FieldMetadata => Boolean(field && fieldAccess[`${object.apiName}.${field.apiName}`]?.read));
