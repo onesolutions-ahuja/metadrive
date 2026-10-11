@@ -69,6 +69,14 @@ export async function readRelationalState(pool) {
     if(marker.rowCount!==1||migration.rowCount!==1)
       throw Error('Relational store has no verified migration marker; refuse to seed or fall back');
     const {version,digest}=snapshotRevision(marker.rows[0]);
+    // For an in-place Aiven migration, legacy JSONB remains as the immutable
+    // rollback baseline. Reject a cutover if it changed after SQL backfill.
+    const legacyTable=await client.query("SELECT to_regclass('metadrive_platform_state') AS name");
+    if(legacyTable.rows[0]?.name) {
+      const legacy=await client.query('SELECT payload FROM metadrive_platform_state WHERE id=1');
+      if(legacy.rowCount!==1||stateDigest(legacy.rows[0].payload)!==String(migration.rows[0].source_sha256).trim())
+        throw Error('Legacy state changed after relational migration; refusing stale cutover');
+    }
     const rows=await readRelationalRows(client);
     const state=restoreState(rows);
     verifyProjection(state,rows);
