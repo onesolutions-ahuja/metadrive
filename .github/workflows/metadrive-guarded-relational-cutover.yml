@@ -1,0 +1,72 @@
+name: Guarded MetaDrive relational cutover
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: metadrive-production-cutover
+  cancel-in-progress: false
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Require verified Render maintenance barrier
+        env:
+          RENDER_URL: https://oneengine-6gas.onrender.com
+        run: |
+          node --input-type=module <<'NODE'
+          const origin=process.env.RENDER_URL;
+          const health=await fetch(origin+'/health',{signal:AbortSignal.timeout(15000)});
+          if(!health.ok) throw Error('Render health check failed');
+          const probe=await fetch(origin+'/api/settings',{signal:AbortSignal.timeout(15000)});
+          if(probe.status!==503) throw Error('Render maintenance barrier not active; refusing migration');
+          const body=await probe.json();
+          if(body.error!=='MetaDrive database maintenance in progress') throw Error('Unexpected maintenance response');
+          console.log('Live production maintenance barrier verified');
+          NODE
+      - name: Prepare private verified database snapshot
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          test -n "${DATABASE_URL:-}" || exit 1
+          node --input-type=module <<'NODE'
+          import {writeFileSync} from 'node:fs';
+          const u=new URL(process.env.DATABASE_URL);
+          if(!u.hostname.endsWith('.aivencloud.com')) throw Error('Unexpected database host');
+          const env={PGHOST:u.hostname,PGPORT:u.port||'5432',PGUSER:decodeURIComponent(u.username),PGPASSWORD:decodeURIComponent(u.password),PGDATABASE:decodeURIComponent(u.pathname.slice(1)),PGSSLMODE:'require'};
+          writeFileSync(process.env.RUNNER_TEMP+'/aiven.env',Object.entries(env).map(([k,v])=>k+'='+v).join('\n')+'\n',{mode:0o600});
+          NODE
+          docker run --rm --network host --env-file "${RUNNER_TEMP}/aiven.env" -v "${RUNNER_TEMP}:/work" --entrypoint pg_dump postgres:18 --format=custom --no-owner --no-acl --file=/work/cutover.dump
+          test -s "${RUNNER_TEMP}/cutover.dump"
+      - name: Restore into isolated PostgreSQL and verify before writes
+        run: |
+          docker run -d --name cutover-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:18
+          for i in $(seq 1 40); do docker exec cutover-postgres pg_isready -U postgres && break || sleep 2; done
+          docker run --rm --network host -e PGPASSWORD=postgres --entrypoint createdb postgres:18 -h 127.0.0.1 -U postgres metadrive_restored
+          docker run --rm --network host -e PGPASSWORD=postgres -v "${RUNNER_TEMP}:/work" --entrypoint pg_restore postgres:18 -h 127.0.0.1 -U postgres -d metadrive_restored --no-owner --no-acl --exit-on-error /work/cutover.dump
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable node apps/server/scripts/verify-aiven-state.mjs
+      - name: Verify barrier again and apply additive relational migration
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_DB_ALLOW_SELF_SIGNED_CERT: 'true'
+          METADRIVE_MIGRATION_TARGET: production
+          METADRIVE_CONFIRMED_OFFLINE: 'true'
+          METADRIVE_BACKUP_VERIFIED_RESTORE: 'true'
+          METADRIVE_VERIFIED_BACKUP_FILE: ${{ runner.temp }}/cutover.dump
+        run: |
+          node --input-type=module <<'NODE'
+          const r=await fetch('https://oneengine-6gas.onrender.com/api/settings',{signal:AbortSignal.timeout(15000)});
+          if(r.status!==503||(await r.json()).error!=='MetaDrive database maintenance in progress') throw Error('Maintenance barrier lost');
+          NODE
+          export METADRIVE_VERIFIED_BACKUP_SHA256="$(sha256sum "${METADRIVE_VERIFIED_BACKUP_FILE}" | cut -d' ' -f1)"
+          node apps/server/scripts/migrate-relational-in-place.mjs --apply
+      - name: Clean private files
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/aiven.env" "${RUNNER_TEMP}/cutover.dump"
