@@ -6,6 +6,8 @@ on:
     paths:
       - 'apps/server/src/relational-projection.mjs'
       - 'apps/server/src/relational-runtime.mjs'
+      - 'apps/server/src/relational-account-recovery.mjs'
+      - 'apps/server/scripts/reset-relational-password.mjs'
       - 'apps/server/src/relational-runtime.d.mts'
       - 'apps/server/src/relational-tables.mjs'
       - 'apps/server/src/postgres-state.ts'
