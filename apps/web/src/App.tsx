@@ -421,7 +421,7 @@ function parseAppRoute(pathname: string, search = ''): AppRoute {
     }
     if (segments[0] === 'setup') {
       const workspace = decodeURIComponent(segments[1] ?? 'home') as WorkspaceId;
-      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'connector-settings', 'named-credentials', 'company-settings', 'rbac'];
+      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'connector-settings', 'named-credentials', 'company-settings', 'rbac'];
       if (!validWorkspaces.includes(workspace)) return { kind: 'setup', workspace: 'home' };
       if (workspace === 'object-manager') {
         return {
@@ -1522,6 +1522,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     else if (item === 'Paused and Waiting Interviews') openSetupWorkspace('flow-interviews');
     else if (item === 'Scheduled Flows') openSetupWorkspace('scheduled-flows');
     else if (item === 'Failed Flow Logs') openSetupWorkspace('flow-logs');
+    else if (item === 'Process Automation Settings') openSetupWorkspace('automation-settings');
     else if (item === 'Reports') openSetupWorkspace('report-builder');
     else if (item === 'Dashboards') openSetupWorkspace('dashboard-builder');
     else if (['Users', 'Roles', 'Public Groups', 'Queues', 'Permission Sets', 'Permission Set Groups', 'Profiles', 'Sharing Settings', 'Sharing Rules'].includes(item)) {
@@ -3190,6 +3191,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           {route.kind === 'setup' && workspace === 'flow-logs' && (
             <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
           )}
+          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace />}
           {route.kind === 'setup' && workspace === 'flow-builder' && (
             <FlowBuilderWorkspace
               landing={!route.resourceApiName}
@@ -5311,6 +5313,76 @@ function SetupHome({ onNavigate }: { onNavigate: (workspace: WorkspaceId) => voi
       </div>
     </div>
   );
+}
+
+type AutomationSettingsDraft = {
+  autoRetryFailedFlows: boolean;
+  conversationIdleMinutes: number;
+};
+
+function AutomationSettingsWorkspace() {
+  const [draft, setDraft] = useState<AutomationSettingsDraft>({
+    autoRetryFailedFlows: false, conversationIdleMinutes: 15
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    void apiRequest<AutomationSettingsDraft>('/metadata/automation-settings')
+      .then((result) => { if (active) setDraft(result); })
+      .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const save = async () => {
+    setError('');
+    setNotice('');
+    setSaving(true);
+    try {
+      const result = await apiRequest<AutomationSettingsDraft>('/metadata/automation-settings', {
+        method: 'PUT', body: JSON.stringify(draft)
+      });
+      setDraft(result);
+      setNotice('Process automation settings saved.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <div className="connector-settings-page">
+    <PageHeading eyebrow="Setup / Automation" title="Process Automation Settings"
+      description="Control retries of failed flow executions and inactivity limits for conversational flows." />
+    <section className="surface" style={{ padding: 24, maxWidth: 760 }}>
+      {loading ? <p>Loading process automation settings…</p> : <>
+        <h2>Execution safety</h2>
+        <label className="checkbox-row">
+          <input type="checkbox" checked={draft.autoRetryFailedFlows}
+            onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
+          Automatically retry failed flow executions
+        </label>
+        <p className="permission-help">OFF by default. When disabled, failed scheduled runs, paused interviews and platform event deliveries are logged but are not retried. New scheduled occurrences are not disabled.</p>
+        <h2>Conversation inactivity</h2>
+        <label className="form-label">Expire inactive conversations after (minutes)
+          <input className="form-control" type="number" min="1" max="1440" step="1"
+            value={draft.conversationIdleMinutes}
+            onChange={(event) => setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
+        </label>
+        <p className="permission-help">Default: 15 minutes. After inactivity, the next incoming message receives a new conversation key. Pending conversational interviews expire without sending late replies. Previous message records are kept.</p>
+        {error && <p role="alert" style={{ color: 'var(--slds-color-text-error, #ba0517)' }}>{error}</p>}
+        {notice && <p role="status">{notice}</p>}
+        <button className="btn btn-brand" type="button" onClick={() => void save()}
+          disabled={saving || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
+          {saving ? 'Saving…' : 'Save Settings'}
+        </button>
+      </>}
+    </section>
+  </div>;
 }
 
 function CompanySettings() {

@@ -7,13 +7,16 @@ export const persistenceMode = process.env.METADRIVE_PERSISTENCE_MODE ?? 'jsonb'
 if (!['jsonb', 'relational'].includes(persistenceMode)) throw new Error('Invalid METADRIVE_PERSISTENCE_MODE');
 let relationalSnapshot: RelationalSnapshot | null = null;
 const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error('DATABASE_URL is required for persistent UNEEngine state');
+// Preserve the explicit no-DB test harness from the latest main branch.
+const testOnlyLocalState = process.env.NODE_ENV === 'test' && process.env.METADRIVE_TEST_MODE === 'true';
+if (!connectionString && !testOnlyLocalState) throw new Error('DATABASE_URL is required for persistent UNEEngine state');
+if (persistenceMode === 'relational' && !connectionString) throw new Error('Relational mode requires DATABASE_URL');
 
 // Keep SSL configuration in one place: pg URL sslmode options otherwise override the trusted CA.
-const databaseUrl = new URL(connectionString);
-for (const key of ['sslmode', 'sslcert', 'sslkey', 'sslrootcert']) databaseUrl.searchParams.delete(key);
+const databaseUrl = connectionString ? new URL(connectionString) : null;
+if (databaseUrl) for (const key of ['sslmode','sslcert','sslkey','sslrootcert']) databaseUrl.searchParams.delete(key);
 
-const pool = new Pool({
+const pool = databaseUrl ? new Pool({
   connectionString: databaseUrl.toString(),
   ssl: process.env.PGSSLMODE === 'disable' ? false : {
     rejectUnauthorized: process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT !== 'true',
@@ -21,9 +24,10 @@ const pool = new Pool({
   },
   max: 3,
   connectionTimeoutMillis: 15000
-});
+}) : null;
 
 export async function readPersistedState(): Promise<unknown | null> {
+  if (!pool) return null;
   if (persistenceMode === 'relational') {
     // Never silently fall back to a stale JSONB blob or empty seed.
     relationalSnapshot = await readRelationalState(pool as unknown as Parameters<typeof readRelationalState>[0]);
@@ -56,6 +60,7 @@ async function drainStateWrites(): Promise<void> {
     newestPayload = null;
     const batch = waiting.splice(0);
     try {
+      if (!pool) throw new Error('Database pool not available');
       if (persistenceMode === 'relational') {
         if (!relationalSnapshot) throw new Error('Relational database must be verified before first write');
         relationalSnapshot = await writeRelationalState(
@@ -78,6 +83,7 @@ async function drainStateWrites(): Promise<void> {
   for (const done of idleWaiters.splice(0)) done();
 }
 export function persistToPostgres(state: unknown): Promise<unknown> {
+  if (!pool) return Promise.resolve();
   if (writeFailure !== null) return Promise.reject(writeFailure);
   const payload = JSON.stringify(state);
   return new Promise<void>((resolve, reject) => {
@@ -93,5 +99,5 @@ export function persistToPostgres(state: unknown): Promise<unknown> {
 export async function closeStateStore(): Promise<void> {
   if (drainActive) await new Promise<void>((resolve) => idleWaiters.push(resolve));
   if (writeFailure !== null) throw writeFailure;
-  await pool.end();
+  if (pool) await pool.end();
 }

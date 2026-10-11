@@ -21,6 +21,7 @@ export type WorkspaceId =
   | 'flow-interviews'
   | 'scheduled-flows'
   | 'flow-logs'
+  | 'automation-settings'
   | 'approval-processes'
   | 'component-library'
   | 'app-manager'
@@ -894,6 +895,7 @@ export const workspaces: WorkspaceMetadata[] = [
   { id: 'dashboard-builder', label: 'Dashboards', icon: BarChart3 },
   { id: 'report-builder', label: 'Reports', icon: FileText },
   { id: 'flow-builder', label: 'Flows', icon: Workflow },
+  { id: 'automation-settings', label: 'Process Automation Settings', icon: Workflow },
   { id: 'component-library', label: 'Component Library', icon: Puzzle },
   { id: 'approval-processes', label: 'Approval Processes', icon: Workflow },
   { id: 'app-manager', label: 'App Manager', icon: LayoutTemplate },
