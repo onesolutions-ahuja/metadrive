@@ -8,6 +8,7 @@ on:
       - apps/server/src/normalized-state-runtime.mjs
       - apps/server/src/normalized-state-tree.mjs
       - apps/server/scripts/copy-normalized-state-on-restore.mjs
+      - apps/server/scripts/benchmark-normalized-state-on-restore.mjs
       - apps/server/sql/normalized-state-v3.sql
       - apps/server/scripts/copy-typed-sql-on-restored-db.mjs
       - apps/server/sql/normalized-registry-v2.sql
@@ -101,6 +102,10 @@ jobs:
           DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
             node apps/server/scripts/copy-normalized-state-on-restore.mjs --apply
           echo "Nested Flow/RBAC/credential state restored from SQL scalar rows, no JSONB required"
+      - name: Measure normalized SQL full-state read and write latency on isolated restore
+        run: |
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
+            node apps/server/scripts/benchmark-normalized-state-on-restore.mjs
       - name: Encrypt full backup, decrypt and verify identical contents
         env:
           METADRIVE_BACKUP_ENCRYPTION_KEY: ${{ secrets.METADRIVE_BACKUP_ENCRYPTION_KEY }}
