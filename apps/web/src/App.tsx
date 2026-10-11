@@ -2207,7 +2207,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const runFlow = async (apiName = flow.apiName) => {
+  const runFlow = async (apiName = flow.apiName, inputs: Record<string, unknown> = {}) => {
     const selectedFlow = flows.find((item) => item.apiName === apiName);
     if (!selectedFlow) {
       notify(`Flow "${apiName}" was not found`);
@@ -2222,16 +2222,16 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     if (hasUnsavedChanges) notify('Running the most recently saved version; unsaved changes are not included.');
     const inputResources = selectedFlow.resources.filter((resource) => resource.availableForInput);
     if (inputResources.length) {
-      const inputs = Object.fromEntries(inputResources.map((resource) => [resource.name, resource.value === undefined
+      const defaultInputs = Object.fromEntries(inputResources.map((resource) => [resource.name, resource.value === undefined
         ? ''
         : typeof resource.value === 'string' ? resource.value : JSON.stringify(resource.value)]));
-      setFlowDebug({ flow: selectedFlow, mode: 'run', inputs, error: '', running: false });
+      setFlowDebug({ flow: selectedFlow, mode: 'run', inputs: { ...defaultInputs, ...inputs }, error: '', running: false });
       return;
     }
     try {
       const result = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string; screen?: FlowElementMetadata; outcomes?: Array<{ name: string; label: string }>; values?: Record<string, unknown> }>(`/flows/${encodeURIComponent(selectedFlow.apiName)}/execute`, {
         method: 'POST',
-        body: JSON.stringify({})
+        body: JSON.stringify(inputs)
       });
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
@@ -3020,12 +3020,12 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName) => void runFlow(apiName)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => item.flowType === 'Screen Flow')
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName) => void runFlow(apiName)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
@@ -3777,7 +3777,7 @@ function MetadataBoundPageComponent({
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
-  onLaunchFlow: (flowApiName: string) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
@@ -3856,7 +3856,7 @@ function LightningAppRuntime({
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
-  onLaunchFlow: (flowApiName: string) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   onKioskModeChange: (enabled: boolean) => void;
 }) {
   const [page, setPage] = useState<LightningPageMetadata | null>(null);
