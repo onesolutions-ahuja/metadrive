@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   MoveRight,
   Plus,
+  Pencil,
   Redo2,
   Save,
   Search,
@@ -130,7 +131,12 @@ export default function FlowBuilder({
   const flowComponents = libraryComponents.filter((component) => component.surfaces.includes('flow'));
   const [elementSearch, setElementSearch] = useState('');
   const [newFlowLabel, setNewFlowLabel] = useState('');
-  const [newFlowType, setNewFlowType] = useState<FlowDefinitionMetadata['flowType']>('Screen Flow');
+  const [newFlowType, setNewFlowType] = useState<FlowDefinitionMetadata['flowType'] | null>(null);
+  const [existingFlowSearch, setExistingFlowSearch] = useState('');
+  const [existingFlowPage, setExistingFlowPage] = useState(1);
+  const matchingFlows = flows.filter((candidate) => `${candidate.label} ${candidate.apiName} ${candidate.flowType} ${candidate.status}`.toLowerCase().includes(existingFlowSearch.trim().toLowerCase()));
+  const flowPageCount = Math.max(1, Math.ceil(matchingFlows.length / 50));
+  const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
   const flowTypeOptions: Array<{ type: FlowDefinitionMetadata['flowType']; description: string }> = [
     { type: 'Screen Flow', description: 'Guide a user through screens and actions.' },
     { type: 'Record-Triggered Flow', description: 'Run when a record is created or updated.' },
@@ -991,31 +997,51 @@ export default function FlowBuilder({
           <span>{option.description}</span>
         </button>)}
       </div>
-      <label className="form-label" htmlFor="flow-start-label">Flow Label</label>
+      {newFlowType && <div className="flow-start-name-step">
+      <label className="form-label" htmlFor="flow-start-label">Flow Name</label>
       <input id="flow-start-label" className="form-control" value={newFlowLabel}
         onChange={(event) => setNewFlowLabel(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && newFlowLabel.trim()) {
-            onCreateFlow(newFlowLabel, newFlowType);
+          if (event.key === 'Enter' && newFlowLabel.trim() && newFlowType) {
+            onCreateFlow(newFlowLabel.trim(), newFlowType);
             setNewFlowLabel('');
           }
         }}
         placeholder="For example, Start Kiosk Order" />
       <button className="btn btn-brand" type="button" disabled={!newFlowLabel.trim()}
         onClick={() => {
-          onCreateFlow(newFlowLabel, newFlowType);
+          onCreateFlow(newFlowLabel.trim(), newFlowType);
           setNewFlowLabel('');
         }}><Plus size={14} />Create Flow</button>
+      </div>}
     </section>
     <section className="flow-start-existing surface" aria-labelledby="flow-start-existing-title">
       <h2 id="flow-start-existing-title">Open an existing flow</h2>
-      {flows.length
-        ? <div className="flow-start-list">{flows.map((candidate) => <button type="button" className="flow-start-existing-item"
-          key={candidate.apiName} onClick={() => onSelectFlow(candidate.apiName)}>
-          <span><strong>{candidate.label}</strong><small>{candidate.flowType} · {candidate.status} · v{candidate.versionNumber}</small></span>
-          <MoveRight size={16} />
-        </button>)}</div>
-        : <p className="settings-panel-copy">No flows yet. Choose a flow type above to create one.</p>}
+      <div className="flow-existing-controls">
+        <label className="form-label" htmlFor="existing-flow-search">Search Flows
+          <input id="existing-flow-search" className="form-control" type="search" placeholder="Search by flow name, type or status"
+            value={existingFlowSearch} onChange={(event) => { setExistingFlowSearch(event.target.value); setExistingFlowPage(1); }} />
+        </label>
+      </div>
+      {matchingFlows.length ? <div className="flow-existing-table-scroll">
+        <table className="flow-existing-table">
+          <thead><tr><th>Flow Name</th><th>Flow Type</th><th>Status</th><th>Version</th><th>Actions</th></tr></thead>
+          <tbody>{matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50).map((candidate) =>
+            <tr key={candidate.apiName}>
+              <td><button type="button" className="text-action" onClick={() => onSelectFlow(candidate.apiName)}>{candidate.label}</button></td>
+              <td>{candidate.flowType}</td><td>{candidate.status}</td><td>v{candidate.versionNumber}</td>
+              <td><button type="button" className="icon-button subtle" aria-label={`Edit ${candidate.label}`}
+                title={`Edit ${candidate.label}`} onClick={() => onSelectFlow(candidate.apiName)}><Pencil size={16} /></button></td>
+            </tr>)}</tbody>
+        </table>
+      </div> : <p className="settings-panel-copy">No matching flows found.</p>}
+      <nav aria-label="Flow list pagination" className="flow-existing-pagination">
+        <span>{matchingFlows.length} flow{matchingFlows.length === 1 ? '' : 's'} · Page {safeFlowPage} of {flowPageCount}</span>
+        <button className="btn" disabled={safeFlowPage === 1} onClick={() => setExistingFlowPage(1)}>First</button>
+        <button className="btn" disabled={safeFlowPage === 1} onClick={() => setExistingFlowPage(safeFlowPage - 1)}>Previous</button>
+        <button className="btn" disabled={safeFlowPage === flowPageCount} onClick={() => setExistingFlowPage(safeFlowPage + 1)}>Next</button>
+        <button className="btn" disabled={safeFlowPage === flowPageCount} onClick={() => setExistingFlowPage(flowPageCount)}>Last</button>
+      </nav>
     </section>
   </div>;
 
