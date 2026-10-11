@@ -4022,6 +4022,7 @@ function MetadataBoundPageComponent({
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
+  const customerObjectApiName = String(properties.customerObjectApiName ?? '');
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + component.id;
     try {
@@ -4037,6 +4038,7 @@ function MetadataBoundPageComponent({
   });
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [cartRecords, setCartRecords] = useState<Record<string, unknown>[]>([]);
+  const [customerRecords, setCustomerRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
@@ -4044,7 +4046,7 @@ function MetadataBoundPageComponent({
   const initializedSessions = useRef<Set<string>>(new Set());
   useEffect(() => {
     let active = true;
-    setRecords([]); setCartRecords([]); setDataError('');
+    setRecords([]); setCartRecords([]); setCustomerRecords([]); setDataError('');
     const tasks: Array<Promise<Record<string, unknown>[]>> = [
       objectApiName ? loadFlowScreenRecords(objectApiName) : Promise.resolve([]),
       cartObjectApiName ? apiRequest<{ records: Record<string, unknown>[] }>(
@@ -4052,18 +4054,19 @@ function MetadataBoundPageComponent({
         + '?filterField=' + encodeURIComponent(String(properties.cartSessionField ?? 'Session__c'))
         + '&filterValue=' + encodeURIComponent(sessionId)
         + '&limit=200'
-      ).then((response) => response.records) : Promise.resolve([])
+      ).then((response) => response.records) : Promise.resolve([]),
+      customerObjectApiName ? loadFlowScreenRecords(customerObjectApiName) : Promise.resolve([])
     ];
     setDataLoading(true);
-    void Promise.all(tasks).then(([products, basket]) => {
-      if (active) { setRecords(products); setCartRecords(basket); }
+    void Promise.all(tasks).then(([products, basket, customers]) => {
+      if (active) { setRecords(products); setCartRecords(basket); setCustomerRecords(customers); }
     }).catch((error: unknown) => {
       if (active) setDataError(error instanceof Error ? error.message : 'Unable to load page records');
     }).finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
-  }, [objectApiName, cartObjectApiName, sessionId, revision]);
-  const matchFilters = (record: Record<string, unknown>) => {
-    const filters = Array.isArray(properties.filters) ? properties.filters : [];
+  }, [objectApiName, cartObjectApiName, customerObjectApiName, sessionId, revision]);
+  const matchFilters = (record: Record<string, unknown>, filterDefinitions: unknown = properties.filters) => {
+    const filters = Array.isArray(filterDefinitions) ? filterDefinitions : [];
     return filters.every((item) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) return true;
       const filter = item as Record<string, unknown>;
@@ -4088,7 +4091,15 @@ function MetadataBoundPageComponent({
     price: Number(record[String(properties.priceField ?? 'Price__c')] ?? 0),
     image: String(record[String(properties.imageField ?? 'Image__c')] ?? ''),
     description: String(record[String(properties.descriptionField ?? 'Description__c')] ?? ''),
-    categoryId: String(record[String(properties.categoryField ?? 'Category__c')] ?? '')
+    categoryId: String(record[String(properties.categoryField ?? 'Category__c')] ?? ''),
+    barcode: properties.barcodeField ? String(record[String(properties.barcodeField)] ?? '') : '',
+    sku: properties.skuField ? String(record[String(properties.skuField)] ?? '') : ''
+  }));
+  const mappedCustomers = customerRecords.filter((record) => matchFilters(record, properties.customerFilters)).map((record) => ({
+    id: String(record.Id ?? ''),
+    name: properties.customerNameField ? String(record[String(properties.customerNameField)] ?? '') : '',
+    phone: properties.customerPhoneField ? String(record[String(properties.customerPhoneField)] ?? '') : '',
+    email: properties.customerEmailField ? String(record[String(properties.customerEmailField)] ?? '') : ''
   }));
   const categories = [...new Set(mappedProducts.map((item) => item.categoryId).filter(Boolean))]
     .map((id) => ({ id, name: id, icon: '🍽️' }));
@@ -4182,6 +4193,7 @@ function MetadataBoundPageComponent({
       ...properties, label: component.label, properties, objects, reports, flows: availableFlows,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
       loading: dataLoading, cartLines, sessionId,
+      customers: mappedCustomers,
       ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
     }} />
   </div>;
@@ -7223,6 +7235,9 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
   const selectedObject = objects.find((candidate) => candidate.apiName === objectApiName);
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
   const cartObject = objects.find((candidate) => candidate.apiName === cartObjectApiName);
+  const customerObjectApiName = String(properties.customerObjectApiName ?? '');
+  const customerObject = objects.find((candidate) => candidate.apiName === customerObjectApiName);
+  const tillMode = properties.libraryComponentId === 'TillSalesWorkspace';
   const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
     ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
@@ -7232,7 +7247,9 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
     return Array.isArray(value) ? value : [];
   };
   const sourceKeys = new Set(['libraryComponentId', 'objectApiName', 'targetObject', 'flowApiName', 'filters',
-    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName', 'checkoutFlowApiName',
+    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'barcodeField', 'skuField',
+    'customerObjectApiName', 'customerNameField', 'customerPhoneField', 'customerEmailField', 'customerFilters',
+    'fieldApiName', 'checkoutFlowApiName',
     'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows']);
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
@@ -7251,7 +7268,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
         {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
       </select>
     </label>
-    {['nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName']
+    {['nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'barcodeField', 'skuField', 'fieldApiName']
       .filter((key) => key in properties || (objectApiName && ['nameField', 'priceField', 'imageField', 'categoryField'].includes(key)))
       .map((key) => fieldPicker(key, properties[key]))}
     {actionFlows && <>
@@ -7274,6 +7291,35 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
             <option value={field.apiName} key={field.apiName}>{field.label}</option>)}
         </select>
       </label>)}
+    </>}
+    {tillMode && <>
+      <div className="properties-section-title">Customer Object and Fields</div>
+      <label className="form-label">Customer object
+        <select className="form-control" value={customerObjectApiName} onChange={(event) => update('customerObjectApiName', event.target.value)}>
+          <option value="">No customer object selected</option>
+          {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+        </select>
+      </label>
+      {([
+        ['customerNameField', 'Name field'], ['customerPhoneField', 'Phone field'], ['customerEmailField', 'Email field']
+      ] as const).map(([key, label]) => <label className="form-label" key={key}>{label}
+        <select className="form-control" value={String(properties[key] ?? '')} onChange={(event) => update(key, event.target.value)}>
+          <option value="">Select customer field…</option>
+          {(customerObject?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+        </select>
+      </label>)}
+      <div className="properties-section-title">Customer Filters</div>
+      {listProperty('customerFilters').map((raw, index) => {
+        const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
+        const setFilter = (key: string, value: string) => update('customerFilters', listProperty('customerFilters').map((item, i) => i === index ? {...filter, [key]: value} : item));
+        return <div className="home-page-assignment" key={index}>
+          <label className="form-label">Field<select className="form-control" value={String(filter.field ?? '')} onChange={(e) => setFilter('field',e.target.value)}><option value="">Select field…</option>{(customerObject?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select></label>
+          <label className="form-label">Operator<select className="form-control" value={String(filter.operator ?? 'Equals')} onChange={(e) => setFilter('operator',e.target.value)}>{['Equals','Not Equals','Contains','Greater Than','Less Than'].map((op) => <option key={op}>{op}</option>)}</select></label>
+          <label className="form-label">Value<input className="form-control" value={String(filter.value ?? '')} onChange={(e) => setFilter('value',e.target.value)} /></label>
+          <button className="btn" type="button" onClick={() => update('customerFilters',listProperty('customerFilters').filter((_,i)=>i!==index))}>Remove filter</button>
+        </div>;
+      })}
+      <button className="btn" disabled={!customerObjectApiName} onClick={() => update('customerFilters',[...listProperty('customerFilters'),{field:'',operator:'Equals',value:''}])}>Add customer filter</button>
     </>}
     {kioskMode && <p className="properties-help">Products come from the selected object and filters. Static product cards are not used. Checkout requires a verified, active Flow that creates the Sale record.</p>}
     <div className="properties-section-title">Record Filters</div>
@@ -7302,7 +7348,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
     <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
-    {actionFlows && (['start', 'add', 'quantity', 'remove', 'reset', 'checkout'] as const).map((eventName) => {
+    {actionFlows && (['start', 'add', 'quantity', 'remove', 'reset', 'checkout', ...(tillMode ? ['customer','hold','resume','discount'] : [])]).map((eventName) => {
       const binding = actionFlows[eventName] && typeof actionFlows[eventName] === 'object'
         ? actionFlows[eventName] as Record<string, unknown> : {};
       return <label className="form-label" key={eventName}>{eventName.charAt(0).toUpperCase() + eventName.slice(1)} Flow
@@ -7312,7 +7358,8 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
           else next[eventName] = {
             flowApiName: event.target.value,
             inputs: binding.inputs ?? (eventName === 'checkout'
-              ? { SessionId: '$session', OrderType: '$event.orderType' }
+              ? (tillMode ? { SessionId: '$session', PaymentMethod: '$event.paymentMethod', CustomerId: '$event.customerId' } : { SessionId: '$session', OrderType: '$event.orderType' })
+              : eventName === 'customer' ? { SessionId: '$session', CustomerId: '$event.customerId' }
               : eventName === 'add'
                 ? { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' }
                 : eventName === 'quantity'
