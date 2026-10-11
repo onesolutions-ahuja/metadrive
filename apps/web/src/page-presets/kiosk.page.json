@@ -71,7 +71,8 @@
             "flowApiName": "KIOSK_CART_RESET",
             "inputs": {
               "SessionId": "$session"
-            }
+            },
+            "resetSessionOnSuccess": true
           }
         },
         "brandName": "Your Restaurant",
