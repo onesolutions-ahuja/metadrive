@@ -1,6 +1,10 @@
 name: Guarded MetaDrive relational cutover
 on:
   workflow_dispatch:
+  push:
+    branches: [migration/aiven-cutover-guarded-20261011]
+    paths:
+      - .github/workflows/metadrive-guarded-relational-cutover.yml
 permissions:
   contents: read
 concurrency:
@@ -10,6 +14,20 @@ jobs:
   migrate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -47,8 +65,6 @@ jobs:
           test -s "${RUNNER_TEMP}/cutover.dump"
       - name: Restore into isolated PostgreSQL and verify before writes
         run: |
-          docker run -d --name cutover-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:18
-          for i in $(seq 1 40); do docker exec cutover-postgres pg_isready -U postgres && break || sleep 2; done
           docker run --rm --network host -e PGPASSWORD=postgres --entrypoint createdb postgres:18 -h 127.0.0.1 -U postgres metadrive_restored
           docker run --rm --network host -e PGPASSWORD=postgres -v "${RUNNER_TEMP}:/work" --entrypoint pg_restore postgres:18 -h 127.0.0.1 -U postgres -d metadrive_restored --no-owner --no-acl --exit-on-error /work/cutover.dump
           DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable node apps/server/scripts/verify-aiven-state.mjs
