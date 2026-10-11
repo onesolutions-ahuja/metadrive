@@ -48,6 +48,57 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         fields: productFields, recordTypes: [], pageLayouts: []
       });
     }
+    // Object metadata is the single catalogue/cart/device schema. Devices hold references to
+    // Named Credentials, never payment API keys or printer secrets.
+    const ensureObject = (apiName, label, fields, description) => {
+      let object = tenant.objects.find((candidate) => candidate.apiName === apiName);
+      if (!object) {
+        object = { apiName, label, pluralLabel: label + 's', kind: 'Custom Object',
+          description, fields: [], recordTypes: [], pageLayouts: [] };
+        tenant.objects.push(object);
+      }
+      for (const definition of fields) {
+        if (!object.fields.some((existing) => existing.apiName === definition.apiName)) object.fields.push(definition);
+      }
+      return object;
+    };
+    const cartFields = [
+      field('Name', 'Cart Name', 'Text', true),
+      field('Session__c', 'Session ID', 'Text', true),
+      field('Product__c', 'Product ID', 'Text', true),
+      field('Quantity__c', 'Quantity', 'Number', true),
+      field('Unit_Price__c', 'Unit Price', 'Currency', true)
+    ];
+    const deviceFields = [
+      field('Name', 'Device Name', 'Text', true),
+      field('Type__c', 'Device Type', 'Text', true),
+      field('Connection_Type__c', 'Connection Type', 'Text'),
+      field('Named_Credential_Id__c', 'Named Credential Reference', 'Text'),
+      field('Agent_Endpoint__c', 'Agent Endpoint (HTTPS)', 'URL'),
+      field('Store__c', 'Store', 'Text'),
+      field('Terminal__c', 'Terminal', 'Text'),
+      field('Enabled__c', 'Enabled', 'Checkbox'),
+      field('Capabilities__c', 'Capabilities', 'LongTextArea')
+    ];
+    ensureObject('CartLine__c', 'Cart Line', cartFields, 'Temporary session-scoped cart line; all mutations use Flow');
+    ensureObject('NamedDevice__c', 'Named Device', deviceFields, 'Tenant-owned hardware definition referencing secured Named Credentials');
+    ensureObject('ProductCategory__c', 'Product Category', [
+      field('Name', 'Category', 'Text', true),
+      field('Image__c', 'Image', 'URL'), field('Sort_Order__c', 'Sort Order', 'Number')
+    ], 'Reusable product navigation categories');
+    ensureObject('ProductModifier__c', 'Product Modifier', [
+      field('Name', 'Modifier', 'Text', true), field('Product__c', 'Product', 'Text', true),
+      field('Price__c', 'Price', 'Currency'), field('Available__c', 'Available', 'Checkbox')
+    ], 'Product customisations and extras');
+    ensureObject('Cart__c', 'Cart', [
+      field('Name', 'Cart Name', 'Text', true), field('Session__c', 'Session ID', 'Text', true),
+      field('Status__c', 'Status', 'Text'), field('Order_Type__c', 'Order Type', 'Text')
+    ], 'Temporary session header; can be linked to Sale at checkout');
+    ensureObject('PaymentTransaction__c', 'Payment Transaction', [
+      field('Name', 'Payment Reference', 'Text', true), field('Sale__c', 'Sale', 'Text'),
+      field('Device__c', 'Named Device', 'Text'), field('Provider_Reference__c', 'Provider Reference', 'Text'),
+      field('Amount__c', 'Amount', 'Currency'), field('Status__c', 'Status', 'Text')
+    ], 'Provider-verified payment events, not kiosk client claims');
     tenant.records ??= {};
     if (!Array.isArray(tenant.records.Product__c)) tenant.records.Product__c = [];
     // Demonstration catalogue is ordinary records, never embedded inside the page or component code.
@@ -92,10 +143,12 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         systemPermissions: ['flows:run'],
         objectPermissions: {
           Product__c: { ...grants },
+          CartLine__c: { ...grants, create: true, edit: true, delete: true },
           Sale__c: { ...grants, create: true, edit: true }
         },
         fieldPermissions: Object.fromEntries([
           ...productFields.map((f) => ['Product__c.' + f.apiName, { read: true, edit: false }]),
+          ...cartFields.map((f) => ['CartLine__c.' + f.apiName, { read: true, edit: true }]),
           ...saleFields.map((f) => ['Sale__c.' + f.apiName, { read: true, edit: true }])
         ])
       });
@@ -104,6 +157,18 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
     };
     createProfile('till-user', 'TillUser');
     createProfile('kiosk-user', 'KioskUser');
+    // Existing profile assignments are preserved; add only the new cart permissions.
+    for (const id of ['till-user', 'kiosk-user']) {
+      const profile = tenant.accessControl.profiles.find((candidate) => candidate.id === id);
+      if (!profile) continue;
+      profile.objectPermissions ??= {};
+      profile.objectPermissions.CartLine__c = { ...grants, create: true, edit: true, delete: true };
+      profile.fieldPermissions ??= {};
+      for (const f of cartFields) profile.fieldPermissions['CartLine__c.' + f.apiName] = { read: true, edit: true };
+      profile.objectPermissions.Product__c ??= { ...grants };
+      for (const f of productFields) profile.fieldPermissions['Product__c.' + f.apiName] ??= { read: true, edit: false };
+    }
+
     const credentials = promisify(scryptCallback);
     for (const [email, label, profileId] of [
       ['till@unesolutions.co.uk', 'Till Test User', 'till-user'],
@@ -129,37 +194,93 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
       }
     }
     tenant.flows ??= [];
-    if (!tenant.flows.some((f) => f.apiName === 'KIOSK_BILLING')) {
-      tenant.flows.push({
-        apiName: 'KIOSK_BILLING', label: 'Kiosk Billing (Test Orders)',
-        description: 'Editable test checkout. Creates an unpaid Sale record; does not charge a card.',
-        flowType: 'Screen Flow', status: 'Active', versionNumber: 1, activeVersion: null,
-        triggerObject: null, startConfig: {},
-        elements: [
-          { id: 1, type: 'Start', label: 'Start checkout', config: {} },
-          { id: 2, type: 'Create Records', label: 'Create Pending Sale', config: {
-            object: 'Sale__c', fieldValues: [
-              { field: 'Order_Type__c', value: '{OrderType}' },
-              { field: 'Currency__c', value: '{Currency}' },
-              { field: 'Order_Total__c', value: '{Total}' },
-              { field: 'Order_Items__c', value: '{Items}' },
-              { field: 'Payment_Status__c', value: 'Test - Pending Payment' }
-            ]
-          } },
-          { id: 3, type: 'End', label: 'Finish', config: {} }
-        ],
-        connectors: [
-          { id: 'kiosk-start-create', from: 1, to: 2, label: '', kind: 'normal' },
-          { id: 'kiosk-create-end', from: 2, to: 3, label: '', kind: 'normal' }
-        ],
-        resources: [
-          { name: 'OrderType', label: 'Order Type', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false },
-          { name: 'Currency', label: 'Currency', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false },
-          { name: 'Total', label: 'Total', type: 'Variable', dataType: 'Number', isCollection: false, availableForInput: true, availableForOutput: false },
-          { name: 'Items', label: 'Items', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false }
-        ],
-        versions: []
-      });
+    const resource = (name, dataType, direction = 'input', type = 'Variable') => ({
+      name, label: name.replace(/([a-z])([A-Z])/g, '$1 $2'), type, dataType,
+      isCollection: false, availableForInput: direction === 'input', availableForOutput: direction === 'output'
+    });
+    const connector = (from, to, label = '') =>
+      ({ id: 'kiosk-' + from + '-' + to + '-' + (label || 'next'), from, to, label, kind: 'normal' });
+    const flow = (apiName, label, elements, connectors, resources, status = 'Active') => ({
+      apiName, label, description: 'Editable metadata Flow; uses record permissions and tenant objects',
+      flowType: apiName === 'KIOSK_CHECKOUT' ? 'Screen Flow' : 'Autolaunched Flow',
+      status, versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},
+      elements, connectors, resources, versions: []
+    });
+    const getProduct = { id: 2, type: 'Get Records', label: 'Read current product and price', config: {
+      object: 'Product__c', conditions: [
+        { field: 'Id', operator: 'Equals', value: '{!ProductId}' },
+        { field: 'Available__c', operator: 'Equals', value: true }
+      ], outputVariable: 'SelectedProduct'
+    } };
+    const cartInputs = [resource('SessionId', 'Text'), resource('LineId', 'Text')];
+    const kioskFlows = [
+      flow('KIOSK_CART_ADD', 'Kiosk - Add product', [
+        { id: 1, type: 'Start', label: 'Add', config: {} },
+        getProduct,
+        { id: 3, type: 'Decision', label: 'Product exists?', config: {
+          outcomes: [{ name: 'Found', label: 'Found', conditions: [
+            { field: '{!SelectedProduct.Id}', operator: 'Is Not Null' },
+            { field: '{!Quantity}', operator: 'Greater Than', value: 0 }
+          ] }]
+        } },
+        { id: 4, type: 'Create Records', label: 'Create cart line', config: {
+          object: 'CartLine__c', fieldValues: [
+            { field: 'Name', value: '{!SelectedProduct.Name}' },
+            { field: 'Session__c', value: '{!SessionId}' },
+            { field: 'Product__c', value: '{!ProductId}' },
+            { field: 'Quantity__c', value: '{!Quantity}' },
+            { field: 'Unit_Price__c', value: '{!SelectedProduct.Price__c}' }
+          ]
+        } },
+        { id: 5, type: 'End', label: 'End', config: {} }
+      ], [connector(1,2),connector(2,3),connector(3,4,'Found'),connector(3,5,'Default Outcome'),connector(4,5)], [
+        resource('SessionId','Text'),resource('ProductId','Text'),resource('Quantity','Number'),
+        resource('SelectedProduct','Product__c','internal','Record')
+      ]),
+      flow('KIOSK_CART_QUANTITY', 'Kiosk - Change quantity', [
+        { id: 1, type: 'Start', label: 'Edit quantity', config: {} },
+        { id: 2, type: 'Decision', label: 'Positive quantity?', config: {
+          outcomes: [{ name: 'Positive', label: 'Positive', conditions: [
+            { field: '{!Quantity}', operator: 'Greater Than', value: 0 }
+          ] }]
+        } },
+        { id: 3, type: 'Update Records', label: 'Update own session line', config: {
+          object: 'CartLine__c', conditions: [
+            { field: 'Id', operator: 'Equals', value: '{!LineId}' },
+            { field: 'Session__c', operator: 'Equals', value: '{!SessionId}' }
+          ], fieldValues: [{ field: 'Quantity__c', value: '{!Quantity}' }]
+        } },
+        { id: 4, type: 'End', label: 'End', config: {} }
+      ],[connector(1,2),connector(2,3,'Positive'),connector(2,4,'Default Outcome'),connector(3,4)],[
+        ...cartInputs,resource('Quantity','Number')
+      ]),
+      flow('KIOSK_CART_REMOVE', 'Kiosk - Remove line', [
+        { id: 1, type: 'Start', label: 'Remove', config: {} },
+        { id: 2, type: 'Delete Records', label: 'Delete own session line', config: {
+          object: 'CartLine__c', conditions: [
+            { field: 'Id', operator: 'Equals', value: '{!LineId}' },
+            { field: 'Session__c', operator: 'Equals', value: '{!SessionId}' }
+          ]
+        } },
+        { id: 3, type: 'End', label: 'End', config: {} }
+      ],[connector(1,2),connector(2,3)],cartInputs),
+      flow('KIOSK_CART_RESET', 'Kiosk - Clear session', [
+        { id: 1, type: 'Start', label: 'Clear', config: {} },
+        { id: 2, type: 'Delete Records', label: 'Remove all session lines', config: {
+          object: 'CartLine__c', conditions: [{ field: 'Session__c', operator: 'Equals', value: '{!SessionId}' }]
+        } },
+        { id: 3, type: 'End', label: 'End', config: {} }
+      ],[connector(1,2),connector(2,3)],[resource('SessionId','Text')]),
+      flow('KIOSK_CHECKOUT', 'Kiosk - Payment and receipt (configure device)', [
+        { id: 1, type: 'Start', label: 'Start checkout', config: {} },
+        { id: 2, type: 'Screen', label: 'Payment provider required', config: {
+          fields: [{ type: 'Display Text', label: 'Device setup', text: 'Configure a payment Named Credential and a Named Device. Add payment confirmation, receipt and Sale creation steps before activating this Flow.' }]
+        } },
+        { id: 3, type: 'End', label: 'End', config: {} }
+      ],[connector(1,2),connector(2,3)],[resource('SessionId','Text'),resource('OrderType','Text')],'Draft')
+    ];
+    for (const candidate of kioskFlows) {
+      if (!tenant.flows.some((existing) => existing.apiName === candidate.apiName)) tenant.flows.push(candidate);
     }
     const kiosk = tenant.pages.find((p) => p.apiName === 'UNE_KIOSK');
     if (!kiosk) throw Error('UNE_KIOSK page is missing');
@@ -205,7 +326,14 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         priceField: 'Price__c', imageField: 'Image__c',
         categoryField: 'Category__c', descriptionField: 'Description__c',
         filters: [{ field: 'Available__c', operator: 'Equals', value: 'true' }],
-        checkoutFlowApiName: 'KIOSK_BILLING',
+        cartObjectApiName: 'CartLine__c', cartSessionField: 'Session__c',
+        cartProductField: 'Product__c', cartQuantityField: 'Quantity__c', cartPriceField: 'Unit_Price__c',
+        actionFlows: {
+          add: { flowApiName: 'KIOSK_CART_ADD', inputs: { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' } },
+          quantity: { flowApiName: 'KIOSK_CART_QUANTITY', inputs: { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' } },
+          remove: { flowApiName: 'KIOSK_CART_REMOVE', inputs: { SessionId: '$session', LineId: '$event.lineId' } },
+          reset: { flowApiName: 'KIOSK_CART_RESET', inputs: { SessionId: '$session' } }
+        },
         brandName: 'Your Restaurant', tagline: 'Made fresh for you',
         accentColor: '#ffca26', inkColor: '#202124', currency: '£'
       }
