@@ -2031,3 +2031,13 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 /* Compact, stable page-load duration immediately before Help */
 .navigation-load-time { display: inline-flex; align-items: center; justify-content: flex-end; min-width: 94px; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; color: #54657a; }
 @media (max-width: 600px) { .navigation-load-time { font-size: 11px; min-width: 70px; } }
+
+/* Accessible connection enable/disable switch. No permissions are changed. */
+.credential-switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; white-space:nowrap; }
+.credential-switch input { position:absolute; width:1px; height:1px; opacity:0; }
+.credential-switch-track { position:relative; display:inline-block; width:36px; height:20px; border-radius:12px; background:#8794a3; transition:background .15s ease; }
+.credential-switch-track::after { content:""; position:absolute; left:3px; top:3px; width:14px; height:14px; border-radius:50%; background:white; transition:transform .15s ease; }
+.credential-switch input:checked + .credential-switch-track { background:#147d64; }
+.credential-switch input:checked + .credential-switch-track::after { transform:translateX(16px); }
+.credential-switch input:focus-visible + .credential-switch-track { outline:2px solid #1264c8; outline-offset:3px; }
+.credential-switch input:disabled + .credential-switch-track { opacity:.45; }
