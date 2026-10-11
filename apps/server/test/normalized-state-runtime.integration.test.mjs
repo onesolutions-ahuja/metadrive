@@ -1,7 +1,12 @@
 // Local PostgreSQL 18 only: tests transactional parity, concurrency, rollback and no JSONB.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,createHash} from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {join,resolve} from 'node:path';
+import {tmpdir} from 'node:os';
+import {fileURLToPath} from 'node:url';
 import {readFile} from 'node:fs/promises';
 import pg from 'pg';
 import {initializeNormalizedState,readNormalizedState,writeNormalizedState} from '../src/normalized-state-runtime.mjs';
@@ -15,6 +20,8 @@ test('SQL-only normalized metadata runtime preserves active Flow, credentials, R
   const database='md_v3_'+randomBytes(6).toString('hex'),target=new URL(base);
   target.pathname='/'+database;
   const admin=new pg.Client({connectionString:base,ssl:false});
+  const dir=mkdtempSync(join(tmpdir(),'metadrive-normalized-rollback-'));
+  const protectedBackup=join(dir,'backup.json');
   await admin.connect();
   try {
     await admin.query('CREATE DATABASE '+database);
@@ -31,7 +38,7 @@ test('SQL-only normalized metadata runtime preserves active Flow, credentials, R
         }},
         libraryComponents:[],users:[{id:'user1',disabled:false}],refreshSessions:[],revokedAccessTokens:{}
       };
-      await pool.query('CREATE TABLE metadrive_platform_state(id SMALLINT PRIMARY KEY,payload JSONB NOT NULL)');
+      await pool.query('CREATE TABLE metadrive_platform_state(id SMALLINT PRIMARY KEY,payload JSONB NOT NULL,updated_at TIMESTAMPTZ DEFAULT now())');
       await pool.query('INSERT INTO metadrive_platform_state(id,payload) VALUES (1,$1::jsonb)',[JSON.stringify(state)]);
       await pool.query(await readFile(new URL('../sql/normalized-state-v3.sql',import.meta.url),'utf8'));
       const client=await pool.connect();
@@ -58,11 +65,31 @@ test('SQL-only normalized metadata runtime preserves active Flow, credentials, R
       const jsonCols=await pool.query(
         "SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table_name LIKE 'md_v3_%' AND data_type IN ('json','jsonb')");
       assert.equal(jsonCols.rowCount,0,'New normalized tables must not use JSON/JSONB');
-      await pool.query("UPDATE metadrive_platform_state SET payload=jsonb_set(payload,'{tenants,une,flows,0,activeVersion}','22'::jsonb) WHERE id=1");
-      await assert.rejects(readNormalizedState(pool),/Legacy data changed/,'Stale source must prevent unsafe cutover');
+      // Exercise the exact guarded rollback path with post-cutover record and Flow changes.
+      const data=JSON.stringify(state);
+      writeFileSync(protectedBackup,data,{mode:0o600});
+      const sha=createHash('sha256').update(data).digest('hex');
+      const path=resolve(fileURLToPath(new URL('../scripts/restore-normalized-to-legacy.mjs',import.meta.url)));
+      const env={...process.env,DATABASE_URL:target.toString(),PGSSLMODE:'disable',
+        METADRIVE_PERSISTENCE_MODE:'normalized',
+        METADRIVE_VERIFIED_BACKUP_FILE:protectedBackup,METADRIVE_VERIFIED_BACKUP_SHA256:sha,
+        METADRIVE_CONFIRMED_OFFLINE:'true',METADRIVE_ROLLBACK_CONFIRMED:'true',
+        METADRIVE_BACKUP_VERIFIED_RESTORE:'true'};
+      const rollback=(args=[],overrides={})=>spawnSync(process.execPath,[path,...args],{
+        encoding:'utf8',timeout:25000,env:{...env,...overrides}});
+      assert.equal(rollback().status,0,'Rollback preflight failed');
+      assert.notEqual(rollback(['--apply'],{METADRIVE_CONFIRMED_OFFLINE:'false'}).status,0);
+      assert.notEqual(rollback(['--apply'],{METADRIVE_VERIFIED_BACKUP_SHA256:'0'.repeat(64)}).status,0);
+      const applied=rollback(['--apply']);
+      assert.equal(applied.status,0,applied.stderr?.slice(-1000));
+      const recovered=await pool.query('SELECT payload FROM metadrive_platform_state WHERE id=1');
+      assert.deepEqual(recovered.rows[0].payload,edited,'Rollback must retain new records, Flow changes and permissions');
+
+      await assert.rejects(readNormalizedState(pool),/Legacy data changed/,'Normalized store must reject legacy mode after rollback');
     } finally {await pool.end();}
   } finally {
     await admin.query('DROP DATABASE IF EXISTS '+database);
     await admin.end();
+    rmSync(dir,{recursive:true,force:true});
   }
 });
