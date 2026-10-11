@@ -49,7 +49,7 @@ export function applyConnectorLifecycle<T extends ConnectorAppRecord>(
   now = new Date(),
   allowLicenceAdministration = false
 ): T {
-  const app = { ...requested } as T;
+  const app: ConnectorAppRecord = { ...requested };
   const protectedFields = ['TrialStartedAt__c', 'TrialExpiresAt__c', 'TrialUsed__c'];
   for (const name of protectedFields) {
     if (app[name] !== previous[name]) throw new Error(name + ' is managed by the licence engine.');
@@ -80,5 +80,5 @@ export function applyConnectorLifecycle<T extends ConnectorAppRecord>(
   app.LicenceStatus__c = app.Installed__c !== true ? 'Not Installed'
     : entitlement.allowed ? (Number.isFinite(Date.parse(text(app.LicenceExpiresAt__c))) && Date.parse(text(app.LicenceExpiresAt__c)) > now.getTime() ? 'Licensed' : 'Trial')
       : app.TrialUsed__c === true ? 'Expired' : 'Not Activated';
-  return app;
+  return app as T;
 }
