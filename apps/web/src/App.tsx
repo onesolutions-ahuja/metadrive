@@ -3829,7 +3829,12 @@ function MetadataBoundPageComponent({
     setRecords([]); setCartRecords([]); setDataError('');
     const tasks: Array<Promise<Record<string, unknown>[]>> = [
       objectApiName ? loadFlowScreenRecords(objectApiName) : Promise.resolve([]),
-      cartObjectApiName ? loadFlowScreenRecords(cartObjectApiName) : Promise.resolve([])
+      cartObjectApiName ? apiRequest<{ records: Record<string, unknown>[] }>(
+        '/records/' + encodeURIComponent(cartObjectApiName)
+        + '?filterField=' + encodeURIComponent(String(properties.cartSessionField ?? 'Session__c'))
+        + '&filterValue=' + encodeURIComponent(sessionId)
+        + '&limit=200'
+      ).then((response) => response.records) : Promise.resolve([])
     ];
     setDataLoading(true);
     void Promise.all(tasks).then(([products, basket]) => {
@@ -3838,7 +3843,7 @@ function MetadataBoundPageComponent({
       if (active) setDataError(error instanceof Error ? error.message : 'Unable to load page records');
     }).finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
-  }, [objectApiName, cartObjectApiName, revision]);
+  }, [objectApiName, cartObjectApiName, sessionId, revision]);
   const matchFilters = (record: Record<string, unknown>) => {
     const filters = Array.isArray(properties.filters) ? properties.filters : [];
     return filters.every((item) => {
