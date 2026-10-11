@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { relationalTables } from '../src/relational-tables.mjs';
 import { projectState, stateDigest } from '../src/relational-projection.mjs';
 import { readRelationalState, writeRelationalState } from '../src/relational-runtime.mjs';
+import { resetRelationalAccount } from '../src/relational-account-recovery.mjs';
 
 const base=process.env.METADRIVE_TEST_DATABASE_URL;
 const sample=()=>({
@@ -147,5 +148,29 @@ test('mismatched checksum fails closed and does not seed empty data',{skip:!base
     await assert.rejects(readRelationalState(pool),/checksum mismatch/);
     const record=(await pool.query('SELECT count(*)::int AS count FROM metadrive_rel_records')).rows[0].count;
     assert.equal(record,2);
+  });
+});
+
+test('offline relational account recovery replaces only the matching hash and revokes refresh sessions',{skip:!base},async()=>{
+  await withDatabase(async pool=>{
+    const original=sample();
+    await seed(pool,original);
+    const client=await pool.connect();
+    const previous=await readRelationalState(pool);
+    try {
+      const completed=await resetRelationalAccount(client,{email:' SUPPORT@example.test ',salt:'new-unique-salt',hash:'new-scrypt-hash',revokedAt:12345});
+      assert.equal(completed.userId,'u1');
+      assert.equal(completed.revokedSessions,1);
+      assert.equal(completed.version,1);
+      const verified=await readRelationalState(pool);
+      assert.equal(verified.version,1);
+      assert.equal(verified.state.users.find(u=>u.id==='u1').passwordSalt,'new-unique-salt');
+      assert.equal(verified.state.users.find(u=>u.id==='u1').passwordHash,'new-scrypt-hash');
+      assert.equal(verified.state.users.find(u=>u.id==='u2').passwordHash,'hash2');
+      assert.equal(verified.state.refreshSessions[0].revokedAt,12345);
+      assert.notEqual(previous.digest,verified.digest);
+      await assert.rejects(resetRelationalAccount(client,{email:'missing@example.test',salt:'salt',hash:'hash'}),/Exactly one enabled/);
+      assert.equal((await readRelationalState(pool)).version,1);
+    } finally {client.release();}
   });
 });
