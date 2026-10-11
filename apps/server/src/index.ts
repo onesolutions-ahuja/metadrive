@@ -13370,6 +13370,23 @@ function performSubmitForApproval(
   tenant.notifications.push(...notifications);
 }
 
+function flowNeedsRollbackSnapshot(
+  flow: FlowMetadata,
+  knownFlows: FlowMetadata[],
+  visited: Set<string> = new Set()
+): boolean {
+  if (visited.has(flow.apiName)) return false;
+  visited.add(flow.apiName);
+  return flow.elements.some(element => {
+    if (element.type === 'Roll Back Records') return true;
+    if (element.type !== 'Subflow') return false;
+    const target = element.config.flowApiName;
+    if (typeof target !== 'string') return false;
+    const subflow = knownFlows.find(candidate => candidate.apiName === target);
+    return Boolean(subflow && flowNeedsRollbackSnapshot(subflow, knownFlows, visited));
+  });
+}
+
 async function executeFlow(
   flow: FlowMetadata,
   tenant: TenantData,
@@ -13387,9 +13404,9 @@ async function executeFlow(
   allowDraftExecution = false,
   debugExecution = false,
   debugTrace: FlowDebugTraceEntry[] = [],
-  // Full snapshots are needed only by the explicit Roll Back Records primitive.
-  // Eager clones on every ordinary flow exhausted the 512 MiB worker heap.
-  rollbackSnapshot: TenantData | undefined = flow.elements.some(element => element.type === 'Roll Back Records')
+  // Rollback inside a subflow must restore parent DML, so take a single snapshot
+  // when the executed flow or any referenced child contains Roll Back Records.
+  rollbackSnapshot: TenantData | undefined = flowNeedsRollbackSnapshot(flow, tenant.flows)
     ? structuredClone(tenant) : undefined
 ): Promise<FlowExecutionResult> {
   if (depth > 10) throw new Error('Flow subflow nesting exceeded the 10-level limit.');
