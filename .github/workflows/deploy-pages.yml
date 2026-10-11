@@ -33,6 +33,8 @@ jobs:
           GITHUB_PAGES: 'true'
           VITE_API_BASE_URL: https://metadrive.onrender.com/api
         run: npm run build --workspace apps/web
+      - name: Verify built Pages UI and branding
+        run: node scripts/verify-pages-release.mjs
       - name: Verify client-side deep-link fallback
         run: test -f apps/web/dist/404.html
       - name: Wait for legacy Pages deployment
@@ -65,3 +67,5 @@ jobs:
           path: apps/web/dist
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Verify published Pages matches this release
+        run: node scripts/verify-pages-release.mjs --live
