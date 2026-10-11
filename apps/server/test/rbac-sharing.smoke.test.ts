@@ -4730,6 +4730,9 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       } } : element);
     continuedCalloutFlow.connectors = [{ id: 'start-callout', from: 1, to: 2, label: '', kind: 'normal' }];
     continuedCalloutFlow.resources = [
+      // The callout element still references this input; preserve it when
+      // replacing the output resources for the CONTINUE path.
+      structuredClone(httpCalloutFlow.resources[0]),
       { name: 'CalloutResponse', label: 'Callout Response', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: false, availableForOutput: true, value: '' },
       { name: 'CalloutStatus', label: 'Callout Status', type: 'Variable', dataType: 'Number', isCollection: false, availableForInput: false, availableForOutput: true, value: 0 }
     ];
