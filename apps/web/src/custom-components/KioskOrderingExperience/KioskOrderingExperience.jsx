@@ -64,7 +64,7 @@ export default function KioskOrderingExperience(props) {
     };
     emit('checkout', payload);
     if (p.checkoutFlowApiName && typeof p.onLaunchFlow === 'function') {
-      p.onLaunchFlow(p.checkoutFlowApiName);
+      p.onLaunchFlow(p.checkoutFlowApiName, { OrderType: payload.orderType, Currency: payload.currency, Total: payload.total, Items: payload.items });
       return;
     }
     setScreen('done');
