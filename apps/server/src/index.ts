@@ -192,7 +192,12 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
     );
   };
   const matches = Object.entries(state.tenants).filter(([, data]) =>
-    (data.records.UneConnector__c ?? []).some(record => {
+    data.namedCredentials.some(credential => {
+      const config = credential.configuration ?? {};
+      return (credential.name.toLowerCase().includes('whatsapp') || credential.label.toLowerCase().includes('whatsapp'))
+        && (config.PhoneNumberId === phoneId || config.phone_number_id === phoneId
+          || matchesMetaPhoneUrl(config.ApiBaseUrl) || matchesMetaPhoneUrl(credential.baseUrl));
+    }) || (data.records.UneConnector__c ?? []).some(record => {
       if (String(record.ConnectorType__c ?? '').toLowerCase() !== 'whatsapp') return false;
       if (typeof record.Configuration__c !== 'string') return false;
       try {
@@ -1005,6 +1010,7 @@ const namedCredentialSchema = z.object({
   baseUrl: z.string().url(),
   authType: z.enum(['None', 'Bearer', 'Basic', 'API Key']),
   headerName: z.string().optional(),
+  configuration: z.record(z.string()).optional(),
   keyId: z.string().min(1),
   iv: z.string().min(1),
   authTag: z.string().min(1),
@@ -1039,10 +1045,17 @@ const namedCredentialRequestSchema = z.object({
   baseUrl: z.string().url(),
   authType: z.enum(['None', 'Bearer', 'Basic', 'API Key']),
   headerName: z.string().trim().optional(),
+  configuration: z.record(z.string()).optional(),
   username: z.string().max(512).optional(),
   secret: z.string().max(8192).optional()
 }).superRefine((credential, context) => {
   const url = new URL(credential.baseUrl);
+  for (const [fieldName, fieldValue] of Object.entries(credential.configuration ?? {})) {
+    if (/(?:secret|password|token|api_?key|private_?key|authorization)/i.test(fieldName) && fieldValue.trim()) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['configuration', fieldName],
+        message: 'Sensitive values must use the encrypted credential Secret field, not plain configuration variables' });
+    }
+  }
   const validProtocol = credential.protocol === 'HTTPS'
     ? url.protocol === 'https:'
     : url.protocol === 'smtp:' && ([25, 465, 587, 2525].includes(Number(url.port || 25)) || isTestLoopbackSmtpUrl(url));
@@ -3682,6 +3695,63 @@ function whatsappContextFlow(): FlowMetadata {
   });
 }
 
+// One-time, idempotent migration from legacy UNE connector records to the Flow credential store.
+// No legacy record is deleted until runtime dependencies have been migrated and tested.
+function migrateUneConnectorCredentials(
+  tenantId: string,
+  records: Record<string, any>[],
+  definitions: ConnectorDefinition[],
+  current: StoredNamedCredential[]
+): StoredNamedCredential[] {
+  if (!process.env.METADRIVE_CREDENTIAL_KEYS || !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID) return current;
+  const result = [...current];
+  for (const record of records) {
+    const label = String(record.Name ?? '').trim();
+    if (!label) continue;
+    let configuration: Record<string, string> = {};
+    try {
+      const parsed: unknown = JSON.parse(String(record.Configuration__c || '{}'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        configuration = Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === 'string')) as Record<string, string>;
+      }
+    } catch { continue; }
+    const requestedName = String(configuration.NamedCredential ?? '').trim();
+    const name = requestedName && /^[A-Za-z][A-Za-z0-9_]*$/.test(requestedName)
+      ? requestedName
+      : label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').replace(/^[^A-Za-z]+/, 'Connector_').toUpperCase();
+    const existing = result.find((credential) =>
+      credential.name.toUpperCase() === name.toUpperCase()
+      || (label.toLowerCase() === 'email' && credential.protocol === 'SMTP')
+      || (label.toLowerCase() === 'whatsapp' && credential.name === 'WhatsApp_Dummy'));
+    if (existing) {
+      const index = result.indexOf(existing);
+      result[index] = { ...existing, configuration: { ...existing.configuration, ...configuration } };
+      continue;
+    }
+    const provider = definitions.find((definition) =>
+      definition.name.toLowerCase() === label.toLowerCase()
+      || (label.toLowerCase() === 'uber eats' && definition.name.toLowerCase() === 'uber')
+      || (label.toLowerCase() === 'whatsapp' && definition.name.toLowerCase().includes('whatsapp')));
+    const candidateUrl = String(configuration.ApiBaseUrl || configuration.BaseUrl || provider?.baseUrl || '');
+    let baseUrl = 'https://placeholder.invalid/';
+    try {
+      const parsedUrl = new URL(candidateUrl);
+      if (parsedUrl.protocol === 'https:' && !parsedUrl.username && !parsedUrl.password && !parsedUrl.search && !parsedUrl.hash) {
+        baseUrl = parsedUrl.toString();
+      }
+    } catch { /* Leave the placeholder URL until the tenant configures the provider. */ }
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    result.push(namedCredentialSchema.parse({
+      id, name, label, protocol: 'HTTPS', baseUrl,
+      authType: 'None', configuration,
+      ...sealCredentialPayload(tenantId, id, {}),
+      createdAt: now, updatedAt: now
+    }));
+  }
+  return result;
+}
+
 function seedWhatsappDummyCredential(tenantId: string, current: StoredNamedCredential[]): StoredNamedCredential[] {
   if (current.some((credential) => credential.id === whatsappDummyCredentialId || credential.name === 'WhatsApp_Dummy')) return current;
   if (!process.env.METADRIVE_CREDENTIAL_KEYS || !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID) return current;
@@ -3694,7 +3764,9 @@ function seedWhatsappDummyCredential(tenantId: string, current: StoredNamedCrede
 }
 
 function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 'email' | 'role' | 'permissionSetIds'>): TenantData {
-  const objects = baseObjects.map(withObjectDefaults);
+  const unified = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
+    && Boolean(process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID);
+  const objects = baseObjects.filter((object) => !unified || !['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c'].includes(object.apiName)).map(withObjectDefaults);
   const allAccess = Object.fromEntries(objects.map((object) => [object.apiName, { ...fullObjectPermissions }]));
   const permissionSets = [
     { id: 'system-administrator', label: 'System Administrator', apiName: 'System_Administrator', license: 'MetaDrive', description: 'Full administrative access.', systemPermissions: systemAdminPermissions, objectPermissions: allAccess, recordTypePermissions: {}, fieldPermissions: Object.fromEntries(objects.flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }]))) },
@@ -3762,9 +3834,11 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     }])),
     recordShares: [], campaignMembers: [], activities: [], chatterPosts: [], notifications: [], approvalRequests: [], approvalProcesses: [],
     records: {
-      UneConnector__c: connectorRecords(defaultConnectorSettings, admin?.id ?? 'system'),
-      ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
-      IntegrationConnection__c: [],
+      ...(unified ? {} : {
+        UneConnector__c: connectorRecords(defaultConnectorSettings, admin?.id ?? 'system'),
+        ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
+        IntegrationConnection__c: []
+      }),
       WhatsApp_Message__c: []
     },
     autoNumberSequences: {},
@@ -3949,7 +4023,10 @@ function loadState(): PlatformState {
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
     const parsed = stateSchema.parse(storedState);
     const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
-      const storedObjects = tenant.objects.map((object) => {
+      const consolidationReady = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
+        && Boolean(process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID);
+      const retiredConnectorObjects = new Set(['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c']);
+      const storedObjects = tenant.objects.filter((object) => !consolidationReady || !retiredConnectorObjects.has(object.apiName)).map((object) => {
         const ensured = withObjectDefaults(ensureLeadStreetField(ensureCommunicationFields(object)));
         const baseline = baseObjects.find((candidate) => candidate.apiName === object.apiName);
         if (!baseline || !['ConnectorProvider__c', 'IntegrationConnection__c'].includes(object.apiName)) return ensured;
@@ -3963,13 +4040,13 @@ function loadState(): PlatformState {
       });
       const objects = [
         ...storedObjects,
-        ...baseObjects.filter((object) => ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'].includes(object.apiName)
+        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'] : ['Campaign', 'Communication_Records__c', 'WhatsApp_Message__c']).includes(object.apiName)
           && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(withObjectDefaults)
       ];
       const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
       if (!records.WhatsApp_Message__c) records.WhatsApp_Message__c = [];
       const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
-      if (!(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
+      if (!consolidationReady && !(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
       const previousProviderRecords = records.ConnectorProvider__c ?? [];
       const connectorDefinitions = (tenant.connectorDefinitions ?? structuredClone(defaultConnectorDefinitions)).map((definition) => {
         const previousRecord = previousProviderRecords.find((record) => record.ConnectorKey__c === definition.connectorKey);
@@ -3992,6 +4069,26 @@ function loadState(): PlatformState {
       const previousConnections = records.IntegrationConnection__c ?? [];
       records.IntegrationConnection__c = (tenant.integrationConnections ?? []).map((connection) =>
         integrationConnectionRecord(connection, String(previousConnections.find((record) => record.Id === connection.id)?.OwnerId ?? ownerId)));
+      const migratedCredentials = migrateUneConnectorCredentials(tenantId, records.UneConnector__c ?? [], connectorDefinitions,
+        seedWhatsappDummyCredential(tenantId, tenant.namedCredentials ?? []));
+      if (consolidationReady) {
+        // Retire duplicate Object Manager records only once their configurations have
+        // reached the encrypted tenant-scoped credential store.
+        const legacy = records.UneConnector__c ?? [];
+        const migratedNames = new Set(migratedCredentials.map((credential) => credential.label.toLowerCase()));
+        if (legacy.every((record) => {
+          const label = String(record.Name ?? '').toLowerCase();
+          return migratedNames.has(label)
+            || (label === 'email' && migratedCredentials.some((credential) => credential.protocol === 'SMTP'))
+            || (label === 'whatsapp' && migratedCredentials.some((credential) => credential.name === 'WhatsApp_Dummy'));
+        })) {
+          delete records.UneConnector__c;
+          delete records.ConnectorProvider__c;
+          delete records.IntegrationConnection__c;
+        } else {
+          throw new Error('Connector consolidation did not migrate all legacy configuration records');
+        }
+      }
       const defaultProfiles = buildDefaultProfiles(objects, tenant.accessControl.permissionSets);
       const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'];
       const connectorObjectPermissions = Object.fromEntries(connectorObjectNames.map((apiName) => [apiName, { ...fullObjectPermissions }]));
@@ -4099,7 +4196,7 @@ function loadState(): PlatformState {
       notifications: tenant.notifications ?? [],
       approvalRequests: tenant.approvalRequests ?? [],
       approvalProcesses: tenant.approvalProcesses ?? [],
-      namedCredentials: seedWhatsappDummyCredential(tenantId, tenant.namedCredentials ?? []),
+      namedCredentials: migratedCredentials,
       connectorDefinitions,
       integrationConnections: tenant.integrationConnections ?? [],
       dashboards,
@@ -4162,7 +4259,7 @@ function loadState(): PlatformState {
             systemPermissions: [...new Set([...set.systemPermissions, ...systemAdminPermissions])],
             objectPermissions: { ...set.objectPermissions, UneConnector__c: set.objectPermissions.UneConnector__c ?? { ...fullObjectPermissions } },
             fieldPermissions: {
-              ...Object.fromEntries(tenant.objects.find((object) => object.apiName === 'UneConnector__c')!.fields.map((field) => [
+              ...Object.fromEntries((tenant.objects.find((object) => object.apiName === 'UneConnector__c')?.fields ?? []).map((field) => [
                 `UneConnector__c.${field.apiName}`, { read: true, edit: true }
               ])),
               ...set.fieldPermissions
@@ -4360,6 +4457,7 @@ function publicNamedCredential(credential: StoredNamedCredential) {
     baseUrl: credential.baseUrl,
     authType: credential.authType,
     headerName: credential.headerName ?? '',
+    configuration: credential.configuration ?? {},
     hasSecret: credential.authType !== 'None',
     keyId: credential.keyId,
     updatedAt: credential.updatedAt
@@ -6030,6 +6128,7 @@ app.post('/api/named-credentials', requirePermission('namedCredentials:manage'),
       protocol: parsed.data.protocol,
       baseUrl: parsed.data.baseUrl.endsWith('/') ? parsed.data.baseUrl : `${parsed.data.baseUrl}/`,
       authType, headerName: parsed.data.headerName?.trim() || undefined,
+      configuration: parsed.data.configuration ?? {},
       ...sealed, createdAt: now, updatedAt: now
     });
     const updatedTenant = { ...tenant, namedCredentials: [...tenant.namedCredentials, credential] };
@@ -6084,6 +6183,7 @@ app.put('/api/named-credentials/:id', requirePermission('namedCredentials:manage
       protocol: parsed.data.protocol,
       baseUrl: parsed.data.baseUrl.endsWith('/') ? parsed.data.baseUrl : `${parsed.data.baseUrl}/`,
       authType: parsed.data.authType, headerName: parsed.data.headerName?.trim() || undefined,
+      configuration: parsed.data.configuration ?? existing.configuration ?? {},
       ...sealed, updatedAt: now
     });
     const updatedTenant = { ...tenant, namedCredentials: tenant.namedCredentials.map((item) => item.id === credential.id ? credential : item) };
