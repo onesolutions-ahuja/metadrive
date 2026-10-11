@@ -85,6 +85,27 @@ jobs:
             PGSSLMODE=disable METADRIVE_DIGEST_FILE="${RUNNER_TEMP}/restored.sha" \
             node apps/server/scripts/verify-aiven-state.mjs
           echo "Independent PostgreSQL restore verified. No backup or customer data uploaded to GitHub."
+      - name: Confirm target account and private password secret on restored data
+        env:
+          METADRIVE_SUPPORT_NEW_PASSWORD: ${{ secrets.METADRIVE_SUPPORT_NEW_PASSWORD }}
+        run: |
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const value=process.env.METADRIVE_SUPPORT_NEW_PASSWORD;
+          if(typeof value!=='string'||value.length<12||value.length>256)
+            throw Error('New support password secret must contain 12-256 characters');
+          const client=new pg.Client({connectionString:'postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored',ssl:false});
+          await client.connect();
+          try {
+            const res=await client.query(`
+              SELECT count(*)::int AS matches
+              FROM metadrive_platform_state, jsonb_array_elements(payload->'users') AS item
+              WHERE id=1 AND lower(btrim(item->>'email'))='support@unesolutions.co.uk'
+                AND item->'disabled'='false'::jsonb`);
+            if(res.rows[0]?.matches!==1) throw Error('Expected exactly one enabled support account');
+            console.log('Exactly one enabled target user and new password secret verified without disclosure');
+          } finally {await client.end();}
+          NODE
       - name: Encrypt full backup, decrypt and verify identical contents
         env:
           METADRIVE_BACKUP_ENCRYPTION_KEY: ${{ secrets.METADRIVE_BACKUP_ENCRYPTION_KEY }}
