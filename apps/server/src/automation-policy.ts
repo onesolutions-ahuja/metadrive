@@ -81,3 +81,20 @@ export function activeConversationContext(
   }
   return context;
 }
+
+/** Refresh only the matching active conversation, not another service's interview. */
+export function sameConversationSession(
+  interviewRecord: Record<string, unknown> | null | undefined,
+  incomingRecord: Record<string, unknown>
+): boolean {
+  const incomingKey = incomingRecord.Conversation_Key__c;
+  if (typeof incomingKey !== 'string' || !incomingKey) return false;
+  if (interviewRecord?.Conversation_Key__c !== incomingKey) return false;
+  const interviewContext = interviewRecord.Conversation_Context__c;
+  const incomingContext = incomingRecord.Conversation_Context__c;
+  if (typeof interviewContext === 'string' && interviewContext
+    && typeof incomingContext === 'string' && incomingContext) {
+    return interviewContext === incomingContext;
+  }
+  return true;
+}

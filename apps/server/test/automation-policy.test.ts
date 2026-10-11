@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   conversationKeyForIncoming, defaultAutomationSettings,
-  expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext
+  expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession
 } from '../src/automation-policy.js';
 
 test('failed execution retries are disabled by default', () => {
@@ -48,4 +48,14 @@ test('conversation identity is independently scoped for one sender with multiple
   assert.equal(conversationKeyForIncoming(history, '44700001', now, 15, 'Legal'), 'legal-key');
   assert.equal(activeConversationContext(history, '44700001', now + 16 * 60_000, 15), '');
   assert.equal(activeConversationContext(history, '44700002', now, 15), '');
+});
+
+test('an incoming Legal message does not renew an independent Beauty interview', () => {
+  const beauty = { Conversation_Key__c: 'beauty-key', Conversation_Context__c: 'Beauty' };
+  const lawyer = { Conversation_Key__c: 'legal-key', Conversation_Context__c: 'Legal' };
+  assert.equal(sameConversationSession(beauty, lawyer), false);
+  assert.equal(sameConversationSession(lawyer, lawyer), true);
+  assert.equal(sameConversationSession({ ...lawyer, Conversation_Context__c: 'Beauty' }, lawyer), false);
+  assert.equal(sameConversationSession(null, lawyer), false);
+  assert.equal(sameConversationSession({ Conversation_Key__c: 'key' }, { Conversation_Key__c: 'key' }), true);
 });
