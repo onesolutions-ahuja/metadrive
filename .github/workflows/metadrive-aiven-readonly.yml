@@ -7,6 +7,7 @@ on:
       - .github/workflows/metadrive-aiven-readonly.yml
       - apps/server/scripts/verify-aiven-state.mjs
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -121,7 +122,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: metadrive-aiven-verified-encrypted-backup
-          path: ${{ runner.temp }}/metadrive-verified.dump.enc
+          path: |
+            ${{ runner.temp }}/metadrive-verified.dump.enc
+            ${{ runner.temp }}/restored.sha
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
