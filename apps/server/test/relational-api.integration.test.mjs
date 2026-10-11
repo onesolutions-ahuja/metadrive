@@ -39,7 +39,9 @@ async function startApi(port,dataPath,options={}) {
     ...options
   };
   delete env.NODE_OPTIONS; // No CI-only preload; runtime must exercise PostgreSQL.
-  const child=spawn(process.execPath,[tsx,'src/index.ts'],{cwd:root,env,stdio:['ignore','pipe','pipe']});
+  // Test the emitted production server for relational mode, not only the TS dev server.
+  const entry=options.METADRIVE_PERSISTENCE_MODE==='relational'?['dist/index.js']:[tsx,'src/index.ts'];
+  const child=spawn(process.execPath,entry,{cwd:root,env,stdio:['ignore','pipe','pipe']});
   let output='';
   for(const stream of [child.stdout,child.stderr]) stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-30000);});
   child.on('error',error=>{output+='\n'+String(error);});
