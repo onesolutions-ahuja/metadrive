@@ -3,6 +3,7 @@ import { readPersistedState, persistToPostgres, waitForPersistedState, persisten
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
+import { repairWhatsappRouterMetadata, publishRepairedWhatsappVersion } from './whatsapp-flow-metadata.mjs';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -4338,7 +4339,20 @@ function loadState(): PlatformState {
         ...connectorAppCatalog.flows.filter((definition) => !tenant.flows.some((existingFlow) => existingFlow.apiName === definition.apiName)),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
-      ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
+      ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias).map((flow) => {
+        // One-time metadata migration of the legacy editable WhatsApp starter.
+        // Do not change a draft, modify provider credentials, or overwrite tenant reply templates.
+        // It runs through the usual platform snapshot writer so JSONB and SQL-only runtimes remain consistent.
+        if (flow.apiName !== 'WA_ROUTER' || flow.status !== 'Active'
+          || flow.activeVersion !== flow.versionNumber) return flow;
+        const { flow: fixed, changes } = repairWhatsappRouterMetadata(flow);
+        if (!changes.length) return flow;
+        const repaired = flowSchema.parse(publishRepairedWhatsappVersion(flow, fixed, new Date().toISOString()));
+        console.info('WhatsApp router metadata safely migrated', {
+          tenantId, previousVersion: flow.versionNumber, newVersion: repaired.versionNumber, changes
+        });
+        return repaired;
+      }),
       pages: tenant.pages.map((page) => ({
         ...page,
         activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
