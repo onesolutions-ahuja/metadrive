@@ -169,6 +169,29 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
       for (const f of productFields) profile.fieldPermissions['Product__c.' + f.apiName] ??= { read: true, edit: false };
     }
 
+    // RBAC permissions remain ordinary profile grants; no administrator bypass in runtime.
+    const administratorProfile = tenant.accessControl.profiles.find((candidate) => candidate.id === 'system-administrator');
+    if (administratorProfile) {
+      administratorProfile.objectPermissions ??= {};
+      administratorProfile.fieldPermissions ??= {};
+      for (const objectName of ['Product__c', 'Cart__c', 'CartLine__c', 'ProductCategory__c',
+        'ProductModifier__c', 'NamedDevice__c', 'PaymentTransaction__c']) {
+        administratorProfile.objectPermissions[objectName] = {
+          read: true, create: true, edit: true, delete: true, viewAll: true, modifyAll: true
+        };
+        const object = tenant.objects.find((candidate) => candidate.apiName === objectName);
+        for (const f of object?.fields ?? []) {
+          administratorProfile.fieldPermissions[objectName + '.' + f.apiName] = { read: true, edit: true };
+        }
+      }
+    }
+    const kioskProfile = tenant.accessControl.profiles.find((candidate) => candidate.id === 'kiosk-user');
+    if (kioskProfile) {
+      kioskProfile.objectPermissions.NamedDevice__c = { ...grants };
+      for (const f of deviceFields) {
+        kioskProfile.fieldPermissions['NamedDevice__c.' + f.apiName] = { read: true, edit: false };
+      }
+    }
     const credentials = promisify(scryptCallback);
     for (const [email, label, profileId] of [
       ['till@unesolutions.co.uk', 'Till Test User', 'till-user'],
