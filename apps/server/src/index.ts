@@ -4323,7 +4323,7 @@ for (const tenant of Object.values(state.tenants)) {
   const kept = entries.filter((record) => {
     const internalApiAudit = record.Communication_Mode__c === 'API'
       && record.Direction__c === 'Incoming'
-      && /^\\w+ \\/api\\//.test(String(record.Api_Id__c ?? ''));
+      && String(record.Api_Id__c ?? '').includes(' /api/');
     if (internalApiAudit) removedInternalApiAuditRecords += 1;
     return !internalApiAudit;
   });
