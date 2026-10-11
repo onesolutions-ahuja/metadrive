@@ -32,6 +32,8 @@ const blankCredential = (): CredentialDraft => ({
 export default function NamedCredentials({
   credentials,
   canManage,
+  canManageSecrets = true,
+  canTest,
   encryptionReady,
   providerName,
   preset,
@@ -44,6 +46,8 @@ export default function NamedCredentials({
 }: {
   credentials: NamedCredentialMetadata[];
   canManage: boolean;
+  canManageSecrets?: boolean;
+  canTest?: boolean;
   encryptionReady: boolean | null;
   providerName?: string;
   preset?: { name: string; label: string; baseUrl: string; authType: CredentialDraft['authType']; configuration: Record<string, string> };
@@ -149,7 +153,7 @@ export default function NamedCredentials({
       <input className="form-control" type="search" aria-label="Search Named Credentials" placeholder="Search credentials…" value={query} onChange={(event) => setQuery(event.target.value)} />
     </div>}
     {error && <div className="records-message" role="alert">{error}</div>}
-    {!canManage && <div className="info-callout" role="alert">This account cannot create credentials. Grant namedCredentials:manage through your existing profile or permission set in Settings → Permission Sets.</div>}
+    {!canManage && <div className="info-callout" role="alert">This account cannot edit connector configuration. Ask an administrator for connectorApps:edit.</div>}
     {encryptionReady === false && <div className="records-message" role="alert">Credential encryption is not configured on the server. Set METADRIVE_CREDENTIAL_KEYS and METADRIVE_CREDENTIAL_ACTIVE_KEY_ID in Render before creating or testing credentials. Existing encrypted keys must be preserved.</div>}
     <div className="table-scroll">
       <table className="slds-table">
@@ -164,7 +168,7 @@ export default function NamedCredentials({
           <td>{new Date(credential.updatedAt).toLocaleString()}</td>
           <td role="status">{testResults[credential.id] ?? 'Not tested'}</td>
           <td><div className="toolbar-actions">
-            <button className="btn btn-small" aria-label={`Test connection for ${credential.label}`} disabled={!canManage || Boolean(busyId)} title={credential.protocol === 'SMTP' ? 'Verify SMTP connection, TLS and authentication without sending email' : 'Test saved HTTPS base URL with stored authentication'} onClick={() => void testCredential(credential)}>{busyId === credential.id ? 'Testing…' : 'Test Connection'}</button>
+            <button className="btn btn-small" aria-label={`Test connection for ${credential.label}`} disabled={!(canTest ?? canManage) || credential.enabled === false || Boolean(busyId)} title={credential.protocol === 'SMTP' ? 'Verify SMTP connection, TLS and authentication without sending email' : 'Test saved HTTPS base URL with stored authentication'} onClick={() => void testCredential(credential)}>{busyId === credential.id ? 'Testing…' : 'Test Connection'}</button>
             <button className="icon-button subtle" aria-label={`View ${credential.label}`} onClick={() => editCredential(credential, true)}><Eye size={14} /></button>
             <button className="icon-button subtle" aria-label={`Edit ${credential.label}`} title={!canManage ? 'Manage Named Credentials permission required' : 'Edit credential'} disabled={!canManage || Boolean(busyId)} onClick={() => editCredential(credential)}><Pencil size={14} /></button>
             <button className="icon-button subtle" aria-label={`Rotate key for ${credential.label}`} title="Rotate encryption key" disabled={!canManage || Boolean(busyId)} onClick={() => void performAction(credential, 'rotate')}><RotateCw size={14} /></button>
@@ -203,8 +207,8 @@ export default function NamedCredentials({
           }}>Add variable</button>}
         </fieldset>
         {draft.authType === 'API Key' && <label className="form-label">API Key Header<input className="form-control" value={draft.headerName ?? ''} onChange={(event) => updateDraft({ headerName: event.target.value })} placeholder="X-API-Key" /></label>}
-        {draft.authType === 'Basic' && <label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label>}
-        {draft.authType !== 'None' && <label className="form-label">{draft.authType === 'Basic' ? 'Password' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
+        {draft.authType === 'Basic' && canManageSecrets && <label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label>}
+        {draft.authType !== 'None' && canManageSecrets && <label className="form-label">{draft.authType === 'Basic' ? 'Password' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
         {draft.id && <div className="info-callout">Leave the secret blank to keep the existing secret. Changing authentication type requires a new secret.</div>}
         {error && <div className="records-message" role="alert">{error}</div>}
         </fieldset>
