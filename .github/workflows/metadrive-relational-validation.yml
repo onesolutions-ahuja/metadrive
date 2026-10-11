@@ -14,6 +14,8 @@ on:
       - 'apps/server/src/index.ts'
       - 'apps/server/sql/relational-state-v1.sql'
       - 'apps/server/scripts/migrate-relational-state.mjs'
+      - 'apps/server/scripts/migrate-relational-in-place.mjs'
+      - 'apps/server/src/relational-copy.mjs'
       - 'apps/server/test/relational-*.test.mjs'
       - 'apps/server/test/isolated-postgres-preload.mjs'
       - '.github/workflows/metadrive-relational-validation.yml'
@@ -55,7 +57,7 @@ jobs:
       - name: Verify projections and staging migration in real PostgreSQL
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
-        run: node --test --test-concurrency=1 apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs apps/server/test/relational-api.integration.test.mjs
+        run: node --test --test-concurrency=1 apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs apps/server/test/relational-api.integration.test.mjs apps/server/test/relational-in-place.integration.test.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
