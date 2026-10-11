@@ -1,0 +1,60 @@
+name: Validate lossless SQL normalization v3
+on:
+  push:
+    branches: [migration/normalized-v3-all-state-20261011]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/server/src/normalized-state-*.mjs'
+      - 'apps/server/sql/normalized-state-v3.sql'
+      - 'apps/server/test/normalized-state-*.mjs'
+      - 'apps/server/scripts/copy-normalized-state-on-restore.mjs'
+      - 'apps/server/src/postgres-state.ts'
+      - 'apps/server/scripts/copy-runtime-assets.mjs'
+      - 'apps/server/test/normalized-api.integration.test.mjs'
+      - '.github/workflows/normalized-state-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  normalized-sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Verify entire nested state codec and PostgreSQL concurrency/rollback
+        run: node --test --test-concurrency=1 apps/server/test/normalized-state-tree.test.mjs apps/server/test/normalized-state-runtime.integration.test.mjs
+      - name: Verify original application build
+        run: npm run build
+      - name: End-to-end SQL-only login, CRUD, Flow execution and restart
+        run: node --test --test-concurrency=1 apps/server/test/normalized-api.integration.test.mjs
+      - name: Existing Flow, named-credential and RBAC tests
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: npm run test --workspace apps/server

@@ -12,7 +12,9 @@ for(const name of [
   'relational-tables.mjs',
   'relational-runtime.mjs',
   'relational-copy.mjs',
-  'relational-account-recovery.mjs'
+  'relational-account-recovery.mjs',
+  'normalized-state-tree.mjs',
+  'normalized-state-runtime.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }

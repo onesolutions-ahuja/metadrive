@@ -68,11 +68,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   return res.status(503).json({ error: 'MetaDrive database maintenance in progress' });
 });
 
-// In relational mode, acknowledge an API response only after the latest
-// database transaction commits. JSONB mode is deliberately unchanged.
+// In all SQL modes, acknowledge API writes only after the database transaction
+// commits. Otherwise a fast API response followed by restart loses records/Flows.
+// Legacy JSONB response semantics remain unchanged.
 let latestStateCommit: Promise<unknown> = Promise.resolve();
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (persistenceMode !== 'relational' || !req.path.startsWith('/api')) return next();
+  if (persistenceMode === 'jsonb' || !req.path.startsWith('/api')) return next();
   const end = res.end;
   let ending = false;
   res.end = ((...args: unknown[]) => {
