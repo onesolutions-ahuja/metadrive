@@ -5884,6 +5884,25 @@ app.delete('/api/metadata/approval-processes/:apiName', requireAnyPermission('me
   });
   return res.status(204).end();
 });
+app.get('/api/metadata/flows/list', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
+  const query = typeof req.query.search === 'string' ? req.query.search.trim().toLocaleLowerCase().slice(0, 160) : '';
+  const page = Math.max(1, Math.min(100000, Number.parseInt(String(req.query.page ?? '1'), 10) || 1));
+  const pageSize = 50;
+  const matches = tenant.flows
+    .filter((flow) => !query || [flow.label, flow.apiName, flow.flowType, flow.status].some((value) => value.toLocaleLowerCase().includes(query)))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const offset = (page - 1) * pageSize;
+  const list = matches.slice(offset, offset + pageSize).map((flow) => ({
+    apiName: flow.apiName, label: flow.label, flowType: flow.flowType, status: flow.status,
+    versionNumber: flow.versionNumber, activeVersion: flow.activeVersion,
+    createdAt: flow.createdAt, createdBy: flow.createdBy,
+    lastModifiedAt: flow.lastModifiedAt, lastModifiedBy: flow.lastModifiedBy
+  }));
+  return res.json({ flows: list, total: matches.length, page, pageSize });
+});
 app.get('/api/metadata/flows', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   res.json({ flows: tenantData(getPrincipal(res).tenantId)?.flows ?? [] });
 });
