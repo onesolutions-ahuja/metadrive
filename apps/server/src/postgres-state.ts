@@ -50,6 +50,10 @@ export function persistToPostgres(state: unknown): Promise<unknown> {
   return operation;
 }
 
+export async function waitForPersistedState(): Promise<void> {
+  await pending;
+}
+
 export async function closeStateStore(): Promise<void> {
   await pending;
   if (pool) await pool.end();

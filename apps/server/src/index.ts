@@ -1,6 +1,7 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState } from './postgres-state.js';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs } from './automation-policy.js';
+import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -216,7 +217,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const systemUser = users.find(user => user.role === 'System Administrator') ?? users.find(user => user.permissionSetIds.includes('system-administrator'));
   if (!systemUser) return reject(503, 'tenant_system_administrator_unavailable');
   const userId = systemUser.id;
-  const object = tenant.objects.find(item => item.apiName === 'WhatsApp_Message__c');
+  const object = tenant.objects.find(item => item.apiName === communicationObjectApiName);
   if (!object) return reject(503, 'message_object_missing');
   let working = structuredClone(tenant);
   let received = 0;
@@ -230,18 +231,20 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
         for (const message of value?.messages ?? []) {
           if (!message.id || !message.from) continue;
           received++;
-          if ((working.records[object.apiName] ?? []).some(item => item.Provider_Message_Id__c === message.id)) { duplicate++; continue; }
+          if ((working.records[object.apiName] ?? []).some(item => item.Event_Type__c === 'Message' && item.Communication_Mode__c === 'WhatsApp' && item.Provider_Message_Id__c === message.id)) { duplicate++; continue; }
           const body = message.type === 'text' ? message.text?.body : undefined;
           if (!body) { unsupported++; continue; } // Unsupported message types are acknowledged.
           const conversationKey = conversationKeyForIncoming(
             working.records[object.apiName] ?? [], message.from, Date.now(),
             working.automationSettings.conversationIdleMinutes
           );
+          const nowForIncoming = new Date().toISOString();
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
+            Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
             Direction__c: 'Incoming', From_Number__c: message.from,
             To_Number__c: value?.metadata?.display_phone_number ?? '',
             Message_Body__c: body, Conversation_Key__c: conversationKey,
-            Status__c: 'Received', Provider_Message_Id__c: message.id,
+            Status__c: 'Received', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
             ...(message.timestamp && /^\\d+$/.test(message.timestamp) ? { Occurred_At__c: new Date(Number(message.timestamp) * 1000).toISOString() } : {})
           }), userId);
           validateRuntimeRecord(tenantId, working, object, values);
@@ -262,8 +265,15 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           saved++;
           // Commit inbound identity BEFORE external flow callouts. Meta redeliveries must never resend replies.
           persistTenantRecords(tenantId, working);
+          await waitForPersistedState();
           try {
             await runRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
+            const latestRecords = tenantData(tenantId)?.records[communicationObjectApiName] ?? [];
+            const pendingIds = new Set((working.records[communicationObjectApiName] ?? []).map(row => row.Id));
+            working.records[communicationObjectApiName] = [
+              ...(working.records[communicationObjectApiName] ?? []),
+              ...latestRecords.filter(row => !pendingIds.has(row.Id))
+            ];
             persistTenantRecords(tenantId, working);
           } catch (flowError) {
             // The triggered flow already writes a Failed Flow Log; keep it rather than
@@ -3308,7 +3318,7 @@ const baseObjects: ObjectMetadata[] = [
     allowReports: true, allowActivities: false, trackFieldHistory: true, allowInChatter: false,
     deploymentStatus: 'Deployed', recordNameType: 'Auto Number', recordNameFormat: 'WAM-{000000}'
   } },
-  { apiName: 'Communication_Records__c', label: 'Communication Records', pluralLabel: 'Communication Records', kind: 'Custom Object', description: 'Audit log of incoming API requests and outgoing external API callouts.', fields: [
+  { apiName: 'Communication_Records__c', label: 'Communication Records', pluralLabel: 'Communication Records', kind: 'Custom Object', description: 'Unified messages and API audit activity with metadata-driven channel filtering.', fields: [
     { apiName: 'Name', label: 'Communication ID', dataType: 'AutoNumber', required: true, unique: false },
     { apiName: 'Api_Id__c', label: 'API ID', dataType: 'Text(255)', required: false, unique: false },
     { apiName: 'Url__c', label: 'URL', dataType: 'URL', required: false, unique: false },
@@ -3317,10 +3327,19 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'Direction__c', label: 'Direction', dataType: 'Picklist', required: true, unique: false, picklistValues: ['Incoming', 'Outgoing'], picklistRestricted: true },
     { apiName: 'Request_Body__c', label: 'Request Body', dataType: 'Long Text Area', required: false, unique: false },
     { apiName: 'Response_Body__c', label: 'Response Body', dataType: 'Long Text Area', required: false, unique: false },
+    { apiName: 'Event_Type__c', label: 'Event Type', dataType: 'Picklist', required: false, unique: false, picklistValues: ['API Call', 'Message'], picklistRestricted: true },
+    { apiName: 'Communication_Mode__c', label: 'Communication Mode', dataType: 'Picklist', required: false, unique: false, picklistValues: ['API', 'WhatsApp', 'SMS', 'Email', 'Other'], picklistRestricted: true },
+    { apiName: 'Source__c', label: 'Source', dataType: 'Picklist', required: false, unique: false, picklistValues: ['API', 'Webhook', 'Flow', 'Other'], picklistRestricted: true },
+    { apiName: 'Message_Body__c', label: 'Message Body', dataType: 'Long Text Area', required: false, unique: false },
+    { apiName: 'From_Number__c', label: 'From Number', dataType: 'Phone', required: false, unique: false },
+    { apiName: 'To_Number__c', label: 'To Number', dataType: 'Phone', required: false, unique: false },
+    { apiName: 'Conversation_Key__c', label: 'Conversation Key', dataType: 'Text(120)', required: false, unique: false },
+    { apiName: 'Status__c', label: 'Processing Status', dataType: 'Picklist', required: false, unique: false, picklistValues: ['Received', 'Pending', 'Processing', 'Sent', 'Completed', 'Failed'], picklistRestricted: true },
+    { apiName: 'Provider_Message_Id__c', label: 'Provider Message ID', dataType: 'Text(255)', required: false, unique: false },
     { apiName: 'Status_Code__c', label: 'HTTP Status Code', dataType: 'Number(3, 0)', required: false, unique: false },
     { apiName: 'Error__c', label: 'Error', dataType: 'Long Text Area', required: false, unique: false },
     { apiName: 'Duration_Ms__c', label: 'Duration (ms)', dataType: 'Number(12, 0)', required: false, unique: false },
-    { apiName: 'Occurred_At__c', label: 'Occurred At', dataType: 'Date/Time', required: true, unique: false }
+    { apiName: 'Occurred_At__c', label: 'Occurred At', dataType: 'Date/Time', required: false, unique: false }
   ], settings: {
     allowReports: true, allowActivities: false, trackFieldHistory: false, allowInChatter: false,
     deploymentStatus: 'Deployed', recordNameType: 'Auto Number', recordNameFormat: 'ONECOM-{000000000000000000000}'
@@ -3488,8 +3507,11 @@ function whatsappRouterFlow(): FlowMetadata {
     apiName: 'WA_ROUTER', label: 'WhatsApp Router',
     description: 'Editable starter WhatsApp router. Change keywords, replies, record actions and credential in Flow Builder.',
     flowType: 'Record-Triggered Flow', status: 'Draft', versionNumber: 1, activeVersion: null,
-    triggerObject: 'WhatsApp_Message__c',
-    startConfig: { trigger: 'created', runWhen: 'after-save', conditionLogic: 'All', entryConditions: [{ field: 'Direction__c', operator: 'Equals', value: 'Incoming' }] },
+    triggerObject: communicationObjectApiName,
+    startConfig: { trigger: 'created', runWhen: 'after-save', conditionLogic: 'All', entryConditions: [{ field: 'Direction__c', operator: 'Equals', value: 'Incoming' },
+      { field: 'Event_Type__c', operator: 'Equals', value: 'Message' },
+      { field: 'Communication_Mode__c', operator: 'Equals', value: 'WhatsApp' },
+      { field: 'Source__c', operator: 'Equals', value: 'Webhook' }] },
     elements: [
       { id: 1, type: 'Start', label: 'Incoming WhatsApp Message', config: { trigger: 'created', runWhen: 'after-save' } },
       { id: 2, type: 'Decision', label: 'Route by Keyword', config: { outcomes: [
@@ -3510,12 +3532,14 @@ function whatsappRouterFlow(): FlowMetadata {
         body: '{"messaging_product":"whatsapp","to":"{!$Record.From_Number__c}","type":"text","text":{"body":"{!ReplyText}"}}',
         statusVariable: 'CalloutStatus', onError: 'FAULT_PATH'
       } },
-      { id: 9, type: 'Create Records', label: 'Log Outgoing WhatsApp Message', config: { object: 'WhatsApp_Message__c', fieldValues: [
+      { id: 9, type: 'Create Records', label: 'Log Outgoing WhatsApp Message', config: { object: communicationObjectApiName, fieldValues: [
+        { field: 'Event_Type__c', value: 'Message' }, { field: 'Communication_Mode__c', value: 'WhatsApp' },
+        { field: 'Source__c', value: 'Flow' },
         { field: 'Direction__c', value: 'Outgoing' }, { field: 'From_Number__c', value: '{!$Record.To_Number__c}' },
         { field: 'To_Number__c', value: '{!$Record.From_Number__c}' }, { field: 'Message_Body__c', value: '{!ReplyText}' },
         { field: 'Conversation_Key__c', value: '{!$Record.Conversation_Key__c}' }, { field: 'Status__c', value: 'Sent' }
       ] } },
-      { id: 10, type: 'Update Records', label: 'Mark Incoming Message Processed', config: { object: 'WhatsApp_Message__c', conditions: [{ field: 'Id', operator: 'Equals', value: '{!$Record.Id}' }], fieldValues: [{ field: 'Status__c', value: 'Sent' }] } },
+      { id: 10, type: 'Update Records', label: 'Mark Incoming Message Processed', config: { object: communicationObjectApiName, conditions: [{ field: 'Id', operator: 'Equals', value: '{!$Record.Id}' }], fieldValues: [{ field: 'Status__c', value: 'Sent' }] } },
       { id: 11, type: 'Assignment', label: 'Capture Callout Error', config: { variable: 'FlowError', operator: 'Assign', value: '{!$Flow.FaultMessage}' } }
     ],
     connectors: [
@@ -3748,12 +3772,14 @@ function ensureCommunicationFields(object: ObjectMetadata): ObjectMetadata {
   const defaults = baseObjects.find((item) => item.apiName === object.apiName)!;
   const existingFields = new Set(object.fields.map((field) => field.apiName));
   const addedFields = defaults.fields.filter((field) => !existingFields.has(field.apiName));
-  if (!addedFields.length) return object;
+  const updatedFields = object.fields.map(field => field.apiName === 'Occurred_At__c' && field.required
+    ? { ...field, required: false } : field);
+  if (!addedFields.length && updatedFields.every((field, index) => field === object.fields[index])) return object;
   const fieldApiNames = addedFields.map((field) => field.apiName);
   return {
     ...object,
     description: object.description || defaults.description,
-    fields: [...object.fields, ...addedFields],
+    fields: [...updatedFields, ...addedFields],
     pageLayouts: object.pageLayouts?.map((layout, index) => index === 0 ? {
       ...layout,
       sections: layout.sections.map((section, sectionIndex) => sectionIndex === 0
@@ -3819,8 +3845,7 @@ function loadState(): PlatformState {
         ...baseObjects.filter((object) => ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'].includes(object.apiName)
           && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(withObjectDefaults)
       ];
-      const records = tenant.records ?? {};
-      if (!records.Communication_Records__c) records.Communication_Records__c = [];
+      const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
       if (!records.WhatsApp_Message__c) records.WhatsApp_Message__c = [];
       const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
       if (!(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
@@ -3993,7 +4018,7 @@ function loadState(): PlatformState {
             : set),
       },
       objects,
-      flows: tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? tenant.flows : [...tenant.flows, whatsappRouterFlow()],
+      flows: (tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? tenant.flows : [...tenant.flows, whatsappRouterFlow()]).map(migrateLegacyWhatsappFlow),
       pages: tenant.pages.map((page) => ({
         ...page,
         activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
@@ -6779,6 +6804,7 @@ function appendCommunicationRecord(
   const now = new Date().toISOString();
   const values = applyRecordDefaults(tenantId, tenant, object, {
     Api_Id__c: entry.apiId.slice(0, 255),
+    Event_Type__c: 'API Call', Communication_Mode__c: 'API', Source__c: 'API',
     Url__c: entry.url,
     Auth_Type__c: entry.authType,
     Method__c: entry.method,
