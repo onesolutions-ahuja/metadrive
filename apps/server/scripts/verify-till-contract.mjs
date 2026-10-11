@@ -1,0 +1,36 @@
+import { readFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { transformSync } from 'esbuild';
+const read = (relative) => readFileSync(new URL(relative, import.meta.url),'utf8');
+const root = '../../web/src/';
+const jsx = read(root+'custom-components/TillSalesWorkspace/TillSalesWorkspace.jsx');
+const css = read(root+'custom-components/TillSalesWorkspace/TillSalesWorkspace.css');
+const manifest = JSON.parse(read(root+'custom-components/manifest.json'));
+const page = JSON.parse(read(root+'page-presets/till.editable.json'));
+const app = read(root+'App.tsx');
+const entry = manifest.filter((x) => x.apiName === 'TillSalesWorkspace');
+assert.equal(entry.length,1,'Till must be registered once');
+assert(entry[0].surfaces.includes('page'),'Till must be available in Page Builder');
+assert.equal(entry[0].jsx,'TillSalesWorkspace/TillSalesWorkspace.jsx');
+assert.equal(entry[0].css,'TillSalesWorkspace/TillSalesWorkspace.css');
+assert.equal(page.targetObject,'Sale__c');
+assert.equal(page.components.length,1);
+assert.equal(page.components[0].type,'Custom:TillSalesWorkspace');
+assert.equal(page.components[0].properties.libraryComponentId,'TillSalesWorkspace');
+assert.equal(page.components[0].properties.objectApiName,'Product__c');
+assert.equal(page.components[0].properties.cartObjectApiName,'CartLine__c');
+assert.equal(page.components[0].properties.customerObjectApiName,'Contact');
+assert(!('products' in page.components[0].properties),'No static Product records');
+assert(!('customers' in page.components[0].properties),'No static Customer records');
+assert(!page.components[0].properties.actionFlows.checkout,'Checkout must remain disabled');
+for (const event of ['start','add','quantity','remove','reset'])
+  assert(page.components[0].properties.actionFlows[event]?.flowApiName,'Missing reusable cart Flow: '+event);
+for (const event of ['add','quantity','remove','reset','checkout','customer','hold','resume','discount'])
+  assert(jsx.includes("'"+event+"'"),'Action event not exposed: '+event);
+assert(jsx.includes('p.products') && jsx.includes('p.customers') && jsx.includes('p.cartLines'),'Till data must originate from metadata runtime');
+assert(!jsx.includes('setCart(') && !jsx.includes('/records/') && !jsx.includes('localStorage'),'No direct till business state or API in registered component');
+assert(css.includes('@media'),'Till must support smaller viewports');
+assert(app.includes('customerObjectApiName') && app.includes('customerFilters') && app.includes('mappedCustomers'),'Runtime must bind customer records');
+assert(app.includes('barcodeField') && app.includes('customerPhoneField'),'Fields must be selected through metadata');
+transformSync(jsx,{loader:'jsx',format:'cjs',jsx:'transform',target:'es2020'});
+console.log('Till registered component, metadata bindings, reusable cart actions and guarded checkout verified.');
