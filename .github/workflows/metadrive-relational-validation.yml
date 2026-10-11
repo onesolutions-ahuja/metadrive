@@ -16,6 +16,8 @@ on:
       - 'apps/server/scripts/migrate-relational-state.mjs'
       - 'apps/server/scripts/migrate-relational-in-place.mjs'
       - 'apps/server/scripts/restore-relational-to-legacy.mjs'
+      - 'apps/server/scripts/copy-runtime-assets.mjs'
+      - 'apps/server/package.json'
       - 'apps/server/src/relational-copy.mjs'
       - 'apps/server/test/relational-*.test.mjs'
       - 'apps/server/test/isolated-postgres-preload.mjs'
@@ -55,6 +57,36 @@ jobs:
         run: npm ci
       - name: Compile application (web and server)
         run: npm run build
+      - name: Verify compiled runtime modules
+        run: |
+          test -f apps/server/dist/index.js
+          test -f apps/server/dist/relational-runtime.mjs
+          test -f apps/server/dist/relational-projection.mjs
+          test -f apps/server/dist/relational-tables.mjs
+      - name: Smoke-test compiled server startup
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+          METADRIVE_DATA_PATH: ${{ runner.temp }}/relational-compiled-api-state.json
+          METADRIVE_SCHEDULE_POLL_MS: '3600000'
+          PORT: '38921'
+        run: |
+          node apps/server/dist/index.js > "${RUNNER_TEMP}/metadrive-compiled.log" 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:38921/health >/dev/null; then
+              echo "Compiled MetaDrive server passed startup and health check"
+              exit 0
+            fi
+            if ! kill -0 $pid 2>/dev/null; then
+              cat "${RUNNER_TEMP}/metadrive-compiled.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          cat "${RUNNER_TEMP}/metadrive-compiled.log"
+          exit 1
       - name: Verify projections and staging migration in real PostgreSQL
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
