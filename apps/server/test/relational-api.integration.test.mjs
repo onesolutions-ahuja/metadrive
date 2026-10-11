@@ -57,9 +57,13 @@ async function startApi(port,dataPath,options={}) {
   throw Error('API startup timed out: '+output.slice(-6000));
 }
 async function stopApi(child) {
-  if(child.exitCode!==null) return;
+  if(child.exitCode!==null || child.signalCode!==null) return;
   child.kill('SIGTERM');
   await Promise.race([once(child,'exit'),new Promise(resolve=>setTimeout(resolve,5000))]);
+  if(child.exitCode===null && child.signalCode===null) {
+    child.kill('SIGKILL');
+    await once(child,'exit');
+  }
 }
 async function request(port,path,method='GET',token=null,payload=undefined) {
   const response=await fetch('http://127.0.0.1:'+port+'/api'+path,{
@@ -175,7 +179,7 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     });
   } finally {
     if(child) await stopApi(child);
-    for(const db of [sourceName,targetName]) await admin.query('DROP DATABASE IF EXISTS '+db+' WITH (FORCE)');
+    for(const db of [sourceName,targetName]) await admin.query('DROP DATABASE IF EXISTS '+db+'');
     await admin.end();
     rmSync(dir,{recursive:true,force:true});
   }

@@ -102,7 +102,7 @@ test('in-place Aiven backfill is additive, backup-gated and refuses stale JSONB 
         'Relational restart must refuse mismatched baseline after rollback');
     } finally {await pool.end();}
   } finally {
-    await admin.query('DROP DATABASE IF EXISTS '+db+' WITH (FORCE)');
+    await admin.query('DROP DATABASE IF EXISTS '+db+'');
     await admin.end();
     rmSync(dir,{recursive:true,force:true});
   }

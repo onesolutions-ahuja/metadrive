@@ -78,7 +78,7 @@ test('migrate a real PostgreSQL snapshot into independent staging and reject rep
       assert.deepStrictEqual(original.rows[0].payload,state,'Source must remain unchanged');
     } finally { await confirm.end(); }
   } finally {
-    for(const name of [src,dst]) await root.query('DROP DATABASE IF EXISTS '+name+' WITH (FORCE)');
+    for(const name of [src,dst]) await root.query('DROP DATABASE IF EXISTS '+name+'');
     await root.end();
     rmSync(temp,{recursive:true,force:true});
   }

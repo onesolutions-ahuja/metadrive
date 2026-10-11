@@ -51,7 +51,7 @@ async function withDatabase(action) {
       await action(pool);
     } finally {await pool.end();}
   } finally {
-    await admin.query('DROP DATABASE IF EXISTS '+name+' WITH (FORCE)');
+    await admin.query('DROP DATABASE IF EXISTS '+name+'');
     await admin.end();
   }
 }
