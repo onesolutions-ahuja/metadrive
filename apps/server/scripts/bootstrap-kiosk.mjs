@@ -332,7 +332,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
           add: { flowApiName: 'KIOSK_CART_ADD', inputs: { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' } },
           quantity: { flowApiName: 'KIOSK_CART_QUANTITY', inputs: { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' } },
           remove: { flowApiName: 'KIOSK_CART_REMOVE', inputs: { SessionId: '$session', LineId: '$event.lineId' } },
-          reset: { flowApiName: 'KIOSK_CART_RESET', inputs: { SessionId: '$session' } }
+          reset: { flowApiName: 'KIOSK_CART_RESET', inputs: { SessionId: '$session' }, resetSessionOnSuccess: true }
         },
         brandName: 'Your Restaurant', tagline: 'Made fresh for you',
         accentColor: '#ffca26', inkColor: '#202124', currency: '£'
