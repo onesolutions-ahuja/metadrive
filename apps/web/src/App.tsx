@@ -272,6 +272,15 @@ class ApiRequestError extends Error {
   }
 }
 
+async function loadAppCommunicationHistory(field: string, source: string, offset: number, search: string) {
+  const params = new URLSearchParams({
+    limit: '50', offset: String(offset), filterField: field, filterValue: source,
+    ...(search ? { search } : {})
+  });
+  return apiRequest<{ records: Array<{ Id: string; [key: string]: unknown }>; total: number }>(
+    `/records/Communication_Records__c?${params.toString()}`);
+}
+
 async function loadFlowScreenRecords(objectApiName: string): Promise<Record<string, unknown>[]> {
   const result = await apiRequest<{ records: Record<string, unknown>[] }>(`/records/${encodeURIComponent(objectApiName)}`);
   return result.records;
@@ -3159,7 +3168,17 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             onRotate={rotateNamedCredential}
             onTest={testNamedCredential}
           />}
-          {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange />}
+          {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange
+            credentials={namedCredentials}
+            canManageCredentials={canManageNamedCredentials}
+            encryptionReady={namedCredentialsEncryptionReady}
+            onSave={saveNamedCredential}
+            onDelete={deleteNamedCredential}
+            onRotate={rotateNamedCredential}
+            onTest={testNamedCredential}
+            loadHistory={loadAppCommunicationHistory}
+            onOpenRecord={(id) => navigateRoute({kind:'record-detail', objectApiName:'Communication_Records__c', recordId:id})}
+          />}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
             const provider = connectorProviders.find((item) => item.connectorKey === route.resourceApiName) ?? connectorProviders[0];
             return provider ? <ConnectorSettingsWorkspace
