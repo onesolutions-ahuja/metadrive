@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
+import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -3298,7 +3299,26 @@ const systemAdminPermissions = [
 const salesPermissions = ['metadata:read'];
 const supportPermissions = ['metadata:read', 'namedCredentials:manage'];
 
+const connectorAppCatalog = z.object({
+  object: objectSchema,
+  packages: z.array(z.record(z.unknown())),
+  flows: z.array(flowSchema)
+}).parse(JSON.parse(readFileSync(new URL('../data/connector-apps.json', import.meta.url), 'utf8')));
+function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId: string): RuntimeRecord[] {
+  const existing = [...(records ?? [])];
+  const now = new Date().toISOString();
+  for (const values of connectorAppCatalog.packages) {
+    if (existing.some((record) => record.AppKey__c === values.AppKey__c)) continue;
+    existing.push(runtimeRecordSchema.parse({
+      ...values, Id: randomUUID(), OwnerId: ownerId, RecordTypeId: 'master',
+      CreatedDate: now, LastModifiedDate: now
+    }));
+  }
+  return existing;
+}
+
 const baseObjects: ObjectMetadata[] = [
+  connectorAppCatalog.object,
   { apiName: 'User', label: 'User', pluralLabel: 'Users', kind: 'Standard Object', description: 'Platform users who belong to this tenant.', fields: [
     { apiName: 'Name', label: 'Full Name', dataType: 'Text(121)', required: true, unique: false },
     { apiName: 'Email', label: 'Email', dataType: 'Email', required: true, unique: true },
@@ -3830,7 +3850,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     ]
   });
   return {
-    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow()], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
+    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
@@ -3842,7 +3862,8 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
         ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
         IntegrationConnection__c: []
       }),
-      WhatsApp_Message__c: []
+      WhatsApp_Message__c: [],
+      Connector_App__c: ensureConnectorAppRecords([], admin?.id ?? 'system')
     },
     autoNumberSequences: {},
     fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, automationSettings: { ...defaultAutomationSettings }, namedCredentials: seedWhatsappDummyCredential(admin?.tenantId ?? 'bootstrap', []), emailAlerts: [],
@@ -4043,12 +4064,13 @@ function loadState(): PlatformState {
       });
       const objects = [
         ...storedObjects,
-        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'] : ['Campaign', 'Communication_Records__c', 'WhatsApp_Message__c']).includes(object.apiName)
+        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'] : ['Campaign', 'Communication_Records__c', 'WhatsApp_Message__c', 'Connector_App__c']).includes(object.apiName)
           && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(withObjectDefaults)
       ];
       const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
       if (!records.WhatsApp_Message__c) records.WhatsApp_Message__c = [];
       const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
+      records.Connector_App__c = ensureConnectorAppRecords(records.Connector_App__c, ownerId);
       if (!consolidationReady && !(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
       const previousProviderRecords = records.ConnectorProvider__c ?? [];
       const connectorDefinitions = (tenant.connectorDefinitions ?? structuredClone(defaultConnectorDefinitions)).map((definition) => {
@@ -4093,7 +4115,7 @@ function loadState(): PlatformState {
         }
       }
       const defaultProfiles = buildDefaultProfiles(objects, tenant.accessControl.permissionSets);
-      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'];
+      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c', 'Connector_App__c'];
       const connectorObjectPermissions = Object.fromEntries(connectorObjectNames.map((apiName) => [apiName, { ...fullObjectPermissions }]));
       const connectorFieldPermissions = Object.fromEntries(objects
         .filter((object) => connectorObjectNames.includes(object.apiName))
@@ -4240,6 +4262,7 @@ function loadState(): PlatformState {
       },
       objects,
       flows: [...tenant.flows,
+        ...connectorAppCatalog.flows.filter((definition) => !tenant.flows.some((existingFlow) => existingFlow.apiName === definition.apiName)),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
       ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
@@ -6130,6 +6153,9 @@ app.post('/api/named-credentials', requirePermission('namedCredentials:manage'),
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
+  const packageEntitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [],
+    {id: '', name: parsed.data.name});
+  if (!packageEntitlement.allowed) return res.status(403).json({error:packageEntitlement.message});
   if (tenant.namedCredentials.some((credential) => credential.name === parsed.data.name)) {
     return res.status(409).json({ error: `Named Credential "${parsed.data.name}" already exists` });
   }
@@ -6167,6 +6193,11 @@ app.put('/api/named-credentials/:id', requirePermission('namedCredentials:manage
   const tenant = tenantData(principal.tenantId)!;
   const existing = tenant.namedCredentials.find((credential) => credential.id === routeParam(req, 'id'));
   if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
+  if (existing.name !== parsed.data.name && (tenant.records.Connector_App__c ?? []).some((app) => app.CredentialName__c === existing.name)) {
+    return res.status(403).json({error:'Managed connector credential API names cannot be changed.'});
+  }
+  const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], existing);
+  if (!entitlement.allowed) return res.status(403).json({error:entitlement.message});
   if (tenant.dashboardSubscriptions.some((subscription) =>
     subscription.namedCredentialId === existing.id && parsed.data.protocol !== 'SMTP')) {
     return res.status(409).json({ error: 'Named Credential is used by a dashboard subscription and must remain SMTP' });
@@ -6221,6 +6252,9 @@ app.delete('/api/named-credentials/:id', requirePermission('namedCredentials:man
   const id = routeParam(req, 'id');
   const existing = tenant.namedCredentials.find((credential) => credential.id === id);
   if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
+  if ((tenant.records.Connector_App__c ?? []).some((app) => app.CredentialName__c === existing.name)) {
+    return res.status(409).json({error:'Connector credentials are retained on uninstall and cannot be deleted from this endpoint.'});
+  }
   const references = tenant.flows.flatMap((flow) => flow.elements
     .filter((element) => ['HTTP Callout', 'Action'].includes(element.type) && element.config.namedCredentialId === id)
     .map((element) => `${flow.label} / ${element.label}`));
@@ -6240,6 +6274,8 @@ app.post('/api/named-credentials/:id/test', requirePermission('namedCredentials:
   const principal = getPrincipal(res);
   const credential = tenantData(principal.tenantId)?.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
   if (!credential) return res.status(404).json({ error: 'Named Credential was not found' });
+  const entitlement = connectorEntitlement(tenantData(principal.tenantId)?.records.Connector_App__c ?? [], credential);
+  if (!entitlement.allowed) return res.status(403).json({ error: entitlement.message });
   if (credential.protocol === 'SMTP') {
     try {
       const target = new URL(credential.baseUrl);
@@ -7637,6 +7673,9 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
     return res.status(403).json({ error: 'Manage connector definitions and Integration Connections in Une Connectors Setup' });
   }
   if (objectName === 'User') return res.status(403).json({ error: 'Users must be provisioned through the security workspace' });
+  if (objectName === 'Connector_App__c' && !principal.permissions.includes('licence:manage')) {
+    return res.status(403).json({error:'Connector app catalogue creation/deletion requires platform licence permission.'});
+  }
   if (!hasObjectPermission(principal, tenant, objectName, 'create')) return res.status(403).json({ error: `Missing create permission for object "${objectName}"` });
   const parsed = z.record(z.unknown()).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
@@ -7840,7 +7879,11 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
       }
     }
     const now = new Date().toISOString();
-    let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...existing, ...values, LastModifiedDate: now }, principal.userId, now, existing), formulaContextForUser(working, principal.userId));
+    const nextRecord = objectName === 'Connector_App__c'
+      ? applyConnectorLifecycle(existing, { ...existing, ...values }, tenant.namedCredentials, tenant.flows,
+          new Date(now), principal.permissions.includes('licence:manage'))
+      : { ...existing, ...values };
+    let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...nextRecord, LastModifiedDate: now }, principal.userId, now, existing), formulaContextForUser(working, principal.userId));
     await runBeforeSaveRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     const beforeSaveValues = normalizeFlowRecordAssignments(object, updated, existing);
     updated = calculateFormulaFields(object, updated, formulaContextForUser(working, principal.userId));
@@ -7865,6 +7908,9 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
     return res.status(403).json({ error: 'Manage connector definitions and Integration Connections in Une Connectors Setup' });
   }
   if (objectName === 'User') return res.status(403).json({ error: 'Users must be managed through the security workspace' });
+  if (objectName === 'Connector_App__c' && !principal.permissions.includes('licence:manage')) {
+    return res.status(403).json({error:'Connector app catalogue creation/deletion requires platform licence permission.'});
+  }
   if (!hasObjectPermission(principal, tenant, objectName, 'delete')) return res.status(403).json({ error: `Missing delete permission for object "${objectName}"` });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Delete')) return res.status(404).json({ error: 'Record was not found' });
@@ -11454,6 +11500,10 @@ async function performHttpCallout(
     : undefined;
   if (!connectionId && !namedCredential) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Named Credential or Integration Connection.`);
   if (connectionId && (!connection || !definition)) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Integration Connection or provider.`);
+  if (namedCredential) {
+    const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], namedCredential);
+    if (!entitlement.allowed) throw new Error(entitlement.message);
+  }
   const ring = credentialKeyRing();
   let credential: Pick<StoredNamedCredential, 'baseUrl' | 'authType' | 'headerName' | 'name'>;
   let secretPayload: NamedCredentialPayload;
@@ -14013,6 +14063,11 @@ async function executeFlow(
         const objectName = typeof config.object === 'string' ? config.object : '';
         const object = tenant.objects.find((candidate) => candidate.apiName === objectName);
         if (!object) throw new Error(`${element.type} "${element.label}" references an unknown object.`);
+        if (objectName === 'Connector_App__c'
+          && (element.type === 'Create Records' || element.type === 'Delete Records')
+          && !runningPrincipal.permissions.includes('licence:manage')) {
+          throw new Error('Creating or deleting app catalogue records requires the platform licence permission.');
+        }
         const objectAction = element.type === 'Get Records' ? 'read'
           : element.type === 'Create Records' ? 'create'
             : element.type === 'Update Records' ? 'edit' : 'delete';
@@ -14107,7 +14162,11 @@ async function executeFlow(
           const updates = new Map<string, RuntimeRecord>();
           for (const previous of editableCandidates) {
             const now = new Date().toISOString();
-            let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...previous, ...values, LastModifiedDate: now }, currentUserId, now, previous), context);
+            const nextRecord = objectName === 'Connector_App__c'
+              ? applyConnectorLifecycle(previous, { ...previous, ...values }, tenant.namedCredentials, tenant.flows,
+                  new Date(now), runningPrincipal.permissions.includes('licence:manage'))
+              : { ...previous, ...values };
+            let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...nextRecord, LastModifiedDate: now }, currentUserId, now, previous), context);
             await runBeforeSaveRecordTriggeredFlows(
               tenantId, tenant, currentUserId, objectName, 'updated', updated, previous,
               triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
