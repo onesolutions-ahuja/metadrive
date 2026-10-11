@@ -1025,11 +1025,13 @@ export default function FlowBuilder({
       </div>
       {matchingFlows.length ? <div className="flow-existing-table-scroll">
         <table className="flow-existing-table">
-          <thead><tr><th>Flow Name</th><th>Flow Type</th><th>Status</th><th>Version</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Flow Name</th><th>Flow Type</th><th>Status</th><th>Version</th><th>Created By</th><th>Created Date</th><th>Modified By</th><th>Modified Date</th><th>Actions</th></tr></thead>
           <tbody>{matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50).map((candidate) =>
             <tr key={candidate.apiName}>
               <td><button type="button" className="text-action" onClick={() => onSelectFlow(candidate.apiName)}>{candidate.label}</button></td>
               <td>{candidate.flowType}</td><td>{candidate.status}</td><td>v{candidate.versionNumber}</td>
+              <td>{candidate.createdBy || '—'}</td><td>{candidate.createdAt ? new Date(candidate.createdAt).toLocaleString() : '—'}</td>
+              <td>{candidate.lastModifiedBy || '—'}</td><td>{candidate.lastModifiedAt ? new Date(candidate.lastModifiedAt).toLocaleString() : '—'}</td>
               <td><button type="button" className="icon-button subtle" aria-label={`Edit ${candidate.label}`}
                 title={`Edit ${candidate.label}`} onClick={() => onSelectFlow(candidate.apiName)}><Pencil size={16} /></button></td>
             </tr>)}</tbody>
