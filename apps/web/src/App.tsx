@@ -5110,9 +5110,15 @@ function RecordWorkspace({
       <div className="record-object-icon"><Database size={18} /></div>
       <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
       <div className="records-heading-actions">
-        <select className="form-control records-object-select" aria-label="Choose object" value={object.apiName} onChange={(event) => onNavigate({ kind: 'record-list', objectApiName: event.target.value })}>
-          {objects.map((item) => <option key={item.apiName} value={item.apiName}>{item.pluralLabel}</option>)}
-        </select>
+        <div className="records-object-combobox">
+          <input key={object.apiName} className="form-control records-object-select" aria-label="Search or choose object"
+            list="records-object-options" defaultValue={object.pluralLabel} placeholder="Search objects…"
+            onChange={(event) => {
+              const selection = objects.find((item) => item.pluralLabel.toLowerCase() === event.target.value.trim().toLowerCase());
+              if (selection && selection.apiName !== object.apiName) onNavigate({ kind: 'record-list', objectApiName: selection.apiName });
+            }} />
+          <datalist id="records-object-options">{objects.map((item) => <option key={item.apiName} value={item.pluralLabel} />)}</datalist>
+        </div>
         <button className="btn" onClick={() => setRefreshKey((current) => current + 1)}><RefreshCw size={14} />Refresh</button>
       </div>
     </div>
