@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { migrateLegacyWhatsappRecords, migrateLegacyWhatsappFlow } from '../src/communication-unification.js';
+import { migrateLegacyWhatsappRecords, migrateLegacyWhatsappFlow, addStarterBeautyAlias } from '../src/communication-unification.js';
 
 test('unifies messages and API audit records idempotently without deleting history', () => {
   const records: Record<string, Record<string, unknown>[]> = {
@@ -52,4 +52,24 @@ test('conditionless legacy flows require every message origin filter', () => {
   assert.equal(changed.startConfig.entryConditions[0].field, 'Event_Type__c');
   assert.equal(changed.startConfig.entryConditions[1].field, 'Communication_Mode__c');
   assert.equal(changed.startConfig.entryConditions[2].field, 'Source__c');
+});
+
+test('upgrades only the unchanged editable starter Beauty keyword; preserves custom decisions', () => {
+  const original = {
+    apiName: 'WA_ROUTER',
+    elements: [
+      { type: 'Start', label: 'Start', config: {} as Record<string, unknown> },
+      { type: 'Decision', label: 'Route by Keyword',
+        config: { outcomes: [{ name: 'Beauty', label: 'Beauty',
+          conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'BARBER' }] }] } }
+    ]
+  };
+  const updated = addStarterBeautyAlias(original);
+  const outcome = (updated.elements[1].config.outcomes as Array<Record<string, any>>)[0];
+  assert.equal(outcome.conditionLogic, 'Any');
+  assert.deepEqual(outcome.conditions.map((item: {value: string}) => item.value), ['BARBER', 'BEAUTY']);
+  assert.deepEqual(addStarterBeautyAlias(updated), updated);
+  const custom = structuredClone(original);
+  (custom.elements[1].config.outcomes as Array<Record<string, any>>)[0].conditions[0].value = 'SALON';
+  assert.deepEqual(addStarterBeautyAlias(custom), custom);
 });

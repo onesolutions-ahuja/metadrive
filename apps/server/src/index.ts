@@ -2,7 +2,7 @@ import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState } from './postgres-state.js';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
-import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords } from './communication-unification.js';
+import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -3540,7 +3540,10 @@ function whatsappRouterFlow(): FlowMetadata {
     elements: [
       { id: 1, type: 'Start', label: 'Incoming WhatsApp Message', config: { trigger: 'created', runWhen: 'after-save' } },
       { id: 2, type: 'Decision', label: 'Route by Keyword', config: { outcomes: [
-        { name: 'Beauty', label: 'Beauty', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'BARBER' }] },
+        { name: 'Beauty', label: 'Beauty', conditionLogic: 'Any', conditions: [
+          { field: 'Message_Body__c', operator: 'Starts With', value: 'BARBER' },
+          { field: 'Message_Body__c', operator: 'Starts With', value: 'BEAUTY' }
+        ] },
         { name: 'Roof', label: 'Roof', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ROOF' }] },
         { name: 'Accounts', label: 'Accounts', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'ACCOUNTANT' }] },
         { name: 'Legal', label: 'Legal', conditions: [{ field: 'Message_Body__c', operator: 'Starts With', value: 'LAWYER' }] },
@@ -4099,7 +4102,7 @@ function loadState(): PlatformState {
       flows: [...tenant.flows,
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
-      ].map(migrateLegacyWhatsappFlow),
+      ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
       pages: tenant.pages.map((page) => ({
         ...page,
         activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
