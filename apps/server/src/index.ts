@@ -736,6 +736,7 @@ const objectSchema = z.object({
   compactLayout: z.object({ label: z.string().min(1), fieldApiNames: z.array(z.string()) }).optional(),
   fieldSets: z.array(fieldSetSchema).optional(),
   searchLayouts: searchLayoutsSchema.optional(),
+  listViewFilter: z.object({ fieldApiName: z.string().min(1), value: z.string() }).optional(),
   relatedLookupFilters: z.array(relatedLookupFilterSchema).optional(),
   relatedLookupFilterLogic: z.record(z.enum(['All', 'Any'])).optional(),
   listViewButtons: z.array(listViewButtonSchema).optional(),
@@ -3502,7 +3503,8 @@ const baseObjects: ObjectMetadata[] = [
   ], settings: {
     allowReports: true, allowActivities: false, trackFieldHistory: false, allowInChatter: false,
     deploymentStatus: 'Deployed', recordNameType: 'Auto Number', recordNameFormat: 'ONECOM-{000000000000000000000}'
-  } },
+  }, searchLayouts: { searchResults: ['Name', 'Api_Id__c', 'Url__c', 'Auth_Type__c', 'Method__c', 'Direction__c', 'Request_Body__c', 'Response_Body__c', 'Source__c', 'Status_Code__c', 'Error__c', 'Duration_Ms__c', 'Occurred_At__c'] },
+    listViewFilter: { fieldApiName: 'Event_Type__c', value: 'API Call' } },
   { apiName: 'ConnectorProvider__c', label: 'Connector Provider', pluralLabel: 'Connector Providers', kind: 'Standard Object', description: 'Metadata definitions for external API connector providers.', fields: [
     { apiName: 'Name', label: 'Provider Name', dataType: 'Text(80)', required: true, unique: true },
     { apiName: 'ConnectorKey__c', label: 'Connector Key', dataType: 'Text(80)', required: true, unique: true },
@@ -4118,6 +4120,21 @@ function loadState(): PlatformState {
       const storedObjects = tenant.objects.filter((object) => !consolidationReady || !retiredConnectorObjects.has(object.apiName)).map((object) => {
         const ensured = withObjectDefaults(ensureLeadStreetField(ensureCommunicationFields(object)));
         const baseline = baseObjects.find((candidate) => candidate.apiName === object.apiName);
+        if (baseline?.listViewFilter && !ensured.listViewFilter) {
+          const legacyDefaultColumns = object.fields.slice(0, 5).map((field) => field.apiName);
+          const existingColumns = object.searchLayouts?.searchResults;
+          const unchangedStarterColumns = !existingColumns
+            || (existingColumns.length === legacyDefaultColumns.length
+              && existingColumns.every((name, index) => name === legacyDefaultColumns[index]));
+          // Populate new metadata only for an untouched starter layout.
+          if (unchangedStarterColumns) return {
+            ...ensured, searchLayouts: {
+              ...ensured.searchLayouts,
+              searchResults: baseline.searchLayouts?.searchResults ?? existingColumns
+            },
+            listViewFilter: baseline.listViewFilter
+          };
+        }
         if (!baseline || !['ConnectorProvider__c', 'IntegrationConnection__c', 'Connector_App__c'].includes(object.apiName)) return ensured;
         return {
           ...ensured,
