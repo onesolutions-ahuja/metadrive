@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import pg from 'pg';
 import {planNormalizedObjectTable} from '../src/normalized-object-schema.mjs';
+import {sqlCreateRecord,sqlGetRecord,sqlUpdateRecord,sqlDeleteRecord} from '../src/normalized-record-store.mjs';
 
 const uri=process.env.METADRIVE_TEST_DATABASE_URL;
 test('typed physical tables, registry FKs, and SQL CRUD work transactionally without JSONB',{
@@ -38,12 +39,30 @@ test('typed physical tables, registry FKs, and SQL CRUD work transactionally wit
       await client.query('INSERT INTO md_v2_field_registry(field_id,object_id,api_name,field_label,source_data_type,physical_column) VALUES ($1,$2,$3,$4,$5,$6)',
         [col.fieldId,objectId,col.apiName,col.apiName,col.apiName==='Name'?'Text(80)':'Currency(16, 2)',col.column]);
     }
-    await client.query('INSERT INTO '+table.table+' (tenant_id,record_id,'+table.columns.map(f=>f.column).join(',')+') VALUES ($1,$2,$3,$4)',
-      ['sandbox','rec-1','Item A','4.99']);
+    const allow=async()=>true;
+    const context={tenantId:'sandbox',objectId,recordId:'rec-1',authorize:allow};
+    const created=await sqlCreateRecord(client,{...context,values:{Name:'Item A',Price__c:'4.99'}});
+    assert.equal(created.version,1);
+    const initial=await sqlGetRecord(client,context);
+    assert.equal(initial.values.Name,'Item A');
+    assert.equal(initial.values.Price__c,'4.99');
+    assert.equal(initial.version,1);
+    await assert.rejects(sqlCreateRecord(client,{...context,recordId:'rec-denied',values:{Name:'Blocked'},authorize:async()=>false}),/Access denied/);
+    await assert.rejects(sqlUpdateRecord(client,{...context,expectedVersion:0,values:{Price__c:'9.99'}}),/version is mandatory/);
+    const updated=await sqlUpdateRecord(client,{...context,expectedVersion:1,values:{Price__c:'6.25'},unsetFields:['Name']});
+    assert.equal(updated.version,2);
+    const current=await sqlGetRecord(client,context);
+    assert.equal(current.values.Price__c,'6.25');
+    assert.equal(Object.prototype.hasOwnProperty.call(current.values,'Name'),false,'Removed field must be absent, not null');
+    await assert.rejects(sqlUpdateRecord(client,{...context,expectedVersion:1,values:{Price__c:'9.99'}}),/version conflict/);
     const selected=await client.query('SELECT * FROM '+table.table+' WHERE tenant_id=$1 AND record_id=$2',['sandbox','rec-1']);
     assert.equal(selected.rows.length,1);
-    assert.equal(selected.rows[0][table.columns[0].column],'Item A');
-    assert.equal(selected.rows[0][table.columns[1].column],'4.99');
+    assert.equal(selected.rows[0][table.columns[1].column],'6.25');
+    assert.equal(Number(selected.rows[0].record_version),2);
+    await assert.rejects(sqlDeleteRecord(client,{...context,expectedVersion:1}),/version conflict/);
+    const removed=await sqlDeleteRecord(client,{...context,expectedVersion:2});
+    assert.equal(removed.deleted,true);
+    assert.equal(await sqlGetRecord(client,context),null);
     const types=await client.query('SELECT column_name,data_type FROM information_schema.columns WHERE table_name=$1',[table.table]);
     assert.ok(types.rows.some(r=>r.column_name===table.columns[1].column&&r.data_type==='numeric'));
     assert.ok(types.rows.every(r=>r.data_type!=='jsonb'));
