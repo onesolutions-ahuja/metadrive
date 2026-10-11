@@ -1,0 +1,103 @@
+{
+  "apiName": "UNE_TILL",
+  "label": "UNE TILL",
+  "targetObject": "Sale__c",
+  "pageType": "Home Page",
+  "layoutMode": "free-canvas",
+  "canvasWidth": 1366,
+  "canvasHeight": 768,
+  "status": "Draft",
+  "devices": [
+    "Desktop"
+  ],
+  "template": "one-region",
+  "components": [
+    {
+      "id": "till-sales-workspace",
+      "type": "Custom:TillSalesWorkspace",
+      "label": "Object-bound Cashier Till",
+      "region": "main",
+      "visible": true,
+      "position": {
+        "x": 0,
+        "y": 0,
+        "width": 1366,
+        "height": 768
+      },
+      "properties": {
+        "libraryComponentId": "TillSalesWorkspace",
+        "objectApiName": "Product__c",
+        "nameField": "Name",
+        "priceField": "Price__c",
+        "imageField": "Image__c",
+        "categoryField": "Category__c",
+        "descriptionField": "Description__c",
+        "barcodeField": "",
+        "skuField": "",
+        "filters": [
+          {
+            "field": "Available__c",
+            "operator": "Equals",
+            "value": "true"
+          }
+        ],
+        "customerObjectApiName": "Contact",
+        "customerNameField": "Name",
+        "customerPhoneField": "Phone",
+        "customerEmailField": "Email",
+        "customerFilters": [],
+        "cartObjectApiName": "CartLine__c",
+        "cartSessionField": "Session__c",
+        "cartProductField": "Product__c",
+        "cartQuantityField": "Quantity__c",
+        "cartPriceField": "Unit_Price__c",
+        "actionFlows": {
+          "start": {
+            "flowApiName": "KIOSK_SESSION_START",
+            "inputs": {
+              "SessionId": "$session"
+            }
+          },
+          "add": {
+            "flowApiName": "KIOSK_CART_ADD",
+            "inputs": {
+              "SessionId": "$session",
+              "ProductId": "$event.productId",
+              "Quantity": "$event.quantity"
+            }
+          },
+          "quantity": {
+            "flowApiName": "KIOSK_CART_QUANTITY",
+            "inputs": {
+              "SessionId": "$session",
+              "LineId": "$event.lineId",
+              "Quantity": "$event.quantity"
+            }
+          },
+          "remove": {
+            "flowApiName": "KIOSK_CART_REMOVE",
+            "inputs": {
+              "SessionId": "$session",
+              "LineId": "$event.lineId"
+            }
+          },
+          "reset": {
+            "flowApiName": "KIOSK_CART_RESET",
+            "inputs": {
+              "SessionId": "$session"
+            },
+            "resetSessionOnSuccess": true
+          }
+        },
+        "title": "Sales Till",
+        "currency": "£",
+        "accentColor": "#126be5",
+        "storeLabel": "",
+        "terminalLabel": "",
+        "cashierLabel": "",
+        "statusLabel": "Ready",
+        "walkInLabel": "Walk-in customer"
+      }
+    }
+  ]
+}
