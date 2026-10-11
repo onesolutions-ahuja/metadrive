@@ -85,7 +85,26 @@ jobs:
             PGSSLMODE=disable METADRIVE_DIGEST_FILE="${RUNNER_TEMP}/restored.sha" \
             node apps/server/scripts/verify-aiven-state.mjs
           echo "Independent PostgreSQL restore verified. No backup or customer data uploaded to GitHub."
+      - name: Encrypt full backup, decrypt and verify identical contents
+        env:
+          METADRIVE_BACKUP_ENCRYPTION_KEY: ${{ secrets.METADRIVE_BACKUP_ENCRYPTION_KEY }}
+        run: |
+          test -n "${METADRIVE_BACKUP_ENCRYPTION_KEY:-}" || { echo "::error::Backup encryption secret is missing"; exit 1; }
+          node apps/server/scripts/secure-relational-backup.mjs encrypt \
+            "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/metadrive-verified.dump.enc"
+          node apps/server/scripts/secure-relational-backup.mjs decrypt \
+            "${RUNNER_TEMP}/metadrive-verified.dump.enc" "${RUNNER_TEMP}/verify-decrypted.dump"
+          cmp "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/verify-decrypted.dump"
+          echo "Full encrypted backup round-trip verified"
+      - name: Retain encrypted backup for guarded production rollback
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadrive-aiven-verified-encrypted-backup
+          path: ${{ runner.temp }}/metadrive-verified.dump.enc
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
       - name: Delete transient database backup and credentials
         if: always()
         run: |
-          rm -f "${RUNNER_TEMP}/aiven-pg.env" "${RUNNER_TEMP}/metadrive-private.dump"
+          rm -f "${RUNNER_TEMP}/aiven-pg.env" "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/verify-decrypted.dump" "${RUNNER_TEMP}/metadrive-verified.dump.enc"
