@@ -96,6 +96,12 @@ export function persistToPostgres(state: unknown): Promise<unknown> {
   });
 }
 
+// Await both the pending snapshot and any active durable PostgreSQL commit.
+export async function waitForPersistedState(): Promise<void> {
+  if (drainActive) await new Promise<void>((resolve) => idleWaiters.push(resolve));
+  if (writeFailure !== null) throw writeFailure;
+}
+
 export async function closeStateStore(): Promise<void> {
   if (drainActive) await new Promise<void>((resolve) => idleWaiters.push(resolve));
   if (writeFailure !== null) throw writeFailure;
