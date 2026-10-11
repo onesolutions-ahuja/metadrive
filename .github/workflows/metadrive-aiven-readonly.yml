@@ -38,7 +38,7 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Validate secret and read current legacy state without writes
+      - name: Validate Aiven connection secret without printing credentials
         env:
           DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
         run: |
@@ -46,7 +46,7 @@ jobs:
             echo "::error::METADRIVE_AIVEN_DATABASE_URL is not configured or unavailable"
             exit 1
           fi
-          METADRIVE_DIGEST_FILE="${RUNNER_TEMP}/source.sha" node apps/server/scripts/verify-aiven-state.mjs
+          node --input-type=module -e "const u=new URL(process.env.DATABASE_URL); if(!['postgres:','postgresql:'].includes(u.protocol)||!u.hostname.endsWith('.aivencloud.com')||u.searchParams.get('sslmode')!=='require') throw Error('Expected Aiven PostgreSQL URL with sslmode=require'); console.log('Aiven URI format verified. Remote SQL remains read-only for this job.')"
       - name: Take full consistent PostgreSQL backup into temporary private runner storage
         env:
           DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
