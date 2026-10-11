@@ -2,7 +2,7 @@ import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection } from './postgres-state.js';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
-import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
+import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -3473,20 +3473,6 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'Renewal_Date__c', label: 'Renewal Date', dataType: 'Date', required: true, unique: false },
     { apiName: 'ARR__c', label: 'Annual Recurring Revenue', dataType: 'Currency(16, 2)', required: false, unique: false }
   ] },
-  { apiName: 'WhatsApp_Message__c', label: 'WhatsApp Message', pluralLabel: 'WhatsApp Messages', kind: 'Custom Object', description: 'Editable WhatsApp inbound/outbound message records used by metadata-driven Flows.', fields: [
-    { apiName: 'Name', label: 'Message Reference', dataType: 'AutoNumber', required: true, unique: false },
-    { apiName: 'Direction__c', label: 'Direction', dataType: 'Picklist', required: true, unique: false, picklistValues: ['Incoming', 'Outgoing'], picklistRestricted: true },
-    { apiName: 'From_Number__c', label: 'From Number', dataType: 'Phone', required: false, unique: false },
-    { apiName: 'To_Number__c', label: 'To Number', dataType: 'Phone', required: false, unique: false },
-    { apiName: 'Message_Body__c', label: 'Message Body', dataType: 'Long Text Area', required: true, unique: false },
-    { apiName: 'Conversation_Key__c', label: 'Conversation Key', dataType: 'Text(120)', required: false, unique: false },
-    { apiName: 'Status__c', label: 'Status', dataType: 'Picklist', required: true, unique: false, picklistValues: ['Received', 'Pending', 'Sent', 'Failed'], picklistRestricted: true, defaultValue: 'Received' },
-    { apiName: 'Provider_Message_Id__c', label: 'Provider Message ID', dataType: 'Text(255)', required: false, unique: false },
-    { apiName: 'Occurred_At__c', label: 'Occurred At', dataType: 'Date/Time', required: false, unique: false }
-  ], settings: {
-    allowReports: true, allowActivities: false, trackFieldHistory: true, allowInChatter: false,
-    deploymentStatus: 'Deployed', recordNameType: 'Auto Number', recordNameFormat: 'WAM-{000000}'
-  } },
   { apiName: 'Communication_Records__c', label: 'Communication Records', pluralLabel: 'Communication Records', kind: 'Custom Object', description: 'Unified messages and API audit activity with metadata-driven channel filtering.', fields: [
     { apiName: 'Name', label: 'Communication ID', dataType: 'AutoNumber', required: true, unique: false },
     { apiName: 'Api_Id__c', label: 'API ID', dataType: 'Text(255)', required: false, unique: false },
@@ -3939,7 +3925,6 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
         ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
         IntegrationConnection__c: []
       }),
-      WhatsApp_Message__c: [],
       Connector_App__c: ensureConnectorAppRecords([], admin?.id ?? 'system')
     },
     autoNumberSequences: {},
@@ -4141,11 +4126,10 @@ function loadState(): PlatformState {
       });
       const objects = [
         ...storedObjects,
-        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c'] : ['Campaign', 'Communication_Records__c', 'WhatsApp_Message__c', 'Connector_App__c']).includes(object.apiName)
+        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'] : ['Campaign', 'Communication_Records__c', 'Connector_App__c']).includes(object.apiName)
           && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(withObjectDefaults)
       ];
       const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
-      if (!records.WhatsApp_Message__c) records.WhatsApp_Message__c = [];
       const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
       records.Connector_App__c = ensureConnectorAppRecords(records.Connector_App__c, ownerId);
       if (!consolidationReady && !(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
@@ -4192,7 +4176,7 @@ function loadState(): PlatformState {
         }
       }
       const defaultProfiles = buildDefaultProfiles(objects, tenant.accessControl.permissionSets);
-      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'WhatsApp_Message__c', 'Connector_App__c'];
+      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'Connector_App__c'];
       const connectorObjectPermissions = Object.fromEntries(connectorObjectNames.map((apiName) => [apiName, { ...fullObjectPermissions }]));
       const connectorFieldPermissions = Object.fromEntries(objects
         .filter((object) => connectorObjectNames.includes(object.apiName))
@@ -4373,12 +4357,27 @@ function loadState(): PlatformState {
           : set).filter((set) => set.id !== 'oneengine-named-credentials')
       }
     }]));
-    const migrated = {
+    const migrated: PlatformState = {
       ...parsed,
       users: parsed.users.map((user) => ({ ...user, permissionSetIds: user.permissionSetIds.filter((id) => id !== 'oneengine-named-credentials') })),
       tenants: tenantsWithLibraryManagement,
       libraryComponents: parsed.libraryComponents ?? []
     };
+    // One-time, fail-closed retirement of the superseded WhatsApp object.
+    // The unified Communication Records object remains authoritative.
+    for (const [tenantId, tenant] of Object.entries(migrated.tenants)) {
+      if (!tenant.objects.some((object) => object.apiName === legacyWhatsappObjectApiName)) continue;
+      const recordsRemaining = (tenant.records[legacyWhatsappObjectApiName] ?? []).length;
+      const dependencies = findObjectDependencies(tenant, legacyWhatsappObjectApiName);
+      if (recordsRemaining > 0 || dependencies.length > 0) {
+        console.warn('Retaining legacy WhatsApp metadata; object still has records or dependencies', {
+          tenantId, recordsRemaining, dependencyCount: dependencies.length
+        });
+        continue;
+      }
+      migrated.tenants[tenantId] = removeObjectMetadata(tenant, legacyWhatsappObjectApiName);
+      console.info('Retired unused legacy WhatsApp object metadata', { tenantId });
+    }
     if (!maintenanceMode && (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
     return migrated;
   } catch (error) {
@@ -5542,19 +5541,7 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
   state = nextState;
   return res.json({ object });
 });
-app.delete('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
-  const apiName = routeParam(req, 'apiName');
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const object = tenant.objects.find((item) => item.apiName === apiName);
-  if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
-  if (object.kind !== 'Custom Object') return res.status(403).json({ error: 'Standard objects cannot be deleted' });
-  if ((tenant.records[apiName] ?? []).length) return res.status(409).json({ error: 'Delete or export this object’s records before deleting the object' });
-  const dependencies = findObjectDependencies(tenant, apiName);
-  if (dependencies.length) return res.status(409).json({
-    error: `Object "${apiName}" is still referenced by ${dependencies.join('; ')}`,
-    dependencies
-  });
+function removeObjectMetadata(tenant: TenantData, apiName: string): TenantData {
   const updatedTenant: TenantData = {
     ...tenant,
     objects: tenant.objects.filter((item) => item.apiName !== apiName),
@@ -5586,6 +5573,22 @@ app.delete('/api/metadata/objects/:apiName', requireAnyPermission('metadata:writ
       }))
     }
   };
+  return updatedTenant;
+}
+app.delete('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
+  const apiName = routeParam(req, 'apiName');
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const object = tenant.objects.find((item) => item.apiName === apiName);
+  if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
+  if (object.kind !== 'Custom Object') return res.status(403).json({ error: 'Standard objects cannot be deleted' });
+  if ((tenant.records[apiName] ?? []).length) return res.status(409).json({ error: 'Delete or export this object’s records before deleting the object' });
+  const dependencies = findObjectDependencies(tenant, apiName);
+  if (dependencies.length) return res.status(409).json({
+    error: `Object "${apiName}" is still referenced by ${dependencies.join('; ')}`,
+    dependencies
+  });
+  const updatedTenant = removeObjectMetadata(tenant, apiName);
   persistTenantRecords(principal.tenantId, updatedTenant);
   return res.status(204).end();
 });
