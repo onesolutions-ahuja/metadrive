@@ -15,6 +15,7 @@ on:
       - 'apps/server/sql/relational-state-v1.sql'
       - 'apps/server/scripts/migrate-relational-state.mjs'
       - 'apps/server/scripts/migrate-relational-in-place.mjs'
+      - 'apps/server/scripts/restore-relational-to-legacy.mjs'
       - 'apps/server/src/relational-copy.mjs'
       - 'apps/server/test/relational-*.test.mjs'
       - 'apps/server/test/isolated-postgres-preload.mjs'
