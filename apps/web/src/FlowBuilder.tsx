@@ -1030,7 +1030,7 @@ export default function FlowBuilder({
         <button className="btn" onClick={onSave}><Save size={14} />Save</button>
         {(flow.flowType === 'Autolaunched Flow' || flow.flowType === 'Screen Flow') && <button className="btn" onClick={onDebug} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : 'Debug the most recently saved version with sample inputs.'}>Debug</button>}
         {(flow.flowType === 'Autolaunched Flow' || flow.flowType === 'Screen Flow') && <button className="btn" onClick={onRun} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : isDirty ? 'Runs the most recently saved version; unsaved changes are excluded.' : undefined}>Run</button>}
-        <button className="btn btn-brand" onClick={onActivate}><Check size={14} />Activate</button>
+        <button className="btn btn-brand" disabled={!isDirty && flow.status === 'Active' && flow.activeVersion === flow.versionNumber} onClick={onActivate}><Check size={14} />Activate version</button>
         <button className="icon-button subtle" title="Flow Builder help" onClick={() => onNotify('Configure the Start node, build element paths, check, then save or activate.')}><CircleHelp size={16} /></button>
       </div>
     </div>
@@ -1046,11 +1046,11 @@ export default function FlowBuilder({
           })}
           {flowElementMetadata.filter((item) => item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type)).length === 0 && <p className="empty-list">No elements found.</p>}
         </> : <div className="resource-list">
-          <div className="toolbox-group"><h3>Flows</h3>{flows.map((candidate) => <div className="flow-manager-row" key={candidate.apiName}><button className={`flow-manager-item ${flow.apiName === candidate.apiName ? 'active' : ''}`} onClick={() => onSelectFlow(candidate.apiName)}><span>{candidate.flowType}</span><strong>{candidate.label}</strong><small>{candidate.status} · v{candidate.versionNumber}</small></button><div className="flow-manager-actions"><button className="btn btn-small" aria-label={`Clone ${candidate.label}`} title="Clone flow" onClick={() => onCloneFlow(candidate)}><Copy size={13} />Clone</button>{candidate.status === 'Active' && <button className="btn btn-small" aria-label={`Deactivate ${candidate.label}`} onClick={() => onDeactivateFlow(candidate.apiName)}>Deactivate</button>}<button className="btn btn-small" aria-label={`Delete ${candidate.label}`} onClick={() => onDeleteFlow(candidate.apiName)}>Delete</button></div></div>)}</div>
-          <div className="toolbox-group"><h3>Version History</h3>{flow.versions.length
-            ? [...flow.versions].sort((left, right) => right.versionNumber - left.versionNumber).map((version, index) =>
+          <div className="toolbox-group"><h3>Flows</h3>{flows.map((candidate) => <div className="flow-manager-row" key={candidate.apiName}><button className={`flow-manager-item ${flow.apiName === candidate.apiName ? 'active' : ''}`} onClick={() => onSelectFlow(candidate.apiName)}><span>{candidate.flowType}</span><strong>{candidate.label}</strong><small>{candidate.status} · v{candidate.versionNumber}{candidate.activeVersion !== null ? ` · Active v${candidate.activeVersion}` : ''}</small></button><div className="flow-manager-actions"><button className="btn btn-small" aria-label={`Clone ${candidate.label}`} title="Clone flow" onClick={() => onCloneFlow(candidate)}><Copy size={13} />Clone</button>{candidate.activeVersion !== null && <button className="btn btn-small" aria-label={`Deactivate ${candidate.label}`} onClick={() => onDeactivateFlow(candidate.apiName)}>Deactivate</button>}<button className="btn btn-small" aria-label={`Delete ${candidate.label}`} onClick={() => onDeleteFlow(candidate.apiName)}>Delete</button></div></div>)}</div>
+          <div className="toolbox-group"><h3>Version History</h3><small>{flow.activeVersion !== null ? `Published active version: ${flow.activeVersion}` : 'No active version. Saved drafts cannot run automatically.'}</small>{flow.versions.length
+            ? [...new Map(flow.versions.map((version) => [version.versionNumber, version])).values()].sort((left, right) => right.versionNumber - left.versionNumber).map((version, index) =>
               <div className="flow-resource-card" key={`${version.versionNumber}-${index}`}>
-                <strong>Version {version.versionNumber} · {version.status}</strong>
+                <strong>Version {version.versionNumber} · {version.versionNumber === flow.activeVersion ? 'Active' : version.status === 'Active' ? 'Obsolete' : version.status}</strong>
                 <small>{version.label ?? flow.label} · {version.flowType ?? flow.flowType} · {new Date(version.savedAt).toLocaleString()}</small>
                 {version.description && <small>{version.description}</small>}
                 <button className="text-action" aria-label={`Restore version ${version.versionNumber} as draft`}
@@ -1254,6 +1254,6 @@ export default function FlowBuilder({
         <button className="btn btn-brand btn-full" onClick={onSave}>Save Flow</button>
       </aside>
     </div>
-    <div className="flow-bottom-bar"><span>Flow Builder</span><span>{flow.status} · Version {flow.versionNumber}</span><button className="text-action" onClick={() => onNotify('Select a node to configure it. Use Ctrl+Z / Ctrl+Shift+Z for history.')}><CircleHelp size={12} />Keyboard shortcuts</button></div>
+    <div className="flow-bottom-bar"><span>Flow Builder</span><span>{flow.status} · Version {flow.versionNumber}{flow.activeVersion !== null ? ` · Active v${flow.activeVersion}` : ''}</span><button className="text-action" onClick={() => onNotify('Select a node to configure it. Use Ctrl+Z / Ctrl+Shift+Z for history.')}><CircleHelp size={12} />Keyboard shortcuts</button></div>
   </div>;
 }
