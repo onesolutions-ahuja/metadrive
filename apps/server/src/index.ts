@@ -7201,7 +7201,7 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
-  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined;
+  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined || req.query.filterField !== undefined;
   const rawLimit = Number(req.query.limit ?? 50);
   const rawOffset = Number(req.query.offset ?? 0);
   if (paginated && (!Number.isSafeInteger(rawLimit) || rawLimit < 1 || rawLimit > 200
@@ -7214,6 +7214,17 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
     && (typeof relatedField !== 'string' || typeof relatedId !== 'string'
       || !object.fields.some((field) => field.apiName === relatedField && field.relationship))) {
     return res.status(400).json({ error: 'Invalid related-list filter' });
+  }
+  const filterField = req.query.filterField;
+  const filterValue = req.query.filterValue;
+  if ((filterField !== undefined || filterValue !== undefined) &&
+    (typeof filterField !== 'string' || typeof filterValue !== 'string' || filterValue.length > 250 ||
+      !object.fields.some((field) => field.apiName === filterField))) {
+    return res.status(400).json({ error: 'Invalid record field filter' });
+  }
+  // A filtered query must not reveal information from fields hidden by the user's permission set.
+  if (typeof filterField === 'string' && !hasFieldPermission(principal, tenant, objectName, filterField, 'read')) {
+    return res.status(403).json({ error: 'Missing field read permission for filter' });
   }
   const rawSearch = req.query.search;
   if (rawSearch !== undefined && (typeof rawSearch !== 'string' || rawSearch.length > 250)) {
@@ -7236,11 +7247,14 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   const scopedRecords = typeof relatedField === 'string' && typeof relatedId === 'string'
     ? records.filter((record) => record[relatedField] === relatedId)
     : records;
+  const exactFiltered = typeof filterField === 'string' && typeof filterValue === 'string'
+    ? scopedRecords.filter((record) => String(record[filterField] ?? '') === filterValue)
+    : scopedRecords;
   const filtered = needle
-    ? scopedRecords.filter((record) => searchFields.some((field) =>
+    ? exactFiltered.filter((record) => searchFields.some((field) =>
         Object.prototype.hasOwnProperty.call(record, field.apiName)
         && String(record[field.apiName] ?? '').toLocaleLowerCase().includes(needle)))
-    : scopedRecords;
+    : exactFiltered;
   if (!paginated) return res.json({ records: filtered });
   return res.json({
     records: filtered.slice(rawOffset, rawOffset + rawLimit),
