@@ -16,6 +16,7 @@ import {
   ExternalLink,
   FileText,
   LockKeyhole,
+  MessageSquare,
   PackageCheck,
   Puzzle,
   Search,
