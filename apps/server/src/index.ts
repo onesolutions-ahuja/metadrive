@@ -1,6 +1,6 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState } from './postgres-state.js';
-import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext } from './automation-policy.js';
+import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -277,7 +277,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           // Each inbound message refreshes active conversational interviews; 15 minutes is inactivity, not total age.
           const renewedExpiry = new Date(Date.now() + working.automationSettings.conversationIdleMinutes * 60_000).toISOString();
           working.interviews = working.interviews.map(interview =>
-            interview.record?.Conversation_Key__c === conversationKey
+            sameConversationSession(interview.record, record)
               && (interview.kind === 'wait' || interview.kind === 'scheduled')
               ? { ...interview, expiresAt: renewedExpiry } : interview
           );
