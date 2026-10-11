@@ -3097,7 +3097,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -6762,7 +6762,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange }: {
 }
 
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify
+  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify
 }: {
   page: LightningPageMetadata;
   pages: LightningPageMetadata[];
@@ -6771,6 +6771,7 @@ function PageBuilder({
   profiles: ProfileMetadata[];
   reports: ReportMetadata[];
   libraryComponents: LibraryComponentMetadata[];
+  flows: FlowDefinitionMetadata[];
   onChange: (page: LightningPageMetadata) => void;
   onSelectPage: (apiName: string) => void;
   onTargetObjectChange: (targetObject: string) => void;
@@ -7904,7 +7905,7 @@ function PageBuilder({
               <MetadataComponentProperties
                 properties={selected.properties}
                 objects={objects}
-                flows={[]}
+                flows={flows}
                 onChange={(properties) => updateComponent(selected.id, { properties })}
               />
             </>}
