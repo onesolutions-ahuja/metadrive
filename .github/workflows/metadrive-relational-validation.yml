@@ -87,6 +87,32 @@ jobs:
           done
           cat "${RUNNER_TEMP}/metadrive-compiled.log"
           exit 1
+      - name: Smoke-test database maintenance freeze
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+          METADRIVE_MAINTENANCE_MODE: 'true'
+          METADRIVE_DATA_PATH: ${{ runner.temp }}/maintenance-state.json
+          METADRIVE_SCHEDULE_POLL_MS: '3600000'
+          PORT: '38922'
+        run: |
+          node apps/server/dist/index.js > "${RUNNER_TEMP}/metadrive-maintenance.log" 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:38922/health > "${RUNNER_TEMP}/maintenance-health.json"; then break; fi
+            if ! kill -0 $pid 2>/dev/null; then cat "${RUNNER_TEMP}/metadrive-maintenance.log"; exit 1; fi
+            sleep 1
+          done
+          node --input-type=module -e "import{readFileSync}from'node:fs'; const h=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/maintenance-health.json','utf8'));if(h.maintenance!==true)throw Error('Maintenance health indicator missing')"
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' --request POST \
+            --header 'Content-Type: application/json' --data '{}' \
+            http://127.0.0.1:38922/api/auth/login)
+          test "$code" = 503 || { echo "Maintenance did not reject API writes: $code"; exit 1; }
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            http://127.0.0.1:38922/api/whatsapp/webhook)
+          test "$code" = 503 || { echo "Maintenance did not reject webhook traffic: $code"; exit 1; }
+          echo "Maintenance gate rejected API requests and preserved the health check"
       - name: Verify projections and staging migration in real PostgreSQL
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
