@@ -6182,7 +6182,7 @@ app.get('/api/connector-apps/capabilities', accessAuthentication, (_req: Request
 });
 // A platform licence operator explicitly grants or renews a paid term.
 // This endpoint never processes payment and is deliberately distinct from trial activation.
-app.post('/api/connector-apps/:appKey/licence', requirePermission('licence:manage'), (req: Request, res: Response) => {
+app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePermission('licence:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const key = routeParam(req, 'appKey');
