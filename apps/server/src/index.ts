@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, persistenceMode } from './postgres-state.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup } from 'node:dns/promises';
@@ -55,6 +55,35 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
+// In relational mode, acknowledge an API response only after the latest
+// database transaction commits. JSONB mode is deliberately unchanged.
+let latestStateCommit: Promise<unknown> = Promise.resolve();
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (persistenceMode !== 'relational' || !req.path.startsWith('/api')) return next();
+  const end = res.end;
+  let ending = false;
+  res.end = ((...args: unknown[]) => {
+    if (ending) return res;
+    ending = true;
+    const commit = latestStateCommit;
+    void commit.then(() => {
+      Reflect.apply(end, res, args);
+    }).catch((error: unknown) => {
+      console.error('MetaDrive API transaction not acknowledged:', error);
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : new Error('Database persistence failed'));
+        return;
+      }
+      res.statusCode = 503;
+      res.removeHeader('Content-Length');
+      res.removeHeader('ETag');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      Reflect.apply(end, res, [JSON.stringify({ error: 'Database persistence unavailable' })]);
+    });
+    return res;
+  }) as typeof res.end;
+  next();
+});
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app') return next();
   const startedAt = Date.now();
@@ -4012,7 +4041,12 @@ function persistState(next: PlatformState): void {
   const temporaryPath = `${dataPath}.tmp`;
   writeFileSync(temporaryPath, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
   renameSync(temporaryPath, dataPath);
-  void persistToPostgres(next);
+  latestStateCommit = persistToPostgres(next);
+  // Prevent unhandled rejections from background system jobs. API responses
+  // additionally await the same promise via the durability barrier above.
+  void latestStateCommit.catch((error: unknown) => {
+    console.error('CRITICAL: MetaDrive state commit failed', error);
+  });
 }
 const existingPostgresState = await readPersistedState();
 if (existingPostgresState !== null) {
