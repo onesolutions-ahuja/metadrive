@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   conversationKeyForIncoming, defaultAutomationSettings,
-  expiredConversationInterview, retryDelayMs
+  expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage
 } from '../src/automation-policy.js';
 
 test('failed execution retries are disabled by default', () => {
@@ -21,4 +21,16 @@ test('conversation identity expires after 15 minutes of inactivity', () => {
   assert.equal(expiredConversationInterview({Conversation_Key__c: 'active-key'}, new Date(now).toISOString(), now + 14 * 60_000, 15), false);
   assert.equal(expiredConversationInterview({Conversation_Key__c: 'active-key'}, new Date(now).toISOString(), now + 15 * 60_000, 15), true);
   assert.equal(expiredConversationInterview({Other: true}, new Date(now).toISOString(), now + 60 * 60_000, 15), false);
+});
+
+test('only fresh Meta events start a flow, old replay messages are archived', () => {
+  const now = Date.parse('2026-10-11T09:00:00.000Z');
+  const at = (agoMs: number) => String(Math.floor((now - agoMs) / 1000));
+  assert.equal(shouldTriggerInboundMessage(at(14 * 60_000), now, 15), true);
+  assert.equal(shouldTriggerInboundMessage(at(15 * 60_000), now, 15), false);
+  assert.equal(shouldTriggerInboundMessage(at(3_600_000), now, 15), false);
+  assert.equal(shouldTriggerInboundMessage(at(-20_000), now, 15), true);
+  assert.equal(shouldTriggerInboundMessage(at(-120_000), now, 15), false);
+  assert.equal(shouldTriggerInboundMessage(undefined, now, 15), false);
+  assert.equal(shouldTriggerInboundMessage('not-a-time', now, 15), false);
 });
