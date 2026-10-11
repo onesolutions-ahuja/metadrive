@@ -7200,18 +7200,44 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   const objectName = routeParam(req, 'objectName');
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
-  if (objectName === 'User') {
-    const object = tenant.objects.find((item) => item.apiName === 'User')!;
-    const records = state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => sanitizeRecordForRead(principal, tenant, object, ({
-      Id: user.id, Name: user.name, Email: user.email, Username: user.email, IsActive: !user.disabled,
-      UserRoleId: user.role, CreatedDate: user.createdAt, LastModifiedDate: user.createdAt
-    })));
-    return res.json({ records });
-  }
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
-  return res.json({ records: (tenant.records[objectName] ?? [])
-    .filter((record) => hasRecordAccess(principal, tenant, objectName, record, 'Read'))
-    .map((record) => sanitizeRecordForRead(principal, tenant, object, record)) });
+  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined;
+  const rawLimit = Number(req.query.limit ?? 50);
+  const rawOffset = Number(req.query.offset ?? 0);
+  if (paginated && (!Number.isSafeInteger(rawLimit) || rawLimit < 1 || rawLimit > 200
+    || !Number.isSafeInteger(rawOffset) || rawOffset < 0)) {
+    return res.status(400).json({ error: 'Invalid pagination: limit must be 1–200 and offset must be non-negative' });
+  }
+  const rawSearch = req.query.search;
+  if (rawSearch !== undefined && (typeof rawSearch !== 'string' || rawSearch.length > 250)) {
+    return res.status(400).json({ error: 'Invalid search query' });
+  }
+  const records = objectName === 'User'
+    ? state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => sanitizeRecordForRead(principal, tenant, object, ({
+        Id: user.id, Name: user.name, Email: user.email, Username: user.email, IsActive: !user.disabled,
+        UserRoleId: user.role, CreatedDate: user.createdAt, LastModifiedDate: user.createdAt
+      })))
+    : (tenant.records[objectName] ?? [])
+        .filter((record) => hasRecordAccess(principal, tenant, objectName, record, 'Read'))
+        .map((record) => sanitizeRecordForRead(principal, tenant, object, record));
+  // Search only fields visible to this principal; preserve metadata-configured search layouts.
+  const configuredFields = object.searchLayouts?.searchResults;
+  const searchFields = configuredFields !== undefined
+    ? object.fields.filter((field) => configuredFields.includes(field.apiName))
+    : object.fields;
+  const needle = typeof rawSearch === 'string' ? rawSearch.trim().toLocaleLowerCase() : '';
+  const filtered = needle
+    ? records.filter((record) => searchFields.some((field) =>
+        Object.prototype.hasOwnProperty.call(record, field.apiName)
+        && String(record[field.apiName] ?? '').toLocaleLowerCase().includes(needle)))
+    : records;
+  if (!paginated) return res.json({ records: filtered });
+  return res.json({
+    records: filtered.slice(rawOffset, rawOffset + rawLimit),
+    total: filtered.length,
+    offset: rawOffset,
+    limit: rawLimit
+  });
 });
 app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
