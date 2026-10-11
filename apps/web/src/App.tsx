@@ -6655,6 +6655,112 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
   return <div className="field-selector-list">{fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={selected.includes(field.apiName)} onChange={() => onToggle(field.apiName)} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>;
 }
 
+type ComponentPropertyRecord = Record<string, unknown>;
+
+function MetadataComponentProperties({ properties, objects, flows, onChange }: {
+  properties: ComponentPropertyRecord;
+  objects: ObjectMetadata[];
+  flows: Array<{ apiName: string; label: string }>;
+  onChange: (next: ComponentPropertyRecord) => void;
+}) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedDraft, setAdvancedDraft] = useState('');
+  const [advancedError, setAdvancedError] = useState('');
+  const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
+  const selectedObject = objects.find((candidate) => candidate.apiName === objectApiName);
+  const fields = selectedObject?.fields ?? [];
+  const update = (key: string, value: unknown) => onChange({ ...properties, [key]: value });
+  const listProperty = (key: string) => {
+    const value = properties[key];
+    return Array.isArray(value) ? value : [];
+  };
+  const sourceKeys = new Set(['libraryComponentId', 'objectApiName', 'targetObject', 'flowApiName', 'filters',
+    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName']);
+  const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
+  const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
+  const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
+    <select className="form-control" value={String(value ?? '')} onChange={(event) => update(key, event.target.value)}>
+      <option value="">Select field…</option>
+      {fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+    </select>
+  </label>;
+  return <div className="metadata-component-properties">
+    <label className="form-label">Data Object
+      <select className="form-control" value={objectApiName} onChange={(event) => onChange({
+        ...properties, objectApiName: event.target.value
+      })}>
+        <option value="">No object selected</option>
+        {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+      </select>
+    </label>
+    {['nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'fieldApiName']
+      .filter((key) => key in properties || (objectApiName && ['nameField', 'priceField', 'imageField', 'categoryField'].includes(key)))
+      .map((key) => fieldPicker(key, properties[key]))}
+    <div className="properties-section-title">Record Filters</div>
+    {listProperty('filters').map((raw, index) => {
+      const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
+      const changeFilter = (key: string, value: string) => update('filters', listProperty('filters').map((item, i) =>
+        i === index ? { ...filter, [key]: value } : item));
+      return <div key={index} className="home-page-assignment">
+        <label className="form-label">Field
+          <select className="form-control" value={String(filter.field ?? '')} onChange={(event) => changeFilter('field', event.target.value)}>
+            <option value="">Select field…</option>
+            {fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+          </select>
+        </label>
+        <label className="form-label">Operator
+          <select className="form-control" value={String(filter.operator ?? 'Equals')} onChange={(event) => changeFilter('operator', event.target.value)}>
+            {['Equals', 'Not Equals', 'Contains', 'Greater Than', 'Less Than'].map((operator) => <option key={operator}>{operator}</option>)}
+          </select>
+        </label>
+        <label className="form-label">Value
+          <input className="form-control" value={String(filter.value ?? '')} onChange={(event) => changeFilter('value', event.target.value)} />
+        </label>
+        <button className="btn" type="button" onClick={() => update('filters', listProperty('filters').filter((_, i) => i !== index))}>Remove filter</button>
+      </div>;
+    })}
+    <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
+      [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
+    <div className="properties-section-title">Actions</div>
+    <label className="form-label">Flow API Name
+      <input className="form-control" list="metadata-component-flows" value={String(properties.flowApiName ?? '')}
+        onChange={(event) => update('flowApiName', event.target.value)} placeholder="Select a configured flow…" />
+      <datalist id="metadata-component-flows">{flows.map((flow) =>
+        <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}</datalist>
+    </label>
+    <div className="properties-section-title">Appearance and Settings</div>
+    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key)).map(([key, value]) => {
+      if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
+        <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{labelFor(key)}
+      </label>;
+      if (typeof value === 'number') return <label className="form-label" key={key}>{labelFor(key)}
+        <input className="form-control" type="number" value={value} onChange={(event) =>
+          update(key, Number(event.target.value))} /></label>;
+      if (typeof value === 'string' && !isField(key)) return <label className="form-label" key={key}>{labelFor(key)}
+        <input className="form-control" type={/color/i.test(key) ? 'color' : 'text'} value={value}
+          onChange={(event) => update(key, event.target.value)} /></label>;
+      if (typeof value === 'string') return fieldPicker(key, value);
+      return null;
+    })}
+    <button className="btn" type="button" onClick={() => {
+      if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
+      setAdvancedOpen(!advancedOpen);
+    }}>{advancedOpen ? 'Hide advanced metadata' : 'Advanced metadata'}</button>
+    {advancedOpen && <>
+      <textarea className="form-control component-properties-json" aria-label="Advanced component metadata"
+        value={advancedDraft} onChange={(event) => setAdvancedDraft(event.target.value)} />
+      <button type="button" className="btn" onClick={() => {
+        try {
+          const parsed: unknown = JSON.parse(advancedDraft);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error('Expected a properties object');
+          onChange(parsed as ComponentPropertyRecord); setAdvancedError('');
+        } catch (error) { setAdvancedError(error instanceof Error ? error.message : 'Invalid metadata'); }
+      }}>Apply advanced metadata</button>
+      {advancedError && <div className="auth-error" role="alert">{advancedError}</div>}
+    </>}
+  </div>;
+}
+
 function PageBuilder({
   page, pages, objects, apps, profiles, reports, libraryComponents, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify
 }: {
@@ -7795,13 +7901,12 @@ function PageBuilder({
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
-              <label className="form-label" htmlFor="page-custom-component-properties">Properties (JSON)</label>
-              <textarea id="page-custom-component-properties" className="form-control component-properties-json"
-                aria-describedby="page-custom-component-properties-help"
-                aria-invalid={Boolean(customPropertiesError)} value={customPropertiesDraft}
-                onChange={(event) => updateCustomProperties(event.target.value)} />
-              <p className="properties-help" id="page-custom-component-properties-help">Edit component settings as JSON. Valid changes update the canvas immediately; existing metadata bindings are retained unless you change them.</p>
-              {customPropertiesError && <div className="auth-error component-properties-error" role="alert">{customPropertiesError}</div>}
+              <MetadataComponentProperties
+                properties={selected.properties}
+                objects={objects}
+                flows={[]}
+                onChange={(properties) => updateComponent(selected.id, { properties })}
+              />
             </>}
             {selected.type === 'Related List' && <>
               <div className="properties-section-title">Related Lists</div>
