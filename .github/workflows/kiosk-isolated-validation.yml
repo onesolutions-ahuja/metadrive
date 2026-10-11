@@ -54,6 +54,12 @@ jobs:
         run: |
           PGPASSWORD=postgres createdb -h 127.0.0.1 -U postgres kiosk_validation
           docker run --rm --network host -e PGPASSWORD=postgres -v "${RUNNER_TEMP}:/private" --entrypoint pg_restore postgres:18 -h 127.0.0.1 -U postgres -d kiosk_validation --no-owner --no-acl --exit-on-error /private/kiosk.dump
+      - name: Isolate legacy snapshot drift in disposable test database only
+        run: |
+          # The source rollback baseline has drifted. Never change the production legacy table.
+          # Preserve its contents under a staging-only name, then test the relational installer.
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d kiosk_validation \
+            -v ON_ERROR_STOP=1 -c "ALTER TABLE metadrive_platform_state RENAME TO staging_legacy_snapshot_unverified"
       - name: Verify two idempotent installs on restored copy
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/kiosk_validation
