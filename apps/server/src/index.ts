@@ -4313,6 +4313,25 @@ if (existingPostgresState !== null) {
   console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
 }
 let state = loadState();
+// Remove legacy internal UI requests from Communication Records before the
+// startup snapshot is persisted. Preserve inbound provider webhooks, genuine
+// messages, and outbound API history; never erase non-internal records.
+let removedInternalApiAuditRecords = 0;
+for (const tenant of Object.values(state.tenants)) {
+  const entries = tenant.records.Communication_Records__c;
+  if (!entries) continue;
+  const kept = entries.filter((record) => {
+    const internalApiAudit = record.Communication_Mode__c === 'API'
+      && record.Direction__c === 'Incoming'
+      && String(record.Api_Id__c ?? '').includes(' /api/');
+    if (internalApiAudit) removedInternalApiAuditRecords += 1;
+    return !internalApiAudit;
+  });
+  if (kept.length !== entries.length) tenant.records.Communication_Records__c = kept;
+}
+if (removedInternalApiAuditRecords) {
+  console.info('Removed legacy internal API audit records:', removedInternalApiAuditRecords);
+}
 try {
   credentialKeyRing();
   console.info('Named Credentials encryption readiness: configured');
