@@ -36,7 +36,7 @@ test('in-place Aiven backfill is additive, backup-gated and refuses stale JSONB 
         users:[{id:'user',tenantId:'tenant',name:'Support',email:'support@example.test',passwordSalt:'salt',passwordHash:'hash',role:'Admin',permissionSetIds:[],permissionSetGroupIds:[],disabled:false,createdAt:'2026-10-11T00:00:00.000Z'}],
         refreshSessions:[],revokedAccessTokens:{}
       };
-      await pool.query('CREATE TABLE metadrive_platform_state (id INTEGER PRIMARY KEY,payload JSONB NOT NULL)');
+      await pool.query('CREATE TABLE metadrive_platform_state (id INTEGER PRIMARY KEY,payload JSONB NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now())');
       await pool.query('INSERT INTO metadrive_platform_state (id,payload) VALUES (1,$1::jsonb)',[JSON.stringify(state)]);
       const backupFile=join(dir,'restored-and-verified.json');
       const raw=JSON.stringify(state);
