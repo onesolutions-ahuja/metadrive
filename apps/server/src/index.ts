@@ -2377,6 +2377,54 @@ function reportFilterValueError(
   return null;
 }
 type FlowMetadata = z.infer<typeof flowSchema>;
+
+/** The draft in Flow Builder is not necessarily the published executable version. */
+function activeFlowDefinition(candidate: FlowMetadata | undefined): FlowMetadata | undefined {
+  if (!candidate || candidate.activeVersion === null) return undefined;
+  if (candidate.status === 'Active' && candidate.versionNumber === candidate.activeVersion) return candidate;
+  const published = candidate.versions.find((version) => version.versionNumber === candidate.activeVersion);
+  if (!published) return undefined;
+  return {
+    ...candidate,
+    ...published,
+    versionNumber: candidate.activeVersion,
+    activeVersion: candidate.activeVersion,
+    status: 'Active',
+    versions: candidate.versions
+  };
+}
+
+function flowVersionSnapshot(flow: FlowMetadata, savedAt: string): FlowMetadata['versions'][number] {
+  return {
+    versionNumber: flow.versionNumber,
+    status: flow.status,
+    savedAt,
+    label: flow.label,
+    description: flow.description,
+    flowType: flow.flowType,
+    triggerObject: flow.triggerObject,
+    startConfig: flow.startConfig,
+    elements: flow.elements,
+    connectors: flow.connectors,
+    resources: flow.resources
+  };
+}
+
+function uniqueFlowHistory(flow: FlowMetadata | undefined, savedAt: string): FlowMetadata['versions'] {
+  if (!flow) return [];
+  const snapshots = new Map<number, FlowMetadata['versions'][number]>();
+  for (const version of flow.versions) snapshots.set(version.versionNumber, version);
+  // The editable current version is authoritative when both it and a history entry exist.
+  snapshots.set(flow.versionNumber, flowVersionSnapshot(flow, savedAt));
+  return [...snapshots.values()]
+    .map((version) => ({
+      ...version,
+      status: version.versionNumber === flow.activeVersion
+        ? 'Active' as const
+        : version.status === 'Draft' ? 'Draft' as const : 'Obsolete' as const
+    }))
+    .sort((left, right) => left.versionNumber - right.versionNumber);
+}
 type FlowInterview = z.infer<typeof flowInterviewSchema>;
 type PageMetadata = z.infer<typeof pageSchema>;
 type DashboardMetadata = z.infer<typeof dashboardSchema>;
@@ -3644,7 +3692,14 @@ function whatsappRouterFlow(): FlowMetadata {
         { field: 'Conversation_Key__c', value: '{!$Record.Conversation_Key__c}' }, { field: 'Status__c', value: 'Sent' }
       ] } },
       { id: 10, type: 'Update Records', label: 'Mark Incoming Message Processed', config: { object: communicationObjectApiName, conditions: [{ field: 'Id', operator: 'Equals', value: '{!$Record.Id}' }], fieldValues: [{ field: 'Status__c', value: 'Sent' }] } },
-      { id: 11, type: 'Assignment', label: 'Capture Callout Error', config: { variable: 'FlowError', operator: 'Assign', value: '{!$Flow.FaultMessage}' } }
+      { id: 11, type: 'Assignment', label: 'Capture Callout Error', config: { variable: 'FlowError', operator: 'Assign', value: '{!$Flow.FaultMessage}' } },
+      { id: 12, type: 'Update Records', label: 'Record WhatsApp Delivery Failure', config: {
+        object: communicationObjectApiName, conditions: [{ field: 'Id', operator: 'Equals', value: '{!$Record.Id}' }],
+        fieldValues: [
+          { field: 'Status__c', value: 'Failed' },
+          { field: 'Error__c', value: 'WhatsApp delivery callout failed. Check Flow Debug for details.' }
+        ]
+      } }
     ],
     connectors: [
       { id: 'wa-start-route', from: 1, to: 2, label: '', kind: 'normal' },
@@ -3660,7 +3715,8 @@ function whatsappRouterFlow(): FlowMetadata {
       { id: 'wa-default-send', from: 7, to: 8, label: '', kind: 'normal' },
       { id: 'wa-send-log', from: 8, to: 9, label: '', kind: 'normal' },
       { id: 'wa-log-update', from: 9, to: 10, label: '', kind: 'normal' },
-      { id: 'wa-send-fault', from: 8, to: 11, label: '', kind: 'fault' }
+      { id: 'wa-send-fault', from: 8, to: 11, label: '', kind: 'fault' },
+      { id: 'wa-fault-record-12', from: 11, to: 12, label: '', kind: 'normal' }
     ],
     resources: [
       { name: 'ReplyText', label: 'Reply Text', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: false, availableForOutput: false, value: '' },
@@ -5230,7 +5286,7 @@ app.put('/api/metadata/platform-events/:apiName', requireAnyPermission('metadata
   const duplicate = tenant.platformEvents.find((event) =>
     event.apiName.toLowerCase() === parsed.data.apiName.toLowerCase() && event.apiName !== parsed.data.apiName);
   if (duplicate) return res.status(409).json({ error: 'Platform event API name already exists' });
-  if (existing && tenant.flows.some((flow) => flow.status === 'Active'
+  if (existing && tenant.flows.map(activeFlowDefinition).some((flow) => flow !== undefined
     && flow.flowType === 'Platform Event-Triggered Flow' && flow.triggerObject === existing.apiName)) {
     const changedFields = JSON.stringify(existing.fields) !== JSON.stringify(parsed.data.fields);
     if (changedFields) return res.status(409).json({ error: 'Platform event fields cannot change while an active triggered flow subscribes to this event' });
@@ -5715,7 +5771,8 @@ app.put('/api/metadata/approval-processes/:apiName', requireAnyPermission('metad
   const existing = tenant.approvalProcesses.find((item) => item.apiName === apiName);
   const activeFlowReferences = existing
     ? tenant.flows
-      .filter((flow) => flow.status === 'Active' && flow.elements.some((element) =>
+      .map(activeFlowDefinition)
+      .filter((flow): flow is FlowMetadata => flow !== undefined && flow.elements.some((element) =>
         element.type === 'Action' && element.config.actionType === 'Submit for Approval'
         && element.config.approvalProcessApiName === apiName))
       .map((flow) => flow.label)
@@ -6454,46 +6511,33 @@ app.put('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', '
   const tenant = tenantData(principal.tenantId)!;
   const existing = tenant.flows.find((flow) => flow.apiName === req.params.apiName);
   const requested = parsed.data;
-  if (existing?.status === 'Active'
+  if (requested.status === 'Active' && existing
     && tenant.interviews.some((interview) => interview.flowApiName === existing.apiName)) {
-    return res.status(409).json({ error: 'Flow cannot be edited while its interviews are pending; wait for them to finish or expire.' });
+    return res.status(409).json({ error: 'Flow cannot be activated while interviews are pending.' });
   }
   const now = new Date().toISOString();
-  const versionNumber = existing ? existing.versionNumber + 1 : 1;
-  const versions = existing ? [...existing.versions, {
-    versionNumber: existing.versionNumber,
-    status: existing.status,
-    savedAt: now,
-    label: existing.label,
-    description: existing.description,
-    flowType: existing.flowType,
-    triggerObject: existing.triggerObject,
-    startConfig: existing.startConfig,
-    elements: existing.elements,
-    connectors: existing.connectors,
-    resources: existing.resources
-  }] : [];
-  const nextFlow = {
+  const history = uniqueFlowHistory(existing, now);
+  const previousActive = existing?.activeVersion ?? null;
+  const versionNumber = existing
+    ? Math.max(existing.versionNumber, ...history.map((version) => version.versionNumber)) + 1
+    : 1;
+  // Draft saves never publish an edited graph. Keep the old published version running.
+  const nextFlow: FlowMetadata = {
     ...requested,
     versionNumber,
-    activeVersion: requested.status === 'Active' ? requested.activeVersion : null,
-    versions
+    activeVersion: requested.status === 'Active' ? versionNumber : previousActive,
+    versions: history
   };
   if (requested.status === 'Active') {
     const validation = validateFlow(nextFlow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections, tenant.connectorDefinitions, tenant.emailAlerts,
       formulaContextForUser(tenant, principal.userId),
       [...tenant.flows.filter((flow) => flow.apiName !== nextFlow.apiName), nextFlow], tenant.approvalProcesses, tenant.platformEvents);
     if (validation.errors.length) return res.status(422).json({ error: 'Flow validation failed', details: validation.errors });
-    nextFlow.activeVersion = versionNumber;
-    nextFlow.versions = [...versions, {
-      versionNumber, status: 'Active', savedAt: now,
-      label: nextFlow.label,
-      description: nextFlow.description,
-      flowType: nextFlow.flowType,
-      triggerObject: nextFlow.triggerObject,
-      startConfig: nextFlow.startConfig,
-      elements: nextFlow.elements, connectors: nextFlow.connectors, resources: nextFlow.resources
-    }];
+    // Exactly one active version; do not leave stale Active labels on archived revisions.
+    nextFlow.versions = [...history.map((version) => ({
+      ...version,
+      status: version.status === 'Draft' ? 'Draft' as const : 'Obsolete' as const
+    })), flowVersionSnapshot(nextFlow, now)];
   }
   const updatedTenant = { ...tenant, flows: existing ? tenant.flows.map((flow) => flow.apiName === nextFlow.apiName ? nextFlow : flow) : [...tenant.flows, nextFlow] };
   const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
@@ -6506,14 +6550,16 @@ app.post('/api/metadata/flows/:apiName/deactivate', requireAnyPermission('metada
   const tenant = tenantData(principal.tenantId)!;
   const existing = tenant.flows.find((flow) => flow.apiName === routeParam(req, 'apiName'));
   if (!existing) return res.status(404).json({ error: 'Flow was not found' });
-  if (existing.status !== 'Active' || existing.activeVersion === null) {
+  if (existing.activeVersion === null) {
     return res.status(409).json({ error: 'Flow is not active' });
   }
   if (tenant.interviews.some((interview) => interview.flowApiName === existing.apiName)) {
     return res.status(409).json({ error: 'Flow cannot be deactivated while its interviews are pending; wait for them to finish or expire.' });
   }
   const activeSubflowReferences = tenant.flows
-    .filter((candidate) => candidate.apiName !== existing.apiName && candidate.status === 'Active')
+    .filter((candidate) => candidate.apiName !== existing.apiName)
+    .map(activeFlowDefinition)
+    .filter((candidate): candidate is FlowMetadata => Boolean(candidate))
     .flatMap((candidate) => candidate.elements
       .filter((element) => element.type === 'Subflow' && element.config.flowApiName === existing.apiName)
       .map((element) => `${candidate.label} / ${element.label}`));
@@ -6522,28 +6568,15 @@ app.post('/api/metadata/flows/:apiName/deactivate', requireAnyPermission('metada
       error: `Flow cannot be deactivated while referenced by active subflows: ${activeSubflowReferences.join(', ')}`
     });
   }
-  const versionNumber = existing.versionNumber + 1;
-  const activeVersionSnapshot = {
-    versionNumber: existing.versionNumber,
-    status: 'Active' as const,
-    savedAt: new Date().toISOString(),
-    label: existing.label,
-    description: existing.description,
-    flowType: existing.flowType,
-    triggerObject: existing.triggerObject,
-    startConfig: existing.startConfig,
-    elements: existing.elements,
-    connectors: existing.connectors,
-    resources: existing.resources
-  };
-  const versions = [
-    ...existing.versions.filter((version) => version.versionNumber !== existing.versionNumber),
-    activeVersionSnapshot
-  ];
-  const flow = {
+  const versions = uniqueFlowHistory(existing, new Date().toISOString())
+    .map((version) => ({
+      ...version,
+      status: version.status === 'Draft' ? 'Draft' as const : 'Obsolete' as const
+    }));
+  const flow: FlowMetadata = {
     ...existing,
-    status: 'Draft' as const,
-    versionNumber,
+    status: 'Draft',
+    versionNumber: Math.max(existing.versionNumber, ...versions.map((version) => version.versionNumber)) + 1,
     activeVersion: null,
     versions
   };
@@ -6568,7 +6601,7 @@ app.delete('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write'
   if (tenant.interviews.some((interview) => interview.flowApiName === apiName)) {
     return res.status(409).json({ error: 'Flow cannot be deleted while its interviews are pending; wait for them to finish or expire.' });
   }
-  if (flow.status === 'Active') return res.status(409).json({ error: 'Deactivate the flow before deleting it.' });
+  if (flow.activeVersion !== null) return res.status(409).json({ error: 'Deactivate the flow before deleting it.' });
   persistTenantRecords(principal.tenantId, {
     ...tenant,
     flows: tenant.flows.filter((candidate) => candidate.apiName !== apiName),
@@ -8044,9 +8077,12 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
     persistTenantRecords(principal.tenantId, updated);
     return res.status(410).json({ error: 'Flow interview has expired' });
   }
-  const flow = tenant.flows.find((item) => item.apiName === interview.flowApiName
-    && ((item.status === 'Active' && item.activeVersion === interview.versionNumber)
-      || (item.status === 'Draft' && item.versionNumber === interview.versionNumber)));
+  const editable = tenant.flows.find((item) => item.apiName === interview.flowApiName);
+  const flow = interview.allowDraft && editable?.status === 'Draft'
+    && editable.versionNumber === interview.versionNumber
+    ? editable
+    : activeFlowDefinition(editable)?.versionNumber === interview.versionNumber
+      ? activeFlowDefinition(editable) : undefined;
   if (!flow) return res.status(409).json({ error: 'The flow interview version is no longer active' });
   const values = z.object({
     values: z.record(z.unknown()).default({}),
@@ -14209,7 +14245,7 @@ async function executeFlow(
       }
       case 'Subflow': {
         const apiName = typeof config.flowApiName === 'string' ? config.flowApiName : '';
-        const childFlow = tenant.flows.find((candidate) => candidate.apiName === apiName);
+        const childFlow = activeFlowDefinition(tenant.flows.find((candidate) => candidate.apiName === apiName));
         if (!childFlow || childFlow.status !== 'Active' || childFlow.flowType !== 'Autolaunched Flow') {
           throw new Error(`Subflow "${element.label}" must reference an active autolaunched flow.`);
         }
@@ -14509,7 +14545,8 @@ function orderedRecordTriggeredFlows(
   runWhen: 'before-save' | 'after-save'
 ): FlowMetadata[] {
   return tenant.flows
-    .filter((flow) => flow.status === 'Active'
+    .map(activeFlowDefinition)
+    .filter((flow): flow is FlowMetadata => flow !== undefined
       && flow.flowType === 'Record-Triggered Flow'
       && flow.triggerObject === objectName
       && String(flow.startConfig.runWhen ?? 'after-save') === runWhen)
@@ -14605,9 +14642,12 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
         || (interview.retryAt && Date.parse(interview.retryAt) > now.getTime())) continue;
       const currentTenant = tenantData(tenantId);
       if (!currentTenant) continue;
-      const flow = currentTenant.flows.find((item) => item.apiName === interview.flowApiName
-        && ((item.status === 'Active' && item.activeVersion === interview.versionNumber)
-          || (interview.allowDraft && item.status === 'Draft' && item.versionNumber === interview.versionNumber)));
+      const savedFlow = currentTenant.flows.find((item) => item.apiName === interview.flowApiName);
+      const flow = interview.allowDraft && savedFlow?.status === 'Draft'
+        && savedFlow.versionNumber === interview.versionNumber
+        ? savedFlow
+        : activeFlowDefinition(savedFlow)?.versionNumber === interview.versionNumber
+          ? activeFlowDefinition(savedFlow) : undefined;
       const working = structuredClone(currentTenant);
       try {
         if (interview.kind === 'wait' && !conversational && Date.parse(interview.expiresAt) <= now.getTime()) {
@@ -14658,10 +14698,11 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
 async function executeDueScheduledFlows(now = new Date()): Promise<void> {
   await resumeDueFlowInterviews(now);
   for (const [tenantId, tenant] of Object.entries(state.tenants)) {
-    for (const flow of [...tenant.flows]) {
+    for (const candidate of [...tenant.flows]) {
       const currentTenant = tenantData(tenantId);
       if (!currentTenant) continue;
-      if (flow.status !== 'Active' || flow.flowType !== 'Schedule-Triggered Flow' || !flow.triggerObject) continue;
+      const flow = activeFlowDefinition(candidate);
+      if (!flow || flow.flowType !== 'Schedule-Triggered Flow' || !flow.triggerObject) continue;
       const runKey = `${flow.apiName}@${flow.activeVersion ?? flow.versionNumber}`;
       const latestOccurrence = scheduledOccurrence(flow, now);
       const pendingRetry = currentTenant.scheduleRetries[runKey];
@@ -14780,8 +14821,9 @@ async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
       }
       const subscriberTenant = currentTenant;
       const eventMessage = message;
-      const subscribers = subscriberTenant.flows.filter((flow) =>
-        flow.status === 'Active' && flow.flowType === 'Platform Event-Triggered Flow'
+      const subscribers = subscriberTenant.flows.map(activeFlowDefinition)
+        .filter((flow): flow is FlowMetadata => flow !== undefined
+        && flow.flowType === 'Platform Event-Triggered Flow'
         && flow.triggerObject === eventMessage.eventApiName
         && platformEventFlowMatches(flow, subscriberTenant, eventMessage.publishedBy, eventMessage.payload as RuntimeRecord));
       if (!subscribers.length) {
@@ -14799,8 +14841,8 @@ async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
         if (!currentTenant || !message || message.deliveredFlowApiNames.includes(subscriber.apiName)) continue;
         try {
           const working = structuredClone(currentTenant);
-          const activeFlow = working.flows.find((flow) => flow.apiName === subscriber.apiName
-            && flow.status === 'Active' && flow.flowType === 'Platform Event-Triggered Flow');
+          const activeFlow = activeFlowDefinition(working.flows.find((flow) => flow.apiName === subscriber.apiName
+            && flow.flowType === 'Platform Event-Triggered Flow'));
           if (!activeFlow) continue;
           const result = await executeFlow(
             activeFlow, working, tenantId, message.publishedBy, {},
@@ -15046,6 +15088,21 @@ function validateFlow(
   for (const element of flow.elements) {
     if (!['Start', 'End', 'Assignment', 'Decision', 'Loop', 'Collection Filter', 'Collection Sort', 'Transform', 'Get Records', 'Create Records', 'Update Records', 'Delete Records', 'Roll Back Records', 'Publish Platform Event', 'Subflow', 'Screen', 'Wait', 'Action', 'HTTP Callout'].includes(element.type)) {
       errors.push(`Flow element type "${element.type}" is not supported.`);
+    }
+    // Validate literal picklist writes against Object Manager metadata before activation.
+    if (element.type === 'Create Records' || element.type === 'Update Records') {
+      const targetObject = objects.find((object) => object.apiName === element.config.object);
+      for (const assignment of asConfigRows(element.config.fieldValues)) {
+        const fieldName = typeof assignment.field === 'string' ? assignment.field : '';
+        const field = targetObject?.fields.find((candidate) => candidate.apiName === fieldName);
+        const value = assignment.value;
+        if (field?.dataType === 'Picklist' && Array.isArray(field.picklistValues)
+          && field.picklistValues.length > 0 && typeof value === 'string'
+          && !value.includes('{!') && !value.startsWith('$')
+          && !field.picklistValues.includes(value)) {
+          errors.push(`"${element.label}" sets "${fieldName}" to inactive picklist value "${value}" on "${targetObject?.apiName}".`);
+        }
+      }
     }
     if (element.type === 'Publish Platform Event') {
       const eventApiName = typeof element.config.eventApiName === 'string' ? element.config.eventApiName : '';
@@ -15618,7 +15675,7 @@ function validateFlow(
     }
     if (element.type === 'Subflow') {
       const childApiName = typeof element.config.flowApiName === 'string' ? element.config.flowApiName : '';
-      const childFlow = allFlows.find((candidate) => candidate.apiName === childApiName);
+      const childFlow = activeFlowDefinition(allFlows.find((candidate) => candidate.apiName === childApiName));
       if (!childFlow || childFlow.status !== 'Active' || childFlow.flowType !== 'Autolaunched Flow') {
         errors.push(`Subflow "${element.label}" must reference an active autolaunched flow.`);
       } else {
