@@ -3767,6 +3767,75 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
   </div>;
 }
 
+function MetadataBoundPageComponent({
+  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow
+}: {
+  definition: LibraryComponentMetadata;
+  component: PageComponentMetadata;
+  objects: ObjectMetadata[];
+  reports: ReportMetadata[];
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  formFactor: 'Desktop' | 'Phone';
+  onNavigate: (route: AppRoute) => void;
+  onLaunchFlow: (flowApiName: string) => void;
+}) {
+  const properties = component.properties;
+  const objectApiName = String(properties.objectApiName ?? '');
+  const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [dataError, setDataError] = useState('');
+  const [dataLoading, setDataLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setRecords([]); setDataError('');
+    if (!objectApiName) return () => { active = false; };
+    setDataLoading(true);
+    void loadFlowScreenRecords(objectApiName).then((items) => {
+      if (active) setRecords(items);
+    }).catch((error: unknown) => {
+      if (active) setDataError(error instanceof Error ? error.message : 'Unable to read records');
+    }).finally(() => { if (active) setDataLoading(false); });
+    return () => { active = false; };
+  }, [objectApiName]);
+  const matchFilters = (record: Record<string, unknown>) => {
+    const filters = Array.isArray(properties.filters) ? properties.filters : [];
+    return filters.every((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return true;
+      const filter = item as Record<string, unknown>;
+      const field = String(filter.field ?? '');
+      if (!field) return true;
+      const actual = record[field];
+      const expected = String(filter.value ?? '');
+      const value = String(actual ?? '');
+      switch (String(filter.operator ?? 'Equals')) {
+        case 'Not Equals': return value !== expected;
+        case 'Contains': return value.toLowerCase().includes(expected.toLowerCase());
+        case 'Greater Than': return Number(actual) > Number(expected);
+        case 'Less Than': return Number(actual) < Number(expected);
+        default: return value === expected;
+      }
+    });
+  };
+  const visibleRecords = records.filter(matchFilters);
+  const mappedProducts = visibleRecords.map((record) => ({
+    id: String(record.Id ?? ''),
+    name: String(record[String(properties.nameField ?? 'Name')] ?? ''),
+    price: Number(record[String(properties.priceField ?? 'Price__c')] ?? 0),
+    image: String(record[String(properties.imageField ?? 'Image__c')] ?? ''),
+    description: String(record[String(properties.descriptionField ?? 'Description__c')] ?? ''),
+    categoryId: String(record[String(properties.categoryField ?? 'Category__c')] ?? '')
+  }));
+  const categories = [...new Set(mappedProducts.map((item) => item.categoryId).filter(Boolean))]
+    .map((id) => ({ id, name: id, icon: '🍽️' }));
+  return <div>
+    {dataError && <div className="records-message" role="alert">{dataError}</div>}
+    <RegisteredComponent definition={definition} props={{
+      ...properties, label: component.label, properties, objects, reports, flows: availableFlows,
+      device: formFactor, onNavigate, onLaunchFlow, loading: dataLoading,
+      ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
+    }} />
+  </div>;
+}
+
 function LightningAppRuntime({
   appId,
   pageApiName,
@@ -3828,8 +3897,9 @@ function LightningAppRuntime({
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
       return definition
-        ? <RegisteredComponent key={component.id} definition={definition}
-          props={{ ...component.properties, label: component.label, properties: component.properties, objects, reports, flows: availableFlows, device: formFactor, onNavigate, onLaunchFlow }} />
+        ? <MetadataBoundPageComponent key={component.id} definition={definition} component={component}
+          objects={objects} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+          onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <div className="records-message" role="status" key={component.id}>Component is no longer registered: {component.label}</div>;
     }
     if (component.type === 'Report Chart') {
