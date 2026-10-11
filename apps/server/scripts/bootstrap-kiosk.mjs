@@ -85,7 +85,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
       if (profile) return profile;
       profile = structuredClone(standard);
       Object.assign(profile, {
-        id, label, apiName: label.replace(/\\W+/g, '_'),
+        id, label, apiName: label.replace(/[^A-Za-z0-9]+/g, '_'),
         isStandard: false, description: label + ' test profile for kiosk or till',
         systemPermissions: ['flows:run'],
         objectPermissions: {
