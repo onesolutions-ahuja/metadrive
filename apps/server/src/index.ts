@@ -7884,7 +7884,8 @@ function interactionRecord(principal: Principal, tenant: TenantData, objectApiNa
   }
   if (!featureEnabled) return { error: { status: 409, message: `Activities are disabled for object "${object.label}"` } } as const;
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === recordId);
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, permission === 'read' ? 'Read' : 'Edit')) {
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, permission === 'read' ? 'Read' : 'Edit')) {
     return { error: { status: 404, message: 'Record was not found' } } as const;
   }
   return { object, record } as const;
@@ -7948,7 +7949,8 @@ app.get('/api/records/:objectName/:recordId/chatter', accessAuthentication, (req
   if (!hasObjectPermission(principal, tenant, objectApiName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectApiName}"` });
   if (!object.settings?.allowInChatter) return res.status(409).json({ error: `Chatter is disabled for object "${object.label}"` });
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
   const posts = tenant.chatterPosts
     .filter((post) => post.objectApiName === objectApiName && post.recordId === record.Id)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -7963,7 +7965,8 @@ app.post('/api/records/:objectName/:recordId/chatter', accessAuthentication, (re
   if (!hasObjectPermission(principal, tenant, objectApiName, 'edit')) return res.status(403).json({ error: `Missing edit permission for object "${objectApiName}"` });
   if (!object.settings?.allowInChatter) return res.status(409).json({ error: `Chatter is disabled for object "${object.label}"` });
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   const parsed = chatterPostInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Chatter post', details: parsed.error.flatten() });
   const user = principalUser(principal);
@@ -7984,7 +7987,8 @@ app.post('/api/records/:objectName/:recordId/chatter/:postId/comments', accessAu
   if (!hasObjectPermission(principal, tenant, objectApiName, 'edit')) return res.status(403).json({ error: `Missing edit permission for object "${objectApiName}"` });
   if (!object.settings?.allowInChatter) return res.status(409).json({ error: `Chatter is disabled for object "${object.label}"` });
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   const parsed = chatterPostInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Chatter comment', details: parsed.error.flatten() });
   const user = principalUser(principal);
@@ -8012,7 +8016,8 @@ app.get('/api/records/:objectName/:recordId/history', accessAuthentication, (req
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
-  if (!record || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectName, record)
+    || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
   const fieldLabels = new Map(object.fields.map((field) => [field.apiName, field.label]));
   const users = new Map(state.users.map((user) => [user.id, user.name]));
   const history = tenant.fieldHistory.filter((entry) => entry.objectApiName === objectName && entry.recordId === recordId
@@ -8695,7 +8700,8 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
         }
         const records = tenant.records[objectApiName] ?? [];
         if (selectedIds.some((id) => !records.some((record) =>
-          record.Id === id && hasRecordAccess(principal, tenant, objectApiName, record, 'Read')))) {
+          record.Id === id && canReadCommunicationRecord(principal, objectApiName, record)
+          && hasRecordAccess(principal, tenant, objectApiName, record, 'Read')))) {
           return res.status(400).json({ error: `Selected choice for screen field "${String(field.label ?? name)}" was not found or is not readable` });
         }
       }
@@ -8708,7 +8714,8 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
         const recordExists = objectApiName === 'User'
           ? state.users.some((user) => user.id === value && user.tenantId === principal.tenantId)
           : (tenant.records[objectApiName] ?? []).some((record) =>
-            record.Id === value && hasRecordAccess(principal, tenant, objectApiName, record, 'Read'));
+            record.Id === value && canReadCommunicationRecord(principal, objectApiName, record)
+              && hasRecordAccess(principal, tenant, objectApiName, record, 'Read'));
         if (!recordExists) return res.status(400).json({ error: `Selected record for screen field "${String(field.label ?? name)}" was not found or is not readable` });
       }
       if (type === 'Data Table') {
@@ -9421,7 +9428,8 @@ app.get('/api/metadata/dashboards/:apiName/data/:objectName', requirePermission(
   const formulaContext = formulaContextForUser(tenant, executionPrincipal.userId);
   return res.json({
     records: (tenant.records[objectApiName] ?? [])
-      .filter((record) => hasRecordAccess(executionPrincipal, tenant, objectApiName, record, 'Read'))
+      .filter((record) => hasRecordAccess(executionPrincipal, tenant, objectApiName, record, 'Read')
+        && canReadCommunicationRecord(executionPrincipal, objectApiName, record))
       .map((record) => sanitizeRecordForRead(executionPrincipal, tenant, object,
         calculateFormulaFields(object, record, formulaContext)))
   });
@@ -9805,7 +9813,8 @@ app.get('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metada
       if (snapshot.sourceRecordAccess?.some((source) => {
         const object = tenant.objects.find((item) => item.apiName === source.objectApiName);
         const record = tenant.records[source.objectApiName]?.find((item) => item.Id === source.recordId);
-        return !object || !record || !hasRecordAccess(runningPrincipal, tenant, source.objectApiName, record, 'Read');
+        return !object || !record || !hasRecordAccess(runningPrincipal, tenant, source.objectApiName, record, 'Read')
+          || !canReadCommunicationRecord(runningPrincipal, source.objectApiName, record);
       })) return false;
       return snapshot.components.every((snapshotComponent) => {
         const component = dashboard.components.find((item) => item.id === snapshotComponent.componentId);
