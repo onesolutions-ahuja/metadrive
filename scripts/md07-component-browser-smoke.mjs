@@ -108,7 +108,7 @@ try {
   // with a published custom component at desktop, tablet, and phone widths.
   const kioskPageApiName='MD07_Browser_Kiosk';
   await request('/metadata/pages/'+kioskPageApiName,token,'PUT',{
-    apiName:kioskPageApiName,label:'MD07 Kiosk',targetObject:'',pageType:'App Page',
+    apiName:kioskPageApiName,label:'MD07 Kiosk',targetObject:'Account',pageType:'App Page',
     status:'Active',layoutMode:'template',template:'one-region',canvasWidth:1920,canvasHeight:1080,
     devices:['Desktop','Phone'],activationAssignments:[],
     components:[{id:'md07-kiosk-component',type:'Custom:MD07_Browser_Widget',
