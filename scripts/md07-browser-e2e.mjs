@@ -69,8 +69,9 @@ try {
   assert.equal(await parentPicker.inputValue(), 'md07-root', 'parent relationship must be editable');
   await parentPicker.selectOption('');
   assert.equal(await root.locator('[data-component-id="md07-card"]').count(), 0, 'child can be moved back to root');
-  await page.getByLabel('Parent container').selectOption('md07-root');
-  assert.equal(await root.locator('[data-component-id="md07-card"]').count(), 1, 'child can be reparented');
+  await card.dragTo(root, { targetPosition: { x: 500, y: 350 } });
+  assert.equal(await root.locator('[data-component-id="md07-card"]').count(), 1, 'drag and drop nests an existing child');
+  assert.equal(await page.getByLabel('Parent container').inputValue(), 'md07-root');
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await root.waitFor({ state: 'visible', timeout: 60000 });
