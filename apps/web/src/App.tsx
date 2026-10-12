@@ -4643,6 +4643,8 @@ function RecordWorkspace({
   const [importFileName, setImportFileName] = useState('');
   const [importError, setImportError] = useState('');
   const [importSaving, setImportSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
   const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
   const [campaignOptions, setCampaignOptions] = useState<RecordData[]>([]);
@@ -5137,6 +5139,60 @@ function RecordWorkspace({
       setImportSaving(false);
     }
   };
+  const exportFilteredRecords = async () => {
+    if (!object || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      // Use the same authorised, metadata-filtered Records API as the list.
+      // Fetch in bounded pages; never bypass field/record RBAC or hydrate the
+      // entire table into the live list view.
+      const fields = object.fields.filter((field) => fieldAccess[object.apiName+'.'+field.apiName]?.read);
+      const columns = ['Id', ...fields.map((field) => field.apiName).filter((name) => name !== 'Id')];
+      const csvCell = (value: unknown): string => {
+        let text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+        // Neutralise spreadsheet formulas without changing stored source data.
+        if (typeof value === 'string' && /^[\s\u0000-\u001f]*[=+@-]/.test(value)) text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+      };
+      const rows: string[] = [columns.map(csvCell).join(',')];
+      let offset = 0;
+      let total: number | null = null;
+      do {
+        const params = new URLSearchParams({
+          limit: '200', offset: String(offset),
+          ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          ...(object.listViewFilter ? { filterField: object.listViewFilter.fieldApiName,
+            filterValue: object.listViewFilter.value } : {})
+        });
+        const page = await apiRequest<{ records: RecordData[]; total: number }>(
+          '/records/' + encodeURIComponent(object.apiName) + '?' + params.toString());
+        if (!Array.isArray(page.records) || !Number.isSafeInteger(page.total) || page.total < 0)
+          throw new Error('Unexpected record export response');
+        if (total !== null && total !== page.total)
+          throw new Error('Records changed during export. Please retry for a consistent result.');
+        total = page.total;
+        if (page.records.length === 0 && offset < total)
+          throw new Error('Export stopped before all records were returned');
+        for (const item of page.records) rows.push(columns.map((name) => csvCell(item[name])).join(','));
+        offset += page.records.length;
+      } while (total !== null && offset < total);
+      const blob = new Blob(['\uFEFF', rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = object.apiName + '-records.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setListNotice('Exported ' + offset + ' records to CSV.');
+    } catch (failure) {
+      setExportError(failure instanceof Error ? failure.message : 'Unable to export records');
+    } finally {
+      setExporting(false);
+    }
+  };
   const openAddToCampaign = async () => {
     setCampaignDialogOpen(true);
     setCampaignOptions([]);
@@ -5536,6 +5592,7 @@ function RecordWorkspace({
           <label className="records-search"><Search size={14} /><input aria-label={`Search ${object.pluralLabel}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this list…" /></label>
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
+          {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
           {canAddToCampaign && selectedRecordIds.length > 0 && <button className="btn" onClick={() => void openAddToCampaign()}>Add to Campaign ({selectedRecordIds.length})</button>}
           {object.listViewButtons?.includes('Printable View') && <button className="btn" onClick={() => window.print()}>Printable View</button>}
           {canMassDelete && selectedDeletableRecordIds.length > 0 && <button className="btn btn-danger" onClick={() => void deleteSelectedRecords()} disabled={massDeleting}>{massDeleting ? 'Deleting…' : `Delete (${selectedDeletableRecordIds.length})`}</button>}
@@ -5548,6 +5605,7 @@ function RecordWorkspace({
         </div>
       </div>
       {listNotice && <div className="records-notice" role="status">{listNotice}</div>}
+      {exportError && <div className="records-message" role="alert">{exportError}</div>}
       {error && <div className="records-message" role="alert">{error}</div>}
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
@@ -6068,6 +6126,9 @@ function parseCsvImport(text: string, object: ObjectMetadata): Array<Record<stri
   const unknownHeader = headers.find((header) => !fieldByHeader.has(header.toLocaleLowerCase()) && header.toLocaleLowerCase() !== 'recordtypeid');
   if (unknownHeader) throw new Error(`CSV column "${unknownHeader}" does not match a field API name or label on ${object.label}.`);
   const mappedNames = headers.map((header, index) => header.toLocaleLowerCase() === 'recordtypeid' ? 'RecordTypeId' : fieldNames[index]!);
+  if (new Set(mappedNames).size !== mappedNames.length) {
+    throw new Error('CSV headers map more than once to the same field; remove duplicate label/API name columns.');
+  }
   return rows.slice(1).map((values, index) => {
     if (values.length !== headers.length) throw new Error(`CSV row ${index + 2} has ${values.length} values; expected ${headers.length}.`);
     return Object.fromEntries(values.map((value, columnIndex) => [mappedNames[columnIndex], value]));
