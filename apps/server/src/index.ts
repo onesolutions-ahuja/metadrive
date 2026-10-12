@@ -1308,6 +1308,26 @@ const libraryComponentResizeSchema = z.object({
   }
 });
 const defaultLibraryComponentResize = { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 };
+const libraryComponentRevisionSchema = z.object({
+  version: z.number().int().positive(),
+  label: z.string().min(1).max(80),
+  description: z.string().max(500),
+  surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+  resize: libraryComponentResizeSchema,
+  jsxSource: z.string().min(1).max(200_000),
+  cssSource: z.string().max(100_000),
+  compiledJs: z.string().min(1).max(500_000),
+  scopedCss: z.string().max(150_000),
+  updatedAt: z.string().datetime()
+});
+const libraryComponentStatusSchema = z.enum(['Draft', 'Published']);
+type LibraryComponentRevision = z.infer<typeof libraryComponentRevisionSchema>;
+const snapshotLibraryComponent = (component: LibraryComponent): LibraryComponentRevision => ({
+  version: component.version,
+  label: component.label, description: component.description, surfaces: component.surfaces,
+  resize: component.resize, jsxSource: component.jsxSource, cssSource: component.cssSource,
+  compiledJs: component.compiledJs, scopedCss: component.scopedCss, updatedAt: component.updatedAt
+});
 const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
@@ -1319,7 +1339,10 @@ const libraryComponentSchema = z.object({
   compiledJs: z.string().min(1).max(500_000),
   scopedCss: z.string().max(150_000),
   version: z.number().int().positive(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
+  status: libraryComponentStatusSchema.default('Published'),
+  published: libraryComponentRevisionSchema.optional(),
+  history: z.array(libraryComponentRevisionSchema).max(100).default([])
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -1332,7 +1355,8 @@ const libraryComponentInputSchema = z.object({
   surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
   resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
-  cssSource: z.string().max(100_000).default('')
+  cssSource: z.string().max(100_000).default(''),
+  status: libraryComponentStatusSchema.default('Published')
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -10926,9 +10950,17 @@ app.get('/api/component-library', requirePermission('metadata:read'), async (_re
     return res.status(500).json({ error: `Unable to register bundled custom components: ${error instanceof Error ? error.message : String(error)}` });
   }
   const principal = getPrincipal(res);
+  const canManage = principal.permissions.includes('components:manage');
   res.json({
-    components: state.libraryComponents,
-    canManage: principal.permissions.includes('components:manage')
+    components: state.libraryComponents.flatMap((component) => {
+      if (canManage) return [component];
+      if (component.status === 'Draft' && !component.published) return [];
+      const published = component.status === 'Draft' ? component.published : undefined;
+      const readable = published ? { ...component, ...published, status: 'Published' as const } : component;
+      const { history: _history, published: _published, jsxSource: _jsxSource, cssSource: _cssSource, ...publicComponent } = readable;
+      return [publicComponent];
+    }),
+    canManage
   });
 });
 app.post('/api/component-library', requirePermission('components:manage'), async (req: Request, res: Response) => {
@@ -10958,7 +10990,9 @@ app.post('/api/component-library', requirePermission('components:manage'), async
       compiledJs: compiled.code,
       scopedCss,
       version: 1,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      status: parsed.data.status,
+      history: []
     };
     const nextState = { ...state, libraryComponents: [...state.libraryComponents, component] };
     persistState(nextState);
@@ -11005,8 +11039,13 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
       ...parsed.data,
       compiledJs: compiled.code,
       scopedCss: scopeLibraryCss(parsed.data.cssSource, apiName),
-      version: state.libraryComponents[existingIndex].version + 1,
-      updatedAt: new Date().toISOString()
+      version: existing.version + 1,
+      updatedAt: new Date().toISOString(),
+      status: parsed.data.status,
+      published: parsed.data.status === 'Draft'
+        ? existing.status === 'Published' ? snapshotLibraryComponent(existing) : existing.published
+        : undefined,
+      history: [...existing.history, snapshotLibraryComponent(existing)].slice(-100)
     };
     const libraryComponents = [...state.libraryComponents];
     libraryComponents[existingIndex] = component;
@@ -11017,6 +11056,58 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
   } catch (error) {
     return res.status(400).json({ error: `Unable to compile component: ${error instanceof Error ? error.message : String(error)}` });
   }
+});
+app.get('/api/component-library/:apiName/versions', requirePermission('components:manage'), (req: Request, res: Response) => {
+  const component = state.libraryComponents.find((item) => item.apiName === routeParam(req, 'apiName'));
+  if (!component) return res.status(404).json({ error: 'Library component was not found' });
+  return res.json({
+    apiName: component.apiName, status: component.status,
+    versions: [...component.history, snapshotLibraryComponent(component)]
+      .map(({ version, updatedAt, label, description, surfaces }) => ({ version, updatedAt, label, description, surfaces })),
+    publishedVersion: component.status === 'Published' ? component.version : component.published?.version ?? null
+  });
+});
+app.get('/api/component-library/:apiName/dependencies', requirePermission('components:manage'), (req: Request, res: Response) => {
+  const apiName = routeParam(req, 'apiName');
+  if (!state.libraryComponents.some((component) => component.apiName === apiName)) return res.status(404).json({ error: 'Library component was not found' });
+  const dependencies = usageBlockerDetails(findLibraryComponentUsages(state, apiName), getPrincipal(res).tenantId);
+  return res.json({ apiName, dependencies, canDelete: dependencies.length === 0 });
+});
+app.post('/api/component-library/:apiName/publish', requirePermission('components:manage'), (req: Request, res: Response) => {
+  const apiName = routeParam(req, 'apiName');
+  const index = state.libraryComponents.findIndex((item) => item.apiName === apiName);
+  if (index < 0) return res.status(404).json({ error: 'Library component was not found' });
+  const current = state.libraryComponents[index];
+  if (current.status === 'Published') return res.json({ component: current });
+  const usages = findLibraryComponentUsages(state, apiName);
+  const removed = current.published?.surfaces.filter((surface) => !current.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface)) ?? [];
+  if (removed.length) return res.status(409).json({ error: 'Publishing would remove surfaces still in use', dependencies: usageBlockerDetails(usages.filter((usage) => removed.includes(usage.surface)), getPrincipal(res).tenantId) });
+  const component: LibraryComponent = { ...current, status: 'Published', published: undefined, updatedAt: new Date().toISOString() };
+  const libraryComponents = [...state.libraryComponents];
+  libraryComponents[index] = component;
+  persistState({ ...state, libraryComponents }); state = { ...state, libraryComponents };
+  return res.json({ component });
+});
+app.post('/api/component-library/:apiName/rollback', requirePermission('components:manage'), (req: Request, res: Response) => {
+  const apiName = routeParam(req, 'apiName');
+  const parsed = z.object({ version: z.number().int().positive() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Specify a valid version number' });
+  const index = state.libraryComponents.findIndex((item) => item.apiName === apiName);
+  if (index < 0) return res.status(404).json({ error: 'Library component was not found' });
+  const current = state.libraryComponents[index];
+  const target = [...current.history, snapshotLibraryComponent(current)].find((revision) => revision.version === parsed.data.version);
+  if (!target) return res.status(404).json({ error: 'Component version was not found' });
+  const usages = findLibraryComponentUsages(state, apiName);
+  const activeSurfaces = current.status === 'Published' ? current.surfaces : current.published?.surfaces ?? [];
+  const removed = activeSurfaces.filter((surface) => !target.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
+  if (removed.length) return res.status(409).json({ error: 'Rollback would remove surfaces still in use', dependencies: usageBlockerDetails(usages.filter((usage) => removed.includes(usage.surface)), getPrincipal(res).tenantId) });
+  const component: LibraryComponent = { ...current, ...target, status: 'Published', published: undefined,
+    version: current.version + 1, updatedAt: new Date().toISOString(),
+    history: [...current.history, snapshotLibraryComponent(current)].slice(-100) };
+  const libraryComponents = [...state.libraryComponents];
+  libraryComponents[index] = component;
+  persistState({ ...state, libraryComponents }); state = { ...state, libraryComponents };
+  return res.json({ component });
 });
 app.delete('/api/component-library/:apiName', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
