@@ -37,3 +37,34 @@ test('never interpolates object or field display names into SQL identifiers',()=
   assert.ok(!sql.includes('Evil'));
   assert.ok(sql.includes('md_obj_'));
 });
+
+test('metadata planner refuses duplicate field names and reused immutable field IDs',()=>{
+  assert.throws(()=>planNormalizedObjectTable({
+    apiName:'Product__c',fields:[
+      {apiName:'Price__c',dataType:'Currency(16, 2)'},
+      {apiName:'Price__c',dataType:'Number(12, 0)'}
+    ]},valid),/Duplicate metadata field/);
+  assert.throws(()=>planNormalizedObjectTable({
+    apiName:'Product__c',fields:[
+      {apiName:'Price__c',dataType:'Currency(16, 2)'},
+      {apiName:'Cost__c',dataType:'Currency(16, 2)'}
+    ]},{objectId:oid,fields:{Price__c:{fieldId:fid},Cost__c:{fieldId:fid}}}),
+    /Duplicate physical field identity/);
+});
+
+test('metadata planner preserves typed fields and tenant-scoped record identity',()=>{
+  const plan=planNormalizedObjectTable({
+    apiName:'Catalog__c',fields:[
+      {apiName:'Available__c',dataType:'Checkbox'},
+      {apiName:'Expires__c',dataType:'Date'},
+      {apiName:'Created_At__c',dataType:'Date/Time'}
+    ]
+  },{objectId:oid,fields:{
+    Available__c:{fieldId:'96120ef5-5b50-4905-bd71-09c85a200002'},
+    Expires__c:{fieldId:'96120ef5-5b50-4905-bd71-09c85a200003'},
+    Created_At__c:{fieldId:'96120ef5-5b50-4905-bd71-09c85a200004'}
+  }});
+  assert.deepEqual(plan.columns.map(c=>c.sqlType),['BOOLEAN','DATE','TIMESTAMPTZ']);
+  assert.match(plan.createTable,/PRIMARY KEY \(tenant_id,record_id\)/);
+  assert.ok(![plan.createTable,...plan.addColumns].join(' ').toUpperCase().includes('JSONB'));
+});
