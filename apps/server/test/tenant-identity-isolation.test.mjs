@@ -49,3 +49,15 @@ test('MD-03.4: duplicate users, emails and invalid ACL shapes fail closed',()=>{
   const u=state();u.tenants.beta.accessControl.users={id:'b'};
   assert.throws(()=>assertTenantIdentityIsolation(u),/invalid access-control identities/);
 });
+
+test('MD-03.4: orphan or duplicated access-control assignments cannot enter a snapshot',()=>{
+  const orphan=state();
+  orphan.tenants.alpha.accessControl.users.push({id:'unregistered'});
+  assert.throws(()=>assertTenantIdentityIsolation(orphan),/no tenant identity/);
+  const duplicate=state();
+  duplicate.tenants.alpha.accessControl.users.push({id:'a'});
+  assert.throws(()=>assertTenantIdentityIsolation(duplicate),/duplicate access-control user identity/);
+  const invalid=state();
+  invalid.tenants.alpha.accessControl.users.push({id:''});
+  assert.throws(()=>assertTenantIdentityIsolation(invalid),/invalid access-control user identity/);
+});
