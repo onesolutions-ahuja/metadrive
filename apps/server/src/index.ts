@@ -57,7 +57,8 @@ app.use(cors({
     if (!origin || webOrigins.has(origin) || origin === 'http://localhost:4173') return callback(null, true);
     return callback(new Error('Origin is not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
+  exposedHeaders: ['Server-Timing']
 }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
 // Explicit maintenance barrier for Aiven cutover; no API traffic or scheduled
