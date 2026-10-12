@@ -157,6 +157,9 @@ async function compareObject(client,item,sqlObject) {
     rows.set(p.record_id,p);
   }
   if(rows.size!==item.records.length) return false;
+  // Presence must never refer to a deleted or foreign physical record. Without
+  // this check, a stale presence row could survive a matching row-count proof.
+  for(const recordId of present.keys()) if(!rows.has(recordId)) return false;
   const seen=new Set();
   for(const record of item.records){
     if(typeof record?.Id!=='string'||!record.Id||seen.has(record.Id)) throw Error('Invalid or duplicate record identity');
