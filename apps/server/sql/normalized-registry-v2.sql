@@ -39,6 +39,33 @@ CREATE TABLE IF NOT EXISTS md_v2_field_presence (
   field_id UUID NOT NULL REFERENCES md_v2_field_registry(field_id) ON DELETE RESTRICT,
   PRIMARY KEY (object_id,tenant_id,record_id,field_id)
 );
+-- A typed presence row must match BOTH the tenant owning the physical
+-- object and a field defined by that same object. Separate single-column FKs
+-- previously allowed a cross-tenant/object combination.
+CREATE UNIQUE INDEX IF NOT EXISTS md_v2_object_tenant_identity_uidx
+  ON md_v2_object_registry(object_id,tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS md_v2_field_object_identity_uidx
+  ON md_v2_field_registry(object_id,field_id);
+DO $md_03_4$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid='md_v2_field_presence'::regclass
+      AND conname='md_v2_presence_tenant_object_fk') THEN
+    ALTER TABLE md_v2_field_presence
+      ADD CONSTRAINT md_v2_presence_tenant_object_fk
+      FOREIGN KEY (object_id,tenant_id) REFERENCES md_v2_object_registry(object_id,tenant_id)
+      DEFERRABLE INITIALLY DEFERRED;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid='md_v2_field_presence'::regclass
+      AND conname='md_v2_presence_object_field_fk') THEN
+    ALTER TABLE md_v2_field_presence
+      ADD CONSTRAINT md_v2_presence_object_field_fk
+      FOREIGN KEY (object_id,field_id) REFERENCES md_v2_field_registry(object_id,field_id)
+      DEFERRABLE INITIALLY DEFERRED;
+  END IF;
+END $md_03_4$;
+
 CREATE TABLE IF NOT EXISTS md_v2_shadow_run (
   id SMALLINT PRIMARY KEY CHECK (id=1),
   source_sha256 CHAR(64) NOT NULL,

@@ -146,6 +146,14 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     await connected(new pg.Client({connectionString:databaseUrl(targetName),ssl:false}),async(client)=>{
       assert.equal((await client.query('SELECT tenant_id FROM metadrive_rel_tenants WHERE tenant_id=$1',[secondaryTenantId])).rowCount,1);
       assert.equal((await client.query('SELECT user_id FROM metadrive_rel_users WHERE tenant_id=$1',[secondaryTenantId])).rowCount,2);
+      const originalUser=await client.query('SELECT user_id FROM metadrive_rel_users WHERE tenant_id=$1 LIMIT 1',[tenantId]);
+      assert.equal(originalUser.rowCount,1);
+      // Application-issued tokens cannot be reassigned across tenant
+      // boundaries, including by an erroneous/compromised SQL writer.
+      await assert.rejects(client.query(
+        'INSERT INTO metadrive_rel_refresh_sessions(token_hash,position,family_id,user_id,tenant_id,expires_at) VALUES ($1,(SELECT COALESCE(MAX(position),-1)+1 FROM metadrive_rel_refresh_sessions),$2,$3,$4,$5)',
+        ['cross-tenant-token-not-valid','cross-tenant-family',originalUser.rows[0].user_id,secondaryTenantId,12345678]
+      ),(error)=>error.code==='23503');
       assert.ok((await client.query("SELECT setting_name FROM metadrive_rel_platform_settings WHERE setting_name='tenantRegistry'")).rowCount===1);
     });
     const provisionRetry=await request(port,'/auth/provision-tenant','POST',null,tenantRequest,provisionHeaders);

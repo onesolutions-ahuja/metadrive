@@ -17,7 +17,8 @@ for(const name of [
   'normalized-state-runtime.mjs',
   'normalized-state-delta.mjs',
   'normalized-object-schema.mjs',
-  'normalized-typed-records.mjs'
+  'normalized-typed-records.mjs',
+  'tenant-identity-isolation.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
