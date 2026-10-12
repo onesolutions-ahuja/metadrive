@@ -3029,7 +3029,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   };
   const saveLibraryComponent = async (
-    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'>,
+    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'> & { publicationStatus: 'Draft' | 'Published' }, 
     updating: boolean
   ) => {
     const path = updating ? `/component-library/${encodeURIComponent(component.apiName)}` : '/component-library';
@@ -3041,6 +3041,18 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       ? current.map((item) => item.apiName === payload.component.apiName ? payload.component : item)
       : [...current, payload.component]);
     notify(updating ? 'Global component updated' : 'Global component registered');
+  };
+  const publishLibraryComponent = async (apiName: string) => {
+    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/publish`, {method:'POST',body:'{}'});
+    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
+    notify('Component published');
+  };
+  const rollbackLibraryComponent = async (apiName: string, version: number) => {
+    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/rollback`, {
+      method:'POST',body:JSON.stringify({version})
+    });
+    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
+    notify('Component restored as a new published version');
   };
   const deleteLibraryComponent = async (apiName: string) => {
     await apiRequest<void>(`/component-library/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
@@ -3581,7 +3593,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onSaveTerritories={saveDashboardTerritories}
             onNotify={notify}
           />}
-          {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} />}
+          {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} onPublish={publishLibraryComponent} onRollback={rollbackLibraryComponent} />}
           {route.kind === 'setup' && workspace === 'approval-processes' && <ApprovalProcessManager
             processes={approvalProcesses}
             objects={objects}
