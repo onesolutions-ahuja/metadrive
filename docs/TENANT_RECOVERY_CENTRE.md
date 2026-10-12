@@ -12,6 +12,24 @@ The named claimant (and nobody else) signs in with their own active tenant accou
 
 Audit events are recorded in the dedicated platform-control database, protected from ordinary update/delete by a PostgreSQL trigger. The tenant's security audit records administrator restoration. This does not pretend that a database owner cannot alter audit data.
 
+## Current production readiness (2026-10-12)
+
+The independent Aiven control database and eight base tables exist. Its protected audit
+trigger and restricted runtime role have **not** yet been installed with privileged
+database access. The standard connected Aiven SQL editor disallows the relevant
+`CREATE FUNCTION`, `GRANT` and `REVOKE` commands. An opt-in privileged migration
+and post-migration runtime verification are provided in
+`apps/server/scripts/provision-recovery-controls.mjs`.
+
+Even when external integration flags are accidentally configured, the recovery API
+now checks database identity, runtime role scope and the enabled immutable-event
+trigger before each request and responds with HTTP 503 if any control is missing.
+The user currently has **no SMTP provider**, so leave this service disabled. Existing
+tenant creation, login, archival, domain, usage and normal RBAC features do not
+depend on this optional recovery email transport.
+
+See `docs/MD-03-PRODUCTION-VERIFICATION.md` for the checked production evidence.
+
 ## Security and activation requirements
 
 The recovery routes remain **disabled by default**. Enable only after all requirements are present:
