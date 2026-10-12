@@ -1,0 +1,40 @@
+name: MD-08 App Manager and Navigation
+on:
+  pull_request:
+    paths:
+      - 'apps/web/src/AppManager.tsx'
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/appNavigation.ts'
+      - 'apps/web/src/styles.css'
+      - 'apps/web/test/appNavigation.test.mjs'
+      - '.github/workflows/md08-app-manager-navigation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: App navigation unit tests
+        run: node --experimental-strip-types --test apps/web/test/appNavigation.test.mjs
+      - name: Compile frontend and verify production bundle
+        env:
+          GITHUB_PAGES: 'true'
+        run: npm run build --workspace apps/web
+      - name: Verify GitHub Pages navigation and branding
+        run: node scripts/verify-pages-release.mjs
+      - name: Build API and verify runtime dependencies
+        run: npm run build --workspace apps/server
+      - name: Run full server regression suite (includes tenant RBAC navigation)
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: npm test --workspace apps/server
