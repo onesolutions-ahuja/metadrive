@@ -8678,7 +8678,7 @@ app.put('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', '
   if (requested.status === 'Active') {
     const validation = validateFlow(nextFlow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections, tenant.connectorDefinitions, tenant.emailAlerts,
       formulaContextForUser(tenant, principal.userId),
-      [...tenant.flows.filter((flow) => flow.apiName !== nextFlow.apiName), nextFlow], tenant.approvalProcesses, tenant.platformEvents);
+      [...tenant.flows.filter((flow) => flow.apiName !== nextFlow.apiName), nextFlow], tenant.approvalProcesses, tenant.platformEvents, principal.tenantId);
     if (validation.errors.length) return res.status(422).json({ error: 'Flow validation failed', details: validation.errors });
     // Exactly one active version; do not leave stale Active labels on archived revisions.
     nextFlow.versions = [...history.map((version) => ({
@@ -8764,7 +8764,7 @@ app.post('/api/metadata/flows/:apiName/validate', requirePermission('metadata:re
   const tenant = tenantData(principal.tenantId)!;
   const validation = validateFlow(parsed.data, tenant.objects, tenant.namedCredentials, tenant.integrationConnections, tenant.connectorDefinitions, tenant.emailAlerts,
     formulaContextForUser(tenant, principal.userId),
-    [...tenant.flows.filter((flow) => flow.apiName !== parsed.data.apiName), parsed.data], tenant.approvalProcesses, tenant.platformEvents);
+    [...tenant.flows.filter((flow) => flow.apiName !== parsed.data.apiName), parsed.data], tenant.approvalProcesses, tenant.platformEvents, principal.tenantId);
   return res.json(validation);
 });
 // Reuse the same validated permission assignments for all object and field checks
@@ -10485,7 +10485,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   const validation = validateFlow(
     flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
     tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId), tenant.flows,
-    tenant.approvalProcesses, tenant.platformEvents
+    tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
   );
   if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
   try {
@@ -10522,7 +10522,7 @@ app.post('/api/flows/:apiName/debug', accessAuthentication, requirePermission('f
   const validation = validateFlow(
     flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
     tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId), tenant.flows,
-    tenant.approvalProcesses, tenant.platformEvents
+    tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
   );
   if (!validation.valid) return res.status(422).json({ error: 'Flow debug validation failed', details: validation.errors });
   const debugTrace: FlowDebugTraceEntry[] = [];
@@ -11709,7 +11709,8 @@ app.put('/api/metadata/dashboards/:apiName', requirePermission('metadata:read'),
   for (const [index, component] of parsed.data.components.entries()) {
     if (component.type === 'Custom') {
       const registered = state.libraryComponents.find((item) =>
-        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard'));
+        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard')
+          && libraryComponentVisible(item, principal.tenantId, Object.keys(state.tenants)));
       if (!registered) return res.status(422).json({ error: `Custom dashboard component "${component.customComponentApiName ?? component.title}" is not available in the component library` });
     }
     const report = component.reportApiName
@@ -12074,7 +12075,8 @@ app.post('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metad
     }
     if (component.type === 'Custom') {
       const registered = state.libraryComponents.find((item) =>
-        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard'));
+        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard')
+          && libraryComponentVisible(item, viewer.tenantId, Object.keys(state.tenants)));
       if (!registered) return res.status(409).json({ error: `Custom dashboard component "${component.customComponentApiName}" is no longer available` });
       const capturedHtml = customComponents.get(component.id);
       if (capturedHtml === undefined) return res.status(400).json({ error: `Custom dashboard component "${component.title}" was not captured` });
@@ -13378,7 +13380,8 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
   }
   const invalidLibraryComponent = parsed.data.components.find((component) => component.type.startsWith('Custom:') && !state.libraryComponents.some((libraryComponent) =>
-    libraryComponent.apiName === component.type.slice('Custom:'.length) && libraryComponent.surfaces.includes('page')));
+    libraryComponent.apiName === component.type.slice('Custom:'.length) && libraryComponent.surfaces.includes('page')
+    && libraryComponentVisible(libraryComponent, principal.tenantId, Object.keys(state.tenants))));
   if (invalidLibraryComponent) return res.status(422).json({ error: `Custom page component "${invalidLibraryComponent.type.slice('Custom:'.length)}" is not available in the component library` });
   const invalidApp = parsed.data.activationAssignments?.find((assignment) => assignment.appId
     && !tenant.apps.some((app) => app.apiName === assignment.appId));
@@ -17529,7 +17532,8 @@ function validateFlow(
   formulaContext: { timeZone?: string; locale?: string; corporateCurrency?: string; currencyRates?: Record<string, number> } = {},
   allFlows: FlowMetadata[] = [],
   approvalProcesses: ApprovalProcess[] = [],
-  platformEvents: z.infer<typeof platformEventSchema>[] = []
+  platformEvents: z.infer<typeof platformEventSchema>[] = [],
+  tenantId = ''
 ): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -17857,7 +17861,8 @@ function validateFlow(
         if (type === 'Custom Component') {
           const apiName = typeof field.componentApiName === 'string' ? field.componentApiName.trim() : '';
           const definition = state.libraryComponents.find((component) =>
-            component.apiName === apiName && component.surfaces.includes('flow') && component.status !== 'Draft');
+            component.apiName === apiName && component.surfaces.includes('flow') && component.status !== 'Draft'
+            && libraryComponentVisible(component, tenantId, Object.keys(state.tenants)));
           if (!definition) {
             errors.push(`Custom screen component "${apiName}" on "${element.label}" must reference a published Flow-enabled registry component.`);
           }
