@@ -6110,6 +6110,36 @@ app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'object
   const created = commitObjectMetadata(principal.tenantId, principal.userId, updated, 'CREATED', undefined, object)!;
   return res.status(201).json({ object: created });
 });
+// Dry-run schema validation never mutates records, versions or audit history.
+app.post('/api/metadata/objects/:apiName/validate', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const current = tenant.objects.find((candidate) => candidate.apiName === routeParam(req, 'apiName'));
+  if (!current) return res.status(404).json({ error: 'Object not found' });
+  const parsed = objectSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(422).json({ valid: false, errors: parsed.error.issues.map((issue) => issue.message) });
+  const candidate = withObjectDefaults(parsed.data);
+  const errors: string[] = [];
+  if (candidate.apiName !== current.apiName || candidate.kind !== current.kind) errors.push('Object identity and type cannot change');
+  for (const field of current.fields) {
+    if (!candidate.fields.some((item) => item.apiName === field.apiName)) errors.push(`Field "${field.apiName}" must be removed using the field delete endpoint`);
+  }
+  for (const field of candidate.fields) {
+    const error = validateFieldChange(current.fields.find((item) => item.apiName === field.apiName), field, tenant.records[current.apiName] ?? []);
+    if (error) errors.push(error);
+  }
+  const knownObjects = tenant.objects.map((item) => item.apiName === current.apiName ? candidate : item);
+  for (const error of [
+    validateExistingFieldValues(candidate, tenant.records[current.apiName] ?? []),
+    validateObjectRelationships(candidate, knownObjects),
+    validateRelatedLookupFilters(candidate, knownObjects),
+    validateRelatedLists(candidate, knownObjects, current)
+  ]) if (error) errors.push(error);
+  if (!metadataPrecondition(req, res, current)) return;
+  return res.status(errors.length ? 422 : 200).json({
+    valid: errors.length === 0, revision: metadataVersion(current), errors
+  });
+});
 app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const parsed = objectSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid object metadata', details: parsed.error.flatten() });
