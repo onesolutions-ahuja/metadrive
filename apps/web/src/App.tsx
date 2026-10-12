@@ -4463,6 +4463,7 @@ function LightningAppRuntime({
   onKioskModeChange: (enabled: boolean) => void;
 }) {
   const [page, setPage] = useState<LightningPageMetadata | null>(null);
+  const layoutDevice = usePageLayoutDevice();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
@@ -4499,11 +4500,24 @@ function LightningAppRuntime({
     if (component.type.startsWith('Custom:')) {
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
-      return definition
-        ? <MetadataBoundPageComponent key={component.id} definition={definition} component={component}
-          objects={objects} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
-          onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
-        : <div className="records-message" role="status" key={component.id}>Component is no longer registered: {component.label}</div>;
+      const nestedChildren = isLayoutContainer(component)
+        ? childrenOf(page.components, component.id).map((child) => page.layoutMode === 'free-canvas'
+            ? renderCanvasComponent(child, true) : renderComponent(child))
+        : undefined;
+      if (!definition) return <div className="records-message" role="status" key={component.id}>
+        Component is no longer registered: {component.label}
+      </div>;
+      const content = !isLayoutContainer(component) && typeof component.properties.objectApiName === 'string'
+        && component.properties.objectApiName
+        ? <MetadataBoundPageComponent definition={definition} component={component}
+            objects={objects} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+            onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
+        : <RegisteredComponent definition={definition} props={{
+            ...component.properties, label: component.label, properties: component.properties,
+            device: layoutDevice, children: nestedChildren
+          }} />;
+      return page.layoutMode === 'free-canvas' ? content
+        : <div key={component.id} style={resolveLayoutStyle(component.properties, layoutDevice)}>{content}</div>;
     }
     if (component.type === 'Report Chart') {
       const reportApiName = typeof component.properties.reportApiName === 'string' ? component.properties.reportApiName : '';
@@ -4535,23 +4549,32 @@ function LightningAppRuntime({
     </details>;
     return <div className="records-message" role="status" key={component.id}>{component.label} is not supported on app pages.</div>;
   };
+  const renderCanvasComponent = (component: PageComponentMetadata, nested = false) => {
+    if (!component.visible) return null;
+    return <div key={component.id} className={nested ? 'free-canvas-runtime-component nested-page-runtime' : 'free-canvas-runtime-component'}
+      data-layout-component-id={component.id}
+      style={{
+        ...(nested
+          ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
+          : {
+              left: component.position?.x ?? 0,
+              top: component.position?.y ?? 0,
+              width: component.position?.width ?? 320,
+              height: component.position?.height ?? 180
+            }),
+        ...resolveLayoutStyle(component.properties, layoutDevice)
+      } as React.CSSProperties}>
+      {renderComponent(component)}
+    </div>;
+  };
   if (page.layoutMode === 'free-canvas') return <div className="free-canvas-runtime"
     data-lightning-page={page.apiName}
     data-layout-mode="free-canvas"
     style={{ width: page.canvasWidth, height: page.canvasHeight }}>
-    {page.components.filter((component) => component.visible).map((component) => <div key={component.id}
-      className="free-canvas-runtime-component"
-      style={{
-        left: component.position?.x ?? 0,
-        top: component.position?.y ?? 0,
-        width: component.position?.width ?? 320,
-        height: component.position?.height ?? 180
-      }}>
-      {renderComponent(component)}
-    </div>)}
+    {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
-    page.components.filter((component) => (component.region ?? 'main') === region).map(renderComponent);
+    childrenOf(page.components, null).filter((component) => (component.region ?? 'main') === region).map(renderComponent);
   return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
     <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18} /></div>
