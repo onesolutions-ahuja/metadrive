@@ -60,17 +60,24 @@ jobs:
       - name: Take full consistent PostgreSQL backup into temporary private runner storage
         env:
           DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_AIVEN_CANONICAL_DATABASE: ${{ vars.METADRIVE_AIVEN_CANONICAL_DATABASE }}
         run: |
           node --input-type=module <<'NODE'
           import { writeFileSync } from 'node:fs';
           const u=new URL(process.env.DATABASE_URL);
           if(!['postgres:','postgresql:'].includes(u.protocol)) throw Error('Invalid PostgreSQL URL');
+          // The existing secret names the retired defaultdb; the verified
+          // canonical SQL-only state resides in the named Aiven database.
+          // A future cutover can update this repository variable without
+          // exposing or rotating the Aiven connection credential.
+          const canonical=process.env.METADRIVE_AIVEN_CANONICAL_DATABASE||'metadrive_sql_20261012';
+          if(!/^[a-z][a-z0-9_]{2,61}$/.test(canonical)) throw Error('Invalid canonical database identifier');
           const params={
             PGHOST:u.hostname,
             PGPORT:u.port||'5432',
             PGUSER:decodeURIComponent(u.username),
             PGPASSWORD:decodeURIComponent(u.password),
-            PGDATABASE:decodeURIComponent(u.pathname.slice(1)),
+            PGDATABASE:canonical,
             PGSSLMODE:'require'
           };
           if(Object.values(params).some(v=>!v||/[\r\n]/.test(v))) throw Error('Invalid PostgreSQL connection field');
