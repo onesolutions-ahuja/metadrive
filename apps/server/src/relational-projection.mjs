@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 
 const rootKeys = new Set(['tenants', 'libraryComponents', 'users', 'refreshSessions', 'revokedAccessTokens',
-  'platformPolicies', 'platformPolicyAudit']);
+  'platformPolicies', 'platformPolicyAudit', 'tenantRegistry', 'tenantManagementAudit']);
 const userFields = ['id','tenantId','name','email','passwordSalt','passwordHash','role','permissionSetIds','permissionSetGroupIds','disabled','createdAt'];
 const sessionFields = ['tokenHash','familyId','userId','tenantId','expiresAt','usedAt','revokedAt'];
 function fail(message) { throw new Error('MetaDrive relational projection: ' + message); }
@@ -85,6 +85,12 @@ export function projectState(input) {
   if (Object.hasOwn(state,'platformPolicyAudit')) {
     rows.platformSettings.push({key:'platformPolicyAudit',payload:arr(state.platformPolicyAudit,'platformPolicyAudit')});
   }
+  if (Object.hasOwn(state,'tenantRegistry')) {
+    rows.platformSettings.push({key:'tenantRegistry',payload:obj(state.tenantRegistry,'tenantRegistry')});
+  }
+  if (Object.hasOwn(state,'tenantManagementAudit')) {
+    rows.platformSettings.push({key:'tenantManagementAudit',payload:arr(state.tenantManagementAudit,'tenantManagementAudit')});
+  }
   arr(state.libraryComponents,'libraryComponents').forEach((payload,position)=>rows.components.push({position,payload}));
   const seenUsers=new Set(), seenEmails=new Set();
   arr(state.users,'users').forEach((value,position)=>{
@@ -156,10 +162,12 @@ export function restoreState(rows) {
   const revokedAccessTokens=Object.fromEntries(rows.revokedTokens.map(r=>[r.tokenHash,r.expiresAt]));
   const restored={tenants,libraryComponents,users,refreshSessions,revokedAccessTokens};
   for (const row of rows.platformSettings ?? []) {
-    if (!['platformPolicies','platformPolicyAudit'].includes(row.key) || Object.hasOwn(restored,row.key))
+    if (!['platformPolicies','platformPolicyAudit','tenantRegistry','tenantManagementAudit'].includes(row.key) || Object.hasOwn(restored,row.key))
       fail('unknown or duplicate platform setting ' + row.key);
     if (row.key==='platformPolicies') obj(row.payload,row.key);
     if (row.key==='platformPolicyAudit') arr(row.payload,row.key);
+    if (row.key==='tenantRegistry') obj(row.payload,row.key);
+    if (row.key==='tenantManagementAudit') arr(row.payload,row.key);
     define(restored,row.key,row.payload);
   }
   return restored;
