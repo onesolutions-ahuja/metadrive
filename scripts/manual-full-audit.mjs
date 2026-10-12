@@ -181,7 +181,7 @@ async function collectLayout(page) {
 }
 async function inspectKeyboard(page) {
   const sequence = [];
-  await page.locator('body').click({ position: { x: 1, y: 1 }, force: true }).catch(() => {});
+  await page.evaluate(() => document.activeElement?.blur());
   for (let i = 0; i < 10; i++) {
     await page.keyboard.press('Tab');
     const focus = await page.evaluate(() => {
@@ -208,6 +208,21 @@ async function inspectInteractions(page, label) {
       await quick.fill(before);
     } else steps.push({ test: 'Quick Find text entry', result: 'not-applicable' });
   }
+  if (label.startsWith('Discovered record list')) {
+    const next = page.getByRole('button', { name: /^next (page)?$/i }).first();
+    if (await next.count() && await next.isVisible() && await next.isEnabled()) {
+      // Pagination reads only. Never use New/Edit/Save/Export/Delete controls.
+      const initialUrl = page.url();
+      await next.click();
+      steps.push({ test: 'List next-page navigation', result: 'pass',
+        urlChanged: page.url() !== initialUrl });
+      const previous = page.getByRole('button', { name: /^previous (page)?$/i }).first();
+      if (await previous.count() && await previous.isVisible() && await previous.isEnabled()) {
+        await previous.click();
+        steps.push({ test: 'List previous-page navigation', result: 'pass' });
+      }
+    } else steps.push({ test: 'List pagination', result: 'not-applicable' });
+  }
   if (label === 'Setup home') {
     const profile = page.getByRole('button', { name: 'User profile' }).first();
     if (await profile.count() && await profile.isVisible()) {
@@ -218,6 +233,39 @@ async function inspectInteractions(page, label) {
     }
   }
   return steps;
+}
+async function inspectControlInventory(page) {
+  // Inventory safe selectors and HTML state, without pressing submit/save/action buttons.
+  return page.evaluate(() => {
+    const visible = el => {
+      const s = getComputedStyle(el), r = el.getBoundingClientRect();
+      return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0;
+    };
+    const controls = [...document.querySelectorAll('input, select, textarea, button, [role="combobox"], [role="searchbox"], [role="tab"]')]
+      .filter(visible);
+    const byType = {};
+    const noLabel = [];
+    const invalidSelect = [];
+    for (const el of controls) {
+      const key = (el.getAttribute('role') || el.tagName.toLowerCase());
+      byType[key] = (byType[key] || 0) + 1;
+      const namedBy = el.getAttribute('aria-labelledby');
+      const labelText = el.labels ? [...el.labels].map(l => l.textContent.trim()).join(' ') : '';
+      const accessible = el.getAttribute('aria-label') || el.getAttribute('title') || labelText ||
+        (namedBy && document.getElementById(namedBy)?.textContent) ||
+        (el.tagName === 'BUTTON' ? el.textContent?.trim() : '') || '';
+      if (!accessible && !el.placeholder && noLabel.length < 12) noLabel.push((el.outerHTML || '').slice(0, 110));
+      if (el.tagName === 'SELECT' && el.options.length < 1 && invalidSelect.length < 10)
+        invalidSelect.push(el.outerHTML.slice(0, 100));
+    }
+    const formValidation = [...document.forms].slice(0, 10).map(f => ({
+      controls: f.elements.length,
+      required: f.querySelectorAll('[required]').length,
+      errorsPresent: f.querySelectorAll('[aria-invalid="true"], :invalid').length
+    }));
+    return { total: controls.length, byType, noLabel, emptySelects: invalidSelect,
+      forms: formValidation, disabled: controls.filter(el => el.disabled).length };
+  });
 }
 async function inspectLinks(page) {
   return page.evaluate(() => [...document.querySelectorAll('a[href]')].map(a => ({
@@ -300,6 +348,11 @@ async function run() {
           if (s.keyboard.filter(f => f.offscreen).length > 2) findIssue(s.issues, 'OFFSCREEN_FOCUS', 'medium', 'Several tab stops are off screen');
           s.interactions = await inspectInteractions(page, name);
           for (const step of s.interactions) if (step.result === 'fail') findIssue(s.issues, 'INTERACTION_FAILED', 'medium', step.test);
+          s.controlInventory = await inspectControlInventory(page);
+          if (s.controlInventory.noLabel.length) findIssue(s.issues, 'POSSIBLE_UNLABELED_CONTROLS', 'low',
+            s.controlInventory.noLabel.length + ' controls need review');
+          if (s.controlInventory.emptySelects.length) findIssue(s.issues, 'EMPTY_DROPDOWNS', 'medium',
+            s.controlInventory.emptySelects.length + ' selects have no options');
           s.links = (await inspectLinks(page)).filter(l => !isSameApp(l.href) && l.href.startsWith(base.origin)).slice(0, 15);
           if (s.links.length) findIssue(s.issues, 'BROKEN_INTERNAL_LINK_CANDIDATES', 'low', JSON.stringify(s.links.slice(0, 3)));
           for (const link of await inspectLinks(page)) if (isSameApp(link.href) && /\/une\/o\/[^/]+\/list/.test(link.href))
