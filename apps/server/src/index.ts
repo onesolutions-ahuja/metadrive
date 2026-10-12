@@ -12804,13 +12804,12 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
   if (!parsed.success) return res.status(400).json({ error: 'Invalid access-control metadata', details: parsed.error.flatten() });
   const appNames = new Set(tenant.apps.map((app) => app.apiName));
   const tabNames = new Set(tenant.objects.map((object) => object.apiName));
-  const invalidNavigation = [...parsed.data.profiles, ...parsed.data.permissionSets,
-    ...parsed.data.permissionSetGroups].some((item) => {
-    const apps = 'mutedAppPermissions' in item ? item.mutedAppPermissions : item.appPermissions;
-    const tabs = 'mutedTabPermissions' in item ? item.mutedTabPermissions : item.tabPermissions;
-    return Object.keys(apps ?? {}).some((name) => !appNames.has(name))
-      || Object.keys(tabs ?? {}).some((name) => !tabNames.has(name));
-  });
+  const invalidNavigation = [...parsed.data.profiles, ...parsed.data.permissionSets].some((item) =>
+    Object.keys(item.appPermissions ?? {}).some((name) => !appNames.has(name))
+      || Object.keys(item.tabPermissions ?? {}).some((name) => !tabNames.has(name)))
+    || parsed.data.permissionSetGroups.some((group) =>
+      Object.keys(group.mutedAppPermissions ?? {}).some((name) => !appNames.has(name))
+      || Object.keys(group.mutedTabPermissions ?? {}).some((name) => !tabNames.has(name)));
   if (invalidNavigation) return res.status(400).json({ error: 'Navigation grants must reference apps and tabs in this tenant' });
   // Fail closed: tenant RBAC is deliberately not an authority for platform policies.
   const reservedPermission = (permission: string) =>
