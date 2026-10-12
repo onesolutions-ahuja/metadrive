@@ -1,19 +1,17 @@
-# MD-03.6 — Tenant lifecycle controls
+# MD-03.6 — Tenant lifecycle management
 
-## Baseline and implementation
-This document records the implementation baseline following MD-03.1, MD-03.4 and MD-03.5. The original 3.6 roadmap definition was not found in the repository, so archival/retention/deletion are **proposed scope**, not previously approved functionality.
+## Implemented
+- Platform-only suspend and reactivate, including tenant refresh-session revocation and bearer-token revocation epoch.
+- Tenant ID confirmation in the platform administration UI for suspension, reactivation, archival and restoration.
+- Server-enforced status transitions: ACTIVE → SUSPENDED → ARCHIVED → SUSPENDED → ACTIVE.
+- Archived tenants deny authentication and tenant requests. Archived records, metadata, users and domains are retained.
+- Archive and restore events are persisted in the platform tenant management audit; archive also revokes existing sessions.
+- Audited, platform-only retention-until and legal-hold metadata. No automatic expiry or deletion.
+- Platform directory archived-status filtering and summary metadata; archive/restore/retention UI.
+- HTTP smoke regressions for denied cross-tenant/platform access, archived login denial, restore-to-suspended and legal-hold persistence.
 
-Existing platform-only operations: tenant creation/list/edit, suspension/reactivation, persisted state, and revocation of refresh sessions on suspension. Tenant hostname authentication is governed by verified tenant-domain bindings. Do not duplicate these mechanisms.
+## Deliberately prohibited
+A destructive tenant purge is not exposed. A retention deadline is **not consent or authorization for deletion**. Physical erasure across tenant data, users, database backups and exported copies requires a separately authorised deletion ceremony, proof of recoverability and statutory/legal-hold constraints. No production writes or migrations are part of this PR.
 
-## Delivered in this change
-The tenant management console requires a platform operator to enter the immutable tenant ID exactly before POST /platform/tenants/:tenantId/suspend or /reactivate. Cancelled or mismatched input does not submit the request. Server-side platform authorization, tenant status and session revocation remain authoritative; the browser confirmation is an additional accidental-action safeguard, not an authorization mechanism.
-
-## Required for full lifecycle acceptance
-- Archival: define tenant ARCHIVED semantics, inactivity/access rules, data retention and reversible restore before implementing.
-- Retention: explicit per-tenant/legal-hold policy, audited approval, backup retention interactions and recoverability; never infer deletion from suspension.
-- Erasure: separately authorized, asynchronous and idempotent job with exact tenant scoping, dry-run inventory, audit receipts, recovery window and staging proofs. No implicit database DROP, bulk delete, or production migration.
-- Operational safety: non-platform callers must never invoke lifecycle endpoints. A suspended tenant's bearer/refresh/login paths must remain blocked. Reactivation must not revive revoked sessions.
-- Verification: run web build, HTTP lifecycle smoke tests, and Aiven PostgreSQL integration against isolated test databases. Record passing evidence before merge and verify deployed production separately.
-
-## Rollout constraints
-The Aiven oneengine production service is shared across tenants. Tenant lifecycle actions must never modify unrelated tenant records. This change performs no production database writes or schema migrations.
+## Acceptance
+Merge only after CI build, server lifecycle HTTP tests and PostgreSQL staging tests pass. A merged PR is not production deployment proof; production rollout and explicit deletion-policy approval remain independent.
