@@ -56,7 +56,7 @@ export async function withSchedulerLease(run: () => Promise<void>): Promise<bool
     if (testOnlyLocalState) { await run(); return true; }
     throw new Error('Native scheduler requires PostgreSQL persistence');
   }
-  const client = await pool.connect();
+  const client = await (pool as unknown as { connect(): Promise<{ query(sql: string, params?: unknown[]): Promise<{ rows: Array<{ acquired?: boolean; released?: boolean }> }>; release(destroy?: boolean): void }> }).connect();
   let acquired = false;
   try {
     const result = await client.query('SELECT pg_try_advisory_lock($1::integer, $2::integer) AS acquired', [1330463812, 1]);
