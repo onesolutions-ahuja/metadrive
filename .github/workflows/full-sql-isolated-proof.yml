@@ -104,7 +104,7 @@ jobs:
           const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false});
           try {
             const r=await pool.query("SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='metadrive_platform_state' AND column_name='payload') AS legacy");
-            appendFileSync(process.env.GITHUB_OUTPUT,'legacy='+String(r.rows[0].legacy)+'\\n');
+            appendFileSync(process.env.GITHUB_OUTPUT,'legacy='+String(r.rows[0].legacy)+'\n');
           } finally {await pool.end();}
           NODE
           echo "Independent PostgreSQL restore verified. No backup or customer data uploaded to GitHub."
