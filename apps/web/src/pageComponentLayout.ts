@@ -86,7 +86,7 @@ export const layoutContainerTypes = new Set(['Container', 'Row', 'Column', 'Card
 
 export function isLayoutContainer(component: PageComponentMetadata): boolean {
   return isLayoutType(component.type)
-    || (component.type.startsWith('Custom:') && component.properties?.layoutContainer !== false);
+    || (component.type.startsWith('Custom:') && component.properties?.layoutContainer === true);
 }
 export function rawLayoutParentId(component: PageComponentMetadata): string | null {
   return typeof component.properties?.layoutParentId === 'string' && component.properties.layoutParentId
