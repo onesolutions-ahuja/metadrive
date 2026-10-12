@@ -2837,7 +2837,11 @@ const integrationConnectionRequestSchema = z.object({
 const connectorDefinitionRequestSchema = connectorDefinitionSchema;
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
-type TenantData = { mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type SecurityAuditEvent = {
+  id: string; at: string; actorUserId: string; action: string;
+  targetUserId?: string; details?: Record<string, string>;
+};
+type TenantData = { securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -3302,6 +3306,10 @@ const stateSchema = z.object({
   })).default([]),
   libraryComponents: z.array(libraryComponentSchema).default([]),
   tenants: z.record(z.object({
+    securityAudit: z.array(z.object({
+      id: z.string(), at: z.string().datetime(), actorUserId: z.string(), action: z.string(),
+      targetUserId: z.string().optional(), details: z.record(z.string()).optional()
+    })).default([]),
     mfaPolicy: z.object({ mode: z.enum(['Off', 'Optional', 'Required']) }).default({ mode: 'Off' }),
     objects: z.array(objectSchema),
     flows: z.array(flowSchema),
@@ -3945,7 +3953,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     ]
   });
   return {
-    mfaPolicy: { mode: 'Off' },
+    mfaPolicy: { mode: 'Off' }, securityAudit: [],
     objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
@@ -4738,6 +4746,21 @@ async function bootstrapTenant(): Promise<void> {
 // Existing users and tenants are loaded read-only; bootstrap resumes after maintenance.
 if (!maintenanceMode) await bootstrapTenant();
 
+function withSecurityEvent(
+  tenant: TenantData,
+  actorUserId: string,
+  action: string,
+  details?: Record<string, string>,
+  targetUserId?: string
+): TenantData {
+  const event: SecurityAuditEvent = {
+    id: randomUUID(), at: new Date().toISOString(), actorUserId, action,
+    ...(targetUserId ? { targetUserId } : {}),
+    ...(details ? { details } : {})
+  };
+  // No passwords, bearer tokens, MFA secrets, raw request bodies, or network identifiers.
+  return { ...tenant, securityAudit: [...tenant.securityAudit, event].slice(-5000) };
+}
 function tenantData(tenantId: string): TenantData | undefined {
   return state.tenants[tenantId];
 }
@@ -5090,6 +5113,9 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
   const nextState = {
     ...state,
     refreshSessions: [...state.refreshSessions, refresh.session],
+    tenants: {
+      ...state.tenants, [user.tenantId]: withSecurityEvent(data, user.id, 'auth.login.succeeded')
+    },
     revokedAccessTokens: Object.fromEntries(Object.entries(state.revokedAccessTokens).filter(([, expiry]) => expiry > Date.now() / 1000))
   };
   const sessionStateStartedAt = performance.now();
@@ -5349,7 +5375,11 @@ app.put('/api/auth/mfa/policy', accessAuthentication, requirePermission('securit
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   if (tenant.mfaPolicy.mode !== parsed.data.mode) {
-    persistTenantRecords(principal.tenantId, { ...tenant, mfaPolicy: parsed.data });
+    persistTenantRecords(principal.tenantId, withSecurityEvent(
+      { ...tenant, mfaPolicy: parsed.data },
+      principal.userId, 'auth.mfa.policy.updated',
+      { from: tenant.mfaPolicy.mode, to: parsed.data.mode }
+    ));
   }
   return res.json(parsed.data);
 });
@@ -5597,12 +5627,24 @@ app.post('/api/auth/sessions/revoke-all', accessAuthentication, async (req: Requ
     users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
       ? { ...item, authVersion: (item.authVersion ?? 0) + 1 }
       : item),
-    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
+    tenants: {
+      ...state.tenants,
+      [user.tenantId]: withSecurityEvent(tenantData(user.tenantId)!, user.id, 'auth.sessions.revoked-all')
+    }
   };
   try { persistState(nextState); state = nextState; }
   catch { return res.status(503).json({ error: 'Unable to revoke sessions' }); }
   clearRefreshCookie(res);
   return res.json({ revoked: true, signedOut: true });
+});
+
+app.get('/api/auth/security-events', accessAuthentication, requirePermission('security:manage'), (req: Request, res: Response) => {
+  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const max = Number(req.query.limit ?? 100);
+  if (!Number.isInteger(max) || max < 1 || max > 500)
+    return res.status(400).json({ error: 'limit must be between 1 and 500' });
+  return res.json({ events: tenant.securityAudit.slice(-max).reverse() });
 });
 
 const changePasswordSchema = z.object({
@@ -5637,7 +5679,11 @@ app.post('/api/auth/change-password', accessAuthentication, async (req: Request,
         authVersion: (item.authVersion ?? 0) + 1 }
       : item),
     refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
-      ? { ...session, revokedAt: changedAt } : session)
+      ? { ...session, revokedAt: changedAt } : session),
+    tenants: {
+      ...state.tenants,
+      [user.tenantId]: withSecurityEvent(tenantData(user.tenantId)!, user.id, 'auth.password.changed')
+    }
   };
   try { persistState(nextState); state = nextState; }
   catch { return res.status(503).json({ error: 'Could not save new password. Please retry.' }); }
@@ -12084,7 +12130,10 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
       permissionSetGroupIds: assignment.permissionSetGroupIds
     } : user;
   });
-  const updatedTenant = { ...tenant, accessControl: normalizedAccessControl, sharingSettings };
+  const updatedTenant = withSecurityEvent(
+    { ...tenant, accessControl: normalizedAccessControl, sharingSettings },
+    principal.userId, 'rbac.permissions.updated'
+  );
   const hasActiveSecurityAdministrator = updatedUsers.some((user) =>
     user.tenantId === principal.tenantId && !user.disabled
     && effectivePermissions(user, updatedTenant).includes('security:manage'));
