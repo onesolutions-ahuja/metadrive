@@ -885,7 +885,7 @@ export type SharingRuleMetadata = {
 export type RestrictionConditionMetadata = {
   field:string;
   operator:'eq'|'ne'|'in'|'notIn'|'isNull'|'notNull';
-  value?:string|number|boolean|null;
+  value?:string|string[]|number|boolean|null;
 };
 export type RestrictionRuleMetadata = {
   id:string;tenantId:string;objectApiName:string;enabled:boolean;
