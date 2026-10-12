@@ -67,8 +67,14 @@ export async function withSchedulerLease(run: () => Promise<void>): Promise<bool
   } finally {
     if (acquired) {
       try {
-        await client.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', [1330463812, 1]);
-      } finally { client.release(); }
+        const unlocked = await client.query('SELECT pg_advisory_unlock($1::integer, $2::integer) AS released', [1330463812, 1]);
+        if (unlocked.rows[0]?.released !== true) throw new Error('Scheduler advisory lease release was not confirmed');
+      } catch (error) {
+        // A failed unlock must never return a possibly locked session to the pool.
+        client.release(true);
+        throw error;
+      }
+      client.release();
     } else client.release();
   }
 }
