@@ -77,8 +77,24 @@ async function prepare(client,state){
   const expected=definedObjects(state);
   await client.query('SELECT object_id FROM md_v2_object_registry LIMIT 1');
   const mapping=await registry(client);
+  // Retire removed objects without dropping their physical tables or values.
+  for(const [identifier,saved] of [...mapping]) {
+    if(expected.has(identifier)) continue;
+    await client.query('UPDATE md_v2_object_registry SET active=false WHERE object_id=$1',[saved.object_id]);
+    mapping.delete(identifier);
+  }
   for(const item of expected.values()){
     let current=mapping.get(key(item.tenantId,item.object.apiName));
+    if(!current){
+      const dormant=await client.query('SELECT object_id,tenant_id,api_name,physical_table FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=false',[item.tenantId,item.object.apiName]);
+      if(dormant.rowCount){
+        const saved=dormant.rows[0];
+        if(saved.physical_table!==tableName(saved.object_id)) throw Error('Invalid retired object table identity');
+        await client.query('UPDATE md_v2_object_registry SET active=true WHERE object_id=$1',[saved.object_id]);
+        current={...saved,fields:new Map()};
+        mapping.set(key(item.tenantId,item.object.apiName),current);
+      }
+    }
     if(!current){
       const objectId=randomUUID();
       const plan=planNormalizedObjectTable({...item.object,fields:item.fields},{
@@ -96,6 +112,15 @@ async function prepare(client,state){
       const sqlType=postgresFieldType(f.dataType);
       let saved=current.fields.get(f.apiName);
       if(!saved){
+        const dormantField=await client.query('SELECT field_id,api_name,source_data_type,physical_column FROM md_v2_field_registry WHERE object_id=$1 AND api_name=$2 AND active=false',[current.object_id,f.apiName]);
+        if(dormantField.rowCount){
+          saved=dormantField.rows[0];
+          if(saved.physical_column!==physicalFieldColumn(saved.field_id)) throw Error('Invalid retired field identity');
+          await client.query('UPDATE md_v2_field_registry SET active=true WHERE field_id=$1',[saved.field_id]);
+          current.fields.set(f.apiName,saved);
+        }
+      }
+      if(!saved){
         const fieldId=randomUUID(),column=physicalFieldColumn(fieldId);
         await client.query('ALTER TABLE '+current.physical_table+' ADD COLUMN '+column+' '+sqlType);
         await client.query('INSERT INTO md_v2_field_registry(field_id,object_id,api_name,field_label,source_data_type,physical_column) VALUES($1,$2,$3,$4,$5,$6)',
@@ -104,6 +129,12 @@ async function prepare(client,state){
         current.fields.set(f.apiName,saved);
       }
       if(postgresFieldType(saved.source_data_type)!==sqlType) throw Error('SQL type changed without explicit field migration: '+f.apiName);
+    }
+    const declared=new Set(item.fields.map(f=>f.apiName));
+    for(const [name,field] of [...current.fields]){
+      if(declared.has(name)) continue;
+      await client.query('UPDATE md_v2_field_registry SET active=false WHERE field_id=$1',[field.field_id]);
+      current.fields.delete(name);
     }
   }
   // The source of truth for missing/deleted object metadata is the normalized
