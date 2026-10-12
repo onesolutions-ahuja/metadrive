@@ -67,6 +67,7 @@ import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import FlowInputBindingEditor from './FlowInputBindingEditor';
 import RecordFilterEditor from './RecordFilterEditor';
 import ComponentVisibilityEditor from './ComponentVisibilityEditor';
+import PageRouteDirectory from './PageRouteDirectory';
 import { isComponentVisible } from './componentVisibility';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
@@ -8378,6 +8379,7 @@ function PageBuilder({
   const pagePreviewAreaRef = useRef<HTMLDivElement | null>(null);
   const [canvasRefreshKey, setCanvasRefreshKey] = useState(0);
   const [createPageOpen, setCreatePageOpen] = useState(false);
+  const [routeDirectoryOpen, setRouteDirectoryOpen] = useState(false);
   const [newPageLabel, setNewPageLabel] = useState('');
   const [newPageType, setNewPageType] = useState<LightningPageMetadata['pageType']>('Record Page');
   const [newPageTemplate, setNewPageTemplate] = useState<LightningPageTemplate>('header-main-sidebar');
@@ -9367,6 +9369,8 @@ function PageBuilder({
         </div>
         <div className="toolbar-actions">
           <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
+          <button className="btn" type="button" onClick={() => setRouteDirectoryOpen(true)}
+            aria-label="Open page routes">Routes</button>
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
           {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('kiosk')}>Load Kiosk Layout</button>}
           {page.apiName === 'UNE_TILL' && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('till')}>Load Till Layout</button>}
@@ -9848,6 +9852,9 @@ function PageBuilder({
           </>}
         </aside>
       </div>
+      {routeDirectoryOpen && <PageRouteDirectory apps={apps} pages={pages} objects={objects}
+        initialAppId={builderAppApiName} basePath={import.meta.env.BASE_URL}
+        onNotify={onNotify} onClose={() => setRouteDirectoryOpen(false)} />}
       {createPageOpen && <div className="modal-backdrop" role="presentation"
         onMouseDown={event => { if (event.target === event.currentTarget) setCreatePageOpen(false); }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-lightning-page-title">
