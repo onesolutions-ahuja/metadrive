@@ -36,10 +36,10 @@ The root npm workspace owns `apps/web` and `apps/server`. The web build uses `ts
 | PostgreSQL client | `pg` in server dependencies | Implemented |
 | Auth token support | `jose` in server dependencies | Implemented |
 | Flow runtime | Server source and test suite | Implemented in part; separate Flow acceptance checks apply |
-| Temporal workflow orchestration | No `@temporalio/*` packages or worker script in current workspace manifests | **Not implemented / architectural decision open** |
+| Native scheduled-flow dispatcher | `dispatchScheduledFlows()` in `apps/server/src/index.ts`, backed by persisted tenant state | **Selected architecture; restart and failure recovery E2E must be proven** |
 | Production E2E validation | Requires deployed deployment, credentials and Aiven endpoint | **Not established by repository inspection** |
 
-Temporal appeared in the original project direction. Do not call it implemented merely because asynchronous Flows exist. Before choosing to add Temporal, determine which existing schedules, waits, retries and durable executions must migrate and define idempotency, tenant isolation, worker versioning, state cutover and rollback. Adding an idle worker would not satisfy the requirement.
+**Architecture decision (2026-10-12):** retain MetaDrive's own PostgreSQL-backed scheduling and Flow runtime. Temporal is explicitly removed from Module 1 scope by user choice. No Temporal Cloud namespace or additional hosting should be provisioned. Functional acceptance requires at-most-once concurrent dispatch, tenant isolation, durable resume across API restarts, bounded retry/failure reporting and consistency on transient database failures.
 
 ## Reproducible foundation checks
 
@@ -50,12 +50,12 @@ Temporal appeared in the original project direction. Do not call it implemented 
 5. Test unauthenticated denial, valid sign-in, cookie refresh, deep-link reload, authorised record read/write/re-read, tenant A to tenant B denial, and failed database connection behavior.
 6. Verify safe restart and persisted read-after-restart, without exposing credentials in logs.
 7. On the deployed endpoints, verify correct API routing, browser console/network errors, session expiry and permission-denied UX.
-8. For Temporal only if its architecture is accepted: prove durable work survives API and worker restarts and a transient Aiven failure, with no cross-tenant work replay.
+8. For native scheduler: prove scheduled jobs and paused interviews survive API restarts and a transient Aiven failure, without duplicated side effects or cross-tenant execution.
 9. Record commit SHA, environment, CI URL and actual pass/fail output. Never infer end-to-end pass from a green compile.
 
 ## Foundation completion gate
 
-**Partial** until the chosen durable orchestration design is implemented (including Temporal if retained as a requirement), and fresh-build, API/frontend startup and real tenant-safe production-like journeys pass end-to-end. QA audit is separately tracked; these are functional acceptance gates rather than cosmetic QA.
+**Partial** until native scheduler restart/retry/tenant-isolation acceptance and fresh-build, API/frontend startup and real tenant-safe production-like journeys pass end-to-end. Temporal is not a requirement. QA audit is separately tracked; these are functional acceptance gates rather than cosmetic QA.
 
 ## Related plans
 
