@@ -1291,6 +1291,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [flowInterviews, setFlowInterviews] = useState<FlowInterviewMetadata[]>([]);
   const [flowInterviewsLoading, setFlowInterviewsLoading] = useState(false);
   const [canManageFlows, setCanManageFlows] = useState(false);
+  const [canManageApps, setCanManageApps] = useState(false);
   const [notifications, setNotifications] = useState<CustomNotificationMetadata[]>([]);
   const [notificationsUnreadCount, setNotificationsUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -1511,6 +1512,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           setCanRunFlows(firstSession.user.permissions.includes('flows:run'));
           setCanManageFlows(firstSession.user.permissions.includes('flows:manage')
             || firstSession.user.permissions.includes('metadata:write'));
+          setCanManageApps(firstSession.user.permissions.includes('metadata:write'));
           setMetadataLoaded(true);
           // Give the landing screen a chance to paint before loading editor-only
           // data in the background. On direct builder URLs the full load begins
@@ -1593,6 +1595,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         setCanRunFlows(sessionPayload.user.permissions.includes('flows:run'));
         setCanManageFlows(sessionPayload.user.permissions.includes('flows:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
+        setCanManageApps(sessionPayload.user.permissions.includes('metadata:write'));
         setCurrentFieldAccess(sessionPayload.user.fieldAccess);
         setCurrentRecordTypeAccess(sessionPayload.user.recordTypeAccess);
         setCanCreateDashboards(dashboardPayload.canCreate);
@@ -3394,8 +3397,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         </nav>
         {currentApp?.utilityItems.map((utility) => <button className="app-utility-button" key={utility}
           aria-expanded={activeUtility === utility} onClick={() => setActiveUtility((current) => current === utility ? null : utility)}>{utility}</button>)}
-        <button className="app-strip-menu" type="button" title="Open App Manager" aria-label="Open App Manager"
-          onClick={() => openSetupWorkspace('app-manager')}><MoreHorizontal size={19} /></button>
+        {canManageApps && <button className="app-strip-menu" type="button" title="Open App Manager" aria-label="Open App Manager"
+          onClick={() => openSetupWorkspace('app-manager')}><MoreHorizontal size={19} /></button>}
         {activeUtility && <section className="app-utility-popover" aria-label={`${activeUtility} utility`}>
           <div className="app-utility-heading"><strong>{activeUtility}</strong><button className="icon-button" aria-label={`Close ${activeUtility}`} onClick={() => setActiveUtility(null)}><X size={14} /></button></div>
           {activeUtility === 'Notes'

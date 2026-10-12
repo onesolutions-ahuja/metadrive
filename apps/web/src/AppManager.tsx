@@ -143,7 +143,7 @@ export default function AppManager({
       const remaining = apps.find((app) => app.apiName !== selectedApiName);
       setCreating(false);
       setSelectedApiName(remaining?.apiName ?? '');
-      setDraft(remaining ?? emptyApp());
+      setDraft(remaining ? appDraftFromMetadata(remaining) : emptyApp());
       setNotice('Lightning app deleted.');
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to delete Lightning app.');
@@ -158,6 +158,9 @@ export default function AppManager({
       {embedded
         ? <button className="btn" type="button" onClick={onClose}>Back to Page Builder</button>
         : <button className="btn btn-brand" type="button" onClick={() => {
+        const original = apps.find((app) => app.apiName === selectedApiName);
+        if (original && JSON.stringify(appDraftFromMetadata(original)) !== JSON.stringify(draft)
+          && !window.confirm('Discard unsaved app changes?')) return;
         setCreating(true);
         setSelectedApiName('');
         setDraft(emptyApp());
@@ -185,7 +188,8 @@ export default function AppManager({
               const label = event.target.value;
               setDraft((current) => ({
                 ...current, label,
-                apiName: creating && !current.apiName
+                // Keep generated developer names in sync unless the name was manually edited.
+                apiName: creating && current.apiName === current.label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
                   ? label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
                   : current.apiName
               }));
@@ -237,7 +241,7 @@ export default function AppManager({
         </fieldset>
         <fieldset className="app-manager-fieldset">
           <legend>Navigation Items</legend>
-          <p>Select the objects available as workspace tabs in this app.</p>
+          <p>Select the objects available in this app's Records dropdown.</p>
           <div className="app-manager-checks">
             {objects.filter((object) => navigationMatches(object.pluralLabel, object.apiName)).map((object) => <label key={object.apiName}>
               <input type="checkbox" checked={draft.navigationItems.includes(object.apiName)}

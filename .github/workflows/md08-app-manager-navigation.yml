@@ -26,6 +26,8 @@ jobs:
       - name: App navigation unit tests
         run: node --experimental-strip-types --test apps/web/test/appNavigation.test.mjs
       - name: Compile frontend and verify production bundle
+        env:
+          GITHUB_PAGES: 'true'
         run: npm run build --workspace apps/web
       - name: Verify GitHub Pages navigation and branding
         run: node scripts/verify-pages-release.mjs
