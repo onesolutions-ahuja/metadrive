@@ -89,6 +89,10 @@ export function tenantForRequest(
   const originHost = requestOrigin ? originHostname(requestOrigin) : null;
   if (requestOrigin && !originHost) return { allowed: false, tenantId: null };
   const originTenant = originHost ? config.tenantsByHost.get(originHost) : undefined;
+  // A browser Origin on a shared API host must be either the API's own host
+  // or an explicitly mapped tenant; never silently accept unknown origins.
+  if (requestOrigin && originHost !== host && !originTenant)
+    return { allowed: false, tenantId: null };
   // A mapped tenant host may receive only same-tenant browser origins.
   if (directTenant && requestOrigin && originHost !== host && originTenant !== directTenant)
     return { allowed: false, tenantId: null };
