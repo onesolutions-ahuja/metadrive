@@ -122,7 +122,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     const routePath = req.route?.path;
     const apiId = `${req.method} ${typeof routePath === 'string' ? routePath : req.path}`;
     const requestUrl = `${req.protocol}://${req.get('host') ?? 'localhost'}${req.originalUrl}`;
-    const isCommunicationRecordsEndpoint = /^\/api\/records\/Communication_Records__c(?:\/|$)/i.test(req.path);
+    // Audit metadata only. Request and response payloads can contain passwords,
+    // bearer credentials, integration configuration and other tenant secrets.
+    // Never persist those bodies in a broadly readable Communication Record.
     try {
       appendCommunicationRecord(principal.tenantId, principal.userId, {
         apiId,
@@ -130,8 +132,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
         authType,
         method: supportedCommunicationMethod(req.method),
         direction: 'Incoming',
-        requestBody: isCommunicationRecordsEndpoint ? '' : communicationPayload(req.body),
-        responseBody: isCommunicationRecordsEndpoint ? '' : communicationPayload(responseBody),
+        requestBody: '',
+        responseBody: '',
         status: res.statusCode,
         error: res.statusCode >= 400 ? communicationError(responseBody) : '',
         durationMs: Date.now() - startedAt
