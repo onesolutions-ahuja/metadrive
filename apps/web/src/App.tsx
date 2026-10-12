@@ -8268,8 +8268,7 @@ function PageBuilder({
   onNotify: (message: string) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
 }) {
-  const [builderAppApiName, setBuilderAppApiName] = useState(() =>
-    apps.find(app => app.navigationPageApiNames.includes(page.apiName))?.apiName ?? '');
+  const [builderAppApiName, setBuilderAppApiName] = useState('');
   const pageTemplates: Array<{ id: LightningPageTemplate; label: string; regions: Array<'header' | 'main' | 'sidebar'> }> = [
     { id: 'one-region', label: 'One Region', regions: ['main'] },
     { id: 'header-main', label: 'Header and Main', regions: ['header', 'main'] },
@@ -8864,27 +8863,6 @@ function PageBuilder({
     try {
       const saved = await onSave(nextPage, savedPageApiName.current);
       if (saved) {
-        if (nextPage.status === 'Active' && nextPage.pageType === 'App Page') {
-          const appIds = [...new Set((nextPage.activationAssignments ?? [])
-            .map(assignment => assignment.appId)
-            .filter((appId): appId is string => Boolean(appId)))];
-          for (const appId of appIds) {
-            const app = apps.find(item => item.apiName === appId);
-            if (!app || app.navigationPageApiNames.includes(nextPage.apiName)) continue;
-            const navigationPageApiNames = [...app.navigationPageApiNames, nextPage.apiName];
-            try {
-              await onSaveApp({
-                ...app, navigationPageApiNames,
-                navigationOrder: reconcileNavigationOrder(
-                  app.navigationItems, navigationPageApiNames, app.navigationOrder
-                )
-              }, true);
-            } catch (error) {
-              onNotify(error instanceof Error ? error.message
-                : 'Page activated, but application navigation could not be updated');
-            }
-          }
-        }
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
         setRedoStack([]);
