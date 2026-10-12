@@ -88,8 +88,15 @@ export default function PageComponentStyleEditor({
         {options.map((item) => <option key={item} value={item}>{item.replace('-', ' ')}</option>)}
       </select>
     </label>)}
-    <label className="checkbox-row"><input type="checkbox" checked={current.hidden === true}
-      onChange={(event) => change('hidden', event.target.checked ? true : null)} />Hide on {mode === 'Base' ? 'all devices' : mode}</label>
+    <label className="form-label">Visibility on {mode === 'Base' ? 'all devices' : mode}
+      <select className="form-control" aria-label="Component visibility"
+        value={current.hidden === true ? 'hidden' : current.hidden === false ? 'visible' : 'inherit'}
+        onChange={(event) => change('hidden', event.target.value === 'inherit' ? null : event.target.value === 'hidden')}>
+        <option value="inherit">{mode === 'Base' ? 'Visible by default' : 'Inherit base visibility'}</option>
+        <option value="visible">Visible</option>
+        <option value="hidden">Hidden</option>
+      </select>
+    </label>
     {error && <div className="auth-error" role="alert">{error}</div>}
     <div className="properties-help">Reset a numeric field by clearing it. Values outside the accepted ranges cannot be saved.</div>
   </section>;
