@@ -5361,6 +5361,19 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Access token was issued before credentials changed' });
       return;
     }
+    // Portal identities have a deliberately narrow route allowlist, separate
+    // from role and object permissions. They cannot reach Setup, credentials,
+    // sharing administration, Flows, reports, or record mutation endpoints.
+    const accessMetadataUser = state.tenants[tenantId].accessControl.users
+      .find((member) => member.id === user.id);
+    if (accessMetadataUser?.userType === 'external') {
+      const portalRecordRead = req.method === 'GET' &&
+        /^\/api\/records\/[A-Za-z0-9_]+(?:\/[A-Za-z0-9_-]+)?$/.test(req.path);
+      if (!(portalRecordRead || (req.method === 'GET' && req.path === '/api/auth/me'))) {
+        res.status(403).json({ error: 'External identities cannot use this tenant API' });
+        return;
+      }
+    }
     res.locals.principal = {
       userId: user.id,
       tenantId: user.tenantId,
@@ -13438,6 +13451,12 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
   if (parsed.data.users.some((user) => !user.roleId)) {
     return res.status(400).json({ error: 'Every tenant user must be assigned to a role' });
   }
+  const invalidExternalUser = parsed.data.users.find((member) =>
+    member.userType === 'external' &&
+    (!member.externalAccountId ||
+      !(tenant.records.Account ?? []).some((record) => record.Id === member.externalAccountId)));
+  if (invalidExternalUser)
+    return res.status(400).json({ error: 'External identity requires a tenant-local account boundary' });
   const identitiesByEmail = new Map(state.users
     .filter((user) => user.tenantId === principal.tenantId)
     .map((user) => [user.email.trim().toLowerCase(), user.id]));
