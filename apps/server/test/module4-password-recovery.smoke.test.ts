@@ -138,7 +138,9 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     const requested = await api('/auth/password-reset/request', '', 'POST', { email });
     assert.equal(requested.status, 202, JSON.stringify(requested.data));
     assert.equal(messages.length, 1, 'Password reset must be delivered to registered mailbox');
-    const match = messages[0].replace(/=\n/g, '').match(/resetToken=([A-Za-z0-9_-]{64})/);
+    // Nodemailer may emit quoted-printable MIME: '=' becomes '=3D' and long lines soft-wrap.
+    const decodedMail = messages[0].replace(/=\n/g, '').replace(/=3D/gi, '=');
+    const match = decodedMail.match(/resetToken=([A-Za-z0-9_-]{64})/);
     assert.ok(match, 'Delivered message must contain a single-use reset token');
     const resetToken = match[1];
     assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
