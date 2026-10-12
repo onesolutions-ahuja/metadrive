@@ -8862,6 +8862,13 @@ function PageBuilder({
     const customDefinition = component.type.startsWith('Custom:')
       ? libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length))
       : undefined;
+    const inPage = page.components.some((item) => item.id === component.id);
+    const nested = inPage && !childrenOf(page.components, null).some((item) => item.id === component.id);
+    const nestedChildren = isLayoutContainer(component) && (!libraryPreview || interactivePreview)
+      ? childrenOf(page.components, component.id).map((child) =>
+          renderPageComponent(child, page.components.findIndex((item) => item.id === child.id), libraryPreview, interactivePreview))
+      : undefined;
+    const visualStyle = resolveLayoutStyle(component.properties, device);
     const previewProperties = createComponentPreviewProps(
       customDefinition?.apiName ?? component.type,
       component.label,
@@ -8878,7 +8885,8 @@ function PageBuilder({
       disabled: true,
       onAction: previewProperties.onAction,
       onChange: previewProperties.onChange,
-      onNavigate: previewProperties.onNavigate
+      onNavigate: previewProperties.onNavigate,
+      children: nestedChildren
     };
     const accordionContent = typeof component.properties.content === 'string' && component.properties.content.trim()
       ? component.properties.content
@@ -8886,23 +8894,29 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
-      style={!libraryPreview && page.layoutMode === 'free-canvas' ? {
-        left: component.position?.x ?? 0,
-        top: component.position?.y ?? 0,
-        width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
-        height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
-      } : undefined}
-      onClick={!libraryPreview ? () => { if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${nested ? 'nested-page-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      style={{
+        ...((!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas'
+          ? nested
+            ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
+            : {
+                left: component.position?.x ?? 0,
+                top: component.position?.y ?? 0,
+                width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
+                height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
+              }
+          : {}),
+        ...visualStyle
+      } as React.CSSProperties}
+      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
       onKeyDown={!libraryPreview ? (event) => { if (event.currentTarget === event.target && !previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
-      onDragOver={!libraryPreview ? (event) => { event.preventDefault(); setDragOverId(component.id); } : undefined}
+      onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
-      onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main') : undefined}
+      onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
       draggable={!previewMode && !libraryPreview}
       data-component-id={libraryPreview ? undefined : component.id}
-      onDragStart={!libraryPreview ? (event) => { event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
-      onDragEnd={!libraryPreview ? (event) => moveCanvasComponent(event, component) : undefined}
+      onDragStart={!libraryPreview ? (event) => { event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
@@ -8937,7 +8951,7 @@ function PageBuilder({
                     ? <div className="component-demo-activity"><strong>Recent activity</strong><span>Call with Jordan Lee <small>Today · 10:30 AM</small></span><span>Follow-up email sent <small>Yesterday</small></span></div>
                     : component.type === 'Chatter' && libraryPreview
                       ? <div className="component-demo-activity"><strong>Latest update</strong><span>Alex Morgan shared a project update.</span><small>2 comments · 4 likes</small></div>
-                  : customDefinition && (!libraryPreview || interactivePreview) && typeof component.properties.objectApiName === 'string'
+                  : customDefinition && !isLayoutContainer(component) && (!libraryPreview || interactivePreview) && typeof component.properties.objectApiName === 'string'
                     && component.properties.objectApiName
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
                         objects={objects} reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
@@ -8949,12 +8963,13 @@ function PageBuilder({
                       label: component.label,
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
-                      device
+                      device,
+                      children: nestedChildren
                     }} />
                     : libraryPreview
                       ? <div className="component-demo-fallback"><strong>{component.label}</strong><span>{selectedComponentDescription || 'Preview of a reusable page component.'}</span><div><i /><i /><i /></div></div>
                       : <div className="component-demo-fallback"><strong>{component.label}</strong><span>This component is no longer registered. Re-register it to restore its live preview.</span><div><i /><i /><i /></div></div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && customDefinition && selectedId === component.id && !previewMode
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode
         && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
           title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
           onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
@@ -8964,7 +8979,7 @@ function PageBuilder({
   const renderRegion = (region: 'header' | 'main' | 'sidebar') => {
     const regionComponents = page.components
       .map((component, index) => ({ component, index }))
-      .filter(({ component }) => (component.region ?? 'main') === region);
+      .filter(({ component }) => childrenOf(page.components, null).some((root) => root.id === component.id) && (component.region ?? 'main') === region);
     return <section
       className={`page-region page-region-${region}`}
       aria-label={`${region[0].toUpperCase()}${region.slice(1)} region`}
@@ -9008,7 +9023,7 @@ function PageBuilder({
             <div className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : 'record-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}>
               {page.layoutMode === 'free-canvas'
                 ? <div className="free-canvas-stage" style={{ width: page.canvasWidth, height: page.canvasHeight, position: 'relative' }}>
-                    {page.components.map((component, index) => renderPageComponent(component, index, true, true))}
+                    {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id), true, true))}
                   </div>
                 : <>
                     {page.components.filter((component) => (component.region ?? 'main') === 'header').map((component, index) => renderPageComponent(component, index, true, true))}
@@ -9210,7 +9225,7 @@ function PageBuilder({
                   transformOrigin: 'top left'
                 }}
               >
-                {page.components.map((component, index) => renderPageComponent(component, index))}
+                {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id)))}
                 {!page.components.length && <div className="free-canvas-empty">Add custom components from the left panel.</div>}
               </div> : <>
               {page.pageType === 'Record Page' ? <>
