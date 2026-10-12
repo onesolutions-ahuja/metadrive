@@ -65,6 +65,7 @@ import RegisteredComponent from './RegisteredComponent';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
+import TenantManagement from './TenantManagement';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
 import tillPagePreset from './page-presets/till.editable.json';
@@ -537,7 +538,7 @@ function parseAppRoute(pathname: string, search = ''): AppRoute {
     }
     if (segments[0] === 'setup') {
       const workspace = decodeURIComponent(segments[1] ?? 'home') as WorkspaceId;
-      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'connector-settings', 'named-credentials', 'company-settings', 'rbac'];
+      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'connector-settings', 'named-credentials', 'company-settings', 'tenant-management', 'rbac'];
       if (!validWorkspaces.includes(workspace)) return { kind: 'setup', workspace: 'home' };
       if (workspace === 'object-manager') {
         return {
@@ -1227,6 +1228,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     view: false, edit: false, secrets: false, test: false, install: false, licence: false
   });
   const [canManagePlatformLicences, setCanManagePlatformLicences] = useState(false);
+  const [canManagePlatformTenants, setCanManagePlatformTenants] = useState(false);
   const [namedCredentialsEncryptionReady, setNamedCredentialsEncryptionReady] = useState<boolean | null>(null);
   const [emailAlerts, setEmailAlerts] = useState<EmailAlertMetadata[]>([]);
   const [connectorProviders, setConnectorProviders] = useState<ConnectorProviderMetadata[]>([]);
@@ -1416,6 +1418,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           setCurrentFieldAccess(firstSession.user.fieldAccess);
           setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
           setCanManageUserIdentities(firstSession.user.permissions.includes('security:manage'));
+          setCanManagePlatformTenants(firstSession.user.permissions.includes('platform:superadmin'));
           setMetadataLoaded(true);
           // Give the landing screen a chance to paint before loading editor-only
           // data in the background. On direct builder URLs the full load begins
@@ -1494,6 +1497,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
         setCanManagePlatformLicences(sessionPayload.user.permissions.includes('licence:manage'));
+        setCanManagePlatformTenants(sessionPayload.user.permissions.includes('platform:superadmin'));
         setCanRunFlows(sessionPayload.user.permissions.includes('flows:run'));
         setCanManageFlows(sessionPayload.user.permissions.includes('flows:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
@@ -1703,8 +1707,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
-    if (!query) return setupNavigation;
-    return setupNavigation
+    const allowedGroups = setupNavigation.filter((group) => group.group !== 'Platform Administration' || canManagePlatformTenants);
+    if (!query) return allowedGroups;
+    return allowedGroups
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => item.toLowerCase().includes(query)
@@ -1712,7 +1717,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             `${provider.name} ${provider.connectorKey}`.toLowerCase().includes(query))))
       }))
       .filter((group) => group.items.length);
-  }, [quickFind, connectorProviders]);
+  }, [quickFind, connectorProviders, canManagePlatformTenants]);
   const filteredConnectorProviders = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     return query
@@ -1825,6 +1830,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
     if (item === 'Named Devices') {
       navigateRoute({ kind: 'record-list', objectApiName: 'NamedDevice__c' });
+      return;
+    }
+    if (item === 'Tenant Management') {
+      if (canManagePlatformTenants) openSetupWorkspace('tenant-management');
       return;
     }
     if (item === 'Named Credentials') {
@@ -3608,6 +3617,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             />
           )}
           {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /></>}
+          {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
