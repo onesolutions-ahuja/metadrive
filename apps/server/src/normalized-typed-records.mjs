@@ -197,9 +197,22 @@ async function rewriteObject(client,item,sqlObject){
   }
 }
 /** Use as normalized-state-runtime transactional beforeCommit callback. */
-export async function synchronizeTypedRecords(client,state){
+export async function synchronizeTypedRecords(client,state,previousState=null){
+  // Flow, permission, session and page edits do not touch physical business rows.
+  // Avoid querying 17+ object tables across network on unrelated state changes.
+  if(previousState){
+    const physicalView=(s)=>JSON.stringify(Object.entries(s?.tenants??{}).map(([id,t])=>[id,t.objects,t.records]));
+    if(physicalView(state)===physicalView(previousState)) return;
+  }
   const {expected,mapping}=await prepare(client,state);
   for(const [k,item] of expected){
+    if(previousState){
+      const before=previousState.tenants?.[item.tenantId];
+      const priorObject=before?.objects?.find(o=>o.apiName===item.object.apiName);
+      const priorRecords=before?.records?.[item.object.apiName]??[];
+      if(priorObject && JSON.stringify(priorObject)===JSON.stringify(item.object)
+         && JSON.stringify(priorRecords)===JSON.stringify(item.records)) continue;
+    }
     const sqlObject=mapping.get(k);
     if(!sqlObject) throw Error('Missing metadata SQL object registry');
     if(!(await compareObject(client,item,sqlObject)))
