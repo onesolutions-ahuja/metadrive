@@ -4368,7 +4368,12 @@ function MetadataBoundPageComponent({
     if (source === '$event') return eventPayload;
     if (typeof source === 'string' && source.startsWith('$event.')) {
       return source.slice(7).split('.').reduce<unknown>((current, key) =>
-        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+        current && typeof current === 'object' && !['__proto__','prototype','constructor'].includes(key)
+          ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+    }
+    if (typeof source === 'string' && source.startsWith('$record.')) {
+      const fieldName = source.slice(8);
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
     }
     return source;
   };
@@ -4376,9 +4381,15 @@ function MetadataBoundPageComponent({
     if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test checkout.');
     const config = actionFlows[action.event];
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
-      throw new Error('No Flow is configured for the "' + action.event + '" kiosk action.');
+      throw new Error('No metadata event action is configured for "' + action.event + '".');
     }
     const binding = config as Record<string, unknown>;
+    if (binding.actionType === 'Navigate') {
+      const destination=String(binding.navigationObjectApiName ?? objectApiName);
+      if (!objects.some((object)=>object.apiName===destination)) throw new Error('Choose an accessible destination object in Page Builder');
+      onNavigate({kind:'record-list',objectApiName:destination,appId:'Records'});
+      return {navigated:true};
+    }
     const flowApiName = String(binding.flowApiName ?? '');
     const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
     if (!selected || selected.status !== 'Active') {
@@ -4396,7 +4407,7 @@ function MetadataBoundPageComponent({
       return { interviewStarted: true };
     }
     if (selected.flowType !== 'Autolaunched Flow') {
-      throw new Error('Kiosk action Flow must be Screen or Autolaunched.');
+      throw new Error('Component event Flow must be Screen or Autolaunched.');
     }
     try {
       const response = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string }>(
@@ -8012,33 +8023,51 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
     <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
-    {actionFlows && (['start', 'add', 'quantity', 'remove', 'reset', 'checkout', ...(tillMode ? ['customer','hold','resume','discount'] : [])]).map((eventName) => {
-      const binding = actionFlows[eventName] && typeof actionFlows[eventName] === 'object'
-        ? actionFlows[eventName] as Record<string, unknown> : {};
-      return <label className="form-label" key={eventName}>{eventName.charAt(0).toUpperCase() + eventName.slice(1)} Flow
-        <select className="form-control" value={String(binding.flowApiName ?? '')} onChange={(event) => {
-          const next = { ...actionFlows };
-          if (!event.target.value) delete next[eventName];
-          else next[eventName] = {
-            flowApiName: event.target.value,
-            inputs: binding.inputs ?? (eventName === 'checkout'
-              ? (tillMode ? { SessionId: '$session', PaymentMethod: '$event.paymentMethod', CustomerId: '$event.customerId' } : { SessionId: '$session', OrderType: '$event.orderType' })
-              : eventName === 'customer' ? { SessionId: '$session', CustomerId: '$event.customerId' }
-              : eventName === 'add'
-                ? { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' }
-                : eventName === 'quantity'
-                  ? { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' }
-                  : eventName === 'remove'
-                    ? { SessionId: '$session', LineId: '$event.lineId' }
-                    : { SessionId: '$session' })
-          };
-          update('actionFlows', next);
-        }}>
-          <option value="">Not configured</option>
-          {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
-        </select>
-      </label>;
+    <div className="properties-section-title">Event → Flow / Navigation bindings</div>
+    <p className="properties-help">Each event name is emitted by a custom component. Select a Flow or an RBAC-checked route and map input variables to event fields. No executable code is stored here.</p>
+    {Object.entries(actionFlows ?? {}).map(([eventName, raw]) => {
+      const binding = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+      const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
+      const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
+      const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
+      return <div className="home-page-assignment" key={eventName}>
+        <strong>{eventName}</strong>
+        <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
+        <label className="form-label">Action type<select className="form-control" value={actionType}
+          onChange={(e) => setBinding({...binding,actionType:e.target.value})}>
+          <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option>
+        </select></label>
+        {actionType==='Flow' ? <>
+          <label className="form-label">Flow<select className="form-control" value={String(binding.flowApiName ?? '')}
+            onChange={(e) => setBinding({...binding,flowApiName:e.target.value})}><option value="">Select Flow…</option>
+            {flows.map((flow)=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+          </select></label>
+          <div className="properties-section-title">Flow input mapping</div>
+          {Object.entries(map).map(([name, source]) => <div key={name} className="metadata-array-property">
+            <label className="form-label">Input API name<input className="form-control" value={name} readOnly /></label>
+            <label className="form-label">Source ($event.field, $record.Field, $session, or literal)
+              <input className="form-control" value={String(source ?? '')}
+                onChange={(e) => setBinding({...binding,inputs:{...map,[name]:e.target.value}})} /></label>
+            <button type="button" className="btn btn-small" onClick={() => {const next={...map};delete next[name];setBinding({...binding,inputs:next});}}>Remove input</button>
+          </div>)}
+          <button type="button" className="btn btn-small" onClick={() => {
+            const nextName=window.prompt('Flow input API name');
+            if(!nextName || !/^[A-Za-z][A-Za-z0-9_]*$/.test(nextName)||nextName in map)return;
+            setBinding({...binding,inputs:{...map,[nextName]:''}});
+          }}>Add Flow input</button>
+        </> : <label className="form-label">Destination object<select className="form-control"
+          value={String(binding.navigationObjectApiName ?? objectApiName)}
+          onChange={(e)=>setBinding({...binding,navigationObjectApiName:e.target.value})}>
+          <option value="">Choose object…</option>
+          {objects.map((object)=><option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+        </select></label>}
+      </div>;
     })}
+    <button type="button" className="btn btn-small" onClick={() => {
+      const key=window.prompt('Component event API name (e.g. submitted, itemSelected)');
+      if(!key||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)||(actionFlows??{})[key])return;
+      update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
+    }}>Add event action</button>
     {!actionFlows && <label className="form-label">Flow API Name
       <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
         onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
