@@ -83,6 +83,8 @@ test('Module 4: app/tab permission grants and group muting update without stale 
     assert.equal((await api('/metadata/apps', token)).data.apps.some((item: any) => item.apiName === name), false);
     assert.equal((await api('/apps/' + encodeURIComponent(name) + '/home-page', token)).status, 404,
       'Hidden app must not be accessible by direct API request');
+    assert.equal((await api('/records/Account/nonexistent-record?appId=' + encodeURIComponent(name), token)).status, 404,
+      'A hidden app must not be accepted as a record page context');
 
     directSet.appPermissions = { ...(directSet.appPermissions ?? {}), [name]: true };
     assert.equal((await save(security)).status, 200);

@@ -1,6 +1,7 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
+import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
 import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
@@ -1332,7 +1333,8 @@ const libraryComponentSchema = z.object({
   publishedVersion: z.number().int().nonnegative().optional(),
   revisions: z.array(libraryComponentRevisionSchema).max(100).optional(),
   pendingDraft: libraryComponentRevisionSchema.optional(),
-  trustedBundled: z.boolean().optional()
+  trustedBundled: z.boolean().optional(),
+  tenantId: z.string().min(1).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -4942,8 +4944,19 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
       developerSeed: { userId: developer.id, email: developer.email, seededAt: createdAt },
       ...(requestHash ? { provisioningRequestHash: requestHash } : {})
     };
+    // Preserve provenance before opening a second tenant: a legacy unowned
+    // component could only have been authored in the existing sole tenant.
+    // Do this inside the same durable provisioning commit, never on a later
+    // best-effort migration or by guessing ownership with multiple tenants.
+    const previousTenantIds = Object.keys(state.tenants);
+    const libraryComponents = previousTenantIds.length === 1
+      ? state.libraryComponents.map((component) =>
+        component.tenantId || component.trustedBundled
+          ? component : { ...component, tenantId: previousTenantIds[0] })
+      : state.libraryComponents;
     const nextState: PlatformState = {
       ...state,
+      libraryComponents,
       tenants: { ...state.tenants, [tenantId]: data },
       tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
       tenantManagementAudit: [...state.tenantManagementAudit,
@@ -8676,7 +8689,7 @@ app.put('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', '
   if (requested.status === 'Active') {
     const validation = validateFlow(nextFlow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections, tenant.connectorDefinitions, tenant.emailAlerts,
       formulaContextForUser(tenant, principal.userId),
-      [...tenant.flows.filter((flow) => flow.apiName !== nextFlow.apiName), nextFlow], tenant.approvalProcesses, tenant.platformEvents);
+      [...tenant.flows.filter((flow) => flow.apiName !== nextFlow.apiName), nextFlow], tenant.approvalProcesses, tenant.platformEvents, principal.tenantId);
     if (validation.errors.length) return res.status(422).json({ error: 'Flow validation failed', details: validation.errors });
     // Exactly one active version; do not leave stale Active labels on archived revisions.
     nextFlow.versions = [...history.map((version) => ({
@@ -8762,7 +8775,7 @@ app.post('/api/metadata/flows/:apiName/validate', requirePermission('metadata:re
   const tenant = tenantData(principal.tenantId)!;
   const validation = validateFlow(parsed.data, tenant.objects, tenant.namedCredentials, tenant.integrationConnections, tenant.connectorDefinitions, tenant.emailAlerts,
     formulaContextForUser(tenant, principal.userId),
-    [...tenant.flows.filter((flow) => flow.apiName !== parsed.data.apiName), parsed.data], tenant.approvalProcesses, tenant.platformEvents);
+    [...tenant.flows.filter((flow) => flow.apiName !== parsed.data.apiName), parsed.data], tenant.approvalProcesses, tenant.platformEvents, principal.tenantId);
   return res.json(validation);
 });
 // Reuse the same validated permission assignments for all object and field checks
@@ -9633,6 +9646,10 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
       || !object.fields.some((field) => field.apiName === relatedField && field.relationship))) {
     return res.status(400).json({ error: 'Invalid related-list filter' });
   }
+  // Related-list predicates must not expose fields hidden by FLS.
+  if (typeof relatedField === 'string' &&
+      !hasFieldPermission(principal, tenant, objectName, relatedField, 'read'))
+    return res.status(403).json({ error: 'Missing field read permission for related-list filter' });
   const filterField = req.query.filterField;
   const filterValue = req.query.filterValue;
   if ((filterField !== undefined || filterValue !== undefined) &&
@@ -9721,6 +9738,10 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
   const appId = typeof requestedAppId === 'string' && requestedAppId ? requestedAppId : 'Records';
   if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(appId)) return res.status(400).json({ error: 'Invalid app API name' });
   if (!tenant.apps.some((app) => app.apiName === appId)) return res.status(400).json({ error: `Unknown Lightning app "${appId}"` });
+  // Object access does not confer visibility of an explicitly selected app's page.
+  if (typeof requestedAppId === 'string' && requestedAppId &&
+      !canOpenApp(principal, tenant, appId))
+    return res.status(404).json({ error: 'Lightning app was not found' });
   const requestedFormFactor = req.query.formFactor;
   if (requestedFormFactor !== undefined && requestedFormFactor !== 'Desktop' && requestedFormFactor !== 'Phone') {
     return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
@@ -10475,7 +10496,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   const validation = validateFlow(
     flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
     tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId), tenant.flows,
-    tenant.approvalProcesses, tenant.platformEvents
+    tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
   );
   if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
   try {
@@ -10512,7 +10533,7 @@ app.post('/api/flows/:apiName/debug', accessAuthentication, requirePermission('f
   const validation = validateFlow(
     flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
     tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId), tenant.flows,
-    tenant.approvalProcesses, tenant.platformEvents
+    tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
   );
   if (!validation.valid) return res.status(422).json({ error: 'Flow debug validation failed', details: validation.errors });
   const debugTrace: FlowDebugTraceEntry[] = [];
@@ -11042,13 +11063,22 @@ app.get('/api/component-library', requirePermission('metadata:read'), async (_re
   }
   const principal = getPrincipal(res);
   res.json({
-    components: state.libraryComponents,
+    components: state.libraryComponents.filter((component) =>
+      libraryComponentVisible(component, principal.tenantId, Object.keys(state.tenants))),
     canManage: principal.permissions.includes('components:manage')
   });
 });
 app.post('/api/component-library', requirePermission('components:manage'), async (req: Request, res: Response) => {
+  // Reserve bundled component names before any tenant can register an override.
+  // Never allow a private, user-authored component to shadow a trusted primitive.
+  try { await syncBundledLibraryComponents(); }
+  catch (error) {
+    console.error('Bundled component registration failed', error);
+    return res.status(503).json({ error: 'Component registry unavailable' });
+  }
   const parsed = libraryComponentInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid custom component metadata', details: parsed.error.flatten() });
+  const principal = getPrincipal(res);
   if (state.libraryComponents.some((component) => component.apiName.toLowerCase() === parsed.data.apiName.toLowerCase())) {
     return res.status(409).json({ error: `A library component named "${parsed.data.apiName}" already exists` });
   }
@@ -11070,6 +11100,7 @@ app.post('/api/component-library', requirePermission('components:manage'), async
     const scopedCss = scopeLibraryCss(parsed.data.cssSource, parsed.data.apiName);
     const component: LibraryComponent = {
       ...parsed.data,
+      tenantId: principal.tenantId,
       compiledJs: compiled.code,
       scopedCss,
       version: 1,
@@ -11094,6 +11125,8 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
   if (existingIndex < 0) return res.status(404).json({ error: 'Library component was not found' });
   const principal = getPrincipal(res);
   const existing = state.libraryComponents[existingIndex];
+  if (!libraryComponentEditable(existing, principal.tenantId, Object.keys(state.tenants)))
+    return res.status(404).json({ error: 'Library component was not found' });
   const usages = findLibraryComponentUsages(state, apiName);
   const unavailableSurfaces = existing.surfaces.filter((surface) =>
     !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
@@ -11132,6 +11165,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
         publishedVersion: compiledRevision.version,
         revisions: [...(existing.revisions ?? []), ...(existing.status === 'Draft' ? [] : [libraryRevision(existing)])].slice(-100),
         pendingDraft: undefined };
+    component.tenantId = principal.tenantId;
     const libraryComponents = [...state.libraryComponents];
     libraryComponents[existingIndex] = component;
     const nextState = { ...state, libraryComponents };
@@ -11144,18 +11178,23 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
 });
 app.get('/api/component-library/:apiName/history', requirePermission('components:manage'), (req: Request, res: Response) => {
   const component=state.libraryComponents.find((item)=>item.apiName===routeParam(req,'apiName'));
-  if(!component)return res.status(404).json({error:'Library component was not found'});
+  if (!component || !libraryComponentVisible(component, getPrincipal(res).tenantId, Object.keys(state.tenants)))
+    return res.status(404).json({error:'Library component was not found'});
   return res.json({apiName:component.apiName,history:libraryHistory(component)});
 });
 app.post('/api/component-library/:apiName/publish', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName=routeParam(req,'apiName'),index=state.libraryComponents.findIndex((item)=>item.apiName===apiName);
   if(index<0)return res.status(404).json({error:'Library component was not found'});
   const existing=state.libraryComponents[index],draft=existing.pendingDraft;
+  const principal=getPrincipal(res);
+  if (!libraryComponentEditable(existing,principal.tenantId,Object.keys(state.tenants)))
+    return res.status(404).json({error:'Library component was not found'});
   if(!draft && existing.status!=='Draft')return res.status(409).json({error:'There is no draft to publish'});
   const next:LibraryComponent=draft
     ? {...existing,...draft,status:'Published',publishedVersion:draft.version,trustedBundled:false,
       revisions:[...(existing.revisions??[]),...(existing.status==='Draft'?[]:[libraryRevision(existing)])].slice(-100),pendingDraft:undefined}
     : {...existing,status:'Published',publishedVersion:existing.version};
+  next.tenantId = principal.tenantId;
   const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
   const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
   return res.json({component:next});
@@ -11166,6 +11205,9 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
   const parsed=z.object({version:z.number().int().positive()}).strict().safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Select a published historical version'});
   const existing=state.libraryComponents[index];
+  const principal=getPrincipal(res);
+  if (!libraryComponentEditable(existing,principal.tenantId,Object.keys(state.tenants)))
+    return res.status(404).json({error:'Library component was not found'});
   const previous=(existing.revisions??[]).find((item)=>item.version===parsed.data.version);
   if(!previous)return res.status(404).json({error:'Published revision not found'});
   const usages=findLibraryComponentUsages(state,apiName);
@@ -11174,14 +11216,17 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
   const nextVersion=nextLibraryRevision(existing);
   const next:LibraryComponent={...existing,...previous,version:nextVersion,updatedAt:new Date().toISOString(),status:'Published',trustedBundled:false,
     publishedVersion:nextVersion,pendingDraft:undefined,revisions:[...(existing.revisions??[]),libraryRevision(existing)].slice(-100)};
+  next.tenantId=principal.tenantId;
   const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
   const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
   return res.json({component:next,restoredFrom:parsed.data.version});
 });
 app.delete('/api/component-library/:apiName', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
-  if (!state.libraryComponents.some((component) => component.apiName === apiName)) return res.status(404).json({ error: 'Library component was not found' });
   const principal = getPrincipal(res);
+  const component=state.libraryComponents.find((item)=>item.apiName===apiName);
+  if (!libraryComponentEditable(component,principal.tenantId,Object.keys(state.tenants)))
+    return res.status(404).json({ error: 'Library component was not found' });
   const usages = findLibraryComponentUsages(state, apiName);
   if (usages.length) {
     const dependencies = usageBlockerDetails(usages, principal.tenantId);
@@ -11682,7 +11727,8 @@ app.put('/api/metadata/dashboards/:apiName', requirePermission('metadata:read'),
   for (const [index, component] of parsed.data.components.entries()) {
     if (component.type === 'Custom') {
       const registered = state.libraryComponents.find((item) =>
-        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard'));
+        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard')
+          && libraryComponentVisible(item, principal.tenantId, Object.keys(state.tenants)));
       if (!registered) return res.status(422).json({ error: `Custom dashboard component "${component.customComponentApiName ?? component.title}" is not available in the component library` });
     }
     const report = component.reportApiName
@@ -12047,7 +12093,8 @@ app.post('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metad
     }
     if (component.type === 'Custom') {
       const registered = state.libraryComponents.find((item) =>
-        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard'));
+        item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard')
+          && libraryComponentVisible(item, viewer.tenantId, Object.keys(state.tenants)));
       if (!registered) return res.status(409).json({ error: `Custom dashboard component "${component.customComponentApiName}" is no longer available` });
       const capturedHtml = customComponents.get(component.id);
       if (capturedHtml === undefined) return res.status(400).json({ error: `Custom dashboard component "${component.title}" was not captured` });
@@ -13351,7 +13398,8 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
   }
   const invalidLibraryComponent = parsed.data.components.find((component) => component.type.startsWith('Custom:') && !state.libraryComponents.some((libraryComponent) =>
-    libraryComponent.apiName === component.type.slice('Custom:'.length) && libraryComponent.surfaces.includes('page')));
+    libraryComponent.apiName === component.type.slice('Custom:'.length) && libraryComponent.surfaces.includes('page')
+    && libraryComponentVisible(libraryComponent, principal.tenantId, Object.keys(state.tenants))));
   if (invalidLibraryComponent) return res.status(422).json({ error: `Custom page component "${invalidLibraryComponent.type.slice('Custom:'.length)}" is not available in the component library` });
   const invalidApp = parsed.data.activationAssignments?.find((assignment) => assignment.appId
     && !tenant.apps.some((app) => app.apiName === assignment.appId));
@@ -17502,7 +17550,8 @@ function validateFlow(
   formulaContext: { timeZone?: string; locale?: string; corporateCurrency?: string; currencyRates?: Record<string, number> } = {},
   allFlows: FlowMetadata[] = [],
   approvalProcesses: ApprovalProcess[] = [],
-  platformEvents: z.infer<typeof platformEventSchema>[] = []
+  platformEvents: z.infer<typeof platformEventSchema>[] = [],
+  tenantId = ''
 ): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -17830,7 +17879,8 @@ function validateFlow(
         if (type === 'Custom Component') {
           const apiName = typeof field.componentApiName === 'string' ? field.componentApiName.trim() : '';
           const definition = state.libraryComponents.find((component) =>
-            component.apiName === apiName && component.surfaces.includes('flow') && component.status !== 'Draft');
+            component.apiName === apiName && component.surfaces.includes('flow') && component.status !== 'Draft'
+            && libraryComponentVisible(component, tenantId, Object.keys(state.tenants)));
           if (!definition) {
             errors.push(`Custom screen component "${apiName}" on "${element.label}" must reference a published Flow-enabled registry component.`);
           }
@@ -19190,6 +19240,22 @@ async function dispatchScheduledFlows(): Promise<void> {
       // SQL commit is the durable completion boundary. Do not release the
       // database advisory lock while scheduled mutations are still in flight.
       await waitForPersistedState();
+      // A PostgreSQL advisory lease alone does not refresh this process's
+      // in-memory replica. SQL revision/CAS guards prevent stale overwrites,
+      // but every new dispatcher must start from the committed database head.
+      if (persistenceMode !== 'jsonb') {
+        // Requests can persist state while the scheduler is reading SQL.
+        // Do not replace a newer local request mutation with an older read.
+        const snapshotCommit = latestStateCommit;
+        const committed = await readPersistedState();
+        if (latestStateCommit !== snapshotCommit) {
+          await waitForPersistedState();
+          return; // retry on the next interval with a fresh committed snapshot
+        }
+        if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
+        assertTenantIdentityIsolation(committed);
+        state = stateSchema.parse(committed);
+      }
       await deliverPendingPlatformEvents();
       await executeDueScheduledFlows();
       const now = Date.now();

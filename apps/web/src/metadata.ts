@@ -697,6 +697,7 @@ export type ReportRunMetadata = {
 };
 
 export type LibraryComponentMetadata = {
+  tenantId?: string;
   apiName: string;
   label: string;
   description: string;
