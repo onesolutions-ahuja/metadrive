@@ -4628,6 +4628,7 @@ function RecordWorkspace({
   const [customActionMessage, setCustomActionMessage] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTimestamp, setEditingTimestamp] = useState('');
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [lookupRecords, setLookupRecords] = useState<Record<string, RecordData[]>>({});
   const [lookupError, setLookupError] = useState('');
@@ -4914,6 +4915,7 @@ function RecordWorkspace({
     && object.listViewButtons?.includes('Add to Campaign') === true;
   const openCreateForm = () => {
     setEditingId(null);
+    setEditingTimestamp('');
     setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '' } : { RecordTypeId: defaultRecordTypeId });
     setFormError('');
     setFormOpen(true);
@@ -4923,6 +4925,7 @@ function RecordWorkspace({
     const editableFieldNames = new Set(object.fields.map((field) => field.apiName));
     const editableValues = Object.fromEntries(Object.entries(item).filter(([apiName]) => editableFieldNames.has(apiName) || apiName === 'RecordTypeId'));
     setEditingId(item.Id);
+    setEditingTimestamp(typeof item.LastModifiedDate === 'string' ? item.LastModifiedDate : '');
     setFormValues(editableValues);
     setFormError('');
     setFormOpen(true);
@@ -4953,10 +4956,12 @@ function RecordWorkspace({
       }
       const response = await apiRequest<{ record: RecordData }>(path, {
         method: editingId ? 'PUT' : 'POST',
+        ...(editingId && editingTimestamp ? { headers: { 'If-Unmodified-Since': editingTimestamp } } : {}),
         body: JSON.stringify(writableValues)
       });
       setFormOpen(false);
       setFormValues({});
+      setEditingTimestamp('');
       if (editingId) setRefreshKey((current) => current + 1);
       else onNavigate({ kind: 'record-detail', objectApiName: object.apiName, recordId: response.record.Id });
     } catch (failure) {
@@ -4987,7 +4992,10 @@ function RecordWorkspace({
     if (route.kind !== 'record-detail' || !record || !window.confirm(object.apiName === 'User' ? `Deactivate ${String(record.Name ?? record.Id)} and revoke their sessions? Identity and audit records are retained.` : `Delete ${String(record.Name ?? record.Id)}? This cannot be undone.`)) return;
     setError('');
     try {
-      await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, { method: 'DELETE' });
+      await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, {
+        method: 'DELETE',
+        ...(typeof record.LastModifiedDate === 'string' ? { headers: { 'If-Unmodified-Since': record.LastModifiedDate } } : {})
+      });
       openList();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to delete record');
@@ -5026,6 +5034,7 @@ function RecordWorkspace({
     try {
       await apiRequest<{ record: RecordData }>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(ownerDialogRecord.Id)}/owner`, {
         method: 'PUT',
+        ...(typeof ownerDialogRecord.LastModifiedDate === 'string' ? { headers: { 'If-Unmodified-Since': ownerDialogRecord.LastModifiedDate } } : {}),
         body: JSON.stringify({ ownerId: ownerValue })
       });
       setOwnerDialogRecord(null);
