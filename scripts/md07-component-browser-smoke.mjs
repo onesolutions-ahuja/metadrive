@@ -57,6 +57,7 @@ try {
   await page.getByRole('heading',{name:'Global Component Library'}).waitFor();
   await page.getByRole('button',{name:'Register component'}).click();
   await page.locator('#library-component-label').fill('MD07 Browser Widget');
+  await page.getByLabel('Flow Builder screens').check();
   await page.locator('#library-jsx-file').setInputFiles({
     name:'MD07_Browser_Widget.jsx',mimeType:'text/javascript',
     buffer:Buffer.from("export default function Component({label}) { return <div>MD07 isolated component ready: {label}</div> }")
