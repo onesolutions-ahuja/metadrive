@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:net';
 import os from 'node:os';
@@ -17,6 +17,7 @@ const serverDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)
 const adminEmail = 'admin@rbac-sharing-smoke.test';
 const userPassword = 'RBAC-Smoke-Password-2026!';
 const tenantId = 'rbac-sharing-smoke';
+const apiClientSecret = 'metadrive-e2e-client-secret-with-high-entropy-2026';
 let apiLogs = '';
 
 async function availablePort(): Promise<number> {
@@ -77,7 +78,7 @@ async function startSmtpRelay(): Promise<{ server: Server; port: number; message
   return { server, port: address.port, messages };
 }
 
-async function startApi(port: number, dataPath: string, bootstrap = false): Promise<ChildProcess> {
+async function startApi(port: number, dataPath: string, bootstrap = false, clients?: unknown[]): Promise<ChildProcess> {
   const child = spawn(process.execPath, [tsxCli, 'src/index.ts'], {
     cwd: serverDirectory,
     env: {
@@ -87,6 +88,7 @@ async function startApi(port: number, dataPath: string, bootstrap = false): Prom
       METADRIVE_CREDENTIAL_KEYS: JSON.stringify({ 'test-key': Buffer.alloc(32, 7).toString('base64') }),
       METADRIVE_CREDENTIAL_ACTIVE_KEY_ID: 'test-key',
       METADRIVE_SMTP_TEST_MODE: 'true',
+      ...(clients ? { METADRIVE_API_CLIENTS: JSON.stringify(clients) } : {}),
       ...(bootstrap ? {
         METADRIVE_BOOTSTRAP_TENANT_ID: tenantId,
         METADRIVE_BOOTSTRAP_TENANT_NAME: 'RBAC Sharing Smoke',
@@ -437,7 +439,7 @@ test('dashboard Includes and Excludes filters match configured multi-select valu
 
 function client(port: number) {
   const root = `http://127.0.0.1:${port}/api`;
-  const send = async (pathName: string, token?: string, method = 'GET', body?: unknown, requestSource?: 'web-app' | 'external-api') => {
+  const send = async (pathName: string, token?: string, method = 'GET', body?: unknown, requestSource?: 'web-app' | 'external-api' | 'authenticated-api' | 'expired-api' | 'revoked-api') => {
     let response: Response;
     try {
       response = await fetch(`${root}${pathName}`, {
@@ -446,6 +448,11 @@ function client(port: number) {
           ...(token ? { authorization: `Bearer ${token}` } : {}),
           ...(requestSource === 'web-app' ? { 'x-metadrive-request-source': 'web-app' } : {}),
           ...(requestSource === 'external-api' ? { 'x-metadrive-external-api': 'true' } : {}),
+          ...(['authenticated-api', 'expired-api', 'revoked-api'].includes(requestSource ?? '') ? {
+            'x-metadrive-api-client-id': requestSource === 'authenticated-api' ? 'valid'
+              : requestSource === 'expired-api' ? 'expired' : 'revoked',
+            'x-metadrive-api-client-secret': apiClientSecret
+          } : {}),
           ...(body ? { 'content-type': 'application/json' } : {})
         },
         ...(body ? { body: JSON.stringify(body) } : {})
@@ -784,7 +791,13 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     }];
     await writeFile(dataPath, JSON.stringify(state, null, 2));
 
-    child = await startApi(port, dataPath);
+    const apiClientBase = { tenantId, userId: admin.id,
+      keySha256: createHash('sha256').update(apiClientSecret).digest('hex') };
+    child = await startApi(port, dataPath, false, [
+      { ...apiClientBase, id: 'valid', expiresAt: '2099-01-01T00:00:00Z' },
+      { ...apiClientBase, id: 'expired', expiresAt: '2020-01-01T00:00:00Z' },
+      { ...apiClientBase, id: 'revoked', expiresAt: '2099-01-01T00:00:00Z', revokedAt: '2020-01-01T00:00:00Z' }
+    ]);
     const api = client(port);
     const adminToken = await api.login(adminEmail);
     const lifecycleAdminUserId = (await api.send('/auth/me', adminToken)).data.user.id as string;
@@ -1753,12 +1766,22 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'browser requests remain functional');
     assert.equal((await api.send('/metadata/objects?customSensitiveValue=private-api-log-canary', adminToken, 'GET', undefined, 'external-api')).status, 200,
       'forged external origin headers cannot alter response behavior');
+    for (const requestSource of ['authenticated-api', 'expired-api', 'revoked-api'] as const) {
+      assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, requestSource)).status, 200);
+    }
+    assert.equal((await api.send('/metadata/objects', secondAdminToken, 'GET', undefined, 'authenticated-api')).status, 200,
+      'another tenant cannot acquire client identity by spoofing headers');
     const communicationRecordsResponse = await api.send('/records/Communication_Records__c', adminToken, 'GET', undefined, 'web-app');
     assert.equal(communicationRecordsResponse.status, 200);
     const communicationRecords = communicationRecordsResponse.data.records as Array<Record<string, unknown>>;
-    assert.ok(!communicationRecords.some((record) =>
-      record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API'),
-      'neither internal requests nor forged external headers can create incoming API audit records');
+    assert.equal(communicationRecords.filter((record) =>
+      record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API'
+      && record.Api_Id__c === 'GET /api/metadata/objects').length, 1,
+      'only valid tenant-bound API clients can generate incoming audit records');
+    const authenticatedAudit = communicationRecords.find((record) =>
+      record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API');
+    assert.equal(authenticatedAudit?.Request_Body__c ?? '', '');
+    assert.equal(authenticatedAudit?.Response_Body__c ?? '', '');
     assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('private-api-log-canary')),
       'forged API origin cannot persist query-string secrets');
     const auditDenied = await api.send('/records/Communication_Records__c', developmentReaderToken);
