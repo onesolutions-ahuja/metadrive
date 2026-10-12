@@ -10,6 +10,7 @@
     "dev:server": "npm run dev --workspace apps/server",
     "build": "npm run build --workspace apps/web && npm run build --workspace apps/server",
     "start:web": "npm run preview --workspace apps/web",
-    "start:server": "npm run start --workspace apps/server"
+    "start:server": "npm run start --workspace apps/server",
+    "test:foundation": "node --test scripts/foundation-contract.test.mjs"
   }
 }
