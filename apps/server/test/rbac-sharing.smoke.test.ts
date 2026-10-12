@@ -1720,13 +1720,15 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('private-api-log-canary')),
       'forged API origin cannot persist query-string secrets');
     const auditDenied = await api.send('/records/Communication_Records__c', developmentReaderToken);
-    assert.equal(auditDenied.status, 403, 'non-security users cannot list communication audit records');
+    assert.equal(auditDenied.status, 200, 'ordinary communication history remains readable under existing object permissions');
+    assert.ok(!(auditDenied.data.records as Array<Record<string, unknown>>).some((record) =>
+      record.Communication_Mode__c === 'API'), 'API audit entries must not appear in non-security record lists');
     assert.equal((await api.send('/records/Communication_Records__c', developmentReaderToken, 'POST',
       { Communication_Mode__c: 'API', Direction__c: 'Incoming' })).status, 403,
       'non-security users cannot insert forged audit records');
     assert.equal((await api.send('/records/Communication_Records__c', adminToken, 'POST',
       { Communication_Mode__c: 'API', Direction__c: 'Incoming' })).status, 403,
-      'even security administrators must not forge records through the generic Records API');
+      'security administrators cannot forge API audit entries through the generic Records API');
     const connectorRecordsResponse = await api.send('/records/UneConnector__c', adminToken);
     assert.equal(connectorRecordsResponse.status, 200, 'connector records must use the standard Records API');
     assert.deepEqual((connectorRecordsResponse.data.records as Array<Record<string, unknown>>).map((record) => record.Name),
