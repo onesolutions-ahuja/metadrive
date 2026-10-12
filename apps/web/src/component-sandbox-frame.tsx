@@ -5,6 +5,8 @@ type FrameMessage = { kind: string; instance: string; requestId?: string; props?
 const root = createRoot(document.getElementById('component-root')!);
 const requests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 let currentInstance = '';
+let activeSource = '';
+let activeComponent: React.ComponentType<Record<string, unknown>> | null = null;
 function send(message: Omit<FrameMessage, 'instance'>) {
   window.parent.postMessage({ ...message, instance: currentInstance }, '*');
 }
@@ -23,12 +25,16 @@ window.addEventListener('message', (event: MessageEvent<FrameMessage>) => {
     || typeof message.definition.compiledJs !== 'string' || !message.props) return;
   currentInstance = message.instance;
   try {
-    const mod: { exports: { default?: React.ComponentType<Record<string, unknown>> } } = { exports: {} };
-    const execute = new Function('React','module','exports', message.definition.compiledJs) as
-      (react: typeof React, m: typeof mod, exports: typeof mod.exports) => void;
-    execute(React, mod, mod.exports);
-    if (typeof mod.exports.default !== 'function') throw Error('Missing default React component');
-    const Component = mod.exports.default;
+    if (activeSource !== message.definition.compiledJs || !activeComponent) {
+      const mod: { exports: { default?: React.ComponentType<Record<string, unknown>> } } = { exports: {} };
+      const execute = new Function('React','module','exports', message.definition.compiledJs) as
+        (react: typeof React, m: typeof mod, exports: typeof mod.exports) => void;
+      execute(React, mod, mod.exports);
+      if (typeof mod.exports.default !== 'function') throw Error('Missing default React component');
+      activeComponent = mod.exports.default;
+      activeSource = message.definition.compiledJs;
+    }
+    const Component = activeComponent;
     const style = document.getElementById('component-style') as HTMLStyleElement;
     style.textContent = message.definition.scopedCss || '';
     const onAction = (action: unknown) => new Promise<unknown>((resolve, reject) => {
