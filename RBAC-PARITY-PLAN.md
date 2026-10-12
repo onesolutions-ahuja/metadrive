@@ -4,7 +4,7 @@
 **Inventory date:** 2026-10-08  
 **Scope:** tenant-scoped security and authorization only. Flow Builder, dashboards as a product feature, and unrelated platform work are excluded. Dashboard/report behavior is in scope only where it consumes RBAC decisions.
 
-This plan fixes the remaining work into three phases. Phase 1 is the only phase authorized for implementation in the current task. Do not expand Phase 1 into later-phase features. Salesforce parity is not claimed until the outstanding phase acceptance criteria are implemented and verified.
+This plan retains three phases. The Module 4 authorization work of 2026-10-12 permits Phase 2 implementation while **Phase 3 advanced sharing/restriction rules remains explicitly deferred to the last phase**. Salesforce parity is not claimed until that future scope is implemented and verified.
 
 ## Existing implementation
 
@@ -21,8 +21,8 @@ This plan fixes the remaining work into three phases. Phase 1 is the only phase 
 | Phase | Scope and acceptance boundary | Status |
 |---|---|---|
 | **1 — Complete and verify the implemented RBAC core** | Close inconsistencies in the already-supported profile/permission-set/group, role, record-type, OWD, public-group, and sharing-rule surfaces. Keep metadata references tenant-valid, ensure Setup Quick Find shortcuts reach the correct security-workspace section, and prove current API authorization behavior with end-to-end smoke tests. No new Salesforce security feature family is introduced in this phase. | **Complete in this task** |
-| **2 — Salesforce administration and assignment parity** | Add queue membership and queue record ownership/assignment semantics; define and enforce the remaining in-scope Salesforce system, application, and tab permissions; implement Permission Set Group recalculation/status and assignment lifecycle behavior where the platform supports asynchronous recalculation. Acceptance requires tenant-isolated configuration and end-to-end allow/deny tests for each surface. | Pending |
-| **3 — Advanced sharing and remaining platform semantics** | Add restriction-rule evaluation and supported implicit sharing semantics; complete Salesforce-compatible territory access rather than the current dashboard-folder territory audience; add external/portal-user sharing semantics and remaining RBAC permission surfaces identified by the Phase 2 inventory. Acceptance requires cross-surface record/API/report/dashboard authorization tests, including isolation and revocation. | Pending |
+| **2 — Salesforce administration and assignment parity** | Queue membership and protected queue/user ownership transfer; system, application, and tab grants; synchronous Permission Set Group recalculation and muting; tenant-isolated allow/deny tests. | Implemented in PR #152; CI validation required |
+| **3 — Advanced sharing and remaining platform semantics** | Restriction rules, implicit sharing, territory access, external/portal-user security, and advanced cross-surface tests. | Deferred to last phase at user's request |
 
 ## Phase 1 completion record
 
@@ -36,3 +36,11 @@ This plan fixes the remaining work into three phases. Phase 1 is the only phase 
 - Flow Builder and unrelated product capabilities are not part of this plan.
 - Phase 1 does not claim full Salesforce parity or add queue, external-user, restriction-rule, implicit-sharing, or Enterprise Territory Management features.
 - Any newly discovered RBAC gap must be assigned to Phase 2 or 3; do not silently widen Phase 1.
+
+## Phase 2 implementation notes (2026-10-12)
+
+- Queue membership supports individual users, roles, subordinate roles, and nested public groups. The dedicated `POST /api/records/:objectName/:recordId/transfer-owner` operation validates tenant-local active user/queue ownership, edit and transfer authority, and clears manual shares on ownership transfer. Generic record updates still reject OwnerId changes.
+- Profiles can explicitly hide apps/tabs, permission sets can restore specific visibility, and permission set group muting applies only to the group's contribution. Existing tenants without configured app/tab restrictions retain existing navigation. App/page API endpoints enforce server-side navigation checks; object CRUD, field- and record-security checks remain independent.
+- Permission Set Groups are resolved synchronously when tenant RBAC is saved. Calculation status and last calculated timestamp are recorded as Updated, and the versioned tenant state immediately invalidates cached effective grants. No background worker, pending recalculation queue, or per-request database lookup is added.
+- `navigation-rbac.smoke.test.ts` covers changes to profile, set/group muting, stale-grant prevention, direct-URL denial, invalid app references, owner transfer and queue/tenant isolation.
+- Final CI and deployment performance results are acceptance evidence, not implied by this source-only record. This phase does not cover advanced sharing, full Salesforce parity, or an unverified platform-assisted tenant rescue ceremony.

@@ -2074,6 +2074,8 @@ const objectPermissionSchema = objectPermissionFlagsSchema.superRefine((permissi
   }
 });
 type ObjectPermission = z.infer<typeof objectPermissionFlagsSchema>;
+// Navigation access does not bypass object, field or row permissions.
+const navigationGrantSchema = z.record(z.boolean()).optional();
 const permissionSetSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -2083,6 +2085,8 @@ const permissionSetSchema = z.object({
   systemPermissions: z.array(z.string()),
   objectPermissions: z.record(objectPermissionSchema),
   recordTypePermissions: z.record(z.boolean()).default({}),
+  appPermissions: navigationGrantSchema,
+  tabPermissions: navigationGrantSchema,
   fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean() }).superRefine((permission, context) => {
     if (permission.edit && !permission.read) context.addIssue({ code: z.ZodIssueCode.custom, path: ['read'], message: 'Field edit access requires read access' });
   }))
@@ -2097,6 +2101,8 @@ const profileSchema = z.object({
   systemPermissions: z.array(z.string()),
   objectPermissions: z.record(objectPermissionSchema),
   recordTypePermissions: z.record(z.boolean()).default({}),
+  appPermissions: navigationGrantSchema,
+  tabPermissions: navigationGrantSchema,
   fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean() }).superRefine((permission, context) => {
     if (permission.edit && !permission.read) context.addIssue({ code: z.ZodIssueCode.custom, path: ['read'], message: 'Field edit access requires read access' });
   }))
@@ -2112,6 +2118,8 @@ const permissionSetGroupSchema = z.object({
   mutedSystemPermissions: z.array(z.string()).default([]),
   mutedObjectPermissions: z.record(objectPermissionFlagsSchema.partial()).default({}),
   mutedRecordTypePermissions: z.record(z.boolean()).default({}),
+  mutedAppPermissions: navigationGrantSchema,
+  mutedTabPermissions: navigationGrantSchema,
   mutedFieldPermissions: z.record(z.object({ read: z.boolean().optional(), edit: z.boolean().optional() })).default({})
 });
 const accessUserSchema = z.object({
@@ -8298,6 +8306,25 @@ function authorizationGrants(principal: Principal, tenant: TenantData): AuthGran
   return resolved;
 }
 
+// Profile defaults preserve legacy tenant navigation. Explicit false hides an app/tab.
+// Permission set grants are additive; group muting masks only that group's grant.
+function canNavigate(principal: Principal, tenant: TenantData, type: 'app' | 'tab', key: string): boolean {
+  const grants = authorizationGrants(principal, tenant);
+  if (!grants) return false;
+  const field = type === 'app' ? 'appPermissions' : 'tabPermissions';
+  const mutedField = type === 'app' ? 'mutedAppPermissions' : 'mutedTabPermissions';
+  if (grants.profile?.[field]?.[key] !== false) return true;
+  if (grants.directSets.some((set) => set[field]?.[key] === true)) return true;
+  return grants.groups.some(({ group, sets }) =>
+    group[mutedField]?.[key] !== true && sets.some((set) => set[field]?.[key] === true));
+}
+function canOpenApp(principal: Principal, tenant: TenantData, appApiName: string): boolean {
+  return canNavigate(principal, tenant, 'app', appApiName);
+}
+function canOpenTab(principal: Principal, tenant: TenantData, objectApiName: string): boolean {
+  return canNavigate(principal, tenant, 'tab', objectApiName);
+}
+
 function hasObjectPermission(principal: Principal, tenant: TenantData, objectName: string, action: 'read' | 'create' | 'edit' | 'delete'): boolean {
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (object?.kind === 'Custom Object' && object.settings?.deploymentStatus === 'In Development'
@@ -9725,6 +9752,63 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record update failed' });
   }
 });
+// Ownership changes are only permitted through this dedicated, auditable route.
+// Generic record PUT must never become an ownership-escalation shortcut.
+app.post('/api/records/:objectName/:recordId/transfer-owner', accessAuthentication, async (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const objectName = routeParam(req, 'objectName');
+  const recordId = routeParam(req, 'recordId');
+  const request = z.object({ ownerId: z.string().min(1) }).strict().safeParse(req.body);
+  if (!request.success) return res.status(400).json({ error: 'A valid new owner ID is required' });
+  const object = tenant.objects.find((item) => item.apiName === objectName);
+  if (!object || !object.fields.some((field) => field.apiName === 'OwnerId')
+    || ['User', 'Connector_App__c', 'ConnectorProvider__c', 'IntegrationConnection__c'].includes(objectName))
+    return res.status(404).json({ error: 'Object does not support ownership transfer' });
+  const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
+  if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit'))
+    return res.status(404).json({ error: 'Record was not found' });
+  const currentQueueMember = tenant.accessControl.queues.some((queue) =>
+    queue.id === existing.OwnerId && queue.supportedObjectApiNames.includes(objectName)
+    && queueContainsUser(queue, principal.userId, tenant));
+  if (existing.OwnerId !== principal.userId && !currentQueueMember
+    && !hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')
+    && !principal.permissions.includes('security:manage'))
+    return res.status(403).json({ error: 'Only the owner or authorized administrator may transfer ownership' });
+  if (!hasFieldPermission(principal, tenant, objectName, 'OwnerId', 'edit'))
+    return res.status(403).json({ error: 'Missing OwnerId edit permission' });
+  const ownerId = request.data.ownerId;
+  const targetUser = state.users.find((user) => user.id === ownerId
+    && user.tenantId === principal.tenantId && !user.disabled);
+  const targetQueue = tenant.accessControl.queues.find((queue) =>
+    queue.id === ownerId && queue.supportedObjectApiNames.includes(objectName));
+  if (!targetUser && !targetQueue) return res.status(400).json({ error: 'New owner must be an active tenant user or supported queue' });
+  if (targetQueue && !queueContainsUser(targetQueue, principal.userId, tenant)
+    && !principal.permissions.includes('security:manage'))
+    return res.status(403).json({ error: 'Queue membership or security administration is required' });
+  if (existing.OwnerId === ownerId) return res.json({ record: sanitizeRecordForRead(principal, tenant, object, existing) });
+  try {
+    const working = structuredClone(tenant);
+    const now = new Date().toISOString();
+    const updated = calculateFormulaFields(object,
+      stampRecordAuditFields({ ...existing, OwnerId: ownerId, LastModifiedDate: now }, principal.userId, now, existing),
+      formulaContextForUser(working, principal.userId));
+    validateRuntimeRecord(principal.tenantId, working, object, { OwnerId: ownerId }, updated);
+    appendFieldHistory(working, object, existing, updated, principal.userId);
+    working.records[objectName] = (working.records[objectName] ?? [])
+      .map((item) => item.Id === recordId ? updated : item);
+    // Manual shares are not carried over when ownership changes. Sharing rules,
+    // queue membership and role hierarchy are evaluated against the new owner.
+    working.recordShares = working.recordShares.filter((share) =>
+      share.objectApiName !== objectName || share.recordId !== recordId);
+    persistTenantRecords(principal.tenantId, withSecurityEvent(working, principal.userId,
+      'rbac.record-ownership.transferred', { objectName, recordId, newOwnerId: ownerId }));
+    return res.json({ record: sanitizeRecordForRead(principal, working, object, updated) });
+  } catch (error) {
+    return res.status(422).json({ error: error instanceof Error ? error.message : 'Owner transfer failed' });
+  }
+});
+
 app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -12507,13 +12591,21 @@ app.delete('/api/metadata/reports/:apiName', requirePermission('metadata:read'),
   return res.status(204).end();
 });
 app.get('/api/metadata/apps', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ apps: tenantData(getPrincipal(res).tenantId)?.apps ?? [] });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  res.json({ apps: tenant.apps
+    .filter((app) => canOpenApp(principal, tenant, app.apiName))
+    .map((app) => ({ ...app,
+      navigationItems: app.navigationItems.filter((name) => canOpenTab(principal, tenant, name)),
+      navigationOrder: app.navigationOrder.filter((item) => item.type !== 'Object' || canOpenTab(principal, tenant, item.apiName))
+    })) });
 });
 app.get('/api/apps/:appApiName/home-page', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const appApiName = routeParam(req, 'appApiName');
-  if (!tenant.apps.some((item) => item.apiName === appApiName)) return res.status(404).json({ error: 'Lightning app was not found' });
+  if (!tenant.apps.some((item) => item.apiName === appApiName) || !canOpenApp(principal, tenant, appApiName))
+    return res.status(404).json({ error: 'Lightning app was not found' });
   const formFactor = req.query.formFactor;
   if (formFactor !== undefined && formFactor !== 'Desktop' && formFactor !== 'Phone') {
     return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
@@ -12527,11 +12619,13 @@ app.get('/api/apps/:appApiName/home-page', accessAuthentication, (req: Request, 
   return res.json({ page: homePage ?? null });
 });
 app.get('/api/apps/:appApiName/pages/:pageApiName', accessAuthentication, (req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
   const appApiName = routeParam(req, 'appApiName');
   const pageApiName = routeParam(req, 'pageApiName');
   const app = tenant.apps.find((item) => item.apiName === appApiName);
-  if (!app) return res.status(404).json({ error: 'Lightning app was not found' });
+  if (!app || !canOpenApp(principal, tenant, appApiName))
+    return res.status(404).json({ error: 'Lightning app was not found' });
   if (!app.navigationPageApiNames.includes(pageApiName)) return res.status(404).json({ error: 'Lightning page is not in this app navigation' });
   const page = tenant.pages.find((item) => item.apiName === pageApiName && item.pageType === 'App Page' && item.status === 'Active');
   if (!page) return res.status(404).json({ error: 'Active App Page was not found' });
@@ -12768,6 +12862,15 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
     : req.body;
   const parsed = accessControlSchema.safeParse(body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid access-control metadata', details: parsed.error.flatten() });
+  const appNames = new Set(tenant.apps.map((app) => app.apiName));
+  const tabNames = new Set(tenant.objects.map((object) => object.apiName));
+  const invalidNavigation = [...parsed.data.profiles, ...parsed.data.permissionSets].some((item) =>
+    Object.keys(item.appPermissions ?? {}).some((name) => !appNames.has(name))
+      || Object.keys(item.tabPermissions ?? {}).some((name) => !tabNames.has(name)))
+    || parsed.data.permissionSetGroups.some((group) =>
+      Object.keys(group.mutedAppPermissions ?? {}).some((name) => !appNames.has(name))
+      || Object.keys(group.mutedTabPermissions ?? {}).some((name) => !tabNames.has(name)));
+  if (invalidNavigation) return res.status(400).json({ error: 'Navigation grants must reference apps and tabs in this tenant' });
   // Fail closed: tenant RBAC is deliberately not an authority for platform policies.
   const reservedPermission = (permission: string) =>
     permission === 'licence:manage' || permission.startsWith('platform:');
