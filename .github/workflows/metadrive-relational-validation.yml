@@ -12,6 +12,11 @@ on:
       - 'apps/server/src/relational-tables.mjs'
       - 'apps/server/src/postgres-state.ts'
       - 'apps/server/src/index.ts'
+      - 'apps/server/src/normalized-typed-records.mjs'
+      - 'apps/server/scripts/prove-typed-records-on-restore.mjs'
+      - 'apps/server/test/normalized-api.integration.test.mjs'
+      - 'scripts/md06-records-browser-smoke.mjs'
+      - 'apps/web/src/App.tsx'
       - 'apps/server/src/tenant-recovery-*.mjs'
       - 'apps/server/sql/tenant-recovery-control.sql'
       - 'apps/server/test/tenant-recovery-*.mjs'
@@ -26,7 +31,7 @@ on:
       - 'apps/server/test/isolated-postgres-preload.mjs'
       - '.github/workflows/metadrive-relational-validation.yml'
   push:
-    branches: [migration/relational-staging-20261011]
+    branches: [migration/relational-staging-20261011, md06-record-integrity-20261012]
   workflow_dispatch:
 
 permissions:
@@ -124,6 +129,15 @@ jobs:
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
         run: node --test --test-concurrency=1 apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs apps/server/test/relational-api.integration.test.mjs apps/server/test/relational-in-place.integration.test.mjs
+      - name: Verify typed SQL records, login, relationships and Flow API end to end
+        env:
+          METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: node --test --test-concurrency=1 apps/server/test/normalized-api.integration.test.mjs
+      - name: Verify real Records UI in disposable Chromium test environment
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+          node scripts/md06-records-browser-smoke.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres

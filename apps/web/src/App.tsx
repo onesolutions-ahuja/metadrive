@@ -4609,6 +4609,7 @@ function RecordWorkspace({
   useEffect(() => { if (route.kind === 'record-list') { setSearch(headerSearch); setListOffset(0); } }, [headerSearch, route.kind]);
   const [listOffset, setListOffset] = useState(0);
   const [listTotal, setListTotal] = useState(0);
+  const [listSort, setListSort] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
   const listPageSize = 50;
   const [refreshKey, setRefreshKey] = useState(0);
   const [fieldHistory, setFieldHistory] = useState<Array<Record<string, unknown>>>([]);
@@ -4635,6 +4636,7 @@ function RecordWorkspace({
   const [customActionMessage, setCustomActionMessage] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTimestamp, setEditingTimestamp] = useState('');
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [lookupRecords, setLookupRecords] = useState<Record<string, RecordData[]>>({});
   const [lookupError, setLookupError] = useState('');
@@ -4651,6 +4653,8 @@ function RecordWorkspace({
   const [importFileName, setImportFileName] = useState('');
   const [importError, setImportError] = useState('');
   const [importSaving, setImportSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
   const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
   const [campaignOptions, setCampaignOptions] = useState<RecordData[]>([]);
@@ -4669,9 +4673,14 @@ function RecordWorkspace({
     setListOffset(0);
     setSelectedRecordIds([]);
   }, [route.objectApiName, debouncedSearch]);
+  useEffect(() => { setListSort(null); }, [route.objectApiName]);
 
   useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
+  }, [object?.apiName]);
+  useEffect(() => {
+    setSelectedRecordIds([]);
+    setListNotice('');
   }, [object?.apiName]);
 
   useEffect(() => {
@@ -4698,6 +4707,7 @@ function RecordWorkspace({
           const params = new URLSearchParams({
             limit: String(listPageSize),
             offset: String(listOffset),
+            ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
             ...(debouncedSearch ? { search: debouncedSearch } : {}),
             ...(object?.listViewFilter ? {
               filterField: object.listViewFilter.fieldApiName,
@@ -4734,7 +4744,7 @@ function RecordWorkspace({
     };
     void loadRecords();
     return () => { active = false; };
-  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch]);
+  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch, listSort?.field, listSort?.direction]);
 
   useEffect(() => {
     if (route.kind !== 'record-detail' || !object || !record || record.Id !== route.recordId) {
@@ -4917,6 +4927,7 @@ function RecordWorkspace({
     && object.listViewButtons?.includes('Add to Campaign') === true;
   const openCreateForm = () => {
     setEditingId(null);
+    setEditingTimestamp('');
     setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '' } : { RecordTypeId: defaultRecordTypeId });
     setFormError('');
     setFormOpen(true);
@@ -4926,6 +4937,7 @@ function RecordWorkspace({
     const editableFieldNames = new Set(object.fields.map((field) => field.apiName));
     const editableValues = Object.fromEntries(Object.entries(item).filter(([apiName]) => editableFieldNames.has(apiName) || apiName === 'RecordTypeId'));
     setEditingId(item.Id);
+    setEditingTimestamp(typeof item.LastModifiedDate === 'string' ? item.LastModifiedDate : '');
     setFormValues(editableValues);
     setFormError('');
     setFormOpen(true);
@@ -4945,6 +4957,9 @@ function RecordWorkspace({
       const writableValues = Object.fromEntries(Object.entries(formValues).filter(([apiName]) =>
         apiName !== 'OwnerId' && (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit)
       ));
+      // A record without an assigned type must not submit an empty type ID:
+      // the generic API treats an explicitly supplied ID as an assignment request.
+      if (writableValues.RecordTypeId === '') delete writableValues.RecordTypeId;
       if (object.apiName === 'User') {
         if (!editingId) {
           if (typeof formValues.Password !== 'string' || formValues.Password.length < 12) throw new Error('Set an initial password of at least 12 characters.');
@@ -4956,10 +4971,12 @@ function RecordWorkspace({
       }
       const response = await apiRequest<{ record: RecordData }>(path, {
         method: editingId ? 'PUT' : 'POST',
+        ...(editingId && editingTimestamp ? { headers: { 'If-Unmodified-Since': editingTimestamp } } : {}),
         body: JSON.stringify(writableValues)
       });
       setFormOpen(false);
       setFormValues({});
+      setEditingTimestamp('');
       if (editingId) setRefreshKey((current) => current + 1);
       else onNavigate({ kind: 'record-detail', objectApiName: object.apiName, recordId: response.record.Id });
     } catch (failure) {
@@ -4990,7 +5007,10 @@ function RecordWorkspace({
     if (route.kind !== 'record-detail' || !record || !window.confirm(object.apiName === 'User' ? `Deactivate ${String(record.Name ?? record.Id)} and revoke their sessions? Identity and audit records are retained.` : `Delete ${String(record.Name ?? record.Id)}? This cannot be undone.`)) return;
     setError('');
     try {
-      await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, { method: 'DELETE' });
+      await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, {
+        method: 'DELETE',
+        ...(typeof record.LastModifiedDate === 'string' ? { headers: { 'If-Unmodified-Since': record.LastModifiedDate } } : {})
+      });
       openList();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to delete record');
@@ -5029,6 +5049,7 @@ function RecordWorkspace({
     try {
       await apiRequest<{ record: RecordData }>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(ownerDialogRecord.Id)}/owner`, {
         method: 'PUT',
+        ...(typeof ownerDialogRecord.LastModifiedDate === 'string' ? { headers: { 'If-Unmodified-Since': ownerDialogRecord.LastModifiedDate } } : {}),
         body: JSON.stringify({ ownerId: ownerValue })
       });
       setOwnerDialogRecord(null);
@@ -5143,6 +5164,61 @@ function RecordWorkspace({
       setImportError(failure instanceof Error ? failure.message : 'Import failed; no records were saved');
     } finally {
       setImportSaving(false);
+    }
+  };
+  const exportFilteredRecords = async () => {
+    if (!object || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      // Use the same authorised, metadata-filtered Records API as the list.
+      // Fetch in bounded pages; never bypass field/record RBAC or hydrate the
+      // entire table into the live list view.
+      const fields = object.fields.filter((field) => fieldAccess[object.apiName+'.'+field.apiName]?.read);
+      const columns = ['Id', ...fields.map((field) => field.apiName).filter((name) => name !== 'Id')];
+      const csvCell = (value: unknown): string => {
+        let text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+        // Neutralise spreadsheet formulas without changing stored source data.
+        if (typeof value === 'string' && /^[\s\u0000-\u001f]*[=+@-]/.test(value)) text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+      };
+      const rows: string[] = [columns.map(csvCell).join(',')];
+      let offset = 0;
+      let total: number | null = null;
+      do {
+        const params = new URLSearchParams({
+          limit: '200', offset: String(offset),
+          ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
+          ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          ...(object.listViewFilter ? { filterField: object.listViewFilter.fieldApiName,
+            filterValue: object.listViewFilter.value } : {})
+        });
+        const page = await apiRequest<{ records: RecordData[]; total: number }>(
+          '/records/' + encodeURIComponent(object.apiName) + '?' + params.toString());
+        if (!Array.isArray(page.records) || !Number.isSafeInteger(page.total) || page.total < 0)
+          throw new Error('Unexpected record export response');
+        if (total !== null && total !== page.total)
+          throw new Error('Records changed during export. Please retry for a consistent result.');
+        total = page.total;
+        if (page.records.length === 0 && offset < total)
+          throw new Error('Export stopped before all records were returned');
+        for (const item of page.records) rows.push(columns.map((name) => csvCell(item[name])).join(','));
+        offset += page.records.length;
+      } while (total !== null && offset < total);
+      const blob = new Blob(['\uFEFF', rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = object.apiName + '-records.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setListNotice('Exported ' + offset + ' records to CSV.');
+    } catch (failure) {
+      setExportError(failure instanceof Error ? failure.message : 'Unable to export records');
+    } finally {
+      setExporting(false);
     }
   };
   const openAddToCampaign = async () => {
@@ -5514,10 +5590,6 @@ function RecordWorkspace({
       const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
       return !layout || layout.actions.includes('Delete');
     })());
-  useEffect(() => {
-    setSelectedRecordIds([]);
-    setListNotice('');
-  }, [object.apiName]);
   return <div className="records-page">
     <div className="records-page-heading">
       <div className="record-object-icon"><Database size={18} /></div>
@@ -5544,6 +5616,7 @@ function RecordWorkspace({
           <label className="records-search"><Search size={14} /><input aria-label={`Search ${object.pluralLabel}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this list…" /></label>
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
+          {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
           {canAddToCampaign && selectedRecordIds.length > 0 && <button className="btn" onClick={() => void openAddToCampaign()}>Add to Campaign ({selectedRecordIds.length})</button>}
           {object.listViewButtons?.includes('Printable View') && <button className="btn" onClick={() => window.print()}>Printable View</button>}
           {canMassDelete && selectedDeletableRecordIds.length > 0 && <button className="btn btn-danger" onClick={() => void deleteSelectedRecords()} disabled={massDeleting}>{massDeleting ? 'Deleting…' : `Delete (${selectedDeletableRecordIds.length})`}</button>}
@@ -5556,11 +5629,16 @@ function RecordWorkspace({
         </div>
       </div>
       {listNotice && <div className="records-notice" role="status">{listNotice}</div>}
+      {exportError && <div className="records-message" role="alert">{exportError}</div>}
       {error && <div className="records-message" role="alert">{error}</div>}
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
       {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
-        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName}>{field.label}</th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
+        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+          <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
+            onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
+            {field.label} {listSort?.field === field.apiName ? (listSort.direction === 'asc' ? '▲' : '▼') : '↕'}
+          </button></th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
         <tbody>{visibleRecords.map((item) => {
           const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
@@ -6076,6 +6154,9 @@ function parseCsvImport(text: string, object: ObjectMetadata): Array<Record<stri
   const unknownHeader = headers.find((header) => !fieldByHeader.has(header.toLocaleLowerCase()) && header.toLocaleLowerCase() !== 'recordtypeid');
   if (unknownHeader) throw new Error(`CSV column "${unknownHeader}" does not match a field API name or label on ${object.label}.`);
   const mappedNames = headers.map((header, index) => header.toLocaleLowerCase() === 'recordtypeid' ? 'RecordTypeId' : fieldNames[index]!);
+  if (new Set(mappedNames).size !== mappedNames.length) {
+    throw new Error('CSV headers map more than once to the same field; remove duplicate label/API name columns.');
+  }
   return rows.slice(1).map((values, index) => {
     if (values.length !== headers.length) throw new Error(`CSV row ${index + 2} has ${values.length} values; expected ${headers.length}.`);
     return Object.fromEntries(values.map((value, columnIndex) => [mappedNames[columnIndex], value]));

@@ -91,7 +91,21 @@ async function prepare(client,state){
         const saved=dormant.rows[0];
         if(saved.physical_table!==tableName(saved.object_id)) throw Error('Invalid retired object table identity');
         await client.query('UPDATE md_v2_object_registry SET active=true WHERE object_id=$1',[saved.object_id]);
-        current={...saved,fields:new Map()};
+        // Retiring an object retains its fields and physical table. Reload active
+        // field registry rows when restoring it; otherwise creating fresh field
+        // IDs would duplicate schema and lose the original column mapping.
+        const restored=await client.query(
+          'SELECT field_id,api_name,source_data_type,physical_column,active FROM md_v2_field_registry WHERE object_id=$1',
+          [saved.object_id]);
+        const restoredFields=new Map();
+        for(const field of restored.rows){
+          if(field.physical_column!==physicalFieldColumn(field.field_id)) throw Error('Invalid restored field identity');
+          if(field.active){
+            if(restoredFields.has(field.api_name)) throw Error('Duplicate restored SQL field identity');
+            restoredFields.set(field.api_name,field);
+          }
+        }
+        current={...saved,fields:restoredFields};
         mapping.set(key(item.tenantId,item.object.apiName),current);
       }
     }
@@ -157,6 +171,7 @@ async function compareObject(client,item,sqlObject) {
     rows.set(p.record_id,p);
   }
   if(rows.size!==item.records.length) return false;
+  for(const recordId of present.keys()) if(!rows.has(recordId)) return false;
   const seen=new Set();
   for(const record of item.records){
     if(typeof record?.Id!=='string'||!record.Id||seen.has(record.Id)) throw Error('Invalid or duplicate record identity');
@@ -196,6 +211,45 @@ async function rewriteObject(client,item,sqlObject){
       [sqlObject.object_id,item.tenantId,record.Id,f.field_id]);
   }
 }
+// Update only changed record IDs within the same transaction as the graph revision.
+async function applyRecordDelta(client,item,sqlObject,previousRecords){
+  const oldRows=new Map();
+  for(const record of previousRecords){
+    if(typeof record?.Id!=='string'||!record.Id||oldRows.has(record.Id)) throw Error('Invalid previous SQL record identity');
+    oldRows.set(record.Id,record);
+  }
+  const newRows=new Map();
+  for(const record of item.records){
+    if(typeof record?.Id!=='string'||!record.Id||newRows.has(record.Id)) throw Error('Invalid or duplicate record identity');
+    newRows.set(record.Id,record);
+  }
+  const table=tableName(sqlObject.object_id);
+  for(const recordId of oldRows.keys()){
+    if(newRows.has(recordId)) continue;
+    await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1 AND tenant_id=$2 AND record_id=$3',[sqlObject.object_id,item.tenantId,recordId]);
+    await client.query('DELETE FROM '+table+' WHERE tenant_id=$1 AND record_id=$2',[item.tenantId,recordId]);
+  }
+  const activeFields=[...sqlObject.fields.entries()];
+  const columns=activeFields.map(([,field])=>field.physical_column);
+  for(const [recordId,record] of newRows){
+    if(oldRows.has(recordId)&&JSON.stringify(oldRows.get(recordId))===JSON.stringify(record)) continue;
+    const names=Object.keys(record).filter(name=>name!=='Id');
+    const fields=names.map(name=>sqlObject.fields.get(name));
+    if(fields.some(field=>!field)) throw Error('Record contains field absent from SQL metadata');
+    // Persist NULL for removed values; no stale physical field value survives.
+    const values=[item.tenantId,recordId,...activeFields.map(([name])=>own(record,name)?record[name]:null)];
+    const insertColumns=['tenant_id','record_id',...columns];
+    const updateColumns=columns.map(column=>column+'=EXCLUDED.'+column);
+    updateColumns.push('record_version='+table+'.record_version+1');
+    await client.query('INSERT INTO '+table+' ('+insertColumns.join(',')+') VALUES ('+
+      values.map((_,index)=>'$'+(index+1)).join(',')+
+      ') ON CONFLICT (tenant_id,record_id) DO UPDATE SET '+updateColumns.join(','),values);
+    await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1 AND tenant_id=$2 AND record_id=$3',[sqlObject.object_id,item.tenantId,recordId]);
+    for(const field of fields) await client.query(
+      'INSERT INTO md_v2_field_presence(object_id,tenant_id,record_id,field_id) VALUES($1,$2,$3,$4)',
+      [sqlObject.object_id,item.tenantId,recordId,field.field_id]);
+  }
+}
 /** Use as normalized-state-runtime transactional beforeCommit callback. */
 export async function synchronizeTypedRecords(client,state,previousState=null){
   // Refresh-session-only updates retain the identical tenants object. They cannot
@@ -218,8 +272,17 @@ export async function synchronizeTypedRecords(client,state,previousState=null){
     }
     const sqlObject=mapping.get(k);
     if(!sqlObject) throw Error('Missing metadata SQL object registry');
-    if(!(await compareObject(client,item,sqlObject)))
+    const before=previousState?.tenants?.[item.tenantId];
+    const priorObject=before?.objects?.find(o=>o.apiName===item.object.apiName);
+    const priorRecords=before?.records?.[item.object.apiName]??[];
+    if(previousState&&priorObject&&Array.isArray(priorRecords)
+      &&JSON.stringify(priorObject)===JSON.stringify(item.object)){
+      await applyRecordDelta(client,item,sqlObject,priorRecords);
+      // Repair unexpected physical drift, but never commit an unverified SQL copy.
+      if(!(await compareObject(client,item,sqlObject))) await rewriteObject(client,item,sqlObject);
+    } else if(!(await compareObject(client,item,sqlObject))) {
       await rewriteObject(client,item,sqlObject);
+    }
     if(!(await compareObject(client,item,sqlObject)))
       throw Error('Physical SQL business record field-level readback failed');
   }

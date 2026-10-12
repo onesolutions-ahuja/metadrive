@@ -9517,7 +9517,7 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
-  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined || req.query.filterField !== undefined;
+  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined || req.query.filterField !== undefined || req.query.sortField !== undefined;
   const rawLimit = Number(req.query.limit ?? 50);
   const rawOffset = Number(req.query.offset ?? 0);
   if (paginated && (!Number.isSafeInteger(rawLimit) || rawLimit < 1 || rawLimit > 200
@@ -9571,9 +9571,38 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
         Object.prototype.hasOwnProperty.call(record, field.apiName)
         && String(record[field.apiName] ?? '').toLocaleLowerCase().includes(needle)))
     : exactFiltered;
-  if (!paginated) return res.json({ records: filtered });
+  // Sort authorised values before taking a page; reject sorting hidden fields
+  // because even record ordering can reveal restricted field information.
+  const sortField = req.query.sortField;
+  const sortDirection = req.query.sortDirection;
+  if (sortField !== undefined || sortDirection !== undefined) {
+    if (typeof sortField !== 'string' || !sortField || (sortDirection !== 'asc' && sortDirection !== 'desc')
+      || (sortField !== 'Id' && !object.fields.some((field) => field.apiName === sortField)))
+      return res.status(400).json({ error: 'Invalid sort field or direction' });
+    if (sortField !== 'Id' && !hasFieldPermission(principal, tenant, objectName, sortField, 'read'))
+      return res.status(403).json({ error: 'Missing field read permission for sort' });
+  }
+  const sortType = typeof sortField === 'string' ? object.fields.find((field) => field.apiName === sortField)?.dataType ?? '' : '';
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  const ordered = typeof sortField === 'string' ? [...filtered].sort((left, right) => {
+    const a = left[sortField];
+    const b = right[sortField];
+    const aMissing = a === null || a === undefined || a === '';
+    const bMissing = b === null || b === undefined || b === '';
+    if (aMissing !== bMissing) return aMissing ? 1 : -1;
+    let comparison = 0;
+    if (!aMissing && !bMissing) {
+      if (sortType.startsWith('Number') || sortType.startsWith('Currency') || sortType.startsWith('Percent')) comparison = Number(a) - Number(b);
+      else if (['Date', 'Date/Time', 'DateTime'].includes(sortType)) comparison = new Date(String(a)).getTime() - new Date(String(b)).getTime();
+      else comparison = collator.compare(String(a), String(b));
+    }
+    if (!Number.isFinite(comparison)) comparison = collator.compare(String(a), String(b));
+    return comparison ? (sortDirection === 'desc' ? -Math.sign(comparison) : Math.sign(comparison))
+      : collator.compare(String(left.Id), String(right.Id));
+  }) : filtered;
+  if (!paginated) return res.json({ records: ordered });
   return res.json({
-    records: filtered.slice(rawOffset, rawOffset + rawLimit),
+    records: ordered.slice(rawOffset, rawOffset + rawLimit),
     total: filtered.length,
     offset: rawOffset,
     limit: rawLimit
@@ -10028,6 +10057,8 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
     working.records[objectName] = [...(working.records[objectName] ?? []), record];
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'created', record, undefined, 0, isClone);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.status(201).json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === record.Id) ?? record) });
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record creation failed' });
@@ -10074,12 +10105,21 @@ app.post('/api/records/:objectName/import', accessAuthentication, async (req: Re
       await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'created', record);
     }
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     const savedRecords = created.map((record) => working.records[objectName].find((item) => item.Id === record.Id) ?? record);
     return res.status(201).json({ records: savedRecords.map((record) => sanitizeRecordForRead(principal, working, object, record)), count: savedRecords.length });
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record import failed' });
   }
 });
+function recordUnmodified(req: Request, record: RuntimeRecord): boolean {
+  const expected = req.get('If-Unmodified-Since');
+  if (expected === undefined) return true; // Compatible with older clients.
+  const original = new Date(expected).getTime();
+  const current = new Date(String(record.LastModifiedDate ?? '')).getTime();
+  return Number.isFinite(original) && Number.isFinite(current) && original === current;
+}
 app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -10100,6 +10140,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
+  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
   }
@@ -10123,6 +10164,8 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     if (objectName === 'Connector_App__c') disableOnConnectorUninstall(working, existing, updated);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === existing.Id) ?? updated) });
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record ownership change failed' });
@@ -10143,6 +10186,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
+  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (Object.hasOwn(parsed.data, 'OwnerId')) {
     if (parsed.data.OwnerId !== existing.OwnerId) {
       return res.status(403).json({ error: 'OwnerId cannot be changed through record updates; use a dedicated ownership operation to transfer ownership' });
@@ -10184,6 +10228,8 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
     working.records[objectName] = (working.records[objectName] ?? []).map((item) => item.Id === existing.Id ? updated : item);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === existing.Id) ?? updated) });
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record update failed' });
@@ -10262,6 +10308,7 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
   if (!hasObjectPermission(principal, tenant, objectName, 'delete')) return res.status(403).json({ error: `Missing delete permission for object "${objectName}"` });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Delete')) return res.status(404).json({ error: 'Record was not found' });
+  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (!recordActionEnabled(object, 'Delete', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Delete is not enabled for this object or page layout' });
   }
@@ -10269,6 +10316,8 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
     const working = structuredClone(tenant);
     await deleteRecordCascade(principal.tenantId, working, principal.userId, objectName, existing);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.status(204).end();
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record deletion failed' });
