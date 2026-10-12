@@ -5720,7 +5720,7 @@ app.post('/api/auth/change-password', accessAuthentication, async (req: Request,
   const nextState: PlatformState = {
     ...state,
     users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash, authRevokedBefore: changedAt,
+      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
         authVersion: (item.authVersion ?? 0) + 1 }
       : item),
     refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
