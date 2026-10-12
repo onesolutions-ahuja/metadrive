@@ -2061,9 +2061,19 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .component-category small { color: #4d564e; }
 .component-card-copy span { color: #4d544e; }
 .component-favourite {
-  width: 30px;
-  height: 30px;
-  color: #48584c;
+  /* WCAG 2.2 target size: a usable 44x44 pointer target, not just a larger icon. */
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  top: 0;
+  right: 0;
+  color: #34483d;
+  touch-action: manipulation;
+}
+.component-favourite:focus-visible {
+  outline: 3px solid #126c8d;
+  outline-offset: -3px;
 }
 .component-card-action {
   position: absolute;
@@ -2197,3 +2207,52 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
     max-width: 100%;
   }
 }
+
+/* Audit regression guards: scroll within narrow content instead of expanding the page. */
+.builder-page,
+.builder-titlebar,
+.builder-meta-bar,
+.named-credentials-page {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.builder-titlebar > .toolbar-actions,
+.builder-page-select,
+.builder-title-controls {
+  min-width: 0;
+  max-width: 100%;
+}
+.named-credentials-page .table-scroll {
+  position: relative;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.named-credentials-page .table-scroll > table {
+  width: max-content;
+  max-width: none;
+}
+@media (max-width: 600px) {
+  .builder-page .builder-titlebar > .toolbar-actions > * {
+    max-width: 100%;
+  }
+  .builder-page .builder-title-controls,
+  .builder-page .builder-title-controls > * {
+    max-width: 100%;
+  }
+  .builder-page .builder-meta-bar {
+    height: auto;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+}
+/* Keep contrast improvements scoped to labels already flagged by the audit. */
+.component-card-copy span { color: #3e4741; }
+.component-category small { color: #3e4741; }
+.tree-group-label { color: #45413c; }
+.page-region-label { color: #45453e; }
+.record-component-head > span { color: #3f4943; }
