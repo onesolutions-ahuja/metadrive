@@ -15,6 +15,7 @@ on:
       - 'apps/server/src/normalized-typed-records.mjs'
       - 'apps/server/scripts/prove-typed-records-on-restore.mjs'
       - 'apps/server/test/normalized-api.integration.test.mjs'
+      - 'scripts/md06-records-browser-smoke.mjs'
       - 'apps/web/src/App.tsx'
       - 'apps/server/sql/relational-state-v1.sql'
       - 'apps/server/scripts/migrate-relational-state.mjs'
@@ -127,6 +128,11 @@ jobs:
         env:
           METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: node --test --test-concurrency=1 apps/server/test/normalized-api.integration.test.mjs
+      - name: Verify real Records UI in disposable Chromium test environment
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+          node scripts/md06-records-browser-smoke.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
