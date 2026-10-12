@@ -63,6 +63,8 @@ import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import PageComponentStyleEditor from './PageComponentStyleEditor';
+import { childrenOf, canNest, isLayoutContainer, rawLayoutParentId, reparentComponent, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
@@ -4424,6 +4426,17 @@ function MetadataBoundPageComponent({
       ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
     }} />
   </div>;
+}
+
+function usePageLayoutDevice(): LayoutDevice {
+  const currentDevice = (): LayoutDevice => window.innerWidth <= 640 ? 'Phone' : window.innerWidth <= 1024 ? 'Tablet' : 'Desktop';
+  const [layoutDevice, setLayoutDevice] = useState<LayoutDevice>(currentDevice);
+  useEffect(() => {
+    const onResize = () => setLayoutDevice(currentDevice());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return layoutDevice;
 }
 
 function LightningAppRuntime({
