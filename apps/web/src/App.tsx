@@ -3210,6 +3210,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
                           || (workspace === 'flow-interviews' && item === 'Paused and Waiting Interviews')
                           || (workspace === 'scheduled-flows' && item === 'Scheduled Flows')
                           || (workspace === 'flow-logs' && item === 'Failed Flow Logs')) ? 'tree-item selected' : 'tree-item'}
+                        aria-label={`Open ${item}`}
+                        title={item}
+                        data-short-label={item.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('')}
                         onClick={() => navigateSetupItem(item)}
                       >
                         <span>{item}</span>
@@ -8542,26 +8545,25 @@ function PageBuilder({
                 return <article className="component-library-card" key={component.id}
                   draggable={!previewMode}
                   title={`${component.label}: ${component.description}`}
-                  aria-label={`${component.label}: ${component.description}. Click to add or drag to the canvas.`}
-                  onClick={() => addPaletteComponent(component.type)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      addPaletteComponent(component.type);
-                    }
-                  }}
-                  onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:${component.type}`)}
-                  role="button" tabIndex={previewMode ? -1 : 0}>
-                  <div className="component-card-preview">{renderPaletteComponentPreview(component)}</div>
+                  onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:${component.type}`)}>
+                  <div className="component-card-preview" aria-hidden="true"
+                    ref={(element) => { if (element) element.inert = true; }}>
+                    {renderPaletteComponentPreview(component)}
+                  </div>
                   <div className="component-card-copy">
                     <strong>{component.label}</strong>
                     <span>{component.description}</span>
                   </div>
+                  <button type="button" className="component-card-action"
+                    draggable={!previewMode}
+                    aria-label={`Add ${component.label} to canvas`}
+                    onClick={() => addPaletteComponent(component.type)}
+                    onDragStart={(event) => event.dataTransfer.setData('text/plain', `component:${component.type}`)}>
+                  </button>
                   <button type="button" className={isFavourite ? 'component-favourite active' : 'component-favourite'}
                     aria-label={`${isFavourite ? 'Remove' : 'Add'} ${component.label} ${isFavourite ? 'from' : 'to'} favourites`}
                     title={`${isFavourite ? 'Remove from' : 'Add to'} favourites`}
-                    onClick={(event) => { event.stopPropagation(); toggleFavourite(component.id); }}
-                    onKeyDown={(event) => event.stopPropagation()}>
+                    onClick={(event) => { event.stopPropagation(); toggleFavourite(component.id); }}>
                     <Star size={14} fill={isFavourite ? 'currentColor' : 'none'} />
                   </button>
                 </article>;
