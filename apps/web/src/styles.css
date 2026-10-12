@@ -2041,3 +2041,65 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .credential-switch input:checked + .credential-switch-track::after { transform:translateX(16px); }
 .credential-switch input:focus-visible + .credential-switch-track { outline:2px solid #1264c8; outline-offset:3px; }
 .credential-switch input:disabled + .credential-switch-track { opacity:.45; }
+
+/* Full UI/UX audit fixes: readable mobile navigation and accessible palette actions. */
+@media (max-width: 600px) {
+  .setup-sidebar .tree-item::before {
+    content: attr(data-short-label);
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: .02em;
+    color: #34453e;
+  }
+  .setup-sidebar .tree-item { min-height: 44px; }
+  .setup-sidebar .tree-item.selected::before { color: #0c4b70; }
+  .setup-sidebar .tree-item:focus-visible { outline-offset: -2px; }
+}
+.tree-group-label { color: #55524e; }
+.builder-meta-bar { color: #515951; }
+.component-category small { color: #4d564e; }
+.component-card-copy span { color: #4d544e; }
+.component-favourite {
+  width: 30px;
+  height: 30px;
+  color: #48584c;
+}
+.component-card-action {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: grab;
+}
+.component-card-action:active { cursor: grabbing; }
+.component-card-action:focus-visible {
+  outline: 3px solid #126c8d;
+  outline-offset: -3px;
+}
+.component-library-card:has(.component-card-action:focus-visible) {
+  border-color: #126c8d;
+}
+.named-credentials-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.named-credentials-page .table-scroll {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.named-credentials-page .table-scroll > table {
+  min-width: max-content;
+}
+.table-scroll:focus-visible {
+  outline: 2px solid #126c8d;
+  outline-offset: -2px;
+}

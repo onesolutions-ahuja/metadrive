@@ -48,7 +48,7 @@ export default function ScheduledFlows({ flows, objects, loading, onEdit }: Sche
             />
           </label>
         </div>
-        <div className="table-scroll">
+        <div className="table-scroll" role="region" aria-label="Scheduled flows results" tabIndex={0}>
           <table className="slds-table scheduled-flows-table">
             <thead>
               <tr>
