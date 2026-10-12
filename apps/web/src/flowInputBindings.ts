@@ -4,6 +4,8 @@ export type InputSourceKind = 'Unmapped' | 'Literal' | 'Event' | 'Event Field' |
 export type InputSource = { kind: InputSourceKind; detail: string; value: unknown };
 const identifier = /^[A-Za-z][A-Za-z0-9_]*$/;
 const eventPath = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)*$/;
+const isSafeEventPath = (path: string): boolean => eventPath.test(path)
+  && !path.split('.').some(segment => ['__proto__', 'prototype', 'constructor'].includes(segment));
 
 /** Read the resources that the active Flow version actually exposes. */
 export function declaredFlowInputs(flow?: FlowDefinitionMetadata): FlowResourceMetadata[] {
@@ -19,7 +21,7 @@ export function decodeInputSource(value: unknown, hasMapping = true): InputSourc
   if (value === '$event') return { kind: 'Event', detail: '', value };
   if (typeof value === 'string' && value.startsWith('$event.')) {
     const path = value.slice(7);
-    return eventPath.test(path)
+    return isSafeEventPath(path)
       ? { kind: 'Event Field', detail: path, value }
       : { kind: 'Legacy', detail: '', value };
   }
@@ -43,7 +45,7 @@ export function encodeInputSource(
   if (kind === 'Session') return '$session';
   if (kind === 'Event') return '$event';
   if (kind === 'Event Field') {
-    if (!eventPath.test(detail)) throw new Error('Choose a valid event property (for example item.id).');
+    if (!isSafeEventPath(detail)) throw new Error('Choose a valid event property (for example item.id).');
     return '$event.' + detail;
   }
   if (kind === 'Record Field') {
