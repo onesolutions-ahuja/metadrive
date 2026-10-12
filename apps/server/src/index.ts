@@ -11246,7 +11246,10 @@ app.get('/api/metadata/apps', requirePermission('metadata:read'), (_req: Request
     .some((permission) => principal.permissions.includes(permission));
   const apps = canManageCatalog ? tenant.apps
     : tenant.apps.filter((entry) => canAccessRuntimeApp(principal, tenant, entry.apiName));
-  res.json({ apps });
+  // App navigation consumers need labels, not other users' grant lists.
+  // Preserve full assignments for tenant security administrators only.
+  res.json({ apps: principal.permissions.includes('security:manage') ? apps
+    : apps.map(({ access: _access, ...app }) => app) });
 });
 app.get('/api/apps/accessible', accessAuthentication, (_req: Request, res: Response) => {
   const principal = getPrincipal(res);
