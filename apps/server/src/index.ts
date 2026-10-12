@@ -11362,6 +11362,37 @@ app.put('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'p
   state = nextState;
   return res.json({ app: parsed.data });
 });
+// Explicit Flow-to-app binding. This association is stored outside editable
+// Flow definitions, so saving a new Flow version cannot discard its licence gate.
+const flowAppBindingRequest = z.object({
+  appApiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/).nullable()
+}).strict();
+app.put('/api/metadata/flows/:apiName/app-binding', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  if (!principal.permissions.includes('security:manage') && !principal.permissions.includes('licence:manage'))
+    return res.status(403).json({ error: 'App assignment administration is required.' });
+  const parsed = flowAppBindingRequest.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid Flow app binding.' });
+  const tenant = tenantData(principal.tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  if (!tenant.flows.some((flow) => flow.apiName === apiName))
+    return res.status(404).json({ error: 'Flow was not found.' });
+  const existingAppName = tenant.flowAppBindings[apiName];
+  const existingApp = existingAppName ? tenant.apps.find((app) => app.apiName === existingAppName) : null;
+  const assignedApp = parsed.data.appApiName
+    ? tenant.apps.find((app) => app.apiName === parsed.data.appApiName) : null;
+  if (parsed.data.appApiName && !assignedApp)
+    return res.status(404).json({ error: 'Target app was not found in this tenant.' });
+  if ((existingApp?.licenceAppKey || assignedApp?.licenceAppKey)
+    && !principal.permissions.includes('licence:manage'))
+    return res.status(403).json({ error: 'Only platform licence operators can change commercial Flow bindings.' });
+  const bindings = { ...tenant.flowAppBindings };
+  if (assignedApp) bindings[apiName] = assignedApp.apiName;
+  else delete bindings[apiName];
+  persistTenantRecords(principal.tenantId, { ...tenant, flowAppBindings: bindings });
+  return res.json({ flowApiName: apiName, appApiName: bindings[apiName] ?? null });
+});
+
 // Assignment updates are security operations, not App Builder layout edits.
 app.put('/api/metadata/apps/:apiName/access', requirePermission('security:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
