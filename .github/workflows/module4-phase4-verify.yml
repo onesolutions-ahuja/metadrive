@@ -1,0 +1,23 @@
+name: One-shot Module 4 Phase 4 verification
+on:
+  push:
+    branches: [feature/module4-phase4-advanced-access-policy-20261012]
+permissions:
+  contents: read
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Typecheck main record authorization and full web
+        run: npm run build
+      - name: Full server security and record regressions
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: npm run test --workspace apps/server
