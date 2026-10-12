@@ -55,13 +55,22 @@ const refreshCookieName = 'metadrive_refresh';
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtService = await JwtService.create();
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || webOrigins.has(origin) || origin === 'http://localhost:4173') return callback(null, true);
-    return callback(new Error('Origin is not allowed by CORS'));
-  },
-  credentials: true,
-  exposedHeaders: ['Server-Timing']
+// Canonical origins are fixed. A verified customer domain may call its own
+// same-host API over HTTPS without a deployment-time CORS whitelist update.
+// Cross-origin use of a customer's domain is never allowed.
+app.use(cors((req, callback) => {
+  const origin = req.header('origin');
+  let allowed = !origin || webOrigins.has(origin) || origin === 'http://localhost:4173';
+  if (!allowed && origin) {
+    try {
+      const url = new URL(origin);
+      const binding = tenantForRequestHost(req);
+      allowed = url.protocol === 'https:' && url.hostname === req.hostname
+        && url.pathname === '/' && !url.search && !url.hash
+        && !url.username && !url.password && binding?.status === 'VERIFIED';
+    } catch { allowed = false; }
+  }
+  callback(null, { origin: allowed, credentials: true, exposedHeaders: ['Server-Timing'] });
 }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
 // Explicit maintenance barrier for Aiven cutover; no API traffic or scheduled
@@ -5238,8 +5247,9 @@ function bearerToken(req: Request): string | undefined {
   return scheme?.toLowerCase() === 'bearer' && token && extra.length === 0 ? token : undefined;
 }
 // Verified host bindings are lookup-only: no network or SQL query in the login path.
-const tenantHostCache = new WeakMap<PlatformState['tenantRegistry'], Map<string, string>>();
-function tenantForRequestHost(req: Request): string | undefined {
+type TenantHostBinding = { tenantId: string; status: TenantDomainRecord['status'] };
+const tenantHostCache = new WeakMap<PlatformState['tenantRegistry'], Map<string, TenantHostBinding>>();
+function tenantForRequestHost(req: Request): TenantHostBinding | undefined {
   const hostname = req.hostname?.toLowerCase();
   if (!hostname) return undefined;
   let map = tenantHostCache.get(state.tenantRegistry);
@@ -5247,7 +5257,7 @@ function tenantForRequestHost(req: Request): string | undefined {
     map = new Map();
     for (const [tenantId, entry] of Object.entries(state.tenantRegistry))
       for (const domain of entry.domains ?? [])
-        if (domain.status === 'VERIFIED') map.set(domain.hostname, tenantId);
+        map.set(domain.hostname, { tenantId, status: domain.status });
     tenantHostCache.set(state.tenantRegistry, map);
   }
   return map.get(hostname);
@@ -5263,7 +5273,7 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
     const tenantId = claims.tenant_id;
     const userId = claims.sub;
     const hostTenant = tenantForRequestHost(req);
-    if (hostTenant && hostTenant !== tenantId) {
+    if (hostTenant && (hostTenant.status !== 'VERIFIED' || hostTenant.tenantId !== tenantId)) {
       res.status(401).json({ error: 'This session belongs to a different tenant domain' });
       return;
     }
@@ -5731,7 +5741,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   if (limit && limit.resetAt > now && limit.count >= 8) return res.status(429).json({ error: 'Too many login attempts; try again later' });
   const user = state.users.find((item) => item.email.trim().toLowerCase() === parsed.data.email.toLowerCase());
   const loginHostTenant = tenantForRequestHost(req);
-  if (loginHostTenant && user?.tenantId !== loginHostTenant)
+  if (loginHostTenant && (loginHostTenant.status !== 'VERIFIED' || user?.tenantId !== loginHostTenant.tenantId))
     return res.status(401).json({ error: 'Invalid email or password' });
   const passwordStartedAt = performance.now();
   const valid = user && (!user.lockedUntil || user.lockedUntil <= now)
@@ -5777,7 +5787,7 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
   const key = hashToken(parsed.data.challenge_token);
   const challenge = mfaLoginChallenges.get(key);
   const mfaHostTenant = tenantForRequestHost(req);
-  if (mfaHostTenant && challenge?.tenantId !== mfaHostTenant)
+  if (mfaHostTenant && (mfaHostTenant.status !== 'VERIFIED' || challenge?.tenantId !== mfaHostTenant.tenantId))
     return res.status(401).json({ error: 'MFA challenge is no longer valid' });
   if (!challenge || challenge.expiresAt <= Date.now() || challenge.attempts >= 5) {
     mfaLoginChallenges.delete(key);
@@ -5960,7 +5970,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   const tokenHash = hashToken(rawToken);
   const session = state.refreshSessions.find((item) => item.tokenHash === tokenHash);
   const refreshHostTenant = tenantForRequestHost(req);
-  if (refreshHostTenant && session?.tenantId !== refreshHostTenant) {
+  if (refreshHostTenant && (refreshHostTenant.status !== 'VERIFIED' || session?.tenantId !== refreshHostTenant.tenantId)) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Refresh token belongs to a different tenant domain' });
   }
