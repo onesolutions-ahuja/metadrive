@@ -448,10 +448,10 @@ function client(port: number) {
           ...(token ? { authorization: `Bearer ${token}` } : {}),
           ...(requestSource === 'web-app' ? { 'x-metadrive-request-source': 'web-app' } : {}),
           ...(requestSource === 'external-api' ? { 'x-metadrive-external-api': 'true' } : {}),
-          ...(['authenticated-api', 'expired-api', 'revoked-api'].includes(requestSource ?? '') ? {
+          ...(['authenticated-api', 'expired-api', 'revoked-api', 'wrong-secret-api'].includes(requestSource ?? '') ? {
             'x-metadrive-api-client-id': requestSource === 'authenticated-api' ? 'valid'
-              : requestSource === 'expired-api' ? 'expired' : 'revoked',
-            'x-metadrive-api-client-secret': apiClientSecret
+              : requestSource === 'expired-api' ? 'expired' : requestSource === 'wrong-secret-api' ? 'valid' : 'revoked',
+            'x-metadrive-api-client-secret': requestSource === 'wrong-secret-api' ? 'wrong-secret-not-authorized-123456789' : apiClientSecret
           } : {}),
           ...(body ? { 'content-type': 'application/json' } : {})
         },
@@ -1771,12 +1771,19 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     }
     assert.equal((await api.send('/metadata/objects', secondAdminToken, 'GET', undefined, 'authenticated-api')).status, 200,
       'another tenant cannot acquire client identity by spoofing headers');
+    assert.equal((await api.send('/metadata/objects?access_token=real-client-secret-leak-canary', adminToken,
+      'GET', undefined, 'authenticated-api')).status, 200,
+      'authenticated API requests with query data still succeed');
+    assert.equal((await api.send('/metadata/objects', undefined, 'GET', undefined, 'authenticated-api')).status, 401,
+      'API client credentials cannot replace the required bearer identity');
+    assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'wrong-secret-api')).status, 200,
+      'wrong API secret cannot create an incoming audit even when the user token is valid');
     const communicationRecordsResponse = await api.send('/records/Communication_Records__c', adminToken, 'GET', undefined, 'web-app');
     assert.equal(communicationRecordsResponse.status, 200);
     const communicationRecords = communicationRecordsResponse.data.records as Array<Record<string, unknown>>;
     assert.equal(communicationRecords.filter((record) =>
       record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API'
-      && record.Api_Id__c === 'GET /api/metadata/objects').length, 1,
+      && record.Api_Id__c === 'GET /api/metadata/objects').length, 2,
       'only valid tenant-bound API clients can generate incoming audit records');
     const authenticatedAudit = communicationRecords.find((record) =>
       record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API');
@@ -1784,6 +1791,17 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal(authenticatedAudit?.Response_Body__c ?? '', '');
     assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('private-api-log-canary')),
       'forged API origin cannot persist query-string secrets');
+    assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('real-client-secret-leak-canary')),
+      'valid external API client audit URLs must discard query parameters');
+    const persistedAuditState = JSON.parse(await readFile(dataPath, 'utf8')) as {
+      tenants: Record<string, { records: Record<string, Array<Record<string, unknown>>> }> };
+    const persistedIncoming = persistedAuditState.tenants[tenantId].records.Communication_Records__c.filter((record) =>
+      record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API'
+      && record.Api_Id__c === 'GET /api/metadata/objects');
+    assert.equal(persistedIncoming.length, 2, 'API client audit events must be persisted, not merely returned in memory');
+    assert.ok(!persistedIncoming.some((record) =>
+      String(record.Url__c ?? '').includes('real-client-secret-leak-canary')),
+      'persisted audit records must never include secret query parameters');
     const auditDenied = await api.send('/records/Communication_Records__c', developmentReaderToken);
     assert.equal(auditDenied.status, 403, 'users without Communication Records object read permission are denied');
     // Ordinary message access is still governed by the existing object/row permissions.
