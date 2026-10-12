@@ -129,9 +129,8 @@ export function resolveAdvancedRecordGrant({
         (operation === 'read' || edge.accessLevel === 'edit'))
       implicitGranted = true;
   }
-  if (recordTerritoryId === undefined || recordTerritoryId === null)
-    return Object.freeze({granted:implicitGranted,source:implicitGranted ? 'implicit_parent' : null});
-  if (!ident(recordTerritoryId)) throw Error('Invalid territory identifier');
+  if (recordTerritoryId !== undefined && recordTerritoryId !== null && !ident(recordTerritoryId))
+    throw Error('Invalid territory identifier');
   const ancestors = new Map();
   for (const edge of territoryEdges) {
     if (!obj(edge) || edge.tenantId !== tenantId ||
@@ -140,7 +139,7 @@ export function resolveAdvancedRecordGrant({
     ancestors.set(edge.id,edge.parentId);
   }
   const reachable = new Set();
-  let node = recordTerritoryId;
+  let node = recordTerritoryId ?? null;
   while(node && !reachable.has(node)) {
     reachable.add(node);
     node = ancestors.get(node);
