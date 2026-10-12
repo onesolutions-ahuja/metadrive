@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { request as httpRequest } from 'node:http';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -61,15 +62,42 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     }
     throw new Error('Server did not start: ' + logs);
   };
-  const api = async (route: string, token = '', method = 'GET', body?: unknown, bootstrap = false, cookie = '', idemKey = '') => {
+  const api = async (route: string, token = '', method = 'GET', body?: unknown, bootstrap = false, cookie = '', idemKey = '', host = '') => {
+    const headers = {
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      ...(bootstrap ? { 'x-platform-bootstrap-key': bootstrapKey } : {}),
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(idemKey ? { 'Idempotency-Key': idemKey } : {})
+    };
+    // Node's fetch intentionally overwrites Host with the URL hostname.
+    // Exercise real domain-bound auth with a direct HTTP transport instead.
+    if (host) {
+      return await new Promise<{ status: number; data: Record<string, any>; cookie: string }>((resolve, reject) => {
+        const payload = body === undefined ? undefined : JSON.stringify(body);
+        const request = httpRequest({
+          hostname: '127.0.0.1', port, path: '/api' + route, method,
+          headers: { ...headers, Host: host }
+        }, (response) => {
+          let raw = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk: string) => { raw += chunk; });
+          response.on('end', () => {
+            try {
+              resolve({
+                status: response.statusCode ?? 0,
+                data: raw ? JSON.parse(raw) as Record<string, any> : {},
+                cookie: (response.headers['set-cookie']?.[0] ?? '').split(';')[0]
+              });
+            } catch (error) { reject(error); }
+          });
+        });
+        request.on('error', reject);
+        request.end(payload);
+      });
+    }
     const response = await fetch(base + route, {
-      method, headers: {
-        ...(token ? { Authorization: 'Bearer ' + token } : {}),
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        ...(bootstrap ? { 'x-platform-bootstrap-key': bootstrapKey } : {}),
-        ...(cookie ? { Cookie: cookie } : {}),
-        ...(idemKey ? { 'Idempotency-Key': idemKey } : {})
-      },
+      method, headers,
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     });
     const raw = await response.text();
@@ -137,6 +165,31 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal(login.status, 200);
     const tenantToken = String(login.data.access_token);
     const tenantRefreshCookie = login.cookie;
+    // MD-03.5: tenant owner and platform scopes, DNS proof, global uniqueness,
+    // and durable pending verification all use the existing tenant registry.
+    assert.equal((await api('/tenant/domains')).status, 401);
+    assert.equal((await api('/platform/tenants/studio-beta/domains', tenantToken)).status, 403);
+    assert.equal((await api('/platform/tenants/studio-beta/domains', operatorToken)).status, 200);
+    assert.equal((await api('/tenant/domains', tenantToken, 'POST', { hostname: 'http://not-a-domain.example' })).status, 400);
+    assert.equal((await api('/tenant/domains', tenantToken, 'POST', { hostname: 'localhost' })).status, 400);
+    const claimedDomain = await api('/tenant/domains', tenantToken, 'POST', { hostname: 'CRM.STUDIO-BETA.TEST' });
+    assert.equal(claimedDomain.status, 201, JSON.stringify(claimedDomain.data));
+    assert.equal(claimedDomain.data.domain.hostname, 'crm.studio-beta.test');
+    assert.equal(claimedDomain.data.domain.status, 'PENDING');
+    assert.equal(claimedDomain.data.domain.verification.host, '_metadrive-verification.crm.studio-beta.test');
+    assert.match(claimedDomain.data.domain.verification.value, /^metadrive-verification=[0-9a-f]{64}$/);
+    assert.equal((await api('/tenant/domains', tenantToken)).data.domains.length, 1);
+    assert.equal((await api('/auth/login', '', 'POST',
+      { email: body.email, password: tenantPassword }, false, '', '', 'crm.studio-beta.test')).status, 401,
+      'Pending domains must never allow authentication');
+    assert.equal((await api('/auth/me', tenantToken, 'GET',
+      undefined, false, '', '', 'crm.studio-beta.test')).status, 401,
+      'Pending domain host must reject an existing bearer token');
+    assert.equal((await api('/tenant/domains', tenantToken, 'POST', { hostname: 'crm.studio-beta.test' })).status, 409);
+    assert.equal((await api('/platform/tenants/platform-owner/domains', operatorToken,
+      'POST', { hostname: 'crm.studio-beta.test' })).status, 409, 'Another tenant cannot claim a pending domain');
+    assert.equal((await api('/platform/tenants/studio-beta/domains', operatorToken)).data.domains[0].status, 'PENDING');
+    assert.equal((await api('/tenant/domains/not-owned.example', tenantToken, 'DELETE')).status, 404);
     assert.equal((await api('/tenant/developer-account')).status, 401);
     const beforeDeveloper = await api('/tenant/developer-account', tenantToken);
     assert.equal(beforeDeveloper.status, 200, JSON.stringify(beforeDeveloper.data));
@@ -251,6 +304,22 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     ));
     assert.deepEqual([raceA.status, raceB.status].sort(), [201, 409],
       'Concurrent tenants must not create two identities with the same email');
+    const durableDomain = await api('/platform/tenants/studio-beta/domains', String(newLogin.data.access_token));
+    assert.equal(durableDomain.status, 200);
+    assert.equal(durableDomain.data.domains[0].hostname, 'crm.studio-beta.test');
+    assert.equal(durableDomain.data.domains[0].verification.value, claimedDomain.data.domain.verification.value);
+    assert.equal((await api('/platform/tenants/studio-beta/domains/crm.studio-beta.test',
+      String(newLogin.data.access_token), 'DELETE')).status, 200);
+    assert.deepEqual((await api('/platform/tenants/studio-beta/domains',
+      String(newLogin.data.access_token))).data.domains, []);
+    const tenantAfterRemoval = await api('/auth/login', '', 'POST', {
+      email: body.email, password: tenantPassword
+    });
+    assert.equal(tenantAfterRemoval.status, 200);
+    assert.equal((await api('/auth/me', String(tenantAfterRemoval.data.access_token))).status, 200);
+    assert.equal((await api('/auth/me', String(tenantAfterRemoval.data.access_token), 'GET',
+      undefined, false, '', '', 'crm.studio-beta.test')).status, 401,
+      'Removed domain tombstone must deny tokens on stale hosting proxies');
     assert.equal(persisted.data.tenant.name, 'Studio Beta Updated');
     assert.equal(persisted.data.tenant.status, 'ACTIVE');
   } finally {

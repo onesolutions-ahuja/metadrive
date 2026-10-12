@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Building2, ChevronLeft, ChevronRight, CircleAlert, Plus, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import './TenantManagement.css';
+import TenantDomains from './TenantDomains';
 
 export type TenantSummary = {
   tenantId: string;
@@ -177,7 +178,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
           <label>Developer domain (optional)<input type="text" maxLength={253} placeholder="tenant-domain.com" value={create.developerDomain ?? ''} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, developerDomain: event.target.value })); }} /></label>
           <p className="tenant-help">Creates an initial administrator and a disabled developer account with full starting tenant permissions. For <strong>developer@tenant-domain.com</strong>, enter tenant-domain.com. The tenant administrator activates the developer account from Company Settings; no password is shared with platform operators.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
-        </form> : selected ? <form onSubmit={(event) => void saveTenant(event)}>
+        </form> : selected ? <><form onSubmit={(event) => void saveTenant(event)}>
           <div className="tenant-detail-heading"><div><h2>{selected.name}</h2><code>{selected.tenantId}</code></div><button type="button" className="tenant-button" onClick={() => setSelected(null)}>Close</button></div>
           <p className="tenant-provisioning-status"><span className="tenant-pill tenant-pill-active">Provisioning ready</span> <small>Version {selected.provisioning.version} · {shortDate(selected.provisioning.completedAt)}</small></p>
           {selected.developerAccount && <p className="tenant-help">Developer seeder: <strong>{selected.developerAccount.email}</strong> — {selected.developerAccount.activated ? 'Tenant activated' : 'Pending tenant activation'}. The tenant owns all access changes.</p>}
@@ -188,7 +189,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
           <div className="tenant-actions"><button type="submit" className="tenant-button tenant-button-primary" disabled={busy || !editing.name.trim()}>{busy ? 'Saving…' : 'Save details'}</button>
             <button type="button" className={selected.status === 'ACTIVE' ? 'tenant-button tenant-button-danger' : 'tenant-button'} onClick={() => void changeStatus()} disabled={busy}>{selected.status === 'ACTIVE' ? 'Suspend tenant' : 'Reactivate tenant'}</button></div>
           <p className="tenant-help">Tenant ID cannot be changed. Suspended tenants cannot authenticate or use existing sessions; tenant data is retained.</p>
-        </form> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
+        </form><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
       </section>
     </div>
   </div>;
