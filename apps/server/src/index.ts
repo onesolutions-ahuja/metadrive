@@ -12,6 +12,7 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
+import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
 import postcss from 'postcss';
@@ -56,7 +57,8 @@ app.use(cors({
     if (!origin || webOrigins.has(origin) || origin === 'http://localhost:4173') return callback(null, true);
     return callback(new Error('Origin is not allowed by CORS'));
   },
-  credentials: true
+  credentials: true,
+  exposedHeaders: ['Server-Timing']
 }));
 app.use(express.json({ limit: '1mb', verify: (req, _res, buffer) => { (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer); } }));
 // Explicit maintenance barrier for Aiven cutover; no API traffic or scheduled
@@ -4436,7 +4438,9 @@ function persistState(next: PlatformState): void {
     console.error('CRITICAL: MetaDrive state commit failed', error);
   });
 }
+const startupStateStartedAt = performance.now();
 const existingPostgresState = await readPersistedState();
+console.info(`Startup persistence read: ${(performance.now() - startupStateStartedAt).toFixed(0)}ms`);
 if (persistenceMode === 'typed' && existingPostgresState === null)
   throw new Error('Typed SQL runtime requires a verified database snapshot; cannot seed from JSON files');
 if (existingPostgresState !== null && persistenceMode !== 'typed') {
@@ -4446,7 +4450,9 @@ if (existingPostgresState !== null && persistenceMode !== 'typed') {
   // Never replace an existing database state with a new empty seed.
   console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
 }
+const stateHydrationStartedAt = performance.now();
 let state = loadState(persistenceMode === 'typed' ? existingPostgresState : undefined);
+console.info(`Startup state hydration: ${(performance.now() - stateHydrationStartedAt).toFixed(0)}ms`);
 // Remove legacy internal UI requests from Communication Records before the
 // startup snapshot is persisted. Preserve inbound provider webhooks, genuine
 // messages, and outbound API history; never erase non-internal records.
@@ -5025,20 +5031,33 @@ function issueRefreshSession(user: LocalUser, previousFamilyId?: string): { toke
     }
   };
 }
-async function issueLoginResponse(res: Response, user: LocalUser, data: TenantData, familyId?: string): Promise<void> {
+async function issueLoginResponse(res: Response, user: LocalUser, data: TenantData, familyId?: string,
+  loginTiming?: { startedAt: number; passwordMs: number }): Promise<void> {
   const permissions = effectivePermissions(user, data);
+  const tokenStartedAt = performance.now();
   const issued = await jwtService.issue({
     userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions
   });
+  const tokenMs = performance.now() - tokenStartedAt;
   const refresh = issueRefreshSession(user, familyId);
   const nextState = {
     ...state,
     refreshSessions: [...state.refreshSessions, refresh.session],
     revokedAccessTokens: Object.fromEntries(Object.entries(state.revokedAccessTokens).filter(([, expiry]) => expiry > Date.now() / 1000))
   };
+  const sessionStateStartedAt = performance.now();
   persistState(nextState);
+  const sessionStateMs = performance.now() - sessionStateStartedAt;
   state = nextState;
   setRefreshCookie(res, refresh.token);
+  if (loginTiming) {
+    // Distinguish password verification, signing and synchronous whole-state
+    // serialisation/local-file persistence. The async PostgreSQL commit is
+    // enqueued here, not awaited, and must not be reported as complete.
+    const ms = (value: number) => Math.max(0, value).toFixed(1);
+    res.setHeader('Server-Timing',
+      `password;dur=${ms(loginTiming.passwordMs)},signing;dur=${ms(tokenMs)},state-write;dur=${ms(sessionStateMs)},login;dur=${ms(performance.now() - loginTiming.startedAt)}`);
+  }
   res.json({
     access_token: issued.accessToken,
     token_type: 'Bearer',
@@ -5094,6 +5113,7 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/login', async (req: Request, res: Response) => {
+  const loginStartedAt = performance.now();
   if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Password login is disabled in external OIDC mode' });
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid login request', details: parsed.error.flatten() });
@@ -5102,7 +5122,9 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   const limit = loginAttempts.get(key);
   if (limit && limit.resetAt > now && limit.count >= 8) return res.status(429).json({ error: 'Too many login attempts; try again later' });
   const user = state.users.find((item) => item.email.trim().toLowerCase() === parsed.data.email.toLowerCase());
+  const passwordStartedAt = performance.now();
   const valid = user ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
+  const passwordMs = performance.now() - passwordStartedAt;
   if (!user || user.disabled || !valid) {
     const attempts = limit && limit.resetAt > now ? limit.count + 1 : 1;
     loginAttempts.set(key, { count: attempts, resetAt: now + 15 * 60 * 1000 });
@@ -5111,7 +5133,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   loginAttempts.delete(key);
   const data = tenantData(user.tenantId);
   if (!data) return res.status(401).json({ error: 'Tenant is unavailable' });
-  return issueLoginResponse(res, user, data);
+  return issueLoginResponse(res, user, data, undefined, { startedAt: loginStartedAt, passwordMs });
 });
 
 app.post('/api/auth/refresh', async (req: Request, res: Response) => {

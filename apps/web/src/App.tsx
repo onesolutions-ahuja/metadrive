@@ -431,6 +431,7 @@ function settingToRoute(value: string): string {
 }
 
 type AuthState = 'loading' | 'anonymous' | 'authenticated' | 'error';
+type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number };
 
 type AppRoute =
   | { kind: 'setup'; workspace: WorkspaceId; objectApiName?: string; setting?: string; resourceApiName?: string; resourceId?: string; dashboardView?: boolean }
@@ -908,6 +909,7 @@ function screenFieldIsVisible(field: Record<string, unknown>, values: Record<str
 function App() {
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [authError, setAuthError] = useState('');
+  const [entryTiming, setEntryTiming] = useState<EntryTiming | null>(null);
   const sessionRestoreStarted = useRef(false);
   useEffect(() => {
     const expireSession = () => {
@@ -919,6 +921,7 @@ function App() {
   }, []);
 
   const restoreSession = async () => {
+    const restoreStartedAt = performance.now();
     const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
     const retryDelaysMs = [1500, 3000, 5000, 7000];
 
@@ -945,6 +948,7 @@ function App() {
           const session = await response.json() as { access_token: string };
           accessToken = session.access_token;
           setAuthError('');
+          setEntryTiming({ kind: 'restore', startedAt: restoreStartedAt, authenticatedAt: performance.now() });
           setAuthState('authenticated');
           return;
         }
@@ -999,14 +1003,15 @@ function App() {
   }, [authState]);
 
   if (authState === 'loading') return <div className="auth-loading">Loading your workspace…</div>;
-  if (authState === 'anonymous') return <Login onSuccess={() => setAuthState('authenticated')} />;
-  if (authState === 'error') return <Login error={authError} onSuccess={() => setAuthState('authenticated')} onRetry={() => { setAuthState('loading'); void restoreSession(); }} />;
-  return <SetupApp onLogout={() => { accessToken = undefined; setAuthState('anonymous'); }} />;
+  const loginSuccess = (timing: EntryTiming) => { setEntryTiming(timing); setAuthState('authenticated'); };
+  if (authState === 'anonymous') return <Login onSuccess={loginSuccess} />;
+  if (authState === 'error') return <Login error={authError} onSuccess={loginSuccess} onRetry={() => { setAuthState('loading'); void restoreSession(); }} />;
+  return <SetupApp entryTiming={entryTiming} onLogout={() => { accessToken = undefined; setAuthState('anonymous'); }} />;
 }
 
 const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`;
 
-function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () => void; onRetry?: () => void }) {
+function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (timing: EntryTiming) => void; onRetry?: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPasswordReset, setShowPasswordReset] = useState(false);
@@ -1014,6 +1019,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const startedAt = performance.now();
     setSubmitting(true);
     setMessage('');
     try {
@@ -1022,7 +1028,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () =
         body: JSON.stringify({ email, password })
       });
       accessToken = session.access_token;
-      onSuccess?.();
+      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now() });
     } catch (failure) {
       setMessage(failure instanceof Error ? failure.message : 'Unable to sign in');
     } finally {
@@ -1066,32 +1072,38 @@ async function fetchFlowListPage(page: number, search: string) {
   }>(`/metadata/flows/list?page=${encodeURIComponent(String(page))}&search=${encodeURIComponent(search)}`);
 }
 
-function NavigationLoadTime({ routeKey, startedAt }: { routeKey: string; startedAt: number }) {
+function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }: {
+  routeKey: string;
+  startedAt: number;
+  ready: boolean;
+  kind: 'login' | 'restore' | 'navigation';
+  authMs: number | null;
+}) {
   const [result, setResult] = useState<{ routeKey: string; milliseconds: number } | null>(null);
   useEffect(() => {
+    // Never declare a screen loaded while its essential metadata is outstanding.
+    if (!ready) return;
     let idleTimer: number | undefined;
-    let guardTimer: number | undefined;
     let observer: MutationObserver | undefined;
     let cancelled = false;
+    let animation: number | undefined;
     const complete = () => {
       if (cancelled) return;
       cancelled = true;
       observer?.disconnect();
       window.clearTimeout(idleTimer);
-      window.clearTimeout(guardTimer);
       setResult({ routeKey, milliseconds: Math.max(0, performance.now() - startedAt) });
     };
     const schedule = () => {
       window.clearTimeout(idleTimer);
       idleTimer = window.setTimeout(() => {
-        // Wait for visible async loading indicators before recording a final time.
         const content = document.querySelector('.lightning');
         const stillLoading = content?.querySelector('[aria-busy="true"], [role="progressbar"], .records-loading, .loading-spinner');
-        if (stillLoading && performance.now() - startedAt < 20000) schedule();
+        if (stillLoading) schedule();
         else complete();
       }, 550);
     };
-    const animation = window.requestAnimationFrame(() => {
+    animation = window.requestAnimationFrame(() => {
       const content = document.querySelector('.lightning');
       if (content) {
         observer = new MutationObserver(schedule);
@@ -1099,26 +1111,33 @@ function NavigationLoadTime({ routeKey, startedAt }: { routeKey: string; started
       }
       schedule();
     });
-    guardTimer = window.setTimeout(complete, 22000);
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(animation);
+      if (animation !== undefined) window.cancelAnimationFrame(animation);
       observer?.disconnect();
       window.clearTimeout(idleTimer);
-      window.clearTimeout(guardTimer);
     };
-  }, [routeKey, startedAt]);
-  return <span className="navigation-load-time" role="status" aria-label="Page load time"
-    title="Elapsed time from URL navigation until page content stops updating">
-    {result?.routeKey === routeKey ? `Load: ${(result.milliseconds / 1000).toFixed(2)}s` : 'Loading…'}
+  }, [routeKey, startedAt, ready]);
+  const isEntry = kind !== 'navigation';
+  const label = kind === 'login' ? 'Login → Landing' : kind === 'restore' ? 'Session → Landing' : 'Page navigation';
+  const completed = result?.routeKey === routeKey;
+  const requestSeconds = authMs === null ? null : (authMs / 1000).toFixed(2);
+  return <span className="navigation-load-time" role="status" aria-label="Screen load time"
+    title={isEntry
+      ? `From ${kind === 'login' ? 'Sign in click' : 'session restoration'} until landing content is ready. API authentication: ${requestSeconds ?? 'unknown'}s.`
+      : 'From route navigation until page content is ready.'}>
+    {completed ? `${label}: ${(result.milliseconds / 1000).toFixed(2)}s` : `${label}: Loading…`}
+    {isEntry && requestSeconds !== null && ` · Auth: ${requestSeconds}s`}
   </span>;
 }
 
-function SetupApp({ onLogout }: { onLogout: () => void }) {
+function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming: EntryTiming | null }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppRoute(window.location.pathname, window.location.search));
   const [routeTiming, setRouteTiming] = useState(() => ({
     routeKey: window.location.pathname + window.location.search,
-    startedAt: 0
+    startedAt: entryTiming?.startedAt ?? performance.now(),
+    kind: entryTiming?.kind ?? 'navigation' as const,
+    authMs: entryTiming ? entryTiming.authenticatedAt - entryTiming.startedAt : null
   }));
   const [currentAppId, setCurrentAppId] = useState(() => new URLSearchParams(window.location.search).get('appId') || 'Records');
   const [apps, setApps] = useState<LightningAppMetadata[]>([]);
@@ -1132,6 +1151,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [objectSearch, setObjectSearch] = useState('');
   const [objects, setObjects] = useState(objectMetadata);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [advancedMetadataLoaded, setAdvancedMetadataLoaded] = useState(false);
   const [metadataLoadError, setMetadataLoadError] = useState('');
   const [object, setObject] = useState<ObjectMetadata>(() =>
     (route.kind === 'setup' && route.objectApiName ? objectMetadata.find((item) => item.apiName === route.objectApiName) : undefined)
@@ -1310,15 +1330,53 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     const loadMetadata = async () => {
       const failures: string[] = [];
-      const recover = async <T,>(path: string, fallback: T): Promise<T> => {
-        try { return await apiRequest<T>(path); }
-        catch (error) {
-          if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
-          failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
-          return fallback;
-        }
+      const pending = new Map<string, Promise<unknown>>();
+      // Reuse the four essential requests when the optional data loads later.
+      // This avoids fetching the same objects/pages/apps/session twice.
+      const recover = <T,>(path: string, fallback: T): Promise<T> => {
+        const existing = pending.get(path);
+        if (existing) return existing as Promise<T>;
+        const request = (async () => {
+          try { return await apiRequest<T>(path); }
+          catch (error) {
+            if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
+            failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+            return fallback;
+          }
+        })();
+        pending.set(path, request);
+        return request;
       };
       try {
+        // Setup Home needs only core tenant metadata. Its initial render must
+        // not wait for the Flow Builder, report builders, connectors and dashboards.
+        const fastHome = route.kind === 'setup' && route.workspace === 'home';
+        if (fastHome) {
+          const [firstObjects, firstPages, firstApps, firstSession] = await Promise.all([
+            recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
+            recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
+            recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
+            recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, {read:boolean;edit:boolean}>; recordTypeAccess: Record<string, boolean> } }>('/auth/me',
+              { user: { profileId:'',permissions:[],fieldAccess:{},recordTypeAccess:{} } })
+          ]);
+          if (firstObjects.objects.length) {
+            setObjects(firstObjects.objects);
+            setObject(firstObjects.objects.find((item) => item.apiName === object.apiName) ?? firstObjects.objects[0]);
+          }
+          if (firstPages.pages.length) setPages(firstPages.pages);
+          setApps(firstApps.apps);
+          if (!firstApps.apps.some((item) => item.apiName === currentAppId))
+            setCurrentAppId(firstApps.apps[0]?.apiName ?? '');
+          setCurrentProfileId(firstSession.user.profileId);
+          setCurrentFieldAccess(firstSession.user.fieldAccess);
+          setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
+          setCanManageUserIdentities(firstSession.user.permissions.includes('security:manage'));
+          setMetadataLoaded(true);
+          // Give the landing screen a chance to paint before loading editor-only
+          // data in the background. On direct builder URLs the full load begins
+          // immediately, preserving the previous deep-link behaviour.
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
+        }
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           recover<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows', { flows: [] }),
@@ -1411,6 +1469,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         }
       } finally {
         setMetadataLoaded(true);
+        setAdvancedMetadataLoaded(true);
       }
     };
     void loadMetadata();
@@ -1494,7 +1553,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         window.history.pushState({}, '', appRoutePath(route));
         return;
       }
-      setRouteTiming({ routeKey: window.location.pathname + window.location.search, startedAt: performance.now() });
+      setRouteTiming({ routeKey: window.location.pathname + window.location.search, startedAt: performance.now(), kind: 'navigation', authMs: null });
       setRoute(nextRoute);
       setCurrentAppId(new URLSearchParams(window.location.search).get('appId') || 'Records');
     };
@@ -1549,7 +1608,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     const routeWithApp = nextRoute.kind === 'setup' ? nextRoute : { ...nextRoute, appId: nextRoute.appId ?? currentAppId };
     const path = appRoutePath(routeWithApp);
     if (`${window.location.pathname}${window.location.search}` !== path) {
-      setRouteTiming({ routeKey: path, startedAt: performance.now() });
+      setRouteTiming({ routeKey: path, startedAt: performance.now(), kind: 'navigation', authMs: null });
       window.history.pushState({}, '', path);
     }
     setRoute(routeWithApp);
@@ -3106,7 +3165,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           <kbd>⌘ K</kbd>
         </div>
         <div className="header-tools">
-          <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt} />
+          <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt}
+            ready={metadataLoaded && (route.kind !== 'setup' || route.workspace === 'home' || advancedMetadataLoaded)}
+            kind={routeTiming.kind} authMs={routeTiming.authMs} />
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
           <ConnectionHealthIndicator />
@@ -3283,7 +3344,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && metadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
+          {route.kind === 'setup' && workspace === 'page-builder' && advancedMetadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
             <section className="setup-card" role="alert" style={{ padding: 24 }}>
               <h2>{metadataLoadError ? "Unable to load Lightning pages" : "Lightning page not found"}</h2>
               <p>{metadataLoadError ? `Metadata API error: ${metadataLoadError}` : `The page "${route.resourceApiName}" was not returned by the metadata API. No other page has been substituted.`}</p>
@@ -3326,7 +3387,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
