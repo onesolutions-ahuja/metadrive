@@ -90,6 +90,11 @@ CREATE TABLE IF NOT EXISTS metadrive_rel_library_components (
   position INTEGER PRIMARY KEY CHECK (position >= 0),
   payload JSONB NOT NULL
 );
+-- Platform-scoped authorisation policy and audit metadata, kept separate from tenants.
+CREATE TABLE IF NOT EXISTS metadrive_rel_platform_settings (
+  setting_name TEXT PRIMARY KEY CHECK (setting_name IN ('platformPolicies','platformPolicyAudit')),
+  payload JSONB NOT NULL
+);
 CREATE INDEX IF NOT EXISTS metadrive_rel_collection_api_name_idx ON metadrive_rel_tenant_collection_items (tenant_id, collection_name, (payload->>'apiName'));
 
 -- Runtime revision row used for fail-closed optimistic concurrency and state verification.
