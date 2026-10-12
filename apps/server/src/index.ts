@@ -9749,6 +9749,63 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record update failed' });
   }
 });
+// Ownership changes are only permitted through this dedicated, auditable route.
+// Generic record PUT must never become an ownership-escalation shortcut.
+app.post('/api/records/:objectName/:recordId/transfer-owner', accessAuthentication, async (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const objectName = routeParam(req, 'objectName');
+  const recordId = routeParam(req, 'recordId');
+  const request = z.object({ ownerId: z.string().min(1) }).strict().safeParse(req.body);
+  if (!request.success) return res.status(400).json({ error: 'A valid new owner ID is required' });
+  const object = tenant.objects.find((item) => item.apiName === objectName);
+  if (!object || !object.fields.some((field) => field.apiName === 'OwnerId')
+    || ['User', 'Connector_App__c', 'ConnectorProvider__c', 'IntegrationConnection__c'].includes(objectName))
+    return res.status(404).json({ error: 'Object does not support ownership transfer' });
+  const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
+  if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit'))
+    return res.status(404).json({ error: 'Record was not found' });
+  const currentQueueMember = tenant.accessControl.queues.some((queue) =>
+    queue.id === existing.OwnerId && queue.supportedObjectApiNames.includes(objectName)
+    && queueContainsUser(queue, principal.userId, tenant));
+  if (existing.OwnerId !== principal.userId && !currentQueueMember
+    && !hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')
+    && !principal.permissions.includes('security:manage'))
+    return res.status(403).json({ error: 'Only the owner or authorized administrator may transfer ownership' });
+  if (!hasFieldPermission(principal, tenant, objectName, 'OwnerId', 'edit'))
+    return res.status(403).json({ error: 'Missing OwnerId edit permission' });
+  const ownerId = request.data.ownerId;
+  const targetUser = state.users.find((user) => user.id === ownerId
+    && user.tenantId === principal.tenantId && !user.disabled);
+  const targetQueue = tenant.accessControl.queues.find((queue) =>
+    queue.id === ownerId && queue.supportedObjectApiNames.includes(objectName));
+  if (!targetUser && !targetQueue) return res.status(400).json({ error: 'New owner must be an active tenant user or supported queue' });
+  if (targetQueue && !queueContainsUser(targetQueue, principal.userId, tenant)
+    && !principal.permissions.includes('security:manage'))
+    return res.status(403).json({ error: 'Queue membership or security administration is required' });
+  if (existing.OwnerId === ownerId) return res.json({ record: sanitizeRecordForRead(principal, tenant, object, existing) });
+  try {
+    const working = structuredClone(tenant);
+    const now = new Date().toISOString();
+    const updated = calculateFormulaFields(object,
+      stampRecordAuditFields({ ...existing, OwnerId: ownerId, LastModifiedDate: now }, principal.userId, now, existing),
+      formulaContextForUser(working, principal.userId));
+    validateRuntimeRecord(principal.tenantId, working, object, { OwnerId: ownerId }, updated);
+    appendFieldHistory(working, object, existing, updated, principal.userId);
+    working.records[objectName] = (working.records[objectName] ?? [])
+      .map((item) => item.Id === recordId ? updated : item);
+    // Manual shares are not carried over when ownership changes. Sharing rules,
+    // queue membership and role hierarchy are evaluated against the new owner.
+    working.recordShares = working.recordShares.filter((share) =>
+      share.objectApiName !== objectName || share.recordId !== recordId);
+    persistTenantRecords(principal.tenantId, withSecurityEvent(working, principal.userId,
+      'rbac.record-ownership.transferred', { objectName, recordId, newOwnerId: ownerId }));
+    return res.json({ record: sanitizeRecordForRead(principal, working, object, updated) });
+  } catch (error) {
+    return res.status(422).json({ error: error instanceof Error ? error.message : 'Owner transfer failed' });
+  }
+});
+
 app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
