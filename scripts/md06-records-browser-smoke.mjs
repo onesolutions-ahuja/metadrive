@@ -66,16 +66,8 @@ try {
   await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   const list=page.locator('.records-list-card');
   await list.waitFor({state:'visible'});
-  const headers=list.getByRole('button',{name:/Sort by /});
-  if(await headers.count()===0) throw Error('Metadata-driven sortable record columns missing');
-  await headers.first().click();
-  await list.locator('th[aria-sort="ascending"]').first().waitFor({state:'visible'});
-  await headers.first().click();
-  await list.locator('th[aria-sort="descending"]').first().waitFor({state:'visible'});
-  const search=list.getByRole('textbox',{name:/Search Accounts/i});
-  await search.fill('MD06-MISSING-XYZ-587290');
-  await list.getByText('No records match', {exact:false}).waitFor({state:'visible'});
-  await search.fill('');
+  // New tenants may contain zero Account rows, in which case the list has no
+  // table headers until the first record is persisted. Exercise creation first.
   const newButton=list.getByRole('button',{name:'New',exact:true});
   await newButton.click();
   const dialog=page.getByRole('dialog',{name:/New Account/});
@@ -86,7 +78,20 @@ try {
   await page.locator('.record-detail-heading').waitFor({state:'visible'});
   await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   await list.waitFor({state:'visible'});
-  await list.getByRole('textbox',{name:/Search Accounts/i}).fill('MD06 Browser Acceptance Account');
+  const search=list.getByRole('textbox',{name:/Search Accounts/i});
+  await search.fill('MD06 Browser Acceptance Account');
+  await list.getByText('MD06 Browser Acceptance Account',{exact:false}).first().waitFor({state:'visible'});
+  // Await the asynchronous metadata/record response rather than asserting
+  // immediately after route rendering.
+  const headers=list.getByRole('button',{name:/Sort by /});
+  await headers.first().waitFor({state:'visible'});
+  await headers.first().click();
+  await list.locator('th[aria-sort="ascending"]').first().waitFor({state:'visible'});
+  await headers.first().click();
+  await list.locator('th[aria-sort="descending"]').first().waitFor({state:'visible'});
+  await search.fill('MD06-MISSING-XYZ-587290');
+  await list.getByText('No records match', {exact:false}).waitFor({state:'visible'});
+  await search.fill('MD06 Browser Acceptance Account');
   await list.getByText('MD06 Browser Acceptance Account',{exact:false}).first().waitFor({state:'visible'});
   const downloadTask=page.waitForEvent('download');
   await list.getByRole('button',{name:'Export CSV'}).click();
