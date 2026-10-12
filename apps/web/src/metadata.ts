@@ -359,6 +359,7 @@ export type PageComponentMetadata = {
   properties: Record<string, unknown>;
   visible: boolean;
   region?: 'header' | 'main' | 'sidebar';
+  parentId?: string;
   position?: { x: number; y: number; width: number; height: number };
 };
 
@@ -712,6 +713,19 @@ export type LibraryComponentMetadata = {
   scopedCss: string;
   version: number;
   updatedAt: string;
+  status?: 'Draft' | 'Published';
+  publishedVersion?: number;
+  trustedBundled?: boolean;
+  revisions?: Array<{
+    version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow'>;
+    resize: NonNullable<LibraryComponentMetadata['resize']>;
+    jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
+  }>;
+  pendingDraft?: {
+    version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow'>;
+    resize: NonNullable<LibraryComponentMetadata['resize']>;
+    jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
+  };
 };
 
 export type ConnectorSettingFieldMetadata = {

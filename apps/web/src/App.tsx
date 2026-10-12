@@ -64,6 +64,8 @@ import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import PageComponentVisualEditor from './PageComponentVisualEditor';
+import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
@@ -3028,7 +3030,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   };
   const saveLibraryComponent = async (
-    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'>,
+    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'> & { publicationStatus: 'Draft' | 'Published' }, 
     updating: boolean
   ) => {
     const path = updating ? `/component-library/${encodeURIComponent(component.apiName)}` : '/component-library';
@@ -3040,6 +3042,18 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       ? current.map((item) => item.apiName === payload.component.apiName ? payload.component : item)
       : [...current, payload.component]);
     notify(updating ? 'Global component updated' : 'Global component registered');
+  };
+  const publishLibraryComponent = async (apiName: string) => {
+    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/publish`, {method:'POST',body:'{}'});
+    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
+    notify('Component published');
+  };
+  const rollbackLibraryComponent = async (apiName: string, version: number) => {
+    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/rollback`, {
+      method:'POST',body:JSON.stringify({version})
+    });
+    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
+    notify('Component restored as a new published version');
   };
   const deleteLibraryComponent = async (apiName: string) => {
     await apiRequest<void>(`/component-library/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
@@ -3580,7 +3594,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onSaveTerritories={saveDashboardTerritories}
             onNotify={notify}
           />}
-          {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} />}
+          {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} onPublish={publishLibraryComponent} onRollback={rollbackLibraryComponent} />}
           {route.kind === 'setup' && workspace === 'approval-processes' && <ApprovalProcessManager
             processes={approvalProcesses}
             objects={objects}
@@ -4355,7 +4369,12 @@ function MetadataBoundPageComponent({
     if (source === '$event') return eventPayload;
     if (typeof source === 'string' && source.startsWith('$event.')) {
       return source.slice(7).split('.').reduce<unknown>((current, key) =>
-        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+        current && typeof current === 'object' && !['__proto__','prototype','constructor'].includes(key)
+          ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+    }
+    if (typeof source === 'string' && source.startsWith('$record.')) {
+      const fieldName = source.slice(8);
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
     }
     return source;
   };
@@ -4363,9 +4382,15 @@ function MetadataBoundPageComponent({
     if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test checkout.');
     const config = actionFlows[action.event];
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
-      throw new Error('No Flow is configured for the "' + action.event + '" kiosk action.');
+      throw new Error('No metadata event action is configured for "' + action.event + '".');
     }
     const binding = config as Record<string, unknown>;
+    if (binding.actionType === 'Navigate') {
+      const destination=String(binding.navigationObjectApiName ?? objectApiName);
+      if (!objects.some((object)=>object.apiName===destination)) throw new Error('Choose an accessible destination object in Page Builder');
+      onNavigate({kind:'record-list',objectApiName:destination,appId:'Records'});
+      return {navigated:true};
+    }
     const flowApiName = String(binding.flowApiName ?? '');
     const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
     if (!selected || selected.status !== 'Active') {
@@ -4383,7 +4408,7 @@ function MetadataBoundPageComponent({
       return { interviewStarted: true };
     }
     if (selected.flowType !== 'Autolaunched Flow') {
-      throw new Error('Kiosk action Flow must be Screen or Autolaunched.');
+      throw new Error('Component event Flow must be Screen or Autolaunched.');
     }
     try {
       const response = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string }>(
@@ -4485,6 +4510,7 @@ function LightningAppRuntime({
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const renderComponent = (component: PageComponentMetadata) => {
     if (!component.visible) return null;
+    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map((child) => <div key={child.id} style={!isLayoutType(child.type) ? componentVisualStyle(child.properties.visualStyle, child.type, formFactor) : undefined}>{renderComponent(child)}</div>)}</div>;
     if (component.type.startsWith('Custom:')) {
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
@@ -4528,7 +4554,7 @@ function LightningAppRuntime({
     data-lightning-page={page.apiName}
     data-layout-mode="free-canvas"
     style={{ width: page.canvasWidth, height: page.canvasHeight }}>
-    {page.components.filter((component) => component.visible).map((component) => <div key={component.id}
+    {page.components.filter((component) => component.visible && !component.parentId).map((component) => <div key={component.id}
       className="free-canvas-runtime-component"
       style={{
         left: component.position?.x ?? 0,
@@ -4536,11 +4562,11 @@ function LightningAppRuntime({
         width: component.position?.width ?? 320,
         height: component.position?.height ?? 180
       }}>
-      {renderComponent(component)}
+      <div style={!isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, formFactor) : undefined}>{renderComponent(component)}</div>
     </div>)}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
-    page.components.filter((component) => (component.region ?? 'main') === region).map(renderComponent);
+    page.components.filter((component) => !component.parentId && (component.region ?? 'main') === region).map((component) => <div key={component.id} style={!isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, formFactor) : undefined}>{renderComponent(component)}</div>);
   return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
     <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18} /></div>
@@ -7998,33 +8024,51 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
     <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
-    {actionFlows && (['start', 'add', 'quantity', 'remove', 'reset', 'checkout', ...(tillMode ? ['customer','hold','resume','discount'] : [])]).map((eventName) => {
-      const binding = actionFlows[eventName] && typeof actionFlows[eventName] === 'object'
-        ? actionFlows[eventName] as Record<string, unknown> : {};
-      return <label className="form-label" key={eventName}>{eventName.charAt(0).toUpperCase() + eventName.slice(1)} Flow
-        <select className="form-control" value={String(binding.flowApiName ?? '')} onChange={(event) => {
-          const next = { ...actionFlows };
-          if (!event.target.value) delete next[eventName];
-          else next[eventName] = {
-            flowApiName: event.target.value,
-            inputs: binding.inputs ?? (eventName === 'checkout'
-              ? (tillMode ? { SessionId: '$session', PaymentMethod: '$event.paymentMethod', CustomerId: '$event.customerId' } : { SessionId: '$session', OrderType: '$event.orderType' })
-              : eventName === 'customer' ? { SessionId: '$session', CustomerId: '$event.customerId' }
-              : eventName === 'add'
-                ? { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' }
-                : eventName === 'quantity'
-                  ? { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' }
-                  : eventName === 'remove'
-                    ? { SessionId: '$session', LineId: '$event.lineId' }
-                    : { SessionId: '$session' })
-          };
-          update('actionFlows', next);
-        }}>
-          <option value="">Not configured</option>
-          {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
-        </select>
-      </label>;
+    <div className="properties-section-title">Event → Flow / Navigation bindings</div>
+    <p className="properties-help">Each event name is emitted by a custom component. Select a Flow or an RBAC-checked route and map input variables to event fields. No executable code is stored here.</p>
+    {Object.entries(actionFlows ?? {}).map(([eventName, raw]) => {
+      const binding = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+      const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
+      const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
+      const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
+      return <div className="home-page-assignment" key={eventName}>
+        <strong>{eventName}</strong>
+        <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
+        <label className="form-label">Action type<select className="form-control" value={actionType}
+          onChange={(e) => setBinding({...binding,actionType:e.target.value})}>
+          <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option>
+        </select></label>
+        {actionType==='Flow' ? <>
+          <label className="form-label">Flow<select className="form-control" value={String(binding.flowApiName ?? '')}
+            onChange={(e) => setBinding({...binding,flowApiName:e.target.value})}><option value="">Select Flow…</option>
+            {flows.map((flow)=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+          </select></label>
+          <div className="properties-section-title">Flow input mapping</div>
+          {Object.entries(map).map(([name, source]) => <div key={name} className="metadata-array-property">
+            <label className="form-label">Input API name<input className="form-control" value={name} readOnly /></label>
+            <label className="form-label">Source ($event.field, $record.Field, $session, or literal)
+              <input className="form-control" value={String(source ?? '')}
+                onChange={(e) => setBinding({...binding,inputs:{...map,[name]:e.target.value}})} /></label>
+            <button type="button" className="btn btn-small" onClick={() => {const next={...map};delete next[name];setBinding({...binding,inputs:next});}}>Remove input</button>
+          </div>)}
+          <button type="button" className="btn btn-small" onClick={() => {
+            const nextName=window.prompt('Flow input API name');
+            if(!nextName || !/^[A-Za-z][A-Za-z0-9_]*$/.test(nextName)||nextName in map)return;
+            setBinding({...binding,inputs:{...map,[nextName]:''}});
+          }}>Add Flow input</button>
+        </> : <label className="form-label">Destination object<select className="form-control"
+          value={String(binding.navigationObjectApiName ?? objectApiName)}
+          onChange={(e)=>setBinding({...binding,navigationObjectApiName:e.target.value})}>
+          <option value="">Choose object…</option>
+          {objects.map((object)=><option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+        </select></label>}
+      </div>;
     })}
+    <button type="button" className="btn btn-small" onClick={() => {
+      const key=window.prompt('Component event API name (e.g. submitted, itemSelected)');
+      if(!key||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)||(actionFlows??{})[key])return;
+      update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
+    }}>Add event action</button>
     {!actionFlows && <label className="form-label">Flow API Name
       <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
         onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
@@ -8238,6 +8282,7 @@ function PageBuilder({
   const selectedMigrationLayout = pageLayouts.find((layout) => layout.id === migrationLayoutId) ?? assignedMigrationLayout;
   const dynamicFormsEnabled = page.components.some((component) => component.type === 'Field Section' || component.type === 'Record Field');
   const paletteComponents = [
+    ...layoutTypes.map((type) => ({ id: type, type, label: type, description: `Nest components inside a ${type.toLowerCase()} layout.`, categories: ['Layout'] as (typeof pageBuilderPaletteCategories)[number][] })),
     ...(page.layoutMode === 'template' ? standardPageComponents
       .filter((component) => availableComponents.includes(component.apiName))
       .map((component) => ({
@@ -8440,11 +8485,11 @@ function PageBuilder({
       && existing.profileId === assignment.profileId
       && existing.recordTypeId === assignment.recordTypeId
       && existing.formFactors.some((factor) => assignment.formFactors.includes(factor)));
-  const addComponent = (type: string, position = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', canvasPosition?: PageComponentMetadata['position']) => {
+  const addComponent = (type: string, position = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', canvasPosition?: PageComponentMetadata['position'], parentId?: string) => {
     const customApiName = type.startsWith('Custom:') ? type.slice('Custom:'.length) : '';
     const custom = libraryComponents.find((item) => item.apiName === customApiName && item.surfaces.includes('page'));
     const dynamicFormComponent = type === 'Field Section' && page.pageType === 'Record Page' && dynamicFormsEnabled;
-    if (!availableComponents.includes(type) && !custom && !dynamicFormComponent) {
+    if (!availableComponents.includes(type) && !custom && !dynamicFormComponent && !isLayoutType(type)) {
       onNotify(`Enable the matching object feature before adding the ${type} component`);
       return;
     }
@@ -8471,7 +8516,7 @@ function PageBuilder({
             : type === 'Field Section'
               ? { fieldApiNames: [], columns: 2 }
             : {},
-      visible: true, region,
+      visible: true, parentId, region,
       ...(freeCanvasPosition ? { position: freeCanvasPosition } : {})
     });
     applyPage({ ...page, components });
@@ -8562,7 +8607,7 @@ function PageBuilder({
   };
   const removeSelected = () => {
     if (!selected) return;
-    const remaining = page.components.filter((component) => component.id !== selected.id);
+    const remaining = page.components.filter((component) => component.id !== selected.id && !isDescendantOf(page.components, component.id, selected.id));
     applyPage({ ...page, components: remaining });
     setSelectedId(remaining[0]?.id ?? '');
   };
@@ -8893,7 +8938,7 @@ function PageBuilder({
         && event.clientY > targetElement.getBoundingClientRect().top + targetElement.getBoundingClientRect().height / 2;
       const dropIndex = targetIndex + (insertAfterTarget ? 1 : 0);
       const insertionIndex = sourceIndex < dropIndex ? dropIndex - 1 : dropIndex;
-      components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, { ...draggedComponent, region });
+      components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, { ...draggedComponent, parentId: undefined, region });
       applyPage({ ...page, components });
       setSelectedId(draggedId);
     } else if (data.startsWith('field:')) {
@@ -8934,19 +8979,33 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
-      style={!libraryPreview && page.layoutMode === 'free-canvas' ? {
+      className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' && !component.parentId ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      style={!libraryPreview && page.layoutMode === 'free-canvas' && !component.parentId ? {
         left: component.position?.x ?? 0,
         top: component.position?.y ?? 0,
         width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
         height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
-      } : undefined}
-      onClick={!libraryPreview ? () => { if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      } : componentVisualStyle(component.properties.visualStyle, component.type, device)}
+      onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
       onKeyDown={!libraryPreview ? (event) => { if (event.currentTarget === event.target && !previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); setDragOverId(component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
-      onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main') : undefined}
+      onDrop={!libraryPreview ? (event) => {
+        if (isLayoutType(component.type)) {
+          event.preventDefault(); event.stopPropagation();
+          const draggedId = event.dataTransfer.getData('application/x-metadrive-component-id');
+          const data = event.dataTransfer.getData('text/plain');
+          if (draggedId && canNestComponent(page.components, draggedId, component.id)) {
+            applyPage({ ...page, components: page.components.map((child) => child.id === draggedId ? { ...child, parentId: component.id, region: component.region } : child) });
+            setSelectedId(draggedId);
+          } else if (!draggedId && data.startsWith('component:')) {
+            const type = data.slice('component:'.length);
+            addComponent(type, page.components.length, component.region ?? 'main', undefined, component.id);
+          }
+          setDragOverId('');
+        } else handleDrop(event, index, component.region ?? 'main');
+      } : undefined}
       draggable={!previewMode && !libraryPreview}
       data-component-id={libraryPreview ? undefined : component.id}
       onDragStart={!libraryPreview ? (event) => { event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
@@ -8955,7 +9014,12 @@ function PageBuilder({
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
       {!previewMode && !libraryPreview && <div className="record-component-head"><GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} /></div>}
-      {component.type === 'Record Detail'
+      {isLayoutType(component.type)
+        ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
+          {directChildren(page.components, component.id).map((child) => renderPageComponent(child, page.components.indexOf(child), libraryPreview, interactivePreview))}
+          {!libraryPreview && !previewMode && <div className="canvas-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.stopPropagation(); const draggedId = event.dataTransfer.getData('application/x-metadrive-component-id'); if (draggedId && canNestComponent(page.components, draggedId, component.id)) { applyPage({ ...page, components: page.components.map((item) => item.id === draggedId ? { ...item, parentId: component.id } : item) }); } else if (!draggedId) { const type = event.dataTransfer.getData('text/plain').replace(/^component:/, ''); if (type) addComponent(type, page.components.length, component.region ?? 'main', undefined, component.id); } }}>Drop components inside {component.label}</div>}
+        </div>
+        : component.type === 'Record Detail'
         ? <div className="record-detail-grid">{(Array.isArray(component.properties.fields) ? component.properties.fields : fields.slice(0, 6).map((field) => field.apiName)).map((apiName) => { const field = fields.find((item) => item.apiName === apiName); return field ? <div className="record-detail-field" key={apiName}><small>{field.label}</small><span>{field.apiName === 'Name' ? `${targetObject?.label ?? 'Sample'} record` : 'Sample value'}</span></div> : null; })}</div>
         : component.type === 'Field Section'
           ? <div className={`record-detail-grid columns-${component.properties.columns === 1 ? 1 : 2}`}>{stringList(component.properties.fieldApiNames, []).map((apiName) => fields.find((field) => field.apiName === apiName)).filter((field): field is FieldMetadata => Boolean(field)).map((field) => <div className="record-detail-field" key={field.apiName}><small>{field.label}</small><span>{field.apiName === 'Name' ? `${targetObject?.label ?? 'Sample'} record` : 'Sample value'}</span></div>)}</div>
@@ -9012,7 +9076,7 @@ function PageBuilder({
   const renderRegion = (region: 'header' | 'main' | 'sidebar') => {
     const regionComponents = page.components
       .map((component, index) => ({ component, index }))
-      .filter(({ component }) => (component.region ?? 'main') === region);
+      .filter(({ component }) => !component.parentId && (component.region ?? 'main') === region);
     return <section
       className={`page-region page-region-${region}`}
       aria-label={`${region[0].toUpperCase()}${region.slice(1)} region`}
@@ -9291,6 +9355,8 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
+            <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />
+            {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <MetadataComponentProperties

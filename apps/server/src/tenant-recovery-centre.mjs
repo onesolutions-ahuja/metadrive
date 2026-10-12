@@ -3,6 +3,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { openRecoveryCase } from './tenant-recovery-cases.mjs';
 import { approveRecoveryCase, issueRecoveryInvitation, redeemRecoveryInvitation } from './tenant-recovery-transaction.mjs';
+import { assertRecoveryControlReadiness } from './tenant-recovery-readiness.mjs';
 
 const DAY=86400000, PROOF_TTL=48*60*60*1000;
 const identity=/^[a-zA-Z0-9_-]{1,128}$/;
@@ -29,6 +30,11 @@ export function installTenantRecoveryCentre(app,options) {
   }
   const route=handler=>async(req,res)=>{
     if(!enabled)return res.status(503).json({error:'Verified tenant recovery is not configured'});
+    // This read-only database attestation runs for EVERY request, not only at
+    // process startup, so a revoked role or disabled audit trigger fails closed.
+    // No UI flag, environment flag or platform operator can waive it.
+    try {await assertRecoveryControlReadiness(pool);}
+    catch {return res.status(503).json({error:'Recovery security controls are not ready'});}
     try {await handler(req,res);}
     catch {if(!res.headersSent)res.status(409).json({error:'Recovery request could not be verified'});}
   };

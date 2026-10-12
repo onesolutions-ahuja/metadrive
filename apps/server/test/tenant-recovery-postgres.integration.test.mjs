@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { openRecoveryCase } from '../src/tenant-recovery-cases.mjs';
 import { approveRecoveryCase, issueRecoveryInvitation, redeemRecoveryInvitation } from '../src/tenant-recovery-transaction.mjs';
+import { assertRecoveryControlReadiness } from '../src/tenant-recovery-readiness.mjs';
 
 test('MD-03.7: isolated PostgreSQL recovery approval, invitation, redemption, single use and immutable audit', async t => {
   const url=process.env.METADRIVE_TEST_DATABASE_URL;
@@ -14,6 +15,7 @@ test('MD-03.7: isolated PostgreSQL recovery approval, invitation, redemption, si
   if(process.env.CI!=='true')return t.skip('Disposable GitHub CI database only');
   const {Pool}=pg, unique=randomBytes(5).toString('hex');
   const name='md_recovery_ci_'+unique;
+  const runtimeRole='md_recovery_ci_runtime_'+unique;
   const admin=new Pool({connectionString:url,max:2});
   const address=new URL(url);
   let pool;
@@ -24,6 +26,36 @@ test('MD-03.7: isolated PostgreSQL recovery approval, invitation, redemption, si
     const sql=readFileSync(fileURLToPath(new URL('../sql/tenant-recovery-control.sql',import.meta.url)),'utf8');
     // This is a fully isolated database: it never touches tenant runtime tables.
     await pool.query(sql);
+    // Readiness must reject the owner even though the schema and trigger exist.
+    await assert.rejects(assertRecoveryControlReadiness(pool, {expectedDatabase:name}));
+    // This disposable CI database is the only place where privileged migrations
+    // and runtime role grants are exercised with real PostgreSQL.
+    await pool.query('CREATE ROLE "'+runtimeRole+'" NOLOGIN NOINHERIT');
+    await pool.query('REVOKE ALL ON SCHEMA public FROM PUBLIC');
+    await pool.query('GRANT CONNECT ON DATABASE "'+name+'" TO "'+runtimeRole+'"');
+    await pool.query('GRANT USAGE ON SCHEMA public TO "'+runtimeRole+'"');
+    for (const table of ['tenant_recovery_cases','tenant_recovery_invitations',
+      'tenant_recovery_contacts','tenant_recovery_contact_proofs','tenant_recovery_repair_grants']) {
+      await pool.query('GRANT SELECT,INSERT,UPDATE ON public.'+table+' TO "'+runtimeRole+'"');
+    }
+    for (const table of ['tenant_recovery_approvals','tenant_recovery_events','tenant_recovery_mfa_steps']) {
+      await pool.query('GRANT SELECT,INSERT ON public.'+table+' TO "'+runtimeRole+'"');
+    }
+    await pool.query('GRANT USAGE ON SEQUENCE public.tenant_recovery_events_id_seq TO "'+runtimeRole+'"');
+    const leastPrivilege = await pool.connect();
+    try {
+      await leastPrivilege.query('BEGIN');
+      await leastPrivilege.query('SET LOCAL ROLE "'+runtimeRole+'"');
+      assert.equal(await assertRecoveryControlReadiness(leastPrivilege,{expectedDatabase:name}),true);
+      await assert.rejects(leastPrivilege.query('DELETE FROM public.tenant_recovery_events WHERE false'),
+        'Runtime role must lack audit deletion privilege');
+      // Permission errors abort a transaction, so leave this disposable
+      // session and start a fresh one before any other check.
+    } finally {
+      await leastPrivilege.query('ROLLBACK');
+      leastPrivilege.release();
+    }
+
     const createdAt=new Date('2026-10-13T09:00:00Z');
     const now=new Date('2026-10-15T12:00:00Z');
     const requestor={id:'platform-intake',role:'recovery_intake',active:true,trustedMfa:true};
@@ -69,6 +101,7 @@ test('MD-03.7: isolated PostgreSQL recovery approval, invitation, redemption, si
   } finally {
     if(pool)await pool.end();
     await admin.query('DROP DATABASE IF EXISTS "'+name+'"').catch(()=>{});
+    await admin.query('DROP ROLE IF EXISTS "'+runtimeRole+'"').catch(()=>{});
     await admin.end();
   }
 });
