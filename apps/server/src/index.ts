@@ -10891,8 +10891,9 @@ function syncBundledLibraryComponents(): Promise<void> {
       css: z.string().min(1)
     })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')));
     const imported: LibraryComponent[] = [];
+    const trustedUpgrades = new Set<string>();
     for (const entry of manifest) {
-      if (state.libraryComponents.some((component) => component.apiName.toLowerCase() === entry.apiName.toLowerCase())) continue;
+      const existingBundled = state.libraryComponents.find((component) => component.apiName.toLowerCase() === entry.apiName.toLowerCase());
       const jsxPath = resolve(bundledCustomComponentsPath, entry.jsx);
       const cssPath = resolve(bundledCustomComponentsPath, entry.css);
       const jsxRelativePath = relative(bundledCustomComponentsPath, jsxPath);
@@ -10900,6 +10901,14 @@ function syncBundledLibraryComponents(): Promise<void> {
       if (jsxRelativePath.startsWith('..') || cssRelativePath.startsWith('..')
         || isAbsolute(jsxRelativePath) || isAbsolute(cssRelativePath)) {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
+      }
+      if (existingBundled) {
+        // Historical bundles are trusted only if their stored source exactly matches the
+        // immutable repository source. A registry override must remain sandboxed.
+        if (existingBundled.jsxSource === readFileSync(jsxPath,'utf8')
+          && existingBundled.cssSource === readFileSync(cssPath,'utf8')
+          && existingBundled.trustedBundled !== true) trustedUpgrades.add(existingBundled.apiName);
+        continue;
       }
       const input = libraryComponentInputSchema.parse({
         apiName: entry.apiName,
@@ -10933,8 +10942,11 @@ function syncBundledLibraryComponents(): Promise<void> {
         status: 'Published', publishedVersion: 1, revisions: [], trustedBundled: true
       });
     }
-    if (imported.length) {
-      const nextState = { ...state, libraryComponents: [...state.libraryComponents, ...imported] };
+    if (imported.length || trustedUpgrades.size) {
+      const nextState = { ...state, libraryComponents: [
+        ...state.libraryComponents.map((item) => trustedUpgrades.has(item.apiName) ? {...item,trustedBundled:true} : item),
+        ...imported
+      ] };
       persistState(nextState);
       state = nextState;
     }
@@ -11040,7 +11052,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     };
     const component: LibraryComponent = parsed.data.publicationStatus === 'Draft'
       ? { ...existing, pendingDraft: compiledRevision }
-      : { ...existing, ...compiledRevision, status: 'Published',
+      : { ...existing, ...compiledRevision, status: 'Published', trustedBundled: false,
         publishedVersion: compiledRevision.version,
         revisions: [...(existing.revisions ?? []), ...(existing.status === 'Draft' ? [] : [libraryRevision(existing)])].slice(-100),
         pendingDraft: undefined };
@@ -11065,7 +11077,7 @@ app.post('/api/component-library/:apiName/publish', requirePermission('component
   const existing=state.libraryComponents[index],draft=existing.pendingDraft;
   if(!draft && existing.status!=='Draft')return res.status(409).json({error:'There is no draft to publish'});
   const next:LibraryComponent=draft
-    ? {...existing,...draft,status:'Published',publishedVersion:draft.version,
+    ? {...existing,...draft,status:'Published',publishedVersion:draft.version,trustedBundled:false,
       revisions:[...(existing.revisions??[]),...(existing.status==='Draft'?[]:[libraryRevision(existing)])].slice(-100),pendingDraft:undefined}
     : {...existing,status:'Published',publishedVersion:existing.version};
   const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
@@ -11084,7 +11096,7 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
   const removed=existing.surfaces.filter((surface)=>!previous.surfaces.includes(surface)&&usages.some((usage)=>usage.surface===surface));
   if(removed.length)return res.status(409).json({error:'Rollback would remove surfaces still in use',dependencies:usageBlockerDetails(usages.filter((u)=>removed.includes(u.surface)),getPrincipal(res).tenantId)});
   const nextVersion=nextLibraryRevision(existing);
-  const next:LibraryComponent={...existing,...previous,version:nextVersion,updatedAt:new Date().toISOString(),status:'Published',
+  const next:LibraryComponent={...existing,...previous,version:nextVersion,updatedAt:new Date().toISOString(),status:'Published',trustedBundled:false,
     publishedVersion:nextVersion,pendingDraft:undefined,revisions:[...(existing.revisions??[]),libraryRevision(existing)].slice(-100)};
   const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
   const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
