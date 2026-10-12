@@ -3268,6 +3268,7 @@ type LocalUser = {
   authRevokedBefore?: number;
   mfaSecret?: MfaEncryptedSecret;
   mfaLastUsedStep?: number;
+  mfaVersion?: number;
 };
 type RefreshSession = {
   tokenHash: string;
@@ -3344,7 +3345,8 @@ const stateSchema = z.object({
     disabled: z.boolean(), createdAt: z.string().datetime(),
     authRevokedBefore: z.number().int().nonnegative().optional(),
     mfaSecret: z.object({ keyId: z.string(), iv: z.string(), authTag: z.string(), ciphertext: z.string() }).optional(),
-    mfaLastUsedStep: z.number().int().nonnegative().optional()
+    mfaLastUsedStep: z.number().int().nonnegative().optional(),
+    mfaVersion: z.number().int().nonnegative().optional()
   })),
   refreshSessions: z.array(z.object({
     tokenHash: z.string(), familyId: z.string(), userId: z.string(), tenantId: z.string(),
@@ -4995,6 +4997,10 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
+    if ((claims.mfa_version ?? 0) !== (user.mfaVersion ?? 0)) {
+      res.status(401).json({ error: 'Authentication state has changed; sign in again' });
+      return;
+    }
     if (mfaRequiredForUser(state.tenants[tenantId], user) && !claims.amr?.includes('otp')) {
       res.status(401).json({ error: 'MFA verification is required' });
       return;
@@ -5050,7 +5056,8 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
   const permissions = effectivePermissions(user, data);
   const tokenStartedAt = performance.now();
   const issued = await jwtService.issue({
-    userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified
+    userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified,
+    mfaVersion: user.mfaVersion ?? 0
   });
   const tokenMs = performance.now() - tokenStartedAt;
   const refresh = issueRefreshSession(user, familyId, mfaVerified);
@@ -5148,7 +5155,6 @@ function revokeUserRefreshSessions(userId: string, tenantId: string): RefreshSes
       ? { ...session, revokedAt: now }
       : session);
 }
-const mfaCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const loginSchema = z.object({
@@ -5277,7 +5283,8 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
     securedUser = {
       ...user,
       ...(challenge.pendingSecret ? { mfaSecret: sealMfaSecret(user.tenantId, user.id, secret) } : {}),
-      mfaLastUsedStep: step
+      mfaLastUsedStep: step,
+      mfaVersion: challenge.pendingSecret ? (user.mfaVersion ?? 0) + 1 : user.mfaVersion
     };
     const nextState = {
       ...state,
@@ -5364,7 +5371,7 @@ app.post('/api/auth/mfa/enroll/confirm', accessAuthentication, (req: Request, re
   const nextState = {
     ...state,
     users: state.users.map((item) => item.id === user.id
-      ? { ...item, mfaSecret: encrypted, mfaLastUsedStep: step }
+      ? { ...item, mfaSecret: encrypted, mfaLastUsedStep: step, mfaVersion: (item.mfaVersion ?? 0) + 1 }
       : item),
     refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
   };
@@ -5400,6 +5407,7 @@ app.post('/api/auth/mfa/disable', accessAuthentication, async (req: Request, res
       const updated = { ...item };
       delete updated.mfaSecret;
       delete updated.mfaLastUsedStep;
+      updated.mfaVersion = (item.mfaVersion ?? 0) + 1;
       return updated;
     }),
     refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
@@ -5447,7 +5455,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         state = nextState;
         setRefreshCookie(res, replacement.token);
         const permissions = effectivePermissions(user, data);
-        const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: latest.mfaVerified === true });
+        const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: latest.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0 });
         return res.json({
           access_token: issued.accessToken, token_type: 'Bearer',
           expires_in: jwtService.config.accessTokenTtlSeconds, expires_at: issued.expiresAt,
@@ -5488,7 +5496,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   persistState(nextState);
   state = nextState;
   const permissions = effectivePermissions(user, data);
-  const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: session.mfaVerified === true });
+  const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: session.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0 });
   setRefreshCookie(res, nextRefresh.token);
   return res.json({
     access_token: issued.accessToken, token_type: 'Bearer',
