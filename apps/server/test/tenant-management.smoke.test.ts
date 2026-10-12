@@ -164,6 +164,37 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     login = await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword });
     assert.equal(login.status, 200);
     const tenantToken = String(login.data.access_token);
+    // MD-03.8: tenant usage is scoped, count-only, platform-authorized for
+    // another tenant, and advisory targets persist without blocking writes.
+    assert.equal((await api('/tenant/usage')).status, 401);
+    assert.equal((await api('/platform/tenants/studio-beta/usage', tenantToken)).status, 403);
+    assert.equal((await api('/platform/tenants/not-a-tenant/usage', operatorToken)).status, 404);
+    assert.equal((await api('/platform/tenants/studio-beta/usage-targets', tenantToken, 'PATCH', { users: 1 })).status, 403);
+    const usage = await api('/platform/tenants/studio-beta/usage', operatorToken);
+    assert.equal(usage.status, 200);
+    assert.equal(usage.data.usage.tenantId, 'studio-beta');
+    assert.equal(usage.data.usage.counts.users, 2);
+    assert.ok(usage.data.usage.counts.objects >= 3);
+    assert.equal(usage.data.usage.storageBytes, null);
+    assert.equal(usage.data.usage.enforcement, 'advisory_only');
+    assert.equal(JSON.stringify(usage.data).includes('passwordHash'), false);
+    const selfUsage = await api('/tenant/usage', tenantToken);
+    assert.equal(selfUsage.status, 200);
+    assert.equal(selfUsage.data.usage.counts.users, 2);
+    assert.equal((await api('/platform/tenants/studio-beta/usage-targets', operatorToken,
+      'PATCH', { users: -1 })).status, 400);
+    assert.equal((await api('/platform/tenants/studio-beta/usage-targets', operatorToken,
+      'PATCH', { users: 2.5 })).status, 400);
+    assert.equal((await api('/platform/tenants/studio-beta/usage-targets', operatorToken,
+      'PATCH', { storageBytes: 100 })).status, 400);
+    const targetsSaved = await api('/platform/tenants/studio-beta/usage-targets', operatorToken,
+      'PATCH', { users: 2, records: 10000, objects: null });
+    assert.equal(targetsSaved.status, 200, JSON.stringify(targetsSaved.data));
+    assert.equal(targetsSaved.data.usage.targets.users, 2);
+    assert.ok(targetsSaved.data.usage.warnings.includes('users'));
+    assert.equal(targetsSaved.data.usage.enforcement, 'advisory_only');
+    assert.equal((await api('/tenant/usage', tenantToken)).data.usage.targets.users, 2);
+
     const tenantRefreshCookie = login.cookie;
     // MD-03.5: tenant owner and platform scopes, DNS proof, global uniqueness,
     // and durable pending verification all use the existing tenant registry.
@@ -265,6 +296,10 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal(newLogin.status, 200);
     const persisted = await api('/platform/tenants/studio-beta', String(newLogin.data.access_token));
     assert.equal(persisted.status, 200);
+    const persistedUsage = await api('/platform/tenants/studio-beta/usage', String(newLogin.data.access_token));
+    assert.equal(persistedUsage.status, 200);
+    assert.equal(persistedUsage.data.usage.targets.users, 2);
+
     const persistentRetry = await api('/platform/tenants', String(newLogin.data.access_token), 'POST',
       body, false, '', idem);
     assert.equal(persistentRetry.status, 200);
@@ -320,6 +355,37 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal((await api('/auth/me', String(tenantAfterRemoval.data.access_token), 'GET',
       undefined, false, '', '', 'crm.studio-beta.test')).status, 401,
       'Removed domain tombstone must deny tokens on stale hosting proxies');
+    // MD-03.6 lifecycle: archive requires suspension; restore is never an
+    // implicit reactivation, and retention metadata never deletes tenant data.
+    const platformToken = String(newLogin.data.access_token);
+    const activeTenantToken = String(tenantAfterRemoval.data.access_token);
+    assert.equal((await api('/platform/tenants/studio-beta/archive', activeTenantToken, 'POST', {})).status, 403);
+    assert.equal((await api('/platform/tenants/studio-beta/archive', platformToken, 'POST', {})).status, 409);
+    assert.equal((await api('/platform/tenants/studio-beta/suspend', platformToken, 'POST', {})).status, 200);
+    assert.equal((await api('/platform/tenants/studio-beta/archive', platformToken, 'POST', {})).status, 200);
+    assert.equal((await api('/platform/tenants/studio-beta/reactivate', platformToken, 'POST', {})).status, 409);
+    const archivedUsage = await api('/platform/tenants/studio-beta/usage', platformToken);
+    assert.equal(archivedUsage.status, 200);
+    assert.equal(archivedUsage.data.usage.status, 'ARCHIVED');
+    assert.equal(archivedUsage.data.usage.targets.users, 2);
+
+    assert.equal((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).status, 401);
+    assert.equal((await api('/platform/tenants?status=ARCHIVED', platformToken)).data.total, 1);
+    const retained = await api('/platform/tenants/studio-beta/retention', platformToken, 'PATCH', {
+      retentionUntil: '2099-01-01T00:00:00.000Z', legalHold: true
+    });
+    assert.equal(retained.status, 200, JSON.stringify(retained.data));
+    assert.equal(retained.data.tenant.legalHold, true);
+    assert.equal((await api('/platform/tenants/studio-beta/retention', String((await api('/auth/login', '', 'POST', { email: 'gamma-admin@example.test', password: tenantPassword })).data.access_token), 'PATCH', {
+      retentionUntil: null, legalHold: false
+    })).status, 403);
+    const restored = await api('/platform/tenants/studio-beta/restore', platformToken, 'POST', {});
+    assert.equal(restored.status, 200, JSON.stringify(restored.data));
+    assert.equal(restored.data.tenant.status, 'SUSPENDED');
+    assert.equal(restored.data.tenant.userCount, 2);
+    assert.equal((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).status, 401);
+    assert.equal((await api('/platform/tenants/studio-beta/reactivate', platformToken, 'POST', {})).status, 200);
+    assert.equal((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).status, 200);
     assert.equal(persisted.data.tenant.name, 'Studio Beta Updated');
     assert.equal(persisted.data.tenant.status, 'ACTIVE');
   } finally {

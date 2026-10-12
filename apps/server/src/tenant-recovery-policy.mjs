@@ -47,12 +47,10 @@ export function assertRecoveryEligible(caseFile, now = Date.now()) {
   if (!Array.isArray(approvers) || approvers.length < 2)
     throw new Error('Two independent approvals required');
   const ids = new Set();
-  // Do not accept approvals recorded before the mandatory cooling-off window.
-  const earliestApproval = validDate(caseFile.createdAt) + RECOVERY_WAIT_MS;
   for (const a of approvers) {
     if (!validActor(a) || a.id === caseFile.claimantUserId
       || a.id === caseFile.requestedBy || ids.has(a.id)
-      || !Number.isFinite(validDate(a.approvedAt)) || validDate(a.approvedAt) < earliestApproval
+      || !Number.isFinite(validDate(a.approvedAt)) || validDate(a.approvedAt) < validDate(caseFile.createdAt) + RECOVERY_WAIT_MS
       || validDate(a.approvedAt) > now)
       throw new Error('Approvals must be independent verified platform operators');
     ids.add(a.id);
@@ -78,4 +76,45 @@ export function assertRecoveryRedemption(caseFile, invitation, {
     || !matchesRecoveryToken(token, invitation?.tokenDigest))
     throw new Error('Invalid or expired recovery invitation');
   return grant;
+}
+
+/**
+ * Pure, fail-closed recovery case transitions. These guards are deliberately
+ * independent of HTTP authentication: the calling service must separately
+ * authenticate operators and verify identity evidence out of band.
+ */
+export function assertRecoveryCaseTransition(caseFile, event, context = {}, now = Date.now()) {
+  if (!caseFile || typeof caseFile.id !== 'string' || !caseFile.id
+    || !Number.isFinite(now) || !Number.isFinite(validDate(caseFile.createdAt))
+    || validDate(caseFile.createdAt) > now)
+    throw new Error('Invalid recovery case');
+  if (caseFile.disputed === true || ['disputed', 'rejected', 'expired', 'redeemed'].includes(caseFile.status))
+    throw new Error('Recovery case is closed or disputed');
+  const actor = context.actor;
+  if (event === 'dispute') {
+    if (typeof context.reason !== 'string' || context.reason.trim().length < 12)
+      throw new Error('Dispute reason required');
+    return { ...caseFile, status: 'disputed', disputed: true };
+  }
+  if (caseFile.status !== 'pending')
+    throw new Error('Recovery case is not pending');
+  if (event === 'approve') {
+    if (!validActor(actor) || actor.id === caseFile.claimantUserId || actor.id === caseFile.requestedBy
+      || caseFile.claimantIsPlatformOperator === true)
+      throw new Error('Independent authenticated recovery operator required');
+    if (now - validDate(caseFile.createdAt) < RECOVERY_WAIT_MS
+      || caseFile.identityProofStatus !== 'verified'
+      || caseFile.outOfBandVerification !== true || caseFile.recoveryContactNotified !== true)
+      throw new Error('Proof, contact notification and cooling-off required');
+    if ((caseFile.approvals ?? []).some(a => a.id === actor.id))
+      throw new Error('Duplicate recovery operator');
+    return { ...caseFile, approvals: [...(caseFile.approvals ?? []), {
+      id: actor.id, platformRole: 'recovery_operator',
+      active: true, mfaVerified: true, approvedAt: new Date(now).toISOString()
+    }] };
+  }
+  if (event === 'issue_invitation') {
+    return assertRecoveryEligible(caseFile, now);
+  }
+  throw new Error('Unknown recovery transition');
 }

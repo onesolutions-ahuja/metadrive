@@ -1,4 +1,6 @@
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
+import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import { parseComponentProperties } from './componentProperties';
 import { useEffect, useRef, useState } from 'react';
 import {
   Activity,
@@ -739,7 +741,20 @@ export default function FlowBuilder({
                 value={displayValue(field.height) || libraryComponents.find((item) => item.apiName === field.componentApiName)?.resize?.defaultHeight || 180}
                 onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, height: Number(event.target.value) } : item))} /></label>
               <label className="form-label">Column Span<select className="form-control" value={displayValue(field.columnSpan) || '1'} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, columnSpan: Number(event.target.value) } : item))}><option value="1">One column</option><option value="2">Full width</option></select></label>
-              <label className="form-label">Component Props (JSON)<textarea className="form-control" rows={4} value={displayValue(field.componentPropsJson) || '{}'} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, componentPropsJson: event.target.value } : item))} /></label>
+              {parseComponentProperties(field.componentPropsJson).error
+                ? <div className="auth-error" role="alert">
+                    {parseComponentProperties(field.componentPropsJson).error}
+                    <button className="btn btn-small" type="button" onClick={() =>
+                      setConfig('fields', screenFields.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, componentPropsJson: '{}' } : item))
+                    }>Reset invalid properties</button>
+                  </div>
+                : <CustomComponentPropertyEditor
+                    properties={parseComponentProperties(field.componentPropsJson).properties}
+                    onChange={(properties) => setConfig('fields', screenFields.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
+                  />}
+
               <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>
             </>
             : field.type === 'Display Text'

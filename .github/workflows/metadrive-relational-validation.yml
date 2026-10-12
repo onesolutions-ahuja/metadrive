@@ -12,6 +12,9 @@ on:
       - 'apps/server/src/relational-tables.mjs'
       - 'apps/server/src/postgres-state.ts'
       - 'apps/server/src/index.ts'
+      - 'apps/server/src/tenant-recovery-*.mjs'
+      - 'apps/server/sql/tenant-recovery-control.sql'
+      - 'apps/server/test/tenant-recovery-*.mjs'
       - 'apps/server/sql/relational-state-v1.sql'
       - 'apps/server/scripts/migrate-relational-state.mjs'
       - 'apps/server/scripts/migrate-relational-in-place.mjs'
@@ -115,6 +118,8 @@ jobs:
             http://127.0.0.1:38922/api/whatsapp/webhook)
           test "$code" = 503 || { echo "Maintenance did not reject webhook traffic: $code"; exit 1; }
           echo "Maintenance gate rejected API requests and preserved the health check"
+      - name: Verify isolated tenant recovery control database and transaction policy
+        run: node --test apps/server/test/tenant-recovery-postgres.integration.test.mjs
       - name: Verify projections and staging migration in real PostgreSQL
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
