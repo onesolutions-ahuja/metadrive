@@ -138,3 +138,26 @@ test('dashboard filters support all and any logic while an empty set matches all
   assert.equal(matchesDashboardFilters(filters, 'Any', matches), true);
   assert.equal(matchesDashboardFilters([], 'Any', matches), true);
 });
+
+test('Phase 4: portal users cannot access private dashboards or edit even when shared', () => {
+  assert.equal(canAccessDashboard(privateDashboard, 'owner', [], true, 'external'), false);
+  assert.equal(canEditDashboard(privateDashboard, 'owner', true, 'external'), false);
+  assert.equal(canAccessDashboard({ ...privateDashboard, portalVisible: true },
+    'shared-user', [], false, 'external'), true);
+  assert.equal(canEditDashboard({ ...privateDashboard, portalVisible: true },
+    'shared-user', true, 'external'), false);
+});
+test('Phase 4: cross-tenant folders cannot inherit territory or owner access', () => {
+  const folder: DashboardFolder = {
+    id: 'restricted', tenantId: 'tenant-b', parentFolderId: null,
+    ownerUserId: 'member-a', shares: [{targetType:'User',targetId:'member-a',accessLevel:'Manager'}]
+  };
+  const context = {userId:'member-a',tenantId:'tenant-a',roleId:undefined,
+    roles:[],publicGroups:[]};
+  assert.equal(dashboardFolderAccessLevel('restricted',[folder],context),null);
+  assert.equal(dashboardFolderAccessLevel('restricted',
+    [{...folder,tenantId:'tenant-a'}],context),'Manager');
+  assert.equal(dashboardFolderAccessLevel('restricted',
+    [{...folder,tenantId:'tenant-a'}],
+    {...context,userType:'external',externalAccessEnabled:true}),null);
+});
