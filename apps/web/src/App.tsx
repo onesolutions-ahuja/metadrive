@@ -8856,8 +8856,8 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
-      style={!libraryPreview && page.layoutMode === 'free-canvas' ? {
+      className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' && !component.parentId ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      style={!libraryPreview && page.layoutMode === 'free-canvas' && !component.parentId ? {
         left: component.position?.x ?? 0,
         top: component.position?.y ?? 0,
         width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
@@ -8869,7 +8869,7 @@ function PageBuilder({
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); setDragOverId(component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
       onDrop={!libraryPreview ? (event) => {
-        if (isLayoutType(component.type) && page.layoutMode === 'template') {
+        if (isLayoutType(component.type)) {
           event.preventDefault(); event.stopPropagation();
           const draggedId = event.dataTransfer.getData('application/x-metadrive-component-id');
           const data = event.dataTransfer.getData('text/plain');
