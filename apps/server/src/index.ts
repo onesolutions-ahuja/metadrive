@@ -5081,6 +5081,75 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
   });
 }
 
+
+type MfaLoginChallenge = {
+  userId: string; tenantId: string; expiresAt: number; attempts: number; pendingSecret?: string;
+};
+type MfaEnrollment = { userId: string; tenantId: string; expiresAt: number; attempts: number; secret: string };
+const mfaLoginChallenges = new Map<string, MfaLoginChallenge>();
+const mfaEnrollments = new Map<string, MfaEnrollment>();
+const mfaFailures = new Map<string, { count: number; resetAt: number }>();
+const mfaChallengeTtlMs = 5 * 60 * 1000;
+
+function mfaRequiredForUser(tenant: TenantData, user: LocalUser): boolean {
+  return tenant.mfaPolicy.mode === 'Required'
+    || (tenant.mfaPolicy.mode === 'Optional' && Boolean(user.mfaSecret));
+}
+function sealMfaSecret(tenantId: string, userId: string, secret: string): MfaEncryptedSecret {
+  const ring = credentialKeyRing();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', ring.keys.get(ring.activeKeyId)!, iv);
+  cipher.setAAD(Buffer.from('metadrive:mfa:v1:' + tenantId + ':' + userId));
+  const ciphertext = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
+  return {
+    keyId: ring.activeKeyId,
+    iv: iv.toString('base64'),
+    authTag: cipher.getAuthTag().toString('base64'),
+    ciphertext: ciphertext.toString('base64')
+  };
+}
+function openMfaSecret(tenantId: string, userId: string, envelope: MfaEncryptedSecret): string {
+  const key = credentialKeyRing().keys.get(envelope.keyId);
+  if (!key) throw new Error('MFA encryption key is unavailable');
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(envelope.iv, 'base64'));
+  decipher.setAAD(Buffer.from('metadrive:mfa:v1:' + tenantId + ':' + userId));
+  decipher.setAuthTag(Buffer.from(envelope.authTag, 'base64'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(envelope.ciphertext, 'base64')),
+    decipher.final()
+  ]).toString('utf8');
+}
+function mfaCredentialReady(): boolean {
+  try { credentialKeyRing(); return true; } catch { return false; }
+}
+function newMfaToken<T extends { expiresAt: number }>(store: Map<string, T>, value: T): string {
+  const now = Date.now();
+  for (const [key, item] of store) if (item.expiresAt <= now) store.delete(key);
+  const raw = randomBytes(32).toString('base64url');
+  store.set(hashToken(raw), value);
+  return raw;
+}
+function mfaRateLimited(userId: string): boolean {
+  const failure = mfaFailures.get(userId);
+  return Boolean(failure && failure.resetAt > Date.now() && failure.count >= 8);
+}
+function recordMfaFailure(userId: string): void {
+  const previous = mfaFailures.get(userId);
+  const now = Date.now();
+  mfaFailures.set(userId, {
+    count: previous && previous.resetAt > now ? previous.count + 1 : 1,
+    resetAt: now + 15 * 60 * 1000
+  });
+}
+function revokeUserRefreshSessions(userId: string, tenantId: string): RefreshSession[] {
+  const now = Date.now() / 1000;
+  return state.refreshSessions.map((session) =>
+    session.userId === userId && session.tenantId === tenantId && session.revokedAt === null
+      ? { ...session, revokedAt: now }
+      : session);
+}
+const mfaCodeSchema = z.object({ code: z.string().regex(/^\d{6}$/) }).strict();
+
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -5147,7 +5216,198 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   loginAttempts.delete(key);
   const data = tenantData(user.tenantId);
   if (!data) return res.status(401).json({ error: 'Tenant is unavailable' });
+  if (mfaRequiredForUser(data, user)) {
+    if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts; try later' });
+    if (!mfaCredentialReady()) return res.status(503).json({ error: 'MFA encryption is not configured' });
+    const pendingSecret = user.mfaSecret ? undefined : newTotpSecret();
+    const challengeToken = newMfaToken(mfaLoginChallenges, {
+      tenantId: user.tenantId, userId: user.id, expiresAt: Date.now() + mfaChallengeTtlMs,
+      attempts: 0, ...(pendingSecret ? { pendingSecret } : {})
+    });
+    return res.status(202).json({
+      mfa_required: true, challenge_token: challengeToken,
+      enrollment_required: Boolean(pendingSecret),
+      ...(pendingSecret ? { setup_secret: pendingSecret, setup_uri: totpUri(pendingSecret, user.email) } : {})
+    });
+  }
   return issueLoginResponse(res, user, data, undefined, { startedAt: loginStartedAt, passwordMs });
+});
+
+
+app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'MFA login is managed by the identity provider' });
+  const parsed = z.object({
+    challenge_token: z.string().min(32).max(128),
+    code: z.string().regex(/^\d{6}$/)
+  }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid MFA challenge request' });
+  const key = hashToken(parsed.data.challenge_token);
+  const challenge = mfaLoginChallenges.get(key);
+  if (!challenge || challenge.expiresAt <= Date.now() || challenge.attempts >= 5) {
+    mfaLoginChallenges.delete(key);
+    return res.status(401).json({ error: 'MFA challenge expired; sign in again' });
+  }
+  const user = state.users.find((item) =>
+    item.id === challenge.userId && item.tenantId === challenge.tenantId && !item.disabled);
+  const tenant = tenantData(challenge.tenantId);
+  if (!user || !tenant || !mfaRequiredForUser(tenant, user)
+    || (Boolean(user.mfaSecret) === Boolean(challenge.pendingSecret))) {
+    mfaLoginChallenges.delete(key);
+    return res.status(401).json({ error: 'MFA challenge is no longer valid' });
+  }
+  if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts; try later' });
+  challenge.attempts += 1;
+  let secret: string;
+  try {
+    secret = challenge.pendingSecret ?? openMfaSecret(user.tenantId, user.id, user.mfaSecret!);
+  } catch {
+    mfaLoginChallenges.delete(key);
+    return res.status(503).json({ error: 'MFA secret cannot be decrypted' });
+  }
+  const step = verifyTotp(secret, parsed.data.code, user.mfaLastUsedStep ?? -1);
+  if (step === null) {
+    recordMfaFailure(user.id);
+    if (challenge.attempts >= 5) mfaLoginChallenges.delete(key);
+    return res.status(401).json({ error: 'Invalid or already used authenticator code' });
+  }
+  mfaLoginChallenges.delete(key);
+  mfaFailures.delete(user.id);
+  let securedUser: LocalUser;
+  try {
+    securedUser = {
+      ...user,
+      ...(challenge.pendingSecret ? { mfaSecret: sealMfaSecret(user.tenantId, user.id, secret) } : {}),
+      mfaLastUsedStep: step
+    };
+    const nextState = {
+      ...state,
+      users: state.users.map((item) => item.id === user.id ? securedUser : item)
+    };
+    persistState(nextState);
+    state = nextState;
+  } catch {
+    return res.status(503).json({ error: 'Unable to persist MFA verification' });
+  }
+  return issueLoginResponse(res, securedUser, tenant, undefined, undefined, true);
+});
+
+app.get('/api/auth/mfa/status', accessAuthentication, (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const user = principalUser(principal)!;
+  return res.json({ mode: tenant.mfaPolicy.mode, enrolled: Boolean(user.mfaSecret) });
+});
+
+app.get('/api/auth/mfa/policy', accessAuthentication, requirePermission('security:read'), (_req: Request, res: Response) => {
+  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  return res.json(tenant.mfaPolicy);
+});
+
+app.put('/api/auth/mfa/policy', accessAuthentication, requirePermission('security:manage'), (req: Request, res: Response) => {
+  const parsed = z.object({ mode: z.enum(['Off', 'Optional', 'Required']) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid MFA policy' });
+  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'Configure MFA through your external identity provider' });
+  if (parsed.data.mode !== 'Off' && !mfaCredentialReady()) {
+    return res.status(503).json({ error: 'Configure persistent MFA encryption keys before enabling MFA' });
+  }
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (tenant.mfaPolicy.mode !== parsed.data.mode) {
+    persistTenantRecords(principal.tenantId, { ...tenant, mfaPolicy: parsed.data });
+  }
+  return res.json(parsed.data);
+});
+
+app.post('/api/auth/mfa/enroll', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'External identity provider manages MFA' });
+  const parsed = z.object({ password: z.string().min(1).max(256) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Current password is required' });
+  const principal = getPrincipal(res);
+  const user = principalUser(principal)!;
+  const tenant = tenantData(principal.tenantId)!;
+  if (tenant.mfaPolicy.mode === 'Off') return res.status(409).json({ error: 'Enable Optional MFA in tenant settings first' });
+  if (user.mfaSecret) return res.status(409).json({ error: 'MFA is already enrolled' });
+  if (!mfaCredentialReady()) return res.status(503).json({ error: 'MFA encryption is not configured' });
+  if (!await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash)) {
+    return res.status(401).json({ error: 'Invalid current password' });
+  }
+  const secret = newTotpSecret();
+  const enrollmentToken = newMfaToken(mfaEnrollments, {
+    userId: user.id, tenantId: user.tenantId,
+    secret, attempts: 0, expiresAt: Date.now() + mfaChallengeTtlMs
+  });
+  return res.json({ enrollment_token: enrollmentToken, setup_secret: secret, setup_uri: totpUri(secret, user.email) });
+});
+
+app.post('/api/auth/mfa/enroll/confirm', accessAuthentication, (req: Request, res: Response) => {
+  const parsed = z.object({ enrollment_token: z.string().min(32).max(128), code: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid enrollment confirmation' });
+  const principal = getPrincipal(res);
+  const user = principalUser(principal)!;
+  const tenant = tenantData(principal.tenantId)!;
+  const key = hashToken(parsed.data.enrollment_token);
+  const enrollment = mfaEnrollments.get(key);
+  if (!enrollment || enrollment.userId !== user.id || enrollment.tenantId !== user.tenantId
+    || enrollment.expiresAt <= Date.now() || enrollment.attempts >= 5 || user.mfaSecret || tenant.mfaPolicy.mode === 'Off') {
+    mfaEnrollments.delete(key);
+    return res.status(401).json({ error: 'Enrollment expired; start again' });
+  }
+  enrollment.attempts += 1;
+  const step = verifyTotp(enrollment.secret, parsed.data.code);
+  if (step === null) {
+    if (enrollment.attempts >= 5) mfaEnrollments.delete(key);
+    return res.status(401).json({ error: 'Invalid authenticator code' });
+  }
+  let encrypted: MfaEncryptedSecret;
+  try { encrypted = sealMfaSecret(user.tenantId, user.id, enrollment.secret); }
+  catch { return res.status(503).json({ error: 'MFA encryption is unavailable' }); }
+  const nextState = {
+    ...state,
+    users: state.users.map((item) => item.id === user.id
+      ? { ...item, mfaSecret: encrypted, mfaLastUsedStep: step }
+      : item),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
+  };
+  persistState(nextState);
+  state = nextState;
+  mfaEnrollments.delete(key);
+  return res.json({ enrolled: true, reauthenticate: true });
+});
+
+app.post('/api/auth/mfa/disable', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'External identity provider manages MFA' });
+  const parsed = z.object({ password: z.string().min(1).max(256), code: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Password and authenticator code are required' });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (tenant.mfaPolicy.mode === 'Required') return res.status(409).json({ error: 'Tenant policy requires MFA' });
+  const user = principalUser(principal)!;
+  if (!user.mfaSecret) return res.status(409).json({ error: 'MFA is not enrolled' });
+  if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts; try later' });
+  const valid = await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash);
+  let step: number | null = null;
+  try {
+    if (valid) step = verifyTotp(openMfaSecret(user.tenantId, user.id, user.mfaSecret), parsed.data.code, user.mfaLastUsedStep ?? -1);
+  } catch { return res.status(503).json({ error: 'MFA secret cannot be decrypted' }); }
+  if (step === null) {
+    recordMfaFailure(user.id);
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  const nextState = {
+    ...state,
+    users: state.users.map((item) => {
+      if (item.id !== user.id) return item;
+      const updated = { ...item };
+      delete updated.mfaSecret;
+      delete updated.mfaLastUsedStep;
+      return updated;
+    }),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
+  };
+  persistState(nextState);
+  state = nextState;
+  mfaFailures.delete(user.id);
+  return res.json({ enrolled: false, reauthenticate: true });
 });
 
 app.post('/api/auth/refresh', async (req: Request, res: Response) => {
