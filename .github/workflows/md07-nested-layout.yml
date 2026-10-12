@@ -57,6 +57,7 @@ jobs:
           export METADRIVE_CREDENTIAL_ACTIVE_KEY_ID=test
           npm run dev:server > /tmp/md07-server.log 2>&1 &
           server_pid=$!
+          export VITE_API_BASE_URL=/api
           npm run dev:web > /tmp/md07-web.log 2>&1 &
           web_pid=$!
           trap 'kill "$server_pid" "$web_pid" || true' EXIT
