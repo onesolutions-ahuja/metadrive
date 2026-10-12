@@ -143,6 +143,7 @@ jobs:
           npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
           npx playwright install --with-deps chromium
           node scripts/md06-records-browser-smoke.mjs
+          node scripts/md07-component-browser-smoke.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
