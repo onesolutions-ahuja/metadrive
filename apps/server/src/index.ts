@@ -9331,7 +9331,7 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
-  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined || req.query.filterField !== undefined;
+  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined || req.query.filterField !== undefined || req.query.sortField !== undefined;
   const rawLimit = Number(req.query.limit ?? 50);
   const rawOffset = Number(req.query.offset ?? 0);
   if (paginated && (!Number.isSafeInteger(rawLimit) || rawLimit < 1 || rawLimit > 200
@@ -9385,9 +9385,38 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
         Object.prototype.hasOwnProperty.call(record, field.apiName)
         && String(record[field.apiName] ?? '').toLocaleLowerCase().includes(needle)))
     : exactFiltered;
-  if (!paginated) return res.json({ records: filtered });
+  // Sort authorised values before taking a page; reject sorting hidden fields
+  // because even record ordering can reveal restricted field information.
+  const sortField = req.query.sortField;
+  const sortDirection = req.query.sortDirection;
+  if (sortField !== undefined || sortDirection !== undefined) {
+    if (typeof sortField !== 'string' || !sortField || (sortDirection !== 'asc' && sortDirection !== 'desc')
+      || (sortField !== 'Id' && !object.fields.some((field) => field.apiName === sortField)))
+      return res.status(400).json({ error: 'Invalid sort field or direction' });
+    if (sortField !== 'Id' && !hasFieldPermission(principal, tenant, objectName, sortField, 'read'))
+      return res.status(403).json({ error: 'Missing field read permission for sort' });
+  }
+  const sortType = typeof sortField === 'string' ? object.fields.find((field) => field.apiName === sortField)?.dataType ?? '' : '';
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+  const ordered = typeof sortField === 'string' ? [...filtered].sort((left, right) => {
+    const a = left[sortField];
+    const b = right[sortField];
+    const aMissing = a === null || a === undefined || a === '';
+    const bMissing = b === null || b === undefined || b === '';
+    if (aMissing !== bMissing) return aMissing ? 1 : -1;
+    let comparison = 0;
+    if (!aMissing && !bMissing) {
+      if (/^(?:Number|Currency|Percent)(?:\\(|$)/i.test(sortType)) comparison = Number(a) - Number(b);
+      else if (/^(?:Date|Date\\/Time|DateTime)$/i.test(sortType)) comparison = new Date(String(a)).getTime() - new Date(String(b)).getTime();
+      else comparison = collator.compare(String(a), String(b));
+    }
+    if (!Number.isFinite(comparison)) comparison = collator.compare(String(a), String(b));
+    return comparison ? (sortDirection === 'desc' ? -Math.sign(comparison) : Math.sign(comparison))
+      : collator.compare(String(left.Id), String(right.Id));
+  }) : filtered;
+  if (!paginated) return res.json({ records: ordered });
   return res.json({
-    records: filtered.slice(rawOffset, rawOffset + rawLimit),
+    records: ordered.slice(rawOffset, rawOffset + rawLimit),
     total: filtered.length,
     offset: rawOffset,
     limit: rawLimit
