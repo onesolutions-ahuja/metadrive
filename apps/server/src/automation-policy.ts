@@ -2,13 +2,25 @@ import { randomUUID } from 'node:crypto';
 
 export type AutomationSettings = {
   autoRetryFailedFlows: boolean;
+  maxRetryAttempts: number;
   conversationIdleMinutes: number;
 };
 
 export const defaultAutomationSettings: AutomationSettings = {
   autoRetryFailedFlows: false,
+  maxRetryAttempts: 10,
   conversationIdleMinutes: 15
 };
+
+/** The configured retry budget includes the initial failed execution.
+ * On reaching the limit, metadata-based jobs transition to handled/failed
+ * rather than re-running external side effects without a bound. */
+export function retryBudgetExhausted(nextAttempt: number, maximum: number): boolean {
+  if (!Number.isSafeInteger(nextAttempt) || nextAttempt < 1 ||
+      !Number.isSafeInteger(maximum) || maximum < 1 || maximum > 20)
+    throw new Error('Invalid automation retry budget');
+  return nextAttempt >= maximum;
+}
 
 export function retryDelayMs(attempt: number): number {
   return Math.min(60 * 60_000, 60_000 * 2 ** Math.min(Math.max(attempt - 1, 0), 6));
