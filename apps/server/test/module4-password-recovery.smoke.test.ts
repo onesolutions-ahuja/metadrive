@@ -140,6 +140,14 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     assert.equal(messages.length, 1, 'Password reset must be delivered to registered mailbox');
     // Nodemailer may emit quoted-printable MIME: '=' becomes '=3D' and long lines soft-wrap.
     const decodedMail = messages[0].replace(/=\n/g, '').replace(/=3D/gi, '=');
+    // A reset email must direct the claimant only to an explicitly trusted front-end origin.
+    // The email must never provide an attacker-selected target or point at the API host.
+    const resetLinks = decodedMail.match(/https?:\/\/[^\s<>\"']+resetToken=[A-Za-z0-9_-]{64}/g) ?? [];
+    assert.equal(resetLinks.length, 1, 'Exactly one trusted password-reset URL should be delivered');
+    const resetLink = new URL(resetLinks[0].replace(/&amp;/g, '&'));
+    assert.equal(resetLink.origin, 'http://localhost:5173');
+    assert.equal(resetLink.protocol, 'http:', 'Only local test mode may use plain HTTP');
+    assert.equal(resetLink.searchParams.has('resetToken'), true);
     const match = decodedMail.match(/resetToken=([A-Za-z0-9_-]{64})/);
     assert.ok(match, 'Delivered message must contain a single-use reset token');
     const resetToken = match[1];
