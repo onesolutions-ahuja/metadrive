@@ -323,7 +323,8 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     // MD-03.6 lifecycle: archive requires suspension; restore is never an
     // implicit reactivation, and retention metadata never deletes tenant data.
     const platformToken = String(newLogin.data.access_token);
-    assert.equal((await api('/platform/tenants/studio-beta/archive', tenantToken, 'POST', {})).status, 403);
+    const activeTenantToken = String(tenantAfterRemoval.data.access_token);
+    assert.equal((await api('/platform/tenants/studio-beta/archive', activeTenantToken, 'POST', {})).status, 403);
     assert.equal((await api('/platform/tenants/studio-beta/archive', platformToken, 'POST', {})).status, 409);
     assert.equal((await api('/platform/tenants/studio-beta/suspend', platformToken, 'POST', {})).status, 200);
     assert.equal((await api('/platform/tenants/studio-beta/archive', platformToken, 'POST', {})).status, 200);
@@ -335,7 +336,7 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     });
     assert.equal(retained.status, 200, JSON.stringify(retained.data));
     assert.equal(retained.data.tenant.legalHold, true);
-    assert.equal((await api('/platform/tenants/studio-beta/retention', tenantToken, 'PATCH', {
+    assert.equal((await api('/platform/tenants/studio-beta/retention', String((await api('/auth/login', '', 'POST', { email: 'gamma-admin@example.test', password: tenantPassword })).data.access_token), 'PATCH', {
       retentionUntil: null, legalHold: false
     })).status, 403);
     const restored = await api('/platform/tenants/studio-beta/restore', platformToken, 'POST', {});
