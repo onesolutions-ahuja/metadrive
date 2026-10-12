@@ -17714,9 +17714,29 @@ function validateFlow(
           errors.push(`Help text on screen field "${String(field.label ?? '')}" exceeds 255 characters.`);
         }
         const type = String(field.type ?? 'Text');
-        const supportedTypes = ['Text', 'Password', 'Number', 'Currency', 'Date', 'Time', 'Date/Time', 'Email', 'URL', 'Phone', 'Checkbox', 'Toggle', 'Slider', 'Picklist', 'Multi-Select Picklist', 'Long Text Area', 'Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater'];
+        const supportedTypes = ['Text', 'Password', 'Number', 'Currency', 'Date', 'Time', 'Date/Time', 'Email', 'URL', 'Phone', 'Checkbox', 'Toggle', 'Slider', 'Picklist', 'Multi-Select Picklist', 'Long Text Area', 'Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater', 'Custom Component'];
         if (!supportedTypes.includes(type)) {
           errors.push(`Screen field "${String(field.label ?? '')}" on "${element.label}" uses unsupported data type "${type}".`);
+        }
+        if (type === 'Custom Component') {
+          const apiName = typeof field.componentApiName === 'string' ? field.componentApiName.trim() : '';
+          const definition = state.libraryComponents.find((component) =>
+            component.apiName === apiName && component.surfaces.includes('flow') && component.status !== 'Draft');
+          if (!definition) {
+            errors.push(`Custom screen component "${apiName}" on "${element.label}" must reference a published Flow-enabled registry component.`);
+          }
+          if (field.componentPropsJson !== undefined) {
+            try {
+              const parsed = typeof field.componentPropsJson === 'string' && field.componentPropsJson.length <= 32768
+                ? JSON.parse(field.componentPropsJson) : null;
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+                || ['__proto__', 'constructor', 'prototype'].some((key) => Object.prototype.hasOwnProperty.call(parsed,key))) {
+                throw new Error('Component properties must be a safe object');
+              }
+            } catch {
+              errors.push(`Custom screen component "${apiName}" on "${element.label}" has invalid component properties.`);
+            }
+          }
         }
         if (['Lookup', 'Choice Lookup'].includes(type) && !objects.some((object) => object.apiName === field.objectApiName)) {
           errors.push(`${type} screen field "${String(field.label ?? '')}" on "${element.label}" requires a valid target object.`);
