@@ -76,8 +76,20 @@ try{
   const wizard=page.getByRole('dialog',{name:'Create a Lightning page'});
   await wizard.getByLabel('Phone').check();
   await wizard.getByLabel('Desktop and tablet').uncheck();
+  const failedRequests=[];
+  page.on('response',async response=>{
+    if(response.url().includes('/api/metadata/pages/')&&!response.ok()) {
+      failedRequests.push({status:response.status(),url:response.url(),body:(await response.text().catch(()=>'' )).slice(0,1100)});
+    }
+  });
   await wizard.getByRole('button',{name:'Create draft'}).click();
-  await wizard.waitFor({state:'hidden'});
+  try {
+    await wizard.waitFor({state:'hidden',timeout:7500});
+  } catch (error) {
+    const message=await page.locator('[role="alert"],.toast,.notification,.auth-error').allTextContents().catch(()=>[]);
+    throw Error('Create draft modal did not close. UI notices: '+JSON.stringify(message)
+      +'; API failures: '+JSON.stringify(failedRequests)+'; '+String(error));
+  }
   await page.waitForURL('**/une/setup/page-builder/'+newApi);
   let saved;
   for(let i=0;i<35;i++){
