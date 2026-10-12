@@ -3319,8 +3319,8 @@ type RefreshSession = {
   authVersion?: number;
 };
 type TenantDomainRecord = {
-  hostname: string; status: 'PENDING' | 'VERIFIED'; verificationToken: string;
-  createdAt: string; verifiedAt?: string;
+  hostname: string; status: 'PENDING' | 'VERIFIED' | 'REVOKED'; verificationToken: string;
+  createdAt: string; verifiedAt?: string; revokedAt?: string;
 };
 type TenantRegistryEntry = {
   domains?: TenantDomainRecord[];
@@ -3351,10 +3351,11 @@ type PlatformState = {
 };
 const tenantRegistryEntrySchema = z.object({
   domains: z.array(z.object({
-    hostname: z.string().min(4).max(253), status: z.enum(['PENDING', 'VERIFIED']),
+    hostname: z.string().min(4).max(253), status: z.enum(['PENDING', 'VERIFIED', 'REVOKED']),
     verificationToken: z.string().regex(/^[0-9a-f]{64}$/),
-    createdAt: z.string().datetime(), verifiedAt: z.string().datetime().optional()
-  }).strict()).max(5).optional(),
+    createdAt: z.string().datetime(), verifiedAt: z.string().datetime().optional(),
+    revokedAt: z.string().datetime().optional()
+  }).strict()).max(5000).optional(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).default(''),
   status: z.enum(['ACTIVE', 'SUSPENDED']),
@@ -5257,7 +5258,8 @@ function tenantForRequestHost(req: Request): TenantHostBinding | undefined {
     map = new Map();
     for (const [tenantId, entry] of Object.entries(state.tenantRegistry))
       for (const domain of entry.domains ?? [])
-        map.set(domain.hostname, { tenantId, status: domain.status });
+        if (domain.status !== 'REVOKED' || !map.has(domain.hostname))
+          map.set(domain.hostname, { tenantId, status: domain.status });
     tenantHostCache.set(state.tenantRegistry, map);
   }
   return map.get(hostname);
@@ -6354,7 +6356,7 @@ function tenantSummary(tenantId: string) {
   return {
     tenantId, name: entry.name, description: entry.description, status: entry.status,
     createdAt: entry.createdAt, updatedAt: entry.updatedAt,
-    domains: entry.domains ?? [],
+    domains: (entry.domains ?? []).filter((domain) => domain.status !== 'REVOKED'),
     // Provisioning request fingerprints remain server-side, never exposed in API responses.
     provisioning: entry.provisioning ?? { status: 'READY' as const, version: 0, completedAt: entry.createdAt },
     developerAccount: entry.developerSeed ? {
@@ -6588,7 +6590,8 @@ async function saveDomainChange(actorId: string, tenantId: string,
 function listTenantDomains(req: Request, res: Response, platform: boolean) {
   const tenantId = domainContext(req, res, platform);
   if (!tenantId) return res.status(404).json({ error: 'Tenant not found' });
-  return res.json({ domains: (tenantRegistryEntry(tenantId).domains ?? []).map(domainResponse) });
+  return res.json({ domains: (tenantRegistryEntry(tenantId).domains ?? [])
+    .filter((item) => item.status !== 'REVOKED').map(domainResponse) });
 }
 async function addTenantDomain(req: Request, res: Response, platform: boolean) {
   const tenantId = domainContext(req, res, platform);
@@ -6600,17 +6603,20 @@ async function addTenantDomain(req: Request, res: Response, platform: boolean) {
   if (reservedDomain(hostname, webOrigins))
     return res.status(409).json({ error: 'Platform-owned hostnames cannot be registered to tenants' });
   if (Object.values(state.tenantRegistry).some((entry) =>
-    entry.domains?.some((domain) => domain.hostname === hostname)))
+    entry.domains?.some((domain) => domain.hostname === hostname && domain.status !== 'REVOKED')))
     return res.status(409).json({ error: 'Domain is already registered' });
   const previous = tenantRegistryEntry(tenantId);
-  if ((previous.domains?.length ?? 0) >= 5)
-    return res.status(409).json({ error: 'Maximum five domains per tenant' });
+  if ((previous.domains ?? []).filter((item) => item.status !== 'REVOKED').length >= 5)
+    return res.status(409).json({ error: 'Maximum five active domains per tenant' });
+  if ((previous.domains?.length ?? 0) >= 5000)
+    return res.status(409).json({ error: 'Domain registration history requires archival' });
   const now = new Date().toISOString();
   const domain: TenantDomainRecord = {
     hostname, status: 'PENDING', verificationToken: randomBytes(32).toString('hex'), createdAt: now
   };
   const updated: TenantRegistryEntry = {
-    ...previous, updatedAt: now, domains: [...(previous.domains ?? []), domain]
+    ...previous, updatedAt: now,
+    domains: [...(previous.domains ?? []).filter((item) => item.hostname !== hostname), domain]
   };
   try {
     await saveDomainChange(getPrincipal(res).userId, tenantId, 'DOMAIN_ADDED', updated, previous);
@@ -6623,7 +6629,7 @@ async function verifyTenantDomain(req: Request, res: Response, platform: boolean
   if (domainCommitUncertain) return res.status(503).json({ error: 'Domain persistence requires reconciliation' });
   const hostname = checkedDomain(routeParam(req, 'hostname'));
   if (!hostname) return res.status(400).json({ error: 'Invalid DNS hostname' });
-  const current = tenantRegistryEntry(tenantId).domains?.find((item) => item.hostname === hostname);
+  const current = tenantRegistryEntry(tenantId).domains?.find((item) => item.hostname === hostname && item.status !== 'REVOKED');
   if (!current) return res.status(404).json({ error: 'Domain does not belong to this tenant' });
   if (current.status === 'VERIFIED') return res.json({ domain: domainResponse(current) });
   const lock = tenantId + ':' + hostname;
@@ -6644,7 +6650,7 @@ async function verifyTenantDomain(req: Request, res: Response, platform: boolean
       return res.status(409).json({ error: 'DNS TXT ownership proof does not match', verification: proof });
     // DNS await can interleave with a domain deletion/re-registration.
     const previous = tenantRegistryEntry(tenantId);
-    const latest = previous.domains?.find((item) => item.hostname === hostname);
+    const latest = previous.domains?.find((item) => item.hostname === hostname && item.status !== 'REVOKED');
     if (!latest || latest.verificationToken !== current.verificationToken)
       return res.status(409).json({ error: 'Domain registration changed while verifying; retry' });
     if (latest.status === 'VERIFIED') return res.json({ domain: domainResponse(latest) });
@@ -6666,11 +6672,12 @@ async function removeTenantDomain(req: Request, res: Response, platform: boolean
   const hostname = checkedDomain(routeParam(req, 'hostname'));
   if (!hostname) return res.status(400).json({ error: 'Invalid DNS hostname' });
   const previous = tenantRegistryEntry(tenantId);
-  if (!previous.domains?.some((record) => record.hostname === hostname))
+  if (!previous.domains?.some((record) => record.hostname === hostname && record.status !== 'REVOKED'))
     return res.status(404).json({ error: 'Domain does not belong to this tenant' });
   const updated: TenantRegistryEntry = {
     ...previous, updatedAt: new Date().toISOString(),
-    domains: previous.domains.filter((item) => item.hostname !== hostname)
+    domains: previous.domains.map((item) => item.hostname === hostname
+      ? { ...item, status: 'REVOKED' as const, revokedAt: new Date().toISOString() } : item)
   };
   try {
     await saveDomainChange(getPrincipal(res).userId, tenantId, 'DOMAIN_REMOVED', updated, previous);
