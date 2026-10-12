@@ -74,60 +74,86 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
      !Number.isSafeInteger(previous.storageRevision)||!Array.isArray(previous.nodes))
     throw Error('A verified normalized SQL snapshot with storage nodes is required');
   const {nodes,digest}=projectNormalizedTree(nextState);
-  verifyNormalizedTree(nextState,nodes);
   if(digest===previous.digest) return {...previous};
   const delta=planNormalizedDelta(previous.nodes,nodes);
-  // Validate the complete *logical* next snapshot before touching the database.
+  // One lossless graph roundtrip and checksum verification. Projecting again
+  // separately used to repeat this full 20k-node operation on every refresh.
   if(stateDigest(restoreNormalizedTree(delta.nodes))!==digest)
     throw Error('Incremental normalized graph did not preserve next state');
+
+  const touched=[...delta.updated,...delta.inserted];
   const client=await pool.connect();
   let begun=false;
   try {
-    // One network round trip instead of three for the SQL transaction prelude.
     await client.query("BEGIN; SET LOCAL lock_timeout='10s'; SET LOCAL statement_timeout='120s'");
     begun=true;
-    const result=await client.query('SELECT revision,state_sha256,source_sha256 FROM md_v3_runtime WHERE id=1 FOR UPDATE');
-    if(result.rowCount!==1) throw Error('Missing normalized state revision');
-    const marker=result.rows[0];
-    if(asRevision(marker.revision)!==previous.version||marker.state_sha256.trim()!==previous.digest)
+    // A single parameterized statement atomically checks the logical revision,
+    // updates the changed SQL nodes and returns the actual affected rows. Avoid
+    // 5-7 high-latency Render -> Aiven query roundtrips per token refresh.
+    // A failed compare-and-swap never touches any nodes or releases a session.
+    const sql=`
+      WITH guarded AS (
+        UPDATE md_v3_runtime
+           SET revision=revision+1,state_sha256=$3,updated_at=now()
+         WHERE id=1 AND revision=$1 AND state_sha256=$2
+        RETURNING source_sha256
+      ), removed AS (
+        DELETE FROM md_v3_state_nodes
+         WHERE revision=$4 AND node_id=ANY($5::bigint[])
+           AND EXISTS(SELECT 1 FROM guarded)
+        RETURNING node_id
+      ), applied AS (
+        INSERT INTO md_v3_state_nodes
+          (revision,node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value)
+        SELECT $4, incoming.node_id,incoming.parent_id,incoming.slot_key,
+               incoming.ordinal,incoming.kind,incoming.string_value,
+               incoming.number_value,incoming.bool_value
+          FROM unnest($6::bigint[],$7::bigint[],$8::text[],$9::integer[],
+                      $10::text[],$11::text[],$12::double precision[],$13::boolean[])
+            AS incoming(node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value)
+          JOIN guarded ON true
+        ON CONFLICT (revision,node_id) DO UPDATE
+          SET parent_id=EXCLUDED.parent_id,slot_key=EXCLUDED.slot_key,
+              ordinal=EXCLUDED.ordinal,kind=EXCLUDED.kind,
+              string_value=EXCLUDED.string_value,
+              number_value=EXCLUDED.number_value,bool_value=EXCLUDED.bool_value
+        RETURNING node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value
+      )
+      SELECT false AS summary,node_id,parent_id,slot_key,ordinal,kind,
+             string_value,number_value,bool_value,
+             NULL::integer AS guarded_rows,NULL::integer AS removed_rows,
+             NULL::text AS source_digest
+        FROM applied
+      UNION ALL
+      SELECT true,NULL::bigint,NULL::bigint,NULL::text,NULL::integer,NULL::text,
+             NULL::text,NULL::double precision,NULL::boolean,
+             (SELECT count(*)::integer FROM guarded),
+             (SELECT count(*)::integer FROM removed),
+             (SELECT source_sha256::text FROM guarded)
+    `;
+    const fields=[
+      row=>row.nodeId,row=>row.parentId,row=>row.slotKey,row=>row.ordinal,
+      row=>row.kind,row=>row.stringValue,row=>row.numberValue,row=>row.boolValue
+    ];
+    const results=await client.query(sql,[
+      previous.version,previous.digest,digest,previous.storageRevision,
+      delta.deleted.map(row=>row.nodeId),...fields.map(select=>touched.map(select))
+    ]);
+    const summary=results.rows.find(row=>row.summary===true);
+    if(!summary||summary.guarded_rows!==1)
       throw Error('Concurrent writer detected; no state was overwritten');
-    const revision=previous.version+1;
-    const physical=previous.storageRevision;
-    // Keep the unchanged ~20,000 nodes untouched. The marker row lock and one
-    // transaction give every reader either the prior or the next verified graph.
-    if(delta.deleted.length) {
-      const removed=await client.query(
-        'DELETE FROM md_v3_state_nodes WHERE revision=$1 AND node_id=ANY($2::bigint[])',
-        [physical,delta.deleted.map(row=>row.nodeId)]);
-      if(removed.rowCount!==delta.deleted.length) throw Error('SQL delta delete count mismatch');
-    }
-    if(delta.updated.length) {
-      // One bound, set-based update even when audit retention rotates an array
-      // or metadata order changes. Never perform one network call per node.
-      const changed=await client.query(
-        'UPDATE md_v3_state_nodes AS n SET parent_id=v.parent_id,slot_key=v.slot_key,ordinal=v.ordinal,kind=v.kind,string_value=v.string_value,number_value=v.number_value,bool_value=v.bool_value FROM unnest($2::bigint[],$3::bigint[],$4::text[],$5::integer[],$6::text[],$7::text[],$8::double precision[],$9::boolean[]) AS v(node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value) WHERE n.revision=$1 AND n.node_id=v.node_id',
-        [physical,...[
-          row=>row.nodeId,row=>row.parentId,row=>row.slotKey,row=>row.ordinal,
-          row=>row.kind,row=>row.stringValue,row=>row.numberValue,row=>row.boolValue
-        ].map(select=>delta.updated.map(select))]);
-      if(changed.rowCount!==delta.updated.length) throw Error('SQL delta update count mismatch');
-    }
-    if(delta.inserted.length) await insertNodes(client,physical,delta.inserted);
-    const touched=[...delta.updated,...delta.inserted];
-    if(touched.length) {
-      const check=await client.query(
-        'SELECT node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value FROM md_v3_state_nodes WHERE revision=$1 AND node_id=ANY($2::bigint[])',
-        [physical,touched.map(row=>row.nodeId)]);
-      verifyDeltaReadback(touched,check.rows);
-    }
-    // SQL physical business rows and graph updates remain in the same commit.
-    if(synchronizePhysicalRecords) await synchronizePhysicalRecords(client,nextState,previous.state);
-    await client.query('UPDATE md_v3_runtime SET revision=$1,state_sha256=$2,updated_at=now() WHERE id=1',
-      [revision,digest]);
+    if(summary.removed_rows!==delta.deleted.length)
+      throw Error('SQL delta delete count mismatch');
+    verifyDeltaReadback(touched,results.rows.filter(row=>row.summary===false));
+    // Physical CRUD remains in the same transaction, never asynchronously
+    // deferred. The caller cannot receive a token before durable COMMIT.
+    if(synchronizePhysicalRecords)
+      await synchronizePhysicalRecords(client,nextState,previous.state);
     await client.query('COMMIT');
     begun=false;
-    return {state:nextState,version:revision,digest,sourceDigest:marker.source_sha256.trim(),
-      storageRevision:physical,nodes:delta.nodes};
+    return {state:nextState,version:previous.version+1,digest,
+      sourceDigest:summary.source_digest.trim(),
+      storageRevision:previous.storageRevision,nodes:delta.nodes};
   } catch(error) {
     if(begun) await client.query('ROLLBACK');
     throw error;
