@@ -60,13 +60,14 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     }
     throw new Error('Server did not start: ' + logs);
   };
-  const api = async (route: string, token = '', method = 'GET', body?: unknown, bootstrap = false, cookie = '') => {
+  const api = async (route: string, token = '', method = 'GET', body?: unknown, bootstrap = false, cookie = '', idemKey = '') => {
     const response = await fetch(base + route, {
       method, headers: {
         ...(token ? { Authorization: 'Bearer ' + token } : {}),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(bootstrap ? { 'x-platform-bootstrap-key': bootstrapKey } : {}),
-        ...(cookie ? { Cookie: cookie } : {})
+        ...(cookie ? { Cookie: cookie } : {}),
+        ...(idemKey ? { 'Idempotency-Key': idemKey } : {})
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     });
@@ -89,8 +90,28 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
       email: 'tenant-portal-admin@example.test', password: tenantPassword };
     assert.equal((await api('/platform/tenants', operatorToken, 'POST', { ...body, superadmin: true })).status, 400,
       'Unknown privilege escalation fields must fail validation');
-    const created = await api('/platform/tenants', operatorToken, 'POST', body);
+    const idem = 'md03-2-create-studio-beta-retry';
+    const created = await api('/platform/tenants', operatorToken, 'POST', body, false, '', idem);
     assert.equal(created.status, 201, JSON.stringify(created.data));
+    assert.equal(created.data.replayed, false);
+    assert.equal(created.data.tenant.provisioning.status, 'READY');
+    assert.equal(created.data.tenant.provisioning.version, 1);
+    const retry = await api('/platform/tenants', operatorToken, 'POST', body, false, '', idem);
+    assert.equal(retry.status, 200, JSON.stringify(retry.data));
+    assert.equal(retry.data.replayed, true);
+    assert.equal(retry.data.tenant.userCount, 1, 'Retry must never add users');
+    assert.equal((await api('/platform/tenants', operatorToken, 'POST',
+      { ...body, tenantId: 'another-tenant' }, false, '', idem)).status, 409,
+      'The same request key must not create a different tenant');
+    assert.equal((await api('/platform/tenants', operatorToken, 'POST', body, false, '', 'bad')).status, 400);
+    const readiness = await api('/platform/tenants/studio-beta/provisioning', operatorToken);
+    assert.equal(readiness.status, 200);
+    assert.ok(readiness.data.initialized.objects >= 3);
+    assert.ok(readiness.data.initialized.profiles >= 1);
+    assert.ok(readiness.data.initialized.permissionSets >= 1);
+    assert.equal(readiness.data.initialized.initialAdministrator, true);
+    assert.equal((await api('/platform/tenants/studio-beta/provisioning')).status, 401);
+    assert.equal((await api('/platform/tenants/not-here/provisioning', operatorToken)).status, 404);
     assert.equal(created.data.tenant.name, 'Studio Beta');
     assert.equal(created.data.tenant.status, 'ACTIVE');
     assert.ok(!JSON.stringify(created.data).includes(tenantPassword));
@@ -111,6 +132,7 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     const tenantToken = String(login.data.access_token);
     const tenantRefreshCookie = login.cookie;
     assert.equal((await api('/platform/tenants', tenantToken)).status, 403);
+    assert.equal((await api('/platform/tenants/studio-beta/provisioning', tenantToken)).status, 403);
     assert.equal((await api('/platform/tenants/studio-beta/suspend', tenantToken, 'POST', {})).status, 403);
     assert.equal((await api('/auth/me', tenantToken)).status, 200);
     assert.equal((await api('/platform/tenants/studio-beta/suspend', operatorToken, 'POST', {})).status, 200);
@@ -137,6 +159,40 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal(newLogin.status, 200);
     const persisted = await api('/platform/tenants/studio-beta', String(newLogin.data.access_token));
     assert.equal(persisted.status, 200);
+    const persistentRetry = await api('/platform/tenants', String(newLogin.data.access_token), 'POST',
+      body, false, '', idem);
+    assert.equal(persistentRetry.status, 200);
+    assert.equal(persistentRetry.data.replayed, true);
+    assert.equal(persistentRetry.data.tenant.userCount, 1);
+    const createdSecond = await api('/platform/tenants', String(newLogin.data.access_token), 'POST', {
+      tenantId: 'studio-gamma', tenantName: 'Studio Gamma', adminName: 'New Administrator',
+      email: 'gamma-admin@example.test', password: tenantPassword
+    });
+    assert.equal(createdSecond.status, 201, JSON.stringify(createdSecond.data));
+    assert.equal((await api('/auth/login', '', 'POST', { email: 'gamma-admin@example.test', password: tenantPassword })).status, 200);
+    // Same tenant and request key concurrently must yield exactly one creation.
+    const concurrentBody = {
+      tenantId: 'parallel-studio', tenantName: 'Parallel Studio', adminName: 'Parallel Admin',
+      email: 'parallel-admin@example.test', password: tenantPassword
+    };
+    const [parallelA, parallelB] = await Promise.all([
+      api('/platform/tenants', String(newLogin.data.access_token), 'POST', concurrentBody,
+        false, '', 'parallel-studio-idem-1234'),
+      api('/platform/tenants', String(newLogin.data.access_token), 'POST', concurrentBody,
+        false, '', 'parallel-studio-idem-1234')
+    ]);
+    assert.deepEqual([parallelA.status, parallelB.status].sort(), [200, 201]);
+    assert.equal(parallelA.data.tenant.userCount, 1);
+    assert.equal(parallelB.data.tenant.userCount, 1);
+    const competingEmail = 'shared-unique-admin@example.test';
+    const [raceA, raceB] = await Promise.all(['race-a-studio', 'race-b-studio'].map((tenantId) =>
+      api('/platform/tenants', String(newLogin.data.access_token), 'POST', {
+        tenantId, tenantName: tenantId, adminName: 'Competing Admin',
+        email: competingEmail, password: tenantPassword
+      })
+    ));
+    assert.deepEqual([raceA.status, raceB.status].sort(), [201, 409],
+      'Concurrent tenants must not create two identities with the same email');
     assert.equal(persisted.data.tenant.name, 'Studio Beta Updated');
     assert.equal(persisted.data.tenant.status, 'ACTIVE');
   } finally {

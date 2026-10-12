@@ -731,6 +731,8 @@ const objectSchema = z.object({
   kind: z.enum(['Standard Object', 'Custom Object']),
   description: z.string(),
   fields: z.array(fieldSchema),
+  // Revision is platform-managed. Never trust the revision sent in a write body.
+  revision: z.number().int().nonnegative().optional(),
   pageLayouts: z.array(pageLayoutSchema).optional(),
   pageLayoutAssignments: z.array(pageLayoutAssignmentSchema).optional(),
   recordTypes: z.array(recordTypeSchema).optional(),
@@ -2841,7 +2843,7 @@ type SecurityAuditEvent = {
   id: string; at: string; actorUserId: string; action: string;
   targetUserId?: string; details?: Record<string, string>;
 };
-type TenantData = { passwordRecovery: { smtpCredentialId: string; fromEmail: string }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -3290,6 +3292,9 @@ type RefreshSession = {
 };
 type TenantRegistryEntry = {
   name: string; description: string; status: 'ACTIVE' | 'SUSPENDED'; createdAt: string; updatedAt: string;
+  // The complete initial workspace and administrator commit together.
+  provisioning?: { status: 'READY'; version: number; completedAt: string };
+  provisioningRequestHash?: string;
 };
 type TenantManagementAuditEvent = {
   actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED';
@@ -3315,7 +3320,13 @@ const tenantRegistryEntrySchema = z.object({
   description: z.string().trim().max(1000).default(''),
   status: z.enum(['ACTIVE', 'SUSPENDED']),
   createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
+  provisioning: z.object({
+    status: z.literal('READY'),
+    version: z.number().int().min(1),
+    completedAt: z.string().datetime()
+  }).strict().optional(),
+  provisioningRequestHash: z.string().regex(/^[0-9a-f]{64}$/).optional()
 }).strict();
 const tenantManagementAuditSchema = z.object({
   actorId: z.string(), tenantId: z.string(),
@@ -3323,6 +3334,16 @@ const tenantManagementAuditSchema = z.object({
   at: z.string().datetime(),
   previous: tenantRegistryEntrySchema.optional(),
   next: tenantRegistryEntrySchema
+});
+type ObjectMetadataChange = {
+  objectApiName: string; revision: number; action: 'CREATED' | 'UPDATED' | 'DELETED' | 'FIELD_CREATED' | 'FIELD_UPDATED' | 'FIELD_DELETED';
+  actorUserId: string; at: string; before?: ObjectMetadata; after?: ObjectMetadata;
+};
+const objectMetadataChangeSchema = z.object({
+  objectApiName: z.string(), revision: z.number().int().nonnegative(),
+  action: z.enum(['CREATED', 'UPDATED', 'DELETED', 'FIELD_CREATED', 'FIELD_UPDATED', 'FIELD_DELETED']),
+  actorUserId: z.string(), at: z.string().datetime(),
+  before: objectSchema.optional(), after: objectSchema.optional()
 });
 const stateSchema = z.object({
   tenantRegistry: z.record(tenantRegistryEntrySchema).default({}),
@@ -3342,6 +3363,7 @@ const stateSchema = z.object({
     })).default([]),
     mfaPolicy: z.object({ mode: z.enum(['Off', 'Optional', 'Required']) }).default({ mode: 'Off' }),
     objects: z.array(objectSchema),
+    metadataHistory: z.array(objectMetadataChangeSchema).default([]),
     flows: z.array(flowSchema),
     platformEvents: z.array(platformEventSchema).default([]),
     platformEventMessages: z.array(platformEventMessageSchema).default([]),
@@ -4686,41 +4708,107 @@ function publicNamedCredential(credential: StoredNamedCredential) {
   };
 }
 
-async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string, actorId = 'bootstrap'): Promise<LocalUser> {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId)) throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
-  if (state.tenants[tenantId]) throw new Error('Tenant already exists');
-  const normalizedEmail = email.trim().toLowerCase();
-  const credentials = await hashPassword(password);
-  // Revalidate after the awaited password hash; simultaneous requests may race.
-  if (state.tenants[tenantId]) throw new Error('Tenant already exists');
-  if (state.users.some((user) => user.email.trim().toLowerCase() === normalizedEmail)) {
-    throw new Error('Email is already registered. Each email can belong to only one tenant.');
+// No schema/tenant is visible to a new tenant until its first durable commit.
+// Serialize provisioning within an instance; SQL modes also use optimistic
+// revisions to reject cross-instance stale writers rather than lose data.
+const provisioningPendingTenants = new Set<string>();
+let provisioningCommitFailed = false;
+let tenantProvisioningSerial: Promise<void> = Promise.resolve();
+class TenantProvisioningStoreError extends Error {
+  constructor() { super('Tenant provisioning could not be durably committed. Retry after database recovery.'); }
+}
+function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData): void {
+  if (!data.accessControl.users.some((user) => user.id === admin.id && user.profileId === 'system-administrator'))
+    throw new Error('Initial administrator permissions were not provisioned');
+  for (const apiName of ['Account', 'Contact', 'User']) {
+    if (!data.objects.some((item) => item.apiName === apiName))
+      throw new Error('Required tenant object was not provisioned');
   }
-  if (state.tenants[tenantId]) throw new Error('Tenant already exists');
-  const userId = randomUUID();
-  const admin: LocalUser = {
-    id: userId, tenantId, name: adminName, email: normalizedEmail,
-    passwordSalt: credentials.salt, passwordHash: credentials.hash,
-    role: 'System Administrator', permissionSetIds: ['system-administrator'],
-    permissionSetGroupIds: [],
-    disabled: false, createdAt: new Date().toISOString()
-  };
-  const registryEntry: TenantRegistryEntry = {
-    name: name.trim(), description: '', status: 'ACTIVE',
-    createdAt: admin.createdAt, updatedAt: admin.createdAt
-  };
-  const nextState: PlatformState = {
-    ...state,
-    tenants: { ...state.tenants, [tenantId]: defaultTenantData(admin) },
-    tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
-    tenantManagementAudit: [...state.tenantManagementAudit,
-      { actorId, tenantId, action: 'CREATED' as const, at: admin.createdAt, next: registryEntry }].slice(-5000),
-    users: [...state.users, admin]
-  };
-  persistState(nextState);
-  state = nextState;
-  console.info(`Created tenant "${name}" (${tenantId}) with initial administrator ${admin.email}`);
-  return admin;
+  if (!data.accessControl.permissionSets.some((set) => set.id === 'system-administrator'))
+    throw new Error('Initial system administrator permission set is missing');
+  if (admin.tenantId !== tenantId || data.accessControl.users.some((user) => user.id !== admin.id))
+    throw new Error('Initial tenant user isolation check failed');
+  // The existing tenant template intentionally seeds a disabled WhatsApp dummy
+  // credential, scoped to this tenant. Never inherit a live connection.
+  if (data.integrationConnections.length !== 0)
+    throw new Error('New tenants must not inherit another tenant integration connection');
+}
+async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string,
+  actorId = 'bootstrap', idempotencyKey?: string): Promise<{ user: LocalUser; created: boolean }> {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId))
+    throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedName = name.trim();
+  const normalizedAdminName = adminName.trim();
+  if (!normalizedName || !normalizedAdminName) throw new Error('Tenant and administrator names are required');
+  const requestHash = idempotencyKey ? hashToken(actorId + ':' + idempotencyKey) : undefined;
+  const previous = tenantProvisioningSerial;
+  let release: () => void = () => {};
+  tenantProvisioningSerial = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    if (provisioningCommitFailed)
+      throw new TenantProvisioningStoreError();
+    if (requestHash && Object.entries(state.tenantRegistry).some(([existingId, item]) =>
+      item.provisioningRequestHash === requestHash && existingId !== tenantId))
+      throw new Error('Idempotency key was already used for another tenant');
+    const existing = state.tenants[tenantId];
+    if (existing) {
+      const entry = state.tenantRegistry[tenantId];
+      const user = state.users.find((item) => item.tenantId === tenantId && item.email === normalizedEmail);
+      // A retry with the same actor/key must not change passwords or grant
+      // permissions; return the original result without creating another user.
+      if (requestHash && entry?.provisioningRequestHash === requestHash && user)
+        return { user, created: false };
+      throw new Error('Tenant already exists');
+    }
+    if (state.users.some((user) => user.email.trim().toLowerCase() === normalizedEmail))
+      throw new Error('Email is already registered. Each email can belong to only one tenant.');
+    const credentials = await hashPassword(password);
+    // No other provisioning writer can interleave while this hash is calculated.
+    const createdAt = new Date().toISOString();
+    const admin: LocalUser = {
+      id: randomUUID(), tenantId, name: normalizedAdminName, email: normalizedEmail,
+      passwordSalt: credentials.salt, passwordHash: credentials.hash,
+      role: 'System Administrator', permissionSetIds: ['system-administrator'],
+      permissionSetGroupIds: [], disabled: false, createdAt
+    };
+    const data = defaultTenantData(admin);
+    verifySeededTenant(tenantId, admin, data);
+    const registryEntry: TenantRegistryEntry = {
+      name: normalizedName, description: '', status: 'ACTIVE', createdAt, updatedAt: createdAt,
+      provisioning: { status: 'READY', version: 1, completedAt: createdAt },
+      ...(requestHash ? { provisioningRequestHash: requestHash } : {})
+    };
+    const nextState: PlatformState = {
+      ...state,
+      tenants: { ...state.tenants, [tenantId]: data },
+      tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
+      tenantManagementAudit: [...state.tenantManagementAudit,
+        { actorId, tenantId, action: 'CREATED' as const, at: createdAt, next: registryEntry }].slice(-5000),
+      users: [...state.users, admin]
+    };
+    provisioningPendingTenants.add(tenantId);
+    try {
+      // The persisted state contains registry, objects, permission sets and
+      // login identity in ONE complete database snapshot/SQL transaction.
+      persistState(nextState);
+      state = nextState;
+      const commit = latestStateCommit;
+      await commit;
+    } catch (error) {
+      // Never report success or allow the provisional administrator to log in.
+      // Reconcile uncertain writes through the durable SQL state on restart.
+      provisioningCommitFailed = true;
+      console.error('CRITICAL: tenant provisioning persistence failed', error);
+      throw new TenantProvisioningStoreError();
+    }
+    provisioningPendingTenants.delete(tenantId);
+    console.info('Tenant provisioning committed', { tenantId, actorId });
+    return { user: admin, created: true };
+  } finally {
+    release();
+  }
 }
 
 async function bootstrapTenant(): Promise<void> {
@@ -4791,7 +4879,8 @@ async function bootstrapTenant(): Promise<void> {
 if (!maintenanceMode) await bootstrapTenant();
 
 function tenantIsActive(tenantId: string): boolean {
-  return state.tenantRegistry[tenantId]?.status !== 'SUSPENDED';
+  return !provisioningPendingTenants.has(tenantId)
+    && state.tenantRegistry[tenantId]?.status !== 'SUSPENDED';
 }
 function withSecurityEvent(
   tenant: TenantData,
@@ -5299,11 +5388,17 @@ const loginSchema = z.object({
 });
 const provisioningSchema = z.object({
   tenantId: z.string().min(2).max(63),
-  tenantName: z.string().min(1).max(120),
-  adminName: z.string().min(1).max(120),
-  email: z.string().email().max(254),
+  tenantName: z.string().trim().min(1).max(120),
+  adminName: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(254),
   password: z.string().min(12).max(256)
 });
+function provisioningIdempotencyKey(req: Request): string | undefined {
+  const key = req.header('Idempotency-Key');
+  if (key !== undefined && !/^[a-zA-Z0-9_-]{16,128}$/.test(key))
+    throw new Error('Idempotency-Key must be 16–128 ASCII letters, numbers, dashes or underscores');
+  return key;
+}
 
 app.get('/health', async (_req, res) => {
   const database = await checkDatabaseConnection();
@@ -5330,10 +5425,16 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
   const parsed = provisioningSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant provisioning request', details: parsed.error.flatten() });
   try {
-    const user = await createTenant(parsed.data.tenantId, parsed.data.tenantName, parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key');
-    return res.status(201).json({ tenantId: user.tenantId, administrator: { id: user.id, email: user.email } });
+    const key = provisioningIdempotencyKey(req);
+    const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
+      parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key', key);
+    return res.status(created ? 201 : 200).json({
+      tenantId: user.tenantId, administrator: { id: user.id, email: user.email }, replayed: !created
+    });
   } catch (error) {
-    return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
+    return res.status(error instanceof TenantProvisioningStoreError ? 503
+      : error instanceof Error && error.message.startsWith('Idempotency-Key') ? 400 : 409)
+      .json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
   }
 });
 
@@ -6093,7 +6194,11 @@ function tenantSummary(tenantId: string) {
   const entry = tenantRegistryEntry(tenantId);
   const users = state.users.filter((user) => user.tenantId === tenantId);
   return {
-    tenantId, ...entry, userCount: users.length,
+    tenantId, name: entry.name, description: entry.description, status: entry.status,
+    createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+    // Provisioning request fingerprints remain server-side, never exposed in API responses.
+    provisioning: entry.provisioning ?? { status: 'READY' as const, version: 0, completedAt: entry.createdAt },
+    userCount: users.length,
     activeUserCount: users.filter((user) => !user.disabled).length
   };
 }
@@ -6137,6 +6242,7 @@ app.get('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmi
   // Filter/sort cheap registry metadata first; count users only for one page.
   // This avoids scanning the entire identity store once per tenant.
   const matchedIds = Object.keys(state.tenants)
+    .filter((tenantId) => !provisioningPendingTenants.has(tenantId))
     .filter((tenantId) => {
       const metadata = state.tenantRegistry[tenantId];
       const name = metadata?.name ?? tenantId;
@@ -6154,21 +6260,46 @@ app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdm
   const parsed = tenantManagementCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant creation request', details: parsed.error.flatten() });
   try {
-    const user = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
-      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId);
-    return res.status(201).json({ tenant: tenantSummary(user.tenantId) });
+    const key = provisioningIdempotencyKey(req);
+    const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
+      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId, key);
+    return res.status(created ? 201 : 200).json({ tenant: tenantSummary(user.tenantId), replayed: !created });
   } catch (error) {
-    return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
+    return res.status(error instanceof TenantProvisioningStoreError ? 503
+      : error instanceof Error && error.message.startsWith('Idempotency-Key') ? 400 : 409)
+      .json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
   }
 });
+app.get('/api/platform/tenants/:tenantId/provisioning', accessAuthentication, requirePlatformTenantAdmin,
+  (req: Request, res: Response) => {
+    const tenantId = routeParam(req, 'tenantId');
+    const tenant = Object.hasOwn(state.tenants, tenantId) ? state.tenants[tenantId] : undefined;
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+    if (provisioningPendingTenants.has(tenantId))
+      return res.status(202).json({ tenantId, status: 'PROVISIONING' });
+    const registry = tenantRegistryEntry(tenantId);
+    return res.json({
+      tenantId,
+      status: registry.provisioning?.status ?? 'READY',
+      version: registry.provisioning?.version ?? 0,
+      completedAt: registry.provisioning?.completedAt ?? registry.createdAt,
+      initialized: {
+        objects: tenant.objects.length, profiles: tenant.accessControl.profiles.length,
+        permissionSets: tenant.accessControl.permissionSets.length,
+        initialAdministrator: tenant.accessControl.users.length > 0
+      }
+    });
+  });
 app.get('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const tenantId = routeParam(req, 'tenantId');
   if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
   return res.json({ tenant: tenantSummary(tenantId) });
 });
 app.patch('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const tenantId = routeParam(req, 'tenantId');
   if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
   const parsed = tenantManagementUpdateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant update', details: parsed.error.flatten() });
   const previous = tenantRegistryEntry(tenantId);
@@ -6182,6 +6313,7 @@ app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, req
   if (operation !== 'suspend' && operation !== 'reactivate')
     return res.status(404).json({ error: 'Unknown tenant operation' });
   if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
   const previous = tenantRegistryEntry(tenantId);
   const desired = operation === 'suspend' ? 'SUSPENDED' : 'ACTIVE';
   if (previous.status === desired) return res.status(409).json({ error: 'Tenant is already ' + desired.toLowerCase() });
@@ -6368,9 +6500,69 @@ app.delete('/api/metadata/platform-events/:apiName', requireAnyPermission('metad
   });
   return res.status(204).end();
 });
+// Metadata mutations share a single version and bounded, tenant-owned history.
+// Writes still go through the current typed SQL/Aiven persistence implementation.
+const metadataVersion = (object: ObjectMetadata | undefined): number => object?.revision ?? 0;
+function metadataPrecondition(req: Request, res: Response, current: ObjectMetadata): boolean {
+  const supplied = req.header('if-match');
+  // Legacy API clients may omit this header. The Object Manager always sends it.
+  if (supplied === undefined) return true;
+  if (supplied !== `"${metadataVersion(current)}"`) {
+    res.status(412).json({
+      error: 'Metadata has changed since it was loaded; refresh before saving',
+      expectedRevision: metadataVersion(current)
+    });
+    return false;
+  }
+  return true;
+}
+function commitObjectMetadata(
+  tenantId: string, actorUserId: string, updatedTenant: TenantData,
+  action: ObjectMetadataChange['action'], before?: ObjectMetadata, after?: ObjectMetadata
+): ObjectMetadata | undefined {
+  const revision = Math.max(metadataVersion(before), metadataVersion(after)) + 1;
+  const saved = after ? { ...after, revision } : undefined;
+  const audit: ObjectMetadataChange = {
+    objectApiName: (after ?? before)!.apiName,
+    revision, action, actorUserId, at: new Date().toISOString(),
+    ...(before ? { before: structuredClone(before) } : {}),
+    ...(saved ? { after: structuredClone(saved) } : {})
+  };
+  persistTenantRecords(tenantId, {
+    ...updatedTenant,
+    objects: updatedTenant.objects.map((candidate) =>
+      candidate.apiName === saved?.apiName ? saved : candidate),
+    metadataHistory: [...(updatedTenant.metadataHistory ?? []), audit].slice(-300)
+  });
+  return saved;
+}
+app.get('/api/metadata/objects/:apiName/history', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  const object = tenant.objects.find((candidate) => candidate.apiName === apiName);
+  const history = (tenant.metadataHistory ?? []).filter((entry) => entry.objectApiName === apiName);
+  if (!object && !history.length) return res.status(404).json({ error: 'Object not found' });
+  const parsed = z.coerce.number().int().min(1).max(100).safeParse(req.query.limit ?? 30);
+  if (!parsed.success) return res.status(400).json({ error: 'History limit must be between 1 and 100' });
+  return res.json({
+    objectApiName: apiName, revision: metadataVersion(object),
+    history: history.slice(-parsed.data).reverse().map(({ before, after, ...summary }) => ({
+      ...summary, beforeRevision: before ? metadataVersion(before) : null,
+      afterRevision: after ? metadataVersion(after) : null
+    }))
+  });
+});
+app.get('/api/metadata/objects/:apiName/history/:revision', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const event = (tenant.metadataHistory ?? []).find((entry) =>
+    entry.objectApiName === routeParam(req, 'apiName') && String(entry.revision) === routeParam(req, 'revision'));
+  if (!event) return res.status(404).json({ error: 'Metadata revision not found' });
+  return res.json({ change: event });
+});
 app.get('/api/metadata/objects/:apiName', requirePermission('metadata:read'), (req: Request, res: Response) => {
   const object = tenantData(getPrincipal(res).tenantId)?.objects.find((item) => item.apiName === req.params.apiName);
   if (!object) return res.status(404).json({ error: `Object "${req.params.apiName}" was not found` });
+  res.set('ETag', `"${metadataVersion(object)}"`);
   return res.json({ object });
 });
 app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
@@ -6421,10 +6613,38 @@ app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'object
           : permissionSet)
     }
   };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updated } };
-  persistState(nextState);
-  state = nextState;
-  return res.status(201).json({ object });
+  const created = commitObjectMetadata(principal.tenantId, principal.userId, updated, 'CREATED', undefined, object)!;
+  return res.status(201).json({ object: created });
+});
+// Dry-run schema validation never mutates records, versions or audit history.
+app.post('/api/metadata/objects/:apiName/validate', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const current = tenant.objects.find((candidate) => candidate.apiName === routeParam(req, 'apiName'));
+  if (!current) return res.status(404).json({ error: 'Object not found' });
+  const parsed = objectSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(422).json({ valid: false, errors: parsed.error.issues.map((issue) => issue.message) });
+  const candidate = withObjectDefaults(parsed.data);
+  const errors: string[] = [];
+  if (candidate.apiName !== current.apiName || candidate.kind !== current.kind) errors.push('Object identity and type cannot change');
+  for (const field of current.fields) {
+    if (!candidate.fields.some((item) => item.apiName === field.apiName)) errors.push(`Field "${field.apiName}" must be removed using the field delete endpoint`);
+  }
+  for (const field of candidate.fields) {
+    const error = validateFieldChange(current.fields.find((item) => item.apiName === field.apiName), field, tenant.records[current.apiName] ?? []);
+    if (error) errors.push(error);
+  }
+  const knownObjects = tenant.objects.map((item) => item.apiName === current.apiName ? candidate : item);
+  for (const error of [
+    validateExistingFieldValues(candidate, tenant.records[current.apiName] ?? []),
+    validateObjectRelationships(candidate, knownObjects),
+    validateRelatedLookupFilters(candidate, knownObjects),
+    validateRelatedLists(candidate, knownObjects, current)
+  ]) if (error) errors.push(error);
+  if (!metadataPrecondition(req, res, current)) return;
+  return res.status(errors.length ? 422 : 200).json({
+    valid: errors.length === 0, revision: metadataVersion(current), errors
+  });
 });
 app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const parsed = objectSchema.safeParse(req.body);
@@ -6435,6 +6655,7 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
   const current = tenant.objects.find((item) => item.apiName === req.params.apiName);
   if (!current) return res.status(404).json({ error: `Object "${req.params.apiName}" was not found` });
   if (parsed.data.kind !== current.kind) return res.status(400).json({ error: 'Object type cannot be changed after creation' });
+  if (!metadataPrecondition(req, res, current)) return;
   const systemManagedFields = current.fields.filter((field) =>
     field.apiName === 'CurrencyIsoCode' && !parsed.data.fields.some((candidate) => candidate.apiName === field.apiName));
   const objectInput = systemManagedFields.length
@@ -6523,10 +6744,8 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
         : set)
     }
   };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updated } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ object });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updated, 'UPDATED', current, object)!;
+  return res.json({ object: saved });
 });
 function removeObjectMetadata(tenant: TenantData, apiName: string): TenantData {
   const updatedTenant: TenantData = {
@@ -6570,13 +6789,14 @@ app.delete('/api/metadata/objects/:apiName', requireAnyPermission('metadata:writ
   if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
   if (object.kind !== 'Custom Object') return res.status(403).json({ error: 'Standard objects cannot be deleted' });
   if ((tenant.records[apiName] ?? []).length) return res.status(409).json({ error: 'Delete or export this object’s records before deleting the object' });
+  if (!metadataPrecondition(req, res, object)) return;
   const dependencies = findObjectDependencies(tenant, apiName);
   if (dependencies.length) return res.status(409).json({
     error: `Object "${apiName}" is still referenced by ${dependencies.join('; ')}`,
     dependencies
   });
   const updatedTenant = removeObjectMetadata(tenant, apiName);
-  persistTenantRecords(principal.tenantId, updatedTenant);
+  commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'DELETED', object);
   return res.status(204).end();
 });
 app.post('/api/metadata/objects/:apiName/formulas/validate', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
@@ -6641,6 +6861,7 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata
     }).strict()
   ]).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid field metadata', details: parsed.error.flatten() });
+  if (!metadataPrecondition(req, res, object)) return;
   const field = 'field' in parsed.data ? parsed.data.field : parsed.data;
   const relatedLookupFilters = 'field' in parsed.data ? parsed.data.relatedLookupFilters ?? [] : [];
   const relatedLookupFilterLogic = 'field' in parsed.data ? parsed.data.relatedLookupFilterLogic ?? {} : {};
@@ -6695,10 +6916,8 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata
         : set)
     }
   };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.status(201).json({ object: updatedObject, field });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'FIELD_CREATED', object, updatedObject)!;
+  return res.status(201).json({ object: saved, field });
 });
 app.get('/api/metadata/objects/:apiName/field-dependencies', requirePermission('metadata:read'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -6727,6 +6946,7 @@ app.put('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermiss
   const tenant = tenantData(principal.tenantId)!;
   const object = tenant.objects.find((item) => item.apiName === req.params.apiName);
   if (!object) return res.status(404).json({ error: `Object "${req.params.apiName}" was not found` });
+  if (!metadataPrecondition(req, res, object)) return;
   const existing = object.fields.find((item) => item.apiName === req.params.fieldApiName);
   if (!existing) return res.status(404).json({ error: `Field "${req.params.fieldApiName}" was not found` });
   const parsed = fieldSchema.safeParse(req.body);
@@ -6748,10 +6968,8 @@ app.put('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermiss
   const lookupFilterError = validateRelatedLookupFilters(updatedObject, tenant.objects);
   if (lookupFilterError) return res.status(400).json({ error: lookupFilterError });
   const updatedTenant = { ...tenant, objects: tenant.objects.map((item) => item.apiName === object.apiName ? updatedObject : item) };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ object: updatedObject, field: parsed.data });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'FIELD_UPDATED', object, updatedObject)!;
+  return res.json({ object: saved, field: parsed.data });
 });
 app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -6760,6 +6978,7 @@ app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPerm
   const fieldApiName = routeParam(req, 'fieldApiName');
   const object = tenant.objects.find((item) => item.apiName === apiName);
   if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
+  if (!metadataPrecondition(req, res, object)) return;
   const field = object.fields.find((item) => item.apiName === fieldApiName);
   if (!field) return res.status(404).json({ error: `Field "${fieldApiName}" was not found` });
   if (!fieldApiName.endsWith('__c')) return res.status(403).json({ error: 'Standard fields cannot be deleted' });
@@ -6803,8 +7022,8 @@ app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPerm
       }))
     }
   };
-  persistTenantRecords(principal.tenantId, updatedTenant);
-  return res.json({ object: updatedObject });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'FIELD_DELETED', object, updatedObject)!;
+  return res.json({ object: saved });
 });
 app.get('/api/metadata/approval-processes', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId);
