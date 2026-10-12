@@ -158,7 +158,7 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
       kind:'Custom Object',description:'Metadata-driven relational persistence smoke',
       listViewButtons:['New','Import'],
       fields:[
-        {apiName:'Name',label:'Name',dataType:'Text(80)',required:true,unique:false},
+        {apiName:'Name',label:'Name',dataType:'Text(80)',required:true,unique:true},
         {apiName:'Account__c',label:'Related Account',dataType:'Lookup(Account)',required:false,unique:false,
          relationship:{type:'Lookup',targetObject:'Account',relationshipName:'Account',childRelationshipName:'MigrationLinks'}}
       ]
@@ -188,6 +188,12 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     assert.equal(firstPage.data.total,51,'Server must count filtered records before pagination');
     assert.equal(firstPage.data.records.length,50);
     assert.equal(finalPage.data.records.length,1);
+    const rejectedImport=await request(port,'/records/Migration_Link__c/import','POST',token,{
+      records:[{Name:'Atomic Unique Staged',Account__c:parentId},{Name:'Imported 1',Account__c:parentId}]
+    });
+    assert.equal(rejectedImport.status,422,'duplicate import must be rejected atomically');
+    const afterFailedImport=await request(port,'/records/Migration_Link__c?limit=50&offset=0','GET',token);
+    assert.equal(afterFailedImport.data.total,51,'rejected CSV may not partially persist valid earlier rows');
     const sortedFirst=await request(port,'/records/Migration_Link__c?sortField=Name&sortDirection=asc&limit=50&offset=0','GET',token);
     const sortedLast=await request(port,'/records/Migration_Link__c?sortField=Name&sortDirection=asc&limit=50&offset=50','GET',token);
     assert.equal(sortedFirst.status,200,JSON.stringify(sortedFirst.data));
