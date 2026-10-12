@@ -183,6 +183,29 @@ test('MD-01C: app permissions, profile assignments and licensed runtime routes',
     });
     assert.equal(profileGrant.status, 200);
     assert.equal((await api('/apps/Till/home-page', cashierToken)).status, 200);
+    // Paid Flow bindings cannot be modified through editable Flow metadata
+    // or by a tenant administrator lacking the platform licence policy.
+    const lifecycleFlow = 'ONE_Uninstall_Connector';
+    const platformBinding = await api('/metadata/flows/' + lifecycleFlow + '/app-binding',
+      adminToken, 'PUT', { appApiName: 'Till' });
+    assert.equal(platformBinding.status, 200, JSON.stringify(platformBinding.data));
+    assert.equal((await api('/metadata/flows/' + lifecycleFlow + '/app-binding',
+      cashierToken, 'PUT', { appApiName: null })).status, 403);
+    assert.equal((await api('/flows/' + lifecycleFlow + '/execute', cashierToken, 'POST', {})).status, 403,
+      'Cashier cannot invoke bound Flow without flows:run RBAC; denies by default');
+    assert.equal((await api('/metadata/flows/' + lifecycleFlow + '/app-binding',
+      adminToken, 'PUT', { appApiName: 'Missing_App' })).status, 404);
+    assert.equal((await api('/metadata/apps/Till', adminToken, 'DELETE')).status, 409,
+      'Bound Flow must be disconnected before deleting its app');
+    const before = await api('/metadata/apps/Till/access', adminToken, 'PUT', {
+      mode: 'Assigned', userIds: [adminId], profileIds: []
+    });
+    assert.equal(before.status, 200);
+    assert.equal((await api('/flows/' + lifecycleFlow + '/execute', cashierToken, 'POST', {})).status, 403,
+      'Revocation persists through direct Flow endpoint');
+    const unlink = await api('/metadata/flows/' + lifecycleFlow + '/app-binding',
+      adminToken, 'PUT', { appApiName: null });
+    assert.equal(unlink.status, 200);
   } finally {
     await stop(child);
     await rm(dir, { recursive: true, force: true });
