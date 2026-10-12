@@ -66,6 +66,8 @@ import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import FlowInputBindingEditor from './FlowInputBindingEditor';
 import RecordFilterEditor from './RecordFilterEditor';
+import ComponentVisibilityEditor from './ComponentVisibilityEditor';
+import { isComponentVisible } from './componentVisibility';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
@@ -4560,15 +4562,18 @@ function LightningAppRuntime({
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
   if (!page) return <div className="records-page"><div className="records-empty">No active Home Page is assigned to this app and profile. Assign one from Lightning App Builder.</div></div>;
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
+  const appVisibilityContext = { formFactor } as const;
+  const isAppComponentVisible = (component: PageComponentMetadata) =>
+    isComponentVisible(component, appVisibilityContext, false);
   const renderComponent = (component: PageComponentMetadata): React.ReactNode => {
-    if (!component.visible) return null;
+    if (!isAppComponentVisible(component)) return null;
     if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{childrenOf(page.components, component.id).map((child) => renderComponent(child))}</div>;
     if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map((child) => <div key={child.id} style={!isLayoutType(child.type) ? componentVisualStyle(child.properties.visualStyle, child.type, formFactor) : undefined}>{renderComponent(child)}</div>)}</div>;
     if (component.type.startsWith('Custom:')) {
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
       const nestedChildren = isLayoutContainer(component)
-        ? childrenOf(page.components, component.id).map((child) => page.layoutMode === 'free-canvas'
+        ? childrenOf(page.components, component.id).filter(isAppComponentVisible).map((child) => page.layoutMode === 'free-canvas'
             ? renderCanvasComponent(child, true) : renderComponent(child))
         : undefined;
       if (!definition) return <div className="records-message" role="status" key={component.id}>
@@ -4603,7 +4608,7 @@ function LightningAppRuntime({
         : [];
       const selected = tabs.includes(activeTab) ? activeTab : tabs[0];
       const content = page.components.find((item) =>
-        item.id !== component.id && item.visible && item.label.toLocaleLowerCase() === selected?.toLocaleLowerCase());
+        item.id !== component.id && isAppComponentVisible(item) && item.label.toLocaleLowerCase() === selected?.toLocaleLowerCase());
       return <section className="record-fields-card surface" key={component.id}>
         <div className="record-tabs" role="tablist" aria-label={component.label}>
           {tabs.map((tab) => <button type="button" role="tab" aria-selected={selected === tab}
@@ -4621,7 +4626,7 @@ function LightningAppRuntime({
     return <div className="records-message" role="status" key={component.id}>{component.label} is not supported on app pages.</div>;
   };
   const renderCanvasComponent = (component: PageComponentMetadata, nested = false) => {
-    if (!component.visible) return null;
+    if (!isAppComponentVisible(component)) return null;
     return <div key={component.id} className={nested ? 'free-canvas-runtime-component nested-page-runtime' : 'free-canvas-runtime-component'}
       data-layout-component-id={component.id}
       style={{
@@ -4645,7 +4650,7 @@ function LightningAppRuntime({
     {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
-    childrenOf(page.components, null).filter((component) => (component.region ?? 'main') === region).map(renderComponent);
+    childrenOf(page.components, null).filter((component) => isAppComponentVisible(component) && (component.region ?? 'main') === region).map(renderComponent);
   return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
     <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18} /></div>
@@ -5418,7 +5423,10 @@ function RecordWorkspace({
       </section>;
     };
     const renderRuntimeComponent = (component: PageComponentMetadata) => {
-      if (!component.visible) return null;
+      if (!isComponentVisible(component, {
+        formFactor, record, fields: object.fields,
+        readableFieldApiNames: new Set(readableRecordFields.map(field => field.apiName))
+      }, true)) return null;
       if (component.type.startsWith('Custom:')) {
         const definition = libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
         const children = isLayoutContainer(component)
@@ -9649,7 +9657,19 @@ function PageBuilder({
             </div>}
             <div className="properties-section-title">Position</div>
             <div className="property-position-actions"><button className="btn" disabled={page.components[0]?.id === selected.id} onClick={() => moveSelected(-1)}><ArrowDown className="move-up-icon" size={13} />Move up</button><button className="btn" disabled={page.components[page.components.length - 1]?.id === selected.id} onClick={() => moveSelected(1)}><ArrowDown size={13} />Move down</button></div>
-            <div className="properties-section-title">Visibility</div><label className="checkbox-row"><input type="checkbox" checked={selected.visible} onChange={(event) => updateComponent(selected.id, { visible: event.target.checked })} />Show component</label>
+            <div className="properties-section-title">Visibility</div>
+            <label className="checkbox-row"><input type="checkbox" checked={selected.visible}
+              onChange={(event) => updateComponent(selected.id, { visible: event.target.checked })} />
+              Show component
+            </label>
+            <ComponentVisibilityEditor rules={selected.properties.visibilityRules} fields={fields}
+              allowRecordFields={page.pageType === 'Record Page'}
+              onChange={visibilityRules => {
+                const properties = { ...selected.properties };
+                if (visibilityRules) properties.visibilityRules = visibilityRules;
+                else delete properties.visibilityRules;
+                updateComponent(selected.id, { properties });
+              }} />
             <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); }}>Done</button>
           </> : <>
             <p className="properties-help">Configure the page definition and supported form factors.</p>
