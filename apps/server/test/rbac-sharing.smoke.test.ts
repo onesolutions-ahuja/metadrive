@@ -1718,9 +1718,9 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       && record.Direction__c === 'Incoming'
       && record.Method__c === 'GET'
       && record.Auth_Type__c === 'Bearer'
-      && typeof record.Response_Body__c === 'string'
-      && record.Response_Body__c.includes('Communication_Records__c')),
-    'explicitly marked external incoming requests must be recorded with method, auth type, and response body');
+      && !record.Request_Body__c
+      && !record.Response_Body__c),
+    'external incoming audit records must preserve method and auth type without exposing request or response bodies');
     assert.equal(communicationRecords.filter((record) => record.Api_Id__c === 'GET /api/metadata/objects').length, 1,
       'unmarked internal metadata requests must not generate communication records');
     assert.ok(!communicationRecords.some((record) => record.Api_Id__c === 'GET /api/connector-providers'),
