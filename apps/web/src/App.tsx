@@ -8370,7 +8370,7 @@ function PageBuilder({
       && existing.profileId === assignment.profileId
       && existing.recordTypeId === assignment.recordTypeId
       && existing.formFactors.some((factor) => assignment.formFactors.includes(factor)));
-  const addComponent = (type: string, position = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', canvasPosition?: PageComponentMetadata['position']) => {
+  const addComponent = (type: string, position = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', canvasPosition?: PageComponentMetadata['position'], parentId: string | null = null) => {
     const customApiName = type.startsWith('Custom:') ? type.slice('Custom:'.length) : '';
     const custom = libraryComponents.find((item) => item.apiName === customApiName && item.surfaces.includes('page'));
     const dynamicFormComponent = type === 'Field Section' && page.pageType === 'Record Page' && dynamicFormsEnabled;
@@ -8393,7 +8393,7 @@ function PageBuilder({
     components.splice(Math.max(0, Math.min(position, components.length)), 0, {
       id, type, label: custom?.label ?? type,
       properties: custom
-        ? { libraryComponentId: custom.apiName }
+        ? { libraryComponentId: custom.apiName, ...(parentId ? { layoutParentId: parentId } : {}) }
         : type === 'Report Chart'
           ? { reportApiName: '' }
           : type === 'Related List'
@@ -8492,9 +8492,16 @@ function PageBuilder({
   };
   const removeSelected = () => {
     if (!selected) return;
-    const remaining = page.components.filter((component) => component.id !== selected.id);
+    const parentId = rawLayoutParentId(selected);
+    const remaining = page.components.filter((component) => component.id !== selected.id)
+      .map((component) => rawLayoutParentId(component) === selected.id
+        ? { ...component, properties: {
+            ...component.properties,
+            ...(parentId ? { layoutParentId: parentId } : { layoutParentId: undefined })
+          } }
+        : component);
     applyPage({ ...page, components: remaining });
-    setSelectedId(remaining[0]?.id ?? '');
+    setSelectedId(parentId ?? remaining[0]?.id ?? '');
   };
   const addRecordAssignment = () => {
     const needsApp = recordScope !== 'Org Default';
@@ -8565,7 +8572,8 @@ function PageBuilder({
       ...structuredClone(componentClipboard),
       id: `${componentClipboard.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`,
       label: `${componentClipboard.label} Copy`,
-      region: selected?.region ?? componentClipboard.region ?? 'main'
+      region: selected?.region ?? componentClipboard.region ?? 'main',
+      properties: { ...structuredClone(componentClipboard.properties), layoutParentId: selected && canNest(page.components, componentClipboard.id, selected.id) ? selected.id : undefined }
     };
     const components = [...page.components];
     const selectedIndex = selected ? components.findIndex((component) => component.id === selected.id) : -1;
@@ -8795,7 +8803,7 @@ function PageBuilder({
       }
     });
   };
-  const handleDrop = (event: React.DragEvent<HTMLElement>, targetIndex = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main') => {
+  const handleDrop = (event: React.DragEvent<HTMLElement>, targetIndex = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', parentId: string | null = null) => {
     event.preventDefault();
     event.stopPropagation();
     const data = event.dataTransfer.getData('text/plain');
@@ -8804,12 +8812,26 @@ function PageBuilder({
       const draggedId = event.dataTransfer.getData('application/x-metadrive-component-id');
       if (!draggedId) {
         addComponent(data.slice('component:'.length), targetIndex, region,
-          page.layoutMode === 'free-canvas' ? canvasPositionFromEvent(event) : undefined);
+          page.layoutMode === 'free-canvas' ? canvasPositionFromEvent(event) : undefined, parentId);
+        return;
+      }
+      if (!canNest(page.components, draggedId, parentId)) {
+        onNotify('Cannot nest a component inside itself or one of its descendants.');
         return;
       }
       if (page.layoutMode === 'free-canvas') {
         const draggedComponent = page.components.find((component) => component.id === draggedId);
-        if (draggedComponent) moveCanvasComponent(event, draggedComponent);
+        if (!draggedComponent) return;
+        const reparented = reparentComponent(page.components, draggedId, parentId);
+        const position = !parentId ? canvasPositionFromEvent(event) : undefined;
+        applyPage({ ...page, components: reparented.map((item) =>
+          item.id === draggedId && position && item.position
+            ? { ...item, position: {
+                ...item.position,
+                x: Math.min(position.x, page.canvasWidth - item.position.width),
+                y: Math.min(position.y, page.canvasHeight - item.position.height)
+              } } : item) });
+        setSelectedId(draggedId);
         return;
       }
       const sourceIndex = page.components.findIndex((component) => component.id === draggedId);
@@ -8824,7 +8846,7 @@ function PageBuilder({
       const dropIndex = targetIndex + (insertAfterTarget ? 1 : 0);
       const insertionIndex = sourceIndex < dropIndex ? dropIndex - 1 : dropIndex;
       components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, { ...draggedComponent, region });
-      applyPage({ ...page, components });
+      applyPage({ ...page, components: reparentComponent(components, draggedId, parentId) });
       setSelectedId(draggedId);
     } else if (data.startsWith('field:')) {
       const sectionId = event.currentTarget.getAttribute('data-component-id');
@@ -8967,7 +8989,8 @@ function PageBuilder({
   const addPaletteComponent = (type: string) => {
     const selectedIndex = page.components.findIndex((component) => component.id === selectedId);
     const selectedRegion = page.components[selectedIndex]?.region ?? 'main';
-    addComponent(type, selectedIndex >= 0 ? selectedIndex + 1 : page.components.length, selectedRegion);
+    const parentId = selected && isLayoutContainer(selected) ? selected.id : selected ? rawLayoutParentId(selected) : null;
+    addComponent(type, selectedIndex >= 0 ? selectedIndex + 1 : page.components.length, selectedRegion, undefined, parentId);
   };
   const renderPaletteComponentPreview = (component: typeof paletteComponents[number]) => renderPageComponent({
     id: `palette-preview-${component.id}`,
