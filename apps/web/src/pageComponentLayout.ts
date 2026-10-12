@@ -141,6 +141,18 @@ export function updateLayoutSettings(
   return { ...properties, layoutResponsive: responsive };
 }
 
+export function componentLayoutProps(
+  properties: Record<string, unknown>,
+  device: LayoutDevice = 'Desktop'
+): Record<string, string | number> {
+  const s = layoutSettings(properties, device);
+  return {
+    ...(s.alignItems ? { align: String(s.alignItems) } : {}),
+    ...(s.justifyContent ? { justify: String(s.justifyContent) } : {}),
+    ...(s.gap !== undefined ? { gap: Number(s.gap) } : {})
+  };
+}
+
 export function resolveLayoutStyle(
   properties: Record<string, unknown>,
   device: LayoutDevice = 'Desktop'
