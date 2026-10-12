@@ -3295,6 +3295,7 @@ type TenantRegistryEntry = {
   // The complete initial workspace and administrator commit together.
   provisioning?: { status: 'READY'; version: number; completedAt: string };
   provisioningRequestHash?: string;
+  developerSeed?: { userId: string; email: string; seededAt: string; activatedAt?: string };
 };
 type TenantManagementAuditEvent = {
   actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED';
@@ -3326,7 +3327,11 @@ const tenantRegistryEntrySchema = z.object({
     version: z.number().int().min(1),
     completedAt: z.string().datetime()
   }).strict().optional(),
-  provisioningRequestHash: z.string().regex(/^[0-9a-f]{64}$/).optional()
+  provisioningRequestHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  developerSeed: z.object({
+    userId: z.string().uuid(), email: z.string().email(),
+    seededAt: z.string().datetime(), activatedAt: z.string().datetime().optional()
+  }).strict().optional()
 }).strict();
 const tenantManagementAuditSchema = z.object({
   actorId: z.string(), tenantId: z.string(),
@@ -4717,7 +4722,7 @@ let tenantProvisioningSerial: Promise<void> = Promise.resolve();
 class TenantProvisioningStoreError extends Error {
   constructor() { super('Tenant provisioning could not be durably committed. Retry after database recovery.'); }
 }
-function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData): void {
+function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData, developer?: LocalUser): void {
   if (!data.accessControl.users.some((user) => user.id === admin.id && user.profileId === 'system-administrator'))
     throw new Error('Initial administrator permissions were not provisioned');
   for (const apiName of ['Account', 'Contact', 'User']) {
@@ -4726,20 +4731,43 @@ function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData
   }
   if (!data.accessControl.permissionSets.some((set) => set.id === 'system-administrator'))
     throw new Error('Initial system administrator permission set is missing');
-  if (admin.tenantId !== tenantId || data.accessControl.users.some((user) => user.id !== admin.id))
+  const expectedIds = new Set([admin.id, ...(developer ? [developer.id] : [])]);
+  if (admin.tenantId !== tenantId || (developer && (developer.tenantId !== tenantId || !developer.disabled))
+    || data.accessControl.users.length !== expectedIds.size
+    || data.accessControl.users.some((user) => !expectedIds.has(user.id)))
     throw new Error('Initial tenant user isolation check failed');
+  if (developer && !data.accessControl.users.some((user) =>
+    user.id === developer.id && user.profileId === 'system-administrator'
+    && user.permissionSetIds.includes('system-administrator')))
+    throw new Error('Developer initial permissions were not provisioned');
   // The existing tenant template intentionally seeds a disabled WhatsApp dummy
   // credential, scoped to this tenant. Never inherit a live connection.
   if (data.integrationConnections.length !== 0)
     throw new Error('New tenants must not inherit another tenant integration connection');
 }
+// The developer identity is a tenant-owned seeder, never an operator backdoor.
+// Domain defaults to the tenant administrator's mailbox domain, or an explicit
+// tenant domain supplied at provisioning. No credentials are shared with MetaDrive.
+function developerDomainFor(email: string, preferred?: string): string {
+  const domain = (preferred ?? email.split('@')[1] ?? '').trim().toLowerCase();
+  if (domain.length > 253 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain))
+    throw new Error('A valid tenant domain is required for the developer account');
+  return domain;
+}
 async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string,
-  actorId = 'bootstrap', idempotencyKey?: string): Promise<{ user: LocalUser; created: boolean }> {
+  actorId = 'bootstrap', idempotencyKey?: string, developerDomain?: string): Promise<{ user: LocalUser; created: boolean }> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId))
     throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedName = name.trim();
   const normalizedAdminName = adminName.trim();
+  // Without a tenant-controlled domain, use a distinct tenant-scoped placeholder
+  // rather than claiming "developer@" at a shared email-provider domain.
+  const domain = developerDomain ? developerDomainFor(normalizedEmail, developerDomain)
+    : developerDomainFor(normalizedEmail, tenantId.toLowerCase() + '.' + normalizedEmail.split('@')[1]);
+  const developerEmail = 'developer@' + domain;
+  if (developerEmail === normalizedEmail)
+    throw new Error('The initial administrator email must differ from the developer seeder email');
   if (!normalizedName || !normalizedAdminName) throw new Error('Tenant and administrator names are required');
   const requestHash = idempotencyKey ? hashToken(actorId + ':' + idempotencyKey) : undefined;
   const previous = tenantProvisioningSerial;
@@ -4762,9 +4790,12 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
         return { user, created: false };
       throw new Error('Tenant already exists');
     }
-    if (state.users.some((user) => user.email.trim().toLowerCase() === normalizedEmail))
-      throw new Error('Email is already registered. Each email can belong to only one tenant.');
+    if (state.users.some((user) => [normalizedEmail, developerEmail].includes(user.email.trim().toLowerCase())))
+      throw new Error('Administrator or developer email is already registered. Each email belongs to one tenant.');
     const credentials = await hashPassword(password);
+    // The developer gets an unguessable, never-disclosed secret and is disabled.
+    // Only tenant security administrators can activate it with a new password.
+    const developerCredentials = await hashPassword(randomBytes(32).toString('base64url'));
     // No other provisioning writer can interleave while this hash is calculated.
     const createdAt = new Date().toISOString();
     const admin: LocalUser = {
@@ -4773,11 +4804,32 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
       role: 'System Administrator', permissionSetIds: ['system-administrator'],
       permissionSetGroupIds: [], disabled: false, createdAt
     };
-    const data = defaultTenantData(admin);
-    verifySeededTenant(tenantId, admin, data);
+    const developer: LocalUser = {
+      id: randomUUID(), tenantId, name: 'Developer', email: developerEmail,
+      passwordSalt: developerCredentials.salt, passwordHash: developerCredentials.hash,
+      role: 'System Administrator', permissionSetIds: ['system-administrator'],
+      permissionSetGroupIds: [], disabled: true, createdAt
+    };
+    const tenantSeed = defaultTenantData(admin);
+    const developerAccess = {
+      id: developer.id, name: developer.name, username: developer.email,
+      role: developer.role, roleId: roleIdForName(developer.role, tenantSeed.accessControl.roles),
+      profileId: profileIdForRole(developer.role, tenantSeed.accessControl.profiles),
+      permissionSetIds: developer.permissionSetIds, permissionSetGroupIds: developer.permissionSetGroupIds,
+      timeZone: 'UTC', locale: 'en-GB'
+    };
+    const data: TenantData = {
+      ...tenantSeed,
+      accessControl: {
+        ...tenantSeed.accessControl,
+        users: [...tenantSeed.accessControl.users, developerAccess]
+      }
+    };
+    verifySeededTenant(tenantId, admin, data, developer);
     const registryEntry: TenantRegistryEntry = {
       name: normalizedName, description: '', status: 'ACTIVE', createdAt, updatedAt: createdAt,
       provisioning: { status: 'READY', version: 1, completedAt: createdAt },
+      developerSeed: { userId: developer.id, email: developer.email, seededAt: createdAt },
       ...(requestHash ? { provisioningRequestHash: requestHash } : {})
     };
     const nextState: PlatformState = {
@@ -4786,7 +4838,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
       tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
       tenantManagementAudit: [...state.tenantManagementAudit,
         { actorId, tenantId, action: 'CREATED' as const, at: createdAt, next: registryEntry }].slice(-5000),
-      users: [...state.users, admin]
+      users: [...state.users, admin, developer]
     };
     provisioningPendingTenants.add(tenantId);
     try {
@@ -5391,7 +5443,8 @@ const provisioningSchema = z.object({
   tenantName: z.string().trim().min(1).max(120),
   adminName: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
-  password: z.string().min(12).max(256)
+  password: z.string().min(12).max(256),
+  developerDomain: z.string().trim().min(4).max(253).optional()
 });
 function provisioningIdempotencyKey(req: Request): string | undefined {
   const key = req.header('Idempotency-Key');
@@ -5427,7 +5480,8 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
   try {
     const key = provisioningIdempotencyKey(req);
     const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
-      parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key', key);
+      parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key', key,
+      parsed.data.developerDomain);
     return res.status(created ? 201 : 200).json({
       tenantId: user.tenantId, administrator: { id: user.id, email: user.email }, replayed: !created
     });
@@ -5599,7 +5653,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   const valid = user && (!user.lockedUntil || user.lockedUntil <= now)
     ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
   const passwordMs = performance.now() - passwordStartedAt;
-  if (!user || user.disabled || !valid || !tenantIsActive(user.tenantId)) {
+  if (!user || user.disabled || !valid || developerActivationPending.has(user.id) || !tenantIsActive(user.tenantId)) {
     const attempts = limit && limit.resetAt > now ? limit.count + 1 : 1;
     loginAttempts.set(key, { count: attempts, resetAt: now + 15 * 60 * 1000 });
     if (user && !user.disabled && !valid && tenantIsActive(user.tenantId) && (!user.lockedUntil || user.lockedUntil <= now))
@@ -6198,6 +6252,10 @@ function tenantSummary(tenantId: string) {
     createdAt: entry.createdAt, updatedAt: entry.updatedAt,
     // Provisioning request fingerprints remain server-side, never exposed in API responses.
     provisioning: entry.provisioning ?? { status: 'READY' as const, version: 0, completedAt: entry.createdAt },
+    developerAccount: entry.developerSeed ? {
+      email: entry.developerSeed.email,
+      activated: Boolean(entry.developerSeed.activatedAt)
+    } : null,
     userCount: users.length,
     activeUserCount: users.filter((user) => !user.disabled).length
   };
@@ -6262,7 +6320,8 @@ app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdm
   try {
     const key = provisioningIdempotencyKey(req);
     const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
-      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId, key);
+      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId, key,
+      parsed.data.developerDomain);
     return res.status(created ? 201 : 200).json({ tenant: tenantSummary(user.tenantId), replayed: !created });
   } catch (error) {
     return res.status(error instanceof TenantProvisioningStoreError ? 503
@@ -6270,6 +6329,89 @@ app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdm
       .json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
   }
 });
+// MD-03.3: activation belongs to the tenant's security administrators only.
+// A platform superadmin cannot activate an account in another tenant through
+// the platform directory, nor obtain its password or silently impersonate it.
+const activateDeveloperSchema = z.object({
+  password: z.string().min(12).max(256)
+}).strict();
+const developerActivationPending = new Set<string>();
+app.get('/api/tenant/developer-account', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+  if (!principal.permissions.includes('security:manage') || !hasObjectPermission(principal, tenant, 'User', 'read'))
+    return res.status(403).json({ error: 'Tenant user administration permission required' });
+  const seed = state.tenantRegistry[principal.tenantId]?.developerSeed;
+  if (!seed) return res.json({ seeded: false });
+  const user = state.users.find((item) => item.id === seed.userId && item.tenantId === principal.tenantId);
+  return res.json({
+    seeded: true, userId: seed.userId, email: user?.email ?? seed.email,
+    active: Boolean(user && !user.disabled), activated: Boolean(seed.activatedAt),
+    initialPermissions: 'System Administrator', tenantControlled: true
+  });
+});
+app.post('/api/tenant/developer-account/activate', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local')
+    return res.status(501).json({ error: 'Developer credentials are managed by the identity provider' });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+  if (!principal.permissions.includes('security:manage') || !hasObjectPermission(principal, tenant, 'User', 'edit'))
+    return res.status(403).json({ error: 'Tenant user administration permission required' });
+  const seed = state.tenantRegistry[principal.tenantId]?.developerSeed;
+  if (!seed) return res.status(404).json({ error: 'No developer seeder exists for this tenant' });
+  if (seed.activatedAt) return res.status(409).json({
+    error: 'Developer was already activated. Manage its access through tenant User and RBAC settings.'
+  });
+  if (developerActivationPending.has(seed.userId)) return res.status(409).json({ error: 'Developer activation already in progress' });
+  const parsed = activateDeveloperSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'A new password of 12–256 characters is required' });
+  developerActivationPending.add(seed.userId);
+  try {
+    const credentials = await hashPassword(parsed.data.password);
+    const now = new Date().toISOString();
+    const current = state.users.find((item) => item.id === seed.userId && item.tenantId === principal.tenantId);
+    const currentSeed = state.tenantRegistry[principal.tenantId]?.developerSeed;
+    if (!current || !currentSeed || currentSeed.activatedAt) return res.status(409).json({
+      error: 'Developer identity changed during activation'
+    });
+    const changed: LocalUser = { ...current, disabled: false,
+      passwordSalt: credentials.salt, passwordHash: credentials.hash,
+      authVersion: (current.authVersion ?? 0) + 1,
+      authRevokedBefore: Math.floor(Date.now() / 1000) };
+    const nextState: PlatformState = {
+      ...state,
+      users: state.users.map((item) => item.id === changed.id ? changed : item),
+      tenants: {
+        ...state.tenants,
+        [principal.tenantId]: withSecurityEvent(tenant, principal.userId,
+          'tenant.developer.activated', { developerUserId: changed.id }, changed.id)
+      },
+      tenantRegistry: { ...state.tenantRegistry,
+        [principal.tenantId]: {
+          ...state.tenantRegistry[principal.tenantId],
+          developerSeed: { ...currentSeed, email: changed.email, activatedAt: now }
+        }
+      },
+      refreshSessions: state.refreshSessions.map((item) => item.userId === changed.id
+        ? { ...item, revokedAt: Date.now() / 1000 } : item)
+    };
+    persistState(nextState);
+    state = nextState;
+    await latestStateCommit;
+    return res.json({ activated: true, userId: changed.id, email: changed.email });
+  } catch (error) {
+    console.error('CRITICAL: developer activation commit failed', error);
+    // Fail closed if durability cannot be established until state is reconciled.
+    provisioningCommitFailed = true;
+    return res.status(503).json({ error: 'Developer activation could not be durably committed' });
+  } finally {
+    // Keep the login path closed after a persistence failure.
+    if (!provisioningCommitFailed) developerActivationPending.delete(seed.userId);
+  }
+});
+
 app.get('/api/platform/tenants/:tenantId/provisioning', accessAuthentication, requirePlatformTenantAdmin,
   (req: Request, res: Response) => {
     const tenantId = routeParam(req, 'tenantId');
@@ -6284,6 +6426,9 @@ app.get('/api/platform/tenants/:tenantId/provisioning', accessAuthentication, re
       version: registry.provisioning?.version ?? 0,
       completedAt: registry.provisioning?.completedAt ?? registry.createdAt,
       initialized: {
+        developerAccount: registry.developerSeed ? {
+          email: registry.developerSeed.email, activated: Boolean(registry.developerSeed.activatedAt)
+        } : null,
         objects: tenant.objects.length, profiles: tenant.accessControl.profiles.length,
         permissionSets: tenant.accessControl.permissionSets.length,
         initialAdministrator: tenant.accessControl.users.length > 0
@@ -9247,16 +9392,21 @@ app.put('/api/records/User/:recordId', accessAuthentication, (req: Request, res:
     return res.status(400).json({ error: 'Username must equal Email for tenant login' });
   if (state.users.some((item) => item.id !== id && item.email.toLowerCase() === email))
     return res.status(409).json({ error: 'Email is already registered' });
-  const role = userRoleFromValue(tenant, values.UserRoleId ?? existing.role);
+  // System Administrator is a profile/seeded login role, not a hierarchy role.
+  // An IsActive/name edit must not silently downgrade its assigned profile.
+  const role = values.UserRoleId
+    ? userRoleFromValue(tenant, values.UserRoleId)
+    : tenant.accessControl.roles.find((item) => item.id === existingAccess.roleId);
   if (!role) return res.status(400).json({ error: 'Select an existing tenant role' });
+  const nextRoleName = values.UserRoleId ? role.name : existing.role;
   const disabling = values.IsActive === false;
   const revocation = Math.floor(Date.now() / 1000);
-  const changedIdentity: LocalUser = { ...existing, name: values.Name ?? existing.name, email, role: role.name,
+  const changedIdentity: LocalUser = { ...existing, name: values.Name ?? existing.name, email, role: nextRoleName,
     disabled: values.IsActive === undefined ? existing.disabled : !values.IsActive,
-    ...(disabling || email !== existing.email || role.name !== existing.role ? {authRevokedBefore:revocation}: {}) };
+    ...(disabling || email !== existing.email || nextRoleName !== existing.role ? {authRevokedBefore:revocation}: {}) };
   const updatedAccess = { ...existingAccess, name: changedIdentity.name, username: email,
-    role: role.name, roleId: role.id,
-    profileId: role.name === existing.role ? existingAccess.profileId : profileIdForRole(role.name, tenant.accessControl.profiles) };
+    role: nextRoleName, roleId: role.id,
+    profileId: values.UserRoleId ? profileIdForRole(role.name, tenant.accessControl.profiles) : existingAccess.profileId };
   const nextAccess = { ...tenant.accessControl,
     users: tenant.accessControl.users.map((item) => item.id === id ? updatedAccess : item) };
   const validation = accessControlSchema.safeParse(nextAccess);
@@ -9268,7 +9418,7 @@ app.put('/api/records/User/:recordId', accessAuthentication, (req: Request, res:
     return res.status(409).json({ error: 'At least one active security administrator must remain' });
   const nextState: PlatformState = { ...state, users: updatedUsers,
     tenants: { ...state.tenants, [principal.tenantId]: updatedTenant },
-    refreshSessions: state.refreshSessions.map((session) => session.userId === id && (disabling || email !== existing.email || role.name !== existing.role)
+    refreshSessions: state.refreshSessions.map((session) => session.userId === id && (disabling || email !== existing.email || nextRoleName !== existing.role)
       ? { ...session, revokedAt: revocation } : session) };
   try { persistState(nextState); state = nextState; }
   catch { return res.status(503).json({ error: 'Unable to persist user changes' }); }
