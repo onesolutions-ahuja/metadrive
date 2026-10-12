@@ -46,7 +46,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS md_v2_object_tenant_identity_uidx
   ON md_v2_object_registry(object_id,tenant_id);
 CREATE UNIQUE INDEX IF NOT EXISTS md_v2_field_object_identity_uidx
   ON md_v2_field_registry(object_id,field_id);
-DO $
+DO $md_03_4$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint
     WHERE conrelid='md_v2_field_presence'::regclass
@@ -64,7 +64,7 @@ BEGIN
       FOREIGN KEY (object_id,field_id) REFERENCES md_v2_field_registry(object_id,field_id)
       DEFERRABLE INITIALLY DEFERRED;
   END IF;
-END $;
+END $md_03_4$;
 
 CREATE TABLE IF NOT EXISTS md_v2_shadow_run (
   id SMALLINT PRIMARY KEY CHECK (id=1),
