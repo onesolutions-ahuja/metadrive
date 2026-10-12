@@ -83,6 +83,20 @@ test('typed physical tables, registry FKs, and SQL CRUD work transactionally wit
       'INSERT INTO md_v2_field_presence(object_id,tenant_id,record_id,field_id) VALUES($1,$2,$3,$4)',
       [otherObjectId,'sandbox','rec-foreign',priceId]),/foreign key/i);
     await client.query('ROLLBACK TO SAVEPOINT cross_object');
+    // An orphan presence row must not survive a field or record deletion.
+    // Validate the immutable object/field identity before testing negative cases.
+    await client.query('INSERT INTO '+table.table+' (tenant_id,record_id) VALUES ($1,$2)', ['sandbox','presence-test']);
+    await client.query('INSERT INTO md_v2_field_presence(object_id,tenant_id,record_id,field_id) VALUES($1,$2,$3,$4)',
+      [objectId,'sandbox','presence-test',priceId]);
+    const validPresence=await client.query('SELECT count(*)::int AS n FROM md_v2_field_presence WHERE object_id=$1 AND tenant_id=$2 AND record_id=$3',
+      [objectId,'sandbox','presence-test']);
+    assert.equal(validPresence.rows[0].n,1);
+    await client.query('SAVEPOINT delete_referenced_field');
+    await assert.rejects(client.query('DELETE FROM md_v2_field_registry WHERE field_id=$1',[priceId]),/foreign key/i);
+    await client.query('ROLLBACK TO SAVEPOINT delete_referenced_field');
+    await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1 AND tenant_id=$2 AND record_id=$3',
+      [objectId,'sandbox','presence-test']);
+    await client.query('DELETE FROM '+table.table+' WHERE tenant_id=$1 AND record_id=$2',['sandbox','presence-test']);
     await assert.rejects(client.query('INSERT INTO md_v2_field_registry(field_id,object_id,api_name,field_label,source_data_type,physical_column) VALUES ($1,$2,$3,$4,$5,$6)',
       ['9d0584f2-6b05-4e79-bc6c-06aecf8db7af','00000000-0000-4000-8000-000000000000','bad','Bad','Text','x']), /foreign key/i);
   } finally {
