@@ -15,6 +15,7 @@ import { isIP } from 'node:net';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement, connectorProviderEntitlement } from './connector-app-runtime.js';
 import { appAccessDecision, type AppAccess } from './app-access.js';
+import { parseApiClients, verifiedApiClient } from './api-client-auth.js';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -99,11 +100,37 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }) as typeof res.end;
   next();
 });
-// Incoming API audit is deliberately disabled until authentication issues a
-// server-verifiable external API-client identity. Request-source headers are
-// caller-controlled and cannot establish the channel. Flow/connector audit
-// records and standard tenant-scoped record permissions remain unaffected.
-// Do not reinstate this interceptor based on x-metadrive-* headers.
+// External API audit requires BOTH a verified bearer principal and a distinct
+// tenant/user-bound API client credential. Browser or origin marker headers do
+// not establish identity. Only metadata is persisted; never request/response bodies.
+const configuredApiClients = parseApiClients(process.env.METADRIVE_API_CLIENTS);
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!req.path.startsWith('/api/')) return next();
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const principal = res.locals.principal as Principal | undefined;
+    if (!principal || !tenantData(principal.tenantId)) return;
+    const clientId = verifiedApiClient(configuredApiClients,
+      req.get('x-metadrive-api-client-id'), req.get('x-metadrive-api-client-secret'),
+      principal.tenantId, principal.userId);
+    if (!clientId) return;
+    // Never log requests to authentication or audit-record endpoints.
+    if (/^\/api\/(?:auth\/|records\/Communication_Records__c(?:\/|$))/i.test(req.path)) return;
+    const routePath = req.route?.path;
+    const apiId = `${req.method} ${typeof routePath === 'string' ? routePath : req.path}`;
+    try {
+      appendCommunicationRecord(principal.tenantId, principal.userId, {
+        apiId, url: communicationSafeUrl(`${req.protocol}://${req.get('host') ?? 'localhost'}${req.path}`),
+        authType: 'Bearer', method: supportedCommunicationMethod(req.method),
+        direction: 'Incoming', requestBody: '', responseBody: '', error: '',
+        status: res.statusCode, durationMs: Date.now() - startedAt
+      });
+    } catch (error) {
+      console.error('Incoming API audit metadata persistence failed:', error instanceof Error ? error.message : 'Unknown error');
+    }
+  });
+  next();
+});
 
 // Meta webhook transport is a platform primitive; routing and replies remain in editable Flows.
 // Configure these four values on Render before enabling the callback.
