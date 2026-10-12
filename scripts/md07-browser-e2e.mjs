@@ -50,6 +50,7 @@ try {
   await page.locator('#login-email').fill(email);
   await page.locator('#login-password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.locator('#login-email').waitFor({ state: 'hidden', timeout: 60000 });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const root = page.locator('.free-canvas-stage [data-component-id="md07-root"]');
   const card = page.locator('.free-canvas-stage [data-component-id="md07-card"]');
@@ -91,6 +92,8 @@ try {
   assert.equal(saved.components.find((item) => item.id === 'md07-card').properties.layoutParentId, 'md07-root');
   console.log('PASS: authenticated browser nested component editing, styling, save and reopen');
 } catch (error) {
+  console.error('Browser E2E failure at URL:', page.url());
+  console.error('Visible screen:', (await page.locator('body').innerText().catch(() => '')).slice(0, 3500));
   await page.screenshot({ path: '/tmp/md07-browser-failure.png', fullPage: true }).catch(() => {});
   throw error;
 } finally {
