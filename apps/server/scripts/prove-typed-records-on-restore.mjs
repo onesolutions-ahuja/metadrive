@@ -25,6 +25,7 @@ try{
      tenant.objects.find(o=>Array.isArray(o.fields));
   if(!object) throw Error('No metadata object suitable for typed SQL CRUD testing');
   const objectId=object.apiName, id='SQL-MIGRATION-PROOF-'+randomUUID();
+  const hadRecordBucket=Object.prototype.hasOwnProperty.call(tenant.records,objectId);
   const original=stateDigest(initial.state);
   let after=structuredClone(initial.state);
   if(!Array.isArray(after.tenants[tenantId].records[objectId]))
@@ -46,6 +47,7 @@ try{
   }
   after=structuredClone(active.state);
   after.tenants[tenantId].records[objectId]=after.tenants[tenantId].records[objectId].filter(r=>r.Id!==id);
+  if(!hadRecordBucket) delete after.tenants[tenantId].records[objectId];
   active=await save(after,active);
   const gone=await read();
   if(gone.state.tenants[tenantId].records[objectId].some(r=>r.Id===id))
