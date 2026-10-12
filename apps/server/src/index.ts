@@ -2837,7 +2837,11 @@ const integrationConnectionRequestSchema = z.object({
 const connectorDefinitionRequestSchema = connectorDefinitionSchema;
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
-type TenantData = { mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type SecurityAuditEvent = {
+  id: string; at: string; actorUserId: string; action: string;
+  targetUserId?: string; details?: Record<string, string>;
+};
+type TenantData = { securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -3269,6 +3273,7 @@ type LocalUser = {
   mfaSecret?: MfaEncryptedSecret;
   mfaLastUsedStep?: number;
   mfaVersion?: number;
+  authVersion?: number;
 };
 type RefreshSession = {
   tokenHash: string;
@@ -3279,6 +3284,7 @@ type RefreshSession = {
   usedAt: number | null;
   revokedAt: number | null;
   mfaVerified?: boolean;
+  authVersion?: number;
 };
 type TenantRegistryEntry = {
   name: string; description: string; status: 'ACTIVE' | 'SUSPENDED'; createdAt: string; updatedAt: string;
@@ -3326,6 +3332,10 @@ const stateSchema = z.object({
   })).default([]),
   libraryComponents: z.array(libraryComponentSchema).default([]),
   tenants: z.record(z.object({
+    securityAudit: z.array(z.object({
+      id: z.string(), at: z.string().datetime(), actorUserId: z.string(), action: z.string(),
+      targetUserId: z.string().optional(), details: z.record(z.string()).optional()
+    })).default([]),
     mfaPolicy: z.object({ mode: z.enum(['Off', 'Optional', 'Required']) }).default({ mode: 'Off' }),
     objects: z.array(objectSchema),
     flows: z.array(flowSchema),
@@ -3372,12 +3382,14 @@ const stateSchema = z.object({
     authRevokedBefore: z.number().int().nonnegative().optional(),
     mfaSecret: z.object({ keyId: z.string(), iv: z.string(), authTag: z.string(), ciphertext: z.string() }).optional(),
     mfaLastUsedStep: z.number().int().nonnegative().optional(),
-    mfaVersion: z.number().int().nonnegative().optional()
+    mfaVersion: z.number().int().nonnegative().optional(),
+    authVersion: z.number().int().nonnegative().optional()
   })),
   refreshSessions: z.array(z.object({
     tokenHash: z.string(), familyId: z.string(), userId: z.string(), tenantId: z.string(),
     expiresAt: z.number(), usedAt: z.number().nullable(), revokedAt: z.number().nullable(),
-    mfaVerified: z.boolean().optional()
+    mfaVerified: z.boolean().optional(),
+    authVersion: z.number().int().nonnegative().optional()
   })),
   revokedAccessTokens: z.record(z.number())
 }).superRefine((state, context) => {
@@ -3967,7 +3979,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     ]
   });
   return {
-    mfaPolicy: { mode: 'Off' },
+    mfaPolicy: { mode: 'Off' }, securityAudit: [],
     objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
@@ -4772,6 +4784,21 @@ if (!maintenanceMode) await bootstrapTenant();
 function tenantIsActive(tenantId: string): boolean {
   return state.tenantRegistry[tenantId]?.status !== 'SUSPENDED';
 }
+function withSecurityEvent(
+  tenant: TenantData,
+  actorUserId: string,
+  action: string,
+  details?: Record<string, string>,
+  targetUserId?: string
+): TenantData {
+  const event: SecurityAuditEvent = {
+    id: randomUUID(), at: new Date().toISOString(), actorUserId, action,
+    ...(targetUserId ? { targetUserId } : {}),
+    ...(details ? { details } : {})
+  };
+  // No passwords, bearer tokens, MFA secrets, raw request bodies, or network identifiers.
+  return { ...tenant, securityAudit: [...tenant.securityAudit, event].slice(-5000) };
+}
 function tenantData(tenantId: string): TenantData | undefined {
   return tenantIsActive(tenantId) ? state.tenants[tenantId] : undefined;
 }
@@ -4783,7 +4810,23 @@ function getPrincipal(res: Response): Principal {
 function principalUser(principal: Principal): LocalUser | undefined {
   return state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
 }
+// In-memory, tenant-reference/versioned authorization cache. No TTL-based stale grants:
+// tenant metadata updates replace the tenant object; identity changes replace the
+// LocalUser object; platform policy changes replace the policy array.
+const effectivePermissionCache = new WeakMap<TenantData, Map<string, {
+  user: LocalUser; platformGrants?: PlatformState['platformPolicies'][string]; permissions: string[];
+}>>();
 function effectivePermissions(user: LocalUser, data: TenantData): string[] {
+  const platformGrants = state.platformPolicies[user.id];
+  let tenantCache = effectivePermissionCache.get(data);
+  if (!tenantCache) {
+    tenantCache = new Map();
+    effectivePermissionCache.set(data, tenantCache);
+  }
+  const cached = tenantCache.get(user.id);
+  if (cached && cached.user === user && cached.platformGrants === platformGrants) {
+    return cached.permissions;
+  }
   const accessUser = data.accessControl.users.find((item) => item.id === user.id);
   const profile = data.accessControl.profiles.find((item) =>
     item.id === (accessUser?.profileId ?? profileIdForRole(user.role, data.accessControl.profiles)));
@@ -4814,7 +4857,9 @@ function effectivePermissions(user: LocalUser, data: TenantData): string[] {
   } else if (policies.includes('licence:manage')) {
     permissions.add('licence:manage');
   }
-  return [...permissions];
+  const resolved = [...permissions];
+  tenantCache.set(user.id, { user, platformGrants, permissions: resolved });
+  return resolved;
 }
 function principalForUser(user: LocalUser, tenant: TenantData): Principal {
   return {
@@ -5035,6 +5080,10 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
+    if ((claims.auth_version ?? 0) !== (user.authVersion ?? 0)) {
+      res.status(401).json({ error: 'Authentication state has changed; sign in again' });
+      return;
+    }
     if ((claims.mfa_version ?? 0) !== (user.mfaVersion ?? 0)) {
       res.status(401).json({ error: 'Authentication state has changed; sign in again' });
       return;
@@ -5085,7 +5134,7 @@ function issueRefreshSession(user: LocalUser, previousFamilyId?: string, mfaVeri
       tokenHash: hashToken(token), familyId: previousFamilyId ?? randomUUID(),
       userId: user.id, tenantId: user.tenantId,
       expiresAt: Date.now() / 1000 + jwtService.config.refreshTokenTtlSeconds,
-      usedAt: null, revokedAt: null, mfaVerified
+      usedAt: null, revokedAt: null, mfaVerified, authVersion: user.authVersion ?? 0
     }
   };
 }
@@ -5101,13 +5150,16 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
   const tokenStartedAt = performance.now();
   const issued = await jwtService.issue({
     userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified,
-    mfaVersion: user.mfaVersion ?? 0
+    mfaVersion: user.mfaVersion ?? 0, authVersion: user.authVersion ?? 0
   });
   const tokenMs = performance.now() - tokenStartedAt;
   const refresh = issueRefreshSession(user, familyId, mfaVerified);
   const nextState = {
     ...state,
     refreshSessions: [...state.refreshSessions, refresh.session],
+    tenants: {
+      ...state.tenants, [user.tenantId]: withSecurityEvent(data, user.id, 'auth.login.succeeded')
+    },
     revokedAccessTokens: Object.fromEntries(Object.entries(state.revokedAccessTokens).filter(([, expiry]) => expiry > Date.now() / 1000))
   };
   const sessionStateStartedAt = performance.now();
@@ -5134,9 +5186,9 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
 
 
 type MfaLoginChallenge = {
-  userId: string; tenantId: string; expiresAt: number; attempts: number; pendingSecret?: string;
+  userId: string; tenantId: string; expiresAt: number; attempts: number; pendingSecret?: string; authVersion: number;
 };
-type MfaEnrollment = { userId: string; tenantId: string; expiresAt: number; attempts: number; secret: string };
+type MfaEnrollment = { userId: string; tenantId: string; expiresAt: number; attempts: number; secret: string; authVersion: number };
 const mfaLoginChallenges = new Map<string, MfaLoginChallenge>();
 const mfaEnrollments = new Map<string, MfaEnrollment>();
 const mfaFailures = new Map<string, { count: number; resetAt: number }>();
@@ -5274,7 +5326,8 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     const pendingSecret = user.mfaSecret ? undefined : newTotpSecret();
     const challengeToken = newMfaToken(mfaLoginChallenges, {
       tenantId: user.tenantId, userId: user.id, expiresAt: Date.now() + mfaChallengeTtlMs,
-      attempts: 0, ...(pendingSecret ? { pendingSecret } : {})
+      attempts: 0, authVersion: user.authVersion ?? 0,
+      ...(pendingSecret ? { pendingSecret } : {})
     });
     return res.status(202).json({
       mfa_required: true, challenge_token: challengeToken,
@@ -5302,7 +5355,7 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
   const user = state.users.find((item) =>
     item.id === challenge.userId && item.tenantId === challenge.tenantId && !item.disabled);
   const tenant = tenantData(challenge.tenantId);
-  if (!user || !tenant || !mfaRequiredForUser(tenant, user)
+  if (!user || !tenant || challenge.authVersion !== (user.authVersion ?? 0) || !mfaRequiredForUser(tenant, user)
     || (Boolean(user.mfaSecret) === Boolean(challenge.pendingSecret))) {
     mfaLoginChallenges.delete(key);
     return res.status(401).json({ error: 'MFA challenge is no longer valid' });
@@ -5366,7 +5419,11 @@ app.put('/api/auth/mfa/policy', accessAuthentication, requirePermission('securit
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   if (tenant.mfaPolicy.mode !== parsed.data.mode) {
-    persistTenantRecords(principal.tenantId, { ...tenant, mfaPolicy: parsed.data });
+    persistTenantRecords(principal.tenantId, withSecurityEvent(
+      { ...tenant, mfaPolicy: parsed.data },
+      principal.userId, 'auth.mfa.policy.updated',
+      { from: tenant.mfaPolicy.mode, to: parsed.data.mode }
+    ));
   }
   return res.json(parsed.data);
 });
@@ -5387,7 +5444,7 @@ app.post('/api/auth/mfa/enroll', accessAuthentication, async (req: Request, res:
   const secret = newTotpSecret();
   const enrollmentToken = newMfaToken(mfaEnrollments, {
     userId: user.id, tenantId: user.tenantId,
-    secret, attempts: 0, expiresAt: Date.now() + mfaChallengeTtlMs
+    secret, attempts: 0, expiresAt: Date.now() + mfaChallengeTtlMs, authVersion: user.authVersion ?? 0
   });
   return res.json({ enrollment_token: enrollmentToken, setup_secret: secret, setup_uri: totpUri(secret, user.email) });
 });
@@ -5401,7 +5458,8 @@ app.post('/api/auth/mfa/enroll/confirm', accessAuthentication, (req: Request, re
   const key = hashToken(parsed.data.enrollment_token);
   const enrollment = mfaEnrollments.get(key);
   if (!enrollment || enrollment.userId !== user.id || enrollment.tenantId !== user.tenantId
-    || enrollment.expiresAt <= Date.now() || enrollment.attempts >= 5 || user.mfaSecret || tenant.mfaPolicy.mode === 'Off') {
+    || enrollment.expiresAt <= Date.now() || enrollment.attempts >= 5
+    || enrollment.authVersion !== (user.authVersion ?? 0) || user.mfaSecret || tenant.mfaPolicy.mode === 'Off') {
     mfaEnrollments.delete(key);
     return res.status(401).json({ error: 'Enrollment expired; start again' });
   }
@@ -5488,7 +5546,9 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         .sort((a, b) => b.expiresAt - a.expiresAt)[0];
       const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
       const data = tenantData(session.tenantId);
-      if (latest && user && data && tenantIsActive(session.tenantId) && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
+      if (latest && user && data && tenantIsActive(session.tenantId)
+        && (latest.authVersion ?? 0) === (user.authVersion ?? 0)
+        && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
         // The old cookie has already been consumed by another tab. Return a
         // fresh cookie as well as an access token, or the next page load will
         // reuse the stale cookie and lose the authenticated session.
@@ -5501,7 +5561,8 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         state = nextState;
         setRefreshCookie(res, replacement.token);
         const permissions = effectivePermissions(user, data);
-        const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: latest.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0 });
+        const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: latest.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0,
+          authVersion: user.authVersion ?? 0 });
         return res.json({
           access_token: issued.accessToken, token_type: 'Bearer',
           expires_in: jwtService.config.accessTokenTtlSeconds, expires_at: issued.expiresAt,
@@ -5529,6 +5590,10 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Tenant membership is no longer active' });
   }
+  if ((session.authVersion ?? 0) !== (user.authVersion ?? 0)) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Authentication state has changed; sign in again' });
+  }
   if (mfaRequiredForUser(data, user) && !session.mfaVerified) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'MFA verification is required' });
@@ -5542,7 +5607,8 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   persistState(nextState);
   state = nextState;
   const permissions = effectivePermissions(user, data);
-  const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: session.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0 });
+  const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: session.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0,
+    authVersion: user.authVersion ?? 0 });
   setRefreshCookie(res, nextRefresh.token);
   return res.json({
     access_token: issued.accessToken, token_type: 'Bearer',
@@ -5570,6 +5636,60 @@ app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response)
     clearRefreshCookie(res);
     return res.status(204).end();
   }).catch(() => res.status(401).json({ error: 'Access token is invalid or expired' }));
+});
+
+
+app.get('/api/auth/sessions', accessAuthentication, (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const now = Date.now() / 1000;
+  const active = state.refreshSessions
+    .filter((session) => session.userId === principal.userId && session.tenantId === principal.tenantId
+      && session.revokedAt === null && session.usedAt === null && session.expiresAt > now)
+    .map((session) => ({
+      familyId: session.familyId,
+      expiresAt: session.expiresAt,
+      mfaVerified: session.mfaVerified === true
+    }));
+  // Do not expose raw refresh tokens or their hashes.
+  res.json({ sessions: active });
+});
+
+// Revokes every refresh session AND every bearer token using auth-version
+// invalidation. Requires password proof even when the caller holds a valid JWT.
+app.post('/api/auth/sessions/revoke-all', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') {
+    return res.status(409).json({ error: 'Sessions are managed by the external identity provider' });
+  }
+  const parsed = z.object({ currentPassword: z.string().min(1).max(256) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Current password required' });
+  const principal = getPrincipal(res);
+  const user = principalUser(principal);
+  if (!user || !await verifyPassword(parsed.data.currentPassword, user.passwordSalt, user.passwordHash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+      ? { ...item, authVersion: (item.authVersion ?? 0) + 1 }
+      : item),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
+    tenants: {
+      ...state.tenants,
+      [user.tenantId]: withSecurityEvent(tenantData(user.tenantId)!, user.id, 'auth.sessions.revoked-all')
+    }
+  };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to revoke sessions' }); }
+  clearRefreshCookie(res);
+  return res.json({ revoked: true, signedOut: true });
+});
+
+app.get('/api/auth/security-events', accessAuthentication, requirePermission('security:manage'), (req: Request, res: Response) => {
+  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const max = Number(req.query.limit ?? 100);
+  if (!Number.isInteger(max) || max < 1 || max > 500)
+    return res.status(400).json({ error: 'limit must be between 1 and 500' });
+  return res.json({ events: tenant.securityAudit.slice(-max).reverse() });
 });
 
 const changePasswordSchema = z.object({
@@ -5600,10 +5720,15 @@ app.post('/api/auth/change-password', accessAuthentication, async (req: Request,
   const nextState: PlatformState = {
     ...state,
     users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash, authRevokedBefore: changedAt }
+      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
+        authVersion: (item.authVersion ?? 0) + 1 }
       : item),
     refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
-      ? { ...session, revokedAt: changedAt } : session)
+      ? { ...session, revokedAt: changedAt } : session),
+    tenants: {
+      ...state.tenants,
+      [user.tenantId]: withSecurityEvent(tenantData(user.tenantId)!, user.id, 'auth.password.changed')
+    }
   };
   try { persistState(nextState); state = nextState; }
   catch { return res.status(503).json({ error: 'Could not save new password. Please retry.' }); }
@@ -7465,65 +7590,76 @@ app.post('/api/metadata/flows/:apiName/validate', requirePermission('metadata:re
     [...tenant.flows.filter((flow) => flow.apiName !== parsed.data.apiName), parsed.data], tenant.approvalProcesses, tenant.platformEvents);
   return res.json(validation);
 });
+// Reuse the same validated permission assignments for all object and field checks
+// within a request, instead of repeatedly scanning profiles/sets for every cell.
+type AuthGrantContext = {
+  profile?: TenantData['accessControl']['profiles'][number];
+  directSets: TenantData['accessControl']['permissionSets'];
+  groups: Array<{
+    group: TenantData['accessControl']['permissionSetGroups'][number];
+    sets: TenantData['accessControl']['permissionSets'];
+  }>;
+};
+const requestGrantCache = new WeakMap<Principal, WeakMap<TenantData, AuthGrantContext>>();
+function authorizationGrants(principal: Principal, tenant: TenantData): AuthGrantContext | undefined {
+  let tenantCache = requestGrantCache.get(principal);
+  if (tenantCache?.has(tenant)) return tenantCache.get(tenant);
+  const user = principalUser(principal);
+  if (!user) return undefined;
+  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
+  const profiles = tenant.accessControl.profiles;
+  const profile = profiles.find((item) => item.id ===
+    (accessUser?.profileId ?? profileIdForRole(user.role, profiles)));
+  const assignedSets = new Set(accessUser?.permissionSetIds ?? user.permissionSetIds);
+  const directSets = tenant.accessControl.permissionSets.filter((set) => assignedSets.has(set.id));
+  const groupIds = new Set(accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds);
+  const groups = tenant.accessControl.permissionSetGroups
+    .filter((group) => groupIds.has(group.id))
+    .map((group) => ({
+      group,
+      sets: tenant.accessControl.permissionSets.filter((set) => group.permissionSetIds.includes(set.id))
+    }));
+  const resolved: AuthGrantContext = { profile, directSets, groups };
+  if (!tenantCache) {
+    tenantCache = new WeakMap();
+    requestGrantCache.set(principal, tenantCache);
+  }
+  tenantCache.set(tenant, resolved);
+  return resolved;
+}
+
 function hasObjectPermission(principal: Principal, tenant: TenantData, objectName: string, action: 'read' | 'create' | 'edit' | 'delete'): boolean {
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (object?.kind === 'Custom Object' && object.settings?.deploymentStatus === 'In Development'
     && !principal.permissions.includes('objects:manage')
     && !principal.permissions.includes('metadata:write')) return false;
-  const user = principalUser(principal);
-  if (!user) return false;
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  const grants: Array<{ permission: ObjectPermission; muted?: Partial<ObjectPermission> }> = [];
-  const addGrants = (permissions: Record<string, ObjectPermission>, muted?: Partial<ObjectPermission>) => {
-    const permission = permissions[objectName];
-    if (permission) grants.push({ permission, muted });
-  };
-  if (profile) addGrants(profile.objectPermissions);
-  tenant.accessControl.permissionSets
-     .filter((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id))
-    .forEach((set) => addGrants(set.objectPermissions));
-  (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).forEach((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    if (!group) return;
-    tenant.accessControl.permissionSets
-      .filter((set) => group.permissionSetIds.includes(set.id))
-      .forEach((set) => addGrants(set.objectPermissions, group.mutedObjectPermissions[objectName]));
-  });
-  const hasGrant = ({ permission, muted }: typeof grants[number]) => {
+  const grants = authorizationGrants(principal, tenant);
+  if (!grants) return false;
+  const hasGrant = (permission?: ObjectPermission, muted?: Partial<ObjectPermission>): boolean => {
+    if (!permission) return false;
     if (permission[action] && !muted?.[action] && !muted?.read) return true;
     if (action === 'read') {
       return (permission.viewAll && !muted?.viewAll || permission.modifyAll && !muted?.modifyAll)
         && !muted?.read;
     }
-    return action !== 'create'
-      && permission.modifyAll
-      && !muted?.modifyAll
-      && !muted?.[action]
-      && !muted?.read;
+    return action !== 'create' && permission.modifyAll && !muted?.modifyAll
+      && !muted?.[action] && !muted?.read;
   };
-  return grants.some(hasGrant);
+  if (hasGrant(grants.profile?.objectPermissions[objectName])) return true;
+  if (grants.directSets.some((set) => hasGrant(set.objectPermissions[objectName]))) return true;
+  return grants.groups.some(({ group, sets }) => sets.some((set) =>
+    hasGrant(set.objectPermissions[objectName], group.mutedObjectPermissions[objectName])));
 }
 
 function hasObjectWidePermission(principal: Principal, tenant: TenantData, objectName: string, flag: 'viewAll' | 'modifyAll'): boolean {
-  const user = principalUser(principal);
-  if (!user) return false;
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  const hasGrant = (permissions: Record<string, ObjectPermission>, muted?: Partial<ObjectPermission>) => {
-    const permission = permissions[objectName];
-    return Boolean(permission?.[flag] && !muted?.[flag] && !muted?.read);
-  };
-  if (profile && hasGrant(profile.objectPermissions)) return true;
-  if (tenant.accessControl.permissionSets.some((set) =>
-    (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && hasGrant(set.objectPermissions))) return true;
-  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    return Boolean(group && tenant.accessControl.permissionSets.some((set) =>
-      group.permissionSetIds.includes(set.id) && hasGrant(set.objectPermissions, group.mutedObjectPermissions[objectName])));
-  });
+  const grants = authorizationGrants(principal, tenant);
+  if (!grants) return false;
+  const hasGrant = (permission?: ObjectPermission, muted?: Partial<ObjectPermission>) =>
+    Boolean(permission?.[flag] && !muted?.[flag] && !muted?.read);
+  if (hasGrant(grants.profile?.objectPermissions[objectName])) return true;
+  if (grants.directSets.some((set) => hasGrant(set.objectPermissions[objectName]))) return true;
+  return grants.groups.some(({ group, sets }) => sets.some((set) =>
+    hasGrant(set.objectPermissions[objectName], group.mutedObjectPermissions[objectName])));
 }
 
 function hasRoleHierarchyAccess(principal: Principal, tenant: TenantData, ownerId: unknown): boolean {
@@ -7612,6 +7748,23 @@ function sharingRuleGrantsUser(rule: SharingRule, recipientUserId: string, recor
   return roleIsAtOrBelow(recipientRoleId, rule.targetId, tenant.accessControl.roles);
 }
 
+// Scope and cache record-share lookups by immutable tenant state snapshot.
+// A sharing change replaces TenantData; an old index cannot authorize new data.
+const recordShareIndexes = new WeakMap<TenantData, Map<string, TenantData['recordShares']>>();
+function recordShareIndex(tenant: TenantData): Map<string, TenantData['recordShares']> {
+  const existing = recordShareIndexes.get(tenant);
+  if (existing) return existing;
+  const index = new Map<string, TenantData['recordShares']>();
+  for (const share of tenant.recordShares) {
+    const key = JSON.stringify([share.objectApiName, share.recordId]);
+    let list = index.get(key);
+    if (!list) { list = []; index.set(key, list); }
+    list.push(share);
+  }
+  recordShareIndexes.set(tenant, index);
+  return index;
+}
+
 function hasRecordAccess(
   principal: Principal,
   tenant: TenantData,
@@ -7647,10 +7800,9 @@ function hasRecordAccess(
   if (tenant.sharingSettings[objectName]?.grantAccessUsingHierarchies !== false
     && (accessLevel === 'Read' || defaultAccess === 'Public Read/Write')
     && hasRoleHierarchyAccess(principal, tenant, record.OwnerId)) return true;
-  const share = tenant.recordShares.find((item) =>
-    item.objectApiName === objectName && item.recordId === record.Id
-    && (item.userId === principal.userId
-      || Boolean(item.groupId && publicGroupContainsUser(item.groupId, principal.userId, tenant))));
+  const share = (recordShareIndex(tenant).get(JSON.stringify([objectName, record.Id])) ?? []).find((item) =>
+    item.userId === principal.userId
+      || Boolean(item.groupId && publicGroupContainsUser(item.groupId, principal.userId, tenant)));
   if (share && (share.accessLevel === 'Edit' || accessLevel === 'Read')) return true;
   if (tenant.accessControl.sharingRules.some((rule) =>
     rule.objectApiName === objectName
@@ -7661,13 +7813,9 @@ function hasRecordAccess(
 }
 
 function hasFieldPermission(principal: Principal, tenant: TenantData, objectName: string, fieldName: string, action: 'read' | 'edit'): boolean {
-  const user = principalUser(principal);
-  if (!user) return false;
+  const grants = authorizationGrants(principal, tenant);
+  if (!grants) return false;
   const key = `${objectName}.${fieldName}`;
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  const sets = tenant.accessControl.permissionSets;
   const grantsField = (
     fieldPermissions: Record<string, { read: boolean; edit: boolean }>,
     objectPermissions: Record<string, ObjectPermission>,
@@ -7682,13 +7830,11 @@ function hasFieldPermission(principal: Principal, tenant: TenantData, objectName
       || action === 'read' && objectPermission.viewAll && !muted?.viewAll && !muted?.read
     ));
   };
-  if (profile && grantsField(profile.fieldPermissions, profile.objectPermissions)) return true;
-  if (sets.some((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && grantsField(set.fieldPermissions, set.objectPermissions))) return true;
-  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    if (!group || group.mutedFieldPermissions[key]?.[action]) return false;
-    return sets.some((set) => group.permissionSetIds.includes(set.id)
-      && grantsField(set.fieldPermissions, set.objectPermissions, group.mutedObjectPermissions[objectName]));
+  if (grants.profile && grantsField(grants.profile.fieldPermissions, grants.profile.objectPermissions)) return true;
+  if (grants.directSets.some((set) => grantsField(set.fieldPermissions, set.objectPermissions))) return true;
+  return grants.groups.some(({ group, sets }) => {
+    if (group.mutedFieldPermissions[key]?.[action]) return false;
+    return sets.some((set) => grantsField(set.fieldPermissions, set.objectPermissions, group.mutedObjectPermissions[objectName]));
   });
 }
 
@@ -12152,7 +12298,10 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
       permissionSetGroupIds: assignment.permissionSetGroupIds
     } : user;
   });
-  const updatedTenant = { ...tenant, accessControl: normalizedAccessControl, sharingSettings };
+  const updatedTenant = withSecurityEvent(
+    { ...tenant, accessControl: normalizedAccessControl, sharingSettings },
+    principal.userId, 'rbac.permissions.updated'
+  );
   const hasActiveSecurityAdministrator = updatedUsers.some((user) =>
     user.tenantId === principal.tenantId && !user.disabled
     && effectivePermissions(user, updatedTenant).includes('security:manage'));
