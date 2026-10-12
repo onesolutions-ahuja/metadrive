@@ -11107,6 +11107,8 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
   if (existingIndex < 0) return res.status(404).json({ error: 'Library component was not found' });
   const principal = getPrincipal(res);
   const existing = state.libraryComponents[existingIndex];
+  if (!libraryComponentEditable(existing, principal.tenantId, Object.keys(state.tenants)))
+    return res.status(404).json({ error: 'Library component was not found' });
   const usages = findLibraryComponentUsages(state, apiName);
   const unavailableSurfaces = existing.surfaces.filter((surface) =>
     !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
@@ -11145,6 +11147,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
         publishedVersion: compiledRevision.version,
         revisions: [...(existing.revisions ?? []), ...(existing.status === 'Draft' ? [] : [libraryRevision(existing)])].slice(-100),
         pendingDraft: undefined };
+    component.tenantId = principal.tenantId;
     const libraryComponents = [...state.libraryComponents];
     libraryComponents[existingIndex] = component;
     const nextState = { ...state, libraryComponents };
@@ -11157,18 +11160,23 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
 });
 app.get('/api/component-library/:apiName/history', requirePermission('components:manage'), (req: Request, res: Response) => {
   const component=state.libraryComponents.find((item)=>item.apiName===routeParam(req,'apiName'));
-  if(!component)return res.status(404).json({error:'Library component was not found'});
+  if (!component || !libraryComponentVisible(component, getPrincipal(res).tenantId, Object.keys(state.tenants)))
+    return res.status(404).json({error:'Library component was not found'});
   return res.json({apiName:component.apiName,history:libraryHistory(component)});
 });
 app.post('/api/component-library/:apiName/publish', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName=routeParam(req,'apiName'),index=state.libraryComponents.findIndex((item)=>item.apiName===apiName);
   if(index<0)return res.status(404).json({error:'Library component was not found'});
   const existing=state.libraryComponents[index],draft=existing.pendingDraft;
+  const principal=getPrincipal(res);
+  if (!libraryComponentEditable(existing,principal.tenantId,Object.keys(state.tenants)))
+    return res.status(404).json({error:'Library component was not found'});
   if(!draft && existing.status!=='Draft')return res.status(409).json({error:'There is no draft to publish'});
   const next:LibraryComponent=draft
     ? {...existing,...draft,status:'Published',publishedVersion:draft.version,trustedBundled:false,
       revisions:[...(existing.revisions??[]),...(existing.status==='Draft'?[]:[libraryRevision(existing)])].slice(-100),pendingDraft:undefined}
     : {...existing,status:'Published',publishedVersion:existing.version};
+  next.tenantId = principal.tenantId;
   const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
   const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
   return res.json({component:next});
@@ -11179,6 +11187,9 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
   const parsed=z.object({version:z.number().int().positive()}).strict().safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Select a published historical version'});
   const existing=state.libraryComponents[index];
+  const principal=getPrincipal(res);
+  if (!libraryComponentEditable(existing,principal.tenantId,Object.keys(state.tenants)))
+    return res.status(404).json({error:'Library component was not found'});
   const previous=(existing.revisions??[]).find((item)=>item.version===parsed.data.version);
   if(!previous)return res.status(404).json({error:'Published revision not found'});
   const usages=findLibraryComponentUsages(state,apiName);
@@ -11187,14 +11198,17 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
   const nextVersion=nextLibraryRevision(existing);
   const next:LibraryComponent={...existing,...previous,version:nextVersion,updatedAt:new Date().toISOString(),status:'Published',trustedBundled:false,
     publishedVersion:nextVersion,pendingDraft:undefined,revisions:[...(existing.revisions??[]),libraryRevision(existing)].slice(-100)};
+  next.tenantId=principal.tenantId;
   const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
   const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
   return res.json({component:next,restoredFrom:parsed.data.version});
 });
 app.delete('/api/component-library/:apiName', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
-  if (!state.libraryComponents.some((component) => component.apiName === apiName)) return res.status(404).json({ error: 'Library component was not found' });
   const principal = getPrincipal(res);
+  const component=state.libraryComponents.find((item)=>item.apiName===apiName);
+  if (!libraryComponentEditable(component,principal.tenantId,Object.keys(state.tenants)))
+    return res.status(404).json({ error: 'Library component was not found' });
   const usages = findLibraryComponentUsages(state, apiName);
   if (usages.length) {
     const dependencies = usageBlockerDetails(usages, principal.tenantId);
