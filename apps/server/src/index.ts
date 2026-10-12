@@ -99,49 +99,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }) as typeof res.end;
   next();
 });
-app.use((req: Request, res: Response, next: NextFunction) => {
-  // Only explicitly identified external API traffic belongs in Communication Records.
-  // Browser, internal automation and platform API requests must not be logged here.
-  if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app'
-    || req.get('x-metadrive-external-api') !== 'true') return next();
-  const startedAt = Date.now();
-  let responseBody: unknown;
-  const sendJson = res.json.bind(res);
-  res.json = ((body: unknown) => {
-    responseBody = body;
-    return sendJson(body);
-  }) as typeof res.json;
-  res.on('finish', () => {
-    const principal = res.locals.principal as Principal | undefined;
-    if (!principal || !tenantData(principal.tenantId)) return;
-    const authorization = req.get('authorization') ?? '';
-    const authType = authorization.toLowerCase().startsWith('bearer ') ? 'Bearer'
-      : authorization.toLowerCase().startsWith('basic ') ? 'Basic'
-        : req.get('x-api-key') ? 'API Key'
-          : authorization ? 'Other' : 'None';
-    const routePath = req.route?.path;
-    const apiId = `${req.method} ${typeof routePath === 'string' ? routePath : req.path}`;
-    const requestUrl = `${req.protocol}://${req.get('host') ?? 'localhost'}${req.originalUrl}`;
-    const isCommunicationRecordsEndpoint = /^\/api\/records\/Communication_Records__c(?:\/|$)/i.test(req.path);
-    try {
-      appendCommunicationRecord(principal.tenantId, principal.userId, {
-        apiId,
-        url: communicationSafeUrl(requestUrl),
-        authType,
-        method: supportedCommunicationMethod(req.method),
-        direction: 'Incoming',
-        requestBody: isCommunicationRecordsEndpoint ? '' : communicationPayload(req.body),
-        responseBody: isCommunicationRecordsEndpoint ? '' : communicationPayload(responseBody),
-        status: res.statusCode,
-        error: res.statusCode >= 400 ? communicationError(responseBody) : '',
-        durationMs: Date.now() - startedAt
-      });
-    } catch (error) {
-      console.error(`Failed to record incoming API request "${apiId}": ${error instanceof Error ? error.message : String(error)}`);
-    }
-  });
-  next();
-});
+// Incoming API audit is deliberately disabled until authentication issues a
+// server-verifiable external API-client identity. Request-source headers are
+// caller-controlled and cannot establish the channel. Flow/connector audit
+// records and standard tenant-scoped record permissions remain unaffected.
+// Do not reinstate this interceptor based on x-metadrive-* headers.
 
 // Meta webhook transport is a platform primitive; routing and replies remain in editable Flows.
 // Configure these four values on Render before enabling the callback.
@@ -7470,11 +7432,10 @@ function communicationPayload(value: unknown): string {
 
 function communicationSafeUrl(value: string): string {
   const url = new URL(value);
-  for (const [key] of url.searchParams) {
-    if (/password|secret|authorization|token|api[-_]?key|credential|cookie/i.test(key)) {
-      url.searchParams.set(key, '[REDACTED]');
-    }
-  }
+  // Query strings may contain arbitrary personal data or secrets under custom
+  // parameter names. Retain only the route location, never query or fragment.
+  url.search = '';
+  url.hash = '';
   return url.toString();
 }
 
@@ -7661,6 +7622,13 @@ function routeParam(req: Request, name: string): string {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 }
 
+function isProtectedApiAuditRecord(objectName: string, record: RuntimeRecord): boolean {
+  return objectName === 'Communication_Records__c'
+    && record.Communication_Mode__c === 'API';
+}
+function canReadCommunicationRecord(principal: Principal, objectName: string, record: RuntimeRecord): boolean {
+  return !isProtectedApiAuditRecord(objectName, record) || principal.permissions.includes('security:manage');
+}
 function canManageRecordShares(principal: Principal, tenant: TenantData, objectName: string, record: RuntimeRecord): boolean {
   return record.OwnerId === principal.userId
     || hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')
@@ -7674,6 +7642,7 @@ app.get('/api/records/:objectName/:recordId/shares', accessAuthentication, (req:
   const recordId = routeParam(req, 'recordId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7696,6 +7665,7 @@ app.post('/api/records/:objectName/:recordId/shares', accessAuthentication, (req
   const recordId = routeParam(req, 'recordId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7738,6 +7708,7 @@ app.delete('/api/records/:objectName/:recordId/shares/:userId', accessAuthentica
   const userId = routeParam(req, 'userId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7760,6 +7731,7 @@ app.delete('/api/records/:objectName/:recordId/shares/groups/:groupId', accessAu
   const groupId = routeParam(req, 'groupId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7816,7 +7788,8 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
         UserRoleId: user.role, CreatedDate: user.createdAt, LastModifiedDate: user.createdAt
       })))
     : (tenant.records[objectName] ?? [])
-        .filter((record) => hasRecordAccess(principal, tenant, objectName, record, 'Read'))
+        .filter((record) => hasRecordAccess(principal, tenant, objectName, record, 'Read')
+          && canReadCommunicationRecord(principal, objectName, record))
         .map((record) => sanitizeRecordForRead(principal, tenant, object, record));
   // Search only fields visible to this principal; preserve metadata-configured search layouts.
   const configuredFields = object.searchLayouts?.searchResults;
@@ -7879,7 +7852,8 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
     })), ...(lightningPage ? { lightningPage } : {}) });
   }
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectName, record)
+    || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
   const recordTypeId = typeof record.RecordTypeId === 'string'
     ? record.RecordTypeId
     : object.recordTypes?.find((recordType) => recordType.active && recordType.isDefault)?.id
@@ -7910,7 +7884,8 @@ function interactionRecord(principal: Principal, tenant: TenantData, objectApiNa
   }
   if (!featureEnabled) return { error: { status: 409, message: `Activities are disabled for object "${object.label}"` } } as const;
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === recordId);
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, permission === 'read' ? 'Read' : 'Edit')) {
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, permission === 'read' ? 'Read' : 'Edit')) {
     return { error: { status: 404, message: 'Record was not found' } } as const;
   }
   return { object, record } as const;
@@ -7974,7 +7949,8 @@ app.get('/api/records/:objectName/:recordId/chatter', accessAuthentication, (req
   if (!hasObjectPermission(principal, tenant, objectApiName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectApiName}"` });
   if (!object.settings?.allowInChatter) return res.status(409).json({ error: `Chatter is disabled for object "${object.label}"` });
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
   const posts = tenant.chatterPosts
     .filter((post) => post.objectApiName === objectApiName && post.recordId === record.Id)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -7989,7 +7965,8 @@ app.post('/api/records/:objectName/:recordId/chatter', accessAuthentication, (re
   if (!hasObjectPermission(principal, tenant, objectApiName, 'edit')) return res.status(403).json({ error: `Missing edit permission for object "${objectApiName}"` });
   if (!object.settings?.allowInChatter) return res.status(409).json({ error: `Chatter is disabled for object "${object.label}"` });
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   const parsed = chatterPostInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Chatter post', details: parsed.error.flatten() });
   const user = principalUser(principal);
@@ -8010,7 +7987,8 @@ app.post('/api/records/:objectName/:recordId/chatter/:postId/comments', accessAu
   if (!hasObjectPermission(principal, tenant, objectApiName, 'edit')) return res.status(403).json({ error: `Missing edit permission for object "${objectApiName}"` });
   if (!object.settings?.allowInChatter) return res.status(409).json({ error: `Chatter is disabled for object "${object.label}"` });
   const record = (tenant.records[objectApiName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectApiName, record)
+    || !hasRecordAccess(principal, tenant, objectApiName, record, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   const parsed = chatterPostInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Chatter comment', details: parsed.error.flatten() });
   const user = principalUser(principal);
@@ -8038,7 +8016,8 @@ app.get('/api/records/:objectName/:recordId/history', accessAuthentication, (req
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
-  if (!record || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectName, record)
+    || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
   const fieldLabels = new Map(object.fields.map((field) => [field.apiName, field.label]));
   const users = new Map(state.users.map((user) => [user.id, user.name]));
   const history = tenant.fieldHistory.filter((entry) => entry.objectApiName === objectName && entry.recordId === recordId
@@ -8223,6 +8202,7 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
     return res.status(403).json({ error: 'Manage connector definitions and Integration Connections in Une Connectors Setup' });
   }
   if (objectName === 'User') return res.status(403).json({ error: 'Users must be provisioned through the security workspace' });
+  if (objectName === 'Communication_Records__c' && req.body?.Communication_Mode__c === 'API') return res.status(403).json({ error: 'API audit records are system-managed' });
   if (objectName === 'Connector_App__c' && !principal.permissions.includes('licence:manage')) {
     return res.status(403).json({error:'Connector app catalogue creation/deletion requires platform licence permission.'});
   }
@@ -8360,6 +8340,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     return res.status(403).json({ error: 'Change Owner is not enabled for this object’s list views' });
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (existing && isProtectedApiAuditRecord(objectName, existing)) return res.status(403).json({ error: 'API audit records are immutable' });
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
@@ -8403,6 +8384,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   const parsed = z.record(z.unknown()).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (objectName === 'Communication_Records__c' && (existing?.Communication_Mode__c === 'API' || parsed.data.Communication_Mode__c === 'API')) return res.status(403).json({ error: 'API audit records are system-managed' });
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (Object.hasOwn(parsed.data, 'OwnerId')) {
     if (parsed.data.OwnerId !== existing.OwnerId) {
@@ -8465,6 +8447,7 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
   }
   if (!hasObjectPermission(principal, tenant, objectName, 'delete')) return res.status(403).json({ error: `Missing delete permission for object "${objectName}"` });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (existing && isProtectedApiAuditRecord(objectName, existing)) return res.status(403).json({ error: 'API audit records are immutable' });
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Delete')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordActionEnabled(object, 'Delete', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Delete is not enabled for this object or page layout' });
@@ -8717,7 +8700,8 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
         }
         const records = tenant.records[objectApiName] ?? [];
         if (selectedIds.some((id) => !records.some((record) =>
-          record.Id === id && hasRecordAccess(principal, tenant, objectApiName, record, 'Read')))) {
+          record.Id === id && canReadCommunicationRecord(principal, objectApiName, record)
+          && hasRecordAccess(principal, tenant, objectApiName, record, 'Read')))) {
           return res.status(400).json({ error: `Selected choice for screen field "${String(field.label ?? name)}" was not found or is not readable` });
         }
       }
@@ -8730,7 +8714,8 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
         const recordExists = objectApiName === 'User'
           ? state.users.some((user) => user.id === value && user.tenantId === principal.tenantId)
           : (tenant.records[objectApiName] ?? []).some((record) =>
-            record.Id === value && hasRecordAccess(principal, tenant, objectApiName, record, 'Read'));
+            record.Id === value && canReadCommunicationRecord(principal, objectApiName, record)
+              && hasRecordAccess(principal, tenant, objectApiName, record, 'Read'));
         if (!recordExists) return res.status(400).json({ error: `Selected record for screen field "${String(field.label ?? name)}" was not found or is not readable` });
       }
       if (type === 'Data Table') {
@@ -9443,7 +9428,8 @@ app.get('/api/metadata/dashboards/:apiName/data/:objectName', requirePermission(
   const formulaContext = formulaContextForUser(tenant, executionPrincipal.userId);
   return res.json({
     records: (tenant.records[objectApiName] ?? [])
-      .filter((record) => hasRecordAccess(executionPrincipal, tenant, objectApiName, record, 'Read'))
+      .filter((record) => hasRecordAccess(executionPrincipal, tenant, objectApiName, record, 'Read')
+        && canReadCommunicationRecord(executionPrincipal, objectApiName, record))
       .map((record) => sanitizeRecordForRead(executionPrincipal, tenant, object,
         calculateFormulaFields(object, record, formulaContext)))
   });
@@ -9827,7 +9813,8 @@ app.get('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metada
       if (snapshot.sourceRecordAccess?.some((source) => {
         const object = tenant.objects.find((item) => item.apiName === source.objectApiName);
         const record = tenant.records[source.objectApiName]?.find((item) => item.Id === source.recordId);
-        return !object || !record || !hasRecordAccess(runningPrincipal, tenant, source.objectApiName, record, 'Read');
+        return !object || !record || !hasRecordAccess(runningPrincipal, tenant, source.objectApiName, record, 'Read')
+          || !canReadCommunicationRecord(runningPrincipal, source.objectApiName, record);
       })) return false;
       return snapshot.components.every((snapshotComponent) => {
         const component = dashboard.components.find((item) => item.id === snapshotComponent.componentId);
@@ -10153,7 +10140,8 @@ app.post('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metad
     }
     const formulaContext = formulaContextForUser(tenant, principal.userId);
     const sourceRecords = (tenant.records[object.apiName] ?? [])
-      .filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read'))
+      .filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read')
+        && canReadCommunicationRecord(principal, object.apiName, record))
       .map((record) => calculateFormulaFields(object, record, formulaContext));
     const records = sourceRecords.filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read')
       && reportFilters.every((filter) => reportFilterMatches(record, filter))
@@ -10641,7 +10629,8 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
   ) => reportFilterMatches(record, filter);
   const visibleSourceRecords = object.apiName === 'User'
     ? reportSourceRecords
-    : reportSourceRecords.filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read'));
+    : reportSourceRecords.filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read')
+      && canReadCommunicationRecord(principal, object.apiName, record));
   const crossFilterResolution = resolveDashboardCrossFilters(principal, tenant, object.apiName, crossFilters, matches);
   if ('error' in crossFilterResolution) {
     return res.status(crossFilterResolution.status).json({ error: crossFilterResolution.error });
@@ -16682,7 +16671,8 @@ function resolveReportCrossFilters(
       relationshipFieldApiName: relationshipField.apiName,
       filters: crossFilter.filters,
       childRecords: (tenant.records[childObject.apiName] ?? []).filter((record) =>
-        hasRecordAccess(principal, tenant, childObject.apiName, record, 'Read'))
+        hasRecordAccess(principal, tenant, childObject.apiName, record, 'Read')
+        && canReadCommunicationRecord(principal, childObject.apiName, record))
         .map((record) => calculateFormulaFields(childObject, record, formulaContextForUser(tenant, principal.userId)))
     });
   }
@@ -16773,7 +16763,8 @@ function resolveDashboardCrossFilters(
     if (!records) {
       const object = tenant.objects.find((item) => item.apiName === objectApiName);
       records = (tenant.records[objectApiName] ?? []).filter((record) =>
-        hasRecordAccess(principal, tenant, objectApiName, record, 'Read'))
+        hasRecordAccess(principal, tenant, objectApiName, record, 'Read')
+        && canReadCommunicationRecord(principal, objectApiName, record))
         .map((record) => object
           ? calculateFormulaFields(object, record, formulaContextForUser(tenant, principal.userId))
           : record);

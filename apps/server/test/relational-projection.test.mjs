@@ -97,3 +97,35 @@ test('platform policy grants and audit survive relational projection without ten
   assert.throws(()=>restoreState({...rows,platformSettings:[{key:'notAllowed',payload:{}}]}),
     /unknown or duplicate platform setting/);
 });
+
+test('existing tenant users, profile assignments, permissions, sessions and records survive migration unchanged',()=>{
+  const state=sample();
+  state.tenants.first.accessControl={
+    profiles:[{id:'profile-sales',name:'Sales',systemPermissions:['metadata:read']}],
+    roles:[{id:'role-sales',name:'Sales Manager'}],
+    users:[{id:'user1',profileId:'profile-sales',roleId:'role-sales',
+      permissionSetIds:['perm-reports'],permissionSetGroupIds:['group-sales']}],
+    permissionSets:[{id:'perm-reports',systemPermissions:['reports:read']}],
+    permissionSetGroups:[{id:'group-sales',permissionSetIds:['perm-reports'],mutedSystemPermissions:[]}],
+    publicGroups:[{id:'sales-group',userIds:['user1']}]
+  };
+  state.tenants.first.recordShares=[{id:'share-1',objectApiName:'Customer__c',recordId:'customer1',
+    userId:'user1',accessLevel:'Read',rowCause:'Manual'}];
+  state.tenants.first.records.Customer__c[0].OwnerId='user1';
+  state.tenants.second.accessControl={profiles:[{id:'profile-other',name:'Other tenant'}],
+    users:[],roles:[],permissionSets:[],permissionSetGroups:[],publicGroups:[]};
+  state.users.push({id:'user2',tenantId:'second',name:'Another Tenant',email:'other@example.test',
+    passwordSalt:'different-salt',passwordHash:'different-hash',role:'Member',
+    permissionSetIds:[],permissionSetGroupIds:[],disabled:false,createdAt:'2026-10-11T00:00:00.000Z'});
+  const restored=restoreState(projectState(state));
+  assert.deepStrictEqual(restored,state,'full migration must preserve every source state field');
+  assert.deepStrictEqual(restored.users,state.users,'user credentials, IDs, roles and tenant IDs must not change');
+  assert.deepStrictEqual(restored.tenants.first.accessControl,state.tenants.first.accessControl,
+    'profiles, role hierarchy and effective permission assignments must not be reset');
+  assert.deepStrictEqual(restored.tenants.first.recordShares,state.tenants.first.recordShares,
+    'existing record sharing and ownership must persist');
+  assert.deepStrictEqual(restored.refreshSessions,state.refreshSessions,'sessions must remain linked to original users');
+  assert.equal(restored.tenants.first.records.Customer__c[0].OwnerId,'user1');
+  assert.equal(restored.users.find(user=>user.id==='user2').tenantId,'second',
+    'users must never be reassigned to another tenant during migration');
+});

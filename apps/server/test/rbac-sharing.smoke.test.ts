@@ -758,6 +758,30 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       role: 'Smoke Outsider', roleId: outsiderRoleId, profileId: 'development-reader',
       permissionSetIds: [], permissionSetGroupIds: []
     });
+    // E2E tenant boundary: keep an independent tenant's audit and message records
+    // in the same persisted state. Tenant A must not see either through its JWT.
+    const secondTenantId = 'rbac-audit-tenant-b';
+    const secondAdminId = randomUUID();
+    const secondAdminEmail = 'admin@rbac-audit-tenant-b.test';
+    state.tenants[secondTenantId] = structuredClone(tenant);
+    state.users.push({ ...admin, id: secondAdminId, tenantId: secondTenantId,
+      name: 'Tenant B Audit Admin', email: secondAdminEmail });
+    const secondTenant = state.tenants[secondTenantId] as typeof tenant & {
+      records: Record<string, Array<Record<string, unknown>>>;
+    };
+    const secondAccessUser = secondTenant.accessControl.users.find((user) => user.id === admin.id);
+    if (!secondAccessUser) throw new Error('Second tenant administrator assignment was not seeded');
+    secondAccessUser.id = secondAdminId;
+    secondAccessUser.username = secondAdminEmail;
+    secondAccessUser.name = 'Tenant B Audit Admin';
+    const secondAuditId = randomUUID();
+    secondTenant.records.Communication_Records__c = [{
+      Id: secondAuditId, Name: 'Tenant B Audit', OwnerId: secondAdminId,
+      CreatedDate: new Date().toISOString(), LastModifiedDate: new Date().toISOString(),
+      Communication_Mode__c: 'API', Direction__c: 'Incoming',
+      Event_Type__c: 'API Call', Source__c: 'API',
+      Request_Body__c: '', Response_Body__c: ''
+    }];
     await writeFile(dataPath, JSON.stringify(state, null, 2));
 
     child = await startApi(port, dataPath);
@@ -765,6 +789,24 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     const adminToken = await api.login(adminEmail);
     const lifecycleAdminUserId = (await api.send('/auth/me', adminToken)).data.user.id as string;
     const developmentReaderToken = await api.login('development-reader@rbac-sharing-smoke.test');
+    const secondAdminToken = await api.login(secondAdminEmail);
+    const secondAuditList = await api.send('/records/Communication_Records__c', secondAdminToken);
+    assert.equal(secondAuditList.status, 200, 'tenant B administrator can access its own audit object');
+    assert.ok((secondAuditList.data.records as Array<Record<string, unknown>>).some((record) =>
+      record.Id === secondAuditId), 'tenant B can view its own seeded API audit');
+    const crossTenantDetail = await api.send(`/records/Communication_Records__c/${secondAuditId}`, adminToken);
+    assert.equal(crossTenantDetail.status, 404, 'tenant A cannot read tenant B audit by guessed record ID');
+    assert.equal((await api.send(`/records/Communication_Records__c/${secondAuditId}`, adminToken, 'PUT',
+      { Method__c: 'POST' })).status, 404, 'tenant A cannot overwrite tenant B audit');
+    assert.equal((await api.send(`/records/Communication_Records__c/${secondAuditId}`, adminToken, 'DELETE')).status, 404,
+      'tenant A cannot delete tenant B audit');
+    assert.equal((await api.send(`/records/Communication_Records__c/${secondAuditId}/shares`, adminToken)).status, 404,
+      'tenant A cannot inspect tenant B audit sharing');
+    const tenantAList = await api.send('/records/Communication_Records__c', adminToken);
+    assert.equal(tenantAList.status, 200);
+    assert.ok(!(tenantAList.data.records as Array<Record<string, unknown>>).some((record) =>
+      record.Id === secondAuditId), 'tenant B audit cannot appear in tenant A list');
+
     const runPermissionFlow = await api.send('/metadata/flows/Flow_Run_Permission_Smoke', adminToken, 'PUT', {
       apiName: 'Flow_Run_Permission_Smoke',
       label: 'Flow Run Permission Smoke',
@@ -1708,23 +1750,37 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.ok(objectMetadata.some((object) => object.apiName === 'Communication_Records__c'),
       'Communication Records must be available in Object Manager metadata');
     assert.equal((await api.send('/connector-providers', adminToken, 'GET', undefined, 'web-app')).status, 200,
-      'web app requests must continue to work when marked as internal');
-    assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'external-api')).status, 200,
-      'explicitly identified external API requests must remain auditable');
+      'browser requests remain functional');
+    assert.equal((await api.send('/metadata/objects?customSensitiveValue=private-api-log-canary', adminToken, 'GET', undefined, 'external-api')).status, 200,
+      'forged external origin headers cannot alter response behavior');
     const communicationRecordsResponse = await api.send('/records/Communication_Records__c', adminToken, 'GET', undefined, 'web-app');
-    assert.equal(communicationRecordsResponse.status, 200, 'Communication Records must be readable through the standard Records API');
+    assert.equal(communicationRecordsResponse.status, 200);
     const communicationRecords = communicationRecordsResponse.data.records as Array<Record<string, unknown>>;
-    assert.ok(communicationRecords.some((record) => record.Api_Id__c === 'GET /api/metadata/objects'
-      && record.Direction__c === 'Incoming'
-      && record.Method__c === 'GET'
-      && record.Auth_Type__c === 'Bearer'
-      && typeof record.Response_Body__c === 'string'
-      && record.Response_Body__c.includes('Communication_Records__c')),
-    'explicitly marked external incoming requests must be recorded with method, auth type, and response body');
-    assert.equal(communicationRecords.filter((record) => record.Api_Id__c === 'GET /api/metadata/objects').length, 1,
-      'unmarked internal metadata requests must not generate communication records');
-    assert.ok(!communicationRecords.some((record) => record.Api_Id__c === 'GET /api/connector-providers'),
-      'web app API requests must not be recorded as external incoming API requests');
+    assert.ok(!communicationRecords.some((record) =>
+      record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API'),
+      'neither internal requests nor forged external headers can create incoming API audit records');
+    assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('private-api-log-canary')),
+      'forged API origin cannot persist query-string secrets');
+    const auditDenied = await api.send('/records/Communication_Records__c', developmentReaderToken);
+    assert.equal(auditDenied.status, 403, 'users without Communication Records object read permission are denied');
+    // Ordinary message access is still governed by the existing object/row permissions.
+    // The admin read above must succeed; this reader has no object read grant.
+    assert.equal((await api.send('/records/Communication_Records__c', developmentReaderToken, 'POST',
+      { Communication_Mode__c: 'API', Direction__c: 'Incoming' })).status, 403,
+      'non-security users cannot insert forged audit records');
+    assert.equal((await api.send('/records/Communication_Records__c', adminToken, 'POST',
+      { Communication_Mode__c: 'API', Direction__c: 'Incoming' })).status, 403,
+      'security administrators cannot forge API audit entries through the generic Records API');
+    const ordinaryMessage = await api.send('/records/Communication_Records__c', adminToken, 'POST', {
+      Communication_Mode__c: 'Other', Direction__c: 'Incoming', Event_Type__c: 'Message',
+      Source__c: 'Other', Message_Body__c: 'Audit classification boundary smoke'
+    });
+    assert.equal(ordinaryMessage.status, 201, 'ordinary communications must remain creatable');
+    const messageId = (ordinaryMessage.data.record as { Id: string }).Id;
+    assert.equal((await api.send(`/records/Communication_Records__c/${messageId}`, adminToken, 'PUT',
+      { Communication_Mode__c: 'API' })).status, 403,
+      'ordinary communication updates cannot reclassify messages into protected API audits');
+
     const connectorRecordsResponse = await api.send('/records/UneConnector__c', adminToken);
     assert.equal(connectorRecordsResponse.status, 200, 'connector records must use the standard Records API');
     assert.deepEqual((connectorRecordsResponse.data.records as Array<Record<string, unknown>>).map((record) => record.Name),
