@@ -6767,6 +6767,16 @@ app.patch('/api/platform/tenants/:tenantId/retention', accessAuthentication, req
 // No destructive endpoint: absence is intentional until an independently verified
 // erasure ceremony and physical backup retention policy exist.
 
+app.get('/api/platform/tenants/:tenantId/lifecycle-audit', accessAuthentication, requirePlatformTenantAdmin,
+  (req: Request, res: Response) => {
+    const tenantId = routeParam(req, 'tenantId');
+    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+    // Do not expose historical registry snapshots: they can contain domain ownership challenges.
+    const events = state.tenantManagementAudit.filter((event) => event.tenantId === tenantId)
+      .slice(-100).reverse().map(({ actorId, action, at }) => ({ actorId, action, at }));
+    return res.json({ tenantId, events });
+  });
+
 app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const user = principalUser(principal);
