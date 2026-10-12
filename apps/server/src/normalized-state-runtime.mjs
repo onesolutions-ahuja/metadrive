@@ -81,7 +81,7 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
     const roundtrip=await stateAt(client,revision);
     if(stateDigest(roundtrip)!==digest) throw Error('Normalized SQL write failed full readback');
     // Physical CRUD is committed atomically with the canonical metadata graph.
-    if(synchronizePhysicalRecords) await synchronizePhysicalRecords(client,nextState);
+    if(synchronizePhysicalRecords) await synchronizePhysicalRecords(client,nextState,previous.state);
     await client.query('UPDATE md_v3_runtime SET revision=$1,state_sha256=$2,updated_at=now() WHERE id=1',[revision,digest]);
     await client.query('DELETE FROM md_v3_state_nodes WHERE revision=$1',[previous.version]);
     await client.query('COMMIT');
