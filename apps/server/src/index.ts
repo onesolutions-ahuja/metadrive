@@ -199,8 +199,8 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
       && matchesMetaPhoneUrl(credential.baseUrl)
     );
   };
-  const matches = Object.entries(state.tenants).filter(([, data]) =>
-    data.namedCredentials.some(credential => {
+  const matches = Object.entries(state.tenants).filter(([tenantId, data]) =>
+    tenantIsActive(tenantId) && data.namedCredentials.some(credential => {
       const config = credential.configuration ?? {};
       return (credential.name.toLowerCase().includes('whatsapp') || credential.label.toLowerCase().includes('whatsapp'))
         && (config.PhoneNumberId === phoneId || config.phone_number_id === phoneId
@@ -3280,7 +3280,17 @@ type RefreshSession = {
   revokedAt: number | null;
   mfaVerified?: boolean;
 };
+type TenantRegistryEntry = {
+  name: string; description: string; status: 'ACTIVE' | 'SUSPENDED'; createdAt: string; updatedAt: string;
+};
+type TenantManagementAuditEvent = {
+  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED';
+  at: string; previous?: TenantRegistryEntry; next: TenantRegistryEntry;
+};
 type PlatformState = {
+  // Central registry is controlled exclusively by platform policy, never tenant RBAC.
+  tenantRegistry: Record<string, TenantRegistryEntry>;
+  tenantManagementAudit: TenantManagementAuditEvent[];
   // Platform policies are outside tenant-managed profiles and permission sets.
   platformPolicies: Record<string, Array<'platform:superadmin' | 'licence:manage'>>;
   platformPolicyAudit: Array<{
@@ -3292,7 +3302,23 @@ type PlatformState = {
   refreshSessions: RefreshSession[];
   revokedAccessTokens: Record<string, number>;
 };
+const tenantRegistryEntrySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(1000).default(''),
+  status: z.enum(['ACTIVE', 'SUSPENDED']),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+}).strict();
+const tenantManagementAuditSchema = z.object({
+  actorId: z.string(), tenantId: z.string(),
+  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED']),
+  at: z.string().datetime(),
+  previous: tenantRegistryEntrySchema.optional(),
+  next: tenantRegistryEntrySchema
+});
 const stateSchema = z.object({
+  tenantRegistry: z.record(tenantRegistryEntrySchema).default({}),
+  tenantManagementAudit: z.array(tenantManagementAuditSchema).default([]),
   platformPolicies: z.record(z.array(z.enum(['platform:superadmin', 'licence:manage']))).default({}),
   platformPolicyAudit: z.array(z.object({
     actorId: z.string(), userId: z.string(), previous: z.array(z.string()),
@@ -4108,7 +4134,7 @@ function ensureLeadStreetField(object: ObjectMetadata): ObjectMetadata {
 }
 
 const initialState: PlatformState = {
-  platformPolicies: {}, platformPolicyAudit: [], tenants: {}, libraryComponents: [],
+  platformPolicies: {}, platformPolicyAudit: [], tenantRegistry: {}, tenantManagementAudit: [], tenants: {}, libraryComponents: [],
   users: [], refreshSessions: [], revokedAccessTokens: {}
 };
 function migrateStoredLeadStreetField(value: unknown): boolean {
@@ -4639,11 +4665,13 @@ function publicNamedCredential(credential: StoredNamedCredential) {
   };
 }
 
-async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string): Promise<LocalUser> {
+async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string, actorId = 'bootstrap'): Promise<LocalUser> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId)) throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
   if (state.tenants[tenantId]) throw new Error('Tenant already exists');
   const normalizedEmail = email.trim().toLowerCase();
   const credentials = await hashPassword(password);
+  // Revalidate after the awaited password hash; simultaneous requests may race.
+  if (state.tenants[tenantId]) throw new Error('Tenant already exists');
   if (state.users.some((user) => user.email.trim().toLowerCase() === normalizedEmail)) {
     throw new Error('Email is already registered. Each email can belong to only one tenant.');
   }
@@ -4656,9 +4684,16 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     permissionSetGroupIds: [],
     disabled: false, createdAt: new Date().toISOString()
   };
-  const nextState = {
+  const registryEntry: TenantRegistryEntry = {
+    name: name.trim(), description: '', status: 'ACTIVE',
+    createdAt: admin.createdAt, updatedAt: admin.createdAt
+  };
+  const nextState: PlatformState = {
     ...state,
     tenants: { ...state.tenants, [tenantId]: defaultTenantData(admin) },
+    tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
+    tenantManagementAudit: [...state.tenantManagementAudit,
+      { actorId, tenantId, action: 'CREATED' as const, at: admin.createdAt, next: registryEntry }].slice(-5000),
     users: [...state.users, admin]
   };
   persistState(nextState);
@@ -4734,8 +4769,11 @@ async function bootstrapTenant(): Promise<void> {
 // Existing users and tenants are loaded read-only; bootstrap resumes after maintenance.
 if (!maintenanceMode) await bootstrapTenant();
 
+function tenantIsActive(tenantId: string): boolean {
+  return state.tenantRegistry[tenantId]?.status !== 'SUSPENDED';
+}
 function tenantData(tenantId: string): TenantData | undefined {
-  return state.tenants[tenantId];
+  return tenantIsActive(tenantId) ? state.tenants[tenantId] : undefined;
 }
 function getPrincipal(res: Response): Principal {
   const principal = res.locals.principal as Principal | undefined;
@@ -4993,7 +5031,7 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       return;
     }
     const user = state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
-    if (!user || !state.tenants[tenantId]) {
+    if (!user || !state.tenants[tenantId] || !tenantIsActive(tenantId)) {
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
@@ -5053,6 +5091,12 @@ function issueRefreshSession(user: LocalUser, previousFamilyId?: string, mfaVeri
 }
 async function issueLoginResponse(res: Response, user: LocalUser, data: TenantData, familyId?: string,
   loginTiming?: { startedAt: number; passwordMs: number }, mfaVerified = false): Promise<void> {
+  // JWT iat is second-granular. When reactivated in the same second as a
+  // suspension, wait until a fresh token is strictly newer than the revocation.
+  if (user.authRevokedBefore !== undefined && user.authRevokedBefore >= Math.floor(Date.now() / 1000)) {
+    await new Promise<void>((resolve) => setTimeout(resolve,
+      Math.max(0, (user.authRevokedBefore! + 1) * 1000 - Date.now() + 5)));
+  }
   const permissions = effectivePermissions(user, data);
   const tokenStartedAt = performance.now();
   const issued = await jwtService.issue({
@@ -5196,7 +5240,7 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
   const parsed = provisioningSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant provisioning request', details: parsed.error.flatten() });
   try {
-    const user = await createTenant(parsed.data.tenantId, parsed.data.tenantName, parsed.data.adminName, parsed.data.email, parsed.data.password);
+    const user = await createTenant(parsed.data.tenantId, parsed.data.tenantName, parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key');
     return res.status(201).json({ tenantId: user.tenantId, administrator: { id: user.id, email: user.email } });
   } catch (error) {
     return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
@@ -5216,7 +5260,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   const passwordStartedAt = performance.now();
   const valid = user ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
   const passwordMs = performance.now() - passwordStartedAt;
-  if (!user || user.disabled || !valid) {
+  if (!user || user.disabled || !valid || !tenantIsActive(user.tenantId)) {
     const attempts = limit && limit.resetAt > now ? limit.count + 1 : 1;
     loginAttempts.set(key, { count: attempts, resetAt: now + 15 * 60 * 1000 });
     return res.status(401).json({ error: 'Invalid email or password' });
@@ -5444,7 +5488,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         .sort((a, b) => b.expiresAt - a.expiresAt)[0];
       const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
       const data = tenantData(session.tenantId);
-      if (latest && user && data && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
+      if (latest && user && data && tenantIsActive(session.tenantId) && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
         // The old cookie has already been consumed by another tab. Return a
         // fresh cookie as well as an access token, or the next page load will
         // reuse the stale cookie and lose the authenticated session.
@@ -5481,7 +5525,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   }
   const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
   const data = tenantData(session.tenantId);
-  if (!user || !data) {
+  if (!user || !data || !tenantIsActive(session.tenantId)) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Tenant membership is no longer active' });
   }
@@ -5641,6 +5685,129 @@ app.put('/api/platform/policies/:userId', accessAuthentication, (req: Request, r
   } catch {
     return res.status(503).json({ error: 'Unable to persist platform policies.' });
   }
+});
+
+// MD-03.1: platform-only tenant directory and lifecycle. Tenant-editable
+// profiles/permission sets never confer this policy; no impersonation or secrets.
+const tenantManagementCreateSchema = provisioningSchema.strict();
+const tenantManagementUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  description: z.string().trim().max(1000).optional()
+}).strict().refine((value) => Object.keys(value).length > 0);
+function tenantRegistryEntry(tenantId: string): TenantRegistryEntry {
+  const saved = state.tenantRegistry[tenantId];
+  if (saved) return saved;
+  // Older tenants pre-date the registry: display them without changing their data.
+  const earliest = state.users.filter((user) => user.tenantId === tenantId)
+    .map((user) => user.createdAt).sort()[0] ?? new Date(0).toISOString();
+  return { name: tenantId, description: '', status: 'ACTIVE', createdAt: earliest, updatedAt: earliest };
+}
+function tenantSummary(tenantId: string) {
+  const entry = tenantRegistryEntry(tenantId);
+  const users = state.users.filter((user) => user.tenantId === tenantId);
+  return {
+    tenantId, ...entry, userCount: users.length,
+    activeUserCount: users.filter((user) => !user.disabled).length
+  };
+}
+function requirePlatformTenantAdmin(_req: Request, res: Response, next: NextFunction): void {
+  if (!getPrincipal(res).permissions.includes('platform:superadmin')) {
+    res.status(403).json({ error: 'Platform administrator policy required.' });
+    return;
+  }
+  next();
+}
+function commitTenantChange(actorId: string, tenantId: string,
+  action: TenantManagementAuditEvent['action'], next: TenantRegistryEntry,
+  previous?: TenantRegistryEntry) {
+  const nextState: PlatformState = {
+    ...state,
+    tenantRegistry: { ...state.tenantRegistry, [tenantId]: next },
+    tenantManagementAudit: [...state.tenantManagementAudit,
+      { actorId, tenantId, action, at: new Date().toISOString(), ...(previous ? { previous } : {}), next }
+    ].slice(-5000),
+    ...(action === 'SUSPENDED' ? {
+      // Access JWTs are stateless; advance every tenant user's revocation epoch
+      // so pre-suspension bearer tokens cannot revive after reactivation.
+      users: state.users.map((user) => user.tenantId === tenantId
+        ? { ...user, authRevokedBefore: Math.max(user.authRevokedBefore ?? 0, Math.floor(Date.now() / 1000)) }
+        : user),
+      refreshSessions: state.refreshSessions.map((session) =>
+        session.tenantId === tenantId ? { ...session, revokedAt: Date.now() / 1000 } : session)
+    } : {})
+  };
+  persistState(nextState);
+  state = nextState;
+}
+app.get('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
+  const query = String(req.query.q ?? '').trim().toLowerCase().slice(0,120);
+  const status = String(req.query.status ?? 'ALL');
+  if (!['ALL', 'ACTIVE', 'SUSPENDED'].includes(status)) return res.status(400).json({ error: 'Invalid tenant status filter' });
+  const page = Number(req.query.page ?? 1);
+  const pageSize = Number(req.query.pageSize ?? 25);
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100)
+    return res.status(400).json({ error: 'Invalid pagination parameters' });
+  // Filter/sort cheap registry metadata first; count users only for one page.
+  // This avoids scanning the entire identity store once per tenant.
+  const matchedIds = Object.keys(state.tenants)
+    .filter((tenantId) => {
+      const metadata = state.tenantRegistry[tenantId];
+      const name = metadata?.name ?? tenantId;
+      const tenantStatus = metadata?.status ?? 'ACTIVE';
+      return (status === 'ALL' || tenantStatus === status)
+        && (!query || (tenantId + ' ' + name).toLowerCase().includes(query));
+    })
+    .sort((a, b) => (state.tenantRegistry[a]?.name ?? a).localeCompare(state.tenantRegistry[b]?.name ?? b)
+      || a.localeCompare(b));
+  const offset = (page - 1) * pageSize;
+  return res.json({ tenants: matchedIds.slice(offset, offset + pageSize).map(tenantSummary),
+    total: matchedIds.length, page, pageSize });
+});
+app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmin, async (req: Request, res: Response) => {
+  const parsed = tenantManagementCreateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant creation request', details: parsed.error.flatten() });
+  try {
+    const user = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
+      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId);
+    return res.status(201).json({ tenant: tenantSummary(user.tenantId) });
+  } catch (error) {
+    return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
+  }
+});
+app.get('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
+  const tenantId = routeParam(req, 'tenantId');
+  if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  return res.json({ tenant: tenantSummary(tenantId) });
+});
+app.patch('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
+  const tenantId = routeParam(req, 'tenantId');
+  if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  const parsed = tenantManagementUpdateSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant update', details: parsed.error.flatten() });
+  const previous = tenantRegistryEntry(tenantId);
+  const next = { ...previous, ...parsed.data, updatedAt: new Date().toISOString() };
+  commitTenantChange(getPrincipal(res).userId, tenantId, 'UPDATED', next, previous);
+  return res.json({ tenant: tenantSummary(tenantId) });
+});
+app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
+  const tenantId = routeParam(req, 'tenantId');
+  const operation = routeParam(req, 'operation');
+  if (operation !== 'suspend' && operation !== 'reactivate')
+    return res.status(404).json({ error: 'Unknown tenant operation' });
+  if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  const previous = tenantRegistryEntry(tenantId);
+  const desired = operation === 'suspend' ? 'SUSPENDED' : 'ACTIVE';
+  if (previous.status === desired) return res.status(409).json({ error: 'Tenant is already ' + desired.toLowerCase() });
+  if (desired === 'SUSPENDED') {
+    const remaining = state.users.filter((user) => !user.disabled && user.tenantId !== tenantId
+      && tenantIsActive(user.tenantId) && (state.platformPolicies[user.id] ?? []).includes('platform:superadmin'));
+    if (remaining.length === 0) return res.status(409).json({
+      error: 'Cannot suspend the tenant hosting the last active platform administrator.'
+    });
+  }
+  const next: TenantRegistryEntry = { ...previous, status: desired, updatedAt: new Date().toISOString() };
+  commitTenantChange(getPrincipal(res).userId, tenantId, desired === 'SUSPENDED' ? 'SUSPENDED' : 'REACTIVATED', next, previous);
+  return res.json({ tenant: tenantSummary(tenantId) });
 });
 
 app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
@@ -15439,6 +15606,7 @@ function nextScheduledOccurrence(flow: FlowMetadata, previous: Date, now: Date):
 
 async function resumeDueFlowInterviews(now: Date): Promise<void> {
   for (const [tenantId, tenant] of Object.entries(state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
     for (const interview of [...tenant.interviews]) {
       if (!['wait', 'scheduled'].includes(interview.kind) || !interview.waitUntil) continue;
       const settings = tenant.automationSettings ?? defaultAutomationSettings;
@@ -15521,6 +15689,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
 async function executeDueScheduledFlows(now = new Date()): Promise<void> {
   await resumeDueFlowInterviews(now);
   for (const [tenantId, tenant] of Object.entries(state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
     for (const candidate of [...tenant.flows]) {
       const currentTenant = tenantData(tenantId);
       if (!currentTenant) continue;
@@ -15624,6 +15793,7 @@ function platformEventFlowMatches(
 async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
   const nowIso = now.toISOString();
   for (const tenantId of Object.keys(state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
     const snapshot = tenantData(tenantId);
     if (!snapshot) continue;
     const dueMessages = snapshot.platformEventMessages.filter((message) =>
@@ -17394,9 +17564,9 @@ async function dispatchScheduledFlows(): Promise<void> {
     await executeDueScheduledFlows();
     const now = Date.now();
     const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
-      tenant.dashboardSubscriptions.filter((subscription) =>
+      tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
         subscription.active && Date.parse(subscription.nextRunAt) <= now)
-        .map((subscription) => ({ tenantId, subscriptionId: subscription.id })));
+        .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
     for (const due of dueSubscriptions) {
       await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
     }
