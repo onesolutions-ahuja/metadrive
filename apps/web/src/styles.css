@@ -2256,3 +2256,25 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .tree-group-label { color: #45413c; }
 .page-region-label { color: #45453e; }
 .record-component-head > span { color: #3f4943; }
+
+/* Metadata-driven nested Page Builder components */
+.free-canvas-component.layout-container-component { overflow: auto; }
+.free-canvas-component.nested-page-component { min-width: 0; max-width: 100%; overflow: visible; }
+.record-component.layout-container-component > .md-widget,
+.record-component.layout-container-component > .registered-component,
+.record-component.layout-container-component > .registered-component > .md-widget {
+  min-width: 0; max-width: 100%; width: 100%; box-sizing: border-box;
+}
+.record-component.layout-container-component .nested-page-component {
+  box-sizing: border-box; flex: 1 1 120px; min-width: 0; max-width: 100%;
+}
+.free-canvas-runtime-component.nested-page-runtime {
+  box-sizing: border-box; flex: 1 1 120px; max-width: 100%; min-width: 0; overflow: visible;
+}
+.free-canvas-runtime-component.nested-page-runtime .registered-component { min-width: 0; }
+.page-component-style-editor { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; display: grid; gap: 8px; }
+.page-component-style-editor .form-label { min-width: 0; }
+.page-component-style-editor .metadata-array-property { padding: 8px 0; }
+.external-page-preview .component-rendered-preview { transform: none; width: auto; height: auto; min-height: 0; pointer-events: auto; }
+.external-page-preview .component-rendered-preview.free-canvas-component { position: absolute; }
+.external-page-preview .nested-page-component.component-rendered-preview { position: relative; }
