@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
@@ -19186,16 +19186,22 @@ async function dispatchScheduledFlows(): Promise<void> {
   if (scheduledDispatchRunning) return;
   scheduledDispatchRunning = true;
   try {
-    await deliverPendingPlatformEvents();
-    await executeDueScheduledFlows();
-    const now = Date.now();
-    const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
-      tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
-        subscription.active && Date.parse(subscription.nextRunAt) <= now)
-        .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
-    for (const due of dueSubscriptions) {
-      await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
-    }
+    await withSchedulerLease(async () => {
+      // SQL commit is the durable completion boundary. Do not release the
+      // database advisory lock while scheduled mutations are still in flight.
+      await waitForPersistedState();
+      await deliverPendingPlatformEvents();
+      await executeDueScheduledFlows();
+      const now = Date.now();
+      const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
+        tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
+          subscription.active && Date.parse(subscription.nextRunAt) <= now)
+          .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
+      for (const due of dueSubscriptions) {
+        await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
+      }
+      await waitForPersistedState();
+    });
   } finally {
     scheduledDispatchRunning = false;
   }
