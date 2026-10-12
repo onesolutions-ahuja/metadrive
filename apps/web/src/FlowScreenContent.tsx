@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import FlowScreenAdvancedField from './FlowScreenAdvancedField';
 import RegisteredComponent from './RegisteredComponent';
 import type { LibraryComponentMetadata } from './metadata';
@@ -32,6 +34,13 @@ export default function FlowScreenContent({
   onError,
   isFieldVisible
 }: FlowScreenContentProps) {
+  const [layoutDevice, setLayoutDevice] = useState<LayoutDevice>(() =>
+    window.innerWidth <= 640 ? 'Phone' : window.innerWidth <= 1024 ? 'Tablet' : 'Desktop');
+  useEffect(() => {
+    const onResize = () => setLayoutDevice(window.innerWidth <= 640 ? 'Phone' : window.innerWidth <= 1024 ? 'Tablet' : 'Desktop');
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const groups: Array<{ section: ScreenField | null; fields: Array<{ field: ScreenField; index: number }> }> = [];
   let current: { section: ScreenField | null; fields: Array<{ field: ScreenField; index: number }> } = { section: null, fields: [] };
   fields.forEach((field, index) => {
@@ -87,10 +96,12 @@ export default function FlowScreenContent({
           height: safeHeight,
           minWidth: resize?.minWidth ?? 120,
           minHeight: resize?.minHeight ?? 60,
-          maxWidth: '100%'
+          maxWidth: '100%',
+          ...resolveLayoutStyle(componentProps, layoutDevice)
         }}>
         <RegisteredComponent definition={definition} props={{
           ...componentProps,
+          ...componentLayoutProps(componentProps, layoutDevice),
           label,
           value,
           onChange: setValue,

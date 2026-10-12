@@ -44,3 +44,45 @@ test('JwtService rejects tokens missing required email or permissions claims', a
 
   await assert.rejects(() => service.verify(token), /missing required identity, tenant, email, role, or permission claims/);
 });
+
+test('JwtService rejects tokens signed for another issuer or audience', async () => {
+  const service = await JwtService.create({
+    AUTH_ISSUER: 'http://localhost:3001/',
+    AUTH_AUDIENCE: 'metadrive-api'
+  });
+  const foreign = await JwtService.create({
+    AUTH_ISSUER: 'http://localhost:3002/',
+    AUTH_AUDIENCE: 'other-api'
+  });
+  const { accessToken } = await foreign.issue({
+    userId: 'user-123', tenantId: 'tenant-456',
+    email: 'admin@example.com', roles: ['Reader'], permissions: ['metadata:read']
+  });
+  await assert.rejects(() => service.verify(accessToken));
+});
+
+test('JwtService rejects expired signed tokens and malformed RBAC permissions', async () => {
+  const service = await JwtService.create({
+    AUTH_ISSUER: 'http://localhost:3001/',
+    AUTH_AUDIENCE: 'metadrive-api'
+  });
+  const now = Math.floor(Date.now() / 1000);
+  const base = {
+    tenant_id: 'tenant-456', email: 'admin@example.com',
+    roles: ['Reader'], permissions: ['metadata:read']
+  };
+  const signed = async (payload: Record<string, unknown>, expiry: number) =>
+    new SignJWT(payload)
+      .setProtectedHeader({ alg: 'RS256', kid: service.kid, typ: 'JWT' })
+      .setIssuer(service.config.issuer)
+      .setAudience(service.config.audience)
+      .setSubject('user-123')
+      .setIssuedAt(now - 3600)
+      .setExpirationTime(expiry)
+      .sign((service as any).signingKey);
+  await assert.rejects(() => service.verify(await signed(base, now - 60)));
+  await assert.rejects(
+    () => service.verify(await signed({ ...base, permissions: ['metadata:read', 42] }, now + 60)),
+    /missing required identity, tenant, email, role, or permission claims/
+  );
+});
