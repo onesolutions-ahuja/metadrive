@@ -60,7 +60,7 @@ try {
   await page.getByLabel('Flow Builder screens').check();
   await page.locator('#library-jsx-file').setInputFiles({
     name:'MD07_Browser_Widget.jsx',mimeType:'text/javascript',
-    buffer:Buffer.from("export default function Component({label}) { return <div>MD07 isolated component ready: {label}</div> }")
+    buffer:Buffer.from("export default function Component({label,onAction}) { return <div>MD07 isolated component ready: {label}<button onClick={() => onAction({event:'open',value:{Name:'Clicked'}})}>Launch Flow</button><button onClick={() => onAction({event:'browse',value:{}})}>Browse Records</button></div> }")
   });
   await page.getByRole('button',{name:'Register draft'}).click();
   const row=page.locator('.library-component-card').filter({hasText:'MD07_Browser_Widget'});
@@ -112,7 +112,9 @@ try {
     status:'Active',layoutMode:'template',template:'one-region',canvasWidth:1920,canvasHeight:1080,
     devices:['Desktop','Phone'],activationAssignments:[],
     components:[{id:'md07-kiosk-component',type:'Custom:MD07_Browser_Widget',
-      label:'MD07 Browser Widget',properties:{libraryComponentId:'MD07_Browser_Widget'},
+      label:'MD07 Browser Widget',properties:{libraryComponentId:'MD07_Browser_Widget',objectApiName:'Account',
+        actionFlows:{open:{actionType:'RunFlow',flowApiName:'MD07_Browser_Flow',inputs:{}},
+          browse:{actionType:'Navigate',navigationObjectApiName:'Account'}}},
       visible:true,region:'main'}]
   });
   const kioskApp='MD07_Browser_Kiosk_App';
@@ -163,10 +165,21 @@ try {
   await flowFrame.waitFor({state:'attached'});
   await flowFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
   await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
+  // Prove sandbox user events reach metadata-configured Flow and navigation,
+  // without exposing privileged callbacks to the uploaded JSX.
+  await page.goto('http://127.0.0.1:5173/une/apps/'+kioskApp+'/pages/'+kioskPageApiName);
+  const runtimeKioskFrame=page.locator('iframe[sandbox="allow-scripts"]').first();
+  await runtimeKioskFrame.contentFrame().getByRole('button',{name:'Launch Flow'}).click();
+  await page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]').waitFor({state:'attached'});
+  await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
+  await runtimeKioskFrame.contentFrame().getByRole('button',{name:'Browse Records'}).click();
+  await page.waitForURL(/\/une\/o\/Account\/list/);
+
   if(uncaught.length)throw Error('Uncaught browser errors: '+uncaught.join('; '));
   console.log(JSON.stringify({module:7,browser:'Chromium',registryCreate:true,publish:true,
     pageSave:true,reopen:true,desktop:true,tablet:true,phone:true,
-    sandbox:true,kioskAppRendered:true,dashboardRendered:true,flowScreenRendered:true,
+    sandbox:true,kioskAppRendered:true,metadataFlowAction:true,metadataNavigation:true,
+    dashboardRendered:true,flowScreenRendered:true,
     advertisedSurfaces:['page','dashboard','flow'],pageErrors:0,isolated:true}));
 } finally {
   if(browser)await browser.close();
