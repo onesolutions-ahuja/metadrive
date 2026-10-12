@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { request as httpRequest } from 'node:http';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
@@ -78,21 +79,34 @@ test('MD-01B API: login, bearer requests and refresh cannot cross tenant hostnam
     host?: string; origin?: string; token?: string; method?: string; body?: unknown;
     cookie?: string; forwardedHost?: string;
   } = {}) => {
-    const response = await fetch('http://127.0.0.1:' + serverPort + '/api' + route, {
-      method: opts.method ?? 'GET',
-      headers: {
-        Host: opts.host ?? 'api.example.com',
-        ...(opts.origin ? { Origin: opts.origin } : {}),
-        ...(opts.token ? { Authorization: 'Bearer ' + opts.token } : {}),
-        ...(opts.cookie ? { Cookie: opts.cookie } : {}),
-        ...(opts.forwardedHost ? { 'X-Forwarded-Host': opts.forwardedHost } : {}),
-        ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {})
-      },
-      ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) })
+    // Node's fetch/undici drops custom Host headers. Use http.request to
+    // exercise the actual Host received by Express behind a reverse proxy.
+    return await new Promise<{ status: number; data: Record<string, any>; cookie: string }>((resolve, reject) => {
+      const request = httpRequest('http://127.0.0.1:' + serverPort + '/api' + route, {
+        method: opts.method ?? 'GET',
+        headers: {
+          Host: opts.host ?? 'api.example.com',
+          ...(opts.origin ? { Origin: opts.origin } : {}),
+          ...(opts.token ? { Authorization: 'Bearer ' + opts.token } : {}),
+          ...(opts.cookie ? { Cookie: opts.cookie } : {}),
+          ...(opts.forwardedHost ? { 'X-Forwarded-Host': opts.forwardedHost } : {}),
+          ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {})
+        }
+      }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          try {
+            const raw = Buffer.concat(chunks).toString('utf8');
+            resolve({ status: response.statusCode ?? 0, data: raw ? JSON.parse(raw) as Record<string, any> : {},
+              cookie: response.headers['set-cookie']?.[0] ?? '' });
+          } catch (error) { reject(error); }
+        });
+        response.on('error', reject);
+      });
+      request.on('error', reject);
+      request.end(opts.body === undefined ? undefined : JSON.stringify(opts.body));
     });
-    const raw = await response.text();
-    return { status: response.status, data: raw ? JSON.parse(raw) as Record<string, any> : {},
-      cookie: response.headers.get('set-cookie') ?? '' };
   };
   try {
     let ready = false;
