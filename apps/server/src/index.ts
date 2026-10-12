@@ -9842,6 +9842,8 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
     working.records[objectName] = [...(working.records[objectName] ?? []), record];
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'created', record, undefined, 0, isClone);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.status(201).json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === record.Id) ?? record) });
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record creation failed' });
@@ -9888,6 +9890,8 @@ app.post('/api/records/:objectName/import', accessAuthentication, async (req: Re
       await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'created', record);
     }
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     const savedRecords = created.map((record) => working.records[objectName].find((item) => item.Id === record.Id) ?? record);
     return res.status(201).json({ records: savedRecords.map((record) => sanitizeRecordForRead(principal, working, object, record)), count: savedRecords.length });
   } catch (error) {
@@ -9937,6 +9941,8 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     if (objectName === 'Connector_App__c') disableOnConnectorUninstall(working, existing, updated);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === existing.Id) ?? updated) });
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record ownership change failed' });
@@ -9998,6 +10004,8 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
     working.records[objectName] = (working.records[objectName] ?? []).map((item) => item.Id === existing.Id ? updated : item);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.json({ record: sanitizeRecordForRead(principal, working, object, working.records[objectName].find((item) => item.Id === existing.Id) ?? updated) });
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record update failed' });
@@ -10083,6 +10091,8 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
     const working = structuredClone(tenant);
     await deleteRecordCascade(principal.tenantId, working, principal.userId, objectName, existing);
     persistTenantRecords(principal.tenantId, working);
+    // Do not acknowledge a record write before its transactional SQL commit.
+    await waitForPersistedState();
     return res.status(204).end();
   } catch (error) {
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record deletion failed' });
