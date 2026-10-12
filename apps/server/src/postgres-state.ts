@@ -8,6 +8,8 @@ const { Pool } = pg;
 // Current production remains unchanged until verified offline cutover.
 export const persistenceMode = process.env.METADRIVE_PERSISTENCE_MODE ?? 'jsonb';
 if (!['jsonb', 'relational', 'normalized', 'typed'].includes(persistenceMode)) throw new Error('Invalid METADRIVE_PERSISTENCE_MODE');
+const strictSqlOnly = process.env.METADRIVE_ZERO_JSONB_REQUIRED === 'true';
+if (strictSqlOnly && persistenceMode !== 'typed') throw new Error('Zero-JSONB requires typed SQL mode');
 let relationalSnapshot: RelationalSnapshot | null = null;
 let normalizedSnapshot: NormalizedSnapshot | null = null;
 // Explicit opt-in is required even after creating verified normalized SQL tables.
@@ -55,6 +57,11 @@ export async function checkDatabaseConnection(): Promise<'healthy' | 'unavailabl
 
 export async function readPersistedState(): Promise<unknown | null> {
   if (!pool) return null;
+  if (strictSqlOnly) {
+    const remaining = await pool.query(`SELECT COUNT(*)::integer AS n FROM information_schema.columns
+      WHERE table_schema NOT IN ('pg_catalog','information_schema') AND data_type IN ('json','jsonb')`);
+    if (Number((remaining.rows[0] as {n?: unknown} | undefined)?.n) !== 0) throw new Error('Zero-JSONB database gate failed');
+  }
   if (persistenceMode === 'normalized' || persistenceMode === 'typed') {
     // SQL-only read. Typed mode verifies physical records under the SAME SQL snapshot.
     // No fallback to legacy JSONB, even on first start or lost connections.
