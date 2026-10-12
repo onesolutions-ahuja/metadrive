@@ -2,7 +2,7 @@ name: Temporary authenticated width diagnostic
 on:
   push:
     branches: [audit/diagnose-width-20261012]
-    paths: [scripts/diagnose-responsive-width.mjs, .github/workflows/diagnose-responsive-width.yml]
+    paths: [scripts/verify-ux-fixes.mjs, .github/workflows/diagnose-responsive-width.yml]
 permissions:
   contents: read
 jobs:
@@ -15,10 +15,10 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
-      - run: npm install --no-save --no-package-lock playwright@1.56.0
+      - run: npm install --no-save --no-package-lock playwright@1.56.0 @axe-core/playwright@4.11.0
       - run: npx playwright install --with-deps chromium
       - name: Report layout metrics without record contents
         env:
           METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
-        run: node scripts/diagnose-responsive-width.mjs
+        run: node scripts/verify-ux-fixes.mjs
