@@ -1032,6 +1032,8 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
 
   const [mfaChallenge, setMfaChallenge] = useState<{ challenge_token: string; enrollment_required: boolean; setup_secret?: string } | null>(null);
   const [mfaCode, setMfaCode] = useState('');
+  const [mfaNewBackupCodes, setMfaNewBackupCodes] = useState<string[]>([]);
+  const [pendingLoginToken, setPendingLoginToken] = useState('');
   const [showPasswordReset, setShowPasswordReset] = useState(Boolean(resetToken));
   const [message, setMessage] = useState(error ?? '');
   const [submitting, setSubmitting] = useState(false);
@@ -1066,16 +1068,33 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
     setMessage('');
     const startedAt = performance.now();
     try {
-      const session = await apiRequest<{ access_token: string }>('/auth/mfa/verify', {
+      const session = await apiRequest<{ access_token: string; backup_codes?: string[] }>('/auth/mfa/verify', {
         method: 'POST',
         body: JSON.stringify({ challenge_token: mfaChallenge.challenge_token, code: mfaCode })
       });
-      accessToken = session.access_token;
-      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now() });
+      if (session.backup_codes?.length) {
+        setMfaNewBackupCodes(session.backup_codes); setPendingLoginToken(session.access_token);
+      } else {
+        accessToken = session.access_token;
+        onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now() });
+      }
     } catch (failure) {
       setMessage(failure instanceof Error ? failure.message : 'MFA verification failed');
     } finally { setSubmitting(false); }
   };
+  if (mfaNewBackupCodes.length && pendingLoginToken) return <main className="auth-screen">
+    <section className="auth-card">
+      <div className="eyebrow">SAVE YOUR BACKUP CODES</div>
+      <h1>Authenticator backup codes</h1>
+      <p>Store these codes securely. Each code works once if you lose your authenticator. They will not be displayed again.</p>
+      <textarea className="form-control" readOnly rows={10} value={mfaNewBackupCodes.join('\n')} aria-label="One-time MFA backup codes" />
+      <button className="btn btn-brand auth-submit" onClick={() => {
+        accessToken = pendingLoginToken;
+        setPendingLoginToken(''); setMfaNewBackupCodes([]);
+        onSuccess?.({ kind: 'login', startedAt: performance.now(), authenticatedAt: performance.now() });
+      }}>I've saved my codes — continue</button>
+    </section>
+  </main>;
   if (mfaChallenge) return <main className="auth-screen">
     <form className="auth-card" onSubmit={(event) => void verifyMfa(event)}>
       <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
@@ -1085,11 +1104,11 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
         <p>In your authenticator app, add an account manually using this setup key. Then enter its six-digit code to finish enrollment.</p>
         <div className="auth-notice"><strong>Setup key</strong><p><code style={{ overflowWrap: 'anywhere' }}>{mfaChallenge.setup_secret}</code></p></div>
       </>}
-      {!mfaChallenge.enrollment_required && <p>Enter the current six-digit code from your authenticator app.</p>}
+      {!mfaChallenge.enrollment_required && <p>Enter your six-digit authenticator code or a single-use 24-character backup code.</p>}
       {message && <div className="auth-error" role="alert">{message}</div>}
       <label className="form-label" htmlFor="login-mfa-code">Authenticator code</label>
-      <input className="form-control" id="login-mfa-code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
-        autoComplete="one-time-code" required value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/[^0-9]/g, ''))} />
+      <input className="form-control" id="login-mfa-code" type="text" inputMode="text" pattern="([0-9]{6}|[A-Fa-f0-9]{24})" maxLength={24}
+        autoComplete="one-time-code" required value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/[^A-Fa-f0-9]/g, ''))} />
       <button className="btn btn-brand auth-submit" disabled={submitting}>{submitting ? 'Verifying…' : 'Verify and sign in'}</button>
       <button className="text-action auth-back" type="button" onClick={() => {
         setMfaChallenge(null); setMfaCode(''); setMessage('');
