@@ -12159,6 +12159,7 @@ function resolveFlowTemplate(value: string, context: FlowRuntimeContext): string
   });
 }
 
+class ConnectorLicenceDenied extends Error {}
 async function performHttpCallout(
   tenantId: string,
   tenant: TenantData,
@@ -12187,11 +12188,11 @@ async function performHttpCallout(
   if (connectionId && (!connection || !definition)) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Integration Connection or provider.`);
   if (connection) {
     const entitlement = connectorProviderEntitlement(tenant.records.Connector_App__c ?? [], connection.connectorKey);
-    if (!entitlement.allowed) throw new Error(entitlement.message);
+    if (!entitlement.allowed) throw new ConnectorLicenceDenied(entitlement.message);
   }
   if (namedCredential) {
     const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], namedCredential);
-    if (!entitlement.allowed) throw new Error(entitlement.message);
+    if (!entitlement.allowed) throw new ConnectorLicenceDenied(entitlement.message);
     if (namedCredential.enabled === false) throw new Error('Named Credential is disabled. Enable it in AppExchange.');
   }
   const ring = credentialKeyRing();
@@ -15039,7 +15040,7 @@ async function executeFlow(
         try {
           result = await performHttpCallout(tenantId, tenant, config, context, element.label);
         } catch (error) {
-          if (config.onError !== 'CONTINUE') throw error;
+          if (error instanceof ConnectorLicenceDenied || config.onError !== 'CONTINUE') throw error;
           result = { body: { error: error instanceof Error ? error.message : String(error) }, status: 0 };
         }
         const responseVariable = typeof config.responseVariable === 'string' ? config.responseVariable : '';
