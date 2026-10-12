@@ -4678,6 +4678,10 @@ function RecordWorkspace({
   useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
   }, [object?.apiName]);
+  useEffect(() => {
+    setSelectedRecordIds([]);
+    setListNotice('');
+  }, [object?.apiName]);
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 600px)');
@@ -5586,10 +5590,6 @@ function RecordWorkspace({
       const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
       return !layout || layout.actions.includes('Delete');
     })());
-  useEffect(() => {
-    setSelectedRecordIds([]);
-    setListNotice('');
-  }, [object.apiName]);
   return <div className="records-page">
     <div className="records-page-heading">
       <div className="record-object-icon"><Database size={18} /></div>
