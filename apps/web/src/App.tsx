@@ -67,6 +67,7 @@ import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
+import { reconcileNavigationOrder } from './appNavigation';
 import NamedCredentials from './NamedCredentials';
 import TenantManagement from './TenantManagement';
 import TenantDomains from './TenantDomains';
@@ -1796,6 +1797,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     ...apps.map((app) => app.apiName)
   ])].sort((left, right) => left.localeCompare(right));
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
+  const currentAppNavigation = currentApp
+    ? reconcileNavigationOrder(currentApp.navigationItems ?? [], currentApp.navigationPageApiNames ?? [], currentApp.navigationOrder ?? [])
+    : [];
+  const currentAppObjectTabs = currentAppNavigation.filter((entry) =>
+    entry.type === 'Object' && objects.some((object) => object.apiName === entry.apiName)).map((entry) => entry.apiName);
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     const allowedGroups = setupNavigation.filter((group) => group.group !== 'Platform Administration' || canManagePlatformTenants);
@@ -3299,12 +3305,20 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
-        <button type="button" className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
+        <button type="button" disabled={!currentAppObjectTabs.length}
+          className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
           onClick={() => {
-            const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName))
-              ?? objects[0]?.apiName ?? 'Account';
-            navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
+            const targetObject = currentAppObjectTabs[0];
+            if (targetObject) navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
           }}><Database size={16} />Records</button>
+        {currentAppObjectTabs.length > 1 && <select className="header-record-object-select" aria-label="Switch records object"
+          value={(route.kind === 'record-list' || route.kind === 'record-detail') && currentAppObjectTabs.includes(route.objectApiName) ? route.objectApiName : ''}
+          onChange={(event) => {
+            if (event.target.value) navigateRoute({ kind: 'record-list', objectApiName: event.target.value, appId: currentApp?.apiName ?? 'Records' });
+          }}>
+          <option value="">Choose records…</option>
+          {currentAppObjectTabs.map((apiName) => <option key={apiName} value={apiName}>{objects.find((object) => object.apiName === apiName)?.pluralLabel ?? apiName}</option>)}
+        </select>}
         <div className="global-search">
           <Search size={15} />
           <input
@@ -3358,11 +3372,17 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         <div className="app-title">
           <span className="app-icon"><Database size={18} /></span>
-          <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>
+          {apps.length > 1
+            ? <select className="app-title-switcher" aria-label="Switch app" value={currentApp?.apiName ?? ''}
+                onChange={(event) => navigateRoute({ kind: 'app-home', appId: event.target.value })}>
+                {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
+              </select>
+            : <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>}
         </div>
         <nav className="primary-tabs" aria-label="Workspace navigation">
-          {(currentApp?.navigationPageApiNames ?? []).map((apiName) => {
-            const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page');
+          {currentAppNavigation.filter((entry) => entry.type === 'App Page').map((entry) => {
+            const apiName = entry.apiName;
+            const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page' && item.status === 'Active');
             if (!appPage) return null;
             return <button className={route.kind === 'app-page' && route.pageApiName === apiName ? 'primary-tab active' : 'primary-tab'}
               key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp?.apiName ?? '', pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
@@ -3374,7 +3394,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         </nav>
         {currentApp?.utilityItems.map((utility) => <button className="app-utility-button" key={utility}
           aria-expanded={activeUtility === utility} onClick={() => setActiveUtility((current) => current === utility ? null : utility)}>{utility}</button>)}
-        <button className="app-strip-menu" aria-label="More app actions"><MoreHorizontal size={19} /></button>
+        <button className="app-strip-menu" type="button" title="Open App Manager" aria-label="Open App Manager"
+          onClick={() => openSetupWorkspace('app-manager')}><MoreHorizontal size={19} /></button>
         {activeUtility && <section className="app-utility-popover" aria-label={`${activeUtility} utility`}>
           <div className="app-utility-heading"><strong>{activeUtility}</strong><button className="icon-button" aria-label={`Close ${activeUtility}`} onClick={() => setActiveUtility(null)}><X size={14} /></button></div>
           {activeUtility === 'Notes'
