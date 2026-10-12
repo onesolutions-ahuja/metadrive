@@ -2074,7 +2074,7 @@ const objectPermissionSchema = objectPermissionFlagsSchema.superRefine((permissi
 });
 type ObjectPermission = z.infer<typeof objectPermissionFlagsSchema>;
 // Navigation access does not bypass object, field or row permissions.
-const navigationGrantSchema = z.record(z.boolean()).default({});
+const navigationGrantSchema = z.record(z.boolean()).optional();
 const permissionSetSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -12808,8 +12808,8 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
     ...parsed.data.permissionSetGroups].some((item) => {
     const apps = 'mutedAppPermissions' in item ? item.mutedAppPermissions : item.appPermissions;
     const tabs = 'mutedTabPermissions' in item ? item.mutedTabPermissions : item.tabPermissions;
-    return Object.keys(apps).some((name) => !appNames.has(name))
-      || Object.keys(tabs).some((name) => !tabNames.has(name));
+    return Object.keys(apps ?? {}).some((name) => !appNames.has(name))
+      || Object.keys(tabs ?? {}).some((name) => !tabNames.has(name));
   });
   if (invalidNavigation) return res.status(400).json({ error: 'Navigation grants must reference apps and tabs in this tenant' });
   // Fail closed: tenant RBAC is deliberately not an authority for platform policies.
