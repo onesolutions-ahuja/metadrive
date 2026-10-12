@@ -117,6 +117,33 @@ test('Module 4: app/tab permission grants and group muting update without stale 
     admin.appPermissions = { Unknown_Other_Tenant_App: true };
     assert.equal((await save(security)).status, 400,
       'Foreign and nonexistent app references must fail validation');
+
+    // Queue ownership is tenant-scoped and may be changed only through the
+    // dedicated transfer API, never by modifying OwnerId in normal record PUT.
+    const fresh = await api('/metadata/permissions', token);
+    assert.equal(fresh.status, 200);
+    const queueId = 'navigation-rbac-queue';
+    const queueSecurity = structuredClone(fresh.data);
+    queueSecurity.queues.push({
+      id: queueId, apiName: 'Navigation_Queue', label: 'Navigation Queue',
+      description: '', supportedObjectApiNames: ['Account'],
+      userIds: [user.id], roleIds: [], roleAndSubordinateIds: [], publicGroupIds: []
+    });
+    assert.equal((await save(queueSecurity)).status, 200);
+    const created = await api('/records/Account', token, 'POST', { Name: 'Queue Transfer Test' });
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    const recordId = String(created.data.record.Id);
+    const recordPath = '/records/Account/' + recordId;
+    assert.equal((await api(recordPath, token, 'PUT', { OwnerId: queueId })).status, 403);
+    const transferred = await api(recordPath + '/transfer-owner', token, 'POST', { ownerId: queueId });
+    assert.equal(transferred.status, 200, JSON.stringify(transferred.data));
+    assert.equal(transferred.data.record.OwnerId, queueId);
+    assert.equal((await api(recordPath + '/transfer-owner', token, 'POST', { ownerId: 'other-tenant-queue' })).status, 400);
+    const back = await api(recordPath + '/transfer-owner', token, 'POST', { ownerId: user.id });
+    assert.equal(back.status, 200, JSON.stringify(back.data));
+    assert.equal(back.data.record.OwnerId, user.id);
+    const audit = await api('/auth/security-events', token);
+    assert.ok(audit.data.events.some((event: { action: string }) => event.action === 'rbac.record-ownership.transferred'));
   } finally {
     if (child.exitCode === null) {
       child.kill();
