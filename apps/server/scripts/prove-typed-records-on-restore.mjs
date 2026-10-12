@@ -66,8 +66,48 @@ try{
   if(stateDigest(gone.state)!==original) throw Error('CRUD rollback did not exactly restore source snapshot');
   const sqlRecordRegistry=await pool.query('SELECT count(*)::int AS n FROM md_v2_object_registry WHERE active=true');
   if(sqlRecordRegistry.rows[0].n!==tenant.objects.length) throw Error('Typed object registry count differs after CRUD');
+  // Metadata object retirement and reactivation must retain immutable typed
+  // field column identities and existing values, without duplicate registry rows.
+  const temporaryApi='SQL_Reactivation_Proof__c';
+  if(tenant.objects.some(o=>o.apiName===temporaryApi)) throw Error('Proof object already exists');
+  const temporaryObject={apiName:temporaryApi,label:'SQL Reactivation Proof',
+    pluralLabel:'SQL Reactivation Proofs',fields:[{apiName:'Name',label:'Name',dataType:'Text'}]};
+  const temporaryId='SQL-REACTIVATION-'+randomUUID();
+  after=structuredClone(active.state);
+  after.tenants[tenantId].objects.push(temporaryObject);
+  after.tenants[tenantId].records[temporaryApi]=[{Id:temporaryId,Name:'Preserved through retirement'}];
+  active=await save(after,active);
+  const beforeRetirement=await pool.query(
+    'SELECT object_id FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=true',[tenantId,temporaryApi]);
+  if(beforeRetirement.rowCount!==1) throw Error('New metadata object has no typed table');
+  const registryId=beforeRetirement.rows[0].object_id;
+  const beforeFields=await pool.query(
+    'SELECT field_id,physical_column FROM md_v2_field_registry WHERE object_id=$1 AND api_name=$2 AND active=true',
+    [registryId,'Name']);
+  if(beforeFields.rowCount!==1) throw Error('Temporary typed field was not registered');
+  after=structuredClone(active.state);
+  after.tenants[tenantId].objects=after.tenants[tenantId].objects.filter(o=>o.apiName!==temporaryApi);
+  delete after.tenants[tenantId].records[temporaryApi];
+  active=await save(after,active);
+  after=structuredClone(active.state);
+  after.tenants[tenantId].objects.push(temporaryObject);
+  after.tenants[tenantId].records[temporaryApi]=[{Id:temporaryId,Name:'Preserved through retirement'}];
+  active=await save(after,active);
+  const afterFields=await pool.query(
+    'SELECT field_id,physical_column FROM md_v2_field_registry WHERE object_id=$1 AND api_name=$2 AND active=true',
+    [registryId,'Name']);
+  if(afterFields.rowCount!==1||afterFields.rows[0].field_id!==beforeFields.rows[0].field_id
+    ||afterFields.rows[0].physical_column!==beforeFields.rows[0].physical_column)
+    throw Error('Object reactivation regenerated or duplicated a SQL field identity');
+  if(!(await read()).state.tenants[tenantId].records[temporaryApi].some(r=>r.Id===temporaryId))
+    throw Error('Typed records did not survive object reactivation');
+  after=structuredClone(active.state);
+  after.tenants[tenantId].objects=after.tenants[tenantId].objects.filter(o=>o.apiName!==temporaryApi);
+  delete after.tenants[tenantId].records[temporaryApi];
+  active=await save(after,active);
+  if(stateDigest((await read()).state)!==original) throw Error('Reactivation proof changed source tenant data');
   console.log(JSON.stringify({isolatedRestoreOnly:true,typedSqlCrud:true,create:true,
-    update:nameDefined,delete:true,unrelatedRowVersionPreserved:nameDefined,
+    update:nameDefined,delete:true,unrelatedRowVersionPreserved:nameDefined,objectReactivation:true,
     fullSnapshotReversible:true,noJsonColumns:true,
     objects:sqlRecordRegistry.rows[0].n,version:gone.version}));
 }catch(error){
