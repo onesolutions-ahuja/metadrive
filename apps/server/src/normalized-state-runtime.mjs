@@ -3,6 +3,7 @@
 // until Flow, credential, row-based record and rollback parity are verified.
 import {projectNormalizedTree,restoreNormalizedTree,verifyNormalizedTree} from './normalized-state-tree.mjs';
 import {stateDigest} from './relational-projection.mjs';
+import {planNormalizedDelta,verifyDeltaReadback} from './normalized-state-delta.mjs';
 
 function asRevision(value) {
   const n=Number(value);
@@ -23,11 +24,14 @@ async function insertNodes(client,revision,nodes) {
       batch.flatMap(row=>normalizeRow(row,revision)));
   }
 }
-async function stateAt(client,revision) {
+async function nodesAt(client,revision) {
   const result=await client.query(
     'SELECT node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value FROM md_v3_state_nodes WHERE revision=$1 ORDER BY node_id',
     [revision]);
-  return restoreNormalizedTree(result.rows);
+  return result.rows;
+}
+async function stateAt(client,revision) {
+  return restoreNormalizedTree(await nodesAt(client,revision));
 }
 export async function readNormalizedState(pool,verifyPhysicalRecords=null) {
   const client=await pool.connect();
@@ -45,48 +49,85 @@ export async function readNormalizedState(pool,verifyPhysicalRecords=null) {
       if(legacy.rowCount!==1||stateDigest(legacy.rows[0].payload)!==source_sha256.trim())
         throw Error('Legacy data changed since normalized SQL snapshot; refusing stale cutover');
     }
-    const state=await stateAt(client,version);
+    // Node storage revision is intentionally stable across delta commits.
+    // The logical version in md_v3_runtime still advances on EVERY change.
+    // This supports SQL-only databases created before the delta upgrade.
+    const revisions=await client.query('SELECT DISTINCT revision FROM md_v3_state_nodes LIMIT 2');
+    if(revisions.rowCount!==1) throw Error('Expected one verified normalized storage revision');
+    const storageRevision=asRevision(revisions.rows[0].revision);
+    const nodes=await nodesAt(client,storageRevision);
+    const state=restoreNormalizedTree(nodes);
     const digest=stateDigest(state);
     if(digest!==state_sha256.trim()) throw Error('Normalized state checksum mismatch');
     // Physical SQL records must match the same repeatable-read snapshot as metadata.
     if(verifyPhysicalRecords) await verifyPhysicalRecords(client,state);
     await client.query('COMMIT');
     begun=false;
-    return {state,version,digest,sourceDigest:source_sha256.trim()};
+    return {state,version,digest,sourceDigest:source_sha256.trim(),storageRevision,nodes};
   } catch(error) {
     if(begun) await client.query('ROLLBACK');
     throw error;
   } finally {client.release();}
 }
 export async function writeNormalizedState(pool,nextState,previous,synchronizePhysicalRecords=null) {
-  if(!previous||!Number.isSafeInteger(previous.version)||!previous.digest)
-    throw Error('A verified normalized SQL snapshot is required');
+  if(!previous||!Number.isSafeInteger(previous.version)||!previous.digest ||
+     !Number.isSafeInteger(previous.storageRevision)||!Array.isArray(previous.nodes))
+    throw Error('A verified normalized SQL snapshot with storage nodes is required');
   const {nodes,digest}=projectNormalizedTree(nextState);
   verifyNormalizedTree(nextState,nodes);
   if(digest===previous.digest) return {...previous};
+  const delta=planNormalizedDelta(previous.nodes,nodes);
+  // Validate the complete *logical* next snapshot before touching the database.
+  if(stateDigest(restoreNormalizedTree(delta.nodes))!==digest)
+    throw Error('Incremental normalized graph did not preserve next state');
   const client=await pool.connect();
   let begun=false;
   try {
-    await client.query('BEGIN');
+    // One network round trip instead of three for the SQL transaction prelude.
+    await client.query("BEGIN; SET LOCAL lock_timeout='10s'; SET LOCAL statement_timeout='120s'");
     begun=true;
-    await client.query("SET LOCAL lock_timeout='10s'");
-    await client.query("SET LOCAL statement_timeout='120s'");
     const result=await client.query('SELECT revision,state_sha256,source_sha256 FROM md_v3_runtime WHERE id=1 FOR UPDATE');
     if(result.rowCount!==1) throw Error('Missing normalized state revision');
     const marker=result.rows[0];
     if(asRevision(marker.revision)!==previous.version||marker.state_sha256.trim()!==previous.digest)
       throw Error('Concurrent writer detected; no state was overwritten');
     const revision=previous.version+1;
-    await insertNodes(client,revision,nodes);
-    const roundtrip=await stateAt(client,revision);
-    if(stateDigest(roundtrip)!==digest) throw Error('Normalized SQL write failed full readback');
-    // Physical CRUD is committed atomically with the canonical metadata graph.
+    const physical=previous.storageRevision;
+    // Keep the unchanged ~20,000 nodes untouched. The marker row lock and one
+    // transaction give every reader either the prior or the next verified graph.
+    if(delta.deleted.length) {
+      const removed=await client.query(
+        'DELETE FROM md_v3_state_nodes WHERE revision=$1 AND node_id=ANY($2::bigint[])',
+        [physical,delta.deleted.map(row=>row.nodeId)]);
+      if(removed.rowCount!==delta.deleted.length) throw Error('SQL delta delete count mismatch');
+    }
+    if(delta.updated.length) {
+      // One bound, set-based update even when audit retention rotates an array
+      // or metadata order changes. Never perform one network call per node.
+      const changed=await client.query(
+        'UPDATE md_v3_state_nodes AS n SET parent_id=v.parent_id,slot_key=v.slot_key,ordinal=v.ordinal,kind=v.kind,string_value=v.string_value,number_value=v.number_value,bool_value=v.bool_value FROM unnest($2::bigint[],$3::bigint[],$4::text[],$5::integer[],$6::text[],$7::text[],$8::double precision[],$9::boolean[]) AS v(node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value) WHERE n.revision=$1 AND n.node_id=v.node_id',
+        [physical,...[
+          row=>row.nodeId,row=>row.parentId,row=>row.slotKey,row=>row.ordinal,
+          row=>row.kind,row=>row.stringValue,row=>row.numberValue,row=>row.boolValue
+        ].map(select=>delta.updated.map(select))]);
+      if(changed.rowCount!==delta.updated.length) throw Error('SQL delta update count mismatch');
+    }
+    if(delta.inserted.length) await insertNodes(client,physical,delta.inserted);
+    const touched=[...delta.updated,...delta.inserted];
+    if(touched.length) {
+      const check=await client.query(
+        'SELECT node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value FROM md_v3_state_nodes WHERE revision=$1 AND node_id=ANY($2::bigint[])',
+        [physical,touched.map(row=>row.nodeId)]);
+      verifyDeltaReadback(touched,check.rows);
+    }
+    // SQL physical business rows and graph updates remain in the same commit.
     if(synchronizePhysicalRecords) await synchronizePhysicalRecords(client,nextState,previous.state);
-    await client.query('UPDATE md_v3_runtime SET revision=$1,state_sha256=$2,updated_at=now() WHERE id=1',[revision,digest]);
-    await client.query('DELETE FROM md_v3_state_nodes WHERE revision=$1',[previous.version]);
+    await client.query('UPDATE md_v3_runtime SET revision=$1,state_sha256=$2,updated_at=now() WHERE id=1',
+      [revision,digest]);
     await client.query('COMMIT');
     begun=false;
-    return {state:nextState,version:revision,digest,sourceDigest:marker.source_sha256.trim()};
+    return {state:nextState,version:revision,digest,sourceDigest:marker.source_sha256.trim(),
+      storageRevision:physical,nodes:delta.nodes};
   } catch(error) {
     if(begun) await client.query('ROLLBACK');
     throw error;
