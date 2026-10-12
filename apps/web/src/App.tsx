@@ -62,6 +62,7 @@ import ScheduledFlows from './ScheduledFlows';
 import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
+import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
@@ -7981,6 +7982,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
           [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
       </div>;
     })}
+    <CustomComponentPropertyEditor properties={properties} onChange={onChange} addOnly />
     <button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);
