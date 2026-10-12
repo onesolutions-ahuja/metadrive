@@ -148,6 +148,20 @@ try {
   assert.equal(await inspector.locator('select').nth(2).inputValue(), targetId);
   const destination = '/une/apps/' + appId + '/pages/' + targetId;
   assert.equal(await inspector.locator('a[href]').first().getAttribute('href'), destination);
+  // Routes are generated from active App/Page/Object metadata.
+  await page.getByRole('button', { name: 'Open page routes' }).click();
+  const directory = page.getByRole('dialog', { name: 'Page routes' });
+  await directory.waitFor();
+  await directory.getByLabel('Filter routes by application').selectOption(appId);
+  const targetRow = directory.locator('[data-route-key="' + appId + ':page:' + targetId + '"]');
+  await targetRow.waitFor();
+  assert.equal(await targetRow.locator('a[href]').first().getAttribute('href'), destination);
+  const recordRow = directory.locator('[data-route-key="' + appId + ':object:Account"]');
+  await recordRow.waitFor();
+  assert.match(await recordRow.locator('code').innerText(), /\/une\/o\/Account\/list\?/);
+  await directory.getByLabel('Search routes').fill(targetId);
+  assert.equal(await directory.locator('tbody tr').count(), 1);
+  await directory.getByRole('button', { name: 'Close page routes' }).click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const saved = (await request('/metadata/pages', token)).pages.find((item) => item.apiName === sourceId);
   assert.equal(saved.components[0].properties.actionFlows.browse.navigationPageApiName, targetId);
