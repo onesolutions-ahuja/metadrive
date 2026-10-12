@@ -119,6 +119,20 @@ test('tenant MFA can be Off, Optional or Required without a password-only API by
     assert.equal((await send('/auth/login', '', 'POST', { email, password })).status, 200,
       'Password-only login remains allowed when the tenant disables MFA');
     assert.deepEqual((await send('/auth/mfa/policy', String(secondLogin.data.access_token))).data, { mode: 'Off' });
+
+    const secondToken = String(secondLogin.data.access_token);
+    assert.equal((await send('/auth/mfa/policy', secondToken, 'PUT', { mode: 'Optional' })).status, 200);
+    const selfEnrollment = await send('/auth/mfa/enroll', secondToken, 'POST', { password });
+    assert.equal(selfEnrollment.status, 200, JSON.stringify(selfEnrollment.data));
+    const enrollmentCode = totpCode(String(selfEnrollment.data.setup_secret), Math.floor(Date.now() / 30_000));
+    const confirmed = await send('/auth/mfa/enroll/confirm', secondToken, 'POST', {
+      enrollment_token: selfEnrollment.data.enrollment_token, code: enrollmentCode
+    });
+    assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data));
+    assert.equal((await send('/auth/me', secondToken)).status, 401,
+      'Enrolling a factor must invalidate previously issued bearer access');
+    assert.equal((await send('/auth/login', '', 'POST', { email: 'other@mfa-smoke.test', password })).status, 202,
+      'Optional MFA must challenge a voluntarily enrolled account');
   } finally {
     if (child.exitCode === null) {
       child.kill();
