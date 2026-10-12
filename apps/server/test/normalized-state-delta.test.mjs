@@ -39,7 +39,7 @@ test('changing parent type correctly retires old children',()=>{
 });
 
 test('large metadata graphs retain unchanged rows for login append',()=>{
-  const users=Array.from({length:2500},(_,i)=>({id:'u'+i,email:'u'+i+'@example.test',role:'reader',enabled:true}));
+  const users=Array.from({length:4500},(_,i)=>({id:'u'+i,email:'u'+i+'@example.test',role:'reader',enabled:true}));
   const before={users,tenants:{a:{securityEvents:[]}},refreshSessions:[]};
   const original=projectNormalizedTree(before).nodes;
   assert.ok(original.length>19000,'Regress against production-sized graphs');
