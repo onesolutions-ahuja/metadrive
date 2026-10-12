@@ -8110,7 +8110,9 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
         </> : <div className="metadata-navigation-target" aria-label="Navigation destination">
           <label className="form-label">Destination type
             <select className="form-control" value={navigationTargetType}
-              onChange={(e) => setBinding({ ...binding, navigationTargetType: e.target.value, navigationPageApiName: '' })}>
+              onChange={(e) => setBinding({ ...binding, navigationTargetType: e.target.value,
+                navigationAppId: e.target.value === 'Record List' ? 'Records' : currentAppId,
+                navigationPageApiName: '' })}>
               <option value="Record List">Record list</option>
               <option value="App Home">App home</option>
               <option value="App Page">App page</option>
