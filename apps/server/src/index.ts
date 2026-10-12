@@ -7467,11 +7467,10 @@ function communicationPayload(value: unknown): string {
 
 function communicationSafeUrl(value: string): string {
   const url = new URL(value);
-  for (const [key] of url.searchParams) {
-    if (/password|secret|authorization|token|api[-_]?key|credential|cookie/i.test(key)) {
-      url.searchParams.set(key, '[REDACTED]');
-    }
-  }
+  // Query strings may contain arbitrary personal data or secrets under custom
+  // parameter names. Retain only the route location, never query or fragment.
+  url.search = '';
+  url.hash = '';
   return url.toString();
 }
 

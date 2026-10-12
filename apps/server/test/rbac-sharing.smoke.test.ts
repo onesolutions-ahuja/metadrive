@@ -1711,9 +1711,13 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'web app requests must continue to work when marked as internal');
     assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'external-api')).status, 200,
       'explicitly identified external API requests must remain auditable');
+    assert.equal((await api.send('/metadata/objects?customSensitiveValue=private-api-log-canary', adminToken, 'GET', undefined, 'external-api')).status, 200,
+      'audited API requests must accept query parameters without retaining them in audit URLs');
     const communicationRecordsResponse = await api.send('/records/Communication_Records__c', adminToken, 'GET', undefined, 'web-app');
     assert.equal(communicationRecordsResponse.status, 200, 'Communication Records must be readable through the standard Records API');
     const communicationRecords = communicationRecordsResponse.data.records as Array<Record<string, unknown>>;
+    assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('private-api-log-canary')),
+      'API audit URLs must not persist query string values, even under unfamiliar parameter names');
     assert.ok(communicationRecords.some((record) => record.Api_Id__c === 'GET /api/metadata/objects'
       && record.Direction__c === 'Incoming'
       && record.Method__c === 'GET'
