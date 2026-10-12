@@ -1,6 +1,7 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
+import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
 import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
@@ -1332,7 +1333,8 @@ const libraryComponentSchema = z.object({
   publishedVersion: z.number().int().nonnegative().optional(),
   revisions: z.array(libraryComponentRevisionSchema).max(100).optional(),
   pendingDraft: libraryComponentRevisionSchema.optional(),
-  trustedBundled: z.boolean().optional()
+  trustedBundled: z.boolean().optional(),
+  tenantId: z.string().min(1).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -11050,13 +11052,15 @@ app.get('/api/component-library', requirePermission('metadata:read'), async (_re
   }
   const principal = getPrincipal(res);
   res.json({
-    components: state.libraryComponents,
+    components: state.libraryComponents.filter((component) =>
+      libraryComponentVisible(component, principal.tenantId, Object.keys(state.tenants))),
     canManage: principal.permissions.includes('components:manage')
   });
 });
 app.post('/api/component-library', requirePermission('components:manage'), async (req: Request, res: Response) => {
   const parsed = libraryComponentInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid custom component metadata', details: parsed.error.flatten() });
+  const principal = getPrincipal(res);
   if (state.libraryComponents.some((component) => component.apiName.toLowerCase() === parsed.data.apiName.toLowerCase())) {
     return res.status(409).json({ error: `A library component named "${parsed.data.apiName}" already exists` });
   }
@@ -11078,6 +11082,7 @@ app.post('/api/component-library', requirePermission('components:manage'), async
     const scopedCss = scopeLibraryCss(parsed.data.cssSource, parsed.data.apiName);
     const component: LibraryComponent = {
       ...parsed.data,
+      tenantId: principal.tenantId,
       compiledJs: compiled.code,
       scopedCss,
       version: 1,
