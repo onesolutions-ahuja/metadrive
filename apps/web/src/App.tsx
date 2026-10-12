@@ -9299,6 +9299,18 @@ function PageBuilder({
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
+              {!['Custom:KioskContainer','Custom:KioskRow','Custom:KioskColumn','Custom:KioskCard','Custom:KioskGrid'].includes(selected.type)
+                && <label className="checkbox-row">
+                  <input type="checkbox" checked={isLayoutContainer(selected)}
+                    onChange={(event) => {
+                      if (!event.target.checked && childrenOf(page.components, selected.id).length) {
+                        onNotify('Move all child components out before disabling nesting.');
+                        return;
+                      }
+                      updateComponent(selected.id, { properties: { ...selected.properties, layoutContainer: event.target.checked } });
+                    }} />
+                  Accept nested components (requires a component that renders children)
+                </label>}
               <label className="form-label">Parent container
                 <select className="form-control" aria-label="Parent container" value={rawLayoutParentId(selected) ?? ''}
                   onChange={(event) => {
