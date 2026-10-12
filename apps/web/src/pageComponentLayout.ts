@@ -10,7 +10,8 @@ export const layoutContainerTypes = new Set([
 ]);
 
 export function isLayoutContainer(component: PageComponentMetadata): boolean {
-  return layoutContainerTypes.has(component.type);
+  return layoutContainerTypes.has(component.type)
+    || (component.type.startsWith('Custom:') && component.properties?.layoutContainer === true);
 }
 export function rawLayoutParentId(component: PageComponentMetadata): string | null {
   return typeof component.properties?.layoutParentId === 'string' && component.properties.layoutParentId
