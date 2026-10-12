@@ -3669,7 +3669,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -6138,6 +6138,99 @@ function AutomationSettingsWorkspace() {
 
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 
+
+
+function TenantEmailRecoverySettings() {
+  const [smtpCredentialId, setSmtpCredentialId] = useState('');
+  const [fromEmail, setFromEmail] = useState('');
+  const [ready, setReady] = useState(false);
+  const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ smtpCredentialId: string; fromEmail: string; linkReady: boolean }>('/auth/password-recovery/settings')
+      .then((value) => {
+        if (!active) return;
+        setPermitted(true); setSmtpCredentialId(value.smtpCredentialId);
+        setFromEmail(value.fromEmail); setReady(value.linkReady);
+      }).catch(() => { if (active) setPermitted(false); });
+    void apiRequest<{ credentials: Array<{ id: string; label: string; protocol: string; enabled: boolean }> }>('/named-credentials')
+      .then((response) => { if (active) setCredentials(response.credentials.filter((item) => item.protocol === 'SMTP' && item.enabled)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+  if (!permitted) return null;
+  const save = async () => {
+    setBusy(true); setMessage('');
+    try {
+      await apiRequest('/auth/password-recovery/settings', {
+        method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '' })
+      });
+      setMessage('Password recovery configuration saved.');
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings'); }
+    finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>Tenant password recovery</h2>
+    <p>Email reset links are delivered through your tenant's SMTP Named Credential. They do not bypass MFA or allow platform staff to access tenant accounts.</p>
+    {!ready && <p role="alert">The server must have a trusted METADRIVE_PASSWORD_RESET_BASE_URL matching an allowed HTTPS web origin before recovery can be enabled.</p>}
+    {message && <p role="status">{message}</p>}
+    <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential</label>
+    <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
+      onChange={(event) => setSmtpCredentialId(event.target.value)}>
+      <option value="">Disabled</option>
+      {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+    </select>
+    <label className="form-label" htmlFor="recovery-sender">Sender email</label>
+    <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
+      onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
+    <button className="btn btn-brand" onClick={() => void save()}
+      disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
+      {busy ? 'Saving…' : 'Save recovery configuration'}
+    </button>
+  </section>;
+}
+
+function TenantUserLockSettings() {
+  const [users, setUsers] = useState<Array<{ id: string; name: string; email: string; active: boolean; lockedUntil: number | null }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    const response = await apiRequest<{ users: Array<{ id: string; name: string; email: string; active: boolean; lockedUntil: number | null }> }>('/auth/user-locks');
+    setUsers(response.users); setPermitted(true);
+  };
+  useEffect(() => { void load().catch(() => setPermitted(false)); }, []);
+  if (!permitted) return null;
+  const changeLock = async (userId: string, lock: boolean) => {
+    setBusy(true); setMessage('');
+    try {
+      await apiRequest('/auth/users/' + encodeURIComponent(userId) + (lock ? '/lock' : '/unlock'), {
+        method: 'POST', body: JSON.stringify(lock ? { durationMinutes: 60 } : {})
+      });
+      await load();
+      setMessage(lock ? 'User locked and existing sessions revoked.' : 'User unlocked.');
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to update account lock'); }
+    finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>User account locks</h2>
+    <p>Security administrators can lock or unlock an account. Locking immediately invalidates its active tokens and sessions.</p>
+    {message && <p role="status">{message}</p>}
+    <ul>{users.map((user) => <li key={user.id}>
+      {user.name} ({user.email}) — {user.lockedUntil && user.lockedUntil > Date.now()
+        ? 'Locked until ' + new Date(user.lockedUntil).toLocaleString()
+        : user.active ? 'Active' : 'Inactive'}
+      {' '}
+      <button className="btn btn-small" disabled={busy || !user.active}
+        onClick={() => void changeLock(user.id, !(user.lockedUntil && user.lockedUntil > Date.now()))}>
+        {user.lockedUntil && user.lockedUntil > Date.now() ? 'Unlock' : 'Lock for 1 hour'}
+      </button>
+    </li>)}</ul>
+  </section>;
+}
 
 function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => void }) {
   const [sessions, setSessions] = useState<Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }>>([]);
