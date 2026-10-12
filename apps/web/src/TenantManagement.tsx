@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Building2, ChevronLeft, ChevronRight, CircleAlert, Plus, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import './TenantManagement.css';
 import TenantDomains from './TenantDomains';
+import TenantRecoveryPanel from './TenantRecoveryPanel';
 
 export type TenantSummary = {
   tenantId: string;
@@ -242,7 +243,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             <button type="button" className="tenant-button" onClick={() => void saveRetention()} disabled={busy}>Save retention policy</button>
             <p className="tenant-help">Retention metadata is audited. No automatic or manual data deletion is enabled.</p>
           </section>
-        </form><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
+        </form><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
       </section>
     </div>
   </div>;
