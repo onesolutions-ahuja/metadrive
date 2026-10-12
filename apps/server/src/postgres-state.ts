@@ -60,7 +60,7 @@ export async function readPersistedState(): Promise<unknown | null> {
   if (strictSqlOnly) {
     const remaining = await pool.query(`SELECT COUNT(*)::integer AS n FROM information_schema.columns
       WHERE table_schema NOT IN ('pg_catalog','information_schema') AND data_type IN ('json','jsonb')`);
-    if (remaining.rows[0]?.n !== 0) throw new Error('Zero-JSONB database gate failed');
+    if (Number((remaining.rows[0] as {n?: unknown} | undefined)?.n) !== 0) throw new Error('Zero-JSONB database gate failed');
   }
   if (persistenceMode === 'normalized' || persistenceMode === 'typed') {
     // SQL-only read. Typed mode verifies physical records under the SAME SQL snapshot.
