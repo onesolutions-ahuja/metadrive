@@ -80,19 +80,26 @@ try{
   await wizard.waitFor({state:'hidden'});
   await page.waitForURL('**/une/setup/page-builder/'+newApi);
   let saved;
-  let updatedApp;
   for(let i=0;i<35;i++){
     saved=(await request('/metadata/pages',token)).pages.find(item=>item.apiName===newApi);
-    updatedApp=(await request('/metadata/apps',token)).apps.find(item=>item.apiName===appId);
-    if(saved&&updatedApp?.navigationPageApiNames.includes(newApi))break;
+    if(saved)break;
     await pause(200);
   }
-  assert(saved,'Guided page must be saved');
+  assert(saved,'Guided draft must be persisted before the route changes');
+  assert.equal(saved.status,'Draft');
   assert.equal(saved.pageType,'App Page');
   assert.equal(saved.targetObject,'Account');
   assert.equal(saved.template,'header-main');
   assert.deepEqual(saved.devices,['Phone']);
-  assert(updatedApp?.navigationPageApiNames.includes(newApi),'App Page must be attached to the selected application on first save');
+  assert(saved.activationAssignments?.some(item=>item.appId===appId),'Draft must retain the selected application metadata');
+  await page.getByRole('button',{name:'Activate'}).click();
+  let updatedApp;
+  for(let i=0;i<35;i++){
+    updatedApp=(await request('/metadata/apps',token)).apps.find(item=>item.apiName===appId);
+    if(updatedApp?.navigationPageApiNames.includes(newApi))break;
+    await pause(200);
+  }
+  assert(updatedApp?.navigationPageApiNames.includes(newApi),'Activation must attach the page to the selected application');
   assert(updatedApp.navigationOrder.some(entry=>entry.type==='App Page'&&entry.apiName===newApi));
   await page.reload();
   await page.getByRole('button',{name:'Phone preview'}).waitFor();
