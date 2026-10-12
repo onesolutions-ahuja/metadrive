@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/full-sql-isolated-proof.yml'
+      - '.github/workflows/sql-only-prod-stage.yml'
       - 'apps/server/src/normalized-state-runtime.mjs'
       - 'apps/server/src/normalized-typed-records.mjs'
       - 'apps/server/src/postgres-state.ts'
@@ -127,6 +128,29 @@ jobs:
             -h 127.0.0.1 -U postgres -d metadrive_restored \
             --format=custom --no-owner --no-acl --file=/work/metadrive-sql-only.dump
           test -s "${RUNNER_TEMP}/metadrive-sql-only.dump"
+      - name: Independently restore SQL-only converted dump and verify typed record parity
+        run: |
+          docker run --rm --network host -e PGPASSWORD=postgres --entrypoint createdb \
+            postgres:18 -h 127.0.0.1 -U postgres metadrive_sql_roundtrip
+          docker run --rm --network host -e PGPASSWORD=postgres \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_restore postgres:18 \
+            -h 127.0.0.1 -U postgres -d metadrive_sql_roundtrip \
+            --no-owner --no-acl --exit-on-error /work/metadrive-sql-only.dump
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_roundtrip" PGSSLMODE=disable \
+            node --input-type=module <<'NODE'
+          import pg from 'pg';
+          import {readNormalizedState} from './apps/server/src/normalized-state-runtime.mjs';
+          import {verifyTypedRecords} from './apps/server/src/normalized-typed-records.mjs';
+          const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false});
+          try {
+            const cols=await pool.query("SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE data_type IN ('json','jsonb')");
+            if(cols.rows[0].n!==0) throw Error('Restored SQL-only dump recreated JSON columns');
+            const state=await readNormalizedState(pool,verifyTypedRecords);
+            if(!state.digest||!Object.keys(state.state.tenants||{}).length)
+              throw Error('SQL-only independent restore lost tenant data');
+            console.log('Independently restored SQL-only database has 0 JSONB and verified physical records');
+          } finally {await pool.end();}
+          NODE
       - name: Measure normalized SQL full-state read and write latency on isolated restore
         run: |
           DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
