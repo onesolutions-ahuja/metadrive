@@ -1,0 +1,36 @@
+name: MD07 Advanced Properties and Nested Layout E2E
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/pageComponentLayout.ts'
+      - 'apps/web/src/PageComponentStyleEditor.tsx'
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/styles.css'
+      - 'apps/web/test/pageComponentLayout.test.ts'
+      - 'apps/server/test/rbac-sharing.smoke.test.ts'
+      - '.github/workflows/md07-nested-layout.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile-persist-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Compile frontend backend and foundation
+        run: npm run build
+      - name: Test nesting, responsive properties, and saved metadata
+        run: npx tsx --test apps/web/test/pageComponentLayout.test.ts apps/web/test/componentProperties.test.ts
+      - name: Authenticated Page Builder save/reopen and backend regression
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: npm run test --workspace apps/server
