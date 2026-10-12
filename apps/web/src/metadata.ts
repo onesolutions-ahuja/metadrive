@@ -154,6 +154,7 @@ export type ObjectMetadata = {
   kind: 'Standard Object' | 'Custom Object';
   description: string;
   fields: FieldMetadata[];
+  revision?: number;
   pageLayouts?: PageLayoutMetadata[];
   pageLayoutAssignments?: PageLayoutAssignmentMetadata[];
   recordTypes?: RecordTypeMetadata[];
