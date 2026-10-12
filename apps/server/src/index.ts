@@ -731,6 +731,8 @@ const objectSchema = z.object({
   kind: z.enum(['Standard Object', 'Custom Object']),
   description: z.string(),
   fields: z.array(fieldSchema),
+  // Revision is platform-managed. Never trust the revision sent in a write body.
+  revision: z.number().int().nonnegative().optional(),
   pageLayouts: z.array(pageLayoutSchema).optional(),
   pageLayoutAssignments: z.array(pageLayoutAssignmentSchema).optional(),
   recordTypes: z.array(recordTypeSchema).optional(),
@@ -2837,7 +2839,7 @@ const integrationConnectionRequestSchema = z.object({
 const connectorDefinitionRequestSchema = connectorDefinitionSchema;
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
-type TenantData = { mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type TenantData = { metadataHistory?: ObjectMetadataChange[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -3316,6 +3318,16 @@ const tenantManagementAuditSchema = z.object({
   previous: tenantRegistryEntrySchema.optional(),
   next: tenantRegistryEntrySchema
 });
+type ObjectMetadataChange = {
+  objectApiName: string; revision: number; action: 'CREATED' | 'UPDATED' | 'DELETED' | 'FIELD_CREATED' | 'FIELD_UPDATED' | 'FIELD_DELETED';
+  actorUserId: string; at: string; before?: ObjectMetadata; after?: ObjectMetadata;
+};
+const objectMetadataChangeSchema = z.object({
+  objectApiName: z.string(), revision: z.number().int().nonnegative(),
+  action: z.enum(['CREATED', 'UPDATED', 'DELETED', 'FIELD_CREATED', 'FIELD_UPDATED', 'FIELD_DELETED']),
+  actorUserId: z.string(), at: z.string().datetime(),
+  before: objectSchema.optional(), after: objectSchema.optional()
+});
 const stateSchema = z.object({
   tenantRegistry: z.record(tenantRegistryEntrySchema).default({}),
   tenantManagementAudit: z.array(tenantManagementAuditSchema).default([]),
@@ -3328,6 +3340,7 @@ const stateSchema = z.object({
   tenants: z.record(z.object({
     mfaPolicy: z.object({ mode: z.enum(['Off', 'Optional', 'Required']) }).default({ mode: 'Off' }),
     objects: z.array(objectSchema),
+    metadataHistory: z.array(objectMetadataChangeSchema).default([]),
     flows: z.array(flowSchema),
     platformEvents: z.array(platformEventSchema).default([]),
     platformEventMessages: z.array(platformEventMessageSchema).default([]),
@@ -5981,9 +5994,69 @@ app.delete('/api/metadata/platform-events/:apiName', requireAnyPermission('metad
   });
   return res.status(204).end();
 });
+// Metadata mutations share a single version and bounded, tenant-owned history.
+// Writes still go through the current typed SQL/Aiven persistence implementation.
+const metadataVersion = (object: ObjectMetadata | undefined): number => object?.revision ?? 0;
+function metadataPrecondition(req: Request, res: Response, current: ObjectMetadata): boolean {
+  const supplied = req.header('if-match');
+  // Legacy API clients may omit this header. The Object Manager always sends it.
+  if (supplied === undefined) return true;
+  if (supplied !== `"${metadataVersion(current)}"`) {
+    res.status(412).json({
+      error: 'Metadata has changed since it was loaded; refresh before saving',
+      expectedRevision: metadataVersion(current)
+    });
+    return false;
+  }
+  return true;
+}
+function commitObjectMetadata(
+  tenantId: string, actorUserId: string, updatedTenant: TenantData,
+  action: ObjectMetadataChange['action'], before?: ObjectMetadata, after?: ObjectMetadata
+): ObjectMetadata | undefined {
+  const revision = Math.max(metadataVersion(before), metadataVersion(after)) + 1;
+  const saved = after ? { ...after, revision } : undefined;
+  const audit: ObjectMetadataChange = {
+    objectApiName: (after ?? before)!.apiName,
+    revision, action, actorUserId, at: new Date().toISOString(),
+    ...(before ? { before: structuredClone(before) } : {}),
+    ...(saved ? { after: structuredClone(saved) } : {})
+  };
+  persistTenantRecords(tenantId, {
+    ...updatedTenant,
+    objects: updatedTenant.objects.map((candidate) =>
+      candidate.apiName === saved?.apiName ? saved : candidate),
+    metadataHistory: [...(updatedTenant.metadataHistory ?? []), audit].slice(-300)
+  });
+  return saved;
+}
+app.get('/api/metadata/objects/:apiName/history', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  const object = tenant.objects.find((candidate) => candidate.apiName === apiName);
+  const history = (tenant.metadataHistory ?? []).filter((entry) => entry.objectApiName === apiName);
+  if (!object && !history.length) return res.status(404).json({ error: 'Object not found' });
+  const parsed = z.coerce.number().int().min(1).max(100).safeParse(req.query.limit ?? 30);
+  if (!parsed.success) return res.status(400).json({ error: 'History limit must be between 1 and 100' });
+  return res.json({
+    objectApiName: apiName, revision: metadataVersion(object),
+    history: history.slice(-parsed.data).reverse().map(({ before, after, ...summary }) => ({
+      ...summary, beforeRevision: before ? metadataVersion(before) : null,
+      afterRevision: after ? metadataVersion(after) : null
+    }))
+  });
+});
+app.get('/api/metadata/objects/:apiName/history/:revision', requirePermission('metadata:read'), (req: Request, res: Response) => {
+  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const event = (tenant.metadataHistory ?? []).find((entry) =>
+    entry.objectApiName === routeParam(req, 'apiName') && String(entry.revision) === routeParam(req, 'revision'));
+  if (!event) return res.status(404).json({ error: 'Metadata revision not found' });
+  return res.json({ change: event });
+});
 app.get('/api/metadata/objects/:apiName', requirePermission('metadata:read'), (req: Request, res: Response) => {
   const object = tenantData(getPrincipal(res).tenantId)?.objects.find((item) => item.apiName === req.params.apiName);
   if (!object) return res.status(404).json({ error: `Object "${req.params.apiName}" was not found` });
+  res.set('ETag', `"${metadataVersion(object)}"`);
   return res.json({ object });
 });
 app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
@@ -6034,10 +6107,8 @@ app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'object
           : permissionSet)
     }
   };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updated } };
-  persistState(nextState);
-  state = nextState;
-  return res.status(201).json({ object });
+  const created = commitObjectMetadata(principal.tenantId, principal.userId, updated, 'CREATED', undefined, object)!;
+  return res.status(201).json({ object: created });
 });
 app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const parsed = objectSchema.safeParse(req.body);
@@ -6048,6 +6119,7 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
   const current = tenant.objects.find((item) => item.apiName === req.params.apiName);
   if (!current) return res.status(404).json({ error: `Object "${req.params.apiName}" was not found` });
   if (parsed.data.kind !== current.kind) return res.status(400).json({ error: 'Object type cannot be changed after creation' });
+  if (!metadataPrecondition(req, res, current)) return;
   const systemManagedFields = current.fields.filter((field) =>
     field.apiName === 'CurrencyIsoCode' && !parsed.data.fields.some((candidate) => candidate.apiName === field.apiName));
   const objectInput = systemManagedFields.length
@@ -6136,10 +6208,8 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
         : set)
     }
   };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updated } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ object });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updated, 'UPDATED', current, object)!;
+  return res.json({ object: saved });
 });
 function removeObjectMetadata(tenant: TenantData, apiName: string): TenantData {
   const updatedTenant: TenantData = {
@@ -6183,13 +6253,14 @@ app.delete('/api/metadata/objects/:apiName', requireAnyPermission('metadata:writ
   if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
   if (object.kind !== 'Custom Object') return res.status(403).json({ error: 'Standard objects cannot be deleted' });
   if ((tenant.records[apiName] ?? []).length) return res.status(409).json({ error: 'Delete or export this object’s records before deleting the object' });
+  if (!metadataPrecondition(req, res, object)) return;
   const dependencies = findObjectDependencies(tenant, apiName);
   if (dependencies.length) return res.status(409).json({
     error: `Object "${apiName}" is still referenced by ${dependencies.join('; ')}`,
     dependencies
   });
   const updatedTenant = removeObjectMetadata(tenant, apiName);
-  persistTenantRecords(principal.tenantId, updatedTenant);
+  commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'DELETED', object);
   return res.status(204).end();
 });
 app.post('/api/metadata/objects/:apiName/formulas/validate', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
@@ -6254,6 +6325,7 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata
     }).strict()
   ]).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid field metadata', details: parsed.error.flatten() });
+  if (!metadataPrecondition(req, res, object)) return;
   const field = 'field' in parsed.data ? parsed.data.field : parsed.data;
   const relatedLookupFilters = 'field' in parsed.data ? parsed.data.relatedLookupFilters ?? [] : [];
   const relatedLookupFilterLogic = 'field' in parsed.data ? parsed.data.relatedLookupFilterLogic ?? {} : {};
@@ -6308,10 +6380,8 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata
         : set)
     }
   };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.status(201).json({ object: updatedObject, field });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'FIELD_CREATED', object, updatedObject)!;
+  return res.status(201).json({ object: saved, field });
 });
 app.get('/api/metadata/objects/:apiName/field-dependencies', requirePermission('metadata:read'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -6340,6 +6410,7 @@ app.put('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermiss
   const tenant = tenantData(principal.tenantId)!;
   const object = tenant.objects.find((item) => item.apiName === req.params.apiName);
   if (!object) return res.status(404).json({ error: `Object "${req.params.apiName}" was not found` });
+  if (!metadataPrecondition(req, res, object)) return;
   const existing = object.fields.find((item) => item.apiName === req.params.fieldApiName);
   if (!existing) return res.status(404).json({ error: `Field "${req.params.fieldApiName}" was not found` });
   const parsed = fieldSchema.safeParse(req.body);
@@ -6361,10 +6432,8 @@ app.put('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermiss
   const lookupFilterError = validateRelatedLookupFilters(updatedObject, tenant.objects);
   if (lookupFilterError) return res.status(400).json({ error: lookupFilterError });
   const updatedTenant = { ...tenant, objects: tenant.objects.map((item) => item.apiName === object.apiName ? updatedObject : item) };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ object: updatedObject, field: parsed.data });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'FIELD_UPDATED', object, updatedObject)!;
+  return res.json({ object: saved, field: parsed.data });
 });
 app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -6373,6 +6442,7 @@ app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPerm
   const fieldApiName = routeParam(req, 'fieldApiName');
   const object = tenant.objects.find((item) => item.apiName === apiName);
   if (!object) return res.status(404).json({ error: `Object "${apiName}" was not found` });
+  if (!metadataPrecondition(req, res, object)) return;
   const field = object.fields.find((item) => item.apiName === fieldApiName);
   if (!field) return res.status(404).json({ error: `Field "${fieldApiName}" was not found` });
   if (!fieldApiName.endsWith('__c')) return res.status(403).json({ error: 'Standard fields cannot be deleted' });
@@ -6416,8 +6486,8 @@ app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPerm
       }))
     }
   };
-  persistTenantRecords(principal.tenantId, updatedTenant);
-  return res.json({ object: updatedObject });
+  const saved = commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'FIELD_DELETED', object, updatedObject)!;
+  return res.json({ object: saved });
 });
 app.get('/api/metadata/approval-processes', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId);
