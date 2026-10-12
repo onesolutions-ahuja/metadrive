@@ -4745,7 +4745,23 @@ function getPrincipal(res: Response): Principal {
 function principalUser(principal: Principal): LocalUser | undefined {
   return state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
 }
+// In-memory, tenant-reference/versioned authorization cache. No TTL-based stale grants:
+// tenant metadata updates replace the tenant object; identity changes replace the
+// LocalUser object; platform policy changes replace the policy array.
+const effectivePermissionCache = new WeakMap<TenantData, Map<string, {
+  user: LocalUser; platformGrants?: PlatformState['platformPolicies'][string]; permissions: string[];
+}>>();
 function effectivePermissions(user: LocalUser, data: TenantData): string[] {
+  const platformGrants = state.platformPolicies[user.id];
+  let tenantCache = effectivePermissionCache.get(data);
+  if (!tenantCache) {
+    tenantCache = new Map();
+    effectivePermissionCache.set(data, tenantCache);
+  }
+  const cached = tenantCache.get(user.id);
+  if (cached && cached.user === user && cached.platformGrants === platformGrants) {
+    return cached.permissions;
+  }
   const accessUser = data.accessControl.users.find((item) => item.id === user.id);
   const profile = data.accessControl.profiles.find((item) =>
     item.id === (accessUser?.profileId ?? profileIdForRole(user.role, data.accessControl.profiles)));
@@ -4776,7 +4792,9 @@ function effectivePermissions(user: LocalUser, data: TenantData): string[] {
   } else if (policies.includes('licence:manage')) {
     permissions.add('licence:manage');
   }
-  return [...permissions];
+  const resolved = [...permissions];
+  tenantCache.set(user.id, { user, platformGrants, permissions: resolved });
+  return resolved;
 }
 function principalForUser(user: LocalUser, tenant: TenantData): Principal {
   return {
@@ -7298,65 +7316,76 @@ app.post('/api/metadata/flows/:apiName/validate', requirePermission('metadata:re
     [...tenant.flows.filter((flow) => flow.apiName !== parsed.data.apiName), parsed.data], tenant.approvalProcesses, tenant.platformEvents);
   return res.json(validation);
 });
+// Reuse the same validated permission assignments for all object and field checks
+// within a request, instead of repeatedly scanning profiles/sets for every cell.
+type AuthGrantContext = {
+  profile?: TenantData['accessControl']['profiles'][number];
+  directSets: TenantData['accessControl']['permissionSets'];
+  groups: Array<{
+    group: TenantData['accessControl']['permissionSetGroups'][number];
+    sets: TenantData['accessControl']['permissionSets'];
+  }>;
+};
+const requestGrantCache = new WeakMap<Principal, WeakMap<TenantData, AuthGrantContext>>();
+function authorizationGrants(principal: Principal, tenant: TenantData): AuthGrantContext | undefined {
+  let tenantCache = requestGrantCache.get(principal);
+  if (tenantCache?.has(tenant)) return tenantCache.get(tenant);
+  const user = principalUser(principal);
+  if (!user) return undefined;
+  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
+  const profiles = tenant.accessControl.profiles;
+  const profile = profiles.find((item) => item.id ===
+    (accessUser?.profileId ?? profileIdForRole(user.role, profiles)));
+  const assignedSets = new Set(accessUser?.permissionSetIds ?? user.permissionSetIds);
+  const directSets = tenant.accessControl.permissionSets.filter((set) => assignedSets.has(set.id));
+  const groupIds = new Set(accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds);
+  const groups = tenant.accessControl.permissionSetGroups
+    .filter((group) => groupIds.has(group.id))
+    .map((group) => ({
+      group,
+      sets: tenant.accessControl.permissionSets.filter((set) => group.permissionSetIds.includes(set.id))
+    }));
+  const resolved: AuthGrantContext = { profile, directSets, groups };
+  if (!tenantCache) {
+    tenantCache = new WeakMap();
+    requestGrantCache.set(principal, tenantCache);
+  }
+  tenantCache.set(tenant, resolved);
+  return resolved;
+}
+
 function hasObjectPermission(principal: Principal, tenant: TenantData, objectName: string, action: 'read' | 'create' | 'edit' | 'delete'): boolean {
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (object?.kind === 'Custom Object' && object.settings?.deploymentStatus === 'In Development'
     && !principal.permissions.includes('objects:manage')
     && !principal.permissions.includes('metadata:write')) return false;
-  const user = principalUser(principal);
-  if (!user) return false;
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  const grants: Array<{ permission: ObjectPermission; muted?: Partial<ObjectPermission> }> = [];
-  const addGrants = (permissions: Record<string, ObjectPermission>, muted?: Partial<ObjectPermission>) => {
-    const permission = permissions[objectName];
-    if (permission) grants.push({ permission, muted });
-  };
-  if (profile) addGrants(profile.objectPermissions);
-  tenant.accessControl.permissionSets
-     .filter((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id))
-    .forEach((set) => addGrants(set.objectPermissions));
-  (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).forEach((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    if (!group) return;
-    tenant.accessControl.permissionSets
-      .filter((set) => group.permissionSetIds.includes(set.id))
-      .forEach((set) => addGrants(set.objectPermissions, group.mutedObjectPermissions[objectName]));
-  });
-  const hasGrant = ({ permission, muted }: typeof grants[number]) => {
+  const grants = authorizationGrants(principal, tenant);
+  if (!grants) return false;
+  const hasGrant = (permission?: ObjectPermission, muted?: Partial<ObjectPermission>): boolean => {
+    if (!permission) return false;
     if (permission[action] && !muted?.[action] && !muted?.read) return true;
     if (action === 'read') {
       return (permission.viewAll && !muted?.viewAll || permission.modifyAll && !muted?.modifyAll)
         && !muted?.read;
     }
-    return action !== 'create'
-      && permission.modifyAll
-      && !muted?.modifyAll
-      && !muted?.[action]
-      && !muted?.read;
+    return action !== 'create' && permission.modifyAll && !muted?.modifyAll
+      && !muted?.[action] && !muted?.read;
   };
-  return grants.some(hasGrant);
+  if (hasGrant(grants.profile?.objectPermissions[objectName])) return true;
+  if (grants.directSets.some((set) => hasGrant(set.objectPermissions[objectName]))) return true;
+  return grants.groups.some(({ group, sets }) => sets.some((set) =>
+    hasGrant(set.objectPermissions[objectName], group.mutedObjectPermissions[objectName])));
 }
 
 function hasObjectWidePermission(principal: Principal, tenant: TenantData, objectName: string, flag: 'viewAll' | 'modifyAll'): boolean {
-  const user = principalUser(principal);
-  if (!user) return false;
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  const hasGrant = (permissions: Record<string, ObjectPermission>, muted?: Partial<ObjectPermission>) => {
-    const permission = permissions[objectName];
-    return Boolean(permission?.[flag] && !muted?.[flag] && !muted?.read);
-  };
-  if (profile && hasGrant(profile.objectPermissions)) return true;
-  if (tenant.accessControl.permissionSets.some((set) =>
-    (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && hasGrant(set.objectPermissions))) return true;
-  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    return Boolean(group && tenant.accessControl.permissionSets.some((set) =>
-      group.permissionSetIds.includes(set.id) && hasGrant(set.objectPermissions, group.mutedObjectPermissions[objectName])));
-  });
+  const grants = authorizationGrants(principal, tenant);
+  if (!grants) return false;
+  const hasGrant = (permission?: ObjectPermission, muted?: Partial<ObjectPermission>) =>
+    Boolean(permission?.[flag] && !muted?.[flag] && !muted?.read);
+  if (hasGrant(grants.profile?.objectPermissions[objectName])) return true;
+  if (grants.directSets.some((set) => hasGrant(set.objectPermissions[objectName]))) return true;
+  return grants.groups.some(({ group, sets }) => sets.some((set) =>
+    hasGrant(set.objectPermissions[objectName], group.mutedObjectPermissions[objectName])));
 }
 
 function hasRoleHierarchyAccess(principal: Principal, tenant: TenantData, ownerId: unknown): boolean {
@@ -7445,6 +7474,23 @@ function sharingRuleGrantsUser(rule: SharingRule, recipientUserId: string, recor
   return roleIsAtOrBelow(recipientRoleId, rule.targetId, tenant.accessControl.roles);
 }
 
+// Scope and cache record-share lookups by immutable tenant state snapshot.
+// A sharing change replaces TenantData; an old index cannot authorize new data.
+const recordShareIndexes = new WeakMap<TenantData, Map<string, TenantData['recordShares']>>();
+function recordShareIndex(tenant: TenantData): Map<string, TenantData['recordShares']> {
+  const existing = recordShareIndexes.get(tenant);
+  if (existing) return existing;
+  const index = new Map<string, TenantData['recordShares']>();
+  for (const share of tenant.recordShares) {
+    const key = JSON.stringify([share.objectApiName, share.recordId]);
+    let list = index.get(key);
+    if (!list) { list = []; index.set(key, list); }
+    list.push(share);
+  }
+  recordShareIndexes.set(tenant, index);
+  return index;
+}
+
 function hasRecordAccess(
   principal: Principal,
   tenant: TenantData,
@@ -7480,10 +7526,9 @@ function hasRecordAccess(
   if (tenant.sharingSettings[objectName]?.grantAccessUsingHierarchies !== false
     && (accessLevel === 'Read' || defaultAccess === 'Public Read/Write')
     && hasRoleHierarchyAccess(principal, tenant, record.OwnerId)) return true;
-  const share = tenant.recordShares.find((item) =>
-    item.objectApiName === objectName && item.recordId === record.Id
-    && (item.userId === principal.userId
-      || Boolean(item.groupId && publicGroupContainsUser(item.groupId, principal.userId, tenant))));
+  const share = (recordShareIndex(tenant).get(JSON.stringify([objectName, record.Id])) ?? []).find((item) =>
+    item.userId === principal.userId
+      || Boolean(item.groupId && publicGroupContainsUser(item.groupId, principal.userId, tenant)));
   if (share && (share.accessLevel === 'Edit' || accessLevel === 'Read')) return true;
   if (tenant.accessControl.sharingRules.some((rule) =>
     rule.objectApiName === objectName
@@ -7494,13 +7539,9 @@ function hasRecordAccess(
 }
 
 function hasFieldPermission(principal: Principal, tenant: TenantData, objectName: string, fieldName: string, action: 'read' | 'edit'): boolean {
-  const user = principalUser(principal);
-  if (!user) return false;
+  const grants = authorizationGrants(principal, tenant);
+  if (!grants) return false;
   const key = `${objectName}.${fieldName}`;
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  const sets = tenant.accessControl.permissionSets;
   const grantsField = (
     fieldPermissions: Record<string, { read: boolean; edit: boolean }>,
     objectPermissions: Record<string, ObjectPermission>,
@@ -7515,13 +7556,11 @@ function hasFieldPermission(principal: Principal, tenant: TenantData, objectName
       || action === 'read' && objectPermission.viewAll && !muted?.viewAll && !muted?.read
     ));
   };
-  if (profile && grantsField(profile.fieldPermissions, profile.objectPermissions)) return true;
-  if (sets.some((set) => (accessUser?.permissionSetIds ?? user.permissionSetIds).includes(set.id) && grantsField(set.fieldPermissions, set.objectPermissions))) return true;
-  return (accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds).some((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    if (!group || group.mutedFieldPermissions[key]?.[action]) return false;
-    return sets.some((set) => group.permissionSetIds.includes(set.id)
-      && grantsField(set.fieldPermissions, set.objectPermissions, group.mutedObjectPermissions[objectName]));
+  if (grants.profile && grantsField(grants.profile.fieldPermissions, grants.profile.objectPermissions)) return true;
+  if (grants.directSets.some((set) => grantsField(set.fieldPermissions, set.objectPermissions))) return true;
+  return grants.groups.some(({ group, sets }) => {
+    if (group.mutedFieldPermissions[key]?.[action]) return false;
+    return sets.some((set) => grantsField(set.fieldPermissions, set.objectPermissions, group.mutedObjectPermissions[objectName]));
   });
 }
 
