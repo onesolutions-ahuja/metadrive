@@ -9,6 +9,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { appAccessDecision } from '../src/app-access.js';
+import { connectorProviderEntitlement, applyConnectorLifecycle } from '../src/connector-app-runtime.js';
 
 test('MD-01C: app assignment and expiry use current in-memory records', () => {
   const owner = { userId: 'owner', profileId: 'owner-profile' };
@@ -33,6 +34,26 @@ test('MD-01C: app assignment and expiry use current in-memory records', () => {
   assert.equal(appAccessDecision({ apiName: 'Records' }, cashier, [], now).allowed, true,
     'Existing free apps preserve tenant-wide access');
   assert.equal(appAccessDecision({ apiName: 'Unlicensed', licenceAppKey: 'missing' }, cashier, [], now).allowed, false);
+});
+
+test('MD-01D: managed provider licence is enforced at each callout without DB reads', () => {
+  const licensedAt = new Date('2026-10-31T23:59:59Z');
+  const expiredAt = new Date('2026-11-01T00:00:00Z');
+  const app = {
+    Name: 'Managed WhatsApp', AppKey__c: 'whatsapp', ProviderConnectorKey__c: 'META_WHATSAPP',
+    CredentialName__c: 'WhatsApp_Dummy', Installed__c: true,
+    TrialUsed__c: false, TrialExpiresAt__c: '',
+    LicenceExpiresAt__c: '2026-11-01T00:00:00Z'
+  };
+  assert.equal(connectorProviderEntitlement([app], 'META_WHATSAPP', licensedAt).allowed, true);
+  assert.equal(connectorProviderEntitlement([app], 'META_WHATSAPP', expiredAt).allowed, false);
+  assert.equal(connectorProviderEntitlement([{...app,Installed__c:false}], 'META_WHATSAPP', licensedAt).allowed, false);
+  assert.equal(connectorProviderEntitlement([{...app,LicenceExpiresAt__c:'',TrialUsed__c:true,
+    TrialExpiresAt__c:'2026-11-01T00:00:00Z'}], 'META_WHATSAPP', licensedAt).allowed, true);
+  assert.equal(connectorProviderEntitlement([app], 'CUSTOM_UNMANAGED', expiredAt).managed, false);
+  assert.throws(() => applyConnectorLifecycle(app, { ...app, ProviderConnectorKey__c:'CUSTOM_UNMANAGED' },
+    [], [], licensedAt, false), /ProviderConnectorKey__c/,
+    'Tenant configuration must not detach the provider from its package');
 });
 
 const require = createRequire(import.meta.url);
