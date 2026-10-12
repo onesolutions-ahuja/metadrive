@@ -1,3 +1,7 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { transformSync } from 'esbuild';
+import RegisteredComponent from '../src/RegisteredComponent';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -71,4 +75,31 @@ test('invalid style values cannot be persisted or used at runtime', () => {
   assert.match(validateLayoutSetting('backgroundColor','url(javascript:alert(1))'),/colour/);
   assert.throws(()=>updateLayoutSettings({},'Base','padding',NaN));
   assert.deepEqual(resolveLayoutStyle({layoutStyle:{padding:999,backgroundColor:'javascript:evil'}}),{});
+});
+
+test('registered JSX containers render real child components, not placeholders', () => {
+  const build = (apiName: string, body: string) => ({
+    apiName,
+    label: apiName,
+    description: '',
+    version: 1,
+    updatedAt: '2026-10-12T00:00:00Z',
+    surfaces: ['page' as const],
+    jsxSource: body,
+    cssSource: '',
+    scopedCss: '',
+    compiledJs: transformSync(body, { loader: 'jsx', format: 'cjs', jsx: 'transform', target: 'es2020' }).code
+  });
+  const container = build('TestContainer', 'export default function Container(props) { return <div data-kind="container">{props.children}</div> }');
+  const card = build('TestCard', 'export default function Card(props) { return <article data-kind="card">{props.title}</article> }');
+  const html = renderToStaticMarkup(React.createElement(RegisteredComponent, {
+    definition: container,
+    props: {
+      children: React.createElement(RegisteredComponent, { definition: card, props: { title: 'Nested component works' } })
+    }
+  }));
+  assert.match(html, /data-kind="container"/);
+  assert.match(html, /data-kind="card"/);
+  assert.match(html, /Nested component works/);
+  assert.ok(html.indexOf('data-kind="container"') < html.indexOf('data-kind="card"'));
 });
