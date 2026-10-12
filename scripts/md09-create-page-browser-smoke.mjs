@@ -103,7 +103,7 @@ try{
   assert.equal(saved.targetObject,'Account');
   assert.equal(saved.template,'header-main');
   assert.deepEqual(saved.devices,['Phone']);
-  assert(saved.activationAssignments?.some(item=>item.appId===appId),'Draft must retain the selected application metadata');
+  assert.deepEqual(saved.activationAssignments,[], 'App Pages must not use record/home activation assignments');
   await page.getByRole('button',{name:'Activate'}).click();
   let updatedApp;
   for(let i=0;i<35;i++){
