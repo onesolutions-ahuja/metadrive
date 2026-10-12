@@ -1,6 +1,7 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
+import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
@@ -3326,14 +3327,15 @@ type TenantDomainRecord = {
 };
 type TenantRegistryEntry = {
   domains?: TenantDomainRecord[];
-  name: string; description: string; status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'; archivedAt?: string; retentionUntil?: string; legalHold?: boolean; createdAt: string; updatedAt: string;
+  name: string; description: string; status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'; archivedAt?: string; retentionUntil?: string; legalHold?: boolean;
+  usageTargets?: { users?: number; records?: number; objects?: number; flows?: number }; createdAt: string; updatedAt: string;
   // The complete initial workspace and administrator commit together.
   provisioning?: { status: 'READY'; version: number; completedAt: string };
   provisioningRequestHash?: string;
   developerSeed?: { userId: string; email: string; seededAt: string; activatedAt?: string };
 };
 type TenantManagementAuditEvent = {
-  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED' | 'ARCHIVED' | 'RESTORED' | 'RETENTION_UPDATED' | 'DOMAIN_ADDED' | 'DOMAIN_VERIFIED' | 'DOMAIN_REMOVED';
+  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED' | 'ARCHIVED' | 'RESTORED' | 'RETENTION_UPDATED' | 'USAGE_TARGETS_UPDATED' | 'DOMAIN_ADDED' | 'DOMAIN_VERIFIED' | 'DOMAIN_REMOVED';
   at: string; previous?: TenantRegistryEntry; next: TenantRegistryEntry;
 };
 type PlatformState = {
@@ -3364,6 +3366,12 @@ const tenantRegistryEntrySchema = z.object({
   archivedAt: z.string().datetime().optional(),
   retentionUntil: z.string().datetime().optional(),
   legalHold: z.boolean().optional(),
+  usageTargets: z.object({
+    users: z.number().int().min(1).max(1000000000).optional(),
+    records: z.number().int().min(1).max(1000000000).optional(),
+    objects: z.number().int().min(1).max(1000000000).optional(),
+    flows: z.number().int().min(1).max(1000000000).optional()
+  }).strict().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   provisioning: z.object({
@@ -3379,7 +3387,7 @@ const tenantRegistryEntrySchema = z.object({
 }).strict();
 const tenantManagementAuditSchema = z.object({
   actorId: z.string(), tenantId: z.string(),
-  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED','ARCHIVED','RESTORED','RETENTION_UPDATED','DOMAIN_ADDED','DOMAIN_VERIFIED','DOMAIN_REMOVED']),
+  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED','ARCHIVED','RESTORED','RETENTION_UPDATED','USAGE_TARGETS_UPDATED','DOMAIN_ADDED','DOMAIN_VERIFIED','DOMAIN_REMOVED']),
   at: z.string().datetime(),
   previous: tenantRegistryEntrySchema.optional(),
   next: tenantRegistryEntrySchema
@@ -6402,6 +6410,52 @@ function commitTenantChange(actorId: string, tenantId: string,
   persistState(nextState);
   state = nextState;
 }
+// MD-03.8: on-demand usage only for the selected tenant. Counts are
+// informational; targets cannot silently disable users or tenant workflows.
+const tenantUsageTargetSchema = z.object({
+  users: z.number().int().min(1).max(1000000000).nullable().optional(),
+  records: z.number().int().min(1).max(1000000000).nullable().optional(),
+  objects: z.number().int().min(1).max(1000000000).nullable().optional(),
+  flows: z.number().int().min(1).max(1000000000).nullable().optional()
+}).strict();
+function tenantUsageFor(tenantId: string) {
+  return tenantUsageSnapshot({
+    tenantId, tenant: state.tenants[tenantId],
+    users: state.users, registry: tenantRegistryEntry(tenantId)
+  });
+}
+app.get('/api/tenant/usage', accessAuthentication, requirePermission('security:read'),
+  (_req: Request, res: Response) => {
+    const tenantId = getPrincipal(res).tenantId;
+    if (!tenantData(tenantId)) return res.status(404).json({ error: 'Tenant unavailable' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ usage: tenantUsageFor(tenantId) });
+  });
+app.get('/api/platform/tenants/:tenantId/usage', accessAuthentication, requirePlatformTenantAdmin,
+  (req: Request, res: Response) => {
+    const tenantId = routeParam(req, 'tenantId');
+    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+    if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ usage: tenantUsageFor(tenantId) });
+  });
+app.patch('/api/platform/tenants/:tenantId/usage-targets', accessAuthentication, requirePlatformTenantAdmin,
+  (req: Request, res: Response) => {
+    const tenantId = routeParam(req, 'tenantId');
+    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+    if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
+    const parsed = tenantUsageTargetSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid advisory target settings', details: parsed.error.flatten() });
+    const previous = tenantRegistryEntry(tenantId);
+    const usageTargets = Object.fromEntries(
+      Object.entries(parsed.data).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+    );
+    const next: TenantRegistryEntry = { ...previous, usageTargets,
+      updatedAt: new Date().toISOString() };
+    commitTenantChange(getPrincipal(res).userId, tenantId, 'USAGE_TARGETS_UPDATED', next, previous);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ usage: tenantUsageFor(tenantId) });
+  });
 app.get('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const query = String(req.query.q ?? '').trim().toLowerCase().slice(0,120);
   const status = String(req.query.status ?? 'ALL');
