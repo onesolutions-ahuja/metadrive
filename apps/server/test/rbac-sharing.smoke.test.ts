@@ -1766,18 +1766,20 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'browser requests remain functional');
     assert.equal((await api.send('/metadata/objects?customSensitiveValue=private-api-log-canary', adminToken, 'GET', undefined, 'external-api')).status, 200,
       'forged external origin headers cannot alter response behavior');
-    for (const requestSource of ['authenticated-api', 'expired-api', 'revoked-api'] as const) {
-      assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, requestSource)).status, 200);
+    assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'authenticated-api')).status, 200);
+    for (const requestSource of ['expired-api', 'revoked-api'] as const) {
+      assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, requestSource)).status, 401,
+        'expired and revoked API clients must be rejected, not silently treated as browser requests');
     }
-    assert.equal((await api.send('/metadata/objects', secondAdminToken, 'GET', undefined, 'authenticated-api')).status, 200,
+    assert.equal((await api.send('/metadata/objects', secondAdminToken, 'GET', undefined, 'authenticated-api')).status, 401,
       'another tenant cannot acquire client identity by spoofing headers');
     assert.equal((await api.send('/metadata/objects?access_token=real-client-secret-leak-canary', adminToken,
       'GET', undefined, 'authenticated-api')).status, 200,
       'authenticated API requests with query data still succeed');
     assert.equal((await api.send('/metadata/objects', undefined, 'GET', undefined, 'authenticated-api')).status, 401,
       'API client credentials cannot replace the required bearer identity');
-    assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'wrong-secret-api')).status, 200,
-      'wrong API secret cannot create an incoming audit even when the user token is valid');
+    assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'wrong-secret-api')).status, 401,
+      'wrong API secret must fail closed even when the user bearer is valid');
     const communicationRecordsResponse = await api.send('/records/Communication_Records__c', adminToken, 'GET', undefined, 'web-app');
     assert.equal(communicationRecordsResponse.status, 200);
     const communicationRecords = communicationRecordsResponse.data.records as Array<Record<string, unknown>>;

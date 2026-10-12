@@ -110,10 +110,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.on('finish', () => {
     const principal = res.locals.principal as Principal | undefined;
     if (!principal || !tenantData(principal.tenantId)) return;
-    const clientId = verifiedApiClient(configuredApiClients,
-      req.get('x-metadrive-api-client-id'), req.get('x-metadrive-api-client-secret'),
-      principal.tenantId, principal.userId);
-    if (!clientId) return;
+    if (typeof res.locals.verifiedApiClientId !== 'string') return;
     // Never log requests to authentication or audit-record endpoints.
     if (/^\/api\/(?:auth\/|records\/Communication_Records__c(?:\/|$))/i.test(req.path)) return;
     const routePath = req.route?.path;
@@ -4992,6 +4989,17 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Access token was issued before credentials changed' });
       return;
     }
+    const clientIdHeader = req.get('x-metadrive-api-client-id');
+    const clientSecretHeader = req.get('x-metadrive-api-client-secret');
+    const isApiClientAttempt = clientIdHeader !== undefined || clientSecretHeader !== undefined;
+    const verifiedClientId = isApiClientAttempt
+      ? verifiedApiClient(configuredApiClients, clientIdHeader, clientSecretHeader, tenantId, userId)
+      : null;
+    if (isApiClientAttempt && !verifiedClientId) {
+      res.status(401).json({ error: 'API client credentials are invalid, revoked or expired' });
+      return;
+    }
+    if (verifiedClientId) res.locals.verifiedApiClientId = verifiedClientId;
     res.locals.principal = {
       userId: user.id,
       tenantId: user.tenantId,
