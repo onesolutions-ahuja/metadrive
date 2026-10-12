@@ -19190,6 +19190,15 @@ async function dispatchScheduledFlows(): Promise<void> {
       // SQL commit is the durable completion boundary. Do not release the
       // database advisory lock while scheduled mutations are still in flight.
       await waitForPersistedState();
+      // A PostgreSQL advisory lease alone does not refresh this process's
+      // in-memory replica. SQL revision/CAS guards prevent stale overwrites,
+      // but every new dispatcher must start from the committed database head.
+      if (persistenceMode !== 'jsonb') {
+        const committed = await readPersistedState();
+        if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
+        assertTenantIdentityIsolation(committed);
+        state = stateSchema.parse(committed);
+      }
       await deliverPendingPlatformEvents();
       await executeDueScheduledFlows();
       const now = Date.now();
