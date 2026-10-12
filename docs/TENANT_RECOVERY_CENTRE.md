@@ -34,3 +34,9 @@ Standard server CI tests `tenant-recovery-policy`, `tenant-recovery-transaction`
 Company Settings -> Tenant Emergency Recovery: security administrator enrols contacts; contacts verify independently. Platform Tenant Management -> select tenant -> Tenant Emergency Recovery: an MFA-enrolled platform operator opens a case. Independently notified contacts confirm or dispute. Following the 24-hour cooling-off, two distinct MFA-enrolled platform operators approve. The invitation is sent to a verified contact, never the operator. The tenant claimant redeems with their own login/MFA, then completes the restricted repair with a **new** OTP and signs in again.
 
 There is no direct reset-password-for-tenant endpoint, shared developer password, bypass of tenant RBAC, or recovery privilege hidden in normal session claims. Advanced sharing remains deferred.
+
+## Additional recovery release checks
+
+- Confirm that normal password reset uses an HTTPS `METADRIVE_PASSWORD_RESET_BASE_URL` matching a trusted `WEB_ORIGIN` / `WEB_ORIGINS` entry, with tenant-controlled SMTP Named Credentials and validated sender identity. The separate platform recovery service uses its dedicated, secret `METADRIVE_RECOVERY_SMTP_URL` as described above.
+- Before production recovery is enabled, independently rehearse operator identity evidence, two fresh MFA approvals following the 24-hour cooling period, verified out-of-band delivery, cancellation on dispute, one-time grant redemption and revoked-session denial in an isolated control database.
+- Verify deployed Render revision and measure tenant RBAC read/write performance under concurrent load. Do not issue impersonation sessions, expose Named Credentials or restore intentionally revoked developer permissions.
