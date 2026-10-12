@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { withSchedulerLease } from '../src/postgres-state.js';
 
 // Run only against an explicitly configured, disposable local PostgreSQL test DB.
 // Production Aiven is never a valid target for this test.
@@ -15,6 +14,9 @@ const local = (() => {
 })();
 test('scheduler lease serializes overlapping dispatches and releases after failures',
   { skip: !local }, async () => {
+    process.env.DATABASE_URL = url;
+    process.env.PGSSLMODE = 'disable';
+    const { withSchedulerLease } = await import('../src/postgres-state.js');
     let entered = false;
     let releaseFirst!: () => void;
     const hold = new Promise<void>(resolve => { releaseFirst = resolve; });
