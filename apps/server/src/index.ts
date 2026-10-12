@@ -10927,7 +10927,8 @@ function syncBundledLibraryComponents(): Promise<void> {
         compiledJs: compiled.code,
         scopedCss: scopeLibraryCss(input.cssSource, input.apiName),
         version: 1,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        status: 'Published', history: []
       });
     }
     if (imported.length) {
