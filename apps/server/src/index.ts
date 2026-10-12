@@ -5089,6 +5089,10 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
+    if (user.lockedUntil && user.lockedUntil > Date.now()) {
+      res.status(401).json({ error: 'Account temporarily locked' });
+      return;
+    }
     if ((claims.auth_version ?? 0) !== (user.authVersion ?? 0)) {
       res.status(401).json({ error: 'Authentication state has changed; sign in again' });
       return;
@@ -5264,6 +5268,31 @@ function revokeUserRefreshSessions(userId: string, tenantId: string): RefreshSes
 }
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const userLoginFailures = new Map<string, { count: number; until: number }>();
+function recordUserLoginFailure(user: LocalUser): void {
+  const now = Date.now();
+  const previous = userLoginFailures.get(user.id);
+  const count = previous && previous.until > now ? previous.count + 1 : 1;
+  userLoginFailures.set(user.id, { count, until: now + 15 * 60_000 });
+  if (userLoginFailures.size > 4096) {
+    for (const [id, item] of userLoginFailures) if (item.until <= now) userLoginFailures.delete(id);
+  }
+  if (count < 8 || (user.lockedUntil ?? 0) > now) return;
+  const tenant = tenantData(user.tenantId);
+  if (!tenant) return;
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+      ? { ...item, lockedUntil: now + 15 * 60_000, authVersion: (item.authVersion ?? 0) + 1 }
+      : item),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
+    tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
+      tenant, user.id, 'auth.account.auto-locked') }
+  };
+  persistState(nextState);
+  state = nextState;
+}
+
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(256)
@@ -5466,14 +5495,18 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   if (limit && limit.resetAt > now && limit.count >= 8) return res.status(429).json({ error: 'Too many login attempts; try again later' });
   const user = state.users.find((item) => item.email.trim().toLowerCase() === parsed.data.email.toLowerCase());
   const passwordStartedAt = performance.now();
-  const valid = user ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
+  const valid = user && (!user.lockedUntil || user.lockedUntil <= now)
+    ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
   const passwordMs = performance.now() - passwordStartedAt;
   if (!user || user.disabled || !valid || !tenantIsActive(user.tenantId)) {
     const attempts = limit && limit.resetAt > now ? limit.count + 1 : 1;
     loginAttempts.set(key, { count: attempts, resetAt: now + 15 * 60 * 1000 });
+    if (user && !user.disabled && !valid && tenantIsActive(user.tenantId) && (!user.lockedUntil || user.lockedUntil <= now))
+      recordUserLoginFailure(user);
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   loginAttempts.delete(key);
+  userLoginFailures.delete(user.id);
   const data = tenantData(user.tenantId);
   if (!data) return res.status(401).json({ error: 'Tenant is unavailable' });
   if (mfaRequiredForUser(data, user)) {
@@ -5702,7 +5735,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         .sort((a, b) => b.expiresAt - a.expiresAt)[0];
       const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
       const data = tenantData(session.tenantId);
-      if (latest && user && data && tenantIsActive(session.tenantId)
+      if (latest && user && data && (!user.lockedUntil || user.lockedUntil <= Date.now()) && tenantIsActive(session.tenantId)
         && (latest.authVersion ?? 0) === (user.authVersion ?? 0)
         && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
         // The old cookie has already been consumed by another tab. Return a
@@ -5745,6 +5778,10 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   if (!user || !data || !tenantIsActive(session.tenantId)) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Tenant membership is no longer active' });
+  }
+  if (user.lockedUntil && user.lockedUntil > Date.now()) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Account temporarily locked' });
   }
   if ((session.authVersion ?? 0) !== (user.authVersion ?? 0)) {
     clearRefreshCookie(res);
@@ -5839,6 +5876,71 @@ app.post('/api/auth/sessions/revoke-all', accessAuthentication, async (req: Requ
   clearRefreshCookie(res);
   return res.json({ revoked: true, signedOut: true });
 });
+
+
+app.get('/api/auth/user-locks', accessAuthentication, requirePermission('security:manage'),
+  (_req: Request, res: Response) => {
+    const principal = getPrincipal(res);
+    const tenant = tenantData(principal.tenantId)!;
+    const now = Date.now();
+    return res.json({
+      users: state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => ({
+        id: user.id, name: user.name, email: user.email, active: !user.disabled,
+        lockedUntil: user.lockedUntil && user.lockedUntil > now ? user.lockedUntil : null,
+        canManageSecurity: effectivePermissions(user, tenant).includes('security:manage')
+      }))
+    });
+  });
+const accountLockSchema = z.object({ durationMinutes: z.number().int().min(1).max(1440).default(60) }).strict();
+app.post('/api/auth/users/:userId/lock', accessAuthentication, requirePermission('security:manage'),
+  (req: Request, res: Response) => {
+    const principal = getPrincipal(res);
+    const targetId = String(req.params.userId);
+    if (targetId === principal.userId) return res.status(409).json({ error: 'Cannot lock your own administrative account' });
+    const parsed = accountLockSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid lock duration' });
+    const target = state.users.find((item) => item.id === targetId && item.tenantId === principal.tenantId);
+    const tenant = tenantData(principal.tenantId)!;
+    if (!target) return res.status(404).json({ error: 'Tenant user not found' });
+    const lastAdmin = effectivePermissions(target, tenant).includes('security:manage')
+      && !state.users.some((user) => user.tenantId === principal.tenantId && user.id !== targetId
+        && !user.disabled && (!user.lockedUntil || user.lockedUntil <= Date.now())
+        && effectivePermissions(user, tenant).includes('security:manage'));
+    if (lastAdmin) return res.status(409).json({ error: 'Cannot lock the last active tenant security administrator' });
+    const until = Date.now() + parsed.data.durationMinutes * 60_000;
+    const nextState: PlatformState = {
+      ...state,
+      users: state.users.map((user) => user.id === target.id && user.tenantId === target.tenantId
+        ? { ...user, lockedUntil: until, authVersion: (user.authVersion ?? 0) + 1 }
+        : user),
+      refreshSessions: revokeUserRefreshSessions(target.id, target.tenantId),
+      tenants: { ...state.tenants, [principal.tenantId]: withSecurityEvent(
+        tenant, principal.userId, 'auth.account.locked', undefined, target.id) }
+    };
+    persistState(nextState);
+    state = nextState;
+    return res.json({ userId: target.id, lockedUntil: until });
+  });
+app.post('/api/auth/users/:userId/unlock', accessAuthentication, requirePermission('security:manage'),
+  (req: Request, res: Response) => {
+    const principal = getPrincipal(res);
+    const userId = String(req.params.userId);
+    const target = state.users.find((item) => item.id === userId && item.tenantId === principal.tenantId);
+    if (!target) return res.status(404).json({ error: 'Tenant user not found' });
+    const updated: LocalUser = { ...target, authVersion: (target.authVersion ?? 0) + 1 };
+    delete updated.lockedUntil;
+    const nextState: PlatformState = {
+      ...state,
+      users: state.users.map((item) => item.id === target.id && item.tenantId === target.tenantId ? updated : item),
+      refreshSessions: revokeUserRefreshSessions(target.id, target.tenantId),
+      tenants: { ...state.tenants, [principal.tenantId]: withSecurityEvent(
+        tenantData(principal.tenantId)!, principal.userId, 'auth.account.unlocked', undefined, target.id) }
+    };
+    persistState(nextState);
+    state = nextState;
+    userLoginFailures.delete(target.id);
+    return res.json({ userId: target.id, unlocked: true });
+  });
 
 app.get('/api/auth/security-events', accessAuthentication, requirePermission('security:manage'), (req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId)!;
