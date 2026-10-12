@@ -57,10 +57,10 @@ test('User CRUD enforces security and User object RBAC while preserving identity
     assert.equal(ready,true,logs);
     const login=await send('/auth/login',undefined,'POST',{email,password:secret});
     assert.equal(login.status,200,JSON.stringify(login.data));
-    assert.match(login.serverTiming ?? '', /password;dur=\\d+(?:\\.\\d+)?/);
-    assert.match(login.serverTiming ?? '', /signing;dur=\\d+(?:\\.\\d+)?/);
-    assert.match(login.serverTiming ?? '', /state-write;dur=\\d+(?:\\.\\d+)?/);
-    assert.match(login.serverTiming ?? '', /login;dur=\\d+(?:\\.\\d+)?/,
+    assert.match(login.serverTiming ?? '', /password;dur=\d+(?:\.\d+)?/);
+    assert.match(login.serverTiming ?? '', /signing;dur=\d+(?:\.\d+)?/);
+    assert.match(login.serverTiming ?? '', /state-write;dur=\d+(?:\.\d+)?/);
+    assert.match(login.serverTiming ?? '', /login;dur=\d+(?:\.\d+)?/,
       'Login timing must identify backend latency phases without exposing credentials');
     const token=login.data.access_token as string;
     const security=await send('/metadata/permissions',token);
