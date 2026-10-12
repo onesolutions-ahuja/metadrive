@@ -8118,7 +8118,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
               <option value="App Page">App page</option>
             </select>
           </label>
-          {navigationTargetType !== 'Record List' && <label className="form-label">Application
+          {<label className="form-label">Application
             <select className="form-control" value={navigationAppId}
               onChange={(e) => setBinding({ ...binding, navigationAppId: e.target.value, navigationPageApiName: '' })}>
               <option value="">Select application…</option>
