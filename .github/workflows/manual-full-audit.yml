@@ -1,6 +1,11 @@
 name: MetaDrive full UI-UX audit (manual only)
 
 on:
+  push:
+    branches:
+      - audit/execute-full-ui-20261012
+    paths:
+      - .github/workflows/manual-full-audit.yml
   workflow_dispatch:
     inputs:
       baseline_run_id:
