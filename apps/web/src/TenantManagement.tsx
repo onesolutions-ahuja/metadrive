@@ -7,7 +7,8 @@ export type TenantSummary = {
   tenantId: string;
   name: string;
   description: string;
-  status: 'ACTIVE' | 'SUSPENDED';
+  status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
+  archivedAt?: string | null; retentionUntil?: string | null; legalHold?: boolean;
   createdAt: string;
   updatedAt: string;
   userCount: number;
@@ -43,6 +44,8 @@ export default function TenantManagement({ request, permitted }: { request: Requ
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [revision, setRevision] = useState(0);
+  const [retentionUntil, setRetentionUntil] = useState('');
+  const [legalHold, setLegalHold] = useState(false);
   const pageSize = 25;
 
   useEffect(() => {
@@ -73,6 +76,8 @@ export default function TenantManagement({ request, permitted }: { request: Requ
     try {
       const result = await request<{ tenant: TenantSummary }>('/platform/tenants/' + encodeURIComponent(id));
       setSelected(result.tenant);
+      setRetentionUntil(result.tenant.retentionUntil?.slice(0, 10) ?? '');
+      setLegalHold(result.tenant.legalHold ?? false);
       setEditing({ name: result.tenant.name, description: result.tenant.description });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to open tenant');
@@ -138,6 +143,38 @@ export default function TenantManagement({ request, permitted }: { request: Requ
     } finally { setBusy(false); }
   };
 
+  const changeLifecycle = async (operation: 'archive' | 'restore') => {
+    if (!selected || busy || !permitted) return;
+    if (window.prompt(`Enter tenant ID "${selected.tenantId}" to ${operation} this tenant:`) !== selected.tenantId) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await request<{ tenant: TenantSummary }>(
+        '/platform/tenants/' + encodeURIComponent(selected.tenantId) + '/' + operation,
+        { method: 'POST', body: '{}' }
+      );
+      setSelected(result.tenant); setRevision((n) => n + 1);
+      setNotice(operation === 'archive' ? 'Tenant archived; data retained and authentication blocked.' :
+        'Tenant restored to suspended. Reactivation requires a separate action.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to change lifecycle');
+    } finally { setBusy(false); }
+  };
+  const saveRetention = async () => {
+    if (!selected || busy || !permitted) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await request<{ tenant: TenantSummary }>(
+        '/platform/tenants/' + encodeURIComponent(selected.tenantId) + '/retention', {
+          method: 'PATCH',
+          body: JSON.stringify({ retentionUntil: retentionUntil ? new Date(retentionUntil + 'T23:59:59.000Z').toISOString() : null, legalHold })
+        });
+      setSelected(result.tenant); setRevision((n) => n + 1);
+      setNotice('Tenant retention settings saved and audited; no data deleted.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to save retention settings');
+    } finally { setBusy(false); }
+  };
+
   if (!permitted) return <section className="tenant-console tenant-restricted" role="status">
     <ShieldCheck size={24} />
     <h2>Platform administration only</h2>
@@ -159,12 +196,12 @@ export default function TenantManagement({ request, permitted }: { request: Requ
       <section className="tenant-panel" aria-label="Tenants">
         <div className="tenant-toolbar">
           <label className="tenant-search"><Search size={16} /><input type="search" aria-label="Search tenants" placeholder="Search name or tenant ID" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
-          <label className="tenant-filter">Status <select aria-label="Filter tenant status" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="ALL">All</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option></select></label>
+          <label className="tenant-filter">Status <select aria-label="Filter tenant status" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="ALL">All</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option><option value="ARCHIVED">Archived</option></select></label>
         </div>
         <div className="tenant-table-wrap"><table className="tenant-table"><thead><tr><th>Name / Tenant ID</th><th>Status</th><th>Users</th><th>Created</th></tr></thead>
           <tbody>{tenants.map((item) => <tr key={item.tenantId} className={selected?.tenantId === item.tenantId ? 'tenant-row-selected' : ''}>
             <td><button className="tenant-name-link" onClick={() => void selectTenant(item.tenantId)}>{item.name}</button><small>{item.tenantId}</small></td>
-            <td><span className={item.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{item.status === 'ACTIVE' ? 'Active' : 'Suspended'}</span></td>
+            <td><span className={item.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{item.status === 'ACTIVE' ? 'Active' : item.status === 'ARCHIVED' ? 'Archived' : 'Suspended'}</span></td>
             <td>{item.activeUserCount} / {item.userCount}</td><td>{shortDate(item.createdAt)}</td></tr>)}
             {!loading && tenants.length === 0 && <tr><td colSpan={4} className="tenant-empty">No tenants match this search.</td></tr>}
             {loading && <tr><td colSpan={4} className="tenant-empty">Loading tenants…</td></tr>}
@@ -189,13 +226,22 @@ export default function TenantManagement({ request, permitted }: { request: Requ
           <div className="tenant-detail-heading"><div><h2>{selected.name}</h2><code>{selected.tenantId}</code></div><button type="button" className="tenant-button" onClick={() => setSelected(null)}>Close</button></div>
           <p className="tenant-provisioning-status"><span className="tenant-pill tenant-pill-active">Provisioning ready</span> <small>Version {selected.provisioning.version} · {shortDate(selected.provisioning.completedAt)}</small></p>
           {selected.developerAccount && <p className="tenant-help">Developer seeder: <strong>{selected.developerAccount.email}</strong> — {selected.developerAccount.activated ? 'Tenant activated' : 'Pending tenant activation'}. The tenant owns all access changes.</p>}
-          <p><span className={selected.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{selected.status === 'ACTIVE' ? 'Active' : 'Suspended'}</span></p>
+          <p><span className={selected.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{selected.status === 'ACTIVE' ? 'Active' : selected.status === 'ARCHIVED' ? 'Archived' : 'Suspended'}</span></p>
           <label>Organisation name<input required maxLength={120} value={editing.name} onChange={(event) => setEditing((old) => ({ ...old, name: event.target.value }))} /></label>
           <label>Description<textarea rows={4} maxLength={1000} value={editing.description} onChange={(event) => setEditing((old) => ({ ...old, description: event.target.value }))} /></label>
           <div className="tenant-facts"><span>Created</span><strong>{shortDate(selected.createdAt)}</strong><span>Last updated</span><strong>{shortDate(selected.updatedAt)}</strong><span>Active users</span><strong>{selected.activeUserCount} of {selected.userCount}</strong></div>
           <div className="tenant-actions"><button type="submit" className="tenant-button tenant-button-primary" disabled={busy || !editing.name.trim()}>{busy ? 'Saving…' : 'Save details'}</button>
-            <button type="button" className={selected.status === 'ACTIVE' ? 'tenant-button tenant-button-danger' : 'tenant-button'} onClick={() => void changeStatus()} disabled={busy}>{selected.status === 'ACTIVE' ? 'Suspend tenant' : 'Reactivate tenant'}</button></div>
-          <p className="tenant-help">Tenant ID cannot be changed. Suspended tenants cannot authenticate or use existing sessions; tenant data is retained.</p>
+            {selected.status !== 'ARCHIVED' && <button type="button" className={selected.status === 'ACTIVE' ? 'tenant-button tenant-button-danger' : 'tenant-button'} onClick={() => void changeStatus()} disabled={busy}>{selected.status === 'ACTIVE' ? 'Suspend tenant' : 'Reactivate tenant'}</button>}
+            {selected.status === 'SUSPENDED' && <button type="button" className="tenant-button tenant-button-danger" onClick={() => void changeLifecycle('archive')} disabled={busy}>Archive tenant</button>}
+            {selected.status === 'ARCHIVED' && <button type="button" className="tenant-button" onClick={() => void changeLifecycle('restore')} disabled={busy}>Restore to suspended</button>}</div>
+          <p className="tenant-help">Tenant ID cannot be changed. Suspended and archived tenants cannot authenticate; reactivation never restores revoked sessions. Archival retains tenant data.</p>
+          <section aria-label="Retention controls">
+            <h3>Retention and legal hold</h3>
+            <label>Retention until (optional)<input type="date" value={retentionUntil} onChange={(event) => setRetentionUntil(event.target.value)} /></label>
+            <label><input type="checkbox" checked={legalHold} onChange={(event) => setLegalHold(event.target.checked)} /> Legal hold</label>
+            <button type="button" className="tenant-button" onClick={() => void saveRetention()} disabled={busy}>Save retention policy</button>
+            <p className="tenant-help">Retention metadata is audited. No automatic or manual data deletion is enabled.</p>
+          </section>
         </form><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
       </section>
     </div>
