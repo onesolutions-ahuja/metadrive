@@ -156,6 +156,7 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     const object=await request(port,'/metadata/objects','POST',token,{
       apiName:'Migration_Link__c',label:'Migration Link',pluralLabel:'Migration Links',
       kind:'Custom Object',description:'Metadata-driven relational persistence smoke',
+      listViewButtons:['New','Import'],
       fields:[
         {apiName:'Name',label:'Name',dataType:'Text(80)',required:true,unique:false},
         {apiName:'Account__c',label:'Related Account',dataType:'Lookup(Account)',required:false,unique:false,
@@ -166,6 +167,30 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     const linked=await request(port,'/records/Migration_Link__c','POST',token,{Name:'Relational Child',Account__c:parentId});
     assert.equal(linked.status,201,JSON.stringify(linked.data));
     const recordId=linked.data.record.Id;
+    const edited=await request(port,'/records/Migration_Link__c/'+recordId,'PUT',token,{Name:'Relational Child Updated'});
+    assert.equal(edited.status,200,JSON.stringify(edited.data));
+    const imported=await request(port,'/records/Migration_Link__c/import','POST',token,{
+      records:Array.from({length:51},(_,index)=>({Name:'Imported '+index,Account__c:parentId}))
+    });
+    assert.equal(imported.status,201,JSON.stringify(imported.data));
+    assert.equal(imported.data.count,51);
+    const removed=await request(port,'/records/Migration_Link__c/'+imported.data.records[0].Id,'DELETE',token);
+    assert.equal(removed.status,204,JSON.stringify(removed.data));
+    const firstPage=await request(port,'/records/Migration_Link__c?limit=50&offset=0','GET',token);
+    const finalPage=await request(port,'/records/Migration_Link__c?limit=50&offset=50','GET',token);
+    assert.equal(firstPage.status,200,JSON.stringify(firstPage.data));
+    assert.equal(finalPage.status,200,JSON.stringify(finalPage.data));
+    assert.equal(firstPage.data.total,51,'Server must count filtered records before pagination');
+    assert.equal(firstPage.data.records.length,50);
+    assert.equal(finalPage.data.records.length,1);
+    const immediatePool=new pg.Pool({connectionString:databaseUrl(targetName),ssl:false,max:2});
+    try {
+      const committed=await readNormalizedState(immediatePool,mode==='typed'?verifyTypedRecords:null);
+      const values=committed.state.tenants[tenantId].records.Migration_Link__c;
+      assert.equal(values.length,51,'Successful CRUD/import responses must already be durable in SQL');
+      assert.equal(values.find(item=>item.Id===recordId)?.Name,'Relational Child Updated');
+      assert.ok(!values.some(item=>item.Id===imported.data.records[0].Id));
+    } finally {await immediatePool.end();}
     const flow=await request(port,'/metadata/flows/Relational_Smoke','PUT',token,{
       label:'Relational Smoke',flowType:'Autolaunched Flow',status:'Active',
       versionNumber:1,activeVersion:null,triggerObject:null,startConfig:{},
@@ -188,6 +213,7 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     const childAfter=await request(port,'/records/Migration_Link__c/'+recordId,'GET',freshToken);
     assert.equal(childAfter.status,200,JSON.stringify(childAfter.data));
     assert.equal(childAfter.data.record.Account__c,parentId);
+    assert.equal(childAfter.data.record.Name,'Relational Child Updated');
     const flowAfter=await request(port,'/metadata/flows','GET',freshToken);
     assert.equal(flowAfter.status,200,JSON.stringify(flowAfter.data));
     assert.ok(flowAfter.data.flows.some(f=>f.apiName==='Relational_Smoke'));
