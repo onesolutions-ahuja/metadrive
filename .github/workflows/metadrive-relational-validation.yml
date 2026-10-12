@@ -12,6 +12,10 @@ on:
       - 'apps/server/src/relational-tables.mjs'
       - 'apps/server/src/postgres-state.ts'
       - 'apps/server/src/index.ts'
+      - 'apps/server/src/normalized-typed-records.mjs'
+      - 'apps/server/scripts/prove-typed-records-on-restore.mjs'
+      - 'apps/server/test/normalized-api.integration.test.mjs'
+      - 'apps/web/src/App.tsx'
       - 'apps/server/sql/relational-state-v1.sql'
       - 'apps/server/scripts/migrate-relational-state.mjs'
       - 'apps/server/scripts/migrate-relational-in-place.mjs'
@@ -119,6 +123,10 @@ jobs:
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
         run: node --test --test-concurrency=1 apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs apps/server/test/relational-api.integration.test.mjs apps/server/test/relational-in-place.integration.test.mjs
+      - name: Verify typed SQL records, login, relationships and Flow API end to end
+        env:
+          METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: node --test --test-concurrency=1 apps/server/test/normalized-api.integration.test.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
