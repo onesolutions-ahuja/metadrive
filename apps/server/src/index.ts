@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
-import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
+import { applyConnectorLifecycle, connectorEntitlement, connectorProviderEntitlement } from './connector-app-runtime.js';
 import { appAccessDecision, type AppAccess } from './app-access.js';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
@@ -2851,7 +2851,7 @@ const integrationConnectionRequestSchema = z.object({
 const connectorDefinitionRequestSchema = connectorDefinitionSchema;
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
-type TenantData = { objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type TenantData = { objects: ObjectMetadata[]; flows: FlowMetadata[]; flowAppBindings: Record<string, string>; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -3311,6 +3311,7 @@ const stateSchema = z.object({
   tenants: z.record(z.object({
     objects: z.array(objectSchema),
     flows: z.array(flowSchema),
+    flowAppBindings: z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/)).default({}),
     platformEvents: z.array(platformEventSchema).default([]),
     platformEventMessages: z.array(platformEventMessageSchema).default([]),
     pages: z.array(pageSchema),
@@ -3945,7 +3946,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     ]
   });
   return {
-    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
+    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], flowAppBindings: {}, platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
@@ -4372,6 +4373,7 @@ function loadState(sqlState?: unknown): PlatformState {
             : set),
       },
       objects,
+      flowAppBindings: tenant.flowAppBindings ?? {},
       flows: [...tenant.flows,
         ...connectorAppCatalog.flows.filter((definition) => !tenant.flows.some((existingFlow) => existingFlow.apiName === definition.apiName)),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
@@ -6255,6 +6257,8 @@ app.post('/api/integration-connections/:id/test', requireAnyPermission('metadata
   if (!connection) return res.status(404).json({ error: 'Integration Connection was not found' });
   const definition = tenant.connectorDefinitions.find((item) => item.connectorKey === connection.connectorKey);
   if (!definition) return res.status(422).json({ error: 'The connector provider definition is unavailable' });
+  const entitlement = connectorProviderEntitlement(tenant.records.Connector_App__c ?? [], connection.connectorKey);
+  if (!entitlement.allowed) return res.status(403).json({ error: entitlement.message });
 
   let result: ConnectorTestResult;
   let credentials: Record<string, string> = {};
@@ -8517,6 +8521,8 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   const flow = tenant.flows.find((item) => item.apiName === apiName);
   if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
   if (flow.flowType !== 'Autolaunched Flow' && flow.flowType !== 'Screen Flow') return res.status(400).json({ error: 'Only autolaunched and screen flows can be invoked through this endpoint' });
+  if (!canExecuteBoundFlow(principal, tenant, apiName))
+    return res.status(403).json({ error: 'This Flow belongs to an app that is not assigned or licensed.' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
   const inputError = validateFlowInputValues(flow, input.data);
@@ -8554,6 +8560,8 @@ app.post('/api/flows/:apiName/debug', accessAuthentication, requirePermission('f
   if (flow.flowType !== 'Autolaunched Flow' && flow.flowType !== 'Screen Flow') {
     return res.status(400).json({ error: 'Only autolaunched and screen flows can be debugged from Flow Builder' });
   }
+  if (!canExecuteBoundFlow(principal, tenant, apiName))
+    return res.status(403).json({ error: 'This Flow belongs to an app that is not assigned or licensed.' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow debug inputs must be an object' });
   const inputError = validateFlowInputValues(flow, input.data);
@@ -8599,6 +8607,8 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
     : activeFlowDefinition(editable)?.versionNumber === interview.versionNumber
       ? activeFlowDefinition(editable) : undefined;
   if (!flow) return res.status(409).json({ error: 'The flow interview version is no longer active' });
+  if (!canExecuteBoundFlow(principal, tenant, flow.apiName))
+    return res.status(403).json({ error: 'This Flow belongs to an app that is not assigned or licensed.' });
   const values = z.object({
     values: z.record(z.unknown()).default({}),
     outcome: z.string().optional(),
@@ -11235,6 +11245,10 @@ function canAccessRuntimeApp(principal: Principal, tenant: TenantData, appApiNam
     profileId: profileIdForPrincipal(principal, tenant)
   }, tenant.records.Connector_App__c ?? []).allowed;
 }
+function canExecuteBoundFlow(principal: Principal, tenant: TenantData, flowApiName: string): boolean {
+  const appApiName = tenant.flowAppBindings[flowApiName];
+  return !appApiName || canAccessRuntimeApp(principal, tenant, appApiName);
+}
 function validAppAssignments(tenant: TenantData, access: AppAccess): boolean {
   return access.profileIds.every((id) => tenant.accessControl.profiles.some((profile) => profile.id === id))
     && access.userIds.every((id) => tenant.accessControl.users.some((user) => user.id === id));
@@ -11386,6 +11400,8 @@ app.delete('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write',
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   if (!tenant.apps.some((item) => item.apiName === apiName)) return res.status(404).json({ error: 'Lightning app was not found' });
+  if (Object.values(tenant.flowAppBindings).includes(apiName))
+    return res.status(409).json({ error: 'Remove this app from bound Flows before deleting it.' });
   if (tenant.pages.some((page) => page.activationAssignments?.some((assignment) => assignment.appId === apiName))) {
     return res.status(409).json({ error: 'This app is used by Lightning page activation assignments. Reassign those pages before deleting it.' });
   }
@@ -12138,6 +12154,10 @@ async function performHttpCallout(
     : undefined;
   if (!connectionId && !namedCredential) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Named Credential or Integration Connection.`);
   if (connectionId && (!connection || !definition)) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Integration Connection or provider.`);
+  if (connection) {
+    const entitlement = connectorProviderEntitlement(tenant.records.Connector_App__c ?? [], connection.connectorKey);
+    if (!entitlement.allowed) throw new Error(entitlement.message);
+  }
   if (namedCredential) {
     const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], namedCredential);
     if (!entitlement.allowed) throw new Error(entitlement.message);
@@ -14389,6 +14409,11 @@ async function executeFlow(
     && user.tenantId === tenantId && !user.disabled);
   if (!runningUser) throw new Error('The Flow running user is not available in this tenant.');
   const runningPrincipal = principalForUser(runningUser, tenant);
+  // Covers direct, child, record-triggered, scheduled and resumed execution.
+  // One in-memory app check per Flow invocation, never once per element.
+  if (!canExecuteBoundFlow(runningPrincipal, tenant, flow.apiName)) {
+    throw new Error(`Flow "${flow.label}" belongs to an app that is not assigned or licensed.`);
+  }
   const interviewGuid = resume?.interviewGuid ?? parentInterview?.interviewGuid ?? randomUUID();
   const interviewStartTime = resume?.interviewStartTime ?? parentInterview?.interviewStartTime ?? new Date().toISOString();
   const context: FlowRuntimeContext = {
