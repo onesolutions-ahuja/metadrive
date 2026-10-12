@@ -151,6 +151,12 @@ try {
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const saved = (await request('/metadata/pages', token)).pages.find((item) => item.apiName === sourceId);
   assert.equal(saved.components[0].properties.actionFlows.browse.navigationPageApiName, targetId);
+  await page.reload();
+  await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
+  const reopened = page.locator('.metadata-navigation-target').first();
+  await reopened.waitFor();
+  assert.equal(await reopened.locator('select').nth(0).inputValue(), 'App Page');
+  assert.equal(await reopened.locator('select').nth(2).inputValue(), targetId);
 
   // Click the actual registered component across both route form factors.
   for (const [width, height] of [[1440, 900], [390, 844]]) {
