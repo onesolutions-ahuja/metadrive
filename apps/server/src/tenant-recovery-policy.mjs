@@ -50,7 +50,7 @@ export function assertRecoveryEligible(caseFile, now = Date.now()) {
   for (const a of approvers) {
     if (!validActor(a) || a.id === caseFile.claimantUserId
       || a.id === caseFile.requestedBy || ids.has(a.id)
-      || !Number.isFinite(validDate(a.approvedAt)) || validDate(a.approvedAt) < validDate(caseFile.createdAt)
+      || !Number.isFinite(validDate(a.approvedAt)) || validDate(a.approvedAt) < validDate(caseFile.createdAt) + RECOVERY_WAIT_MS
       || validDate(a.approvedAt) > now)
       throw new Error('Approvals must be independent verified platform operators');
     ids.add(a.id);

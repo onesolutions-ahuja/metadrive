@@ -25,7 +25,8 @@ test('requires two independent MFA operators and cooling period', () => {
     c=>{c.outOfBandVerification=false},
     c=>{c.recoveryContactNotified=false},
     c=>{c.claimantIsPlatformOperator=true},
-    c=>{c.approvals[0].id=c.requestedBy}
+    c=>{c.approvals[0].id=c.requestedBy},
+    c=>{c.approvals[0].approvedAt='2026-10-13T10:00:00Z'}
   ]) {const c=good();change(c);assert.throws(()=>assertRecoveryEligible(c,now));}
 });
 test('single-use short-lived tenant-bound redemption, with MFA', () => {
