@@ -156,10 +156,6 @@ try {
   assert.equal(await restored.getByLabel('Confirmed source').inputValue(), 'Literal');
 
   // Runtime transport must evaluate selected metadata sources, not send raw expressions.
-  const bodyPromise = page.waitForEvent('request', {
-    predicate: request => request.method() === 'POST'
-      && request.url().includes('/flows/' + flowApiName + '/execute')
-  });
   await page.goto(base + '/une/apps/' + appId + '/pages/' + pageApiName);
   const frame = page.locator('iframe[sandbox="allow-scripts"]').first();
   await frame.waitFor({ state: 'attached' });
