@@ -86,7 +86,13 @@ try {
       '; form: '+(await dialog.innerText()).slice(-1800)+
       '; page alerts: '+JSON.stringify(await page.locator('[role="alert"]').allTextContents()),{cause:error});
   }
-  await page.locator('.record-detail-heading').waitFor({state:'visible'});
+  try {
+    await page.locator('.record-detail-heading').waitFor({state:'visible',timeout:8000});
+  } catch(error) {
+    throw Error('Record created, but detail page not ready. URL: '+page.url()+
+      '; body: '+(await page.locator('body').innerText()).slice(-2300)+
+      '; errors: '+JSON.stringify(pageErrors),{cause:error});
+  }
   await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   await list.waitFor({state:'visible'});
   const search=list.getByRole('textbox',{name:/Search Accounts/i});
