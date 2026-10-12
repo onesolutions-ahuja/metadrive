@@ -4617,6 +4617,7 @@ function RecordWorkspace({
   onNavigate: (route: AppRoute) => void;
 }) {
   const object = objects.find((item) => item.apiName === route.objectApiName);
+  const layoutDevice = usePageLayoutDevice();
   const [records, setRecords] = useState<RecordData[]>([]);
   const [record, setRecord] = useState<RecordData | null>(null);
   const [activeLightningPage, setActiveLightningPage] = useState<LightningPageMetadata | null>(null);
@@ -5273,10 +5274,17 @@ function RecordWorkspace({
       if (!component.visible) return null;
       if (component.type.startsWith('Custom:')) {
         const definition = libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
+        const children = isLayoutContainer(component)
+          ? childrenOf(assignedPage?.components ?? [], component.id).map(renderRuntimeComponent)
+          : undefined;
         return definition
-          ? <RegisteredComponent key={component.id} definition={definition} props={{
-            label: component.label, properties: component.properties, record, recordId: record.Id, object, formFactor
-          }} />
+          ? <div key={component.id} data-layout-component-id={component.id}
+              style={resolveLayoutStyle(component.properties, layoutDevice)}>
+              <RegisteredComponent definition={definition} props={{
+                ...component.properties, label: component.label, properties: component.properties,
+                record, recordId: record.Id, object, formFactor, children
+              }} />
+            </div>
           : <div className="records-message" role="status" key={component.id}>Component “{component.type.slice('Custom:'.length)}” is not available in the component library.</div>;
       }
       if (component.type === 'Highlights Panel') return <section className="record-highlights surface" key={component.id} aria-label="Record highlights">
@@ -5425,7 +5433,7 @@ function RecordWorkspace({
       return <div className="records-message" role="status" key={component.id}>{component.label} is not supported in record runtime.</div>;
     };
     const renderRuntimeRegion = (region: 'header' | 'main' | 'sidebar') =>
-      assignedPage?.components.filter((component) => (component.region ?? 'main') === region).map(renderRuntimeComponent);
+      childrenOf(assignedPage?.components ?? [], null).filter((component) => (component.region ?? 'main') === region).map(renderRuntimeComponent);
     return <div className="records-page">
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
