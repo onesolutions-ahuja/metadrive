@@ -101,6 +101,21 @@ jobs:
           DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
             node apps/server/scripts/copy-normalized-state-on-restore.mjs --apply
           echo "Nested Flow/RBAC/credential state restored from SQL scalar rows, no JSONB required"
+      - name: Prove ALL JSONB columns can be archived as losslessly typed SQL rows
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored
+          PGSSLMODE: disable
+        run: |
+          node --check apps/server/scripts/archive-all-jsonb-on-restored-db.mjs
+          node apps/server/scripts/archive-all-jsonb-on-restored-db.mjs --apply
+          echo "No JSONB columns remain in the isolated converted database"
+      - name: Create separate SQL-only database snapshot on isolated runner
+        run: |
+          docker run --rm --network host -e PGPASSWORD=postgres \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_dump postgres:18 \
+            -h 127.0.0.1 -U postgres -d metadrive_restored \
+            --format=custom --no-owner --no-acl --file=/work/metadrive-sql-only.dump
+          test -s "${RUNNER_TEMP}/metadrive-sql-only.dump"
       - name: Measure normalized SQL full-state read and write latency on isolated restore
         run: |
           DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
@@ -115,6 +130,11 @@ jobs:
           node apps/server/scripts/secure-relational-backup.mjs decrypt \
             "${RUNNER_TEMP}/metadrive-verified.dump.enc" "${RUNNER_TEMP}/verify-decrypted.dump"
           cmp "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/verify-decrypted.dump"
+          node apps/server/scripts/secure-relational-backup.mjs encrypt \
+            "${RUNNER_TEMP}/metadrive-sql-only.dump" "${RUNNER_TEMP}/metadrive-sql-only-verified.dump.enc"
+          node apps/server/scripts/secure-relational-backup.mjs decrypt \
+            "${RUNNER_TEMP}/metadrive-sql-only-verified.dump.enc" "${RUNNER_TEMP}/verify-sql-only.dump"
+          cmp "${RUNNER_TEMP}/metadrive-sql-only.dump" "${RUNNER_TEMP}/verify-sql-only.dump"
           echo "Full encrypted backup round-trip verified"
       - name: Retain encrypted backup for guarded production rollback
         uses: actions/upload-artifact@v4
@@ -122,6 +142,7 @@ jobs:
           name: metadrive-aiven-v3-sql-shadow-verified-encrypted-backup
           path: |
             ${{ runner.temp }}/metadrive-verified.dump.enc
+            ${{ runner.temp }}/metadrive-sql-only-verified.dump.enc
             ${{ runner.temp }}/restored.sha
           if-no-files-found: error
           retention-days: 30
@@ -129,4 +150,4 @@ jobs:
       - name: Delete transient database backup and credentials
         if: always()
         run: |
-          rm -f "${RUNNER_TEMP}/aiven-pg.env" "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/verify-decrypted.dump" "${RUNNER_TEMP}/metadrive-verified.dump.enc"
+          rm -f "${RUNNER_TEMP}/aiven-pg.env" "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/verify-decrypted.dump" "${RUNNER_TEMP}/metadrive-verified.dump.enc" "${RUNNER_TEMP}/metadrive-sql-only.dump" "${RUNNER_TEMP}/metadrive-sql-only-verified.dump.enc" "${RUNNER_TEMP}/verify-sql-only.dump"
