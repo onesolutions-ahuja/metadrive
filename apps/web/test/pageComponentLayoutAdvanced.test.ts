@@ -24,7 +24,7 @@ const original: PageComponentMetadata[] = [
 test('all five supported layout components can contain child components', () => {
   for (const name of ['KioskContainer', 'KioskRow', 'KioskColumn', 'KioskGrid', 'KioskCard'])
     assert.equal(isLayoutContainer(node(name, 'Custom:' + name)), true);
-  assert.equal(isLayoutContainer(node('text', 'Custom:KioskText')), false);
+  assert.equal(isLayoutContainer(node('text', 'Custom:KioskText', { layoutContainer: false })), false);
   assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: true })), true);
   assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: false })), false);
 });
