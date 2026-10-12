@@ -10,7 +10,8 @@ const primaryColumns={
   collectionItems:['tenant_id','collection_name','position'],
   settings:['tenant_id','setting_name'],recordBuckets:['tenant_id','object_api_name'],
   records:['tenant_id','object_api_name','record_id'],users:['user_id'],
-  sessions:['token_hash'],revokedTokens:['token_hash'],components:['position']
+  sessions:['token_hash'],revokedTokens:['token_hash'],components:['position'],
+  platformSettings:['setting_name']
 };
 const signature=(key,row)=>JSON.stringify(keyFor[key](row));
 const equivalent=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
