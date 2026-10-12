@@ -3274,6 +3274,7 @@ type LocalUser = {
   authRevokedBefore?: number;
   mfaSecret?: MfaEncryptedSecret;
   mfaLastUsedStep?: number;
+  mfaRecoveryCodes?: string[];
   mfaVersion?: number;
   authVersion?: number;
   passwordReset?: { tokenHash: string; expiresAt: number };
@@ -3408,6 +3409,7 @@ const stateSchema = z.object({
     authRevokedBefore: z.number().int().nonnegative().optional(),
     mfaSecret: z.object({ keyId: z.string(), iv: z.string(), authTag: z.string(), ciphertext: z.string() }).optional(),
     mfaLastUsedStep: z.number().int().nonnegative().optional(),
+    mfaRecoveryCodes: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(20).optional(),
     mfaVersion: z.number().int().nonnegative().optional(),
     authVersion: z.number().int().nonnegative().optional(),
     passwordReset: z.object({
@@ -5241,7 +5243,8 @@ function issueRefreshSession(user: LocalUser, previousFamilyId?: string, mfaVeri
   };
 }
 async function issueLoginResponse(res: Response, user: LocalUser, data: TenantData, familyId?: string,
-  loginTiming?: { startedAt: number; passwordMs: number }, mfaVerified = false): Promise<void> {
+  loginTiming?: { startedAt: number; passwordMs: number }, mfaVerified = false,
+  backupCodes: string[] = []): Promise<void> {
   // JWT iat is second-granular. When reactivated in the same second as a
   // suspension, wait until a fresh token is strictly newer than the revocation.
   if (user.authRevokedBefore !== undefined && user.authRevokedBefore >= Math.floor(Date.now() / 1000)) {
@@ -5278,6 +5281,7 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
       `password;dur=${ms(loginTiming.passwordMs)},signing;dur=${ms(tokenMs)},state-write;dur=${ms(sessionStateMs)},login;dur=${ms(performance.now() - loginTiming.startedAt)}`);
   }
   res.json({
+    ...(backupCodes.length ? { backup_codes: backupCodes } : {}),
     access_token: issued.accessToken,
     token_type: 'Bearer',
     expires_in: jwtService.config.accessTokenTtlSeconds,
@@ -5293,6 +5297,18 @@ type MfaLoginChallenge = {
 type MfaEnrollment = { userId: string; tenantId: string; expiresAt: number; attempts: number; secret: string; authVersion: number };
 const mfaLoginChallenges = new Map<string, MfaLoginChallenge>();
 const mfaEnrollments = new Map<string, MfaEnrollment>();
+function newMfaRecoveryCodes(): { codes: string[]; digests: string[] } {
+  // Ten independently random 96-bit second factors, displayed once only.
+  const codes = Array.from({ length: 10 }, () => randomBytes(12).toString('hex').toUpperCase());
+  return { codes, digests: codes.map((code) => hashToken(code.toLowerCase())) };
+}
+function usedRecoveryCode(user: LocalUser, code: string): string | null {
+  if (!/^[A-Fa-f0-9]{24}$/.test(code)) return null;
+  const hashed = Buffer.from(hashToken(code.toLowerCase()), 'hex');
+  const matches = (user.mfaRecoveryCodes ?? []).filter((digest) =>
+    timingSafeEqual(Buffer.from(digest, 'hex'), hashed));
+  return matches.length === 1 ? matches[0] : null;
+}
 const mfaFailures = new Map<string, { count: number; resetAt: number }>();
 const mfaChallengeTtlMs = 5 * 60 * 1000;
 
