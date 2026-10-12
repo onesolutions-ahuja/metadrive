@@ -25,6 +25,8 @@ test('all five supported layout components can contain child components', () => 
   for (const name of ['KioskContainer', 'KioskRow', 'KioskColumn', 'KioskGrid', 'KioskCard'])
     assert.equal(isLayoutContainer(node(name, 'Custom:' + name)), true);
   assert.equal(isLayoutContainer(node('text', 'Custom:KioskText')), false);
+  assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: true })), true);
+  assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: false })), false);
 });
 
 test('drag and drop nesting persists across JSON save/reopen without mutating original layout', () => {
