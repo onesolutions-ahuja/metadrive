@@ -29,7 +29,7 @@ function validActor(actor) {
     && actor.active === true;
 }
 export function assertRecoveryEligible(caseFile, now = Date.now()) {
-  if (!caseFile || caseFile.status !== 'pending'
+  if (!caseFile || typeof caseFile.id !== 'string' || !caseFile.id || caseFile.status !== 'pending'
     || typeof caseFile.tenantId !== 'string' || !caseFile.tenantId
     || typeof caseFile.claimantUserId !== 'string' || !caseFile.claimantUserId)
     throw new Error('Invalid pending recovery case');

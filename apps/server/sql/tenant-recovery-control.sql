@@ -51,3 +51,6 @@ LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Recovery audit events are append-o
 DROP TRIGGER IF EXISTS tenant_recovery_no_mutations ON tenant_recovery_events;
 CREATE TRIGGER tenant_recovery_no_mutations BEFORE UPDATE OR DELETE ON tenant_recovery_events
 FOR EACH ROW EXECUTE FUNCTION reject_recovery_event_mutation();
+
+-- Single active case per claimant, enforced against concurrent intake.
+CREATE UNIQUE INDEX IF NOT EXISTS tenant_recovery_single_active_case ON tenant_recovery_cases(tenant_id,claimant_user_id) WHERE status IN ('pending','approved');
