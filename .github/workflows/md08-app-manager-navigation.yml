@@ -34,4 +34,7 @@ jobs:
       - name: Build API and verify runtime dependencies
         run: npm run build --workspace apps/server
       - name: Run full server regression suite (includes tenant RBAC navigation)
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
         run: npm test --workspace apps/server
