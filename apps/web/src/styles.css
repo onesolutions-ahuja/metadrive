@@ -2152,3 +2152,8 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .builder-title-controls select { max-width: 100%; }
   .builder-meta-bar { gap: 8px; }
 }
+
+/* Remaining high-confidence WCAG contrasts after the 114-screen re-audit. */
+.text-action { color: #075b95; }
+.page-region-label { color: #55564f; }
+.record-component-head > span { color: #555e58; }
