@@ -5649,7 +5649,7 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
   if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'MFA login is managed by the identity provider' });
   const parsed = z.object({
     challenge_token: z.string().min(32).max(128),
-    code: z.string().regex(/^\d{6}$/)
+    code: z.string().regex(/^(?:\d{6}|[A-Fa-f0-9]{24})$/)
   }).strict().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid MFA challenge request' });
   const key = hashToken(parsed.data.challenge_token);
@@ -5675,39 +5675,51 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
     mfaLoginChallenges.delete(key);
     return res.status(503).json({ error: 'MFA secret cannot be decrypted' });
   }
-  const step = verifyTotp(secret, parsed.data.code, user.mfaLastUsedStep ?? -1);
-  if (step === null) {
+  const step = /^\d{6}$/.test(parsed.data.code)
+    ? verifyTotp(secret, parsed.data.code, user.mfaLastUsedStep ?? -1)
+    : null;
+  const consumedDigest = !challenge.pendingSecret && step === null
+    ? usedRecoveryCode(user, parsed.data.code)
+    : null;
+  if (step === null && !consumedDigest) {
     recordMfaFailure(user.id);
     if (challenge.attempts >= 5) mfaLoginChallenges.delete(key);
-    return res.status(401).json({ error: 'Invalid or already used authenticator code' });
+    return res.status(401).json({ error: 'Invalid or already used authenticator/recovery code' });
   }
   mfaLoginChallenges.delete(key);
   mfaFailures.delete(user.id);
   let securedUser: LocalUser;
+  let backupCodes: string[] = [];
   try {
+    const generated = challenge.pendingSecret ? newMfaRecoveryCodes() : null;
+    backupCodes = generated?.codes ?? [];
     securedUser = {
       ...user,
       ...(challenge.pendingSecret ? { mfaSecret: sealMfaSecret(user.tenantId, user.id, secret) } : {}),
-      mfaLastUsedStep: step,
-      mfaVersion: challenge.pendingSecret ? (user.mfaVersion ?? 0) + 1 : user.mfaVersion
+      mfaLastUsedStep: step ?? user.mfaLastUsedStep,
+      ...(generated ? { mfaRecoveryCodes: generated.digests } : {}),
+      ...(consumedDigest ? { mfaRecoveryCodes: (user.mfaRecoveryCodes ?? []).filter((code) => code !== consumedDigest) } : {}),
+      mfaVersion: challenge.pendingSecret || consumedDigest ? (user.mfaVersion ?? 0) + 1 : user.mfaVersion,
+      authVersion: consumedDigest ? (user.authVersion ?? 0) + 1 : user.authVersion
     };
     const nextState = {
       ...state,
-      users: state.users.map((item) => item.id === user.id ? securedUser : item)
+      users: state.users.map((item) => item.id === user.id ? securedUser : item),
+      ...(consumedDigest ? { refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId) } : {})
     };
     persistState(nextState);
     state = nextState;
   } catch {
     return res.status(503).json({ error: 'Unable to persist MFA verification' });
   }
-  return issueLoginResponse(res, securedUser, tenant, undefined, undefined, true);
+  return issueLoginResponse(res, securedUser, tenant, undefined, undefined, true, backupCodes);
 });
 
 app.get('/api/auth/mfa/status', accessAuthentication, (_req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const user = principalUser(principal)!;
-  return res.json({ mode: tenant.mfaPolicy.mode, enrolled: Boolean(user.mfaSecret) });
+  return res.json({ mode: tenant.mfaPolicy.mode, enrolled: Boolean(user.mfaSecret), recoveryCodesRemaining: user.mfaRecoveryCodes?.length ?? 0 });
 });
 
 app.get('/api/auth/mfa/policy', accessAuthentication, requirePermission('security:manage'), (_req: Request, res: Response) => {
@@ -5778,17 +5790,19 @@ app.post('/api/auth/mfa/enroll/confirm', accessAuthentication, (req: Request, re
   let encrypted: MfaEncryptedSecret;
   try { encrypted = sealMfaSecret(user.tenantId, user.id, enrollment.secret); }
   catch { return res.status(503).json({ error: 'MFA encryption is unavailable' }); }
+  const backup = newMfaRecoveryCodes();
   const nextState = {
     ...state,
     users: state.users.map((item) => item.id === user.id
-      ? { ...item, mfaSecret: encrypted, mfaLastUsedStep: step, mfaVersion: (item.mfaVersion ?? 0) + 1 }
+      ? { ...item, mfaSecret: encrypted, mfaLastUsedStep: step,
+          mfaRecoveryCodes: backup.digests, mfaVersion: (item.mfaVersion ?? 0) + 1 }
       : item),
     refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
   };
   persistState(nextState);
   state = nextState;
   mfaEnrollments.delete(key);
-  return res.json({ enrolled: true, reauthenticate: true });
+  return res.json({ enrolled: true, reauthenticate: true, backup_codes: backup.codes });
 });
 
 app.post('/api/auth/mfa/disable', accessAuthentication, async (req: Request, res: Response) => {
@@ -5817,6 +5831,7 @@ app.post('/api/auth/mfa/disable', accessAuthentication, async (req: Request, res
       const updated = { ...item };
       delete updated.mfaSecret;
       delete updated.mfaLastUsedStep;
+      delete updated.mfaRecoveryCodes;
       updated.mfaVersion = (item.mfaVersion ?? 0) + 1;
       return updated;
     }),
