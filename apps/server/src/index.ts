@@ -99,46 +99,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }) as typeof res.end;
   next();
 });
-app.use((req: Request, res: Response, next: NextFunction) => {
-  // Only explicitly identified external API traffic belongs in Communication Records.
-  // Browser, internal automation and platform API requests must not be logged here.
-  if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app'
-    || req.get('x-metadrive-external-api') !== 'true') return next();
-  const startedAt = Date.now();
-  res.on('finish', () => {
-    const principal = res.locals.principal as Principal | undefined;
-    if (!principal || !tenantData(principal.tenantId)) return;
-    const authorization = req.get('authorization') ?? '';
-    const authType = authorization.toLowerCase().startsWith('bearer ') ? 'Bearer'
-      : authorization.toLowerCase().startsWith('basic ') ? 'Basic'
-        : req.get('x-api-key') ? 'API Key'
-          : authorization ? 'Other' : 'None';
-    const routePath = req.route?.path;
-    const apiId = `${req.method} ${typeof routePath === 'string' ? routePath : req.path}`;
-    const requestUrl = `${req.protocol}://${req.get('host') ?? 'localhost'}${req.originalUrl}`;
-    // Audit metadata only. Request and response payloads can contain passwords,
-    // bearer credentials, integration configuration and other tenant secrets.
-    // Never persist those bodies in a broadly readable Communication Record.
-    try {
-      appendCommunicationRecord(principal.tenantId, principal.userId, {
-        apiId,
-        url: communicationSafeUrl(requestUrl),
-        authType,
-        method: supportedCommunicationMethod(req.method),
-        direction: 'Incoming',
-        requestBody: '',
-        responseBody: '',
-        status: res.statusCode,
-        // Status code is sufficient for audit; detailed errors may contain secrets.
-        error: '',
-        durationMs: Date.now() - startedAt
-      });
-    } catch (error) {
-      console.error(`Failed to record incoming API request "${apiId}": ${error instanceof Error ? error.message : String(error)}`);
-    }
-  });
-  next();
-});
+// Incoming API audit is deliberately disabled until authentication issues a
+// server-verifiable external API-client identity. Request-source headers are
+// caller-controlled and cannot establish the channel. Flow/connector audit
+// records and standard tenant-scoped record permissions remain unaffected.
+// Do not reinstate this interceptor based on x-metadrive-* headers.
 
 // Meta webhook transport is a platform primitive; routing and replies remain in editable Flows.
 // Configure these four values on Render before enabling the callback.

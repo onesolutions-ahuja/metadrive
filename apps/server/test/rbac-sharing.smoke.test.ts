@@ -1708,27 +1708,17 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.ok(objectMetadata.some((object) => object.apiName === 'Communication_Records__c'),
       'Communication Records must be available in Object Manager metadata');
     assert.equal((await api.send('/connector-providers', adminToken, 'GET', undefined, 'web-app')).status, 200,
-      'web app requests must continue to work when marked as internal');
-    assert.equal((await api.send('/metadata/objects', adminToken, 'GET', undefined, 'external-api')).status, 200,
-      'explicitly identified external API requests must remain auditable');
+      'browser requests remain functional');
     assert.equal((await api.send('/metadata/objects?customSensitiveValue=private-api-log-canary', adminToken, 'GET', undefined, 'external-api')).status, 200,
-      'audited API requests must accept query parameters without retaining them in audit URLs');
+      'forged external origin headers cannot alter response behavior');
     const communicationRecordsResponse = await api.send('/records/Communication_Records__c', adminToken, 'GET', undefined, 'web-app');
-    assert.equal(communicationRecordsResponse.status, 200, 'Communication Records must be readable through the standard Records API');
+    assert.equal(communicationRecordsResponse.status, 200);
     const communicationRecords = communicationRecordsResponse.data.records as Array<Record<string, unknown>>;
+    assert.ok(!communicationRecords.some((record) =>
+      record.Direction__c === 'Incoming' && record.Communication_Mode__c === 'API'),
+      'neither internal requests nor forged external headers can create incoming API audit records');
     assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('private-api-log-canary')),
-      'API audit URLs must not persist query string values, even under unfamiliar parameter names');
-    assert.ok(communicationRecords.some((record) => record.Api_Id__c === 'GET /api/metadata/objects'
-      && record.Direction__c === 'Incoming'
-      && record.Method__c === 'GET'
-      && record.Auth_Type__c === 'Bearer'
-      && !record.Request_Body__c
-      && !record.Response_Body__c),
-    'external incoming audit records must preserve method and auth type without exposing request or response bodies');
-    assert.equal(communicationRecords.filter((record) => record.Api_Id__c === 'GET /api/metadata/objects').length, 1,
-      'unmarked internal metadata requests must not generate communication records');
-    assert.ok(!communicationRecords.some((record) => record.Api_Id__c === 'GET /api/connector-providers'),
-      'web app API requests must not be recorded as external incoming API requests');
+      'forged API origin cannot persist query-string secrets');
     const connectorRecordsResponse = await api.send('/records/UneConnector__c', adminToken);
     assert.equal(connectorRecordsResponse.status, 200, 'connector records must use the standard Records API');
     assert.deepEqual((connectorRecordsResponse.data.records as Array<Record<string, unknown>>).map((record) => record.Name),
