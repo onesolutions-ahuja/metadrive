@@ -1,0 +1,156 @@
+name: Guarded SQL-only production staging
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sql-only-prod-stage.yml'
+permissions:
+  contents: read
+concurrency:
+  group: metadrive-production-migration
+  cancel-in-progress: false
+jobs:
+  stage:
+    if: github.repository == 'onesolutions-ahuja/metadrive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      TARGET_DB: metadrive_sql_20261012
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Fail closed unless live application is in explicit write-blocking maintenance
+        run: |
+          node --input-type=module <<'NODE'
+          const root='https://metadrive.onrender.com';
+          const response=await fetch(root+'/health',{signal:AbortSignal.timeout(15000)});
+          if(!response.ok)throw Error('Production health unavailable');
+          const h=await response.json();
+          if(!h.maintenance||h.database!=='healthy'||h.persistenceMode!=='jsonb')
+            throw Error('Safe maintenance not enabled or source database not healthy');
+          const b=await fetch(root+'/api/settings',{signal:AbortSignal.timeout(15000)});
+          if(b.status!==503)throw Error('Production API is still accepting requests');
+          console.log('Public API and scheduled Flow maintenance barrier verified');
+          NODE
+      - name: Verify private database connection and prepare local client environment
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          node --input-type=module <<'NODE'
+          import {writeFileSync} from 'node:fs';
+          if(!process.env.DATABASE_URL)throw Error('Required Aiven database secret absent');
+          const u=new URL(process.env.DATABASE_URL);
+          if(!u.hostname.endsWith('.aivencloud.com')||u.searchParams.get('sslmode')!=='require'||
+             u.pathname!=='/defaultdb') throw Error('Unexpected Aiven source database');
+          const variables={PGHOST:u.hostname,PGPORT:u.port||'5432',
+            PGUSER:decodeURIComponent(u.username),PGPASSWORD:decodeURIComponent(u.password),
+            PGDATABASE:'defaultdb',PGSSLMODE:'require'};
+          if(Object.values(variables).some(s=>!s||/[\r\n]/.test(s)))throw Error('Invalid database environment');
+          writeFileSync(process.env.RUNNER_TEMP+'/pg.env',
+            Object.entries(variables).map(([k,v])=>k+'='+v).join('\n')+'\n',
+            {flag:'wx',mode:0o600});
+          NODE
+      - name: Fresh, consistent production backup and independent source verification
+        run: |
+          docker run --rm --network host --env-file "${RUNNER_TEMP}/pg.env" \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_dump postgres:18 \
+            --format=custom --no-owner --no-acl -f /work/legacy.dump
+          docker run --rm --network host -e PGPASSWORD=postgres --entrypoint createdb \
+            postgres:18 -h 127.0.0.1 -U postgres metadrive_restored
+          docker run --rm --network host -e PGPASSWORD=postgres \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_restore postgres:18 \
+            -h 127.0.0.1 -U postgres -d metadrive_restored \
+            --no-owner --no-acl --exit-on-error /work/legacy.dump
+          PGSSLMODE=disable DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored \
+            METADRIVE_DIGEST_FILE="${RUNNER_TEMP}/source.sha" \
+            node apps/server/scripts/verify-aiven-state.mjs
+      - name: Confirm frozen source checksum
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_DIGEST_FILE: ${{ runner.temp }}/source.sha
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+        run: node apps/server/scripts/verify-bluegreen-sql-target.mjs source
+      - name: Losslessly convert metadata, physical records, credentials and 23 JSONB columns
+        env:
+          PGSSLMODE: disable
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored
+        run: |
+          node apps/server/scripts/copy-typed-sql-on-restored-db.mjs --apply
+          node apps/server/scripts/copy-normalized-state-on-restore.mjs --apply
+          node apps/server/scripts/archive-all-jsonb-on-restored-db.mjs --apply
+          node apps/server/scripts/prove-typed-records-on-restore.mjs
+      - name: Export SQL-only image separately from legacy backup
+        run: |
+          docker run --rm --network host -e PGPASSWORD=postgres \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_dump postgres:18 \
+            -h 127.0.0.1 -U postgres -d metadrive_restored \
+            --format=custom --no-owner --no-acl -f /work/typed.dump
+      - name: Encrypt and verify both rollback database images
+        env:
+          METADRIVE_BACKUP_ENCRYPTION_KEY: ${{ secrets.METADRIVE_BACKUP_ENCRYPTION_KEY }}
+        run: |
+          test -n "${METADRIVE_BACKUP_ENCRYPTION_KEY:-}"
+          for kind in legacy typed; do
+            node apps/server/scripts/secure-relational-backup.mjs encrypt \
+              "${RUNNER_TEMP}/${kind}.dump" "${RUNNER_TEMP}/${kind}.enc"
+            node apps/server/scripts/secure-relational-backup.mjs decrypt \
+              "${RUNNER_TEMP}/${kind}.enc" "${RUNNER_TEMP}/${kind}.verified"
+            cmp "${RUNNER_TEMP}/${kind}.dump" "${RUNNER_TEMP}/${kind}.verified"
+          done
+      - name: Retain encrypted rollback sources before remote staging
+        uses: actions/upload-artifact@v4
+        with:
+          name: sql-only-production-cutover-encrypted-recovery
+          path: |
+            ${{ runner.temp }}/legacy.enc
+            ${{ runner.temp }}/typed.enc
+            ${{ runner.temp }}/source.sha
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Verify source still frozen and reject competing writes
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_DIGEST_FILE: ${{ runner.temp }}/source.sha
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+        run: node apps/server/scripts/verify-bluegreen-sql-target.mjs source
+      - name: Create and restore an independent SQL-only Aiven target database
+        run: |
+          docker run --rm --network host --env-file "${RUNNER_TEMP}/pg.env" \
+            --entrypoint createdb postgres:18 --maintenance-db=defaultdb "${TARGET_DB}"
+          docker run --rm --network host --env-file "${RUNNER_TEMP}/pg.env" \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_restore postgres:18 \
+            -d "${TARGET_DB}" --no-owner --no-acl --exit-on-error /work/typed.dump
+      - name: Verify all live SQL target records, archived history and source digest
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_DIGEST_FILE: ${{ runner.temp }}/source.sha
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+        run: |
+          node apps/server/scripts/verify-bluegreen-sql-target.mjs target
+          node apps/server/scripts/verify-bluegreen-sql-target.mjs source
+          echo "Verified SQL-only target ready; legacy source untouched. Explicit application switch is next."
+      - name: Erase credentials and plaintext artifacts
+        if: always()
+        run: |
+          rm -f "${RUNNER_TEMP}/pg.env" "${RUNNER_TEMP}/legacy.dump" \
+            "${RUNNER_TEMP}/typed.dump" "${RUNNER_TEMP}/legacy.verified" \
+            "${RUNNER_TEMP}/typed.verified" "${RUNNER_TEMP}/legacy.enc" "${RUNNER_TEMP}/typed.enc"
