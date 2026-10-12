@@ -101,11 +101,16 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
         [physical,delta.deleted.map(row=>row.nodeId)]);
       if(removed.rowCount!==delta.deleted.length) throw Error('SQL delta delete count mismatch');
     }
-    for(const row of delta.updated) {
+    if(delta.updated.length) {
+      // One bound, set-based update even when audit retention rotates an array
+      // or metadata order changes. Never perform one network call per node.
       const changed=await client.query(
-        'UPDATE md_v3_state_nodes SET parent_id=$3,slot_key=$4,ordinal=$5,kind=$6,string_value=$7,number_value=$8,bool_value=$9 WHERE revision=$1 AND node_id=$2',
-        [physical,row.nodeId,row.parentId,row.slotKey,row.ordinal,row.kind,row.stringValue,row.numberValue,row.boolValue]);
-      if(changed.rowCount!==1) throw Error('SQL delta update count mismatch');
+        'UPDATE md_v3_state_nodes AS n SET parent_id=v.parent_id,slot_key=v.slot_key,ordinal=v.ordinal,kind=v.kind,string_value=v.string_value,number_value=v.number_value,bool_value=v.bool_value FROM unnest($2::bigint[],$3::bigint[],$4::text[],$5::integer[],$6::text[],$7::text[],$8::double precision[],$9::boolean[]) AS v(node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value) WHERE n.revision=$1 AND n.node_id=v.node_id',
+        [physical,...[
+          row=>row.nodeId,row=>row.parentId,row=>row.slotKey,row=>row.ordinal,
+          row=>row.kind,row=>row.stringValue,row=>row.numberValue,row=>row.boolValue
+        ].map(select=>delta.updated.map(select))]);
+      if(changed.rowCount!==delta.updated.length) throw Error('SQL delta update count mismatch');
     }
     if(delta.inserted.length) await insertNodes(client,physical,delta.inserted);
     const touched=[...delta.updated,...delta.inserted];
