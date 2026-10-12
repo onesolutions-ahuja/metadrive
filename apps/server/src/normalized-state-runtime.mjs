@@ -83,10 +83,9 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
   const client=await pool.connect();
   let begun=false;
   try {
-    await client.query('BEGIN');
+    // One network round trip instead of three for the SQL transaction prelude.
+    await client.query("BEGIN; SET LOCAL lock_timeout='10s'; SET LOCAL statement_timeout='120s'");
     begun=true;
-    await client.query("SET LOCAL lock_timeout='10s'");
-    await client.query("SET LOCAL statement_timeout='120s'");
     const result=await client.query('SELECT revision,state_sha256,source_sha256 FROM md_v3_runtime WHERE id=1 FOR UPDATE');
     if(result.rowCount!==1) throw Error('Missing normalized state revision');
     const marker=result.rows[0];
