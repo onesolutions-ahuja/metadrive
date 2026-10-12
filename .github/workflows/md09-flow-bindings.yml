@@ -1,0 +1,42 @@
+name: MD-09 Flow Input Bindings
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/FlowInputBindingEditor.tsx'
+      - 'apps/web/src/flowInputBindings.ts'
+      - 'scripts/md09-flow-input-bindings.test.mjs'
+      - 'scripts/md09-flow-binding-browser-smoke.mjs'
+      - 'package.json'
+      - '.github/workflows/md09-flow-bindings.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visual-flow-bindings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Typed Flow binding unit tests
+        run: npm run test:flow-binding
+      - name: Platform build and startup contract
+        run: npm run build
+      - name: Isolated Chromium dependencies
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Browser authoring persistence and runtime execution
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: node scripts/md09-flow-binding-browser-smoke.mjs
