@@ -7863,7 +7863,8 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
     'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'barcodeField', 'skuField',
     'customerObjectApiName', 'customerNameField', 'customerPhoneField', 'customerEmailField', 'customerFilters',
     'fieldApiName', 'checkoutFlowApiName',
-    'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows']);
+    'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows',
+    'layoutContainer', 'layoutParentId', 'layoutStyle', 'layoutResponsive']);
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
