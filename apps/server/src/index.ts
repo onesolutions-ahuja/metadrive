@@ -6358,6 +6358,7 @@ function tenantSummary(tenantId: string) {
   const users = state.users.filter((user) => user.tenantId === tenantId);
   return {
     tenantId, name: entry.name, description: entry.description, status: entry.status,
+    archivedAt: entry.archivedAt ?? null, retentionUntil: entry.retentionUntil ?? null, legalHold: entry.legalHold ?? false,
     createdAt: entry.createdAt, updatedAt: entry.updatedAt,
     domains: (entry.domains ?? []).filter((domain) => domain.status !== 'REVOKED'),
     // Provisioning request fingerprints remain server-side, never exposed in API responses.
