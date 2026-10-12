@@ -8073,6 +8073,15 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
       const navigationAppId = String(binding.navigationAppId || (navigationTargetType === 'Record List' ? 'Records' : currentAppId));
       const navigationApp = apps.find((app) => app.apiName === navigationAppId);
       const navigationPages = navigationApp ? pages.filter((page) => pageIsAvailableInApp(page, navigationApp)) : [];
+      const navigationPreview = actionType === 'Navigate' ? (() => {
+        try {
+          return appRoutePath(resolvePageActionRoute(binding, {
+            objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
+          }));
+        } catch {
+          return '';
+        }
+      })() : '';
       return <div className="home-page-assignment" key={eventName}>
         <strong>{eventName}</strong>
         <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
@@ -8130,6 +8139,10 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
           </label>}
           {navigationTargetType === 'App Page' && !navigationPages.length
             && <p className="properties-help">Activate an App Page and add it to the application in App Settings first.</p>}
+          {navigationPreview && <div className="properties-help">
+            Destination: <code>{navigationPreview}</code>
+            <a href={navigationPreview} target="_blank" rel="noopener noreferrer"> Test route in a new tab</a>
+          </div>}
         </div>}
       </div>;
     })}
