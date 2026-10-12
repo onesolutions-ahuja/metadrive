@@ -120,16 +120,17 @@ export function resolveAdvancedRecordGrant({
       !readableParentRecordIds.every(ident))
     throw Error('Invalid server-resolved advanced record relationships');
   const readSet = new Set(readableParentRecordIds);
+  let implicitGranted = false;
   for (const edge of implicitShares) {
     if (!obj(edge) || edge.tenantId !== tenantId || !ident(edge.parentId) ||
         !ident(edge.childId) || !['read','edit'].includes(edge.accessLevel))
       throw Error('Invalid implicit share');
     if (edge.childId === recordId && readSet.has(edge.parentId) &&
         (operation === 'read' || edge.accessLevel === 'edit'))
-      return Object.freeze({granted:true,source:'implicit_parent'});
+      implicitGranted = true;
   }
   if (recordTerritoryId === undefined || recordTerritoryId === null)
-    return Object.freeze({granted:false,source:null});
+    return Object.freeze({granted:implicitGranted,source:implicitGranted ? 'implicit_parent' : null});
   if (!ident(recordTerritoryId)) throw Error('Invalid territory identifier');
   const ancestors = new Map();
   for (const edge of territoryEdges) {
@@ -145,6 +146,7 @@ export function resolveAdvancedRecordGrant({
     node = ancestors.get(node);
   }
   if(node) throw Error('Cyclic territory hierarchy');
+  let territoryGranted = false;
   for(const member of territoryMemberships) {
     if (!obj(member) || member.tenantId !== tenantId ||
         !ident(member.userId) || !ident(member.territoryId) ||
@@ -155,7 +157,8 @@ export function resolveAdvancedRecordGrant({
       (member.includeSubordinates && reachable.has(member.territoryId));
     if(member.userId === userId && matches &&
        (operation === 'read' || member.accessLevel === 'edit'))
-      return Object.freeze({granted:true,source:'territory'});
+      territoryGranted = true;
   }
-  return Object.freeze({granted:false,source:null});
+  return Object.freeze({granted:implicitGranted || territoryGranted,
+    source:implicitGranted ? 'implicit_parent' : territoryGranted ? 'territory' : null});
 }
