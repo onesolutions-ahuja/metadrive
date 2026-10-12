@@ -21,6 +21,16 @@ if (['relational','normalized','typed'].includes(persistenceMode) && !connection
 
 // Keep SSL configuration in one place: pg URL sslmode options otherwise override the trusted CA.
 const databaseUrl = connectionString ? new URL(connectionString) : null;
+// A blue/green database cutover changes only the database name, not the host,
+// TLS policy, username or password. Never include this value in diagnostic logs.
+const databaseOverride = process.env.METADRIVE_DB_NAME_OVERRIDE;
+if (databaseOverride) {
+  if (persistenceMode !== 'typed') throw new Error('Database override requires typed SQL persistence');
+  if (!/^[a-z][a-z0-9_]{2,61}$/.test(databaseOverride))
+    throw new Error('Invalid SQL-only cutover database identifier');
+  if (!databaseUrl) throw new Error('SQL-only cutover requires a configured connection');
+  databaseUrl.pathname = '/' + databaseOverride;
+}
 if (databaseUrl) for (const key of ['sslmode','sslcert','sslkey','sslrootcert']) databaseUrl.searchParams.delete(key);
 
 const pool = databaseUrl ? new Pool({
