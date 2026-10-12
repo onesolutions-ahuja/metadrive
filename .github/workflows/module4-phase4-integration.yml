@@ -1,0 +1,26 @@
+name: One-shot Module 4 Phase 4 central authorization integration
+on:
+  push:
+    branches:
+      - feature/module4-phase4-advanced-access-policy-20261012
+permissions:
+  contents: write
+jobs:
+  integrate:
+    if: "!contains(github.event.head_commit.message, 'automated phase4 index integration')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/module4-phase4-advanced-access-policy-20261012
+          persist-credentials: true
+      - name: Patch existing centralized record-authorization function
+        run: node apps/server/scripts/apply-phase4-index-patch.mjs
+      - name: Push tested-source integration to feature branch only
+        run: |
+          if git diff --quiet -- apps/server/src/index.ts; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/server/src/index.ts
+          git commit -m "automated phase4 index integration"
+          git push origin HEAD:feature/module4-phase4-advanced-access-policy-20261012
