@@ -1219,7 +1219,11 @@ function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }: {
     animation = window.requestAnimationFrame(() => {
       const content = document.querySelector('.lightning');
       if (content) {
-        observer = new MutationObserver(schedule);
+        // Background notifications, header health and editor loads are not
+        // landing-page blockers. Only extend the timer for a real busy UI.
+        observer = new MutationObserver(() => {
+          if (content.querySelector('[aria-busy="true"], [role="progressbar"], .records-loading, .loading-spinner')) schedule();
+        });
         observer.observe(content, { childList: true, subtree: true, characterData: true });
       }
       schedule();
