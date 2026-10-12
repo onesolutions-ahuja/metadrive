@@ -170,13 +170,21 @@ async function collectLayout(page) {
         }
       }
     }
+    const header = document.querySelector('.salesforce-header');
+    const sidebar = document.querySelector('.setup-sidebar');
+    const shell = {
+      headerPosition: header ? getComputedStyle(header).position : null,
+      sidebarScrollable: !sidebar || sidebar.scrollHeight <= sidebar.clientHeight + 5 || ['auto','scroll'].includes(getComputedStyle(sidebar).overflowY),
+      loadIndicator: document.querySelector('.navigation-load-time')?.textContent?.trim() || null,
+      visibleTextLength: body.innerText.trim().length
+    };
     const brokenImages = [...document.images].filter(img => visible(img) && img.complete && img.naturalWidth === 0)
       .slice(0, 10).map(img => (img.alt || img.src.split('/').pop() || '').slice(0, 70));
     const inViewport = [...document.querySelectorAll('input:not([type="hidden"]), button, a[href]')]
       .filter(visible).length;
     return { viewport: [innerWidth, innerHeight], document: [root.scrollWidth, root.scrollHeight],
       overflowPx: Math.max(0, overflow), clipped, cramped, unlabeled, duplicateIds, collisions, brokenImages,
-      interactiveVisible: inViewport, title: document.title };
+      interactiveVisible: inViewport, title: document.title, shell };
   });
 }
 async function inspectKeyboard(page) {
@@ -333,6 +341,10 @@ async function run() {
           if (readyMs > limits.pageMs) findIssue(s.issues, 'SLOW_PAGE', 'medium', name + ': ' + Math.round(readyMs) + 'ms > ' + limits.pageMs + 'ms goal');
           if (s.httpStatus >= 400) findIssue(s.issues, 'PAGE_HTTP', 'high', 'HTTP ' + s.httpStatus);
           s.layout = await collectLayout(page);
+          if (s.layout.shell.headerPosition && !['fixed','sticky'].includes(s.layout.shell.headerPosition)) findIssue(s.issues,'HEADER_NOT_STICKY','medium','Header position: '+s.layout.shell.headerPosition);
+          if (!s.layout.shell.sidebarScrollable) findIssue(s.issues,'SIDEBAR_CANNOT_SCROLL','high',name);
+          if (s.layout.shell.visibleTextLength < 25) findIssue(s.issues,'BLANK_SCREEN_CANDIDATE','high',name);
+          if (s.layout.shell.loadIndicator === 'Loading…') findIssue(s.issues,'LOADING_INDICATOR_PENDING','medium',name);
           if (s.layout.overflowPx > 3) findIssue(s.issues, 'HORIZONTAL_OVERFLOW', 'high', s.layout.overflowPx + 'px');
           if (s.layout.clipped.length) findIssue(s.issues, 'CLIPPED_ELEMENTS', 'medium', JSON.stringify(s.layout.clipped.slice(0, 4)));
           if (s.layout.collisions.length) findIssue(s.issues, 'TEXT_OVERLAP_CANDIDATES', 'medium', JSON.stringify(s.layout.collisions.slice(0, 4)));
