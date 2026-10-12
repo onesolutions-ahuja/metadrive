@@ -82,14 +82,11 @@ export type LayoutDevice = 'Desktop' | 'Tablet' | 'Phone';
 export type LayoutSettingKey = 'padding' | 'margin' | 'backgroundColor' | 'borderColor'
   | 'borderWidth' | 'borderRadius' | 'alignItems' | 'justifyContent' | 'gap' | 'opacity' | 'hidden';
 export type LayoutSettings = Partial<Record<LayoutSettingKey, string | number | boolean>>;
-export const layoutContainerTypes = new Set([
-  'Custom:KioskContainer', 'Custom:KioskRow', 'Custom:KioskColumn',
-  'Custom:KioskCard', 'Custom:KioskGrid'
-]);
+export const layoutContainerTypes = new Set(['Container', 'Row', 'Column', 'Card', 'Grid']);
 
 export function isLayoutContainer(component: PageComponentMetadata): boolean {
-  return isLayoutType(component.type) || layoutContainerTypes.has(component.type)
-    || (component.type.startsWith('Custom:') && component.properties?.layoutContainer === true);
+  return isLayoutType(component.type)
+    || (component.type.startsWith('Custom:') && component.properties?.layoutContainer !== false);
 }
 export function rawLayoutParentId(component: PageComponentMetadata): string | null {
   return typeof component.properties?.layoutParentId === 'string' && component.properties.layoutParentId
