@@ -87,7 +87,7 @@ const alignmentOptions: Record<string, string[]> = {
   alignItems: ['stretch', 'flex-start', 'center', 'flex-end'],
   justifyContent: ['flex-start', 'center', 'flex-end', 'space-between', 'space-around']
 };
-const cssColorPattern = /^(transparent|#[0-9a-f]{3}(?:[0-9a-f]{3})?|rgb\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*\\)|rgba\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*(?:0(?:\\.\\d+)?|1(?:\\.0+)?)\\s*\\))$/i;
+const cssColorPattern = /^(transparent|#[0-9a-f]{3}(?:[0-9a-f]{3})?|rgba?\([0-9.,\s%]+\))$/i;
 
 export function validateLayoutSetting(key: LayoutSettingKey, value: unknown): string {
   if (key === 'hidden') return typeof value === 'boolean' ? '' : 'Must be true or false';
