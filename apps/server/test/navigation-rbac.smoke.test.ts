@@ -142,6 +142,25 @@ test('Module 4: app/tab permission grants and group muting update without stale 
     const back = await api(recordPath + '/transfer-owner', token, 'POST', { ownerId: user.id });
     assert.equal(back.status, 200, JSON.stringify(back.data));
     assert.equal(back.data.record.OwnerId, user.id);
+    // Phase 3: benchmark real authenticated RBAC reads after multiple changes.
+    // The warm measurements include authentication + permission resolution and
+    // ensure cached navigation is not returned stale after updates.
+    const latencies: number[] = [];
+    for (let sample = 0; sample < 30; sample++) {
+      const begin = performance.now();
+      const response = await api('/metadata/apps', token);
+      latencies.push(performance.now() - begin);
+      assert.equal(response.status, 200);
+      assert.equal(response.data.apps.find((item: any) => item.apiName === name)
+        .navigationItems.includes('Account'), true);
+    }
+    latencies.sort((a, b) => a - b);
+    const p50Ms = Math.round(latencies[Math.ceil(latencies.length * 0.50) - 1]);
+    const p95Ms = Math.round(latencies[Math.ceil(latencies.length * 0.95) - 1]);
+    console.log(JSON.stringify({ suite: 'module4-rbac-authenticated-navigation',
+      samples: latencies.length, p50Ms, p95Ms,
+      environment: 'isolated-local-smoke-test-not-production' }));
+    assert.ok(p95Ms < 3000, 'RBAC navigation p95 above 3 seconds in isolated test');
     const audit = await api('/auth/security-events', token);
     assert.ok(audit.data.events.some((event: { action: string }) => event.action === 'rbac.record-ownership.transferred'));
   } finally {

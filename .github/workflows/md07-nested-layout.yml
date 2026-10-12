@@ -32,7 +32,7 @@ jobs:
       - name: Compile frontend backend and foundation
         run: npm run build
       - name: Test nesting, responsive properties, and saved metadata
-        run: npx tsx --test apps/web/test/pageComponentLayout.test.ts apps/web/test/componentProperties.test.ts
+        run: npx tsx --test apps/web/test/pageComponentLayout.test.ts apps/web/test/pageComponentLayoutAdvanced.test.ts apps/web/test/componentProperties.test.ts
       - name: Authenticated Page Builder save/reopen and backend regression
         env:
           NODE_ENV: test

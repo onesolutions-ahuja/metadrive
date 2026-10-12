@@ -12,6 +12,24 @@ The named claimant (and nobody else) signs in with their own active tenant accou
 
 Audit events are recorded in the dedicated platform-control database, protected from ordinary update/delete by a PostgreSQL trigger. The tenant's security audit records administrator restoration. This does not pretend that a database owner cannot alter audit data.
 
+## Current production readiness (2026-10-12)
+
+The independent Aiven control database and eight base tables exist. Its protected audit
+trigger and restricted runtime role have **not** yet been installed with privileged
+database access. The standard connected Aiven SQL editor disallows the relevant
+`CREATE FUNCTION`, `GRANT` and `REVOKE` commands. An opt-in privileged migration
+and post-migration runtime verification are provided in
+`apps/server/scripts/provision-recovery-controls.mjs`.
+
+Even when external integration flags are accidentally configured, the recovery API
+now checks database identity, runtime role scope and the enabled immutable-event
+trigger before each request and responds with HTTP 503 if any control is missing.
+The user currently has **no SMTP provider**, so leave this service disabled. Existing
+tenant creation, login, archival, domain, usage and normal RBAC features do not
+depend on this optional recovery email transport.
+
+See `docs/MD-03-PRODUCTION-VERIFICATION.md` for the checked production evidence.
+
 ## Security and activation requirements
 
 The recovery routes remain **disabled by default**. Enable only after all requirements are present:
@@ -34,3 +52,9 @@ Standard server CI tests `tenant-recovery-policy`, `tenant-recovery-transaction`
 Company Settings -> Tenant Emergency Recovery: security administrator enrols contacts; contacts verify independently. Platform Tenant Management -> select tenant -> Tenant Emergency Recovery: an MFA-enrolled platform operator opens a case. Independently notified contacts confirm or dispute. Following the 24-hour cooling-off, two distinct MFA-enrolled platform operators approve. The invitation is sent to a verified contact, never the operator. The tenant claimant redeems with their own login/MFA, then completes the restricted repair with a **new** OTP and signs in again.
 
 There is no direct reset-password-for-tenant endpoint, shared developer password, bypass of tenant RBAC, or recovery privilege hidden in normal session claims. Advanced sharing remains deferred.
+
+## Additional recovery release checks
+
+- Confirm that normal password reset uses an HTTPS `METADRIVE_PASSWORD_RESET_BASE_URL` matching a trusted `WEB_ORIGIN` / `WEB_ORIGINS` entry, with tenant-controlled SMTP Named Credentials and validated sender identity. The separate platform recovery service uses its dedicated, secret `METADRIVE_RECOVERY_SMTP_URL` as described above.
+- Before production recovery is enabled, independently rehearse operator identity evidence, two fresh MFA approvals following the 24-hour cooling period, verified out-of-band delivery, cancellation on dispute, one-time grant redemption and revoked-session denial in an isolated control database.
+- Verify deployed Render revision and measure tenant RBAC read/write performance under concurrent load. Do not issue impersonation sessions, expose Named Credentials or restore intentionally revoked developer permissions.

@@ -1,3 +1,4 @@
+import AdvancedSharingSettings from './AdvancedSharingSettings';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -63,14 +64,18 @@ import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import PageComponentVisualEditor from './PageComponentVisualEditor';
+import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayoutParentId, reparentComponent, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
+import { reconcileNavigationOrder } from './appNavigation';
 import NamedCredentials from './NamedCredentials';
 import TenantManagement from './TenantManagement';
 import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
+import TenantUsagePanel from './TenantUsagePanel';
 import DeveloperAccountSettings from './DeveloperAccountSettings';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
@@ -1289,6 +1294,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [flowInterviews, setFlowInterviews] = useState<FlowInterviewMetadata[]>([]);
   const [flowInterviewsLoading, setFlowInterviewsLoading] = useState(false);
   const [canManageFlows, setCanManageFlows] = useState(false);
+  const [canManageApps, setCanManageApps] = useState(false);
   const [notifications, setNotifications] = useState<CustomNotificationMetadata[]>([]);
   const [notificationsUnreadCount, setNotificationsUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
@@ -1509,6 +1515,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           setCanRunFlows(firstSession.user.permissions.includes('flows:run'));
           setCanManageFlows(firstSession.user.permissions.includes('flows:manage')
             || firstSession.user.permissions.includes('metadata:write'));
+          setCanManageApps(firstSession.user.permissions.includes('metadata:write'));
           setMetadataLoaded(true);
           // Give the landing screen a chance to paint before loading editor-only
           // data in the background. On direct builder URLs the full load begins
@@ -1591,6 +1598,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         setCanRunFlows(sessionPayload.user.permissions.includes('flows:run'));
         setCanManageFlows(sessionPayload.user.permissions.includes('flows:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
+        setCanManageApps(sessionPayload.user.permissions.includes('metadata:write'));
         setCurrentFieldAccess(sessionPayload.user.fieldAccess);
         setCurrentRecordTypeAccess(sessionPayload.user.recordTypeAccess);
         setCanCreateDashboards(dashboardPayload.canCreate);
@@ -1795,6 +1803,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     ...apps.map((app) => app.apiName)
   ])].sort((left, right) => left.localeCompare(right));
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
+  const currentAppNavigation = currentApp
+    ? reconcileNavigationOrder(currentApp.navigationItems ?? [], currentApp.navigationPageApiNames ?? [], currentApp.navigationOrder ?? [])
+    : [];
+  const currentAppObjectTabs = currentAppNavigation.filter((entry) =>
+    entry.type === 'Object' && objects.some((object) => object.apiName === entry.apiName)).map((entry) => entry.apiName);
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     const allowedGroups = setupNavigation.filter((group) => group.group !== 'Platform Administration' || canManagePlatformTenants);
@@ -3028,7 +3041,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   };
   const saveLibraryComponent = async (
-    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'>,
+    component: Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'> & { publicationStatus: 'Draft' | 'Published' }, 
     updating: boolean
   ) => {
     const path = updating ? `/component-library/${encodeURIComponent(component.apiName)}` : '/component-library';
@@ -3040,6 +3053,18 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       ? current.map((item) => item.apiName === payload.component.apiName ? payload.component : item)
       : [...current, payload.component]);
     notify(updating ? 'Global component updated' : 'Global component registered');
+  };
+  const publishLibraryComponent = async (apiName: string) => {
+    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/publish`, {method:'POST',body:'{}'});
+    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
+    notify('Component published');
+  };
+  const rollbackLibraryComponent = async (apiName: string, version: number) => {
+    const payload = await apiRequest<{component: LibraryComponentMetadata}>(`/component-library/${encodeURIComponent(apiName)}/rollback`, {
+      method:'POST',body:JSON.stringify({version})
+    });
+    setLibraryComponents((current) => current.map((item) => item.apiName === apiName ? payload.component : item));
+    notify('Component restored as a new published version');
   };
   const deleteLibraryComponent = async (apiName: string) => {
     await apiRequest<void>(`/component-library/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
@@ -3298,12 +3323,20 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
-        <button type="button" className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
+        <button type="button" disabled={!currentAppObjectTabs.length}
+          className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
           onClick={() => {
-            const targetObject = currentApp?.navigationItems.find((apiName) => objects.some((item) => item.apiName === apiName))
-              ?? objects[0]?.apiName ?? 'Account';
-            navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
+            const targetObject = currentAppObjectTabs[0];
+            if (targetObject) navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
           }}><Database size={16} />Records</button>
+        {currentAppObjectTabs.length > 1 && <select className="header-record-object-select" aria-label="Switch records object"
+          value={(route.kind === 'record-list' || route.kind === 'record-detail') && currentAppObjectTabs.includes(route.objectApiName) ? route.objectApiName : ''}
+          onChange={(event) => {
+            if (event.target.value) navigateRoute({ kind: 'record-list', objectApiName: event.target.value, appId: currentApp?.apiName ?? 'Records' });
+          }}>
+          <option value="">Choose records…</option>
+          {currentAppObjectTabs.map((apiName) => <option key={apiName} value={apiName}>{objects.find((object) => object.apiName === apiName)?.pluralLabel ?? apiName}</option>)}
+        </select>}
         <div className="global-search">
           <Search size={15} />
           <input
@@ -3357,11 +3390,17 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         <div className="app-title">
           <span className="app-icon"><Database size={18} /></span>
-          <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>
+          {apps.length > 1
+            ? <select className="app-title-switcher" aria-label="Switch app" value={currentApp?.apiName ?? ''}
+                onChange={(event) => navigateRoute({ kind: 'app-home', appId: event.target.value })}>
+                {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
+              </select>
+            : <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>}
         </div>
         <nav className="primary-tabs" aria-label="Workspace navigation">
-          {(currentApp?.navigationPageApiNames ?? []).map((apiName) => {
-            const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page');
+          {currentAppNavigation.filter((entry) => entry.type === 'App Page').map((entry) => {
+            const apiName = entry.apiName;
+            const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page' && item.status === 'Active');
             if (!appPage) return null;
             return <button className={route.kind === 'app-page' && route.pageApiName === apiName ? 'primary-tab active' : 'primary-tab'}
               key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp?.apiName ?? '', pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
@@ -3373,7 +3412,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         </nav>
         {currentApp?.utilityItems.map((utility) => <button className="app-utility-button" key={utility}
           aria-expanded={activeUtility === utility} onClick={() => setActiveUtility((current) => current === utility ? null : utility)}>{utility}</button>)}
-        <button className="app-strip-menu" aria-label="More app actions"><MoreHorizontal size={19} /></button>
+        {canManageApps && <button className="app-strip-menu" type="button" title="Open App Manager" aria-label="Open App Manager"
+          onClick={() => openSetupWorkspace('app-manager')}><MoreHorizontal size={19} /></button>}
         {activeUtility && <section className="app-utility-popover" aria-label={`${activeUtility} utility`}>
           <div className="app-utility-heading"><strong>{activeUtility}</strong><button className="icon-button" aria-label={`Close ${activeUtility}`} onClick={() => setActiveUtility(null)}><X size={14} /></button></div>
           {activeUtility === 'Notes'
@@ -3580,7 +3620,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onSaveTerritories={saveDashboardTerritories}
             onNotify={notify}
           />}
-          {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} />}
+          {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} onPublish={publishLibraryComponent} onRollback={rollbackLibraryComponent} />}
           {route.kind === 'setup' && workspace === 'approval-processes' && <ApprovalProcessManager
             processes={approvalProcesses}
             objects={objects}
@@ -3712,7 +3752,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -4355,7 +4395,12 @@ function MetadataBoundPageComponent({
     if (source === '$event') return eventPayload;
     if (typeof source === 'string' && source.startsWith('$event.')) {
       return source.slice(7).split('.').reduce<unknown>((current, key) =>
-        current && typeof current === 'object' ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+        current && typeof current === 'object' && !['__proto__','prototype','constructor'].includes(key)
+          ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+    }
+    if (typeof source === 'string' && source.startsWith('$record.')) {
+      const fieldName = source.slice(8);
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
     }
     return source;
   };
@@ -4363,9 +4408,15 @@ function MetadataBoundPageComponent({
     if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test checkout.');
     const config = actionFlows[action.event];
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
-      throw new Error('No Flow is configured for the "' + action.event + '" kiosk action.');
+      throw new Error('No metadata event action is configured for "' + action.event + '".');
     }
     const binding = config as Record<string, unknown>;
+    if (binding.actionType === 'Navigate') {
+      const destination=String(binding.navigationObjectApiName ?? objectApiName);
+      if (!objects.some((object)=>object.apiName===destination)) throw new Error('Choose an accessible destination object in Page Builder');
+      onNavigate({kind:'record-list',objectApiName:destination,appId:'Records'});
+      return {navigated:true};
+    }
     const flowApiName = String(binding.flowApiName ?? '');
     const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
     if (!selected || selected.status !== 'Active') {
@@ -4383,7 +4434,7 @@ function MetadataBoundPageComponent({
       return { interviewStarted: true };
     }
     if (selected.flowType !== 'Autolaunched Flow') {
-      throw new Error('Kiosk action Flow must be Screen or Autolaunched.');
+      throw new Error('Component event Flow must be Screen or Autolaunched.');
     }
     try {
       const response = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string }>(
@@ -4497,6 +4548,8 @@ function LightningAppRuntime({
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const renderComponent = (component: PageComponentMetadata) => {
     if (!component.visible) return null;
+    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{childrenOf(page.components, component.id).map((child) => renderComponent(child))}</div>;
+    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map((child) => <div key={child.id} style={!isLayoutType(child.type) ? componentVisualStyle(child.properties.visualStyle, child.type, formFactor) : undefined}>{renderComponent(child)}</div>)}</div>;
     if (component.type.startsWith('Custom:')) {
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
@@ -4646,6 +4699,7 @@ function RecordWorkspace({
   useEffect(() => { if (route.kind === 'record-list') { setSearch(headerSearch); setListOffset(0); } }, [headerSearch, route.kind]);
   const [listOffset, setListOffset] = useState(0);
   const [listTotal, setListTotal] = useState(0);
+  const [listSort, setListSort] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
   const listPageSize = 50;
   const [refreshKey, setRefreshKey] = useState(0);
   const [fieldHistory, setFieldHistory] = useState<Array<Record<string, unknown>>>([]);
@@ -4672,6 +4726,7 @@ function RecordWorkspace({
   const [customActionMessage, setCustomActionMessage] = useState('');
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTimestamp, setEditingTimestamp] = useState('');
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [lookupRecords, setLookupRecords] = useState<Record<string, RecordData[]>>({});
   const [lookupError, setLookupError] = useState('');
@@ -4688,6 +4743,8 @@ function RecordWorkspace({
   const [importFileName, setImportFileName] = useState('');
   const [importError, setImportError] = useState('');
   const [importSaving, setImportSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
   const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
   const [campaignOptions, setCampaignOptions] = useState<RecordData[]>([]);
@@ -4706,9 +4763,14 @@ function RecordWorkspace({
     setListOffset(0);
     setSelectedRecordIds([]);
   }, [route.objectApiName, debouncedSearch]);
+  useEffect(() => { setListSort(null); }, [route.objectApiName]);
 
   useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
+  }, [object?.apiName]);
+  useEffect(() => {
+    setSelectedRecordIds([]);
+    setListNotice('');
   }, [object?.apiName]);
 
   useEffect(() => {
@@ -4735,6 +4797,7 @@ function RecordWorkspace({
           const params = new URLSearchParams({
             limit: String(listPageSize),
             offset: String(listOffset),
+            ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
             ...(debouncedSearch ? { search: debouncedSearch } : {}),
             ...(object?.listViewFilter ? {
               filterField: object.listViewFilter.fieldApiName,
@@ -4771,7 +4834,7 @@ function RecordWorkspace({
     };
     void loadRecords();
     return () => { active = false; };
-  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch]);
+  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch, listSort?.field, listSort?.direction]);
 
   useEffect(() => {
     if (route.kind !== 'record-detail' || !object || !record || record.Id !== route.recordId) {
@@ -4954,6 +5017,7 @@ function RecordWorkspace({
     && object.listViewButtons?.includes('Add to Campaign') === true;
   const openCreateForm = () => {
     setEditingId(null);
+    setEditingTimestamp('');
     setFormValues(object?.apiName === 'User' ? { RecordTypeId: defaultRecordTypeId, IsActive: true, UserRoleId: '' } : { RecordTypeId: defaultRecordTypeId });
     setFormError('');
     setFormOpen(true);
@@ -4963,6 +5027,7 @@ function RecordWorkspace({
     const editableFieldNames = new Set(object.fields.map((field) => field.apiName));
     const editableValues = Object.fromEntries(Object.entries(item).filter(([apiName]) => editableFieldNames.has(apiName) || apiName === 'RecordTypeId'));
     setEditingId(item.Id);
+    setEditingTimestamp(typeof item.LastModifiedDate === 'string' ? item.LastModifiedDate : '');
     setFormValues(editableValues);
     setFormError('');
     setFormOpen(true);
@@ -4982,6 +5047,9 @@ function RecordWorkspace({
       const writableValues = Object.fromEntries(Object.entries(formValues).filter(([apiName]) =>
         apiName !== 'OwnerId' && (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit)
       ));
+      // A record without an assigned type must not submit an empty type ID:
+      // the generic API treats an explicitly supplied ID as an assignment request.
+      if (writableValues.RecordTypeId === '') delete writableValues.RecordTypeId;
       if (object.apiName === 'User') {
         if (!editingId) {
           if (typeof formValues.Password !== 'string' || formValues.Password.length < 12) throw new Error('Set an initial password of at least 12 characters.');
@@ -4993,10 +5061,12 @@ function RecordWorkspace({
       }
       const response = await apiRequest<{ record: RecordData }>(path, {
         method: editingId ? 'PUT' : 'POST',
+        ...(editingId && editingTimestamp ? { headers: { 'If-Unmodified-Since': editingTimestamp } } : {}),
         body: JSON.stringify(writableValues)
       });
       setFormOpen(false);
       setFormValues({});
+      setEditingTimestamp('');
       if (editingId) setRefreshKey((current) => current + 1);
       else onNavigate({ kind: 'record-detail', objectApiName: object.apiName, recordId: response.record.Id });
     } catch (failure) {
@@ -5027,7 +5097,10 @@ function RecordWorkspace({
     if (route.kind !== 'record-detail' || !record || !window.confirm(object.apiName === 'User' ? `Deactivate ${String(record.Name ?? record.Id)} and revoke their sessions? Identity and audit records are retained.` : `Delete ${String(record.Name ?? record.Id)}? This cannot be undone.`)) return;
     setError('');
     try {
-      await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, { method: 'DELETE' });
+      await apiRequest<void>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(record.Id)}`, {
+        method: 'DELETE',
+        ...(typeof record.LastModifiedDate === 'string' ? { headers: { 'If-Unmodified-Since': record.LastModifiedDate } } : {})
+      });
       openList();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to delete record');
@@ -5066,6 +5139,7 @@ function RecordWorkspace({
     try {
       await apiRequest<{ record: RecordData }>(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(ownerDialogRecord.Id)}/owner`, {
         method: 'PUT',
+        ...(typeof ownerDialogRecord.LastModifiedDate === 'string' ? { headers: { 'If-Unmodified-Since': ownerDialogRecord.LastModifiedDate } } : {}),
         body: JSON.stringify({ ownerId: ownerValue })
       });
       setOwnerDialogRecord(null);
@@ -5180,6 +5254,61 @@ function RecordWorkspace({
       setImportError(failure instanceof Error ? failure.message : 'Import failed; no records were saved');
     } finally {
       setImportSaving(false);
+    }
+  };
+  const exportFilteredRecords = async () => {
+    if (!object || exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      // Use the same authorised, metadata-filtered Records API as the list.
+      // Fetch in bounded pages; never bypass field/record RBAC or hydrate the
+      // entire table into the live list view.
+      const fields = object.fields.filter((field) => fieldAccess[object.apiName+'.'+field.apiName]?.read);
+      const columns = ['Id', ...fields.map((field) => field.apiName).filter((name) => name !== 'Id')];
+      const csvCell = (value: unknown): string => {
+        let text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+        // Neutralise spreadsheet formulas without changing stored source data.
+        if (typeof value === 'string' && /^[\s\u0000-\u001f]*[=+@-]/.test(value)) text = "'" + text;
+        return '"' + text.replace(/"/g, '""') + '"';
+      };
+      const rows: string[] = [columns.map(csvCell).join(',')];
+      let offset = 0;
+      let total: number | null = null;
+      do {
+        const params = new URLSearchParams({
+          limit: '200', offset: String(offset),
+          ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
+          ...(debouncedSearch ? { search: debouncedSearch } : {}),
+          ...(object.listViewFilter ? { filterField: object.listViewFilter.fieldApiName,
+            filterValue: object.listViewFilter.value } : {})
+        });
+        const page = await apiRequest<{ records: RecordData[]; total: number }>(
+          '/records/' + encodeURIComponent(object.apiName) + '?' + params.toString());
+        if (!Array.isArray(page.records) || !Number.isSafeInteger(page.total) || page.total < 0)
+          throw new Error('Unexpected record export response');
+        if (total !== null && total !== page.total)
+          throw new Error('Records changed during export. Please retry for a consistent result.');
+        total = page.total;
+        if (page.records.length === 0 && offset < total)
+          throw new Error('Export stopped before all records were returned');
+        for (const item of page.records) rows.push(columns.map((name) => csvCell(item[name])).join(','));
+        offset += page.records.length;
+      } while (total !== null && offset < total);
+      const blob = new Blob(['\uFEFF', rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = object.apiName + '-records.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setListNotice('Exported ' + offset + ' records to CSV.');
+    } catch (failure) {
+      setExportError(failure instanceof Error ? failure.message : 'Unable to export records');
+    } finally {
+      setExporting(false);
     }
   };
   const openAddToCampaign = async () => {
@@ -5559,10 +5688,6 @@ function RecordWorkspace({
       const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
       return !layout || layout.actions.includes('Delete');
     })());
-  useEffect(() => {
-    setSelectedRecordIds([]);
-    setListNotice('');
-  }, [object.apiName]);
   return <div className="records-page">
     <div className="records-page-heading">
       <div className="record-object-icon"><Database size={18} /></div>
@@ -5589,6 +5714,7 @@ function RecordWorkspace({
           <label className="records-search"><Search size={14} /><input aria-label={`Search ${object.pluralLabel}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this list…" /></label>
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
+          {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
           {canAddToCampaign && selectedRecordIds.length > 0 && <button className="btn" onClick={() => void openAddToCampaign()}>Add to Campaign ({selectedRecordIds.length})</button>}
           {object.listViewButtons?.includes('Printable View') && <button className="btn" onClick={() => window.print()}>Printable View</button>}
           {canMassDelete && selectedDeletableRecordIds.length > 0 && <button className="btn btn-danger" onClick={() => void deleteSelectedRecords()} disabled={massDeleting}>{massDeleting ? 'Deleting…' : `Delete (${selectedDeletableRecordIds.length})`}</button>}
@@ -5601,11 +5727,16 @@ function RecordWorkspace({
         </div>
       </div>
       {listNotice && <div className="records-notice" role="status">{listNotice}</div>}
+      {exportError && <div className="records-message" role="alert">{exportError}</div>}
       {error && <div className="records-message" role="alert">{error}</div>}
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
       {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
-        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName}>{field.label}</th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
+        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+          <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
+            onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
+            {field.label} {listSort?.field === field.apiName ? (listSort.direction === 'asc' ? '▲' : '▼') : '↕'}
+          </button></th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
         <tbody>{visibleRecords.map((item) => {
           const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
@@ -6121,6 +6252,9 @@ function parseCsvImport(text: string, object: ObjectMetadata): Array<Record<stri
   const unknownHeader = headers.find((header) => !fieldByHeader.has(header.toLocaleLowerCase()) && header.toLocaleLowerCase() !== 'recordtypeid');
   if (unknownHeader) throw new Error(`CSV column "${unknownHeader}" does not match a field API name or label on ${object.label}.`);
   const mappedNames = headers.map((header, index) => header.toLocaleLowerCase() === 'recordtypeid' ? 'RecordTypeId' : fieldNames[index]!);
+  if (new Set(mappedNames).size !== mappedNames.length) {
+    throw new Error('CSV headers map more than once to the same field; remove duplicate label/API name columns.');
+  }
   return rows.slice(1).map((values, index) => {
     if (values.length !== headers.length) throw new Error(`CSV row ${index + 2} has ${values.length} values; expected ${headers.length}.`);
     return Object.fromEntries(values.map((value, columnIndex) => [mappedNames[columnIndex], value]));
@@ -7962,33 +8096,51 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
     <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
       [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
     <div className="properties-section-title">Actions</div>
-    {actionFlows && (['start', 'add', 'quantity', 'remove', 'reset', 'checkout', ...(tillMode ? ['customer','hold','resume','discount'] : [])]).map((eventName) => {
-      const binding = actionFlows[eventName] && typeof actionFlows[eventName] === 'object'
-        ? actionFlows[eventName] as Record<string, unknown> : {};
-      return <label className="form-label" key={eventName}>{eventName.charAt(0).toUpperCase() + eventName.slice(1)} Flow
-        <select className="form-control" value={String(binding.flowApiName ?? '')} onChange={(event) => {
-          const next = { ...actionFlows };
-          if (!event.target.value) delete next[eventName];
-          else next[eventName] = {
-            flowApiName: event.target.value,
-            inputs: binding.inputs ?? (eventName === 'checkout'
-              ? (tillMode ? { SessionId: '$session', PaymentMethod: '$event.paymentMethod', CustomerId: '$event.customerId' } : { SessionId: '$session', OrderType: '$event.orderType' })
-              : eventName === 'customer' ? { SessionId: '$session', CustomerId: '$event.customerId' }
-              : eventName === 'add'
-                ? { SessionId: '$session', ProductId: '$event.productId', Quantity: '$event.quantity' }
-                : eventName === 'quantity'
-                  ? { SessionId: '$session', LineId: '$event.lineId', Quantity: '$event.quantity' }
-                  : eventName === 'remove'
-                    ? { SessionId: '$session', LineId: '$event.lineId' }
-                    : { SessionId: '$session' })
-          };
-          update('actionFlows', next);
-        }}>
-          <option value="">Not configured</option>
-          {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
-        </select>
-      </label>;
+    <div className="properties-section-title">Event → Flow / Navigation bindings</div>
+    <p className="properties-help">Each event name is emitted by a custom component. Select a Flow or an RBAC-checked route and map input variables to event fields. No executable code is stored here.</p>
+    {Object.entries(actionFlows ?? {}).map(([eventName, raw]) => {
+      const binding = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+      const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
+      const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
+      const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
+      return <div className="home-page-assignment" key={eventName}>
+        <strong>{eventName}</strong>
+        <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
+        <label className="form-label">Action type<select className="form-control" value={actionType}
+          onChange={(e) => setBinding({...binding,actionType:e.target.value})}>
+          <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option>
+        </select></label>
+        {actionType==='Flow' ? <>
+          <label className="form-label">Flow<select className="form-control" value={String(binding.flowApiName ?? '')}
+            onChange={(e) => setBinding({...binding,flowApiName:e.target.value})}><option value="">Select Flow…</option>
+            {flows.map((flow)=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+          </select></label>
+          <div className="properties-section-title">Flow input mapping</div>
+          {Object.entries(map).map(([name, source]) => <div key={name} className="metadata-array-property">
+            <label className="form-label">Input API name<input className="form-control" value={name} readOnly /></label>
+            <label className="form-label">Source ($event.field, $record.Field, $session, or literal)
+              <input className="form-control" value={String(source ?? '')}
+                onChange={(e) => setBinding({...binding,inputs:{...map,[name]:e.target.value}})} /></label>
+            <button type="button" className="btn btn-small" onClick={() => {const next={...map};delete next[name];setBinding({...binding,inputs:next});}}>Remove input</button>
+          </div>)}
+          <button type="button" className="btn btn-small" onClick={() => {
+            const nextName=window.prompt('Flow input API name');
+            if(!nextName || !/^[A-Za-z][A-Za-z0-9_]*$/.test(nextName)||nextName in map)return;
+            setBinding({...binding,inputs:{...map,[nextName]:''}});
+          }}>Add Flow input</button>
+        </> : <label className="form-label">Destination object<select className="form-control"
+          value={String(binding.navigationObjectApiName ?? objectApiName)}
+          onChange={(e)=>setBinding({...binding,navigationObjectApiName:e.target.value})}>
+          <option value="">Choose object…</option>
+          {objects.map((object)=><option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+        </select></label>}
+      </div>;
     })}
+    <button type="button" className="btn btn-small" onClick={() => {
+      const key=window.prompt('Component event API name (e.g. submitted, itemSelected)');
+      if(!key||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)||(actionFlows??{})[key])return;
+      update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
+    }}>Add event action</button>
     {!actionFlows && <label className="form-label">Flow API Name
       <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
         onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
@@ -8202,6 +8354,7 @@ function PageBuilder({
   const selectedMigrationLayout = pageLayouts.find((layout) => layout.id === migrationLayoutId) ?? assignedMigrationLayout;
   const dynamicFormsEnabled = page.components.some((component) => component.type === 'Field Section' || component.type === 'Record Field');
   const paletteComponents = [
+    ...layoutTypes.map((type) => ({ id: type, type, label: type, description: `Nest components inside a ${type.toLowerCase()} layout.`, categories: ['Layout'] as (typeof pageBuilderPaletteCategories)[number][] })),
     ...(page.layoutMode === 'template' ? standardPageComponents
       .filter((component) => availableComponents.includes(component.apiName))
       .map((component) => ({
@@ -8408,7 +8561,7 @@ function PageBuilder({
     const customApiName = type.startsWith('Custom:') ? type.slice('Custom:'.length) : '';
     const custom = libraryComponents.find((item) => item.apiName === customApiName && item.surfaces.includes('page'));
     const dynamicFormComponent = type === 'Field Section' && page.pageType === 'Record Page' && dynamicFormsEnabled;
-    if (!availableComponents.includes(type) && !custom && !dynamicFormComponent) {
+    if (!availableComponents.includes(type) && !custom && !dynamicFormComponent && !isLayoutType(type)) {
       onNotify(`Enable the matching object feature before adding the ${type} component`);
       return;
     }
@@ -8435,7 +8588,7 @@ function PageBuilder({
             : type === 'Field Section'
               ? { fieldApiNames: [], columns: 2 }
             : {},
-      visible: true, region,
+      visible: true, parentId, region,
       ...(freeCanvasPosition ? { position: freeCanvasPosition } : {})
     });
     applyPage({ ...page, components });
@@ -8879,7 +9032,7 @@ function PageBuilder({
         && event.clientY > targetElement.getBoundingClientRect().top + targetElement.getBoundingClientRect().height / 2;
       const dropIndex = targetIndex + (insertAfterTarget ? 1 : 0);
       const insertionIndex = sourceIndex < dropIndex ? dropIndex - 1 : dropIndex;
-      components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, { ...draggedComponent, region });
+      components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, { ...draggedComponent, parentId: undefined, region });
       applyPage({ ...page, components: reparentComponent(components, draggedId, parentId) });
       setSelectedId(draggedId);
     } else if (data.startsWith('field:')) {
@@ -8902,7 +9055,7 @@ function PageBuilder({
       ? childrenOf(page.components, component.id).map((child) =>
           renderPageComponent(child, page.components.findIndex((item) => item.id === child.id), libraryPreview, interactivePreview))
       : undefined;
-    const visualStyle = resolveLayoutStyle(component.properties, device);
+    const visualStyle = { ...(isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, device) : {}), ...resolveLayoutStyle(component.properties, device) };
     const previewProperties = createComponentPreviewProps(
       customDefinition?.apiName ?? component.type,
       component.label,
@@ -8956,7 +9109,12 @@ function PageBuilder({
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
       {!previewMode && !libraryPreview && <div className="record-component-head"><GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} /></div>}
-      {component.type === 'Record Detail'
+      {isLayoutType(component.type)
+        ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
+          {directChildren(page.components, component.id).map((child) => renderPageComponent(child, page.components.indexOf(child), libraryPreview, interactivePreview))}
+          {!libraryPreview && !previewMode && <div className="canvas-drop-zone" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.stopPropagation(); const draggedId = event.dataTransfer.getData('application/x-metadrive-component-id'); if (draggedId && canNestComponent(page.components, draggedId, component.id)) { applyPage({ ...page, components: page.components.map((item) => item.id === draggedId ? { ...item, parentId: component.id } : item) }); } else if (!draggedId) { const type = event.dataTransfer.getData('text/plain').replace(/^component:/, ''); if (type) addComponent(type, page.components.length, component.region ?? 'main', undefined, component.id); } }}>Drop components inside {component.label}</div>}
+        </div>
+        : component.type === 'Record Detail'
         ? <div className="record-detail-grid">{(Array.isArray(component.properties.fields) ? component.properties.fields : fields.slice(0, 6).map((field) => field.apiName)).map((apiName) => { const field = fields.find((item) => item.apiName === apiName); return field ? <div className="record-detail-field" key={apiName}><small>{field.label}</small><span>{field.apiName === 'Name' ? `${targetObject?.label ?? 'Sample'} record` : 'Sample value'}</span></div> : null; })}</div>
         : component.type === 'Field Section'
           ? <div className={`record-detail-grid columns-${component.properties.columns === 1 ? 1 : 2}`}>{stringList(component.properties.fieldApiNames, []).map((apiName) => fields.find((field) => field.apiName === apiName)).filter((field): field is FieldMetadata => Boolean(field)).map((field) => <div className="record-detail-field" key={field.apiName}><small>{field.label}</small><span>{field.apiName === 'Name' ? `${targetObject?.label ?? 'Sample'} record` : 'Sample value'}</span></div>)}</div>
@@ -9297,6 +9455,8 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
+            <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />
+            {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
@@ -11298,6 +11458,17 @@ function Permissions({
             }))} /></td></tr>;
           })}</tbody></table></div>
           <p className="permission-help">Private records are visible to their owner and users with explicit sharing or View All/Modify All access. Object and field permissions still apply.</p>
+          {visibleSharingObjects.length > 0 && (() => {
+            const object = visibleSharingObjects.find((item) => item.apiName === selectedId) ?? visibleSharingObjects[0];
+            const setting = draft.sharingSettings[object.apiName] ?? {
+              defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
+            };
+            return <AdvancedSharingSettings tenantId={draft.tenantId ?? ''} object={object}
+              setting={setting} users={draft.users} roles={draft.roles}
+              onChange={(next) => setDraft((current) => ({
+                ...current, sharingSettings: { ...current.sharingSettings, [object.apiName]: next }
+              }))} />;
+          })()}
         </>}
         {tab === 'publicGroups' && (() => {
           const selected = draft.publicGroups.find((item) => item.id === selectedId);
@@ -11540,7 +11711,19 @@ function Permissions({
         </>}
         {tab === 'users' && <>
           <div className="section-toolbar"><div><h2>User Assignments</h2><p>Direct permission-set and permission-set-group memberships for this tenant.</p></div><button className="btn btn-brand" onClick={onOpenUserRecords}>Manage Users (CRUD)</button></div>
-          {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label><h3 className="permission-section-heading">Permission Sets</h3><div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={user.permissionSetIds.includes(permissionSet.id)} onChange={() => patchUser(user.id, { permissionSetIds: toggleString(user.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div><h3 className="permission-section-heading">Permission Set Groups</h3><div className="permission-check-grid">{draft.permissionSetGroups.map((group) => <label className="checkbox-row" key={group.id}><input type="checkbox" checked={user.permissionSetGroupIds.includes(group.id)} onChange={() => patchUser(user.id, { permissionSetGroupIds: toggleString(user.permissionSetGroupIds, group.id) })} />{group.label}</label>)}</div></details>)}
+          {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label><label className="form-label">User Type
+          <select className="form-control" value={user.userType ?? 'internal'}
+            onChange={(event) => patchUser(user.id, {
+              userType: event.target.value as 'internal' | 'external',
+              externalAccountId: event.target.value === 'external' ? user.externalAccountId : undefined
+            })}>
+            <option value="internal">Internal</option><option value="external">External portal</option>
+          </select></label>
+          {user.userType === 'external' && <label className="form-label">Verified tenant Account ID
+            <input className="form-control" value={user.externalAccountId ?? ''}
+              onChange={(event) => patchUser(user.id, { externalAccountId: event.target.value })}
+              placeholder="Tenant account record ID" />
+          </label>}<h3 className="permission-section-heading">Permission Sets</h3><div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={user.permissionSetIds.includes(permissionSet.id)} onChange={() => patchUser(user.id, { permissionSetIds: toggleString(user.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div><h3 className="permission-section-heading">Permission Set Groups</h3><div className="permission-check-grid">{draft.permissionSetGroups.map((group) => <label className="checkbox-row" key={group.id}><input type="checkbox" checked={user.permissionSetGroupIds.includes(group.id)} onChange={() => patchUser(user.id, { permissionSetGroupIds: toggleString(user.permissionSetGroupIds, group.id) })} />{group.label}</label>)}</div></details>)}
         </>}
         {tab === 'profiles' && !selectedProfile && <div className="empty-state">Select a profile or create one to get started.</div>}
         {tab === 'sets' && !selectedSet && <div className="empty-state">Select a permission set or create one to get started.</div>}

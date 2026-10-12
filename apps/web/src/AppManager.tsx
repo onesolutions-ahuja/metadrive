@@ -1,8 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
+import { moveNavigationEntry, reconcileNavigationOrder } from './appNavigation';
 import type { LightningAppMetadata, LightningPageMetadata, ObjectMetadata } from './metadata';
 
 type AppDraft = LightningAppMetadata;
+
+const appDraftFromMetadata = (app: AppDraft): AppDraft => ({
+  ...app,
+  navigationItems: [...(app.navigationItems ?? [])],
+  navigationPageApiNames: [...(app.navigationPageApiNames ?? [])],
+  navigationOrder: reconcileNavigationOrder(app.navigationItems ?? [], app.navigationPageApiNames ?? [], app.navigationOrder ?? []),
+  utilityItems: [...(app.utilityItems ?? [])],
+  brandColor: app.brandColor || '#0176d3'
+});
 
 const emptyApp = (): AppDraft => ({
   apiName: '',
@@ -40,7 +50,8 @@ export default function AppManager({
 }) {
   const initialApp = apps.find((app) => app.apiName === initialSelectedApiName) ?? apps[0];
   const [selectedApiName, setSelectedApiName] = useState(initialApp?.apiName ?? '');
-  const [draft, setDraft] = useState<AppDraft>(initialApp ?? emptyApp());
+  const [draft, setDraft] = useState<AppDraft>(initialApp ? appDraftFromMetadata(initialApp) : emptyApp());
+  const [navigationSearch, setNavigationSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -53,7 +64,7 @@ export default function AppManager({
     const selected = apps.find((app) => app.apiName === selectedApiName) ?? apps[0];
     if (selected) {
       setSelectedApiName(selected.apiName);
-      setDraft(selected);
+      setDraft(appDraftFromMetadata(selected));
     } else {
       setSelectedApiName('');
       setDraft(emptyApp());
@@ -69,6 +80,36 @@ export default function AppManager({
     setNotice('');
   };
 
+  const toggleNavigation = (type: 'Object' | 'App Page', apiName: string, checked: boolean) => {
+    setDraft((current) => {
+      const key = type === 'Object' ? 'navigationItems' : 'navigationPageApiNames';
+      const selected = checked
+        ? [...new Set([...current[key], apiName])]
+        : current[key].filter((item) => item !== apiName);
+      const next: AppDraft = { ...current,
+        navigationItems: type === 'Object' ? selected : current.navigationItems,
+        navigationPageApiNames: type === 'App Page' ? selected : current.navigationPageApiNames
+      };
+      next.navigationOrder = reconcileNavigationOrder(next.navigationItems, next.navigationPageApiNames, current.navigationOrder);
+      return next;
+    });
+    setError('');
+    setNotice('');
+  };
+  const moveNavigation = (from: number, to: number) => {
+    setDraft((current) => ({
+      ...current,
+      navigationOrder: moveNavigationEntry(
+        reconcileNavigationOrder(current.navigationItems, current.navigationPageApiNames, current.navigationOrder),
+        from, to
+      )
+    }));
+    setNotice('');
+  };
+  const navigationOrder = reconcileNavigationOrder(draft.navigationItems, draft.navigationPageApiNames, draft.navigationOrder);
+  const navigationMatches = (label: string, apiName: string) =>
+    `${label} ${apiName}`.toLowerCase().includes(navigationSearch.trim().toLowerCase());
+
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setBusy(true);
@@ -79,7 +120,9 @@ export default function AppManager({
       const apiName = creating
         ? (draft.apiName.trim() || label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, ''))
         : draft.apiName;
-      await onSave({ ...draft, apiName, label }, !creating);
+      if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)) throw new Error('Developer Name must start with a letter and contain only letters, numbers or underscores.');
+      if (!draft.navigationItems.length && !draft.navigationPageApiNames.length) throw new Error('Select at least one object or active App Page.');
+      await onSave({ ...draft, apiName, label, navigationOrder }, !creating);
       setCreating(false);
       setSelectedApiName(apiName);
       setNotice('Lightning app saved.');
@@ -100,7 +143,7 @@ export default function AppManager({
       const remaining = apps.find((app) => app.apiName !== selectedApiName);
       setCreating(false);
       setSelectedApiName(remaining?.apiName ?? '');
-      setDraft(remaining ?? emptyApp());
+      setDraft(remaining ? appDraftFromMetadata(remaining) : emptyApp());
       setNotice('Lightning app deleted.');
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to delete Lightning app.');
@@ -115,6 +158,9 @@ export default function AppManager({
       {embedded
         ? <button className="btn" type="button" onClick={onClose}>Back to Page Builder</button>
         : <button className="btn btn-brand" type="button" onClick={() => {
+        const original = apps.find((app) => app.apiName === selectedApiName);
+        if (original && JSON.stringify(appDraftFromMetadata(original)) !== JSON.stringify(draft)
+          && !window.confirm('Discard unsaved app changes?')) return;
         setCreating(true);
         setSelectedApiName('');
         setDraft(emptyApp());
@@ -124,14 +170,31 @@ export default function AppManager({
     </div>
     <section className="surface permission-section app-manager">
       {!creating && <label className="form-label">Lightning App
-        <select className="form-control" value={selectedApiName} onChange={(event) => setSelectedApiName(event.target.value)}>
+        <select className="form-control" aria-label="Select app to edit" value={selectedApiName} onChange={(event) => {
+          const original = apps.find((app) => app.apiName === selectedApiName);
+          if (original && JSON.stringify(appDraftFromMetadata(original)) !== JSON.stringify(draft)
+            && !window.confirm('Discard unsaved app changes?')) return;
+          setSelectedApiName(event.target.value);
+          setError('');
+          setNotice('');
+        }}>
           {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
         </select>
       </label>}
       <form onSubmit={(event) => void save(event)}>
         <div className="permission-form-grid">
           <label className="form-label">App Label
-            <input className="form-control" required maxLength={80} value={draft.label} onChange={(event) => update('label', event.target.value)} />
+            <input className="form-control" required maxLength={80} value={draft.label} onChange={(event) => {
+              const label = event.target.value;
+              setDraft((current) => ({
+                ...current, label,
+                // Keep generated developer names in sync unless the name was manually edited.
+                apiName: creating && current.apiName === current.label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+                  ? label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+                  : current.apiName
+              }));
+              setNotice('');
+            }} />
           </label>
           <label className="form-label">Developer Name
             <input className="form-control" required disabled={!creating} pattern="[A-Za-z][A-Za-z0-9_]*" value={draft.apiName} onChange={(event) => update('apiName', event.target.value)} />
@@ -146,17 +209,17 @@ export default function AppManager({
         <label className="form-label">Description
           <textarea className="form-control" rows={2} maxLength={500} value={draft.description} onChange={(event) => update('description', event.target.value)} />
         </label>
+        <label className="form-label">Find navigation items
+          <input className="form-control" type="search" aria-label="Search navigation items" placeholder="Find object or active App Page…" value={navigationSearch} onChange={(event) => setNavigationSearch(event.target.value)} />
+        </label>
         <fieldset className="app-manager-fieldset">
           <legend>Lightning Pages</legend>
           <p>Active App Pages are available as navigation tabs in this app.</p>
           <div className="app-manager-checks">
-            {pages.filter((page) => page.pageType === 'App Page' && page.status === 'Active').map((page) => <label key={page.apiName}>
-              <input type="checkbox" checked={draft.navigationPageApiNames.includes(page.apiName)} onChange={(event) => {
-                const navigationPageApiNames = event.target.checked
-                  ? [...draft.navigationPageApiNames, page.apiName]
-                  : draft.navigationPageApiNames.filter((name) => name !== page.apiName);
-                update('navigationPageApiNames', navigationPageApiNames);
-              }} />
+            {pages.filter((page) => page.pageType === 'App Page' && page.status === 'Active'
+              && navigationMatches(page.label, page.apiName)).map((page) => <label key={page.apiName}>
+              <input type="checkbox" checked={draft.navigationPageApiNames.includes(page.apiName)}
+                onChange={(event) => toggleNavigation('App Page', page.apiName, event.target.checked)} />
               {page.label}
             </label>)}
             {!pages.some((page) => page.pageType === 'App Page' && page.status === 'Active') && <span className="permission-help">Activate an App Page in Lightning App Builder to add it here.</span>}
@@ -178,18 +241,37 @@ export default function AppManager({
         </fieldset>
         <fieldset className="app-manager-fieldset">
           <legend>Navigation Items</legend>
-          <p>Select the objects available as workspace tabs in this app.</p>
+          <p>Select the objects available in this app's Records dropdown.</p>
           <div className="app-manager-checks">
-            {objects.map((object) => <label key={object.apiName}>
-              <input type="checkbox" checked={draft.navigationItems.includes(object.apiName)} onChange={(event) => {
-                const navigationItems = event.target.checked
-                  ? [...draft.navigationItems, object.apiName]
-                  : draft.navigationItems.filter((name) => name !== object.apiName);
-                update('navigationItems', navigationItems);
-              }} />
+            {objects.filter((object) => navigationMatches(object.pluralLabel, object.apiName)).map((object) => <label key={object.apiName}>
+              <input type="checkbox" checked={draft.navigationItems.includes(object.apiName)}
+                onChange={(event) => toggleNavigation('Object', object.apiName, event.target.checked)} />
               {object.pluralLabel}
             </label>)}
           </div>
+        </fieldset>
+        <fieldset className="app-manager-fieldset">
+          <legend>Navigation Order</legend>
+          <p>Set the order of selected object tabs and App Pages. Objects appear in the Records selector; pages appear as workspace tabs.</p>
+          <ol className="app-manager-navigation-order">
+            {navigationOrder.map((item, index) => {
+              const label = item.type === 'Object'
+                ? objects.find((object) => object.apiName === item.apiName)?.pluralLabel ?? item.apiName
+                : pages.find((page) => page.apiName === item.apiName)?.label ?? item.apiName;
+              return <li key={`${item.type}:${item.apiName}`}>
+                <span className="app-manager-navigation-label"><small>{item.type}</small><strong>{label}</strong></span>
+                <div className="app-manager-order-controls">
+                  <button type="button" className="btn btn-small" aria-label={`Move ${label} up`} title="Move up" disabled={index === 0 || busy}
+                    onClick={() => moveNavigation(index, index - 1)}><ArrowUp size={15} /></button>
+                  <button type="button" className="btn btn-small" aria-label={`Move ${label} down`} title="Move down" disabled={index === navigationOrder.length - 1 || busy}
+                    onClick={() => moveNavigation(index, index + 1)}><ArrowDown size={15} /></button>
+                  <button type="button" className="btn btn-small" aria-label={`Remove ${label} from navigation`} title="Remove"
+                    disabled={busy} onClick={() => toggleNavigation(item.type, item.apiName, false)}>Remove</button>
+                </div>
+              </li>;
+            })}
+          </ol>
+          {!navigationOrder.length && <span className="permission-help">Select at least one object or App Page above.</span>}
         </fieldset>
         <fieldset className="app-manager-fieldset">
           <legend>Utility Bar</legend>
@@ -208,7 +290,11 @@ export default function AppManager({
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p className="form-success" role="status">{notice}</p>}
         <div className="app-manager-actions">
-          <button className="btn btn-brand" type="submit" disabled={busy || !draft.navigationItems.length}><Save size={14} />{busy ? 'Saving…' : 'Save'}</button>
+          <button className="btn btn-brand" type="submit" disabled={busy || (!draft.navigationItems.length && !draft.navigationPageApiNames.length)}><Save size={14} />{busy ? 'Saving…' : 'Save'}</button>
+          {creating && <button className="btn" type="button" disabled={busy} onClick={() => {
+            setCreating(false); const first = apps[0]; setSelectedApiName(first?.apiName ?? '');
+            setDraft(first ? appDraftFromMetadata(first) : emptyApp()); setError(''); setNotice('');
+          }}>Cancel</button>}
           {!creating && <button className="btn" type="button" disabled={busy || apps.length <= 1} onClick={() => void remove()}><Trash2 size={14} />Delete App</button>}
         </div>
       </form>

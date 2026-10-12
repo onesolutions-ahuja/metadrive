@@ -1,5 +1,6 @@
 export type DashboardSharing = {
   ownerUserId: string;
+  portalVisible?: boolean;
   visibility: 'Private' | 'All Users';
   status: 'Draft' | 'Deployed';
   sharedUserIds: readonly string[];
@@ -18,6 +19,8 @@ export type DashboardFolderShare = {
 
 export type DashboardFolder = {
   id: string;
+  tenantId?: string;
+  externalVisible?: boolean;
   parentFolderId: string | null;
   ownerUserId: string;
   shares: readonly DashboardFolderShare[];
@@ -25,6 +28,9 @@ export type DashboardFolder = {
 
 export type DashboardFolderAccessContext = {
   userId: string;
+  tenantId?: string;
+  userType?: 'internal' | 'external';
+  externalAccessEnabled?: boolean;
   roleId: string | undefined;
   permissionSetGroupIds?: readonly string[];
   roles: readonly { id: string; parentRoleId: string | null }[];
@@ -101,11 +107,14 @@ export function dashboardFolderAccessLevel(
   context: DashboardFolderAccessContext
 ): DashboardFolderAccessLevel | null {
   if (!folderId) return null;
+  if (context.userType === 'external' && context.externalAccessEnabled !== true) return null;
   const folderById = new Map(folders.map((folder) => [folder.id, folder]));
   let current = folderById.get(folderId);
   let highest: DashboardFolderAccessLevel | null = null;
   const visited = new Set<string>();
   while (current && !visited.has(current.id)) {
+    if (current.tenantId && current.tenantId !== context.tenantId) return null;
+    if (context.userType === 'external' && current.externalVisible !== true) return null;
     visited.add(current.id);
     if (current.ownerUserId === context.userId) return 'Manager';
     for (const share of current.shares) {
@@ -133,8 +142,10 @@ export function canAccessDashboard(
   dashboard: DashboardSharing,
   userId: string,
   permissionSetGroupIds: readonly string[],
-  canManageAll: boolean
+  canManageAll: boolean,
+  userType: 'internal' | 'external' = 'internal'
 ): boolean {
+  if (userType === 'external' && dashboard.portalVisible !== true) return false;
   if (dashboard.ownerUserId === userId || canManageAll) return true;
   if (dashboard.status !== 'Deployed') return false;
   if (dashboard.folderAccessLevel) return true;
@@ -146,8 +157,10 @@ export function canAccessDashboard(
 export function canEditDashboard(
   dashboard: DashboardSharing,
   userId: string,
-  canManageAll: boolean
+  canManageAll: boolean,
+  userType: 'internal' | 'external' = 'internal'
 ): boolean {
+  if (userType === 'external') return false;
   if (dashboard.ownerUserId === userId || canManageAll) return true;
   if (dashboard.status !== 'Deployed') return false;
   return dashboard.folderAccessLevel === 'Editor' || dashboard.folderAccessLevel === 'Manager';

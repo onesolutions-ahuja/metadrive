@@ -2257,6 +2257,23 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .page-region-label { color: #45453e; }
 .record-component-head > span { color: #3f4943; }
 
+/* Module 8: metadata-driven App Manager navigation and compact runtime selectors. */
+.app-manager-navigation-order { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.app-manager-navigation-order li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 10px; border: 1px solid #dddbda; border-radius: 6px; background: #fff; }
+.app-manager-navigation-label { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.app-manager-navigation-label small { flex: 0 0 auto; font-size: 11px; color: #706e6b; }
+.app-manager-navigation-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.app-manager-order-controls { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
+.app-manager-order-controls .btn { min-width: 32px; padding: 6px 8px; }
+.app-title-switcher { min-width: 120px; max-width: 240px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.header-record-object-select { width: clamp(120px, 12vw, 200px); min-width: 0; border: 1px solid #d9dde5; border-radius: 5px; background: #fff; color: #181818; padding: 5px 8px; font-size: 12px; }
+@media (max-width: 700px) {
+  .app-manager-navigation-order li { align-items: flex-start; flex-wrap: wrap; }
+  .app-manager-order-controls { margin-left: auto; }
+  .app-title-switcher { max-width: 140px; }
+  .header-record-object-select { width: 100px; }
+}
+
 /* Metadata-driven nested Page Builder components */
 .free-canvas-component.layout-container-component { overflow: auto; }
 .free-canvas-component.nested-page-component { min-width: 0; max-width: 100%; overflow: visible; }
