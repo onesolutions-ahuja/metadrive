@@ -16,6 +16,9 @@ on:
       - 'apps/server/scripts/prove-typed-records-on-restore.mjs'
       - 'apps/server/test/normalized-api.integration.test.mjs'
       - 'scripts/md06-records-browser-smoke.mjs'
+      - 'scripts/md07-component-browser-smoke.mjs'
+      - 'apps/server/sql/component-registry-v4.sql'
+      - 'apps/server/test/component-registry-sql.integration.test.mjs'
       - 'apps/web/src/App.tsx'
       - 'apps/server/src/tenant-recovery-*.mjs'
       - 'apps/server/src/tenant-recovery-readiness.d.mts'
@@ -132,6 +135,8 @@ jobs:
         env:
           METADRIVE_REL_VERIFY_WRITES: 'true'
         run: node --test --test-concurrency=1 apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs apps/server/test/relational-api.integration.test.mjs apps/server/test/relational-in-place.integration.test.mjs
+      - name: Verify SQL-only component registry schema and tenant-owned dependencies
+        run: node --test apps/server/test/component-registry-sql.integration.test.mjs
       - name: Verify typed SQL records, login, relationships and Flow API end to end
         env:
           METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
@@ -141,6 +146,7 @@ jobs:
           npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
           npx playwright install --with-deps chromium
           node scripts/md06-records-browser-smoke.mjs
+          node scripts/md07-component-browser-smoke.mjs
       - name: Run existing backend tests in independently isolated PostgreSQL schemas
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres

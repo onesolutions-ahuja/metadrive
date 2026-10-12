@@ -3,15 +3,17 @@ import { Check, Code2, Grid2X2, Pencil, Plus, Puzzle, Save, Trash2, X } from 'lu
 import type { LibraryComponentMetadata } from './metadata';
 import { standardDashboardComponents, standardPageComponents } from './componentCatalog';
 
-type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'>;
+type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'> & {publicationStatus: 'Draft' | 'Published'};
 
 export default function ComponentLibrary({
-  components, canManage, onSave, onDelete
+  components, canManage, onSave, onDelete, onPublish, onRollback
 }: {
   components: LibraryComponentMetadata[];
   canManage: boolean;
   onSave: (component: ComponentInput, updating: boolean) => Promise<void>;
   onDelete: (apiName: string) => Promise<void>;
+  onPublish: (apiName: string) => Promise<void>;
+  onRollback: (apiName: string, version: number) => Promise<void>;
 }) {
   const [editingApiName, setEditingApiName] = useState('');
   const [apiName, setApiName] = useState('');
@@ -28,6 +30,8 @@ export default function ComponentLibrary({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [catalogSearch, setCatalogSearch] = useState('');
+  const [publicationStatus, setPublicationStatus] = useState<'Draft' | 'Published'>('Draft');
+  const [restoreVersion, setRestoreVersion] = useState(0);
 
   const reset = () => {
     setEditingApiName('');
@@ -41,17 +45,20 @@ export default function ComponentLibrary({
     setJsxFileName('');
     setCssFileName('');
     setError('');
+    setPublicationStatus('Draft');
+    setRestoreVersion(0);
   };
 
   const edit = (component: LibraryComponentMetadata) => {
     setEditingApiName(component.apiName);
     setApiName(component.apiName);
-    setLabel(component.label);
-    setDescription(component.description);
-    setSurfaces(component.surfaces);
-    setResize(component.resize ?? { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
-    setJsxSource(component.jsxSource);
-    setCssSource(component.cssSource);
+    const draft = component.pendingDraft;
+    setLabel(draft?.label ?? component.label);
+    setDescription(draft?.description ?? component.description);
+    setSurfaces(draft?.surfaces ?? component.surfaces);
+    setResize(draft?.resize ?? component.resize ?? { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
+    setJsxSource(draft?.jsxSource ?? component.jsxSource);
+    setCssSource(draft?.cssSource ?? component.cssSource);
     setJsxFileName(`${component.apiName}.jsx`);
     setCssFileName(component.cssSource ? `${component.apiName}.css` : '');
     setError('');
@@ -68,7 +75,8 @@ export default function ComponentLibrary({
         surfaces,
         resize,
         jsxSource,
-        cssSource
+        cssSource,
+        publicationStatus
       }, Boolean(editingApiName));
       reset();
     } catch (failure) {
@@ -188,8 +196,8 @@ export default function ComponentLibrary({
           <div className="component-library-section-heading"><h3>Custom components</h3><span>Registered in this shared library</span></div>
         {visibleCustomComponents.map((component) => <article className={`library-component-card ${editingApiName === component.apiName ? 'selected' : ''}`} key={component.apiName}>
           <span className="component-option-icon"><Puzzle size={16} /></span>
-          <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>{component.surfaces.map((surface) => surface === 'page' ? 'Lightning pages' : surface === 'dashboard' ? 'Dashboards' : 'Flow screens').join(' · ')} · v{component.version}</small>{component.description && <p>{component.description}</p>}</div>
-          {canManage && <div className="library-component-actions"><button className="btn btn-small" onClick={() => edit(component)}><Pencil size={12} />Edit</button><button className="icon-button subtle" aria-label={`Delete ${component.label}`} title="Delete component" onClick={() => void remove(component)}><Trash2 size={14} /></button></div>}
+          <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>{component.surfaces.map((surface) => surface === 'page' ? 'Lightning pages' : surface === 'dashboard' ? 'Dashboards' : 'Flow screens').join(' · ')} · v{component.version} · {component.status ?? 'Published'}{component.pendingDraft ? ` · Draft v${component.pendingDraft.version} ready` : ''}</small>{component.description && <p>{component.description}</p>}</div>
+          {canManage && <div className="library-component-actions"><button className="btn btn-small" onClick={() => edit(component)}><Pencil size={12} />Edit</button>{(component.status === 'Draft' || component.pendingDraft) && <button className="btn btn-small" disabled={busy} onClick={() => { setBusy(true); void onPublish(component.apiName).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Publish failed')).finally(() => setBusy(false)); }}><Check size={12}/>Publish</button>}<button className="icon-button subtle" aria-label={`Delete ${component.label}`} title="Delete component" onClick={() => void remove(component)}><Trash2 size={14} /></button></div>}
         </article>)}
         {!components.length && <div className="component-library-empty"><Puzzle size={25} /><strong>No custom components registered</strong><span>Standard components are listed above. Register a JSX component to share your own in the builders.</span></div>}
         </div>
@@ -207,6 +215,9 @@ export default function ComponentLibrary({
         <input id="library-component-api" className="form-control" value={apiName} readOnly={Boolean(editingApiName)} onChange={(event) => setApiName(event.target.value.replace(/[^A-Za-z0-9_]/g, '_'))} placeholder="Calendar" />
         <label className="form-label" htmlFor="library-component-description">Description</label>
         <textarea id="library-component-description" className="form-control" rows={2} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this component for?" />
+        <div className="properties-section-title">Release lifecycle</div>
+        <label className="form-label">Save as<select className="form-control" value={publicationStatus} onChange={(event) => setPublicationStatus(event.target.value as 'Draft' | 'Published')}><option value="Draft">Draft — do not change published output</option><option value="Published">Publish immediately</option></select></label>
+        {editingApiName && <div className="metadata-component-properties"><div className="properties-section-title">Version history and rollback</div><p className="properties-help">Rollback creates a new published version, preserving the full audit trail.</p><select className="form-control" aria-label="Choose published revision" value={restoreVersion} onChange={(event) => setRestoreVersion(Number(event.target.value))}><option value={0}>Select historical revision…</option>{(components.find((item) => item.apiName === editingApiName)?.revisions ?? []).map((revision) => <option key={revision.version} value={revision.version}>Version {revision.version} · {new Date(revision.updatedAt).toLocaleString()}</option>)}</select><button type="button" className="btn btn-small" disabled={busy || !restoreVersion} onClick={() => { if (!window.confirm('Restore this historical version as a new published version?')) return; setBusy(true); void onRollback(editingApiName, restoreVersion).then(reset).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Rollback failed')).finally(() => setBusy(false)); }}>Rollback selected version</button></div>}
         <div className="properties-section-title">Available in</div>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('page')} onChange={(event) => toggleSurface('page', event.target.checked)} />Lightning page builder</label>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('dashboard')} onChange={(event) => toggleSurface('dashboard', event.target.checked)} />Dashboard builder</label>
@@ -238,7 +249,7 @@ export default function ComponentLibrary({
         {cssFileName && <div className="library-file-name"><Code2 size={12} />{cssFileName} · {cssSource.length.toLocaleString()} characters</div>}
         <div className="component-trust-note">Registered code is shared platform code and runs in the signed-in user’s workspace. Assign global component management only to trusted administrators. Components cannot import external modules; CSS selectors are scoped to the component.</div>
         <button className="btn btn-brand btn-full" disabled={busy || !apiName || !label.trim() || !jsxSource || !surfaces.length} onClick={() => void register()}>
-          {busy ? 'Compiling and saving…' : editingApiName ? <><Save size={14} />Save new version</> : <><Check size={14} />Compile and register</>}
+          {busy ? 'Compiling and saving…' : editingApiName ? <><Save size={14} />{publicationStatus === 'Draft' ? 'Save draft revision' : 'Publish new version'}</> : <><Check size={14} />{publicationStatus === 'Draft' ? 'Register draft' : 'Compile and publish'}</>}
         </button>
       </section>}
     </div>
