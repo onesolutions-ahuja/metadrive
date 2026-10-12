@@ -25,7 +25,8 @@ for(const name of [
   'tenant-recovery-verification.mjs',
   'tenant-recovery-transaction.mjs',
   'tenant-recovery-centre.mjs',
-  'tenant-usage.mjs'
+  'tenant-usage.mjs',
+  'advanced-sharing-policy.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
