@@ -137,6 +137,25 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal(login.status, 200);
     const tenantToken = String(login.data.access_token);
     const tenantRefreshCookie = login.cookie;
+    // MD-03.5: tenant owner and platform scopes, DNS proof, global uniqueness,
+    // and durable pending verification all use the existing tenant registry.
+    assert.equal((await api('/tenant/domains')).status, 401);
+    assert.equal((await api('/platform/tenants/studio-beta/domains', tenantToken)).status, 403);
+    assert.equal((await api('/platform/tenants/studio-beta/domains', operatorToken)).status, 200);
+    assert.equal((await api('/tenant/domains', tenantToken, 'POST', { hostname: 'http://not-a-domain.example' })).status, 400);
+    assert.equal((await api('/tenant/domains', tenantToken, 'POST', { hostname: 'localhost' })).status, 400);
+    const claimedDomain = await api('/tenant/domains', tenantToken, 'POST', { hostname: 'CRM.STUDIO-BETA.TEST' });
+    assert.equal(claimedDomain.status, 201, JSON.stringify(claimedDomain.data));
+    assert.equal(claimedDomain.data.domain.hostname, 'crm.studio-beta.test');
+    assert.equal(claimedDomain.data.domain.status, 'PENDING');
+    assert.equal(claimedDomain.data.domain.verification.host, '_metadrive-verification.crm.studio-beta.test');
+    assert.match(claimedDomain.data.domain.verification.value, /^metadrive-verification=[0-9a-f]{64}$/);
+    assert.equal((await api('/tenant/domains', tenantToken)).data.domains.length, 1);
+    assert.equal((await api('/tenant/domains', tenantToken, 'POST', { hostname: 'crm.studio-beta.test' })).status, 409);
+    assert.equal((await api('/platform/tenants/platform-owner/domains', operatorToken,
+      'POST', { hostname: 'crm.studio-beta.test' })).status, 409, 'Another tenant cannot claim a pending domain');
+    assert.equal((await api('/platform/tenants/studio-beta/domains', operatorToken)).data.domains[0].status, 'PENDING');
+    assert.equal((await api('/tenant/domains/not-owned.example', tenantToken, 'DELETE')).status, 404);
     assert.equal((await api('/tenant/developer-account')).status, 401);
     const beforeDeveloper = await api('/tenant/developer-account', tenantToken);
     assert.equal(beforeDeveloper.status, 200, JSON.stringify(beforeDeveloper.data));
@@ -251,6 +270,14 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     ));
     assert.deepEqual([raceA.status, raceB.status].sort(), [201, 409],
       'Concurrent tenants must not create two identities with the same email');
+    const durableDomain = await api('/platform/tenants/studio-beta/domains', String(newLogin.data.access_token));
+    assert.equal(durableDomain.status, 200);
+    assert.equal(durableDomain.data.domains[0].hostname, 'crm.studio-beta.test');
+    assert.equal(durableDomain.data.domains[0].verification.value, claimedDomain.data.domain.verification.value);
+    assert.equal((await api('/platform/tenants/studio-beta/domains/crm.studio-beta.test',
+      String(newLogin.data.access_token), 'DELETE')).status, 200);
+    assert.deepEqual((await api('/platform/tenants/studio-beta/domains',
+      String(newLogin.data.access_token))).data.domains, []);
     assert.equal(persisted.data.tenant.name, 'Studio Beta Updated');
     assert.equal(persisted.data.tenant.status, 'ACTIVE');
   } finally {
