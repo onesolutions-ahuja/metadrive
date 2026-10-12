@@ -35,23 +35,23 @@ try {
     METADRIVE_BOOTSTRAP_ADMIN_EMAIL:login.email,
     METADRIVE_BOOTSTRAP_ADMIN_PASSWORD:login.password,
     METADRIVE_SCHEDULE_POLL_MS:'3600000', NODE_ENV:'test', PORT:'3001',
-    WEB_ORIGIN:'http://localhost:5173'
+    WEB_ORIGIN:'http://127.0.0.1:5173'
   });
   const web=service(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','5173'],{
-    VITE_API_BASE_URL:'http://localhost:3001/api'
+    VITE_API_BASE_URL:'http://127.0.0.1:3001/api'
   });
-  await Promise.all([ready('http://localhost:3001/health',server,'API'),ready('http://localhost:5173/',web,'Vite')]);
+  await Promise.all([ready('http://127.0.0.1:3001/health',server,'API'),ready('http://127.0.0.1:5173/',web,'Vite')]);
   browser=await chromium.launch({headless:true,args:['--no-sandbox']});
   const page=await browser.newPage({acceptDownloads:true});
   page.setDefaultTimeout(25000);
   const pageErrors=[];
   page.on('pageerror',err=>pageErrors.push(err.message));
-  await page.goto('http://localhost:5173/');
+  await page.goto('http://127.0.0.1:5173/');
   await page.locator('#login-email').fill(login.email);
   await page.locator('#login-password').fill(login.password);
   await page.locator('button.auth-submit').click();
   await page.locator('.auth-screen').waitFor({state:'hidden'});
-  await page.goto('http://localhost:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
+  await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   const list=page.locator('.records-list-card');
   await list.waitFor({state:'visible'});
   const headers=list.getByRole('button',{name:/Sort by /});
@@ -72,7 +72,7 @@ try {
   await dialog.getByRole('button',{name:'Save',exact:true}).click();
   await dialog.waitFor({state:'hidden'});
   await page.locator('.record-detail-heading').waitFor({state:'visible'});
-  await page.goto('http://localhost:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
+  await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   await list.waitFor({state:'visible'});
   await list.getByRole('textbox',{name:/Search Accounts/i}).fill('MD06 Browser Acceptance Account');
   await list.getByText('MD06 Browser Acceptance Account',{exact:false}).first().waitFor({state:'visible'});
