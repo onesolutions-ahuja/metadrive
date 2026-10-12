@@ -12,13 +12,14 @@ export type TenantSummary = {
   userCount: number;
   activeUserCount: number;
   provisioning: { status: 'READY'; version: number; completedAt: string };
+  developerAccount: { email: string; activated: boolean } | null;
 };
 
 type TenantCreate = {
-  tenantId: string; tenantName: string; adminName: string; email: string; password: string;
+  tenantId: string; tenantName: string; adminName: string; email: string; password: string; developerDomain?: string;
 };
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
-const emptyCreate: TenantCreate = { tenantId: '', tenantName: '', adminName: '', email: '', password: '' };
+const emptyCreate: TenantCreate = { tenantId: '', tenantName: '', adminName: '', email: '', password: '', developerDomain: '' };
 const shortDate = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? '—' : date.toLocaleDateString();
@@ -82,7 +83,8 @@ export default function TenantManagement({ request, permitted }: { request: Requ
     setBusy(true); setError(''); setNotice('');
     try {
       const result = await request<{ tenant: TenantSummary; replayed: boolean }>('/platform/tenants', {
-        method: 'POST', headers: { 'Idempotency-Key': createKey }, body: JSON.stringify(create)
+        method: 'POST', headers: { 'Idempotency-Key': createKey },
+        body: JSON.stringify({ ...create, developerDomain: create.developerDomain?.trim() || undefined })
       });
       setShowCreate(false); setCreate(emptyCreate); setCreateKey(crypto.randomUUID());
       setSelected(result.tenant);
@@ -172,11 +174,13 @@ export default function TenantManagement({ request, permitted }: { request: Requ
           <label>Initial administrator name<input required maxLength={120} value={create.adminName} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, adminName: event.target.value })); }} /></label>
           <label>Initial administrator email<input type="email" required maxLength={254} autoComplete="off" value={create.email} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, email: event.target.value })); }} /></label>
           <label>Initial administrator password<input type="password" required minLength={12} maxLength={256} autoComplete="new-password" value={create.password} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, password: event.target.value })); }} /></label>
-          <p className="tenant-help">Creates tenant records, default objects, profiles and permissions, and an initial administrator in one durable Aiven commit. Safe submission retries will not create duplicate accounts. Never reuse a platform administrator password.</p>
+          <label>Developer domain (optional)<input type="text" maxLength={253} placeholder="tenant-domain.com" value={create.developerDomain ?? ''} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, developerDomain: event.target.value })); }} /></label>
+          <p className="tenant-help">Creates an initial administrator and a disabled developer account with full starting tenant permissions. For <strong>developer@tenant-domain.com</strong>, enter tenant-domain.com. The tenant administrator activates the developer account from Company Settings; no password is shared with platform operators.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
         </form> : selected ? <form onSubmit={(event) => void saveTenant(event)}>
           <div className="tenant-detail-heading"><div><h2>{selected.name}</h2><code>{selected.tenantId}</code></div><button type="button" className="tenant-button" onClick={() => setSelected(null)}>Close</button></div>
           <p className="tenant-provisioning-status"><span className="tenant-pill tenant-pill-active">Provisioning ready</span> <small>Version {selected.provisioning.version} · {shortDate(selected.provisioning.completedAt)}</small></p>
+          {selected.developerAccount && <p className="tenant-help">Developer seeder: <strong>{selected.developerAccount.email}</strong> — {selected.developerAccount.activated ? 'Tenant activated' : 'Pending tenant activation'}. The tenant owns all access changes.</p>}
           <p><span className={selected.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{selected.status === 'ACTIVE' ? 'Active' : 'Suspended'}</span></p>
           <label>Organisation name<input required maxLength={120} value={editing.name} onChange={(event) => setEditing((old) => ({ ...old, name: event.target.value }))} /></label>
           <label>Description<textarea rows={4} maxLength={1000} value={editing.description} onChange={(event) => setEditing((old) => ({ ...old, description: event.target.value }))} /></label>
