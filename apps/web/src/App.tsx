@@ -1014,6 +1014,8 @@ const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`
 function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (timing: EntryTiming) => void; onRetry?: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaChallenge, setMfaChallenge] = useState<{ challenge_token: string; enrollment_required: boolean; setup_secret?: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [message, setMessage] = useState(error ?? '');
   const [submitting, setSubmitting] = useState(false);
@@ -1023,10 +1025,16 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
     setSubmitting(true);
     setMessage('');
     try {
-      const session = await apiRequest<{ access_token: string }>('/auth/login', {
+      const session = await apiRequest<{ access_token?: string; mfa_required?: boolean; challenge_token?: string; enrollment_required?: boolean; setup_secret?: string }>('/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
+      if (session.mfa_required && session.challenge_token) {
+        setMfaChallenge({ challenge_token: session.challenge_token, enrollment_required: Boolean(session.enrollment_required), setup_secret: session.setup_secret });
+        setPassword('');
+        return;
+      }
+      if (!session.access_token) throw new Error('Authentication did not return an access token');
       accessToken = session.access_token;
       onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now() });
     } catch (failure) {
@@ -1035,6 +1043,43 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
       setSubmitting(false);
     }
   };
+  const verifyMfa = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!mfaChallenge) return;
+    setSubmitting(true);
+    setMessage('');
+    const startedAt = performance.now();
+    try {
+      const session = await apiRequest<{ access_token: string }>('/auth/mfa/verify', {
+        method: 'POST',
+        body: JSON.stringify({ challenge_token: mfaChallenge.challenge_token, code: mfaCode })
+      });
+      accessToken = session.access_token;
+      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now() });
+    } catch (failure) {
+      setMessage(failure instanceof Error ? failure.message : 'MFA verification failed');
+    } finally { setSubmitting(false); }
+  };
+  if (mfaChallenge) return <main className="auth-screen">
+    <form className="auth-card" onSubmit={(event) => void verifyMfa(event)}>
+      <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
+      <div className="eyebrow">ACCOUNT SECURITY</div>
+      <h1>{mfaChallenge.enrollment_required ? 'Set up your authenticator' : 'Verify your identity'}</h1>
+      {mfaChallenge.enrollment_required && <>
+        <p>In your authenticator app, add an account manually using this setup key. Then enter its six-digit code to finish enrollment.</p>
+        <div className="auth-notice"><strong>Setup key</strong><p><code style={{ overflowWrap: 'anywhere' }}>{mfaChallenge.setup_secret}</code></p></div>
+      </>}
+      {!mfaChallenge.enrollment_required && <p>Enter the current six-digit code from your authenticator app.</p>}
+      {message && <div className="auth-error" role="alert">{message}</div>}
+      <label className="form-label" htmlFor="login-mfa-code">Authenticator code</label>
+      <input className="form-control" id="login-mfa-code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
+        autoComplete="one-time-code" required value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/[^0-9]/g, ''))} />
+      <button className="btn btn-brand auth-submit" disabled={submitting}>{submitting ? 'Verifying…' : 'Verify and sign in'}</button>
+      <button className="text-action auth-back" type="button" onClick={() => {
+        setMfaChallenge(null); setMfaCode(''); setMessage('');
+      }}>Back to sign in</button>
+    </form>
+  </main>;
   if (showPasswordReset) return <main className="auth-screen">
     <section className="auth-card" aria-labelledby="password-reset-heading">
       <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
@@ -3562,7 +3607,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <CompanySettings />}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /></>}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
@@ -6025,6 +6070,123 @@ function AutomationSettingsWorkspace() {
       </>}
     </section>
   </div>;
+}
+
+
+type TenantMfaMode = 'Off' | 'Optional' | 'Required';
+
+function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void }) {
+  const [mode, setMode] = useState<TenantMfaMode>('Off');
+  const [draftMode, setDraftMode] = useState<TenantMfaMode>('Off');
+  const [canConfigure, setCanConfigure] = useState(false);
+  const [enrolled, setEnrolled] = useState(false);
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [pending, setPending] = useState<{ enrollment_token: string; setup_secret: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ mode: TenantMfaMode; enrolled: boolean }>('/auth/mfa/status')
+      .then((status) => { if (active) { setMode(status.mode); setDraftMode(status.mode); setEnrolled(status.enrolled); } })
+      .catch((failure: unknown) => { if (active) setError(failure instanceof Error ? failure.message : String(failure)); });
+    void apiRequest<{ mode: TenantMfaMode }>('/auth/mfa/policy')
+      .then((policy) => { if (active) { setCanConfigure(true); setDraftMode(policy.mode); } })
+      .catch(() => { if (active) setCanConfigure(false); });
+    return () => { active = false; };
+  }, []);
+  const savePolicy = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await apiRequest('/auth/mfa/policy', { method: 'PUT', body: JSON.stringify({ mode: draftMode }) });
+      // A policy change can make the existing session ineligible for further requests.
+      onReauthenticate();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to save policy');
+    } finally { setBusy(false); }
+  };
+  const startEnrollment = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const enrollment = await apiRequest<{ enrollment_token: string; setup_secret: string }>('/auth/mfa/enroll', {
+        method: 'POST', body: JSON.stringify({ password })
+      });
+      setPending(enrollment); setCode('');
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to begin enrollment');
+    } finally { setBusy(false); }
+  };
+  const confirmEnrollment = async () => {
+    if (!pending) return;
+    setBusy(true); setError('');
+    try {
+      await apiRequest('/auth/mfa/enroll/confirm', {
+        method: 'POST', body: JSON.stringify({ enrollment_token: pending.enrollment_token, code })
+      });
+      onReauthenticate();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to verify authenticator');
+    } finally { setBusy(false); }
+  };
+  const disableEnrollment = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await apiRequest('/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) });
+      onReauthenticate();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to disable MFA');
+    } finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>Multi-factor authentication</h2>
+    <p>Authenticator-based MFA is configured separately for each tenant. Server-side policy controls sign-in and API access.</p>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    {canConfigure && <>
+      <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy</label>
+      <select className="form-control" id="tenant-mfa-mode" value={draftMode}
+        onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
+        <option value="Off">Off — no MFA challenge</option>
+        <option value="Optional">Optional — individual users can enroll</option>
+        <option value="Required">Required — every user must enroll and verify</option>
+      </select>
+      <p>Changing the policy applies to this tenant only. Affected users must sign in again with the required verification.</p>
+      <button className="btn btn-brand" disabled={busy || draftMode === mode} onClick={() => void savePolicy()}>
+        {busy ? 'Saving…' : 'Save tenant MFA policy'}
+      </button>
+    </>}
+    <h3>My authenticator</h3>
+    <p>{enrolled ? 'Your account has an authenticator enrolled.' : 'Your account has no authenticator enrolled.'}</p>
+    {mode === 'Off' && <p>Ask a tenant security administrator to enable Optional MFA before enrolling.</p>}
+    {mode !== 'Off' && !enrolled && <>
+      <label className="form-label" htmlFor="mfa-current-password">Current password</label>
+      <input className="form-control" id="mfa-current-password" type="password" autoComplete="current-password"
+        value={password} onChange={(event) => setPassword(event.target.value)} />
+      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Set up authenticator</button>}
+      {pending && <>
+        <p>Add this key to your authenticator app, then enter its six-digit code.</p>
+        <p><strong>Setup key:</strong> <code style={{ overflowWrap: 'anywhere' }}>{pending.setup_secret}</code></p>
+        <label className="form-label" htmlFor="mfa-setup-code">Authenticator code</label>
+        <input className="form-control" id="mfa-setup-code" type="text" inputMode="numeric"
+          pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
+          value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
+        <button className="btn btn-brand" disabled={busy || !/^[0-9]{6}$/.test(code)} onClick={() => void confirmEnrollment()}>Confirm enrollment</button>
+      </>}
+    </>}
+    {enrolled && mode !== 'Required' && <>
+      <p>To disable your authenticator, confirm your password and a fresh code.</p>
+      <label className="form-label" htmlFor="mfa-disable-password">Current password</label>
+      <input className="form-control" id="mfa-disable-password" type="password" autoComplete="current-password"
+        value={password} onChange={(event) => setPassword(event.target.value)} />
+      <label className="form-label" htmlFor="mfa-disable-code">Authenticator code</label>
+      <input className="form-control" id="mfa-disable-code" type="text" inputMode="numeric"
+        pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
+        value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
+      <button className="btn" disabled={busy || !password || !/^[0-9]{6}$/.test(code)}
+        onClick={() => void disableEnrollment()}>Disable my MFA</button>
+    </>}
+  </section>;
 }
 
 function CompanySettings() {
