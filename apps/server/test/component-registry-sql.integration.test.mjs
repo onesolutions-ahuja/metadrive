@@ -30,6 +30,20 @@ test('MD07 component registry SQL is typed, relational, tenant-safe and reversib
     await assert.rejects(db.query("INSERT INTO md_v4_component_dependencies(tenant_id,component_id,surface,owner_api_name,placement_id) VALUES('tenant_b',$1,'page','Foreign_Page','placement_2')",[privateComponent]),/Cross-tenant component reference rejected/);
     await db.query("INSERT INTO md_v4_component_dependencies(tenant_id,component_id,surface,owner_api_name,placement_id) VALUES('tenant_b',$1,'page','Public_Page','placement_3')",[platform]);
     await assert.rejects(db.query("DELETE FROM md_v4_components WHERE component_id=$1",[privateComponent]),/foreign key constraint/i);
+    // A tenant-owned component must never be usable by another tenant,
+    // including after a failed insert into the dependency registry.
+    const foreignDependencies=await db.query(
+      'SELECT COUNT(*)::integer AS n FROM md_v4_component_dependencies WHERE tenant_id=$1 AND component_id=$2',
+      ['tenant_b',privateComponent]);
+    assert.equal(foreignDependencies.rows[0].n,0);
+    const ownDependencies=await db.query(
+      'SELECT COUNT(*)::integer AS n FROM md_v4_component_dependencies WHERE tenant_id=$1 AND component_id=$2',
+      ['tenant_a',privateComponent]);
+    assert.equal(ownDependencies.rows[0].n,1);
+    const platformDependencies=await db.query(
+      'SELECT COUNT(*)::integer AS n FROM md_v4_component_dependencies WHERE tenant_id=$1 AND component_id=$2',
+      ['tenant_b',platform]);
+    assert.equal(platformDependencies.rows[0].n,1);
     const versions=await db.query("SELECT version,status,compiled_js FROM md_v4_component_versions WHERE component_id=$1 ORDER BY version",[privateComponent]);
     assert.deepEqual(versions.rows.map(row=>[row.version,row.status,row.compiled_js]),[[1,'PUBLISHED','compiled-v1'],[2,'DRAFT','compiled-v2']]);
     const deps=await db.query('SELECT COUNT(*)::integer AS n FROM md_v4_component_dependencies WHERE component_id=$1',[privateComponent]);
