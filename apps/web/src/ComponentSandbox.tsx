@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LibraryComponentMetadata } from './metadata';
 
-const SAFE_KEYS = ['label','device','properties','records','products','categories','cartLines','customers','loading','preview','disabled','sessionId','object','flows','actionError'] as const;
+const SAFE_KEYS = ['label','title','subtitle','value','device','properties','records','products','categories','cartLines','customers','loading','preview','disabled','sessionId','object','flows','actionError'] as const;
 function publicProps(props: Record<string, unknown>): Record<string, unknown> {
   // Explicit allowlist. Never forward credential providers, React internals or auth tokens.
   const result: Record<string, unknown> = {};
