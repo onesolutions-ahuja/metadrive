@@ -29,6 +29,7 @@ export type WorkspaceId =
   | 'connector-settings'
   | 'named-credentials'
   | 'company-settings'
+  | 'tenant-management'
   | 'rbac';
 
 export type FieldMetadata = {
@@ -153,6 +154,7 @@ export type ObjectMetadata = {
   kind: 'Standard Object' | 'Custom Object';
   description: string;
   fields: FieldMetadata[];
+  revision?: number;
   pageLayouts?: PageLayoutMetadata[];
   pageLayoutAssignments?: PageLayoutAssignmentMetadata[];
   recordTypes?: RecordTypeMetadata[];
@@ -779,6 +781,8 @@ export type PermissionSetMetadata = {
   systemPermissions: string[];
   objectPermissions: Record<string, { read: boolean; create: boolean; edit: boolean; delete: boolean; viewAll: boolean; modifyAll: boolean }>;
   recordTypePermissions: Record<string, boolean>;
+  appPermissions?: Record<string, boolean>;
+  tabPermissions?: Record<string, boolean>;
   fieldPermissions: Record<string, { read: boolean; edit: boolean }>;
 };
 
@@ -793,6 +797,8 @@ export type PermissionSetGroupMetadata = {
   mutedSystemPermissions: string[];
   mutedObjectPermissions: Record<string, { read: boolean; create: boolean; edit: boolean; delete: boolean; viewAll: boolean; modifyAll: boolean }>;
   mutedRecordTypePermissions: Record<string, boolean>;
+  mutedAppPermissions?: Record<string, boolean>;
+  mutedTabPermissions?: Record<string, boolean>;
   mutedFieldPermissions: Record<string, { read: boolean; edit: boolean }>;
 };
 
@@ -806,6 +812,8 @@ export type ProfileMetadata = {
   systemPermissions: string[];
   objectPermissions: Record<string, { read: boolean; create: boolean; edit: boolean; delete: boolean; viewAll: boolean; modifyAll: boolean }>;
   recordTypePermissions: Record<string, boolean>;
+  appPermissions?: Record<string, boolean>;
+  tabPermissions?: Record<string, boolean>;
   fieldPermissions: Record<string, { read: boolean; edit: boolean }>;
 };
 
@@ -909,10 +917,12 @@ export const workspaces: WorkspaceMetadata[] = [
   { id: 'app-exchange', label: 'AppExchange', icon: Store },
   { id: 'named-credentials', label: 'Named Credentials', icon: Database },
   { id: 'company-settings', label: 'Company Information', icon: Building2 },
+  { id: 'tenant-management', label: 'Tenant Management', icon: Building2 },
   { id: 'rbac', label: 'Users & Permissions', icon: ShieldCheck }
 ];
 
 export const setupNavigation = [
+  { group: 'Platform Administration', items: ['Tenant Management'] },
   { group: 'Company Settings', items: ['Company Information', 'Currencies'] },
   { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Lightning App Builder', 'App Manager', 'Component Library', 'AppExchange'] },
   { group: 'Integrations', items: ['Named Credentials', 'Named Devices'] },

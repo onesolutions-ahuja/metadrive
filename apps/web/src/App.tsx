@@ -62,9 +62,15 @@ import ScheduledFlows from './ScheduledFlows';
 import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
+import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
+import TenantManagement from './TenantManagement';
+import TenantDomains from './TenantDomains';
+import TenantRecoveryPanel from './TenantRecoveryPanel';
+import TenantUsagePanel from './TenantUsagePanel';
+import DeveloperAccountSettings from './DeveloperAccountSettings';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
 import tillPagePreset from './page-presets/till.editable.json';
@@ -401,6 +407,7 @@ const objectSettings = [
   'Compact Layouts',
   'Field Sets',
   'Object Limits',
+  'Change History',
   'Record Types',
   'Related Lookup Filters',
   'Search Layouts',
@@ -415,6 +422,7 @@ const settingRouteNames: Record<string, string> = {
   'Compact Layouts': 'CompactLayouts',
   'Field Sets': 'FieldSets',
   'Object Limits': 'ObjectLimits',
+  'Change History': 'ChangeHistory',
   'Record Types': 'RecordTypes',
   'Related Lookup Filters': 'RelatedLookupFilters',
   'Search Layouts': 'SearchLayouts',
@@ -431,6 +439,18 @@ function settingToRoute(value: string): string {
 }
 
 type AuthState = 'loading' | 'anonymous' | 'authenticated' | 'error';
+type LandingBootstrap = {
+  objects: ObjectMetadata[];
+  pages: LightningPageMetadata[];
+  apps: LightningAppMetadata[];
+  user: {
+    profileId: string;
+    permissions: string[];
+    fieldAccess: Record<string, { read: boolean; edit: boolean }>;
+    recordTypeAccess: Record<string, boolean>;
+  };
+};
+type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
 
 type AppRoute =
   | { kind: 'setup'; workspace: WorkspaceId; objectApiName?: string; setting?: string; resourceApiName?: string; resourceId?: string; dashboardView?: boolean }
@@ -536,7 +556,7 @@ function parseAppRoute(pathname: string, search = ''): AppRoute {
     }
     if (segments[0] === 'setup') {
       const workspace = decodeURIComponent(segments[1] ?? 'home') as WorkspaceId;
-      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'connector-settings', 'named-credentials', 'company-settings', 'rbac'];
+      const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'connector-settings', 'named-credentials', 'company-settings', 'tenant-management', 'rbac'];
       if (!validWorkspaces.includes(workspace)) return { kind: 'setup', workspace: 'home' };
       if (workspace === 'object-manager') {
         return {
@@ -908,6 +928,7 @@ function screenFieldIsVisible(field: Record<string, unknown>, values: Record<str
 function App() {
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [authError, setAuthError] = useState('');
+  const [entryTiming, setEntryTiming] = useState<EntryTiming | null>(null);
   const sessionRestoreStarted = useRef(false);
   useEffect(() => {
     const expireSession = () => {
@@ -919,6 +940,7 @@ function App() {
   }, []);
 
   const restoreSession = async () => {
+    const restoreStartedAt = performance.now();
     const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
     const retryDelaysMs = [1500, 3000, 5000, 7000];
 
@@ -927,7 +949,7 @@ function App() {
       const timeout = window.setTimeout(() => controller.abort(), 12000);
       try {
         const response = await withAuthRefreshLock(() =>
-          fetch(`${apiBase}/auth/refresh`, {
+          fetch(`${apiBase}/auth/refresh?landing=1`, {
             method: 'POST',
             credentials: 'include',
             signal: controller.signal
@@ -942,9 +964,10 @@ function App() {
         }
 
         if (response.ok) {
-          const session = await response.json() as { access_token: string };
+          const session = await response.json() as { access_token: string; landing?: LandingBootstrap };
           accessToken = session.access_token;
           setAuthError('');
+          setEntryTiming({ kind: 'restore', startedAt: restoreStartedAt, authenticatedAt: performance.now(), landing: session.landing });
           setAuthState('authenticated');
           return;
         }
@@ -999,47 +1022,147 @@ function App() {
   }, [authState]);
 
   if (authState === 'loading') return <div className="auth-loading">Loading your workspace…</div>;
-  if (authState === 'anonymous') return <Login onSuccess={() => setAuthState('authenticated')} />;
-  if (authState === 'error') return <Login error={authError} onSuccess={() => setAuthState('authenticated')} onRetry={() => { setAuthState('loading'); void restoreSession(); }} />;
-  return <SetupApp onLogout={() => { accessToken = undefined; setAuthState('anonymous'); }} />;
+  const loginSuccess = (timing: EntryTiming) => { setEntryTiming(timing); setAuthState('authenticated'); };
+  if (authState === 'anonymous') return <Login onSuccess={loginSuccess} />;
+  if (authState === 'error') return <Login error={authError} onSuccess={loginSuccess} onRetry={() => { setAuthState('loading'); void restoreSession(); }} />;
+  return <SetupApp entryTiming={entryTiming} onLogout={() => { accessToken = undefined; setAuthState('anonymous'); }} />;
 }
 
 const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`;
 
-function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: () => void; onRetry?: () => void }) {
-  const [email, setEmail] = useState('');
+function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (timing: EntryTiming) => void; onRetry?: () => void }) {
+  const recoveryQuery = new URLSearchParams(window.location.search);
+  const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [resetToken, setResetToken] = useState(recoveryQuery.get('resetToken') ?? '');
+  const [newPassword, setNewPassword] = useState('');
+  const [repeatPassword, setRepeatPassword] = useState('');
+  const [resetFinished, setResetFinished] = useState(false);
+  useEffect(() => {
+    if (!resetToken) return;
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('resetEmail');
+    clean.searchParams.delete('resetToken');
+    window.history.replaceState(window.history.state, '', clean.pathname + clean.search + clean.hash);
+  }, []);
+
+  const [mfaChallenge, setMfaChallenge] = useState<{ challenge_token: string; enrollment_required: boolean; setup_secret?: string } | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [showPasswordReset, setShowPasswordReset] = useState(Boolean(resetToken));
   const [message, setMessage] = useState(error ?? '');
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const startedAt = performance.now();
     setSubmitting(true);
     setMessage('');
     try {
-      const session = await apiRequest<{ access_token: string }>('/auth/login', {
+      const session = await apiRequest<{ access_token?: string; landing?: LandingBootstrap; mfa_required?: boolean; challenge_token?: string; enrollment_required?: boolean; setup_secret?: string }>('/auth/login?landing=1', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
+      if (session.mfa_required && session.challenge_token) {
+        setMfaChallenge({ challenge_token: session.challenge_token, enrollment_required: Boolean(session.enrollment_required), setup_secret: session.setup_secret });
+        setPassword('');
+        return;
+      }
+      if (!session.access_token) throw new Error('Authentication did not return an access token');
       accessToken = session.access_token;
-      onSuccess?.();
+      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now(), landing: session.landing });
     } catch (failure) {
       setMessage(failure instanceof Error ? failure.message : 'Unable to sign in');
     } finally {
       setSubmitting(false);
     }
   };
+  const verifyMfa = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!mfaChallenge) return;
+    setSubmitting(true);
+    setMessage('');
+    const startedAt = performance.now();
+    try {
+      const session = await apiRequest<{ access_token: string; landing?: LandingBootstrap }>('/auth/mfa/verify?landing=1', {
+        method: 'POST',
+        body: JSON.stringify({ challenge_token: mfaChallenge.challenge_token, code: mfaCode })
+      });
+      accessToken = session.access_token;
+      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now(), landing: session.landing });
+    } catch (failure) {
+      setMessage(failure instanceof Error ? failure.message : 'MFA verification failed');
+    } finally { setSubmitting(false); }
+  };
+  if (mfaChallenge) return <main className="auth-screen">
+    <form className="auth-card" onSubmit={(event) => void verifyMfa(event)}>
+      <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
+      <div className="eyebrow">ACCOUNT SECURITY</div>
+      <h1>{mfaChallenge.enrollment_required ? 'Set up your authenticator' : 'Verify your identity'}</h1>
+      {mfaChallenge.enrollment_required && <>
+        <p>In your authenticator app, add an account manually using this setup key. Then enter its six-digit code to finish enrollment.</p>
+        <div className="auth-notice"><strong>Setup key</strong><p><code style={{ overflowWrap: 'anywhere' }}>{mfaChallenge.setup_secret}</code></p></div>
+      </>}
+      {!mfaChallenge.enrollment_required && <p>Enter the current six-digit code from your authenticator app.</p>}
+      {message && <div className="auth-error" role="alert">{message}</div>}
+      <label className="form-label" htmlFor="login-mfa-code">Authenticator code</label>
+      <input className="form-control" id="login-mfa-code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
+        autoComplete="one-time-code" required value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/[^0-9]/g, ''))} />
+      <button className="btn btn-brand auth-submit" disabled={submitting}>{submitting ? 'Verifying…' : 'Verify and sign in'}</button>
+      <button className="text-action auth-back" type="button" onClick={() => {
+        setMfaChallenge(null); setMfaCode(''); setMessage('');
+      }}>Back to sign in</button>
+    </form>
+  </main>;
+  const requestReset = async () => {
+    setSubmitting(true); setMessage('');
+    try {
+      const response = await apiRequest<{ message: string }>('/auth/password-reset/request', {
+        method: 'POST', body: JSON.stringify({ email })
+      });
+      setMessage(response.message);
+    } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to request reset'); }
+    finally { setSubmitting(false); }
+  };
+  const confirmReset = async () => {
+    if (newPassword !== repeatPassword) { setMessage('Passwords do not match.'); return; }
+    setSubmitting(true); setMessage('');
+    try {
+      await apiRequest('/auth/password-reset/confirm', {
+        method: 'POST', body: JSON.stringify({ email, token: resetToken, newPassword })
+      });
+      setResetFinished(true); setResetToken(''); setNewPassword(''); setRepeatPassword('');
+      setMessage('Password changed. Sign in with your new password. Your MFA requirements remain unchanged.');
+    } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to reset password'); }
+    finally { setSubmitting(false); }
+  };
   if (showPasswordReset) return <main className="auth-screen">
     <section className="auth-card" aria-labelledby="password-reset-heading">
       <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
-      <div className="eyebrow">UNEENGINE WORKSPACE</div>
-      <h1 id="password-reset-heading">Reset your password</h1>
-      <p>Enter your account email to request a password reset.</p>
-      <label className="form-label" htmlFor="reset-email">Email</label>
-      <input className="form-control" id="reset-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-      <div className="auth-notice" role="status">Password reset isn’t available yet. Contact your workspace administrator for help.</div>
-      <button className="btn btn-brand auth-submit" type="button" disabled title="Password reset is not configured yet">Send reset link</button>
-      <button className="text-action auth-back" type="button" onClick={() => setShowPasswordReset(false)}>Back to sign in</button>
+      <div className="eyebrow">ACCOUNT RECOVERY</div>
+      <h1 id="password-reset-heading">{resetToken ? 'Choose a new password' : 'Reset your password'}</h1>
+      {message && <div className="auth-notice" role="status">{message}</div>}
+      {!resetFinished && <>
+        <label className="form-label" htmlFor="reset-email">Account email</label>
+        <input className="form-control" id="reset-email" type="email" value={email}
+          onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+        {resetToken ? <>
+          <label className="form-label" htmlFor="reset-password">New password (minimum 12 characters)</label>
+          <input className="form-control" id="reset-password" type="password" minLength={12}
+            autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+          <label className="form-label" htmlFor="reset-confirm">Confirm password</label>
+          <input className="form-control" id="reset-confirm" type="password" minLength={12}
+            autoComplete="new-password" value={repeatPassword} onChange={(event) => setRepeatPassword(event.target.value)} />
+          <button className="btn btn-brand auth-submit" type="button"
+            disabled={submitting || !email || newPassword.length < 12 || !repeatPassword}
+            onClick={() => void confirmReset()}>{submitting ? 'Saving…' : 'Reset password'}</button>
+        </> : <>
+          <p>We'll send a single-use link if email recovery is configured for your tenant. The link expires in 15 minutes.</p>
+          <button className="btn btn-brand auth-submit" type="button" disabled={submitting || !email}
+            onClick={() => void requestReset()}>{submitting ? 'Sending…' : 'Send reset link'}</button>
+        </>}
+      </>}
+      <button className="text-action auth-back" type="button" onClick={() => {
+        setMessage(''); setShowPasswordReset(false); setResetToken(''); setResetFinished(false);
+      }}>Back to sign in</button>
     </section>
   </main>;
   return <main className="auth-screen">
@@ -1066,59 +1189,76 @@ async function fetchFlowListPage(page: number, search: string) {
   }>(`/metadata/flows/list?page=${encodeURIComponent(String(page))}&search=${encodeURIComponent(search)}`);
 }
 
-function NavigationLoadTime({ routeKey, startedAt }: { routeKey: string; startedAt: number }) {
+function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }: {
+  routeKey: string;
+  startedAt: number;
+  ready: boolean;
+  kind: 'login' | 'restore' | 'navigation';
+  authMs: number | null;
+}) {
   const [result, setResult] = useState<{ routeKey: string; milliseconds: number } | null>(null);
   useEffect(() => {
+    // Never declare a screen loaded while its essential metadata is outstanding.
+    if (!ready) return;
     let idleTimer: number | undefined;
-    let guardTimer: number | undefined;
     let observer: MutationObserver | undefined;
     let cancelled = false;
+    let animation: number | undefined;
     const complete = () => {
       if (cancelled) return;
       cancelled = true;
       observer?.disconnect();
       window.clearTimeout(idleTimer);
-      window.clearTimeout(guardTimer);
       setResult({ routeKey, milliseconds: Math.max(0, performance.now() - startedAt) });
     };
     const schedule = () => {
       window.clearTimeout(idleTimer);
       idleTimer = window.setTimeout(() => {
-        // Wait for visible async loading indicators before recording a final time.
         const content = document.querySelector('.lightning');
         const stillLoading = content?.querySelector('[aria-busy="true"], [role="progressbar"], .records-loading, .loading-spinner');
-        if (stillLoading && performance.now() - startedAt < 20000) schedule();
+        if (stillLoading) schedule();
         else complete();
-      }, 550);
+      }, 120);
     };
-    const animation = window.requestAnimationFrame(() => {
+    animation = window.requestAnimationFrame(() => {
       const content = document.querySelector('.lightning');
       if (content) {
-        observer = new MutationObserver(schedule);
+        // Background notifications, header health and editor loads are not
+        // landing-page blockers. Only extend the timer for a real busy UI.
+        observer = new MutationObserver(() => {
+          if (content.querySelector('[aria-busy="true"], [role="progressbar"], .records-loading, .loading-spinner')) schedule();
+        });
         observer.observe(content, { childList: true, subtree: true, characterData: true });
       }
       schedule();
     });
-    guardTimer = window.setTimeout(complete, 22000);
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(animation);
+      if (animation !== undefined) window.cancelAnimationFrame(animation);
       observer?.disconnect();
       window.clearTimeout(idleTimer);
-      window.clearTimeout(guardTimer);
     };
-  }, [routeKey, startedAt]);
-  return <span className="navigation-load-time" role="status" aria-label="Page load time"
-    title="Elapsed time from URL navigation until page content stops updating">
-    {result?.routeKey === routeKey ? `Load: ${(result.milliseconds / 1000).toFixed(2)}s` : 'Loading…'}
+  }, [routeKey, startedAt, ready]);
+  const isEntry = kind !== 'navigation';
+  const label = kind === 'login' ? 'Login → Landing' : kind === 'restore' ? 'Session → Landing' : 'Page navigation';
+  const completed = result?.routeKey === routeKey;
+  const requestSeconds = authMs === null ? null : (authMs / 1000).toFixed(2);
+  return <span className="navigation-load-time" role="status" aria-label="Screen load time"
+    title={isEntry
+      ? `From ${kind === 'login' ? 'Sign in click' : 'session restoration'} until landing content is ready. API authentication: ${requestSeconds ?? 'unknown'}s.`
+      : 'From route navigation until page content is ready.'}>
+    {completed ? `${label}: ${(result.milliseconds / 1000).toFixed(2)}s` : `${label}: Loading…`}
+    {isEntry && requestSeconds !== null && ` · Auth: ${requestSeconds}s`}
   </span>;
 }
 
-function SetupApp({ onLogout }: { onLogout: () => void }) {
+function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming: EntryTiming | null }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppRoute(window.location.pathname, window.location.search));
   const [routeTiming, setRouteTiming] = useState(() => ({
     routeKey: window.location.pathname + window.location.search,
-    startedAt: 0
+    startedAt: entryTiming?.startedAt ?? performance.now(),
+    kind: entryTiming?.kind ?? 'navigation' as const,
+    authMs: entryTiming ? entryTiming.authenticatedAt - entryTiming.startedAt : null
   }));
   const [currentAppId, setCurrentAppId] = useState(() => new URLSearchParams(window.location.search).get('appId') || 'Records');
   const [apps, setApps] = useState<LightningAppMetadata[]>([]);
@@ -1132,6 +1272,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const [objectSearch, setObjectSearch] = useState('');
   const [objects, setObjects] = useState(objectMetadata);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [advancedMetadataLoaded, setAdvancedMetadataLoaded] = useState(false);
   const [metadataLoadError, setMetadataLoadError] = useState('');
   const [object, setObject] = useState<ObjectMetadata>(() =>
     (route.kind === 'setup' && route.objectApiName ? objectMetadata.find((item) => item.apiName === route.objectApiName) : undefined)
@@ -1162,6 +1303,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     view: false, edit: false, secrets: false, test: false, install: false, licence: false
   });
   const [canManagePlatformLicences, setCanManagePlatformLicences] = useState(false);
+  const [canManagePlatformTenants, setCanManagePlatformTenants] = useState(false);
   const [namedCredentialsEncryptionReady, setNamedCredentialsEncryptionReady] = useState<boolean | null>(null);
   const [emailAlerts, setEmailAlerts] = useState<EmailAlertMetadata[]>([]);
   const [connectorProviders, setConnectorProviders] = useState<ConnectorProviderMetadata[]>([]);
@@ -1310,15 +1452,68 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     const loadMetadata = async () => {
       const failures: string[] = [];
-      const recover = async <T,>(path: string, fallback: T): Promise<T> => {
-        try { return await apiRequest<T>(path); }
-        catch (error) {
-          if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
-          failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
-          return fallback;
-        }
+      const pending = new Map<string, Promise<unknown>>();
+      // Reuse the four essential requests when the optional data loads later.
+      // This avoids fetching the same objects/pages/apps/session twice.
+      const recover = <T,>(path: string, fallback: T): Promise<T> => {
+        const existing = pending.get(path);
+        if (existing) return existing as Promise<T>;
+        const request = (async () => {
+          try { return await apiRequest<T>(path); }
+          catch (error) {
+            if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
+            failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+            return fallback;
+          }
+        })();
+        pending.set(path, request);
+        return request;
       };
       try {
+        // Entry routes need only core tenant metadata. Their initial render must
+        // not wait for the Flow Builder, report builders, connectors and dashboards.
+        const fastEntryRoute = route.kind !== 'setup' || route.workspace === 'home';
+        if (fastEntryRoute) {
+          // Trusted tenant-scoped RBAC bootstrap is returned with successful
+          // refresh/login: render immediately without 4 more HTTP round trips.
+          const [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
+            ? [
+                { objects: entryTiming.landing.objects },
+                { pages: entryTiming.landing.pages },
+                { apps: entryTiming.landing.apps },
+                { user: entryTiming.landing.user }
+              ] as const
+            : await Promise.all([
+            recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
+            recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
+            recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
+            recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, {read:boolean;edit:boolean}>; recordTypeAccess: Record<string, boolean> } }>('/auth/me',
+              { user: { profileId:'',permissions:[],fieldAccess:{},recordTypeAccess:{} } })
+          ]);
+          if (firstObjects.objects.length) {
+            setObjects(firstObjects.objects);
+            setObject(firstObjects.objects.find((item) => item.apiName === object.apiName) ?? firstObjects.objects[0]);
+          }
+          if (firstPages.pages.length) setPages(firstPages.pages);
+          setApps(firstApps.apps);
+          if (!firstApps.apps.some((item) => item.apiName === currentAppId))
+            setCurrentAppId(firstApps.apps[0]?.apiName ?? '');
+          setCurrentProfileId(firstSession.user.profileId);
+          setCurrentFieldAccess(firstSession.user.fieldAccess);
+          setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
+          setCanManageUserIdentities(firstSession.user.permissions.includes('security:manage'));
+          setCanManageApprovalProcesses(firstSession.user.permissions.includes('security:manage')
+            || firstSession.user.permissions.includes('metadata:write'));
+          setCanManagePlatformTenants(firstSession.user.permissions.includes('platform:superadmin'));
+          setCanRunFlows(firstSession.user.permissions.includes('flows:run'));
+          setCanManageFlows(firstSession.user.permissions.includes('flows:manage')
+            || firstSession.user.permissions.includes('metadata:write'));
+          setMetadataLoaded(true);
+          // Give the landing screen a chance to paint before loading editor-only
+          // data in the background. On direct builder URLs the full load begins
+          // immediately, preserving the previous deep-link behaviour.
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
+        }
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           recover<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows', { flows: [] }),
@@ -1391,6 +1586,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
         setCanManagePlatformLicences(sessionPayload.user.permissions.includes('licence:manage'));
+        setCanManagePlatformTenants(sessionPayload.user.permissions.includes('platform:superadmin'));
         setCanRunFlows(sessionPayload.user.permissions.includes('flows:run'));
         setCanManageFlows(sessionPayload.user.permissions.includes('flows:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
@@ -1411,6 +1607,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         }
       } finally {
         setMetadataLoaded(true);
+        setAdvancedMetadataLoaded(true);
       }
     };
     void loadMetadata();
@@ -1494,7 +1691,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         window.history.pushState({}, '', appRoutePath(route));
         return;
       }
-      setRouteTiming({ routeKey: window.location.pathname + window.location.search, startedAt: performance.now() });
+      setRouteTiming({ routeKey: window.location.pathname + window.location.search, startedAt: performance.now(), kind: 'navigation', authMs: null });
       setRoute(nextRoute);
       setCurrentAppId(new URLSearchParams(window.location.search).get('appId') || 'Records');
     };
@@ -1549,7 +1746,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     const routeWithApp = nextRoute.kind === 'setup' ? nextRoute : { ...nextRoute, appId: nextRoute.appId ?? currentAppId };
     const path = appRoutePath(routeWithApp);
     if (`${window.location.pathname}${window.location.search}` !== path) {
-      setRouteTiming({ routeKey: path, startedAt: performance.now() });
+      setRouteTiming({ routeKey: path, startedAt: performance.now(), kind: 'navigation', authMs: null });
       window.history.pushState({}, '', path);
     }
     setRoute(routeWithApp);
@@ -1599,8 +1796,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
-    if (!query) return setupNavigation;
-    return setupNavigation
+    const allowedGroups = setupNavigation.filter((group) => group.group !== 'Platform Administration' || canManagePlatformTenants);
+    if (!query) return allowedGroups;
+    return allowedGroups
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => item.toLowerCase().includes(query)
@@ -1608,7 +1806,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
             `${provider.name} ${provider.connectorKey}`.toLowerCase().includes(query))))
       }))
       .filter((group) => group.items.length);
-  }, [quickFind, connectorProviders]);
+  }, [quickFind, connectorProviders, canManagePlatformTenants]);
   const filteredConnectorProviders = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     return query
@@ -1721,6 +1919,10 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
     }
     if (item === 'Named Devices') {
       navigateRoute({ kind: 'record-list', objectApiName: 'NamedDevice__c' });
+      return;
+    }
+    if (item === 'Tenant Management') {
+      if (canManagePlatformTenants) openSetupWorkspace('tenant-management');
       return;
     }
     if (item === 'Named Credentials') {
@@ -2065,6 +2267,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
         : [];
       const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/fields`, {
         method: 'POST',
+        headers: { 'If-Match': `"${object.revision ?? 0}"` },
         body: JSON.stringify({
           field,
           pageLayoutIds: newFieldLayoutIds,
@@ -2087,6 +2290,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const saveObject = async (nextObject: ObjectMetadata) => {
     const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(nextObject.apiName)}`, {
       method: 'PUT',
+      headers: { 'If-Match': `"${nextObject.revision ?? 0}"` },
       body: JSON.stringify(nextObject)
     });
     setObject(payload.object);
@@ -2102,7 +2306,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   };
 
   const deleteObject = async (apiName: string) => {
-    await apiRequest<void>(`/metadata/objects/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
+    await apiRequest<void>(`/metadata/objects/${encodeURIComponent(apiName)}`, {
+      method: 'DELETE', headers: { 'If-Match': `"${object.revision ?? 0}"` }
+    });
     const remaining = objects.filter((item) => item.apiName !== apiName);
     setObjects(remaining);
     if (remaining[0]) setObject(remaining[0]);
@@ -2116,6 +2322,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
   const saveField = async (field: FieldMetadata) => {
     const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(field.apiName)}`, {
       method: 'PUT',
+      headers: { 'If-Match': `"${object.revision ?? 0}"` },
       body: JSON.stringify(field)
     });
     setObject(payload.object);
@@ -2126,7 +2333,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
 
   const deleteField = async (apiName: string) => {
     const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(apiName)}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: { 'If-Match': `"${object.revision ?? 0}"` }
     });
     setObject(payload.object);
     setObjects((current) => current.map((item) => item.apiName === payload.object.apiName ? payload.object : item));
@@ -3106,7 +3314,9 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
           <kbd>⌘ K</kbd>
         </div>
         <div className="header-tools">
-          <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt} />
+          <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt}
+            ready={metadataLoaded && (route.kind !== 'setup' || route.workspace === 'home' || advancedMetadataLoaded)}
+            kind={routeTiming.kind} authMs={routeTiming.authMs} />
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
           <ConnectionHealthIndicator />
@@ -3283,7 +3493,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && metadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
+          {route.kind === 'setup' && workspace === 'page-builder' && advancedMetadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
             <section className="setup-card" role="alert" style={{ padding: 24 }}>
               <h2>{metadataLoadError ? "Unable to load Lightning pages" : "Lightning page not found"}</h2>
               <p>{metadataLoadError ? `Metadata API error: ${metadataLoadError}` : `The page "${route.resourceApiName}" was not returned by the metadata API. No other page has been substituted.`}</p>
@@ -3326,7 +3536,7 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -3501,7 +3711,8 @@ function SetupApp({ onLogout }: { onLogout: () => void }) {
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <CompanySettings />}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
@@ -5966,6 +6177,281 @@ function AutomationSettingsWorkspace() {
   </div>;
 }
 
+
+type TenantMfaMode = 'Off' | 'Optional' | 'Required';
+
+
+
+function TenantEmailRecoverySettings() {
+  const [smtpCredentialId, setSmtpCredentialId] = useState('');
+  const [fromEmail, setFromEmail] = useState('');
+  const [ready, setReady] = useState(false);
+  const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ smtpCredentialId: string; fromEmail: string; linkReady: boolean }>('/auth/password-recovery/settings')
+      .then((value) => {
+        if (!active) return;
+        setPermitted(true); setSmtpCredentialId(value.smtpCredentialId);
+        setFromEmail(value.fromEmail); setReady(value.linkReady);
+      }).catch(() => { if (active) setPermitted(false); });
+    void apiRequest<{ credentials: Array<{ id: string; label: string; protocol: string; enabled: boolean }> }>('/named-credentials')
+      .then((response) => { if (active) setCredentials(response.credentials.filter((item) => item.protocol === 'SMTP' && item.enabled)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+  if (!permitted) return null;
+  const save = async () => {
+    setBusy(true); setMessage('');
+    try {
+      await apiRequest('/auth/password-recovery/settings', {
+        method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '' })
+      });
+      setMessage('Password recovery configuration saved.');
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings'); }
+    finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>Tenant password recovery</h2>
+    <p>Email reset links are delivered through your tenant's SMTP Named Credential. They do not bypass MFA or allow platform staff to access tenant accounts.</p>
+    {!ready && <p role="alert">The server must have a trusted METADRIVE_PASSWORD_RESET_BASE_URL matching an allowed HTTPS web origin before recovery can be enabled.</p>}
+    {message && <p role="status">{message}</p>}
+    <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential</label>
+    <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
+      onChange={(event) => setSmtpCredentialId(event.target.value)}>
+      <option value="">Disabled</option>
+      {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+    </select>
+    <label className="form-label" htmlFor="recovery-sender">Sender email</label>
+    <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
+      onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
+    <button className="btn btn-brand" onClick={() => void save()}
+      disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
+      {busy ? 'Saving…' : 'Save recovery configuration'}
+    </button>
+  </section>;
+}
+
+function TenantUserLockSettings() {
+  const [users, setUsers] = useState<Array<{ id: string; name: string; email: string; active: boolean; lockedUntil: number | null }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    const response = await apiRequest<{ users: Array<{ id: string; name: string; email: string; active: boolean; lockedUntil: number | null }> }>('/auth/user-locks');
+    setUsers(response.users); setPermitted(true);
+  };
+  useEffect(() => { void load().catch(() => setPermitted(false)); }, []);
+  if (!permitted) return null;
+  const changeLock = async (userId: string, lock: boolean) => {
+    setBusy(true); setMessage('');
+    try {
+      await apiRequest('/auth/users/' + encodeURIComponent(userId) + (lock ? '/lock' : '/unlock'), {
+        method: 'POST', body: JSON.stringify(lock ? { durationMinutes: 60 } : {})
+      });
+      await load();
+      setMessage(lock ? 'User locked and existing sessions revoked.' : 'User unlocked.');
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to update account lock'); }
+    finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>User account locks</h2>
+    <p>Security administrators can lock or unlock an account. Locking immediately invalidates its active tokens and sessions.</p>
+    {message && <p role="status">{message}</p>}
+    <ul>{users.map((user) => <li key={user.id}>
+      {user.name} ({user.email}) — {user.lockedUntil && user.lockedUntil > Date.now()
+        ? 'Locked until ' + new Date(user.lockedUntil).toLocaleString()
+        : user.active ? 'Active' : 'Inactive'}
+      {' '}
+      <button className="btn btn-small" disabled={busy || !user.active}
+        onClick={() => void changeLock(user.id, !(user.lockedUntil && user.lockedUntil > Date.now()))}>
+        {user.lockedUntil && user.lockedUntil > Date.now() ? 'Unlock' : 'Lock for 1 hour'}
+      </button>
+    </li>)}</ul>
+  </section>;
+}
+
+function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => void }) {
+  const [sessions, setSessions] = useState<Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }>>([]);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ sessions: Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }> }>('/auth/sessions')
+      .then((response) => { if (active) setSessions(response.sessions); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); });
+    return () => { active = false; };
+  }, []);
+  const revokeAll = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiRequest('/auth/sessions/revoke-all', {
+        method: 'POST', body: JSON.stringify({ currentPassword: password })
+      });
+      setPassword('');
+      onReauthenticate();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to revoke sessions');
+    } finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>Active sessions</h2>
+    <p>Active refresh sessions for your account. Revoking all sessions immediately invalidates existing access tokens on every device.</p>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    <p>{sessions.length} active {sessions.length === 1 ? 'session' : 'sessions'}</p>
+    {sessions.length > 0 && <ul>{sessions.slice(0, 10).map((session) =>
+      <li key={session.familyId}>Expires {new Date(session.expiresAt * 1000).toLocaleString()}
+        {session.mfaVerified ? ' · MFA verified' : ''}</li>
+    )}</ul>}
+    <label className="form-label" htmlFor="sessions-revoke-password">Current password</label>
+    <input className="form-control" id="sessions-revoke-password" type="password"
+      autoComplete="current-password" value={password}
+      onChange={(event) => setPassword(event.target.value)} />
+    <button type="button" className="btn" disabled={busy || !password}
+      onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Sign out on all devices'}</button>
+  </section>;
+}
+
+function TenantSecurityAudit() {
+  const [events, setEvents] = useState<Array<{ id: string; at: string; actorUserId: string; action: string; details?: Record<string, string> }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ events: Array<{ id: string; at: string; actorUserId: string; action: string; details?: Record<string, string> }> }>('/auth/security-events?limit=50')
+      .then((response) => { if (active) { setEvents(response.events); setPermitted(true); } })
+      .catch(() => { if (active) setPermitted(false); });
+    return () => { active = false; };
+  }, []);
+  if (!permitted) return null;
+  return <section className="surface permission-section">
+    <h2>Security activity</h2>
+    <p>Recent tenant security events. Only authorized security administrators can view this history.</p>
+    {!events.length ? <p>No security activity recorded.</p> :
+      <ul>{events.map((event) => <li key={event.id}>
+        <strong>{event.action}</strong> · {new Date(event.at).toLocaleString()}
+        {event.details?.from && event.details?.to ? ' · ' + event.details.from + ' → ' + event.details.to : ''}
+      </li>)}</ul>}
+  </section>;
+}
+
+function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void }) {
+  const [mode, setMode] = useState<TenantMfaMode>('Off');
+  const [draftMode, setDraftMode] = useState<TenantMfaMode>('Off');
+  const [canConfigure, setCanConfigure] = useState(false);
+  const [enrolled, setEnrolled] = useState(false);
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [pending, setPending] = useState<{ enrollment_token: string; setup_secret: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ mode: TenantMfaMode; enrolled: boolean }>('/auth/mfa/status')
+      .then((status) => { if (active) { setMode(status.mode); setDraftMode(status.mode); setEnrolled(status.enrolled); } })
+      .catch((failure: unknown) => { if (active) setError(failure instanceof Error ? failure.message : String(failure)); });
+    void apiRequest<{ mode: TenantMfaMode }>('/auth/mfa/policy')
+      .then((policy) => { if (active) { setCanConfigure(true); setDraftMode(policy.mode); } })
+      .catch(() => { if (active) setCanConfigure(false); });
+    return () => { active = false; };
+  }, []);
+  const savePolicy = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await apiRequest('/auth/mfa/policy', { method: 'PUT', body: JSON.stringify({ mode: draftMode }) });
+      // A policy change can make the existing session ineligible for further requests.
+      onReauthenticate();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to save policy');
+    } finally { setBusy(false); }
+  };
+  const startEnrollment = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const enrollment = await apiRequest<{ enrollment_token: string; setup_secret: string }>('/auth/mfa/enroll', {
+        method: 'POST', body: JSON.stringify({ password })
+      });
+      setPending(enrollment); setCode('');
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to begin enrollment');
+    } finally { setBusy(false); }
+  };
+  const confirmEnrollment = async () => {
+    if (!pending) return;
+    setBusy(true); setError('');
+    try {
+      await apiRequest('/auth/mfa/enroll/confirm', {
+        method: 'POST', body: JSON.stringify({ enrollment_token: pending.enrollment_token, code })
+      });
+      onReauthenticate();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to verify authenticator');
+    } finally { setBusy(false); }
+  };
+  const disableEnrollment = async () => {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await apiRequest('/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) });
+      onReauthenticate();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to disable MFA');
+    } finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>Multi-factor authentication</h2>
+    <p>Authenticator-based MFA is configured separately for each tenant. Server-side policy controls sign-in and API access.</p>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    {notice && <p role="status">{notice}</p>}
+    {canConfigure && <>
+      <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy</label>
+      <select className="form-control" id="tenant-mfa-mode" value={draftMode}
+        onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
+        <option value="Off">Off — no MFA challenge</option>
+        <option value="Optional">Optional — individual users can enroll</option>
+        <option value="Required">Required — every user must enroll and verify</option>
+      </select>
+      <p>Changing the policy applies to this tenant only. Affected users must sign in again with the required verification.</p>
+      <button className="btn btn-brand" disabled={busy || draftMode === mode} onClick={() => void savePolicy()}>
+        {busy ? 'Saving…' : 'Save tenant MFA policy'}
+      </button>
+    </>}
+    <h3>My authenticator</h3>
+    <p>{enrolled ? 'Your account has an authenticator enrolled.' : 'Your account has no authenticator enrolled.'}</p>
+    {mode === 'Off' && <p>Ask a tenant security administrator to enable Optional MFA before enrolling.</p>}
+    {mode !== 'Off' && !enrolled && <>
+      <label className="form-label" htmlFor="mfa-current-password">Current password</label>
+      <input className="form-control" id="mfa-current-password" type="password" autoComplete="current-password"
+        value={password} onChange={(event) => setPassword(event.target.value)} />
+      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Set up authenticator</button>}
+      {pending && <>
+        <p>Add this key to your authenticator app, then enter its six-digit code.</p>
+        <p><strong>Setup key:</strong> <code style={{ overflowWrap: 'anywhere' }}>{pending.setup_secret}</code></p>
+        <label className="form-label" htmlFor="mfa-setup-code">Authenticator code</label>
+        <input className="form-control" id="mfa-setup-code" type="text" inputMode="numeric"
+          pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
+          value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
+        <button className="btn btn-brand" disabled={busy || !/^[0-9]{6}$/.test(code)} onClick={() => void confirmEnrollment()}>Confirm enrollment</button>
+      </>}
+    </>}
+    {enrolled && mode !== 'Required' && <>
+      <p>To disable your authenticator, confirm your password and a fresh code.</p>
+      <label className="form-label" htmlFor="mfa-disable-password">Current password</label>
+      <input className="form-control" id="mfa-disable-password" type="password" autoComplete="current-password"
+        value={password} onChange={(event) => setPassword(event.target.value)} />
+      <label className="form-label" htmlFor="mfa-disable-code">Authenticator code</label>
+      <input className="form-control" id="mfa-disable-code" type="text" inputMode="numeric"
+        pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
+        value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
+      <button className="btn" disabled={busy || !password || !/^[0-9]{6}$/.test(code)}
+        onClick={() => void disableEnrollment()}>Disable my MFA</button>
+    </>}
+  </section>;
+}
+
 function CompanySettings() {
   const [draft, setDraft] = useState<CurrencySettingsMetadata>({
     corporateCurrency: 'USD',
@@ -6202,6 +6688,46 @@ function ObjectManager({
   const [activationFormFactors, setActivationFormFactors] = useState<Array<'Desktop' | 'Phone'>>(['Desktop']);
   const [showDeleteObjectConfirmation, setShowDeleteObjectConfirmation] = useState(false);
   const [showDeleteFieldConfirmation, setShowDeleteFieldConfirmation] = useState(false);
+  const [metadataChanges, setMetadataChanges] = useState<Array<{
+    objectApiName: string; revision: number; action: string; actorUserId: string; at: string;
+    beforeRevision: number | null; afterRevision: number | null;
+  }>>([]);
+  const [metadataHistoryError, setMetadataHistoryError] = useState('');
+  const [selectedSnapshot, setSelectedSnapshot] = useState<{ revision: number; before?: ObjectMetadata; after?: ObjectMetadata } | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  useEffect(() => {
+    if (selectedSetting !== 'Change History') return;
+    let active = true;
+    setHistoryLoading(true);
+    setSelectedSnapshot(null);
+    setMetadataHistoryError('');
+    void apiRequest<{ history: typeof metadataChanges }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/history?limit=100`)
+      .then((response) => { if (active) setMetadataChanges(response.history); })
+      .catch((error: unknown) => { if (active) setMetadataHistoryError(error instanceof Error ? error.message : 'History unavailable'); })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [selectedSetting, object.apiName, object.revision]);
+  const openMetadataSnapshot = async (revision: number) => {
+    try {
+      const response = await apiRequest<{ change: { revision: number; before?: ObjectMetadata; after?: ObjectMetadata } }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}`
+      );
+      setSelectedSnapshot(response.change);
+    } catch (error) {
+      setMetadataHistoryError(error instanceof Error ? error.message : 'Unable to read revision');
+    }
+  };
+  const validateDraft = async () => {
+    try {
+      const result = await apiRequest<{ valid: boolean; errors: string[] }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/validate`,
+        { method: 'POST', headers: { 'If-Match': `"${draft.revision ?? 0}"` }, body: JSON.stringify(draft) }
+      );
+      onNotify(result.valid ? 'Draft metadata validation passed' : result.errors.join('; '));
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Draft metadata validation failed');
+    }
+  };
   useEffect(() => {
     setDraft(object);
     setRecordTypePicklistDrafts(Object.fromEntries((object.recordTypes ?? []).flatMap((recordType) =>
@@ -7056,7 +7582,32 @@ function ObjectManager({
       {standard.map((label) => <label className="metadata-row" key={label}><span>{label}</span><input type="checkbox" checked={selected.includes(label)} onChange={() => updateDraft({ listViewButtons: toggleField(selected, label) })} /></label>)}
     </section>;
   };
+  const renderHistory = () => <section className="surface object-setting-surface">
+    <div className="section-toolbar"><div><h2>Metadata Change History</h2>
+      <p>Last 300 tenant metadata changes are retained; revisions are read-only snapshots.</p>
+    </div><span>Current revision {object.revision ?? 0}</span></div>
+    {historyLoading && <p role="status">Loading history...</p>}
+    {metadataHistoryError && <p role="alert" className="form-error">{metadataHistoryError}</p>}
+    {!historyLoading && metadataChanges.length === 0 && <p>No saved metadata changes.</p>}
+    <div className="metadata-history-list">
+      {metadataChanges.map((change) => <div className="metadata-row" key={change.revision}>
+        <span><strong>Revision {change.revision}: {change.action.replaceAll('_', ' ')}</strong>
+        <small>{new Date(change.at).toLocaleString()} · User {change.actorUserId}</small></span>
+        <button className="btn" type="button" onClick={() => void openMetadataSnapshot(change.revision)}>
+          View snapshot
+        </button>
+      </div>)}
+    </div>
+    {selectedSnapshot && <div className="metadata-card">
+      <h3>Revision {selectedSnapshot.revision} snapshot</h3>
+      <p>Read-only. Use normal Object Manager saves for validated changes.</p>
+      <pre style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+        {JSON.stringify(selectedSnapshot.after ?? selectedSnapshot.before ?? {}, null, 2)}
+      </pre>
+    </div>}
+  </section>;
   const renderSetting = () => {
+    if (selectedSetting === 'Change History') return renderHistory();
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
     if (selectedSetting === 'Page Layouts') return renderPageLayouts();
@@ -7102,7 +7653,7 @@ function ObjectManager({
         </aside>
 
         <div className="object-details">
-          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div>
+          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div>
           <div className="object-subnav">
             {objectSettings.map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
           </div>
@@ -7438,6 +7989,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
           [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
       </div>;
     })}
+    <CustomComponentPropertyEditor properties={properties} onChange={onChange} addOnly />
     <button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);
@@ -10261,6 +10813,14 @@ function Permissions({
   const [selectedId, setSelectedId] = useState(accessControl.permissionSets[0]?.id ?? '');
   const [query, setQuery] = useState('');
   const [saving, setSaving] = useState(false);
+  const [navigationApps, setNavigationApps] = useState<Array<{ apiName: string; label: string }>>([]);
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ apps: Array<{ apiName: string; label: string }> }>('/metadata/apps')
+      .then((result) => { if (active) setNavigationApps(result.apps); })
+      .catch(() => { if (active) setNavigationApps([]); });
+    return () => { active = false; };
+  }, []);
   const [error, setError] = useState('');
   useEffect(() => {
     setDraft(accessControl);
@@ -10735,6 +11295,20 @@ function Permissions({
           </div>
           <h3 className="permission-section-heading">System Permissions</h3>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedProfile.systemPermissions.includes(key)} onChange={() => patchProfile(selectedProfile.id, { systemPermissions: toggleString(selectedProfile.systemPermissions, key) })} />{label}</label>)}</div>
+          
+          <h3 className="permission-section-heading">Application Access</h3>
+          <p className="permission-help">Navigation access does not grant underlying data permissions.</p>
+          <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
+            <input type="checkbox" checked={(selectedProfile.appPermissions?.[app.apiName] !== false)}
+              onChange={(event) => patchProfile(selectedProfile.id, { appPermissions: { ...selectedProfile.appPermissions, [app.apiName]: event.target.checked } })} />
+            {app.label}
+          </label>)}</div>
+          <h3 className="permission-section-heading">Tab Visibility</h3>
+          <div className="permission-check-grid">{objects.map((object) => <label className="checkbox-row" key={object.apiName}>
+            <input type="checkbox" checked={(selectedProfile.tabPermissions?.[object.apiName] !== false)}
+              onChange={(event) => patchProfile(selectedProfile.id, { tabPermissions: { ...selectedProfile.tabPermissions, [object.apiName]: event.target.checked } })} />
+            {object.label}
+          </label>)}</div>
           <h3 className="permission-section-heading">Object Permissions</h3>
           <div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Object</th>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <th key={permission}>{permission === 'viewAll' ? 'View All' : permission === 'modifyAll' ? 'Modify All' : permission[0].toUpperCase() + permission.slice(1)}</th>)}</tr></thead><tbody>{objects.map((object) => <tr key={object.apiName}><td><strong>{object.label}</strong><small>{object.apiName}</small></td>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${selectedProfile.label} ${object.label} ${permission}`} checked={Boolean(selectedProfile.objectPermissions[object.apiName]?.[permission])} onChange={() => {
             const current = selectedProfile.objectPermissions[object.apiName] ?? { read: false, create: false, edit: false, delete: false, viewAll: false, modifyAll: false };
@@ -10768,6 +11342,20 @@ function Permissions({
           </div>
           <h3 className="permission-section-heading">System Permissions</h3>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedSet.systemPermissions.includes(key)} onChange={() => patchSet(selectedSet.id, { systemPermissions: toggleString(selectedSet.systemPermissions, key) })} />{label}</label>)}</div>
+          
+          <h3 className="permission-section-heading">Application Access</h3>
+          <p className="permission-help">Navigation access does not grant underlying data permissions.</p>
+          <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
+            <input type="checkbox" checked={Boolean(selectedSet.appPermissions?.[app.apiName])}
+              onChange={(event) => patchSet(selectedSet.id, { appPermissions: { ...selectedSet.appPermissions, [app.apiName]: event.target.checked } })} />
+            {app.label}
+          </label>)}</div>
+          <h3 className="permission-section-heading">Tab Visibility</h3>
+          <div className="permission-check-grid">{objects.map((object) => <label className="checkbox-row" key={object.apiName}>
+            <input type="checkbox" checked={Boolean(selectedSet.tabPermissions?.[object.apiName])}
+              onChange={(event) => patchSet(selectedSet.id, { tabPermissions: { ...selectedSet.tabPermissions, [object.apiName]: event.target.checked } })} />
+            {object.label}
+          </label>)}</div>
           <h3 className="permission-section-heading">Object Permissions</h3>
           <div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Object</th>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <th key={permission}>{permission === 'viewAll' ? 'View All' : permission === 'modifyAll' ? 'Modify All' : permission[0].toUpperCase() + permission.slice(1)}</th>)}</tr></thead><tbody>{objects.map((object) => <tr key={object.apiName}><td><strong>{object.label}</strong><small>{object.apiName}</small></td>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${object.label} ${permission}`} checked={Boolean(selectedSet.objectPermissions[object.apiName]?.[permission])} onChange={() => toggleObjectPermission(selectedSet, object.apiName, permission)} /></td>)}</tr>)}</tbody></table></div>
           <h3 className="permission-section-heading">Record Type Access</h3>
@@ -10798,6 +11386,19 @@ function Permissions({
           <h3 className="permission-section-heading">Muted System Permissions</h3>
           <p className="permission-help">Muted permissions remove grants contributed by this group; direct permission-set assignments remain in effect.</p>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedGroup.mutedSystemPermissions.includes(key)} onChange={() => patchGroup(selectedGroup.id, { mutedSystemPermissions: toggleString(selectedGroup.mutedSystemPermissions, key) })} />{label}</label>)}</div>
+          
+          <h3 className="permission-section-heading">Muted Application Access</h3>
+          <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
+            <input type="checkbox" checked={Boolean(selectedGroup.mutedAppPermissions?.[app.apiName])}
+              onChange={(event) => patchGroup(selectedGroup.id, { mutedAppPermissions: { ...selectedGroup.mutedAppPermissions, [app.apiName]: event.target.checked } })} />
+            {app.label}
+          </label>)}</div>
+          <h3 className="permission-section-heading">Muted Tab Visibility</h3>
+          <div className="permission-check-grid">{objects.map((object) => <label className="checkbox-row" key={object.apiName}>
+            <input type="checkbox" checked={Boolean(selectedGroup.mutedTabPermissions?.[object.apiName])}
+              onChange={(event) => patchGroup(selectedGroup.id, { mutedTabPermissions: { ...selectedGroup.mutedTabPermissions, [object.apiName]: event.target.checked } })} />
+            {object.label}
+          </label>)}</div>
           <h3 className="permission-section-heading">Muted Object Permissions</h3>
           <div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Object</th>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <th key={permission}>{permission === 'viewAll' ? 'View All' : permission === 'modifyAll' ? 'Modify All' : permission[0].toUpperCase() + permission.slice(1)}</th>)}</tr></thead><tbody>{objects.map((object) => <tr key={object.apiName}><td><strong>{object.label}</strong><small>{object.apiName}</small></td>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`Mute ${object.label} ${permission}`} checked={Boolean(selectedGroup.mutedObjectPermissions[object.apiName]?.[permission])} onChange={() => patchGroup(selectedGroup.id, { mutedObjectPermissions: { ...selectedGroup.mutedObjectPermissions, [object.apiName]: { ...selectedGroup.mutedObjectPermissions[object.apiName], [permission]: !selectedGroup.mutedObjectPermissions[object.apiName]?.[permission] } } })} /></td>)}</tr>)}</tbody></table></div>
           <h3 className="permission-section-heading">Muted Record Type Access</h3>

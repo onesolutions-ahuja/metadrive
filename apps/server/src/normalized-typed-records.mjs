@@ -198,6 +198,9 @@ async function rewriteObject(client,item,sqlObject){
 }
 /** Use as normalized-state-runtime transactional beforeCommit callback. */
 export async function synchronizeTypedRecords(client,state,previousState=null){
+  // Refresh-session-only updates retain the identical tenants object. They cannot
+  // change physical records, so avoid serialising every object's rows and metadata.
+  if(previousState && previousState.tenants===state.tenants) return;
   // Flow, permission, session and page edits do not touch physical business rows.
   // Avoid querying 17+ object tables across network on unrelated state changes.
   if(previousState){

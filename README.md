@@ -15,9 +15,6 @@ The frozen Salesforce parity checklist, including Dashboard Builder criteria, is
 npm install
 npm run dev:web
 npm run dev:server
-```
-
-Then open the frontend at `http://localhost:5173`. During Vite development, `/api` is proxied to `http://127.0.0.1:3001` so login, API requests, and refresh cookies share the frontend origin without requiring extra CORS origins. Set `METADRIVE_API_PROXY_TARGET` to use a different development API. For deployments where the API is not reverse-proxied under the frontend origin, set `VITE_API_BASE_URL` to its URL.
 
 ## Optional tenant subdomain enforcement (MD-01B)
 
@@ -46,6 +43,10 @@ allowlist, but CORS/Origin are not themselves authentication controls.
 With `METADRIVE_TENANT_HOSTS` unset, existing email-based login and local
 development continue unchanged. Enable hostname enforcement only after mapping
 all active tenant domains and shared API hosts in staging and confirming routing.
+
+```
+
+Then open the frontend at `http://localhost:5173`. During Vite development, `/api` is proxied to `http://127.0.0.1:3001` so login, API requests, and refresh cookies share the frontend origin without requiring extra CORS origins. Set `METADRIVE_API_PROXY_TARGET` to use a different development API. For deployments where the API is not reverse-proxied under the frontend origin, set `VITE_API_BASE_URL` to its URL.
 
 ## Local authentication
 

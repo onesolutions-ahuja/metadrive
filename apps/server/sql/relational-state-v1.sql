@@ -81,6 +81,22 @@ CREATE TABLE IF NOT EXISTS metadrive_rel_refresh_sessions (
   revoked_at DOUBLE PRECISION,
   extra JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+-- A refresh token must reference a user *within the same tenant*.
+-- Safe for existing migrated databases: idempotent upgrade; PostgreSQL validates
+-- all existing rows before enabling the constraint. Never delete invalid rows.
+CREATE UNIQUE INDEX IF NOT EXISTS metadrive_rel_users_tenant_user_uidx
+  ON metadrive_rel_users(tenant_id,user_id);
+DO $md_03_4$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid='metadrive_rel_refresh_sessions'::regclass
+      AND conname='metadrive_rel_session_tenant_user_fk') THEN
+    ALTER TABLE metadrive_rel_refresh_sessions
+      ADD CONSTRAINT metadrive_rel_session_tenant_user_fk
+      FOREIGN KEY (tenant_id,user_id) REFERENCES metadrive_rel_users(tenant_id,user_id)
+      DEFERRABLE INITIALLY DEFERRED;
+  END IF;
+END $md_03_4$;
 CREATE INDEX IF NOT EXISTS metadrive_rel_sessions_by_user ON metadrive_rel_refresh_sessions(user_id);
 CREATE TABLE IF NOT EXISTS metadrive_rel_revoked_tokens (
   token_hash TEXT PRIMARY KEY,
@@ -90,6 +106,18 @@ CREATE TABLE IF NOT EXISTS metadrive_rel_library_components (
   position INTEGER PRIMARY KEY CHECK (position >= 0),
   payload JSONB NOT NULL
 );
+-- Platform-scoped authorisation policy and audit metadata, kept separate from tenants.
+CREATE TABLE IF NOT EXISTS metadrive_rel_platform_settings (
+  setting_name TEXT PRIMARY KEY CHECK (setting_name IN ('platformPolicies','platformPolicyAudit','tenantRegistry','tenantManagementAudit')),
+  payload JSONB NOT NULL
+);
+-- Idempotent upgrade for databases provisioned before MD-03.1.
+-- Run this DDL with deployment migrations before tenant-management writes.
+ALTER TABLE metadrive_rel_platform_settings
+  DROP CONSTRAINT IF EXISTS metadrive_rel_platform_settings_setting_name_check;
+ALTER TABLE metadrive_rel_platform_settings
+  ADD CONSTRAINT metadrive_rel_platform_settings_setting_name_check
+  CHECK (setting_name IN ('platformPolicies','platformPolicyAudit','tenantRegistry','tenantManagementAudit'));
 CREATE INDEX IF NOT EXISTS metadrive_rel_collection_api_name_idx ON metadrive_rel_tenant_collection_items (tenant_id, collection_name, (payload->>'apiName'));
 
 -- Runtime revision row used for fail-closed optimistic concurrency and state verification.
