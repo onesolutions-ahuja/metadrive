@@ -4546,7 +4546,7 @@ function LightningAppRuntime({
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
   if (!page) return <div className="records-page"><div className="records-empty">No active Home Page is assigned to this app and profile. Assign one from Lightning App Builder.</div></div>;
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
-  const renderComponent = (component: PageComponentMetadata) => {
+  const renderComponent = (component: PageComponentMetadata): React.ReactNode => {
     if (!component.visible) return null;
     if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{childrenOf(page.components, component.id).map((child) => renderComponent(child))}</div>;
     if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map((child) => <div key={child.id} style={!isLayoutType(child.type) ? componentVisualStyle(child.properties.visualStyle, child.type, formFactor) : undefined}>{renderComponent(child)}</div>)}</div>;
