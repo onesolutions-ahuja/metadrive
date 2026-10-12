@@ -212,6 +212,19 @@ test('MD-01C: app permissions, profile assignments and licensed runtime routes',
     assert.equal(platformBinding.status, 200, JSON.stringify(platformBinding.data));
     assert.equal((await api('/metadata/flows/' + lifecycleFlow + '/app-binding',
       cashierToken, 'PUT', { appApiName: null })).status, 403);
+    // Admin has flows:run, but removing them from this app must deny direct
+    // execution and debug even with a valid JWT and strong system RBAC.
+    assert.equal((await api('/metadata/apps/Till/access', adminToken, 'PUT', {
+      mode:'Assigned',userIds:[cashierId],profileIds:[]
+    })).status, 200);
+    assert.equal((await api('/flows/' + lifecycleFlow + '/execute', adminToken, 'POST', {})).status, 403);
+    assert.equal((await api('/flows/' + lifecycleFlow + '/debug', adminToken, 'POST', {})).status, 403);
+    assert.equal((await api('/metadata/apps/Till/access', adminToken, 'PUT', {
+      mode:'Assigned',userIds:[adminId,cashierId],profileIds:[]
+    })).status, 200);
+    const debugAfterGrant = await api('/flows/' + lifecycleFlow + '/debug', adminToken, 'POST', {});
+    assert.notEqual(debugAfterGrant.status, 403,
+      'Restoring the assignment must remove the app-access denial immediately');
     assert.equal((await api('/flows/' + lifecycleFlow + '/execute', cashierToken, 'POST', {})).status, 403,
       'Cashier cannot invoke bound Flow without flows:run RBAC; denies by default');
     assert.equal((await api('/metadata/flows/' + lifecycleFlow + '/app-binding',
