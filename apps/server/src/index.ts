@@ -83,7 +83,14 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     if (ending) return res;
     ending = true;
     const commit = latestStateCommit;
+    const gateStartedAt = performance.now();
     void commit.then(() => {
+      if (req.path === '/api/auth/login' || req.path === '/api/auth/mfa/verify') {
+        const waitMs = performance.now() - gateStartedAt;
+        const preceding = String(res.getHeader('Server-Timing') ?? '');
+        res.setHeader('Server-Timing', `${preceding}${preceding ? ',' : ''}commit-wait;dur=${waitMs.toFixed(1)}`);
+        console.info(`Auth SQL persistence gate: ${waitMs.toFixed(1)}ms`);
+      }
       Reflect.apply(end, res, args);
     }).catch((error: unknown) => {
       console.error('MetaDrive API transaction not acknowledged:', error);
