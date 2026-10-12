@@ -2157,3 +2157,43 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .text-action { color: #075b95; }
 .page-region-label { color: #55564f; }
 .record-component-head > span { color: #555e58; }
+
+/* Prevent wide credential-table descendants from expanding the document.
+   The inner list remains independently horizontally scrollable. */
+.named-credentials-page { overflow-x: clip; }
+.named-credentials-page .table-scroll {
+  contain: layout paint;
+  isolation: isolate;
+  overflow-x: auto;
+  width: 100%;
+}
+@media (max-width: 600px) {
+  /* On narrow screens, force Builder's page selectors and actions onto
+     separate lines rather than allowing a second flex item beyond the edge. */
+  .builder-page .builder-titlebar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+  .builder-page .builder-titlebar > .builder-page-select,
+  .builder-page .builder-titlebar > .toolbar-actions {
+    box-sizing: border-box;
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+  }
+  .builder-page .builder-titlebar > .toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .builder-page .builder-title-controls {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+}
