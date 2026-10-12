@@ -20,7 +20,9 @@ function sample() {
     libraryComponents:[{id:'component1',source:'example component'}],
     users:[{id:'user1',tenantId:'first',name:'Support',email:'support@example.test',passwordSalt:'salt',passwordHash:'hash',role:'Admin',permissionSetIds:['sys'],permissionSetGroupIds:[],disabled:false,createdAt:'2026-10-11T00:00:00.000Z'}],
     refreshSessions:[{tokenHash:'hash1',familyId:'family',userId:'user1',tenantId:'first',expiresAt:100,usedAt:null,revokedAt:null}],
-    revokedAccessTokens:{revoked:999}
+    revokedAccessTokens:{revoked:999},
+    platformPolicies:{user1:['platform:superadmin']},
+    platformPolicyAudit:[{actorId:'user1',userId:'user1',previous:[],next:['platform:superadmin'],at:'2026-10-12T00:00:00.000Z'}]
   };
 }
 test('metadata records and related objects survive a roundtrip',()=>{
@@ -79,4 +81,19 @@ test('malformed revoked tokens must fail closed',()=>{
   const state=sample();
   state.revokedAccessTokens.invalid='not-number';
   assert.throws(()=>projectState(state),/invalid revoked token expiry/);
+});
+
+test('platform policy grants and audit survive relational projection without tenant leakage',()=>{
+  const state=sample();
+  const rows=projectState(state);
+  assert.equal(rows.platformSettings.length,2);
+  assert.deepStrictEqual(restoreState(rows),state);
+  assert.equal(verifyProjection(state,rows).counts.platformSettings,2);
+  const missing=structuredClone(state);
+  delete missing.platformPolicies;
+  delete missing.platformPolicyAudit;
+  assert.deepStrictEqual(restoreState(projectState(missing)),missing,
+    'Older legacy snapshots without policy fields must also survive unchanged');
+  assert.throws(()=>restoreState({...rows,platformSettings:[{key:'notAllowed',payload:{}}]}),
+    /unknown or duplicate platform setting/);
 });

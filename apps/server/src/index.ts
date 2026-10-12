@@ -3273,6 +3273,11 @@ type RefreshSession = {
   revokedAt: number | null;
 };
 type PlatformState = {
+  // Platform policies are outside tenant-managed profiles and permission sets.
+  platformPolicies: Record<string, Array<'platform:superadmin' | 'licence:manage'>>;
+  platformPolicyAudit: Array<{
+    actorId: string; userId: string; previous: string[]; next: string[]; at: string;
+  }>;
   tenants: Record<string, TenantData>;
   libraryComponents: LibraryComponent[];
   users: LocalUser[];
@@ -3280,6 +3285,11 @@ type PlatformState = {
   revokedAccessTokens: Record<string, number>;
 };
 const stateSchema = z.object({
+  platformPolicies: z.record(z.array(z.enum(['platform:superadmin', 'licence:manage']))).default({}),
+  platformPolicyAudit: z.array(z.object({
+    actorId: z.string(), userId: z.string(), previous: z.array(z.string()),
+    next: z.array(z.string()), at: z.string().datetime()
+  })).default([]),
   libraryComponents: z.array(libraryComponentSchema).default([]),
   tenants: z.record(z.object({
     objects: z.array(objectSchema),
@@ -4083,7 +4093,10 @@ function ensureLeadStreetField(object: ObjectMetadata): ObjectMetadata {
   return { ...object, fields: [...object.fields, streetField] };
 }
 
-const initialState: PlatformState = { tenants: {}, libraryComponents: [], users: [], refreshSessions: [], revokedAccessTokens: {} };
+const initialState: PlatformState = {
+  platformPolicies: {}, platformPolicyAudit: [], tenants: {}, libraryComponents: [],
+  users: [], refreshSessions: [], revokedAccessTokens: {}
+};
 function migrateStoredLeadStreetField(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const state = value as Record<string, unknown>;
@@ -4733,6 +4746,18 @@ function effectivePermissions(user: LocalUser, data: TenantData): string[] {
     for (const permission of group.mutedSystemPermissions) groupPermissions.delete(permission);
     for (const permission of groupPermissions) permissions.add(permission);
   }
+  // Neither a tenant administrator nor a tenant Flow can grant platform authority
+  // through editable profile / permission-set metadata.
+  for (const permission of permissions) {
+    if (permission === 'licence:manage' || permission.startsWith('platform:')) permissions.delete(permission);
+  }
+  const policies = state.platformPolicies[user.id] ?? [];
+  if (policies.includes('platform:superadmin')) {
+    permissions.add('platform:superadmin');
+    permissions.add('licence:manage');
+  } else if (policies.includes('licence:manage')) {
+    permissions.add('licence:manage');
+  }
   return [...permissions];
 }
 function principalForUser(user: LocalUser, tenant: TenantData): Principal {
@@ -5230,6 +5255,82 @@ app.post('/api/auth/change-password', accessAuthentication, async (req: Request,
   catch { return res.status(503).json({ error: 'Could not save new password. Please retry.' }); }
   clearRefreshCookie(res);
   return res.status(200).json({ changed: true, signedOut: true });
+});
+
+// MD-01A: separate, audited platform policies. All lookups use the current in-memory
+// platform state; no additional database read is introduced on guarded requests.
+const platformPolicySchema = z.object({
+  policies: z.array(z.enum(['platform:superadmin', 'licence:manage'])).max(2)
+}).strict();
+function activePlatformSuperadmins(): string[] {
+  return state.users.filter((user) => !user.disabled
+    && (state.platformPolicies[user.id] ?? []).includes('platform:superadmin')).map((user) => user.id);
+}
+function savePlatformPolicies(actorId: string, userId: string, policies: Array<'platform:superadmin' | 'licence:manage'>) {
+  const previous = state.platformPolicies[userId] ?? [];
+  const next = [...new Set(policies)];
+  const nextState: PlatformState = {
+    ...state,
+    platformPolicies: { ...state.platformPolicies, [userId]: next },
+    platformPolicyAudit: [...state.platformPolicyAudit, {
+      actorId, userId, previous, next, at: new Date().toISOString()
+    }].slice(-2000)
+  };
+  persistState(nextState);
+  state = nextState;
+}
+// A tightly controlled one-time bootstrap is required for the first platform
+// operator. It cannot be initiated merely with tenant security:manage.
+app.post('/api/platform/policies/bootstrap', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const configuredEmail = process.env.METADRIVE_PLATFORM_BOOTSTRAP_EMAIL?.trim().toLowerCase();
+  const secret = process.env.METADRIVE_PLATFORM_BOOTSTRAP_KEY;
+  if (!configuredEmail || !secret || secret.length < 24)
+    return res.status(503).json({ error: 'Platform policy bootstrap is not configured.' });
+  const user = principalUser(principal);
+  if (!user || user.email.trim().toLowerCase() !== configuredEmail)
+    return res.status(403).json({ error: 'Platform policy bootstrap is not permitted for this user.' });
+  const supplied = req.header('x-platform-bootstrap-key');
+  if (!supplied || supplied.length !== secret.length
+    || !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)))
+    return res.status(403).json({ error: 'Invalid platform policy bootstrap credential.' });
+  if (activePlatformSuperadmins().length)
+    return res.status(409).json({ error: 'A platform administrator already exists.' });
+  try {
+    savePlatformPolicies(user.id, user.id, ['platform:superadmin']);
+    return res.json({ policies: state.platformPolicies[user.id] });
+  } catch {
+    return res.status(503).json({ error: 'Unable to persist platform policy.' });
+  }
+});
+app.get('/api/platform/policies', accessAuthentication, (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  if (!principal.permissions.includes('platform:superadmin'))
+    return res.status(403).json({ error: 'Platform administrator policy required.' });
+  return res.json({ users: state.users.filter((user) => (state.platformPolicies[user.id] ?? []).length)
+    .map((user) => ({ id: user.id, email: user.email, disabled: user.disabled, policies: state.platformPolicies[user.id] })) });
+});
+app.put('/api/platform/policies/:userId', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  if (!principal.permissions.includes('platform:superadmin'))
+    return res.status(403).json({ error: 'Platform administrator policy required.' });
+  const parsed = platformPolicySchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid platform policies.' });
+  const userId = routeParam(req, 'userId');
+  const target = state.users.find((user) => user.id === userId && !user.disabled);
+  if (!target) return res.status(404).json({ error: 'Active platform user not found.' });
+  const requested = [...new Set(parsed.data.policies)];
+  if ((state.platformPolicies[userId] ?? []).includes('platform:superadmin')
+    && !requested.includes('platform:superadmin')
+    && activePlatformSuperadmins().every((id) => id === userId)) {
+    return res.status(409).json({ error: 'The last active platform administrator cannot be removed.' });
+  }
+  try {
+    savePlatformPolicies(principal.userId, userId, requested);
+    return res.json({ userId, policies: requested });
+  } catch {
+    return res.status(503).json({ error: 'Unable to persist platform policies.' });
+  }
 });
 
 app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
@@ -11369,6 +11470,14 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
     : req.body;
   const parsed = accessControlSchema.safeParse(body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid access-control metadata', details: parsed.error.flatten() });
+  // Fail closed: tenant RBAC is deliberately not an authority for platform policies.
+  const reservedPermission = (permission: string) =>
+    permission === 'licence:manage' || permission.startsWith('platform:');
+  if (parsed.data.profiles.some((profile) => profile.systemPermissions.some(reservedPermission))
+    || parsed.data.permissionSets.some((set) => set.systemPermissions.some(reservedPermission))
+    || parsed.data.permissionSetGroups.some((group) => group.mutedSystemPermissions.some(reservedPermission))) {
+    return res.status(403).json({ error: 'Platform policies cannot be assigned through tenant RBAC.' });
+  }
   const unavailableUserCurrency = parsed.data.users.find((user) =>
     user.currencyIsoCode && !tenant.currencySettings.currencies.some((currency) => currency.currencyIsoCode === user.currencyIsoCode));
   if (unavailableUserCurrency) {
