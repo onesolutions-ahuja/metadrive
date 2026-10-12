@@ -77,7 +77,8 @@ try{
   await wizard.getByLabel('Phone').check();
   await wizard.getByLabel('Desktop and tablet').uncheck();
   await wizard.getByRole('button',{name:'Create draft'}).click();
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await wizard.waitFor({state:'hidden'});
+  await page.waitForURL('**/une/setup/page-builder/'+newApi);
   let saved;
   let updatedApp;
   for(let i=0;i<35;i++){
@@ -102,8 +103,10 @@ try{
   await page.locator('#new-lightning-page-type').selectOption('Record Page');
   await page.locator('#new-lightning-page-object').selectOption('Contact');
   await page.locator('#new-lightning-page-app').selectOption('');
-  await page.getByRole('dialog',{name:'Create a Lightning page'}).getByRole('button',{name:'Create draft'}).click();
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+  const recordWizard=page.getByRole('dialog',{name:'Create a Lightning page'});
+  await recordWizard.getByRole('button',{name:'Create draft'}).click();
+  await recordWizard.waitFor({state:'hidden'});
+  await page.waitForURL('**/une/setup/page-builder/MD09_Guided_Record');
   let recordPage;
   for(let i=0;i<30;i++){
     recordPage=(await request('/metadata/pages',token)).pages.find(item=>item.apiName==='MD09_Guided_Record');
