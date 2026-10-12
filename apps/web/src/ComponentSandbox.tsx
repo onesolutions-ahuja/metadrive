@@ -1,23 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LibraryComponentMetadata } from './metadata';
 
-const SAFE_KEYS = ['label','title','subtitle','value','device','properties','records','products','categories','cartLines','customers','loading','preview','disabled','sessionId','object','flows','actionError'] as const;
-function publicProps(props: Record<string, unknown>): Record<string, unknown> {
-  // Explicit allowlist. Never forward credential providers, React internals or auth tokens.
-  const result: Record<string, unknown> = {};
-  for (const key of SAFE_KEYS) {
-    if (!(key in props)) continue;
-    try { result[key] = JSON.parse(JSON.stringify(props[key])); } catch { /* reject non-serializable values */ }
-  }
-  return result;
-}
+import { sandboxPublicProps, sandboxSafeValue } from './componentSandboxPolicy';
 export default function ComponentSandbox({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const instance = useMemo(() => crypto.randomUUID(), [definition.apiName]);
   const [ready, setReady] = useState(false);
   const frameOrigin = window.location.origin;
   const asset = new URL(import.meta.env.BASE_URL + 'component-sandbox.js', frameOrigin).toString();
-  const safeProps = useMemo(() => publicProps(props), [props]);
+  const safeProps = useMemo(() => sandboxPublicProps(props), [props]);
   const srcDoc = useMemo(() => `<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-eval' ${frameOrigin}; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'">
 <style>html,body{margin:0;min-height:100%;font:inherit}#component-root{min-height:100%}</style><style id="component-style"></style></head>
@@ -34,7 +25,7 @@ export default function ComponentSandbox({ definition, props }: { definition: Li
       const id = message.requestId;
       const reply = (result?: unknown, error?: string) => {
         const frame = ref.current?.contentWindow;
-        frame?.postMessage({ kind: 'ACK', instance, requestId: id, result, error }, '*');
+        frame?.postMessage({ kind: 'ACK', instance, requestId: id, result: sandboxSafeValue(result), error }, '*');
       };
       if (!action || typeof action !== 'object' || typeof action.event !== 'string'
         || action.event.length > 128 || action.event.startsWith('__')) {
