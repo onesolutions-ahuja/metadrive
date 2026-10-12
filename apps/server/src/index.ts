@@ -78,6 +78,7 @@ let latestStateCommit: Promise<unknown> = Promise.resolve();
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (persistenceMode === 'jsonb' || !req.path.startsWith('/api')) return next();
   const end = res.end;
+  const requestStartedAt = performance.now();
   let ending = false;
   res.end = ((...args: unknown[]) => {
     if (ending) return res;
@@ -85,11 +86,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     const commit = latestStateCommit;
     const gateStartedAt = performance.now();
     void commit.then(() => {
-      if (req.path === '/api/auth/login' || req.path === '/api/auth/mfa/verify') {
+      if (req.path === '/api/auth/login' || req.path === '/api/auth/mfa/verify' || req.path === '/api/auth/refresh') {
         const waitMs = performance.now() - gateStartedAt;
+        const totalMs = performance.now() - requestStartedAt;
         const preceding = String(res.getHeader('Server-Timing') ?? '');
-        res.setHeader('Server-Timing', `${preceding}${preceding ? ',' : ''}commit-wait;dur=${waitMs.toFixed(1)}`);
-        console.info(`Auth SQL persistence gate: ${waitMs.toFixed(1)}ms`);
+        res.setHeader('Server-Timing', `${preceding}${preceding ? ',' : ''}commit-wait;dur=${waitMs.toFixed(1)},server-total;dur=${totalMs.toFixed(1)}`);
+        console.info(`Auth path timing ${req.path}: sql-commit=${waitMs.toFixed(1)}ms total=${totalMs.toFixed(1)}ms`);
       }
       Reflect.apply(end, res, args);
     }).catch((error: unknown) => {
@@ -5299,8 +5301,37 @@ function issueRefreshSession(user: LocalUser, previousFamilyId?: string, mfaVeri
     }
   };
 }
+// Match the existing tenant metadata:read gate and /auth/me field-level RBAC.
+// No business records or credentials are included in this optional payload.
+function authenticatedLandingBootstrap(user: LocalUser, tenant: TenantData, permissions: string[]) {
+  const principal: Principal = {
+    userId: user.id, tenantId: user.tenantId, email: user.email,
+    roles: [user.role], permissions
+  };
+  const accessUser = tenant.accessControl.users.find(item => item.id === user.id);
+  const profileId = accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles);
+  const fieldAccess = Object.fromEntries(tenant.objects.flatMap(object => object.fields.map(field => [
+    `${object.apiName}.${field.apiName}`,
+    {
+      read: hasFieldPermission(principal, tenant, object.apiName, field.apiName, 'read'),
+      edit: hasFieldPermission(principal, tenant, object.apiName, field.apiName, 'edit')
+    }
+  ])));
+  const recordTypeAccess = Object.fromEntries(tenant.objects.flatMap(object => (object.recordTypes ?? [])
+    .filter(recordType => recordType.active)
+    .map(recordType => [`${object.apiName}.${recordType.id}`,
+      hasRecordTypeAccessForUser(user.id, tenant, object.apiName, recordType.id)])));
+  const canReadMetadata = permissions.includes('metadata:read');
+  return {
+    objects: canReadMetadata ? tenant.objects : [],
+    pages: canReadMetadata ? tenant.pages : [],
+    apps: canReadMetadata ? tenant.apps : [],
+    user: { profileId, permissions, fieldAccess, recordTypeAccess }
+  };
+}
+
 async function issueLoginResponse(res: Response, user: LocalUser, data: TenantData, familyId?: string,
-  loginTiming?: { startedAt: number; passwordMs: number }, mfaVerified = false): Promise<void> {
+  loginTiming?: { startedAt: number; passwordMs: number }, mfaVerified = false, includeLanding = false): Promise<void> {
   // JWT iat is second-granular. When reactivated in the same second as a
   // suspension, wait until a fresh token is strictly newer than the revocation.
   if (user.authRevokedBefore !== undefined && user.authRevokedBefore >= Math.floor(Date.now() / 1000)) {
@@ -5341,7 +5372,8 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
     token_type: 'Bearer',
     expires_in: jwtService.config.accessTokenTtlSeconds,
     expires_at: issued.expiresAt,
-    user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions }
+    user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions },
+    ...(includeLanding ? { landing: authenticatedLandingBootstrap(user, data, permissions) } : {})
   });
 }
 
@@ -5686,7 +5718,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       ...(pendingSecret ? { setup_secret: pendingSecret, setup_uri: totpUri(pendingSecret, user.email) } : {})
     });
   }
-  return issueLoginResponse(res, user, data, undefined, { startedAt: loginStartedAt, passwordMs });
+  return issueLoginResponse(res, user, data, undefined, { startedAt: loginStartedAt, passwordMs }, false, req.query.landing === '1');
 });
 
 
@@ -5745,7 +5777,7 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
   } catch {
     return res.status(503).json({ error: 'Unable to persist MFA verification' });
   }
-  return issueLoginResponse(res, securedUser, tenant, undefined, undefined, true);
+  return issueLoginResponse(res, securedUser, tenant, undefined, undefined, true, req.query.landing === '1');
 });
 
 app.get('/api/auth/mfa/status', accessAuthentication, (_req: Request, res: Response) => {
@@ -5917,7 +5949,8 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         return res.json({
           access_token: issued.accessToken, token_type: 'Bearer',
           expires_in: jwtService.config.accessTokenTtlSeconds, expires_at: issued.expiresAt,
-          user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions }
+          user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions },
+    ...(req.query.landing === '1' ? { landing: authenticatedLandingBootstrap(user, data, permissions) } : {})
         });
       }
     }
@@ -5968,7 +6001,8 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   return res.json({
     access_token: issued.accessToken, token_type: 'Bearer',
     expires_in: jwtService.config.accessTokenTtlSeconds, expires_at: issued.expiresAt,
-    user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions }
+    user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions },
+    ...(req.query.landing === '1' ? { landing: authenticatedLandingBootstrap(user, data, permissions) } : {})
   });
 });
 
