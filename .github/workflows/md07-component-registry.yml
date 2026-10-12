@@ -13,6 +13,8 @@ on:
       - 'apps/web/test/pageComponentLayout.test.ts'
       - 'apps/web/src/App.tsx'
       - 'apps/web/src/ComponentSandbox.tsx'
+      - 'apps/web/src/componentSandboxPolicy.ts'
+      - 'apps/web/test/componentSandboxPolicy.test.ts'
       - 'apps/web/src/component-sandbox-frame.tsx'
       - 'apps/web/src/RegisteredComponent.tsx'
       - 'apps/web/src/FlowScreenContent.tsx'
@@ -49,6 +51,8 @@ jobs:
         run: npx tsx --test apps/web/test/componentProperties.test.ts
       - name: Verify nested layouts and responsive styling
         run: npx tsx --test apps/web/test/pageComponentLayout.test.ts
+      - name: Verify sandbox payload protection
+        run: npx tsx --test apps/web/test/componentSandboxPolicy.test.ts
       - name: Run backend regression suite
         env:
           NODE_ENV: test
