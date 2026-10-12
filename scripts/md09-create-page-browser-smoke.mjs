@@ -78,17 +78,19 @@ try{
   await wizard.getByLabel('Desktop and tablet').uncheck();
   await wizard.getByRole('button',{name:'Create draft'}).click();
   await page.getByRole('button',{name:'Save',exact:true}).click();
-  await page.waitForFunction(async apiName=>{
-    const response=await fetch('/_unused_'+apiName).catch(()=>null);
-    return true;
-  },newApi).catch(()=>{});
-  const saved=(await request('/metadata/pages',token)).pages.find(item=>item.apiName===newApi);
+  let saved;
+  let updatedApp;
+  for(let i=0;i<35;i++){
+    saved=(await request('/metadata/pages',token)).pages.find(item=>item.apiName===newApi);
+    updatedApp=(await request('/metadata/apps',token)).apps.find(item=>item.apiName===appId);
+    if(saved&&updatedApp?.navigationPageApiNames.includes(newApi))break;
+    await pause(200);
+  }
   assert(saved,'Guided page must be saved');
   assert.equal(saved.pageType,'App Page');
   assert.equal(saved.targetObject,'Account');
   assert.equal(saved.template,'header-main');
   assert.deepEqual(saved.devices,['Phone']);
-  const updatedApp=(await request('/metadata/apps',token)).apps.find(item=>item.apiName===appId);
   assert(updatedApp?.navigationPageApiNames.includes(newApi),'App Page must be attached to the selected application on first save');
   assert(updatedApp.navigationOrder.some(entry=>entry.type==='App Page'&&entry.apiName===newApi));
   await page.reload();
@@ -102,7 +104,12 @@ try{
   await page.locator('#new-lightning-page-app').selectOption('');
   await page.getByRole('dialog',{name:'Create a Lightning page'}).getByRole('button',{name:'Create draft'}).click();
   await page.getByRole('button',{name:'Save',exact:true}).click();
-  const recordPage=(await request('/metadata/pages',token)).pages.find(item=>item.apiName==='MD09_Guided_Record');
+  let recordPage;
+  for(let i=0;i<30;i++){
+    recordPage=(await request('/metadata/pages',token)).pages.find(item=>item.apiName==='MD09_Guided_Record');
+    if(recordPage)break;
+    await pause(200);
+  }
   assert(recordPage);
   assert.equal(recordPage.pageType,'Record Page');
   assert.equal(recordPage.targetObject,'Contact');
