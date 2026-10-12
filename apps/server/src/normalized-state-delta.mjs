@@ -49,7 +49,8 @@ export function planNormalizedDelta(previousRows, projectedRows) {
   const assigned = new Map();
   const seen = new Set();
   const nodes = [];
-  let highestId = Math.max(...old.map(row => row.nodeId));
+  let highestId = 0;
+  for (const row of old) highestId = Math.max(highestId, row.nodeId);
   for (const row of next) {
     const parent = row.parentId === null ? null : assigned.get(row.parentId);
     if (row.parentId !== null && !parent) throw Error('Projected parent is missing');
