@@ -5805,6 +5805,42 @@ app.post('/api/auth/mfa/enroll/confirm', accessAuthentication, (req: Request, re
   return res.json({ enrolled: true, reauthenticate: true, backup_codes: backup.codes });
 });
 
+app.post('/api/auth/mfa/recovery-codes/rotate', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local')
+    return res.status(409).json({ error: 'MFA is managed by your identity provider' });
+  const parsed = z.object({ password: z.string().min(1).max(256), code: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Current password and authenticator code required' });
+  const principal = getPrincipal(res);
+  const user = principalUser(principal)!;
+  if (!user.mfaSecret) return res.status(409).json({ error: 'MFA has not been enrolled' });
+  if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts' });
+  const validPassword = await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash);
+  let step: number | null = null;
+  try {
+    if (validPassword) step = verifyTotp(openMfaSecret(user.tenantId, user.id, user.mfaSecret),
+      parsed.data.code, user.mfaLastUsedStep ?? -1);
+  } catch { return res.status(503).json({ error: 'MFA secret cannot be decrypted' }); }
+  if (step === null) {
+    recordMfaFailure(user.id);
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+  const generated = newMfaRecoveryCodes();
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+      ? { ...item, mfaRecoveryCodes: generated.digests, mfaLastUsedStep: step,
+          mfaVersion: (item.mfaVersion ?? 0) + 1, authVersion: (item.authVersion ?? 0) + 1 }
+      : item),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
+    tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
+      tenantData(user.tenantId)!, user.id, 'auth.mfa.recovery-codes.rotated') }
+  };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to save MFA recovery codes' }); }
+  mfaFailures.delete(user.id);
+  return res.json({ backup_codes: generated.codes, reauthenticate: true });
+});
+
 app.post('/api/auth/mfa/disable', accessAuthentication, async (req: Request, res: Response) => {
   if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'External identity provider manages MFA' });
   const parsed = z.object({ password: z.string().min(1).max(256), code: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
