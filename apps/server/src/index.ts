@@ -65,7 +65,7 @@ app.use(cors((req, callback) => {
     try {
       const url = new URL(origin);
       const binding = tenantForRequestHost(req);
-      allowed = url.protocol === 'https:' && url.hostname === req.hostname
+      allowed = url.protocol === 'https:' && url.port === '' && url.hostname === req.hostname
         && url.pathname === '/' && !url.search && !url.hash
         && !url.username && !url.password && binding?.status === 'VERIFIED';
     } catch { allowed = false; }
