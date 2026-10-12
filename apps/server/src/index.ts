@@ -104,7 +104,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 app.use((req: Request, res: Response, next: NextFunction) => {
   // Only explicitly identified external API traffic belongs in Communication Records.
   // Browser, internal automation and platform API requests must not be logged here.
-  if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app'
+  if (!req.path.startsWith('/api') || req.path.startsWith('/api/auth/') || req.get('x-metadrive-request-source') === 'web-app'
     || req.get('x-metadrive-external-api') !== 'true') return next();
   const startedAt = Date.now();
   let responseBody: unknown;
@@ -5132,6 +5132,8 @@ function mfaCredentialReady(): boolean {
 function newMfaToken<T extends { expiresAt: number }>(store: Map<string, T>, value: T): string {
   const now = Date.now();
   for (const [key, item] of store) if (item.expiresAt <= now) store.delete(key);
+  // Bound pending challenges even if a credentialed client repeatedly requests new ones.
+  if (store.size >= 2048) store.delete(store.keys().next().value!);
   const raw = randomBytes(32).toString('base64url');
   store.set(hashToken(raw), value);
   return raw;
@@ -5305,7 +5307,7 @@ app.get('/api/auth/mfa/status', accessAuthentication, (_req: Request, res: Respo
   return res.json({ mode: tenant.mfaPolicy.mode, enrolled: Boolean(user.mfaSecret) });
 });
 
-app.get('/api/auth/mfa/policy', accessAuthentication, requirePermission('security:read'), (_req: Request, res: Response) => {
+app.get('/api/auth/mfa/policy', accessAuthentication, requirePermission('security:manage'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId)!;
   return res.json(tenant.mfaPolicy);
 });
