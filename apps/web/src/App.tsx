@@ -4357,7 +4357,9 @@ function MetadataBoundPageComponent({
       }
     });
   };
-  const visibleRecords = records.filter(matchFilters);
+  // Array.filter supplies the numeric index as its second callback argument.
+  // Keep filter definitions bound to component metadata instead of receiving that index.
+  const visibleRecords = records.filter((record) => matchFilters(record));
   const mappedProducts = visibleRecords.map((record) => ({
     id: String(record.Id ?? ''),
     name: String(record[String(properties.nameField ?? 'Name')] ?? ''),
