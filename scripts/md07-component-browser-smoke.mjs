@@ -60,7 +60,7 @@ try {
   await page.getByLabel('Flow Builder screens').check();
   await page.locator('#library-jsx-file').setInputFiles({
     name:'MD07_Browser_Widget.jsx',mimeType:'text/javascript',
-    buffer:Buffer.from("export default function Component({label}) { return <div>MD07 isolated component ready: {label}</div> }")
+    buffer:Buffer.from("export default function Component({label,onAction}) { return <div>MD07 isolated component ready: {label}<button onClick={() => onAction({event:'open',value:{Name:'Clicked'}})}>Launch Flow</button><button onClick={() => onAction({event:'browse',value:{}})}>Browse Records</button></div> }")
   });
   await page.getByRole('button',{name:'Register draft'}).click();
   const row=page.locator('.library-component-card').filter({hasText:'MD07_Browser_Widget'});
@@ -104,10 +104,83 @@ try {
   const published=componentRow.components.find((item)=>item.apiName==='MD07_Browser_Widget');
   if(!published?.surfaces.includes('dashboard')||!published?.surfaces.includes('flow'))
     throw Error('Custom component not advertised for dashboard and Flow surfaces');
+  // A kiosk is an App Page, not just a Page Builder preview. Exercise its activated runtime
+  // with a published custom component at desktop, tablet, and phone widths.
+  const kioskPageApiName='MD07_Browser_Kiosk';
+  await request('/metadata/pages/'+kioskPageApiName,token,'PUT',{
+    apiName:kioskPageApiName,label:'MD07 Kiosk',targetObject:'Account',pageType:'App Page',
+    status:'Active',layoutMode:'template',template:'one-region',canvasWidth:1920,canvasHeight:1080,
+    devices:['Desktop','Phone'],activationAssignments:[],
+    components:[{id:'md07-kiosk-component',type:'Custom:MD07_Browser_Widget',
+      label:'MD07 Browser Widget',properties:{libraryComponentId:'MD07_Browser_Widget',objectApiName:'Account',
+        actionFlows:{open:{actionType:'RunFlow',flowApiName:'MD07_Browser_Flow',inputs:{}},
+          browse:{actionType:'Navigate',navigationObjectApiName:'Account'}}},
+      visible:true,region:'main'}]
+  });
+  const kioskApp='MD07_Browser_Kiosk_App';
+  await request('/metadata/apps',token,'POST',{
+    apiName:kioskApp,label:'MD07 Kiosk App',description:'Disposable component acceptance kiosk',
+    navigationItems:['Account'],navigationPageApiNames:[kioskPageApiName],
+    brandColor:'#0176d3',utilityItems:[]
+  });
+  for(const [width,height] of [[1440,900],[820,1180],[390,844]]) {
+    await page.setViewportSize({width,height});
+    await page.goto('http://127.0.0.1:5173/une/apps/'+kioskApp+'/pages/'+kioskPageApiName);
+    const kioskFrame=page.locator('iframe[sandbox="allow-scripts"]').first();
+    await kioskFrame.waitFor({state:'attached'});
+    await kioskFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  }
+  await page.setViewportSize({width:1440,height:900});
+  // Prove actual custom component rendering on dashboards; advertising a surface is insufficient.
+  const dashboardApiName='MD07_Browser_Dashboard';
+  await request('/metadata/dashboards/'+dashboardApiName,token,'PUT',{
+    apiName:dashboardApiName,label:'MD07 Browser Dashboard',description:'',
+    folderName:'Private Reports',visibility:'Private',sharedUserIds:[],sharedPermissionSetGroupIds:[],
+    filterLogic:'All',status:'Deployed',filters:[],
+    components:[{id:'md07-dashboard-widget',title:'MD07 Browser Widget',type:'Custom',
+      customComponentApiName:'MD07_Browser_Widget',objectApiName:'Account',
+      properties:{title:'MD07 dashboard proof'},width:'Half',height:'Medium',
+      aggregation:'Count',measureFieldApiName:null,groupByFieldApiName:null,
+      chartType:'Bar',displayFieldApiNames:[]}]
+  });
+  await page.goto('http://127.0.0.1:5173/une/dashboards/'+dashboardApiName);
+  const dashboardFrame=page.locator('[data-dashboard-custom-component-id="md07-dashboard-widget"] iframe[sandbox="allow-scripts"]');
+  await dashboardFrame.waitFor({state:'attached'});
+  await dashboardFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  // Screen Flows use the identical registry definition and opaque-origin sandbox.
+  const flowApiName='MD07_Browser_Flow';
+  await request('/metadata/flows/'+flowApiName,token,'PUT',{
+    apiName:flowApiName,label:'MD07 Browser Flow',flowType:'Screen Flow',
+    status:'Active',versionNumber:1,activeVersion:null,triggerObject:null,startConfig:{},
+    elements:[{id:1,type:'Start',label:'Start',config:{}},
+      {id:2,type:'Screen',label:'Custom Component Screen',config:{fields:[
+        {type:'Custom Component',apiName:'MD07_Custom_Field',label:'MD07 Browser Widget',
+          componentApiName:'MD07_Browser_Widget',componentPropsJson:'{}',required:false}
+      ]}}],
+    connectors:[{id:'start-screen',from:1,to:2,label:'',kind:'normal'}],resources:[],versions:[]
+  });
+  await page.goto('http://127.0.0.1:5173/une/setup/flow-builder/'+flowApiName);
+  await page.getByRole('button',{name:'Run',exact:true}).click();
+  const flowFrame=page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]');
+  await flowFrame.waitFor({state:'attached'});
+  await flowFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
+  // Prove sandbox user events reach metadata-configured Flow and navigation,
+  // without exposing privileged callbacks to the uploaded JSX.
+  await page.goto('http://127.0.0.1:5173/une/apps/'+kioskApp+'/pages/'+kioskPageApiName);
+  const runtimeKioskFrame=page.locator('iframe[sandbox="allow-scripts"]').first();
+  await runtimeKioskFrame.contentFrame().getByRole('button',{name:'Launch Flow'}).click();
+  await page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]').waitFor({state:'attached'});
+  await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
+  await runtimeKioskFrame.contentFrame().getByRole('button',{name:'Browse Records'}).click();
+  await page.waitForURL(/\/une\/o\/Account\/list/);
+
   if(uncaught.length)throw Error('Uncaught browser errors: '+uncaught.join('; '));
   console.log(JSON.stringify({module:7,browser:'Chromium',registryCreate:true,publish:true,
     pageSave:true,reopen:true,desktop:true,tablet:true,phone:true,
-    sandbox:true,advertisedSurfaces:['page','dashboard','flow'],pageErrors:0,isolated:true}));
+    sandbox:true,kioskAppRendered:true,metadataFlowAction:true,metadataNavigation:true,
+    dashboardRendered:true,flowScreenRendered:true,
+    advertisedSurfaces:['page','dashboard','flow'],pageErrors:0,isolated:true}));
 } finally {
   if(browser)await browser.close();
   for(const child of children.reverse())if(child.exitCode===null)child.kill('SIGTERM');

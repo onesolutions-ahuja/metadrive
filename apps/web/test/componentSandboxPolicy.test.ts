@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sandboxPublicProps, sandboxSafeValue } from '../src/componentSandboxPolicy';
+import { sandboxPublicProps, sandboxSafeValue, sandboxSafeAction } from '../src/componentSandboxPolicy';
 
 test('sandbox never forwards tokens, named credentials or nested secrets',()=>{
   const original = {
@@ -25,4 +25,17 @@ test('sandbox rejects inherited prototypes, cycles and unbounded arrays',()=>{
   assert.equal(clean.constructor,undefined);
   assert.equal(clean.rows.length,500);
   assert.equal(sandboxSafeValue('x'.repeat(15000)), 'x'.repeat(10000));
+});
+
+test('untrusted sandbox events are validated, size-bounded and redacted before Flow dispatch', () => {
+  assert.equal(sandboxSafeAction({event:'__proto__',value:1}),null);
+  assert.equal(sandboxSafeAction({event:'checkout;DROP',value:1}),null);
+  assert.equal(sandboxSafeAction({event:'checkout',value:'x'.repeat(35000)}),null);
+  assert.equal(sandboxSafeAction({event:'add_to_cart',value:{quantity:2,customerPassword:'do-not-send',nested:{refreshToken:'secret',Name:'Product'}}})?.event,'add_to_cart');
+  const action=sandboxSafeAction({event:'add_to_cart',value:{quantity:2,customerPassword:'do-not-send',nested:{refreshToken:'secret',Name:'Product'}}});
+  assert.deepEqual((action?.value as any).quantity,2);
+  assert.equal((action?.value as any).customerPassword,undefined);
+  assert.equal((action?.value as any).nested.refreshToken,undefined);
+  assert.equal((action?.value as any).nested.Name,'Product');
+  assert.equal(sandboxSafeAction({event:'start',value:{safe:'hello'}})?.event,'start');
 });
