@@ -45,6 +45,34 @@ const pool = databaseUrl ? new Pool({
   connectionTimeoutMillis: 15000
 }) : null;
 
+/**
+ * Only one SQL-backed scheduler may dispatch across API replicas.
+ * A session-level advisory lock on a dedicated connection is released in
+ * finally; PostgreSQL also releases it if the process/connection dies.
+ * Contention skips this poll; the next interval retries outstanding work.
+ */
+export async function withSchedulerLease(run: () => Promise<void>): Promise<boolean> {
+  if (!pool) {
+    if (testOnlyLocalState) { await run(); return true; }
+    throw new Error('Native scheduler requires PostgreSQL persistence');
+  }
+  const client = await pool.connect();
+  let acquired = false;
+  try {
+    const result = await client.query('SELECT pg_try_advisory_lock($1::integer, $2::integer) AS acquired', [1330463812, 1]);
+    acquired = result.rows[0]?.acquired === true;
+    if (!acquired) return false;
+    await run();
+    return true;
+  } finally {
+    if (acquired) {
+      try {
+        await client.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', [1330463812, 1]);
+      } finally { client.release(); }
+    } else client.release();
+  }
+}
+
 export async function checkDatabaseConnection(): Promise<'healthy' | 'unavailable' | 'not_configured'> {
   if (!pool) return 'not_configured';
   try {
