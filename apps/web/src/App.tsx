@@ -65,6 +65,7 @@ import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import FlowInputBindingEditor from './FlowInputBindingEditor';
+import RecordFilterEditor from './RecordFilterEditor';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import AppExchange from './AppExchange';
@@ -8022,45 +8023,12 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
           {(customerObject?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
         </select>
       </label>)}
-      <div className="properties-section-title">Customer Filters</div>
-      {listProperty('customerFilters').map((raw, index) => {
-        const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
-        const setFilter = (key: string, value: string) => update('customerFilters', listProperty('customerFilters').map((item, i) => i === index ? {...filter, [key]: value} : item));
-        return <div className="home-page-assignment" key={index}>
-          <label className="form-label">Field<select className="form-control" value={String(filter.field ?? '')} onChange={(e) => setFilter('field',e.target.value)}><option value="">Select field…</option>{(customerObject?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select></label>
-          <label className="form-label">Operator<select className="form-control" value={String(filter.operator ?? 'Equals')} onChange={(e) => setFilter('operator',e.target.value)}>{['Equals','Not Equals','Contains','Greater Than','Less Than'].map((op) => <option key={op}>{op}</option>)}</select></label>
-          <label className="form-label">Value<input className="form-control" value={String(filter.value ?? '')} onChange={(e) => setFilter('value',e.target.value)} /></label>
-          <button className="btn" type="button" onClick={() => update('customerFilters',listProperty('customerFilters').filter((_,i)=>i!==index))}>Remove filter</button>
-        </div>;
-      })}
-      <button className="btn" disabled={!customerObjectApiName} onClick={() => update('customerFilters',[...listProperty('customerFilters'),{field:'',operator:'Equals',value:''}])}>Add customer filter</button>
+      <RecordFilterEditor title="Customer Filters" fields={customerObject?.fields ?? []}
+        filters={listProperty('customerFilters')} onChange={filters => update('customerFilters', filters)} />
     </>}
     {kioskMode && <p className="properties-help">Products come from the selected object and filters. Static product cards are not used. Checkout requires a verified, active Flow that creates the Sale record.</p>}
-    <div className="properties-section-title">Record Filters</div>
-    {listProperty('filters').map((raw, index) => {
-      const filter = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as ComponentPropertyRecord : {};
-      const changeFilter = (key: string, value: string) => update('filters', listProperty('filters').map((item, i) =>
-        i === index ? { ...filter, [key]: value } : item));
-      return <div key={index} className="home-page-assignment">
-        <label className="form-label">Field
-          <select className="form-control" value={String(filter.field ?? '')} onChange={(event) => changeFilter('field', event.target.value)}>
-            <option value="">Select field…</option>
-            {fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
-          </select>
-        </label>
-        <label className="form-label">Operator
-          <select className="form-control" value={String(filter.operator ?? 'Equals')} onChange={(event) => changeFilter('operator', event.target.value)}>
-            {['Equals', 'Not Equals', 'Contains', 'Greater Than', 'Less Than'].map((operator) => <option key={operator}>{operator}</option>)}
-          </select>
-        </label>
-        <label className="form-label">Value
-          <input className="form-control" value={String(filter.value ?? '')} onChange={(event) => changeFilter('value', event.target.value)} />
-        </label>
-        <button className="btn" type="button" onClick={() => update('filters', listProperty('filters').filter((_, i) => i !== index))}>Remove filter</button>
-      </div>;
-    })}
-    <button className="btn" type="button" disabled={!objectApiName} onClick={() => update('filters',
-      [...listProperty('filters'), { field: '', operator: 'Equals', value: '' }])}>Add filter</button>
+    <RecordFilterEditor title="Record Filters" fields={fields}
+      filters={listProperty('filters')} onChange={filters => update('filters', filters)} />
     <div className="properties-section-title">Actions</div>
     <div className="properties-section-title">Event → Flow / Navigation bindings</div>
     <p className="properties-help">Each event name is emitted by a custom component. Select a Flow or an RBAC-checked route and map input variables to event fields. No executable code is stored here.</p>
