@@ -7622,6 +7622,11 @@ function routeParam(req: Request, name: string): string {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 }
 
+function requireCommunicationAuditAccess(principal: Principal, objectName: string, res: Response): boolean {
+  if (objectName !== 'Communication_Records__c' || principal.permissions.includes('security:manage')) return true;
+  res.status(403).json({ error: 'Communication audit access requires security:manage' });
+  return false;
+}
 function canManageRecordShares(principal: Principal, tenant: TenantData, objectName: string, record: RuntimeRecord): boolean {
   return record.OwnerId === principal.userId
     || hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')
@@ -7632,6 +7637,8 @@ app.get('/api/records/:objectName/:recordId/shares', accessAuthentication, (req:
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
+  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
@@ -7654,6 +7661,8 @@ app.post('/api/records/:objectName/:recordId/shares', accessAuthentication, (req
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
+  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
@@ -7695,6 +7704,8 @@ app.delete('/api/records/:objectName/:recordId/shares/:userId', accessAuthentica
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
+  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const userId = routeParam(req, 'userId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
@@ -7717,6 +7728,8 @@ app.delete('/api/records/:objectName/:recordId/shares/groups/:groupId', accessAu
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
+  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const groupId = routeParam(req, 'groupId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
@@ -7739,6 +7752,7 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
@@ -7808,6 +7822,7 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
@@ -8178,6 +8193,8 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
+  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (objectName === 'ConnectorProvider__c' || objectName === 'IntegrationConnection__c') {
@@ -8354,6 +8371,8 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
+  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (objectName === 'ConnectorProvider__c' || objectName === 'IntegrationConnection__c') {
@@ -8415,6 +8434,8 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
+  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
+  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (objectName === 'ConnectorProvider__c' || objectName === 'IntegrationConnection__c') {
