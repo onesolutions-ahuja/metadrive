@@ -5,7 +5,7 @@ import RegisteredComponent from '../src/RegisteredComponent';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  canNest, childrenOf, isLayoutContainer, layoutSettings,
+  canNest, childrenOf, componentLayoutProps, isLayoutContainer, layoutSettings,
   reparentComponent, resolveLayoutStyle, updateLayoutSettings, validateLayoutSetting
 } from '../src/pageComponentLayout';
 import type { PageComponentMetadata } from '../src/metadata';
@@ -102,4 +102,14 @@ test('registered JSX containers render real child components, not placeholders',
   assert.match(html, /data-kind="card"/);
   assert.match(html, /Nested component works/);
   assert.ok(html.indexOf('data-kind="container"') < html.indexOf('data-kind="card"'));
+});
+
+test('row and grid alignment/gap settings are delivered to existing registered component props', () => {
+  let props: Record<string, unknown> = {};
+  props = updateLayoutSettings(props, 'Base', 'alignItems', 'center');
+  props = updateLayoutSettings(props, 'Base', 'justifyContent', 'space-between');
+  props = updateLayoutSettings(props, 'Base', 'gap', 14);
+  props = updateLayoutSettings(props, 'Phone', 'gap', 6);
+  assert.deepEqual(componentLayoutProps(props, 'Desktop'), { align: 'center', justify: 'space-between', gap: 14 });
+  assert.deepEqual(componentLayoutProps(props, 'Phone'), { align: 'center', justify: 'space-between', gap: 6 });
 });
