@@ -11,7 +11,8 @@ export const relationalTables=[
       ['users','metadrive_rel_users','position,user_id,tenant_id,name,email,password_salt,password_hash,role,permission_set_ids,permission_set_group_ids,disabled,created_at,extra',r=>[r.position,r.id,r.tenantId,r.name,r.email,r.passwordSalt,r.passwordHash,r.role,JSON.stringify(r.permissionSetIds),JSON.stringify(r.permissionSetGroupIds),r.disabled,r.createdAt,JSON.stringify(r.extra)],r=>({position:r.position,id:r.user_id,tenantId:r.tenant_id,name:r.name,email:r.email,passwordSalt:r.password_salt,passwordHash:r.password_hash,role:r.role,permissionSetIds:r.permission_set_ids,permissionSetGroupIds:r.permission_set_group_ids,disabled:r.disabled,createdAt:r.created_at,extra:r.extra})],
       ['sessions','metadrive_rel_refresh_sessions','position,token_hash,family_id,user_id,tenant_id,expires_at,used_at,revoked_at,extra',r=>[r.position,r.tokenHash,r.familyId,r.userId,r.tenantId,r.expiresAt,r.usedAt,r.revokedAt,JSON.stringify(r.extra)],r=>({position:r.position,tokenHash:r.token_hash,familyId:r.family_id,userId:r.user_id,tenantId:r.tenant_id,expiresAt:r.expires_at,usedAt:r.used_at,revokedAt:r.revoked_at,extra:r.extra})],
       ['revokedTokens','metadrive_rel_revoked_tokens','token_hash,expires_at',r=>[r.tokenHash,r.expiresAt],r=>({tokenHash:r.token_hash,expiresAt:r.expires_at})],
-      ['components','metadrive_rel_library_components','position,payload',r=>[r.position,JSON.stringify(r.payload)],r=>({position:r.position,payload:r.payload})]
+      ['components','metadrive_rel_library_components','position,payload',r=>[r.position,JSON.stringify(r.payload)],r=>({position:r.position,payload:r.payload})],
+      ['platformSettings','metadrive_rel_platform_settings','setting_name,payload',r=>[r.key,JSON.stringify(r.payload)],r=>({key:r.setting_name,payload:r.payload})]
     ];
 
 export const keyFor = {
@@ -25,7 +26,8 @@ export const keyFor = {
   users:r=>[r.id],
   sessions:r=>[r.tokenHash],
   revokedTokens:r=>[r.tokenHash],
-  components:r=>[r.position]
+  components:r=>[r.position],
+  platformSettings:r=>[r.key]
 };
 export async function readRelationalRows(client) {
   const rows={};
