@@ -1338,6 +1338,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const flowHistory = useRef<{ undo: FlowDefinitionMetadata[]; redo: FlowDefinitionMetadata[] }>({ undo: [], redo: [] });
   const flowSnapshots = useRef(new Map<string, string>());
   const [page, setPage] = useState<LightningPageMetadata>(defaultLightningPage);
+  // UI-only wizard handoff; app membership is persisted through metadata navigation on activation.
+  const [pageCreationAppContext, setPageCreationAppContext] = useState<Record<string, string>>({});
   const pageRouteApiName = useRef('');
   const [pages, setPages] = useState<LightningPageMetadata[]>([defaultLightningPage]);
   const [dashboards, setDashboards] = useState<DashboardMetadata[]>([]);
@@ -3582,7 +3584,16 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages}
+            preparedAppId={pageCreationAppContext[page.apiName] ?? ''}
+            onPrepareApp={(pageApiName, appId) => setPageCreationAppContext(current => ({
+              ...current, [pageApiName]: appId
+            }))}
+            onAppLinked={pageApiName => setPageCreationAppContext(current => {
+              const next = { ...current };
+              delete next[pageApiName];
+              return next;
+            })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -8248,7 +8259,8 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
 }
 
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow
+  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
+  preparedAppId, onPrepareApp, onAppLinked
 }: {
   page: LightningPageMetadata;
   pages: LightningPageMetadata[];
@@ -8267,8 +8279,14 @@ function PageBuilder({
   onExit: () => void;
   onNotify: (message: string) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  preparedAppId: string;
+  onPrepareApp: (pageApiName: string, appId: string) => void;
+  onAppLinked: (pageApiName: string) => void;
 }) {
-  const [builderAppApiName, setBuilderAppApiName] = useState('');
+  const [builderAppApiName, setBuilderAppApiName] = useState(preparedAppId);
+  useEffect(() => {
+    if (preparedAppId) setBuilderAppApiName(preparedAppId);
+  }, [preparedAppId]);
   const pageTemplates: Array<{ id: LightningPageTemplate; label: string; regions: Array<'header' | 'main' | 'sidebar'> }> = [
     { id: 'one-region', label: 'One Region', regions: ['main'] },
     { id: 'header-main', label: 'Header and Main', regions: ['header', 'main'] },
@@ -8863,6 +8881,24 @@ function PageBuilder({
     try {
       const saved = await onSave(nextPage, savedPageApiName.current);
       if (saved) {
+        if (nextPage.status === 'Active' && nextPage.pageType === 'App Page') {
+          const targetAppId = builderAppApiName || preparedAppId;
+          const destinationApp = apps.find(item => item.apiName === targetAppId);
+          if (destinationApp && !destinationApp.navigationPageApiNames.includes(nextPage.apiName)) {
+            const navigationPageApiNames = [...destinationApp.navigationPageApiNames, nextPage.apiName];
+            try {
+              await onSaveApp({
+                ...destinationApp, navigationPageApiNames,
+                navigationOrder: reconcileNavigationOrder(
+                  destinationApp.navigationItems, navigationPageApiNames, destinationApp.navigationOrder
+                )
+              }, true);
+              onAppLinked(nextPage.apiName);
+            } catch (error) {
+              onNotify(error instanceof Error ? error.message : 'Page activated, but app navigation could not be updated');
+            }
+          } else if (destinationApp) onAppLinked(nextPage.apiName);
+        }
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
         setRedoStack([]);
@@ -8978,25 +9014,9 @@ function PageBuilder({
     try {
       // Persist first: the route resolver must never replace a new unsaved page
       // with the previously selected page on its next metadata refresh.
+      if (newPageAppId) onPrepareApp(apiName, newPageAppId);
       const saved = await onSave(nextPage, apiName, 'Lightning page draft created');
-      if (!saved) return;
-      if (nextPage.pageType === 'App Page' && newPageAppId) {
-        const selectedApp = apps.find(item => item.apiName === newPageAppId);
-        if (selectedApp && !selectedApp.navigationPageApiNames.includes(apiName)) {
-          const navigationPageApiNames = [...selectedApp.navigationPageApiNames, apiName];
-          try {
-            await onSaveApp({
-              ...selectedApp, navigationPageApiNames,
-              navigationOrder: reconcileNavigationOrder(
-                selectedApp.navigationItems, navigationPageApiNames, selectedApp.navigationOrder
-              )
-            }, true);
-          } catch (error) {
-            onNotify(error instanceof Error ? error.message
-              : 'Page draft saved, but app navigation must be configured in App Manager');
-          }
-        }
-      }
+      if (!saved) { onAppLinked(apiName); return; }
       savedPageApiName.current = apiName;
       if (newPageAppId) setBuilderAppApiName(newPageAppId);
       setSelectedId('');
