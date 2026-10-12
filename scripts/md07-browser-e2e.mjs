@@ -63,6 +63,14 @@ try {
   await inspector.getByLabel('Edit layout breakpoint').selectOption('Base');
   await inspector.locator('input[aria-label="Padding"]').fill('32');
   assert.equal(await root.evaluate((element) => Math.round(parseFloat(getComputedStyle(element).paddingTop))), 32);
+  await inspector.getByLabel('Edit layout breakpoint').selectOption('Phone');
+  await inspector.locator('input[aria-label="Padding"]').fill('12');
+  await page.getByRole('button', { name: 'Phone preview' }).click();
+  assert.equal(await root.evaluate((element) => Math.round(parseFloat(getComputedStyle(element).paddingTop))), 12,
+    'phone breakpoint should override default padding');
+  await page.getByRole('button', { name: 'Desktop preview' }).click();
+  assert.equal(await root.evaluate((element) => Math.round(parseFloat(getComputedStyle(element).paddingTop))), 32,
+    'desktop must retain base padding');
 
   await card.click({ position: { x: 30, y: 12 } });
   const parentPicker = page.getByLabel('Parent container');
@@ -80,6 +88,7 @@ try {
   const saved = (await request('/metadata/pages')).pages.find((item) => item.apiName === name);
   assert.ok(saved, 'saved test page must remain queryable');
   assert.equal(saved.components.find((item) => item.id === 'md07-root').properties.layoutStyle.padding, 32);
+  assert.equal(saved.components.find((item) => item.id === 'md07-root').properties.layoutResponsive.Phone.padding, 12);
   assert.equal(saved.components.find((item) => item.id === 'md07-card').properties.layoutParentId, 'md07-root');
   console.log('PASS: authenticated browser nested component editing, styling, save and reopen');
 } catch (error) {
