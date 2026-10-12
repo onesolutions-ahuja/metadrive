@@ -6,6 +6,9 @@ on:
     paths:
       - '.github/workflows/full-sql-isolated-proof.yml'
       - 'apps/server/src/normalized-state-runtime.mjs'
+      - 'apps/server/src/normalized-typed-records.mjs'
+      - 'apps/server/src/postgres-state.ts'
+      - 'apps/server/scripts/prove-typed-records-on-restore.mjs'
       - 'apps/server/src/normalized-state-tree.mjs'
       - 'apps/server/src/normalized-object-schema.mjs'
       - 'apps/server/sql/normalized-state-v3.sql'
@@ -109,6 +112,14 @@ jobs:
           node --check apps/server/scripts/archive-all-jsonb-on-restored-db.mjs
           node apps/server/scripts/archive-all-jsonb-on-restored-db.mjs --apply
           echo "No JSONB columns remain in the isolated converted database"
+      - name: Test transactional typed SQL CREATE UPDATE DELETE and rollback
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored
+          PGSSLMODE: disable
+        run: |
+          node --check apps/server/src/normalized-typed-records.mjs
+          node --check apps/server/scripts/prove-typed-records-on-restore.mjs
+          node apps/server/scripts/prove-typed-records-on-restore.mjs
       - name: Create separate SQL-only database snapshot on isolated runner
         run: |
           docker run --rm --network host -e PGPASSWORD=postgres \
