@@ -50,7 +50,7 @@ try{
   if(!hadRecordBucket) delete after.tenants[tenantId].records[objectId];
   active=await save(after,active);
   const gone=await read();
-  if(gone.state.tenants[tenantId].records[objectId].some(r=>r.Id===id))
+  if((gone.state.tenants[tenantId].records[objectId]??[]).some(r=>r.Id===id))
     throw Error('Record DELETE not durable in typed SQL');
   if(stateDigest(gone.state)!==original) throw Error('CRUD rollback did not exactly restore source snapshot');
   const sqlRecordRegistry=await pool.query('SELECT count(*)::int AS n FROM md_v2_object_registry WHERE active=true');
