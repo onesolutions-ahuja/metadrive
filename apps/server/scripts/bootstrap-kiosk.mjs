@@ -177,7 +177,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
       profile.fieldPermissions ??= {};
       for (const f of cartFields) profile.fieldPermissions['CartLine__c.' + f.apiName] = { read: true, edit: true };
       for (const f of cartHeaderFields) profile.fieldPermissions['Cart__c.' + f.apiName] = { read: true, edit: true };
-      profile.objectPermissions.Product__c ??= { ...grants };
+      profile.objectPermissions.Product__c = { ...grants };
       for (const f of productFields) profile.fieldPermissions['Product__c.' + f.apiName] ??= { read: true, edit: false };
     }
 
@@ -258,7 +258,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         { id: 3, type: 'Decision', label: 'Create session if missing', config: {
           outcomes: [{ name: 'Missing', label: 'Missing', conditions: [
             { field: '{!CartHeader.Id}', operator: 'Is Null' }
-          ] }]
+          ] }, { name: 'Default', label: 'Default Outcome', conditions: [] }]
         } },
         { id: 4, type: 'Create Records', label: 'Create session header', config: {
           object: 'Cart__c', fieldValues: [
@@ -278,7 +278,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
           outcomes: [{ name: 'Found', label: 'Found', conditions: [
             { field: '{!SelectedProduct.Id}', operator: 'Is Not Null' },
             { field: '{!Quantity}', operator: 'Greater Than', value: 0 }
-          ] }]
+          ] }, { name: 'Default', label: 'Default Outcome', conditions: [] }]
         } },
         { id: 4, type: 'Create Records', label: 'Create cart line', config: {
           object: 'CartLine__c', fieldValues: [
@@ -299,7 +299,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         { id: 2, type: 'Decision', label: 'Positive quantity?', config: {
           outcomes: [{ name: 'Positive', label: 'Positive', conditions: [
             { field: '{!Quantity}', operator: 'Greater Than', value: 0 }
-          ] }]
+          ] }, { name: 'Default', label: 'Default Outcome', conditions: [] }]
         } },
         { id: 3, type: 'Update Records', label: 'Update own session line', config: {
           object: 'CartLine__c', conditions: [
