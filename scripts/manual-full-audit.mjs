@@ -466,7 +466,26 @@ async function run() {
   md.push('', '## Limitations', ...report.limitations.map(l => '- ' + l), '');
   await fs.writeFile(path.join(root, 'summary.md'), md.join('\n'));
   console.log(JSON.stringify(report.summary, null, 2));
-  if (report.summary.authenticatedProfiles !== profiles.length || report.summary.completedScreens === 0)
-    process.exitCode = 2;
+  // Audit closure is a hard gate. A green Actions run must not disguise severe UX defects.
+  // Moderate findings (including contrast) require explicit review before declaring completion.
+  const severe = all.filter(issue => ['critical', 'high'].includes(issue.severity));
+  const unresolvedAcceptance = all.filter(issue =>
+    issue.code === 'A11Y_color-contrast' ||
+    ['FAVOURITE_TARGET_BELOW_44PX', 'BUILDER_TOOLBAR_OFFSCREEN',
+      'CREDENTIALS_TABLE_OFFSCREEN', 'HORIZONTAL_OVERFLOW'].includes(issue.code));
+  const coverageIncomplete = report.summary.authenticatedProfiles !== profiles.length ||
+    report.summary.completedScreens < profiles.length * routes.length ||
+    report.summary.failedScreens > 0;
+  report.summary.closure = {
+    status: !coverageIncomplete && severe.length === 0 && unresolvedAcceptance.length === 0 ? 'pass' : 'fail',
+    coverageIncomplete, severeFindings: severe.length, unresolvedAcceptance: unresolvedAcceptance.length
+  };
+  // Rewrite the report with its final closure result (do not rely only on job success).
+  await fs.writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
+  await fs.appendFile(path.join(root, 'summary.md'),
+    '\n## Acceptance gate\n\nStatus: **' + report.summary.closure.status.toUpperCase() +
+    '**; severe findings: ' + severe.length + '; unresolved acceptance: ' +
+    unresolvedAcceptance.length + '; coverage incomplete: ' + coverageIncomplete + '\n');
+  if (report.summary.closure.status !== 'pass') process.exitCode = 2;
 }
 await run();
