@@ -1,0 +1,374 @@
+import { chromium } from 'playwright';
+import AxeBuilder from '@axe-core/playwright';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const defaultBase = 'https://onesolutions-ahuja.github.io/metadrive/';
+const base = new URL(process.env.METADRIVE_BASE_URL || defaultBase);
+const email = process.env.METADRIVE_TEST_EMAIL;
+const password = process.env.METADRIVE_TEST_PASSWORD;
+const output = process.env.METADRIVE_AUDIT_OUTPUT || 'audit-results';
+const baselineDir = process.env.METADRIVE_BASELINE_DIR || '';
+const root = path.resolve(output);
+const limits = { pageMs: 1500, touchTargetPx: 24, preferredTouchPx: 44 };
+if (base.protocol !== 'https:' && base.hostname !== 'localhost') throw new Error('Use HTTPS or localhost');
+if (process.env.METADRIVE_BASE_URL && base.origin !== new URL(defaultBase).origin &&
+    process.env.METADRIVE_ALLOW_OTHER_HOST !== 'true') throw new Error('Non-default host requires explicit opt-in');
+if (Boolean(email) !== Boolean(password)) throw new Error('Set both test email and password');
+if (!email || !password) throw new Error('Authenticated full audit requires METADRIVE_TEST_EMAIL and METADRIVE_TEST_PASSWORD (GitHub Actions secrets).');
+if (base.pathname.indexOf('/metadrive/') !== 0 && base.hostname !== 'localhost') throw new Error('Unexpected MetaDrive base path');
+
+const profiles = [
+  { name: 'desktop', viewport: { width: 1440, height: 900 } },
+  { name: 'till-15-inch', viewport: { width: 1920, height: 1080 }, hasTouch: true },
+  { name: 'tablet', viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true },
+  { name: 'phone', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+  { name: 'phone-landscape', viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true },
+  { name: 'zoom-equivalent', viewport: { width: 640, height: 800 } }
+];
+const routes = [
+  ['App home', 'une/apps/Records/home'],
+  ['Setup home', 'une/setup/home'],
+  ['Object Manager', 'une/setup/object-manager'],
+  ['Flow Builder', 'une/setup/flow-builder'],
+  ['Page Builder', 'une/setup/page-builder'],
+  ['Kiosk Page Builder', 'une/setup/page-builder/UNE_KIOSK'],
+  ['Dashboard Builder', 'une/setup/dashboard-builder'],
+  ['Report Builder', 'une/setup/report-builder'],
+  ['Component Library', 'une/setup/component-library'],
+  ['App Manager', 'une/setup/app-manager'],
+  ['AppExchange', 'une/setup/app-exchange'],
+  ['Connector Settings', 'une/setup/connector-settings'],
+  ['Named Credentials', 'une/setup/named-credentials'],
+  ['Company Settings', 'une/setup/company-settings'],
+  ['Access Control', 'une/setup/rbac'],
+  ['Flow Interviews', 'une/setup/flow-interviews'],
+  ['Scheduled Flows', 'une/setup/scheduled-flows'],
+  ['Flow Logs', 'une/setup/flow-logs'],
+  ['Approval Processes', 'une/setup/approval-processes']
+];
+const report = {
+  startedAt: new Date().toISOString(), base: base.origin + base.pathname,
+  mode: 'read-only', targetReadyMs: limits.pageMs, profiles: [],
+  scope: { routes: routes.map(([name, route]) => ({ name, route })), devices: profiles.map(p => p.name) },
+  summary: {}, limitations: [
+    'Read-only inspection only. Checkout, saving, deleting, changing credentials, executing Flows and payments are never triggered.',
+    'User interactions are limited to local Quick Find, profile menu and keyboard focus; arbitrary application buttons are not clicked.',
+    '200%-zoom equivalent is a reduced CSS viewport, not actual browser zoom.',
+    'Visual regression requires an approved, compatible baseline run; initial screenshots are reference candidates, not passes.',
+    'Screenshots are redacted to conceal form and table data; use a dedicated test tenant, not real customer data.',
+    'Lighthouse synthetic tests and browser timing do not measure real-user INP.',
+    'Some UI and UX judgement (visual hierarchy and task comprehension) requires human review.'
+  ]
+};
+const discovered = new Set();
+const severity = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
+const findIssue = (list, code, level, details) => {
+  if (list.some(i => i.code === code && i.details === details)) return;
+  list.push({ code, severity: level, details: String(details).slice(0, 360) });
+};
+function urlFor(relative) { return new URL(relative, base).href; }
+function safeName(value) { return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 70); }
+async function mkdir(p) { await fs.mkdir(p, { recursive: true }); }
+function isSameApp(url) {
+  try {
+    const u = new URL(url, base);
+    return u.origin === base.origin && u.pathname.startsWith(base.pathname) &&
+      !/\/auth\/|\/logout|\/delete|\/execute|\/payment|\/checkout/.test(u.pathname.toLowerCase());
+  } catch { return false; }
+}
+async function capture(page, profile, label, findings) {
+  const name = profile + '-' + safeName(label) + '.png';
+  const folder = path.join(root, 'screenshots');
+  await mkdir(folder);
+  const file = path.join(folder, name);
+  // Mask content-bearing regions before uploading artifacts from a public repository.
+  const masks = page.locator('input, textarea, [contenteditable="true"], [data-sensitive], table tbody td, [role="gridcell"], img, .user-menu, [class*="customer-info"], [class*="record-row"]');
+  await page.screenshot({ path: file, fullPage: true, animations: 'disabled',
+    mask: masks, maskColor: '#cccccc', timeout: 20000 });
+  const comparison = { status: 'baseline-needed' };
+  if (baselineDir) {
+    const old = path.join(baselineDir, 'screenshots', name);
+    try {
+      const { PNG } = await import('pngjs');
+      const pixelmatch = (await import('pixelmatch')).default;
+      const previous = PNG.sync.read(await fs.readFile(old));
+      const current = PNG.sync.read(await fs.readFile(file));
+      if (previous.width !== current.width || previous.height !== current.height) {
+        comparison.status = 'dimension-changed';
+        comparison.previous = [previous.width, previous.height];
+        comparison.current = [current.width, current.height];
+        findIssue(findings, 'VISUAL_DIMENSIONS', 'medium', name);
+      } else {
+        const diff = new PNG({ width: current.width, height: current.height });
+        const pixels = pixelmatch(previous.data, current.data, diff.data, current.width, current.height, { threshold: 0.12 });
+        comparison.status = pixels / (current.width * current.height) > 0.01 ? 'changed' : 'matched';
+        comparison.changedPercent = Math.round(pixels / (current.width * current.height) * 10000) / 100;
+        if (comparison.status === 'changed') {
+          await mkdir(path.join(root, 'diffs'));
+          await fs.writeFile(path.join(root, 'diffs', name), PNG.sync.write(diff));
+          findIssue(findings, 'VISUAL_REGRESSION', 'medium', name + ': ' + comparison.changedPercent + '% changed');
+        }
+      }
+    } catch (e) {
+      comparison.status = 'baseline-unavailable';
+      comparison.reason = e.code === 'ENOENT' ? 'No matching approved baseline' : String(e.message).slice(0, 120);
+    }
+  }
+  return { file: 'screenshots/' + name, comparison };
+}
+async function collectLayout(page) {
+  return page.evaluate(() => {
+    const visible = el => {
+      const style = getComputedStyle(el), rect = el.getBoundingClientRect();
+      return style.visibility === 'visible' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const label = el => (el.getAttribute('aria-label') || el.getAttribute('title') ||
+      el.textContent || el.tagName).replace(/\s+/g, ' ').trim().slice(0, 55);
+    const body = document.body, root = document.documentElement;
+    const overflow = Math.max(0, root.scrollWidth, body.scrollWidth) - innerWidth;
+    const clipped = [], cramped = [], unlabeled = [], duplicateIds = [];
+    const ids = new Map();
+    const leaves = [];
+    for (const el of document.querySelectorAll('body *')) {
+      if (!visible(el)) continue;
+      if (el.id) {
+        ids.set(el.id, (ids.get(el.id) || 0) + 1);
+      }
+      const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+      if (r.left < -5 || r.right > innerWidth + 5) {
+        if (r.width > 5 && r.height > 5 && !el.closest('[role="grid"], table, .flow-canvas, .page-builder-canvas')) {
+          if (clipped.length < 12 && s.position !== 'fixed' && s.position !== 'absolute' &&
+              !el.closest('[style*="overflow: auto"], [style*="overflow-x"]')) clipped.push({ tag: el.tagName, text: label(el) });
+        }
+      }
+      if (['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) || el.getAttribute('role') === 'button') {
+        if (r.width < 24 || r.height < 24) {
+          if (cramped.length < 12) cramped.push({ tag: el.tagName, text: label(el), size: [Math.round(r.width), Math.round(r.height)] });
+        }
+        if ((el.tagName === 'BUTTON' || el.getAttribute('role') === 'button') &&
+            !el.getAttribute('aria-label') && !el.getAttribute('title') && !el.textContent.trim()) {
+          if (unlabeled.length < 12) unlabeled.push(el.outerHTML.slice(0, 90));
+        }
+      }
+      if (el.children.length === 0 && el.textContent.trim() && r.width > 4 && r.height > 4 &&
+          s.position !== 'absolute' && s.position !== 'fixed' && leaves.length < 250) {
+        leaves.push({ el, r, text: label(el) });
+      }
+    }
+    for (const [id, count] of ids) if (count > 1 && duplicateIds.length < 10) duplicateIds.push({ id, count });
+    const collisions = [];
+    for (let i = 0; i < leaves.length; i++) {
+      for (let j = i + 1; j < leaves.length; j++) {
+        const a = leaves[i], b = leaves[j];
+        if (a.el.closest('button, a') && a.el.closest('button, a') === b.el.closest('button, a')) continue;
+        const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+        const h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+        if (w > 8 && h > 8 && w * h > 0.35 * Math.min(a.r.width*a.r.height, b.r.width*b.r.height)) {
+          if (collisions.length < 8) collisions.push([a.text, b.text]);
+        }
+      }
+    }
+    const brokenImages = [...document.images].filter(img => visible(img) && img.complete && img.naturalWidth === 0)
+      .slice(0, 10).map(img => (img.alt || img.src.split('/').pop() || '').slice(0, 70));
+    const inViewport = [...document.querySelectorAll('input:not([type="hidden"]), button, a[href]')]
+      .filter(visible).length;
+    return { viewport: [innerWidth, innerHeight], document: [root.scrollWidth, root.scrollHeight],
+      overflowPx: Math.max(0, overflow), clipped, cramped, unlabeled, duplicateIds, collisions, brokenImages,
+      interactiveVisible: inViewport, title: document.title };
+  });
+}
+async function inspectKeyboard(page) {
+  const sequence = [];
+  await page.locator('body').click({ position: { x: 1, y: 1 }, force: true }).catch(() => {});
+  for (let i = 0; i < 10; i++) {
+    await page.keyboard.press('Tab');
+    const focus = await page.evaluate(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) return null;
+      const r = a.getBoundingClientRect();
+      return { tag: a.tagName, label: (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 50),
+        offscreen: r.right < 0 || r.left > innerWidth || r.bottom < 0 || r.top > innerHeight };
+    });
+    if (focus) sequence.push(focus);
+  }
+  await page.keyboard.press('Escape');
+  return sequence;
+}
+async function inspectInteractions(page, label) {
+  const steps = [];
+  // Never click arbitrary controls: their names may hide destructive workflow actions.
+  if (label === 'Setup home' || label === 'Object Manager') {
+    const quick = page.getByRole('textbox', { name: 'Quick Find' }).first();
+    if (await quick.count() && await quick.isVisible()) {
+      const before = await quick.inputValue();
+      await quick.fill('audit-find-no-match');
+      steps.push({ test: 'Quick Find text entry', result: await quick.inputValue() === 'audit-find-no-match' ? 'pass' : 'fail' });
+      await quick.fill(before);
+    } else steps.push({ test: 'Quick Find text entry', result: 'not-applicable' });
+  }
+  if (label === 'Setup home') {
+    const profile = page.getByRole('button', { name: 'User profile' }).first();
+    if (await profile.count() && await profile.isVisible()) {
+      await profile.click();
+      const expanded = await profile.getAttribute('aria-expanded');
+      steps.push({ test: 'Profile dropdown open', result: expanded === 'true' ? 'pass' : 'fail' });
+      await profile.click();
+    }
+  }
+  return steps;
+}
+async function inspectLinks(page) {
+  return page.evaluate(() => [...document.querySelectorAll('a[href]')].map(a => ({
+    label: (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 70),
+    href: a.href
+  })).filter(a => a.href).slice(0, 200));
+}
+async function run() {
+  await mkdir(root);
+  await mkdir(path.join(root, 'screenshots'));
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const profile of profiles) {
+      const p = { name: profile.name, screens: [], errors: [], login: {}, coverage: {} };
+      report.profiles.push(p);
+      const context = await browser.newContext({ viewport: profile.viewport, hasTouch: !!profile.hasTouch,
+        isMobile: !!profile.isMobile, reducedMotion: 'reduce' });
+      await context.addInitScript(() => {
+        window.__auditLcp = 0;
+        window.__auditCls = 0;
+        try {
+          new PerformanceObserver(list => { for (const e of list.getEntries()) window.__auditLcp = Math.round(e.startTime); })
+            .observe({ type: 'largest-contentful-paint', buffered: true });
+          new PerformanceObserver(list => { for (const e of list.getEntries()) if (!e.hadRecentInput) window.__auditCls += e.value; })
+            .observe({ type: 'layout-shift', buffered: true });
+        } catch { /* Unsupported metric; leave as unavailable. */ }
+      });
+      const page = await context.newPage();
+      page.setDefaultTimeout(10000);
+      let currentIssues = p.errors;
+      page.on('pageerror', e => findIssue(currentIssues, 'JAVASCRIPT_ERROR', 'high', e.message));
+      page.on('response', response => {
+        if (response.status() >= 500) findIssue(currentIssues, 'HTTP_5XX', 'high', response.status() + ' ' + response.url().split('?')[0]);
+        else if (response.status() === 404 && isSameApp(response.url())) {
+          findIssue(currentIssues, 'HTTP_404', 'medium', response.url().split('?')[0]);
+        }
+      });
+      async function scan(name, relative, authenticated = true) {
+        const s = { name, route: relative, issues: [], checks: {}, status: 'started' };
+        p.screens.push(s);
+        currentIssues = s.issues;
+        try {
+          const started = performance.now();
+          const response = await page.goto(urlFor(relative), { waitUntil: 'domcontentloaded', timeout: 45000 });
+          s.httpStatus = response?.status() ?? null;
+          const domMs = performance.now() - started;
+          await page.locator('body').waitFor({ state: 'visible', timeout: 15000 });
+          if (authenticated) {
+            // An authenticated route returning a 200 login shell is not a pass.
+            await page.waitForFunction(() => !document.querySelector('.auth-loading'), { timeout: 22000 });
+            if (await page.locator('input[type="password"]').first().isVisible().catch(() => false))
+              throw new Error('Authenticated route redirected to login');
+          }
+          await page.evaluate(() => document.fonts.ready);
+          await page.waitForTimeout(550);
+          const readyMs = performance.now() - started;
+          const timings = await page.evaluate(() => {
+            const nav = performance.getEntriesByType('navigation')[0];
+            const paint = performance.getEntriesByType('paint');
+            return { ttfbMs: nav ? Math.round(nav.responseStart) : null,
+              fcpMs: Math.round(paint.find(e => e.name === 'first-contentful-paint')?.startTime || 0) || null,
+              lcpMs: window.__auditLcp || null, cls: Math.round((window.__auditCls || 0)*1000)/1000 };
+          });
+          s.timing = { domMs: Math.round(domMs), readyMs: Math.round(readyMs), ...timings };
+          if (readyMs > limits.pageMs) findIssue(s.issues, 'SLOW_PAGE', 'medium', name + ': ' + Math.round(readyMs) + 'ms > ' + limits.pageMs + 'ms goal');
+          if (s.httpStatus >= 400) findIssue(s.issues, 'PAGE_HTTP', 'high', 'HTTP ' + s.httpStatus);
+          s.layout = await collectLayout(page);
+          if (s.layout.overflowPx > 3) findIssue(s.issues, 'HORIZONTAL_OVERFLOW', 'high', s.layout.overflowPx + 'px');
+          if (s.layout.clipped.length) findIssue(s.issues, 'CLIPPED_ELEMENTS', 'medium', JSON.stringify(s.layout.clipped.slice(0, 4)));
+          if (s.layout.collisions.length) findIssue(s.issues, 'TEXT_OVERLAP_CANDIDATES', 'medium', JSON.stringify(s.layout.collisions.slice(0, 4)));
+          if (s.layout.cramped.length) findIssue(s.issues, 'SMALL_TOUCH_TARGETS', 'low', s.layout.cramped.length + ' examples');
+          if (s.layout.unlabeled.length) findIssue(s.issues, 'UNLABELED_BUTTONS', 'medium', s.layout.unlabeled.length + ' examples');
+          if (s.layout.duplicateIds.length) findIssue(s.issues, 'DUPLICATE_IDS', 'medium', JSON.stringify(s.layout.duplicateIds));
+          if (s.layout.brokenImages.length) findIssue(s.issues, 'BROKEN_IMAGES', 'medium', JSON.stringify(s.layout.brokenImages));
+          const accessibility = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+          s.accessibility = accessibility.violations.map(v => ({ id: v.id, impact: v.impact, count: v.nodes.length,
+            help: v.help, examples: v.nodes.slice(0, 3).map(n => n.target.join(' ')) }));
+          for (const v of s.accessibility) findIssue(s.issues, 'A11Y_' + v.id, v.impact === 'critical' ? 'critical' : v.impact === 'serious' ? 'high' : 'medium', v.help + ' (' + v.count + ')');
+          s.keyboard = await inspectKeyboard(page);
+          if (s.keyboard.filter(f => f.offscreen).length > 2) findIssue(s.issues, 'OFFSCREEN_FOCUS', 'medium', 'Several tab stops are off screen');
+          s.interactions = await inspectInteractions(page, name);
+          for (const step of s.interactions) if (step.result === 'fail') findIssue(s.issues, 'INTERACTION_FAILED', 'medium', step.test);
+          s.links = (await inspectLinks(page)).filter(l => !isSameApp(l.href) && l.href.startsWith(base.origin)).slice(0, 15);
+          if (s.links.length) findIssue(s.issues, 'BROKEN_INTERNAL_LINK_CANDIDATES', 'low', JSON.stringify(s.links.slice(0, 3)));
+          for (const link of await inspectLinks(page)) if (isSameApp(link.href) && /\/une\/o\/[^/]+\/list/.test(link.href))
+            discovered.add(link.href);
+          s.screenshot = await capture(page, profile.name, name, s.issues);
+          s.status = 'completed';
+        } catch (e) {
+          s.status = 'failed';
+          findIssue(s.issues, 'SCREEN_EXCEPTION', 'high', String(e.message || e));
+          try { s.screenshot = await capture(page, profile.name, name + '-error', s.issues); } catch { /* Report stays. */ }
+        }
+      }
+      try {
+        // Login once per browser context; never store credentials in logs or artifacts.
+        const loginStart = performance.now();
+        await page.goto(base.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.locator('input[type="email"]').first().waitFor({ state: 'visible', timeout: 20000 });
+        await page.locator('input[type="email"]').first().fill(email);
+        await page.locator('input[type="password"]').first().fill(password);
+        p.login.validation = await page.locator('form').first().evaluate(form => ({ valid: form.checkValidity() }));
+        await page.getByRole('button', { name: /^sign in$/i }).click();
+        await page.locator('input[type="password"]').first().waitFor({ state: 'hidden', timeout: 45000 });
+        p.login.status = 'passed';
+        p.login.elapsedMs = Math.round(performance.now() - loginStart);
+        if (p.login.elapsedMs > limits.pageMs) findIssue(p.errors, 'SLOW_LOGIN', 'medium', p.login.elapsedMs + 'ms > 1500ms goal');
+        for (const [name, relative] of routes) await scan(name, relative);
+        const dynamic = [...discovered].slice(0, 3);
+        for (let i = 0; i < dynamic.length; i++) {
+          const url = new URL(dynamic[i]);
+          await scan('Discovered record list ' + (i+1), url.pathname.replace(base.pathname, '') + url.search);
+        }
+      } catch (e) {
+        p.login.status = 'failed';
+        // Do not interpolate response bodies or form values; those may contain secrets.
+        findIssue(p.errors, 'AUTHENTICATION_OR_NAVIGATION', 'critical', String(e.message || e).slice(0, 250));
+      } finally {
+        p.coverage = { requested: routes.length, completed: p.screens.filter(s => s.status === 'completed').length,
+          failed: p.screens.filter(s => s.status === 'failed').length,
+          skipped: routes.length - p.screens.filter(s => s.status === 'completed').length -
+            p.screens.filter(s => s.status === 'failed' && routes.some(([name]) => name === s.name)).length };
+        await context.close();
+      }
+    }
+  } finally { await browser.close(); }
+  const all = report.profiles.flatMap(p => [...p.errors, ...p.screens.flatMap(s => s.issues)]);
+  report.finishedAt = new Date().toISOString();
+  report.summary = { profiles: report.profiles.length, requestedScreens: profiles.length * routes.length,
+    completedScreens: report.profiles.reduce((total, p) => total + p.coverage.completed, 0),
+    failedScreens: report.profiles.reduce((total, p) => total + p.coverage.failed, 0),
+    authenticatedProfiles: report.profiles.filter(p => p.login.status === 'passed').length,
+    issues: all.length, bySeverity: Object.fromEntries(Object.keys(severity).map(key => [key, all.filter(e => e.severity === key).length])) };
+  await fs.writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
+  const md = ['# MetaDrive UI/UX audit', '', 'Run: ' + report.startedAt, '',
+    '| Metric | Result |', '|---|---:|',
+    '| Authenticated device profiles | ' + report.summary.authenticatedProfiles + '/' + profiles.length + ' |',
+    '| Screens completed | ' + report.summary.completedScreens + ' |',
+    '| Screens failed | ' + report.summary.failedScreens + ' |',
+    '| Findings | ' + all.length + ' |', '',
+    '## Highest priority issues', ''];
+  const ranked = report.profiles.flatMap(p => [
+    ...p.errors.map(i => ({ profile: p.name, screen: 'Login', ...i })),
+    ...p.screens.flatMap(s => s.issues.map(i => ({ profile: p.name, screen: s.name, ...i })))
+  ]).sort((a,b)=>severity[b.severity]-severity[a.severity]);
+  for (const i of ranked.slice(0, 70))
+    md.push('- **' + i.severity.toUpperCase() + '** ' + i.profile + ' / ' + i.screen + ': ' + i.code + ' — ' + i.details.replace(/\|/g, '/') );
+  md.push('', '## Limitations', ...report.limitations.map(l => '- ' + l), '');
+  await fs.writeFile(path.join(root, 'summary.md'), md.join('\n'));
+  console.log(JSON.stringify(report.summary, null, 2));
+  if (report.summary.authenticatedProfiles !== profiles.length || report.summary.completedScreens === 0)
+    process.exitCode = 2;
+}
+await run();
