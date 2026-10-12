@@ -435,7 +435,18 @@ function settingToRoute(value: string): string {
 }
 
 type AuthState = 'loading' | 'anonymous' | 'authenticated' | 'error';
-type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number };
+type LandingBootstrap = {
+  objects: ObjectMetadata[];
+  pages: LightningPageMetadata[];
+  apps: LightningAppMetadata[];
+  user: {
+    profileId: string;
+    permissions: string[];
+    fieldAccess: Record<string, { read: boolean; edit: boolean }>;
+    recordTypeAccess: Record<string, boolean>;
+  };
+};
+type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
 
 type AppRoute =
   | { kind: 'setup'; workspace: WorkspaceId; objectApiName?: string; setting?: string; resourceApiName?: string; resourceId?: string; dashboardView?: boolean }
@@ -934,7 +945,7 @@ function App() {
       const timeout = window.setTimeout(() => controller.abort(), 12000);
       try {
         const response = await withAuthRefreshLock(() =>
-          fetch(`${apiBase}/auth/refresh`, {
+          fetch(`${apiBase}/auth/refresh?landing=1`, {
             method: 'POST',
             credentials: 'include',
             signal: controller.signal
@@ -949,10 +960,10 @@ function App() {
         }
 
         if (response.ok) {
-          const session = await response.json() as { access_token: string };
+          const session = await response.json() as { access_token: string; landing?: LandingBootstrap };
           accessToken = session.access_token;
           setAuthError('');
-          setEntryTiming({ kind: 'restore', startedAt: restoreStartedAt, authenticatedAt: performance.now() });
+          setEntryTiming({ kind: 'restore', startedAt: restoreStartedAt, authenticatedAt: performance.now(), landing: session.landing });
           setAuthState('authenticated');
           return;
         }
@@ -1042,7 +1053,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
     setSubmitting(true);
     setMessage('');
     try {
-      const session = await apiRequest<{ access_token?: string; mfa_required?: boolean; challenge_token?: string; enrollment_required?: boolean; setup_secret?: string }>('/auth/login', {
+      const session = await apiRequest<{ access_token?: string; landing?: LandingBootstrap; mfa_required?: boolean; challenge_token?: string; enrollment_required?: boolean; setup_secret?: string }>('/auth/login?landing=1', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
@@ -1053,7 +1064,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
       }
       if (!session.access_token) throw new Error('Authentication did not return an access token');
       accessToken = session.access_token;
-      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now() });
+      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now(), landing: session.landing });
     } catch (failure) {
       setMessage(failure instanceof Error ? failure.message : 'Unable to sign in');
     } finally {
@@ -1067,12 +1078,12 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
     setMessage('');
     const startedAt = performance.now();
     try {
-      const session = await apiRequest<{ access_token: string }>('/auth/mfa/verify', {
+      const session = await apiRequest<{ access_token: string; landing?: LandingBootstrap }>('/auth/mfa/verify?landing=1', {
         method: 'POST',
         body: JSON.stringify({ challenge_token: mfaChallenge.challenge_token, code: mfaCode })
       });
       accessToken = session.access_token;
-      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now() });
+      onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now(), landing: session.landing });
     } catch (failure) {
       setMessage(failure instanceof Error ? failure.message : 'MFA verification failed');
     } finally { setSubmitting(false); }
@@ -1208,7 +1219,11 @@ function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }: {
     animation = window.requestAnimationFrame(() => {
       const content = document.querySelector('.lightning');
       if (content) {
-        observer = new MutationObserver(schedule);
+        // Background notifications, header health and editor loads are not
+        // landing-page blockers. Only extend the timer for a real busy UI.
+        observer = new MutationObserver(() => {
+          if (content.querySelector('[aria-busy="true"], [role="progressbar"], .records-loading, .loading-spinner')) schedule();
+        });
         observer.observe(content, { childList: true, subtree: true, characterData: true });
       }
       schedule();
@@ -1455,7 +1470,16 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         // not wait for the Flow Builder, report builders, connectors and dashboards.
         const fastHome = route.kind === 'setup' && route.workspace === 'home';
         if (fastHome) {
-          const [firstObjects, firstPages, firstApps, firstSession] = await Promise.all([
+          // Trusted tenant-scoped RBAC bootstrap is returned with successful
+          // refresh/login: render immediately without 4 more HTTP round trips.
+          const [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
+            ? [
+                { objects: entryTiming.landing.objects },
+                { pages: entryTiming.landing.pages },
+                { apps: entryTiming.landing.apps },
+                { user: entryTiming.landing.user }
+              ] as const
+            : await Promise.all([
             recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
             recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
             recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
