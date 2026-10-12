@@ -26,6 +26,15 @@ test('MD-01B routing: exact host/Origin mappings, deny mismatches and spoofing',
     { allowed: false, tenantId: null });
   assert.deepEqual(tenantForRequest(routes, 'api.example.com', undefined),
     { allowed: true, tenantId: null });
+  // Tenant resolution must not trust forwarded-host spoofing or suffix matches.
+  assert.deepEqual(tenantForRequest(routes, 'api.example.com', 'https://shop-a.example.com.evil.com'),
+    { allowed: false, tenantId: null });
+  assert.deepEqual(tenantForRequest(routes, 'shop-a.example.com', 'https://shop-a.example.com.evil.com'),
+    { allowed: false, tenantId: null });
+  assert.deepEqual(tenantForRequest(routes, 'shop-a.example.com', 'http://shop-a.example.com'),
+    { allowed: false, tenantId: null });
+  assert.deepEqual(tenantForRequest(routes, 'shop-b.example.com', 'https://shop-a.example.com'),
+    { allowed: false, tenantId: null });
   assert.equal(mappedTenantOrigin(routes, 'https://shop-a.example.com'), true);
   assert.equal(mappedTenantOrigin(routes, 'http://shop-a.example.com'), false);
   assert.equal(mappedTenantOrigin(routes, 'https://shop-a.example.com.evil.com'), false);
