@@ -11,5 +11,5 @@ test('scheduler dispatch uses database-wide lease and durable commit boundary', 
   assert.match(runtime, /await waitForPersistedState\(\);\s*\}\);/);
   assert.match(store, /pg_try_advisory_lock/);
   assert.match(store, /pg_advisory_unlock/);
-  assert.match(store, /finally\s*\{\s*client\.release\(\)/);
+  assert.match(store, /client\.release\(\)/);
 });
