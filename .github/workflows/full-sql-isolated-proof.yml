@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/full-sql-isolated-proof.yml'
+      - '.github/workflows/sql-only-prod-stage.yml'
       - 'apps/server/src/normalized-state-runtime.mjs'
       - 'apps/server/src/normalized-typed-records.mjs'
       - 'apps/server/src/postgres-state.ts'
