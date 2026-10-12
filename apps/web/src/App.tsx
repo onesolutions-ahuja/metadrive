@@ -8925,7 +8925,7 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${nested ? 'nested-page-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
       style={{
         ...((!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas'
           ? nested
@@ -9292,6 +9292,31 @@ function PageBuilder({
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
+              <div className="properties-section-title">Container hierarchy</div>
+              <label className="form-label">Parent container
+                <select className="form-control" aria-label="Parent container" value={rawLayoutParentId(selected) ?? ''}
+                  onChange={(event) => {
+                    const parentId = event.target.value || null;
+                    if (!canNest(page.components, selected.id, parentId)) {
+                      onNotify('A component cannot be nested inside itself or a descendant.');
+                      return;
+                    }
+                    applyPage({ ...page, components: reparentComponent(page.components, selected.id, parentId) });
+                  }}>
+                  <option value="">Canvas / page root</option>
+                  {page.components.filter((item) => canNest(page.components, selected.id, item.id))
+                    .map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              {isLayoutContainer(selected) && <>
+                <p className="properties-help">Drag components onto this container or select them below to edit. Drop a child onto the canvas to move it back to the root.</p>
+                <div className="properties-section-title">Child components</div>
+                {childrenOf(page.components, selected.id).map((child) => <button className="btn btn-small" type="button" key={child.id}
+                  onClick={() => setSelectedId(child.id)}>{child.label}</button>)}
+                {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
+              </>}
+              <PageComponentStyleEditor properties={selected.properties}
+                onChange={(properties) => updateComponent(selected.id, { properties })} />
               <MetadataComponentProperties
                 kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
                 properties={selected.properties}
@@ -9381,7 +9406,7 @@ function PageBuilder({
                 </select>
               </label>
             </>}
-            {page.layoutMode === 'free-canvas' && selected.position && <div className="free-canvas-component-properties">
+            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
               <div className="properties-section-title">Position and Size (pixels)</div>
               {([
                 ['x', 'Left'], ['y', 'Top'], ['width', 'Width'], ['height', 'Height']
