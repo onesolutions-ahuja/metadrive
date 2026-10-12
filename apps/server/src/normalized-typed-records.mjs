@@ -91,7 +91,21 @@ async function prepare(client,state){
         const saved=dormant.rows[0];
         if(saved.physical_table!==tableName(saved.object_id)) throw Error('Invalid retired object table identity');
         await client.query('UPDATE md_v2_object_registry SET active=true WHERE object_id=$1',[saved.object_id]);
-        current={...saved,fields:new Map()};
+        // Retiring an object retains its fields and physical table. Reload active
+        // field registry rows when restoring it; otherwise creating fresh field
+        // IDs would duplicate schema and lose the original column mapping.
+        const restored=await client.query(
+          'SELECT field_id,api_name,source_data_type,physical_column,active FROM md_v2_field_registry WHERE object_id=$1',
+          [saved.object_id]);
+        const restoredFields=new Map();
+        for(const field of restored.rows){
+          if(field.physical_column!==physicalFieldColumn(field.field_id)) throw Error('Invalid restored field identity');
+          if(field.active){
+            if(restoredFields.has(field.api_name)) throw Error('Duplicate restored SQL field identity');
+            restoredFields.set(field.api_name,field);
+          }
+        }
+        current={...saved,fields:restoredFields};
         mapping.set(key(item.tenantId,item.object.apiName),current);
       }
     }
