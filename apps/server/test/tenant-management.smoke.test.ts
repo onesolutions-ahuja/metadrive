@@ -164,6 +164,32 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     login = await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword });
     assert.equal(login.status, 200);
     const tenantToken = String(login.data.access_token);
+
+    // Component source belongs to its tenant even when both administrators
+    // hold the same RBAC permission. Never reveal private code cross-tenant.
+    const privateComponent = {
+      apiName: 'StudioPrivateTile', label: 'Studio private tile',
+      description: '', surfaces: ['page'], publicationStatus: 'Published',
+      jsxSource: 'export default function Component() { return <div>Studio tile</div>; }',
+      cssSource: ''
+    };
+    const createdComponent = await api('/component-library', tenantToken, 'POST', privateComponent);
+    assert.equal(createdComponent.status, 201, JSON.stringify(createdComponent.data));
+    assert.equal(createdComponent.data.component.tenantId, 'studio-beta');
+    const ownerComponents = await api('/component-library', tenantToken);
+    assert.equal(ownerComponents.status, 200);
+    assert.ok(ownerComponents.data.components.some((component: { apiName: string }) =>
+      component.apiName === privateComponent.apiName));
+    const operatorComponents = await api('/component-library', operatorToken);
+    assert.equal(operatorComponents.status, 200);
+    assert.ok(!operatorComponents.data.components.some((component: { apiName: string }) =>
+      component.apiName === privateComponent.apiName),
+      'Platform operator tenant must not enumerate another tenant source');
+    assert.equal((await api('/component-library/' + privateComponent.apiName + '/history', operatorToken)).status, 404);
+    assert.equal((await api('/component-library/' + privateComponent.apiName, operatorToken, 'PUT', privateComponent)).status, 404);
+    assert.equal((await api('/component-library/' + privateComponent.apiName, operatorToken, 'DELETE')).status, 404);
+    assert.equal((await api('/component-library/' + privateComponent.apiName, tenantToken, 'DELETE')).status, 204);
+
     // MD-03.8: tenant usage is scoped, count-only, platform-authorized for
     // another tenant, and advisory targets persist without blocking writes.
     assert.equal((await api('/tenant/usage')).status, 401);
