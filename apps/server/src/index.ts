@@ -105,12 +105,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   if (!req.path.startsWith('/api') || req.get('x-metadrive-request-source') === 'web-app'
     || req.get('x-metadrive-external-api') !== 'true') return next();
   const startedAt = Date.now();
-  let responseBody: unknown;
-  const sendJson = res.json.bind(res);
-  res.json = ((body: unknown) => {
-    responseBody = body;
-    return sendJson(body);
-  }) as typeof res.json;
   res.on('finish', () => {
     const principal = res.locals.principal as Principal | undefined;
     if (!principal || !tenantData(principal.tenantId)) return;
@@ -135,7 +129,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
         requestBody: '',
         responseBody: '',
         status: res.statusCode,
-        error: res.statusCode >= 400 ? communicationError(responseBody) : '',
+        // Status code is sufficient for audit; detailed errors may contain secrets.
+        error: '',
         durationMs: Date.now() - startedAt
       });
     } catch (error) {
