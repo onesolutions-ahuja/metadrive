@@ -4486,7 +4486,7 @@ function LightningAppRuntime({
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const renderComponent = (component: PageComponentMetadata) => {
     if (!component.visible) return null;
-    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map(renderComponent)}</div>;
+    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map((child) => <div key={child.id} style={!isLayoutType(child.type) ? componentVisualStyle(child.properties.visualStyle, child.type, formFactor) : undefined}>{renderComponent(child)}</div>)}</div>;
     if (component.type.startsWith('Custom:')) {
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
@@ -4538,11 +4538,11 @@ function LightningAppRuntime({
         width: component.position?.width ?? 320,
         height: component.position?.height ?? 180
       }}>
-      {renderComponent(component)}
+      <div style={!isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, formFactor) : undefined}>{renderComponent(component)}</div>
     </div>)}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
-    page.components.filter((component) => !component.parentId && (component.region ?? 'main') === region).map(renderComponent);
+    page.components.filter((component) => !component.parentId && (component.region ?? 'main') === region).map((component) => <div key={component.id} style={!isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, formFactor) : undefined}>{renderComponent(component)}</div>);
   return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
     <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18} /></div>
