@@ -41,9 +41,9 @@ while(pending.length) {
   for(const name of readdirSync(directory)) {
     const file=resolve(directory,name);
     if(statSync(file).isDirectory()) {pending.push(file);continue;}
-    if(!/\\.(?:js|mjs)$/.test(name)) continue;
+    if(!/\.(?:js|mjs)$/.test(name)) continue;
     const source=readFileSync(file,'utf8');
-    const imports=[...source.matchAll(/\\b(?:from\\s*|import\\s*\\(\\s*)['"]([^'"]+\\.mjs)['"]/g)];
+    const imports=[...source.matchAll(/\b(?:from\s*|import\s*\(\s*)['"]([^'"]+\.mjs)['"]/g)];
     for(const match of imports) {
       if (!match[1].startsWith('.')) continue;
       if (!existsSync(resolve(dirname(file),match[1]))) {
