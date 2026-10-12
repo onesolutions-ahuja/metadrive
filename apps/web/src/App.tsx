@@ -62,11 +62,14 @@ import ScheduledFlows from './ScheduledFlows';
 import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
+import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
 import TenantManagement from './TenantManagement';
 import TenantDomains from './TenantDomains';
+import TenantRecoveryPanel from './TenantRecoveryPanel';
+import TenantUsagePanel from './TenantUsagePanel';
 import DeveloperAccountSettings from './DeveloperAccountSettings';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
@@ -1467,10 +1470,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         return request;
       };
       try {
-        // Setup Home needs only core tenant metadata. Its initial render must
+        // Entry routes need only core tenant metadata. Their initial render must
         // not wait for the Flow Builder, report builders, connectors and dashboards.
-        const fastHome = route.kind === 'setup' && route.workspace === 'home';
-        if (fastHome) {
+        const fastEntryRoute = route.kind !== 'setup' || route.workspace === 'home';
+        if (fastEntryRoute) {
           // Trusted tenant-scoped RBAC bootstrap is returned with successful
           // refresh/login: render immediately without 4 more HTTP round trips.
           const [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
@@ -1499,7 +1502,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           setCurrentFieldAccess(firstSession.user.fieldAccess);
           setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
           setCanManageUserIdentities(firstSession.user.permissions.includes('security:manage'));
+          setCanManageApprovalProcesses(firstSession.user.permissions.includes('security:manage')
+            || firstSession.user.permissions.includes('metadata:write'));
           setCanManagePlatformTenants(firstSession.user.permissions.includes('platform:superadmin'));
+          setCanRunFlows(firstSession.user.permissions.includes('flows:run'));
+          setCanManageFlows(firstSession.user.permissions.includes('flows:manage')
+            || firstSession.user.permissions.includes('metadata:write'));
           setMetadataLoaded(true);
           // Give the landing screen a chance to paint before loading editor-only
           // data in the background. On direct builder URLs the full load begins
@@ -3703,7 +3711,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -8062,6 +8070,7 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
           [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
       </div>;
     })}
+    <CustomComponentPropertyEditor properties={properties} onChange={onChange} addOnly />
     <button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);

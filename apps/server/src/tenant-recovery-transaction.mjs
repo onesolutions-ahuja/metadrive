@@ -53,7 +53,9 @@ export async function approveRecoveryCase(pool, { caseId, operator, now = new Da
     return { caseId };
   });
 }
-export async function issueRecoveryInvitation(pool, { caseId, operator, now = new Date() }) {
+export async function issueRecoveryInvitation(pool, { caseId, operator, deliverToVerifiedContact, now = new Date() }) {
+  // Never return bearer invitations to a support or platform operator.
+  if (typeof deliverToVerifiedContact !== 'function') throw new Error('Verified private delivery required');
   requirePrincipal(operator, 'recovery_operator');
   return transaction(pool, async db => {
     const c = await loadCase(db, caseId);
@@ -63,8 +65,13 @@ export async function issueRecoveryInvitation(pool, { caseId, operator, now = ne
     await db.query('INSERT INTO tenant_recovery_invitations(id,case_id,tenant_id,claimant_user_id,token_sha256,scope,issued_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
       [randomUUID(), caseId, c.tenantId, c.claimantUserId, digestRecoveryToken(token), RECOVERY_GRANT, now, expiry]);
     await audit(db, caseId, operator.id, 'invitation_issued');
-    // Deliver only to an independently verified contact; never to a platform operator.
-    return { token, expiresAt: expiry.toISOString(), tenantId: c.tenantId, userId: c.claimantUserId };
+    // Delivery failures roll back token issuance. Delivery may precede commit,
+    // but an undurable invitation is invalid and cannot be redeemed.
+    await deliverToVerifiedContact(Object.freeze({
+      token, caseId, tenantId: c.tenantId, claimantUserId: c.claimantUserId,
+      expiresAt: expiry.toISOString()
+    }));
+    return { caseId, expiresAt: expiry.toISOString(), delivered: true };
   });
 }
 export async function redeemRecoveryInvitation(pool, { caseId, tenantId, claimant, token, now = new Date() }) {
@@ -83,8 +90,13 @@ export async function redeemRecoveryInvitation(pool, { caseId, tenantId, claiman
     if (updated.rowCount !== 1) throw new Error('Recovery invitation already used');
     const closed = await db.query("UPDATE tenant_recovery_cases SET status='redeemed',updated_at=$2 WHERE id=$1 AND status='pending' RETURNING id", [caseId, now]);
     if (closed.rowCount !== 1) throw new Error('Recovery case no longer pending');
+    // A one-hour, claimant-only repair instruction is written in the SAME
+    // transaction as token consumption. No platform API can redeem this grant.
+    await db.query(
+      'INSERT INTO tenant_recovery_repair_grants(case_id,tenant_id,claimant_user_id,issued_at) VALUES($1,$2,$3,$4)',
+      [caseId, tenantId, claimant.id, now]);
     await audit(db, caseId, claimant.id, 'invitation_redeemed');
-    // This is an instruction, NOT a tenant session or applied privilege.
+    // No password, session, elevated JWT or tenant data is returned.
     return { ...grant, caseId, requiresRestrictedTenantRepair: true };
   });
 }

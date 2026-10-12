@@ -27,6 +27,7 @@ export default function ComponentLibrary({
   const [cssFileName, setCssFileName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState('');
 
   const reset = () => {
     setEditingApiName('');
@@ -132,6 +133,7 @@ export default function ComponentLibrary({
   };
 
   const remove = async (component: LibraryComponentMetadata) => {
+    if (!window.confirm(`Remove ${component.label} from the shared registry? Existing page, dashboard and Flow placements in any tenant may stop rendering. This cannot be undone here.`)) return;
     setError('');
     try {
       await onDelete(component.apiName);
@@ -147,6 +149,13 @@ export default function ComponentLibrary({
       : current.filter((item) => item !== surface));
   };
 
+  const matchesSearch = (component: { apiName: string; label: string; description: string }) =>
+    [component.apiName, component.label, component.description].join(' ').toLowerCase().includes(catalogSearch.trim().toLowerCase());
+  const visibleStandardPages = standardPageComponents.filter(matchesSearch);
+  const visibleDashboardWidgets = standardDashboardComponents.filter(matchesSearch);
+  const visibleCustomComponents = components.filter(matchesSearch);
+  const shownCount = visibleStandardPages.length + visibleDashboardWidgets.length + visibleCustomComponents.length;
+
   return <div className="component-library-page">
     <div className="page-heading">
       <div><div className="eyebrow">Setup / Platform Tools</div><h1>Global Component Library</h1><p>Browse built-in builder components and register reusable JSX and CSS components for Lightning pages, dashboards, and Flow screens.</p></div>
@@ -157,25 +166,29 @@ export default function ComponentLibrary({
     <div className="component-library-layout">
       <section className="surface component-library-list">
         <div className="list-view-header"><div><div className="list-view-label">Shared catalog</div><h2>All components</h2><span>{standardPageComponents.length + standardDashboardComponents.length + components.length} components · {standardPageComponents.length + standardDashboardComponents.length} standard · {components.length} custom</span></div></div>
+        <label className="form-label" htmlFor="component-library-search">Search components
+          <input id="component-library-search" className="form-control" type="search" value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Search label, API name or description" />
+        </label>
+        <p className="properties-help">Showing {shownCount} of {standardPageComponents.length + standardDashboardComponents.length + components.length} components</p>
         <div className="component-library-section">
           <div className="component-library-section-heading"><h3>Standard components</h3><span>Built in · Lightning pages</span></div>
-          {standardPageComponents.map((component) => <article className="library-component-card" key={component.apiName}>
+          {visibleStandardPages.map((component) => <article className="library-component-card" key={component.apiName}>
             <span className="component-option-icon"><Grid2X2 size={16} /></span>
             <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>Standard · Lightning pages</small><p>{component.description}</p></div>
           </article>)}
         </div>
         <div className="component-library-section">
           <div className="component-library-section-heading"><h3>Standard dashboard widgets</h3><span>Built in · Dashboards</span></div>
-          {standardDashboardComponents.map((component) => <article className="library-component-card" key={component.apiName}>
+          {visibleDashboardWidgets.map((component) => <article className="library-component-card" key={component.apiName}>
             <span className="component-option-icon"><Grid2X2 size={16} /></span>
             <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>Standard · Dashboards</small><p>{component.description}</p></div>
           </article>)}
         </div>
         <div className="component-library-section">
           <div className="component-library-section-heading"><h3>Custom components</h3><span>Registered in this shared library</span></div>
-        {components.map((component) => <article className={`library-component-card ${editingApiName === component.apiName ? 'selected' : ''}`} key={component.apiName}>
+        {visibleCustomComponents.map((component) => <article className={`library-component-card ${editingApiName === component.apiName ? 'selected' : ''}`} key={component.apiName}>
           <span className="component-option-icon"><Puzzle size={16} /></span>
-          <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>{component.surfaces.map((surface) => surface === 'page' ? 'Lightning pages' : 'Dashboards').join(' · ')} · v{component.version}</small>{component.description && <p>{component.description}</p>}</div>
+          <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>{component.surfaces.map((surface) => surface === 'page' ? 'Lightning pages' : surface === 'dashboard' ? 'Dashboards' : 'Flow screens').join(' · ')} · v{component.version}</small>{component.description && <p>{component.description}</p>}</div>
           {canManage && <div className="library-component-actions"><button className="btn btn-small" onClick={() => edit(component)}><Pencil size={12} />Edit</button><button className="icon-button subtle" aria-label={`Delete ${component.label}`} title="Delete component" onClick={() => void remove(component)}><Trash2 size={14} /></button></div>}
         </article>)}
         {!components.length && <div className="component-library-empty"><Puzzle size={25} /><strong>No custom components registered</strong><span>Standard components are listed above. Register a JSX component to share your own in the builders.</span></div>}

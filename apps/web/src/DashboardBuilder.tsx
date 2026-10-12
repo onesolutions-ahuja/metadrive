@@ -25,6 +25,7 @@ import {
   X
 } from 'lucide-react';
 import RegisteredComponent from './RegisteredComponent';
+import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import { sourceReportTitleUpdate } from './dashboardComponentTitle';
 import {
   dashboardFilterValue,
@@ -1283,6 +1284,7 @@ export default function DashboardBuilder({
       const definition = libraryComponents.find((item) => item.apiName === component.customComponentApiName);
       return definition
         ? <div data-dashboard-custom-component-id={component.id}><RegisteredComponent definition={definition} props={{
+            ...(component.properties ?? {}),
             title: component.title,
             properties: component.properties ?? {},
             object: objectFor(component.objectApiName),
@@ -2590,6 +2592,13 @@ export default function DashboardBuilder({
               disabled={!canEditCurrent} value={selected.imageAltText ?? ''}
               onChange={(event) => updateComponent(selected.id, { imageAltText: event.target.value })}
               placeholder="Describe the image" />
+          </>}
+          {selected.type === 'Custom' && <>
+            <CustomComponentPropertyEditor
+              properties={selected.properties ?? {}}
+              disabled={!canEditCurrent}
+              onChange={(properties) => updateComponent(selected.id, { properties })}
+            />
           </>}
           {['Metric', 'Chart', 'Table'].includes(selected.type) && <>
             <label className="form-label" htmlFor="dashboard-component-object">{selected.reportApiName ? 'Report object' : 'Source object'}</label>
