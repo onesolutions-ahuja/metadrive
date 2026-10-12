@@ -285,6 +285,14 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
       String(newLogin.data.access_token), 'DELETE')).status, 200);
     assert.deepEqual((await api('/platform/tenants/studio-beta/domains',
       String(newLogin.data.access_token))).data.domains, []);
+    const tenantAfterRemoval = await api('/auth/login', '', 'POST', {
+      email: body.email, password: tenantPassword
+    });
+    assert.equal(tenantAfterRemoval.status, 200);
+    assert.equal((await api('/auth/me', String(tenantAfterRemoval.data.access_token))).status, 200);
+    assert.equal((await api('/auth/me', String(tenantAfterRemoval.data.access_token), 'GET',
+      undefined, false, '', '', 'crm.studio-beta.test')).status, 401,
+      'Removed domain tombstone must deny tokens on stale hosting proxies');
     assert.equal(persisted.data.tenant.name, 'Studio Beta Updated');
     assert.equal(persisted.data.tenant.status, 'ACTIVE');
   } finally {
