@@ -320,6 +320,31 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal((await api('/auth/me', String(tenantAfterRemoval.data.access_token), 'GET',
       undefined, false, '', '', 'crm.studio-beta.test')).status, 401,
       'Removed domain tombstone must deny tokens on stale hosting proxies');
+    // MD-03.6 lifecycle: archive requires suspension; restore is never an
+    // implicit reactivation, and retention metadata never deletes tenant data.
+    const platformToken = String(newLogin.data.access_token);
+    assert.equal((await api('/platform/tenants/studio-beta/archive', tenantToken, 'POST', {})).status, 403);
+    assert.equal((await api('/platform/tenants/studio-beta/archive', platformToken, 'POST', {})).status, 409);
+    assert.equal((await api('/platform/tenants/studio-beta/suspend', platformToken, 'POST', {})).status, 200);
+    assert.equal((await api('/platform/tenants/studio-beta/archive', platformToken, 'POST', {})).status, 200);
+    assert.equal((await api('/platform/tenants/studio-beta/reactivate', platformToken, 'POST', {})).status, 409);
+    assert.equal((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).status, 401);
+    assert.equal((await api('/platform/tenants?status=ARCHIVED', platformToken)).data.total, 1);
+    const retained = await api('/platform/tenants/studio-beta/retention', platformToken, 'PATCH', {
+      retentionUntil: '2099-01-01T00:00:00.000Z', legalHold: true
+    });
+    assert.equal(retained.status, 200, JSON.stringify(retained.data));
+    assert.equal(retained.data.tenant.legalHold, true);
+    assert.equal((await api('/platform/tenants/studio-beta/retention', tenantToken, 'PATCH', {
+      retentionUntil: null, legalHold: false
+    })).status, 403);
+    const restored = await api('/platform/tenants/studio-beta/restore', platformToken, 'POST', {});
+    assert.equal(restored.status, 200, JSON.stringify(restored.data));
+    assert.equal(restored.data.tenant.status, 'SUSPENDED');
+    assert.equal(restored.data.tenant.userCount, 2);
+    assert.equal((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).status, 401);
+    assert.equal((await api('/platform/tenants/studio-beta/reactivate', platformToken, 'POST', {})).status, 200);
+    assert.equal((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).status, 200);
     assert.equal(persisted.data.tenant.name, 'Studio Beta Updated');
     assert.equal(persisted.data.tenant.status, 'ACTIVE');
   } finally {
