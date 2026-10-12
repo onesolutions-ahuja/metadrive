@@ -13407,7 +13407,7 @@ app.put('/api/metadata/currencies', requirePermission('security:manage'), (req: 
 app.get('/api/metadata/permissions', requirePermission('security:read'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId);
   res.json(tenant
-    ? { ...tenant.accessControl, sharingSettings: tenant.sharingSettings }
+    ? { ...tenant.accessControl, sharingSettings: tenant.sharingSettings, tenantId: getPrincipal(res).tenantId }
     : { profiles: [], permissionSets: [], permissionSetGroups: [], roles: [], publicGroups: [], sharingRules: [], users: [], sharingSettings: {} });
 });
 app.put('/api/metadata/permissions', requirePermission('security:manage'), (req: Request, res: Response) => {
