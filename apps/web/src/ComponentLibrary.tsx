@@ -169,7 +169,7 @@ export default function ComponentLibrary({
       <div><div className="eyebrow">Setup / Platform Tools</div><h1>Global Component Library</h1><p>Browse built-in builder components and register reusable JSX and CSS components for Lightning pages, dashboards, and Flow screens.</p></div>
       {canManage && <button className="btn btn-brand" onClick={reset}><Plus size={14} />Register component</button>}
     </div>
-    {!canManage && <div className="info-callout component-library-notice">You can use shared components in builders. A user with the <strong>Manage global components</strong> permission is required to register, update, or remove library entries.</div>}
+    {!canManage && <div className="info-callout component-library-notice">You can use shared components in builders. A user with the <strong>Manage tenant components</strong> permission is required to register, update, or remove library entries.</div>}
     {error && <div className="auth-error" role="alert">{error}</div>}
     <div className="component-library-layout">
       <section className="surface component-library-list">
@@ -197,13 +197,13 @@ export default function ComponentLibrary({
         {visibleCustomComponents.map((component) => <article className={`library-component-card ${editingApiName === component.apiName ? 'selected' : ''}`} key={component.apiName}>
           <span className="component-option-icon"><Puzzle size={16} /></span>
           <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>{component.surfaces.map((surface) => surface === 'page' ? 'Lightning pages' : surface === 'dashboard' ? 'Dashboards' : 'Flow screens').join(' · ')} · v{component.version} · {component.status ?? 'Published'}{component.pendingDraft ? ` · Draft v${component.pendingDraft.version} ready` : ''}</small>{component.description && <p>{component.description}</p>}</div>
-          {canManage && <div className="library-component-actions"><button className="btn btn-small" onClick={() => edit(component)}><Pencil size={12} />Edit</button>{(component.status === 'Draft' || component.pendingDraft) && <button className="btn btn-small" disabled={busy} onClick={() => { setBusy(true); void onPublish(component.apiName).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Publish failed')).finally(() => setBusy(false)); }}><Check size={12}/>Publish</button>}<button className="icon-button subtle" aria-label={`Delete ${component.label}`} title="Delete component" onClick={() => void remove(component)}><Trash2 size={14} /></button></div>}
+          {canManage && !component.trustedBundled && <div className="library-component-actions"><button className="btn btn-small" onClick={() => edit(component)}><Pencil size={12} />Edit</button>{(component.status === 'Draft' || component.pendingDraft) && <button className="btn btn-small" disabled={busy} onClick={() => { setBusy(true); void onPublish(component.apiName).catch((e: unknown) => setError(e instanceof Error ? e.message : 'Publish failed')).finally(() => setBusy(false)); }}><Check size={12}/>Publish</button>}<button className="icon-button subtle" aria-label={`Delete ${component.label}`} title="Delete component" onClick={() => void remove(component)}><Trash2 size={14} /></button></div>}
         </article>)}
         {!components.length && <div className="component-library-empty"><Puzzle size={25} /><strong>No custom components registered</strong><span>Standard components are listed above. Register a JSX component to share your own in the builders.</span></div>}
         </div>
       </section>
       {canManage && <section className="surface component-registration-panel">
-        <div className="properties-header"><div><div className="list-view-label">{editingApiName ? 'New version' : 'Global catalog'}</div><h2>{editingApiName ? `Update ${label || editingApiName}` : 'Register a component'}</h2></div>{editingApiName && <button className="icon-button subtle" aria-label="Cancel editing" onClick={reset}><X size={15} /></button>}</div>
+        <div className="properties-header"><div><div className="list-view-label">{editingApiName ? 'New version' : 'Tenant catalog'}</div><h2>{editingApiName ? `Update ${label || editingApiName}` : 'Register a component'}</h2></div>{editingApiName && <button className="icon-button subtle" aria-label="Cancel editing" onClick={reset}><X size={15} /></button>}</div>
         <p className="properties-help">Select a self-contained React JSX/TSX component and an optional CSS file. Saving a new version updates every tenant that uses this component.</p>
         <label className="form-label" htmlFor="library-component-label">Label</label>
         <input id="library-component-label" className="form-control" value={label} onChange={(event) => {
