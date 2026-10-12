@@ -18,3 +18,10 @@ This change adds **policy guards, PostgreSQL storage schema and regression tests
 
 ## Scope
 This branch intentionally does **not** provision Aiven databases, modify production data, reset credentials, or claim the flow is production ready.
+
+## Operational release gates
+- Configure `METADRIVE_PASSWORD_RESET_BASE_URL` to the real HTTPS web origin approved in `WEB_ORIGIN`/`WEB_ORIGINS`; enable tenant-owned SMTP Named Credentials and verify real mailbox delivery and sender identity per tenant.
+- Confirm Aiven platform-control database, migrations, separated roles and durable audit exporter before enabling recovery endpoints. The SQL file is **not** evidence of an applied migration.
+- Rehearse independent claimant evidence, notified recovery contacts, dual MFA approval, 24-hour cooling-off, single-use redemption, session revocation and dispute cancellation against an isolated Aiven test tenant.
+- Verify Render deployment revision and externally timed RBAC read/write hot paths under realistic concurrent tenancy before marking Module 4 production complete.
+- No recovery flows may issue impersonation sessions, reveal Named Credentials, or reinstate intentionally revoked developer permissions.
