@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LibraryComponentMetadata } from './metadata';
 
-import { sandboxPublicProps, sandboxSafeValue } from './componentSandboxPolicy';
+import { sandboxPublicProps, sandboxSafeValue, sandboxSafeAction } from './componentSandboxPolicy';
 export default function ComponentSandbox({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const instance = useMemo(() => crypto.randomUUID(), [definition.apiName]);
   const [ready, setReady] = useState(false);
+  const actionWindow = useRef({start: 0, count: 0});
   const frameOrigin = window.location.origin;
   const asset = new URL(import.meta.env.BASE_URL + 'component-sandbox.js', frameOrigin).toString();
   const safeProps = useMemo(() => sandboxPublicProps(props), [props]);
@@ -27,13 +28,14 @@ export default function ComponentSandbox({ definition, props }: { definition: Li
         const frame = ref.current?.contentWindow;
         frame?.postMessage({ kind: 'ACK', instance, requestId: id, result: sandboxSafeValue(result), error }, '*');
       };
-      if (!action || typeof action !== 'object' || typeof action.event !== 'string'
-        || action.event.length > 128 || action.event.startsWith('__')) {
-        reply(undefined,'Invalid component event'); return;
-      }
+      const safeAction = sandboxSafeAction(action);
+      if (!safeAction) { reply(undefined,'Invalid or oversized component event'); return; }
+      const now = Date.now();
+      if (now - actionWindow.current.start > 1000) actionWindow.current = {start: now, count: 0};
+      if (++actionWindow.current.count > 30) { reply(undefined,'Component event rate exceeded'); return; }
       const handler = props.onAction;
       if (typeof handler !== 'function') { reply(undefined,'No metadata Flow or navigation action is configured'); return; }
-      Promise.resolve().then(() => (handler as (payload: unknown) => Promise<unknown>)(action))
+      Promise.resolve().then(() => (handler as (payload: unknown) => Promise<unknown>)(safeAction))
         .then((result) => reply(result)).catch((error: unknown) =>
           reply(undefined,error instanceof Error ? error.message : 'Action failed'));
     };
