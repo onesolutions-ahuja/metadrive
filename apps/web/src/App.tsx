@@ -9883,7 +9883,7 @@ function PageBuilder({
           </label>
           <p className="properties-help">
             {newPageType === 'App Page'
-              ? 'When you Activate this page, it will automatically be added to the chosen application's navigation.'
+              ? "When you Activate this page, it will automatically be added to the chosen application's navigation."
               : 'For Home and Record pages, choosing an application prepares an App Default assignment. You can change it before activation.'}
           </p>
           {newPageLayoutMode === 'template' && <label className="form-label" htmlFor="new-lightning-page-template">
