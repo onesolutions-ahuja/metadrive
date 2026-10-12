@@ -3,13 +3,14 @@
 // Strictly local, disposable databases; never accesses live provider databases.
 import test from 'node:test';
 import {initializeNormalizedState,readNormalizedState} from '../src/normalized-state-runtime.mjs';
+import {synchronizeTypedRecords,verifyTypedRecords} from '../src/normalized-typed-records.mjs';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { spawn,spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
-import { mkdtempSync,readFileSync,rmSync } from 'node:fs';
+import { existsSync,mkdtempSync,readFileSync,rmSync } from 'node:fs';
 import { join,dirname,resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +42,7 @@ async function startApi(port,dataPath,options={}) {
   };
   delete env.NODE_OPTIONS; // No CI-only preload; runtime must exercise PostgreSQL.
   // Test the emitted production server for relational mode, not only the TS dev server.
-  const entry=['relational','normalized'].includes(options.METADRIVE_PERSISTENCE_MODE)?['dist/index.js']:[tsx,'src/index.ts'];
+  const entry=['relational','normalized','typed'].includes(options.METADRIVE_PERSISTENCE_MODE)?['dist/index.js']:[tsx,'src/index.ts'];
   const child=spawn(process.execPath,entry,{cwd:root,env,stdio:['ignore','pipe','pipe']});
   let output='';
   for(const stream of [child.stdout,child.stderr]) stream.on('data',chunk=>{output=(output+chunk.toString()).slice(-30000);});
@@ -76,7 +77,7 @@ async function request(port,path,method='GET',token=null,payload=undefined) {
   return {status:response.status,data:body?JSON.parse(body):{}};
 }
 const connected=async(client,fn)=>{await client.connect();try{return await fn(client);}finally{await client.end();}};
-test('normalized SQL-only API preserves metadata, linked records, Flows, users and sessions across restart',{skip:!base,timeout:180000},async()=>{
+for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata, linked records, Flows, users and sessions across restart',{skip:!base,timeout:240000},async()=>{
   const url=new URL(base);
   assert.ok(['localhost','127.0.0.1','::1'].includes(url.hostname),'No external database access');
   assert.equal(url.pathname,'/postgres','Require disposable local administrator DB');
@@ -115,13 +116,21 @@ test('normalized SQL-only API preserves metadata, linked records, Flows, users a
       const sql=readFileSync(resolve(root,'sql/normalized-state-v3.sql'),'utf8');
       await client.query(sql);
       await client.query('BEGIN');
-      try {await initializeNormalizedState(client,initial); await client.query('COMMIT');}
+      try {
+        await initializeNormalizedState(client,initial);
+        if(mode==='typed') {
+          await client.query('CREATE TABLE metadrive_rel_tenants(tenant_id TEXT PRIMARY KEY)');
+          await client.query(readFileSync(resolve(root,'sql/normalized-registry-v2.sql'),'utf8'));
+          await synchronizeTypedRecords(client,initial);
+        }
+        await client.query('COMMIT');
+      }
       catch(error) {await client.query('ROLLBACK');throw error;}
     });
     const relationalPath=join(dir,'relational-state.json');
     const relationalEnv={
       DATABASE_URL:databaseUrl(targetName), METADRIVE_TEST_MODE:'false',
-      METADRIVE_PERSISTENCE_MODE:'normalized',METADRIVE_NORMALIZED_ALLOW_RUNTIME:'true'
+      METADRIVE_PERSISTENCE_MODE:mode,METADRIVE_NORMALIZED_ALLOW_RUNTIME:'true'
     };
     child=await startApi(port,relationalPath,relationalEnv);
     const login=await request(port,'/auth/login','POST',null,{email,password});
@@ -153,6 +162,7 @@ test('normalized SQL-only API preserves metadata, linked records, Flows, users a
     const execution=await request(port,'/flows/Relational_Smoke/execute','POST',token,{});
     assert.equal(execution.status,200,JSON.stringify(execution.data));
     await stopApi(child);child=null;
+    if(mode==='typed') assert.equal(existsSync(relationalPath),false,'SQL-only runtime must not write a local JSON snapshot');
     // Restart with another local state file; the relational DB must remain the authority.
     child=await startApi(port,join(dir,'after-restart.json'),relationalEnv);
     const restarted=await request(port,'/auth/login','POST',null,{email,password});
@@ -169,13 +179,17 @@ test('normalized SQL-only API preserves metadata, linked records, Flows, users a
     assert.ok(flowAfter.data.flows.some(f=>f.apiName==='Relational_Smoke'));
     const sqlPool=new pg.Pool({connectionString:databaseUrl(targetName),ssl:false});
     try {
-      const verified=await readNormalizedState(sqlPool);
+      const verified=await readNormalizedState(sqlPool,mode==='typed'?verifyTypedRecords:null);
       assert.ok(verified.version>0);
       assert.equal(verified.state.tenants[tenantId].records.Migration_Link__c[0].Account__c,parentId);
       assert.ok(verified.state.tenants[tenantId].flows.some(f=>f.apiName==='Relational_Smoke'));
       const sqlOnly=await sqlPool.query(
         "SELECT column_name FROM information_schema.columns WHERE table_name='md_v3_state_nodes' AND data_type IN ('json','jsonb')");
       assert.equal(sqlOnly.rowCount,0);
+      if(mode==='typed') {
+        const physical=await sqlPool.query('SELECT COUNT(*)::int AS n FROM md_v2_object_registry WHERE active=true');
+        assert.equal(physical.rows[0].n,verified.state.tenants[tenantId].objects.length);
+      }
       const baseline=await sqlPool.query('SELECT payload FROM metadrive_platform_state WHERE id=1');
       assert.deepEqual(baseline.rows[0].payload,initial,'Legacy rollback snapshot stays untouched');
     } finally {await sqlPool.end();}

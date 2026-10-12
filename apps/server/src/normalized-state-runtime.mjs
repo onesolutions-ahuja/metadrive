@@ -29,7 +29,7 @@ async function stateAt(client,revision) {
     [revision]);
   return restoreNormalizedTree(result.rows);
 }
-export async function readNormalizedState(pool) {
+export async function readNormalizedState(pool,verifyPhysicalRecords=null) {
   const client=await pool.connect();
   let begun=false;
   try {
@@ -48,6 +48,8 @@ export async function readNormalizedState(pool) {
     const state=await stateAt(client,version);
     const digest=stateDigest(state);
     if(digest!==state_sha256.trim()) throw Error('Normalized state checksum mismatch');
+    // Physical SQL records must match the same repeatable-read snapshot as metadata.
+    if(verifyPhysicalRecords) await verifyPhysicalRecords(client,state);
     await client.query('COMMIT');
     begun=false;
     return {state,version,digest,sourceDigest:source_sha256.trim()};
@@ -56,7 +58,7 @@ export async function readNormalizedState(pool) {
     throw error;
   } finally {client.release();}
 }
-export async function writeNormalizedState(pool,nextState,previous) {
+export async function writeNormalizedState(pool,nextState,previous,synchronizePhysicalRecords=null) {
   if(!previous||!Number.isSafeInteger(previous.version)||!previous.digest)
     throw Error('A verified normalized SQL snapshot is required');
   const {nodes,digest}=projectNormalizedTree(nextState);
@@ -78,6 +80,8 @@ export async function writeNormalizedState(pool,nextState,previous) {
     await insertNodes(client,revision,nodes);
     const roundtrip=await stateAt(client,revision);
     if(stateDigest(roundtrip)!==digest) throw Error('Normalized SQL write failed full readback');
+    // Physical CRUD is committed atomically with the canonical metadata graph.
+    if(synchronizePhysicalRecords) await synchronizePhysicalRecords(client,nextState,previous.state);
     await client.query('UPDATE md_v3_runtime SET revision=$1,state_sha256=$2,updated_at=now() WHERE id=1',[revision,digest]);
     await client.query('DELETE FROM md_v3_state_nodes WHERE revision=$1',[previous.version]);
     await client.query('COMMIT');
