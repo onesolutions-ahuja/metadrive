@@ -73,8 +73,19 @@ try {
   const dialog=page.getByRole('dialog',{name:/New Account/});
   await dialog.waitFor({state:'visible'});
   await dialog.locator('input[name="Name"]').fill('MD06 Browser Acceptance Account');
+  const saveResponses=[];
+  page.on('response', response => {
+    if(response.url().includes('/api/records/Account') && response.status()>=400)
+      saveResponses.push(response.status()+' '+response.url());
+  });
   await dialog.getByRole('button',{name:'Save',exact:true}).click();
-  await dialog.waitFor({state:'hidden'});
+  try {
+    await dialog.waitFor({state:'hidden',timeout:9000});
+  } catch(error) {
+    throw Error('New Account did not save. API errors: '+JSON.stringify(saveResponses)+
+      '; form: '+(await dialog.innerText()).slice(-1800)+
+      '; page alerts: '+JSON.stringify(await page.locator('[role="alert"]').allTextContents()),{cause:error});
+  }
   await page.locator('.record-detail-heading').waitFor({state:'visible'});
   await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   await list.waitFor({state:'visible'});
