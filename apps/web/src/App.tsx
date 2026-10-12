@@ -1468,10 +1468,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         return request;
       };
       try {
-        // Setup Home needs only core tenant metadata. Its initial render must
+        // Entry routes need only core tenant metadata. Their initial render must
         // not wait for the Flow Builder, report builders, connectors and dashboards.
-        const fastHome = route.kind === 'setup' && route.workspace === 'home';
-        if (fastHome) {
+        const fastEntryRoute = route.kind !== 'setup' || route.workspace === 'home';
+        if (fastEntryRoute) {
           // Trusted tenant-scoped RBAC bootstrap is returned with successful
           // refresh/login: render immediately without 4 more HTTP round trips.
           const [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
@@ -1500,7 +1500,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           setCurrentFieldAccess(firstSession.user.fieldAccess);
           setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
           setCanManageUserIdentities(firstSession.user.permissions.includes('security:manage'));
+          setCanManageApprovalProcesses(firstSession.user.permissions.includes('security:manage')
+            || firstSession.user.permissions.includes('metadata:write'));
           setCanManagePlatformTenants(firstSession.user.permissions.includes('platform:superadmin'));
+          setCanRunFlows(firstSession.user.permissions.includes('flows:run'));
+          setCanManageFlows(firstSession.user.permissions.includes('flows:manage')
+            || firstSession.user.permissions.includes('metadata:write'));
           setMetadataLoaded(true);
           // Give the landing screen a chance to paint before loading editor-only
           // data in the background. On direct builder URLs the full load begins
