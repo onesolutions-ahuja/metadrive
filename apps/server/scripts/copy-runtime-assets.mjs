@@ -15,6 +15,7 @@ for(const name of [
   'relational-account-recovery.mjs',
   'normalized-state-tree.mjs',
   'normalized-state-runtime.mjs',
+  'normalized-state-delta.mjs',
   'normalized-object-schema.mjs',
   'normalized-typed-records.mjs'
 ]) {
