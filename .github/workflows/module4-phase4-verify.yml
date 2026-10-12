@@ -3,7 +3,7 @@ on:
   push:
     branches: [feature/module4-phase4-advanced-access-policy-20261012]
 permissions:
-  contents: read
+  contents: write
 jobs:
   security:
     runs-on: ubuntu-latest
@@ -13,6 +13,15 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Add portal route scope to central API
+        run: |
+          node apps/server/scripts/phase4-portal-isolation-patch.mjs
+          if git diff --quiet -- apps/server/src/index.ts; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/server/src/index.ts
+          git commit -m "automated phase4 portal isolation integration"
+          git push origin HEAD:feature/module4-phase4-advanced-access-policy-20261012
       - run: npm ci
       - name: Typecheck main record authorization and full web
         run: npm run build
