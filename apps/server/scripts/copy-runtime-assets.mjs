@@ -19,7 +19,12 @@ for(const name of [
   'normalized-object-schema.mjs',
   'normalized-typed-records.mjs',
   'tenant-identity-isolation.mjs',
-  'tenant-domains.mjs'
+  'tenant-domains.mjs',
+  'tenant-recovery-policy.mjs',
+  'tenant-recovery-cases.mjs',
+  'tenant-recovery-verification.mjs',
+  'tenant-recovery-transaction.mjs',
+  'tenant-recovery-centre.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }

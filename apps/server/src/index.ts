@@ -20,6 +20,8 @@ import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-r
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
+import pg from 'pg';
+import { installTenantRecoveryCentre } from './tenant-recovery-centre.mjs';
 import sanitizeHtml from 'sanitize-html';
 import { z } from 'zod';
 import { newTotpSecret, totpUri, verifyTotp } from './mfa.js';
@@ -6776,6 +6778,120 @@ app.get('/api/platform/tenants/:tenantId/lifecycle-audit', accessAuthentication,
       .slice(-100).reverse().map(({ actorId, action, at }) => ({ actorId, action, at }));
     return res.json({ tenantId, events });
   });
+
+// MD-03.7: An isolated platform-control database contains recovery cases and
+// one-time factors. Never point it at the normal tenant application database.
+// No runtime table migrations, startup grants, or privileged side doors.
+const recoveryConfigured = process.env.METADRIVE_RECOVERY_ENABLED === 'true'
+  && !!process.env.METADRIVE_RECOVERY_DATABASE_URL
+  && !!process.env.METADRIVE_RECOVERY_SMTP_URL
+  && !!process.env.METADRIVE_RECOVERY_FROM_EMAIL;
+const recoveryDatabaseUrl = process.env.METADRIVE_RECOVERY_DATABASE_URL;
+if (recoveryConfigured && process.env.DATABASE_URL) {
+  const normal = new URL(process.env.DATABASE_URL);
+  const separate = new URL(recoveryDatabaseUrl!);
+  if (normal.hostname === separate.hostname && normal.pathname === separate.pathname
+      && normal.port === separate.port) {
+    throw new Error('Recovery must have a dedicated platform-control database, never the tenant application DB');
+  }
+}
+const recoveryPool = recoveryConfigured ? new pg.Pool({
+  connectionString: recoveryDatabaseUrl, max: 4,
+  idleTimeoutMillis: 10000, connectionTimeoutMillis: 5000
+}) : undefined;
+const recoverySmtp = recoveryConfigured ? new URL(process.env.METADRIVE_RECOVERY_SMTP_URL!) : undefined;
+if (recoverySmtp && (!['smtp:', 'smtps:'].includes(recoverySmtp.protocol)
+    || !recoverySmtp.username || !recoverySmtp.password)) {
+  throw new Error('Recovery delivery requires authenticated SMTP with TLS');
+}
+const recoveryMailer = recoverySmtp
+  ? nodemailer.createTransport({
+      host: recoverySmtp.hostname,
+      port: Number(recoverySmtp.port || (recoverySmtp.protocol === 'smtps:' ? 465 : 587)),
+      secure: recoverySmtp.protocol === 'smtps:',
+      requireTLS: recoverySmtp.protocol !== 'smtps:',
+      tls: { servername: recoverySmtp.hostname, minVersion: 'TLSv1.2' },
+      auth: { user: decodeURIComponent(recoverySmtp.username),
+        pass: decodeURIComponent(recoverySmtp.password) }
+    })
+  : undefined;
+installTenantRecoveryCentre(app, {
+  pool: recoveryPool,
+  deliver: recoveryMailer ? async (mail: { to: string; subject: string; text: string }) => {
+    await recoveryMailer.sendMail({
+      from: process.env.METADRIVE_RECOVERY_FROM_EMAIL!,
+      to: mail.to, subject: mail.subject, text: mail.text
+    });
+  } : undefined,
+  verifyDomain: async (record: TenantDomainRecord) => {
+    const challenge = domainChallenge(record.hostname, record.verificationToken);
+    return matchesDomainChallenge(await resolveTxt(challenge.host), challenge.value);
+  },
+  auth: accessAuthentication,
+  tenantAdmin: requirePermission('security:manage'),
+  platformAdmin: requirePlatformTenantAdmin,
+  principal: getPrincipal,
+  isCurrentOperator: (userId: string) => {
+    const operator = state.users.find(item => item.id === userId && !item.disabled);
+    return Boolean(operator && operator.mfaSecret && tenantIsActive(operator.tenantId)
+      && (state.platformPolicies[operator.id] ?? []).includes('platform:superadmin'));
+  },
+  tenantUser: (tenantId: string, userId: string) =>
+    state.users.find(user => user.tenantId === tenantId && user.id === userId
+      && !user.disabled && !((state.platformPolicies[user.id] ?? []).includes('platform:superadmin'))),
+  domains: (tenantId: string) => state.tenantRegistry[tenantId]?.domains ?? [],
+  // Every recovery action requires a new TOTP proof, even when tenant MFA
+  // policy is only Optional. A cross-instance SQL uniqueness constraint blocks
+  // replay and platform policies alone never count as MFA.
+  freshMfa: async (res: Response, code: unknown) => {
+    const principal = getPrincipal(res);
+    const user = principalUser(principal);
+    if (!recoveryPool || !user || !user.mfaSecret || typeof code !== 'string'
+      || !/^\d{6}$/.test(code) || !tenantIsActive(user.tenantId))
+      throw new Error('Verified fresh MFA is required');
+    const secret = openMfaSecret(user.tenantId, user.id, user.mfaSecret);
+    const step = verifyTotp(secret, code, user.mfaLastUsedStep ?? -1);
+    if (step === null) throw new Error('Invalid or previously used MFA code');
+    const reserved = await recoveryPool.query(
+      'INSERT INTO tenant_recovery_mfa_steps(user_id,time_step) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING user_id',
+      [user.id, step]);
+    if (reserved.rows.length !== 1) throw new Error('MFA code was already used');
+    return { id: user.id, active: true, trustedMfa: true };
+  },
+  // Only the authenticated, token-redeeming claimant may apply this one-case
+  // repair. Platform support cannot choose a password or get a tenant session.
+  applyRestrictedRepair: async ({tenantId,userId,caseId}: {
+    tenantId: string; userId: string; caseId: string
+  }) => {
+    const user = state.users.find(item => item.id === userId && item.tenantId === tenantId && !item.disabled);
+    const tenant = state.tenants[tenantId];
+    if (!user || !tenant || !tenantIsActive(tenantId)
+      || !tenant.accessControl.profiles.some(profile => profile.id === 'system-administrator')
+      || !tenant.accessControl.users.some(item => item.id === userId))
+      throw new Error('Restricted tenant repair cannot be applied');
+    const nextTenant = withSecurityEvent({
+      ...tenant,
+      accessControl: {
+        ...tenant.accessControl,
+        users: tenant.accessControl.users.map(item => item.id === userId
+          ? {...item, profileId: 'system-administrator', role: 'System Administrator'} : item)
+      }
+    }, userId, 'security.recovery.admin-restored', {caseId}, userId);
+    const now = Math.floor(Date.now() / 1000);
+    const nextState: PlatformState = {
+      ...state,
+      tenants: {...state.tenants, [tenantId]: nextTenant},
+      users: state.users.map(item => item.id === userId && item.tenantId === tenantId
+        ? {...item, role: 'System Administrator', authVersion: (item.authVersion ?? 0) + 1,
+           authRevokedBefore: now} : item),
+      refreshSessions: state.refreshSessions.map(session => session.userId === userId && session.tenantId === tenantId
+        ? {...session, revokedAt: now} : session)
+    };
+    persistState(nextState);
+    state = nextState;
+    await latestStateCommit;
+  }
+});
 
 app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
