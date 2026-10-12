@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS tenant_recovery_cases (
 );
 CREATE TABLE IF NOT EXISTS tenant_recovery_approvals (
   case_id uuid NOT NULL REFERENCES tenant_recovery_cases(id),
-  operator_id text NOT NULL,
+  operator_id text NOT NULL CHECK (length(trim(operator_id)) > 0),
   operator_role text NOT NULL DEFAULT 'recovery_operator' CHECK (operator_role='recovery_operator'),
   operator_active boolean NOT NULL DEFAULT false,
   mfa_verified boolean NOT NULL DEFAULT false,
