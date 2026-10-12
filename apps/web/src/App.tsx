@@ -64,6 +64,7 @@ import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import FlowInputBindingEditor from './FlowInputBindingEditor';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
@@ -71,6 +72,7 @@ import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayout
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
+import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
 import NamedCredentials from './NamedCredentials';
 import TenantManagement from './TenantManagement';
 import TenantDomains from './TenantDomains';
@@ -3483,12 +3485,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={globalSearch} onNavigate={navigateRoute} />}
-          {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} reports={reports}
+          {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
-          {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} reports={reports}
+          {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
@@ -4276,11 +4278,14 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+  definition, component, objects, apps, pages, currentAppId, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  currentAppId: string;
   reports: ReportMetadata[];
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
@@ -4412,10 +4417,12 @@ function MetadataBoundPageComponent({
     }
     const binding = config as Record<string, unknown>;
     if (binding.actionType === 'Navigate') {
-      const destination=String(binding.navigationObjectApiName ?? objectApiName);
-      if (!objects.some((object)=>object.apiName===destination)) throw new Error('Choose an accessible destination object in Page Builder');
-      onNavigate({kind:'record-list',objectApiName:destination,appId:'Records'});
-      return {navigated:true};
+      const target = resolvePageActionRoute(binding, {
+        objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
+      });
+      // Server endpoints enforce the final object and page authorization checks.
+      onNavigate(target);
+      return { navigated: true };
     }
     const flowApiName = String(binding.flowApiName ?? '');
     const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
@@ -4494,6 +4501,8 @@ function LightningAppRuntime({
   appId,
   pageApiName,
   objects,
+  apps,
+  pages,
   reports,
   libraryComponents,
   availableFlows,
@@ -4505,6 +4514,8 @@ function LightningAppRuntime({
   appId: string;
   pageApiName?: string;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
   reports: ReportMetadata[];
   libraryComponents: LibraryComponentMetadata[];
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
@@ -4563,7 +4574,7 @@ function LightningAppRuntime({
       const content = !isLayoutContainer(component) && typeof component.properties.objectApiName === 'string'
         && component.properties.objectApiName
         ? <MetadataBoundPageComponent definition={definition} component={component}
-            objects={objects} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+            objects={objects} apps={apps} pages={pages} currentAppId={appId} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <RegisteredComponent definition={definition} props={{
             ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
@@ -7971,10 +7982,13 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-function MetadataComponentProperties({ properties, objects, flows, onChange, kioskMode = false }: {
+function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, kioskMode = false }: {
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
-  flows: Array<{ apiName: string; label: string }>;
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  currentAppId: string;
+  flows: FlowDefinitionMetadata[];
   onChange: (next: ComponentPropertyRecord) => void;
   kioskMode?: boolean;
 }) {
@@ -8104,8 +8118,23 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
     {Object.entries(actionFlows ?? {}).map(([eventName, raw]) => {
       const binding = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
       const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
+      const selectedFlow = flows.find(flow => flow.apiName === binding.flowApiName);
       const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
       const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
+      const navigationTargetType = binding.navigationTargetType === 'App Home' || binding.navigationTargetType === 'App Page'
+        ? binding.navigationTargetType : 'Record List';
+      const navigationAppId = String(binding.navigationAppId || (navigationTargetType === 'Record List' ? 'Records' : currentAppId));
+      const navigationApp = apps.find((app) => app.apiName === navigationAppId);
+      const navigationPages = navigationApp ? pages.filter((page) => pageIsAvailableInApp(page, navigationApp)) : [];
+      const navigationPreview = actionType === 'Navigate' ? (() => {
+        try {
+          return appRoutePath(resolvePageActionRoute(binding, {
+            objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
+          }));
+        } catch {
+          return '';
+        }
+      })() : '';
       return <div className="home-page-assignment" key={eventName}>
         <strong>{eventName}</strong>
         <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
@@ -8114,29 +8143,59 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
           <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option>
         </select></label>
         {actionType==='Flow' ? <>
-          <label className="form-label">Flow<select className="form-control" value={String(binding.flowApiName ?? '')}
-            onChange={(e) => setBinding({...binding,flowApiName:e.target.value})}><option value="">Select Flow…</option>
-            {flows.map((flow)=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
-          </select></label>
-          <div className="properties-section-title">Flow input mapping</div>
-          {Object.entries(map).map(([name, source]) => <div key={name} className="metadata-array-property">
-            <label className="form-label">Input API name<input className="form-control" value={name} readOnly /></label>
-            <label className="form-label">Source ($event.field, $record.Field, $session, or literal)
-              <input className="form-control" value={String(source ?? '')}
-                onChange={(e) => setBinding({...binding,inputs:{...map,[name]:e.target.value}})} /></label>
-            <button type="button" className="btn btn-small" onClick={() => {const next={...map};delete next[name];setBinding({...binding,inputs:next});}}>Remove input</button>
-          </div>)}
-          <button type="button" className="btn btn-small" onClick={() => {
-            const nextName=window.prompt('Flow input API name');
-            if(!nextName || !/^[A-Za-z][A-Za-z0-9_]*$/.test(nextName)||nextName in map)return;
-            setBinding({...binding,inputs:{...map,[nextName]:''}});
-          }}>Add Flow input</button>
-        </> : <label className="form-label">Destination object<select className="form-control"
-          value={String(binding.navigationObjectApiName ?? objectApiName)}
-          onChange={(e)=>setBinding({...binding,navigationObjectApiName:e.target.value})}>
-          <option value="">Choose object…</option>
-          {objects.map((object)=><option key={object.apiName} value={object.apiName}>{object.label}</option>)}
-        </select></label>}
+          <label className="form-label">Flow
+            <select className="form-control" value={String(binding.flowApiName ?? '')}
+              onChange={(e) => setBinding({ ...binding, flowApiName: e.target.value })}>
+              <option value="">Select an active Flow…</option>
+              {flows.filter(flow => flow.status === 'Active'
+                && ['Screen Flow','Autolaunched Flow'].includes(flow.flowType)).map(flow =>
+                  <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+              {selectedFlow && (selectedFlow.status !== 'Active'
+                || !['Screen Flow','Autolaunched Flow'].includes(selectedFlow.flowType))
+                && <option value={selectedFlow.apiName} disabled>{selectedFlow.label} (not available)</option>}
+            </select>
+          </label>
+          <FlowInputBindingEditor flow={selectedFlow} inputs={map} fields={fields}
+            onChange={inputs => setBinding({ ...binding, inputs })} />
+        </> : <div className="metadata-navigation-target" aria-label="Navigation destination">
+          <label className="form-label">Destination type
+            <select className="form-control" value={navigationTargetType}
+              onChange={(e) => setBinding({ ...binding, navigationTargetType: e.target.value,
+                navigationAppId: e.target.value === 'Record List' ? 'Records' : currentAppId,
+                navigationPageApiName: '' })}>
+              <option value="Record List">Record list</option>
+              <option value="App Home">App home</option>
+              <option value="App Page">App page</option>
+            </select>
+          </label>
+          <label className="form-label">Application
+            <select className="form-control" value={navigationAppId}
+              onChange={(e) => setBinding({ ...binding, navigationAppId: e.target.value, navigationPageApiName: '' })}>
+              <option value="">Select application…</option>
+              {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
+            </select>
+          </label>
+          {navigationTargetType === 'Record List' && <label className="form-label">Destination object
+            <select className="form-control" value={String(binding.navigationObjectApiName ?? objectApiName)}
+              onChange={(e) => setBinding({ ...binding, navigationObjectApiName: e.target.value })}>
+              <option value="">Choose object…</option>
+              {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+            </select>
+          </label>}
+          {navigationTargetType === 'App Page' && <label className="form-label">App page
+            <select className="form-control" value={String(binding.navigationPageApiName ?? '')}
+              onChange={(e) => setBinding({ ...binding, navigationPageApiName: e.target.value })}>
+              <option value="">Select active app page…</option>
+              {navigationPages.map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}
+            </select>
+          </label>}
+          {navigationTargetType === 'App Page' && !navigationPages.length
+            && <p className="properties-help">Activate an App Page and add it to the application in App Settings first.</p>}
+          {navigationPreview && <div className="properties-help">
+            Destination: <code>{navigationPreview}</code>
+            <a href={navigationPreview} target="_blank" rel="noopener noreferrer"> Test route in a new tab</a>
+          </div>}
+        </div>}
       </div>;
     })}
     <button type="button" className="btn btn-small" onClick={() => {
@@ -9150,7 +9209,8 @@ function PageBuilder({
                   : customDefinition && !isLayoutContainer(component) && (!libraryPreview || interactivePreview) && typeof component.properties.objectApiName === 'string'
                     && component.properties.objectApiName
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
-                        objects={objects} reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
+                        objects={objects} apps={apps} pages={pages} currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
+                        reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
                         onNavigate={() => {}} onLaunchFlow={(flowApiName, inputs) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
                   : customDefinition
@@ -9505,6 +9565,9 @@ function PageBuilder({
                 kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
                 properties={selected.properties}
                 objects={objects}
+                apps={apps}
+                pages={pages}
+                currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
                 flows={flows}
                 onChange={(properties) => updateComponent(selected.id, { properties })}
               />
