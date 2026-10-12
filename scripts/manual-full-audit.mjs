@@ -341,6 +341,29 @@ async function run() {
           if (readyMs > limits.pageMs) findIssue(s.issues, 'SLOW_PAGE', 'medium', name + ': ' + Math.round(readyMs) + 'ms > ' + limits.pageMs + 'ms goal');
           if (s.httpStatus >= 400) findIssue(s.issues, 'PAGE_HTTP', 'high', 'HTTP ' + s.httpStatus);
           s.layout = await collectLayout(page);
+          // Regression checks for the defects recorded in PRs #119, #121 and #123.
+          // Read-only geometry checks; never click business actions or reveal field values.
+          if (name === 'Component Library' || name === 'Page Builder' || name === 'Kiosk Page Builder') {
+            s.checks.favouriteTargets = await page.locator('.component-favourite:visible').evaluateAll(nodes =>
+              nodes.map(node => { const r = node.getBoundingClientRect(); return { width: r.width, height: r.height }; })
+            );
+            if (s.checks.favouriteTargets.some(r => r.width < limits.preferredTouchPx || r.height < limits.preferredTouchPx))
+              findIssue(s.issues, 'FAVOURITE_TARGET_BELOW_44PX', 'medium', 'Visible favourite action is smaller than 44x44px');
+          }
+          if (name === 'Page Builder' || name === 'Kiosk Page Builder') {
+            s.checks.builderToolbar = await page.locator('.builder-titlebar > .toolbar-actions:visible').evaluateAll(nodes =>
+              nodes.map(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right }; })
+            );
+            if (s.checks.builderToolbar.some(r => r.left < -3 || r.right > profile.viewport.width + 3))
+              findIssue(s.issues, 'BUILDER_TOOLBAR_OFFSCREEN', 'high', 'Toolbar extends outside viewport');
+          }
+          if (name === 'Named Credentials') {
+            s.checks.credentialsTable = await page.locator('.named-credentials-page .table-scroll:visible').evaluateAll(nodes =>
+              nodes.map(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }; })
+            );
+            if (s.checks.credentialsTable.some(r => r.left < -3 || r.right > profile.viewport.width + 3))
+              findIssue(s.issues, 'CREDENTIALS_TABLE_OFFSCREEN', 'high', 'Table scroll container extends outside viewport');
+          }
           if (s.layout.shell.headerPosition && !['fixed','sticky'].includes(s.layout.shell.headerPosition)) findIssue(s.issues,'HEADER_NOT_STICKY','medium','Header position: '+s.layout.shell.headerPosition);
           if (!s.layout.shell.sidebarScrollable) findIssue(s.issues,'SIDEBAR_CANNOT_SCROLL','high',name);
           if (s.layout.shell.visibleTextLength < 25) findIssue(s.issues,'BLANK_SCREEN_CANDIDATE','high',name);
