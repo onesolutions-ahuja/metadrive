@@ -1,0 +1,36 @@
+name: MD-07 Component Registry validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/ComponentLibrary.tsx'
+      - 'apps/web/src/CustomComponentPropertyEditor.tsx'
+      - 'apps/web/src/componentProperties.ts'
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/DashboardBuilder.tsx'
+      - 'apps/web/src/FlowBuilder.tsx'
+      - 'apps/web/test/componentProperties.test.ts'
+      - '.github/workflows/md07-component-registry.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  registry-build-and-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build frontend, backend and foundation contract
+        run: npm run build
+      - name: Verify typed custom-component properties
+        run: npx tsx --test apps/web/test/componentProperties.test.ts
+      - name: Run backend regression suite
+        run: npm run test --workspace apps/server
