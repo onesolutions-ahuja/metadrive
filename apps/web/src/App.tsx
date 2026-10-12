@@ -402,6 +402,7 @@ const objectSettings = [
   'Compact Layouts',
   'Field Sets',
   'Object Limits',
+  'Change History',
   'Record Types',
   'Related Lookup Filters',
   'Search Layouts',
@@ -416,6 +417,7 @@ const settingRouteNames: Record<string, string> = {
   'Compact Layouts': 'CompactLayouts',
   'Field Sets': 'FieldSets',
   'Object Limits': 'ObjectLimits',
+  'Change History': 'ChangeHistory',
   'Record Types': 'RecordTypes',
   'Related Lookup Filters': 'RelatedLookupFilters',
   'Search Layouts': 'SearchLayouts',
@@ -2178,6 +2180,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         : [];
       const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/fields`, {
         method: 'POST',
+        headers: { 'If-Match': `"${object.revision ?? 0}"` },
         body: JSON.stringify({
           field,
           pageLayoutIds: newFieldLayoutIds,
@@ -2200,6 +2203,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const saveObject = async (nextObject: ObjectMetadata) => {
     const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(nextObject.apiName)}`, {
       method: 'PUT',
+      headers: { 'If-Match': `"${nextObject.revision ?? 0}"` },
       body: JSON.stringify(nextObject)
     });
     setObject(payload.object);
@@ -2215,7 +2219,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   };
 
   const deleteObject = async (apiName: string) => {
-    await apiRequest<void>(`/metadata/objects/${encodeURIComponent(apiName)}`, { method: 'DELETE' });
+    await apiRequest<void>(`/metadata/objects/${encodeURIComponent(apiName)}`, {
+      method: 'DELETE', headers: { 'If-Match': `"${object.revision ?? 0}"` }
+    });
     const remaining = objects.filter((item) => item.apiName !== apiName);
     setObjects(remaining);
     if (remaining[0]) setObject(remaining[0]);
@@ -2229,6 +2235,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const saveField = async (field: FieldMetadata) => {
     const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(field.apiName)}`, {
       method: 'PUT',
+      headers: { 'If-Match': `"${object.revision ?? 0}"` },
       body: JSON.stringify(field)
     });
     setObject(payload.object);
@@ -2239,7 +2246,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
   const deleteField = async (apiName: string) => {
     const payload = await apiRequest<{ object: ObjectMetadata }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/fields/${encodeURIComponent(apiName)}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      headers: { 'If-Match': `"${object.revision ?? 0}"` }
     });
     setObject(payload.object);
     setObjects((current) => current.map((item) => item.apiName === payload.object.apiName ? payload.object : item));
@@ -6435,6 +6443,46 @@ function ObjectManager({
   const [activationFormFactors, setActivationFormFactors] = useState<Array<'Desktop' | 'Phone'>>(['Desktop']);
   const [showDeleteObjectConfirmation, setShowDeleteObjectConfirmation] = useState(false);
   const [showDeleteFieldConfirmation, setShowDeleteFieldConfirmation] = useState(false);
+  const [metadataChanges, setMetadataChanges] = useState<Array<{
+    objectApiName: string; revision: number; action: string; actorUserId: string; at: string;
+    beforeRevision: number | null; afterRevision: number | null;
+  }>>([]);
+  const [metadataHistoryError, setMetadataHistoryError] = useState('');
+  const [selectedSnapshot, setSelectedSnapshot] = useState<{ revision: number; before?: ObjectMetadata; after?: ObjectMetadata } | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  useEffect(() => {
+    if (selectedSetting !== 'Change History') return;
+    let active = true;
+    setHistoryLoading(true);
+    setSelectedSnapshot(null);
+    setMetadataHistoryError('');
+    void apiRequest<{ history: typeof metadataChanges }>(`/metadata/objects/${encodeURIComponent(object.apiName)}/history?limit=100`)
+      .then((response) => { if (active) setMetadataChanges(response.history); })
+      .catch((error: unknown) => { if (active) setMetadataHistoryError(error instanceof Error ? error.message : 'History unavailable'); })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [selectedSetting, object.apiName, object.revision]);
+  const openMetadataSnapshot = async (revision: number) => {
+    try {
+      const response = await apiRequest<{ change: { revision: number; before?: ObjectMetadata; after?: ObjectMetadata } }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}`
+      );
+      setSelectedSnapshot(response.change);
+    } catch (error) {
+      setMetadataHistoryError(error instanceof Error ? error.message : 'Unable to read revision');
+    }
+  };
+  const validateDraft = async () => {
+    try {
+      const result = await apiRequest<{ valid: boolean; errors: string[] }>(
+        `/metadata/objects/${encodeURIComponent(object.apiName)}/validate`,
+        { method: 'POST', headers: { 'If-Match': `"${draft.revision ?? 0}"` }, body: JSON.stringify(draft) }
+      );
+      onNotify(result.valid ? 'Draft metadata validation passed' : result.errors.join('; '));
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : 'Draft metadata validation failed');
+    }
+  };
   useEffect(() => {
     setDraft(object);
     setRecordTypePicklistDrafts(Object.fromEntries((object.recordTypes ?? []).flatMap((recordType) =>
@@ -7289,7 +7337,32 @@ function ObjectManager({
       {standard.map((label) => <label className="metadata-row" key={label}><span>{label}</span><input type="checkbox" checked={selected.includes(label)} onChange={() => updateDraft({ listViewButtons: toggleField(selected, label) })} /></label>)}
     </section>;
   };
+  const renderHistory = () => <section className="surface object-setting-surface">
+    <div className="section-toolbar"><div><h2>Metadata Change History</h2>
+      <p>Last 300 tenant metadata changes are retained; revisions are read-only snapshots.</p>
+    </div><span>Current revision {object.revision ?? 0}</span></div>
+    {historyLoading && <p role="status">Loading history...</p>}
+    {metadataHistoryError && <p role="alert" className="form-error">{metadataHistoryError}</p>}
+    {!historyLoading && metadataChanges.length === 0 && <p>No saved metadata changes.</p>}
+    <div className="metadata-history-list">
+      {metadataChanges.map((change) => <div className="metadata-row" key={change.revision}>
+        <span><strong>Revision {change.revision}: {change.action.replaceAll('_', ' ')}</strong>
+        <small>{new Date(change.at).toLocaleString()} · User {change.actorUserId}</small></span>
+        <button className="btn" type="button" onClick={() => void openMetadataSnapshot(change.revision)}>
+          View snapshot
+        </button>
+      </div>)}
+    </div>
+    {selectedSnapshot && <div className="metadata-card">
+      <h3>Revision {selectedSnapshot.revision} snapshot</h3>
+      <p>Read-only. Use normal Object Manager saves for validated changes.</p>
+      <pre style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+        {JSON.stringify(selectedSnapshot.after ?? selectedSnapshot.before ?? {}, null, 2)}
+      </pre>
+    </div>}
+  </section>;
   const renderSetting = () => {
+    if (selectedSetting === 'Change History') return renderHistory();
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
     if (selectedSetting === 'Page Layouts') return renderPageLayouts();
@@ -7335,7 +7408,7 @@ function ObjectManager({
         </aside>
 
         <div className="object-details">
-          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div>
+          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div>
           <div className="object-subnav">
             {objectSettings.map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
           </div>
