@@ -19,13 +19,25 @@ function service(cmd, args, env) {
   children.push(child);
   return {child,logs:()=>output};
 }
-async function ready(url, process, label) {
+async function ready(url, serviceProcess, label) {
+  let lastResponse = 'none';
   for(let i=0;i<150;i++){
-    if(process.child.exitCode!==null) throw Error(label+' exited: '+process.logs());
-    try {const response=await fetch(url,{signal:AbortSignal.timeout(600)});if(response.ok)return;}catch{}
+    if(serviceProcess.child.exitCode!==null) throw Error(label+' exited: '+serviceProcess.logs());
+    try {
+      const response=await fetch(url,{signal:AbortSignal.timeout(600)});
+      lastResponse='HTTP '+response.status+' at '+response.url;
+      if(response.ok)return;
+      if(response.status>=500) {
+        lastResponse+=' '+(await response.text()).slice(0,500);
+        throw Error(label+' responded with HTTP error: '+lastResponse+' '+serviceProcess.logs());
+      }
+    } catch(error) {
+      lastResponse=String(error instanceof Error ? error.message : error);
+      if(lastResponse.includes('responded with HTTP error')) throw error;
+    }
     await pause(200);
   }
-  throw Error(label+' startup timed out: '+process.logs());
+  throw Error(label+' startup timed out; last response: '+lastResponse+' logs: '+serviceProcess.logs());
 }
 try {
   const server=service(process.execPath,['apps/server/dist/index.js'],{
