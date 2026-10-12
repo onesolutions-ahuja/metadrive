@@ -60,3 +60,28 @@ test('no privileged recovery action is registered without authentication middlew
     assert.equal(route.handlers[0], requireAuth);
   }
 });
+
+test('MD-03 production: even configured mail and MFA cannot bypass missing Aiven audit trigger', async () => {
+  const app = fakeApp();
+  const noOp = () => {};
+  let queried = 0;
+  installTenantRecoveryCentre(app, {
+    auth: noOp, tenantAdmin: noOp, platformAdmin: noOp, principal: () => { throw Error('must not enter handler'); },
+    tenantUser: () => { throw Error('must not inspect user'); }, domains: () => [],
+    freshMfa: async () => ({ id: 'operator' }), applyRestrictedRepair: async () => {},
+    pool: {query: async () => {queried++; return { rows: [{
+      database_name: 'metadrive_recovery_control', role_name: 'avnadmin',
+      elevated_role: true, recovery_tables: 8, owned_tables: 8,
+      immutable_audit_triggers: 0, can_mutate_audit: true,
+      can_create_schema_objects: true, can_create_database_objects: true
+    }] }; }},
+    deliver: async () => {}, verifyDomain: async () => true
+  });
+  const route = app.routes.find(x => x.path === '/api/platform/recovery/cases/:caseId/approve');
+  const response = { statusCode: 200, status(code) {this.statusCode=code; return this;},
+    json(payload) {this.body=payload; return this;} };
+  await route.handlers.at(-1)({body:{mfaCode:'000000'},params:{caseId:'00000000-0000-0000-0000-000000000000'}},response);
+  assert.equal(response.statusCode,503);
+  assert.equal(response.body.error,'Recovery security controls are not ready');
+  assert.equal(queried,1,'Database attestation must run before any handler');
+});
