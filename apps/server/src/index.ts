@@ -4108,9 +4108,9 @@ function migrateStoredLeadStreetField(value: unknown): boolean {
   }
   return changed;
 }
-function loadState(): PlatformState {
+function loadState(sqlState?: unknown): PlatformState {
   try {
-    const storedState: unknown = JSON.parse(readFileSync(dataPath, 'utf8'));
+    const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
     const parsed = stateSchema.parse(storedState);
     const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
@@ -4410,28 +4410,30 @@ function loadState(): PlatformState {
 }
 function persistState(next: PlatformState): void {
   if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
-  mkdirSync(dirname(dataPath), { recursive: true });
-  const temporaryPath = `${dataPath}.tmp`;
-  // Serialize once: pretty-printing plus a second JSON stringify doubled large
-  // platform-state allocations and could exhaust the 512 MB Render instance.
+  // Typed SQL mode must never persist an unencrypted local JSON state copy.
   const serialized = JSON.stringify(next);
-  writeFileSync(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
-  renameSync(temporaryPath, dataPath);
+  if (persistenceMode !== 'typed') {
+    mkdirSync(dirname(dataPath), { recursive: true });
+    const temporaryPath = `${dataPath}.tmp`;
+    writeFileSync(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
+    renameSync(temporaryPath, dataPath);
+  }
   latestStateCommit = persistToPostgres(next, serialized);
   void latestStateCommit.catch((error: unknown) => {
     console.error('CRITICAL: MetaDrive state commit failed', error);
   });
 }
 const existingPostgresState = await readPersistedState();
-if (existingPostgresState !== null) {
+if (persistenceMode === 'typed' && existingPostgresState === null)
+  throw new Error('Typed SQL runtime requires a verified database snapshot; cannot seed from JSON files');
+if (existingPostgresState !== null && persistenceMode !== 'typed') {
   mkdirSync(dirname(dataPath), { recursive: true });
   writeFileSync(dataPath, JSON.stringify(existingPostgresState), { encoding: 'utf8', mode: 0o600 });
-} else {
+} else if (existingPostgresState === null) {
   // Never replace an existing database state with a new empty seed.
-  // On first deployment, seed from the existing local MetaDrive state when present.
   console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
 }
-let state = loadState();
+let state = loadState(persistenceMode === 'typed' ? existingPostgresState : undefined);
 // Remove legacy internal UI requests from Communication Records before the
 // startup snapshot is persisted. Preserve inbound provider webhooks, genuine
 // messages, and outbound API history; never erase non-internal records.
