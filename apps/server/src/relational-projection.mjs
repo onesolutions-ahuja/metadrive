@@ -2,7 +2,8 @@
 // Contains no database calls. Custom objects/fields are never hardcoded as SQL identifiers.
 import { createHash } from 'node:crypto';
 
-const rootKeys = new Set(['tenants', 'libraryComponents', 'users', 'refreshSessions', 'revokedAccessTokens']);
+const rootKeys = new Set(['tenants', 'libraryComponents', 'users', 'refreshSessions', 'revokedAccessTokens',
+  'platformPolicies', 'platformPolicyAudit']);
 const userFields = ['id','tenantId','name','email','passwordSalt','passwordHash','role','permissionSetIds','permissionSetGroupIds','disabled','createdAt'];
 const sessionFields = ['tokenHash','familyId','userId','tenantId','expiresAt','usedAt','revokedAt'];
 function fail(message) { throw new Error('MetaDrive relational projection: ' + message); }
@@ -37,7 +38,8 @@ export function projectState(input) {
   for (const key of Object.keys(state)) if (!rootKeys.has(key)) fail('unknown top-level key: ' + key);
   const rows = {
     tenants:[], objects:[], collections:[], collectionItems:[], settings:[],
-    recordBuckets:[], records:[], users:[], sessions:[], revokedTokens:[], components:[]
+    recordBuckets:[], records:[], users:[], sessions:[], revokedTokens:[], components:[],
+    platformSettings:[]
   };
   for (const [tenantId, tenantValue] of Object.entries(obj(state.tenants, 'tenants'))) {
     name(tenantId, 'tenant ID');
@@ -74,6 +76,14 @@ export function projectState(input) {
         rows.settings.push({tenantId,key,payload:value});
       }
     }
+  }
+  // Platform policy grants are platform-scoped, not tenant-specific metadata.
+  // Keep root-key presence intact so legacy snapshots also round-trip losslessly.
+  if (Object.hasOwn(state,'platformPolicies')) {
+    rows.platformSettings.push({key:'platformPolicies',payload:obj(state.platformPolicies,'platformPolicies')});
+  }
+  if (Object.hasOwn(state,'platformPolicyAudit')) {
+    rows.platformSettings.push({key:'platformPolicyAudit',payload:arr(state.platformPolicyAudit,'platformPolicyAudit')});
   }
   arr(state.libraryComponents,'libraryComponents').forEach((payload,position)=>rows.components.push({position,payload}));
   const seenUsers=new Set(), seenEmails=new Set();
@@ -144,7 +154,15 @@ export function restoreState(rows) {
   const refreshSessions=[...rows.sessions].sort((a,b)=>a.position-b.position).map(({position,extra,...fields})=>({...fields,...extra}));
   const libraryComponents=[...rows.components].sort((a,b)=>a.position-b.position).map(r=>r.payload);
   const revokedAccessTokens=Object.fromEntries(rows.revokedTokens.map(r=>[r.tokenHash,r.expiresAt]));
-  return {tenants,libraryComponents,users,refreshSessions,revokedAccessTokens};
+  const restored={tenants,libraryComponents,users,refreshSessions,revokedAccessTokens};
+  for (const row of rows.platformSettings ?? []) {
+    if (!['platformPolicies','platformPolicyAudit'].includes(row.key) || Object.hasOwn(restored,row.key))
+      fail('unknown or duplicate platform setting ' + row.key);
+    if (row.key==='platformPolicies') obj(row.payload,row.key);
+    if (row.key==='platformPolicyAudit') arr(row.payload,row.key);
+    define(restored,row.key,row.payload);
+  }
+  return restored;
 }
 export function verifyProjection(state, rows=projectState(state)) {
   const expected=stateDigest(state);
