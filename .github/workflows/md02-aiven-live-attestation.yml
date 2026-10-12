@@ -1,0 +1,37 @@
+name: Attest live Aiven SQL-only persistence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/md02-aiven-live-attestation.yml'
+      - 'apps/server/scripts/verify-live-sql-persistence.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metadrive-aiven-live-readonly-attestation
+  cancel-in-progress: false
+
+jobs:
+  readonly-proof:
+    if: github.repository == 'onesolutions-ahuja/metadrive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+      METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+      # Aiven's certificate is issued by its private CA; transport encryption
+      # is independently checked against pg_stat_ssl in the verification script.
+      METADRIVE_DB_ALLOW_SELF_SIGNED_CERT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Assert target schema, current revision, archives and physical records
+        run: node apps/server/scripts/verify-live-sql-persistence.mjs
