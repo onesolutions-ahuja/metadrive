@@ -10,7 +10,7 @@ import { spawn,spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
-import { mkdtempSync,readFileSync,rmSync } from 'node:fs';
+import { existsSync,mkdtempSync,readFileSync,rmSync } from 'node:fs';
 import { join,dirname,resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -162,6 +162,7 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     const execution=await request(port,'/flows/Relational_Smoke/execute','POST',token,{});
     assert.equal(execution.status,200,JSON.stringify(execution.data));
     await stopApi(child);child=null;
+    if(mode==='typed') assert.equal(existsSync(relationalPath),false,'SQL-only runtime must not write a local JSON snapshot');
     // Restart with another local state file; the relational DB must remain the authority.
     child=await startApi(port,join(dir,'after-restart.json'),relationalEnv);
     const restarted=await request(port,'/auth/login','POST',null,{email,password});
