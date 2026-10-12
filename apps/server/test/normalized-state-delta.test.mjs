@@ -37,7 +37,8 @@ test('changing parent type correctly retires old children',()=>{
   assert.deepEqual(restoreNormalizedTree(plan.nodes),b);
   assert.equal(plan.deleted.length,2);
 });
-\ntest('large metadata graphs retain unchanged rows for login append',()=>{
+
+test('large metadata graphs retain unchanged rows for login append',()=>{
   const users=Array.from({length:2500},(_,i)=>({id:'u'+i,email:'u'+i+'@example.test',role:'reader',enabled:true}));
   const before={users,tenants:{a:{securityEvents:[]}},refreshSessions:[]};
   const original=projectNormalizedTree(before).nodes;
