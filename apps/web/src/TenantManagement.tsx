@@ -114,9 +114,16 @@ export default function TenantManagement({ request, permitted }: { request: Requ
   const changeStatus = async () => {
     if (!selected || busy || !permitted) return;
     const suspend = selected.status === 'ACTIVE';
-    if (!window.confirm(suspend
-      ? `Suspend ${selected.name}? All tenant sessions will be blocked and existing refresh sessions revoked.`
-      : `Reactivate ${selected.name}? Users will need to sign in again.`)) return;
+    // Require the immutable tenant ID, not its editable display name, before
+    // an operator can change the authentication availability of an organisation.
+    // This UI safeguard complements (and never replaces) server-side platform RBAC.
+    const confirmation = window.prompt(
+      (suspend
+        ? `Suspend ${selected.name}? All tenant sessions will be blocked and existing refresh sessions revoked.`
+        : `Reactivate ${selected.name}? Users will need to sign in again.`) +
+      `\n\nEnter tenant ID "${selected.tenantId}" to confirm:`
+    );
+    if (confirmation !== selected.tenantId) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const result = await request<{ tenant: TenantSummary }>(
