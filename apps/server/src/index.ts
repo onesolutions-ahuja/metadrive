@@ -7622,10 +7622,12 @@ function routeParam(req: Request, name: string): string {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 }
 
-function requireCommunicationAuditAccess(principal: Principal, objectName: string, res: Response): boolean {
-  if (objectName !== 'Communication_Records__c' || principal.permissions.includes('security:manage')) return true;
-  res.status(403).json({ error: 'Communication audit access requires security:manage' });
-  return false;
+function isProtectedApiAuditRecord(objectName: string, record: RuntimeRecord): boolean {
+  return objectName === 'Communication_Records__c'
+    && record.Communication_Mode__c === 'API';
+}
+function canReadCommunicationRecord(principal: Principal, objectName: string, record: RuntimeRecord): boolean {
+  return !isProtectedApiAuditRecord(objectName, record) || principal.permissions.includes('security:manage');
 }
 function canManageRecordShares(principal: Principal, tenant: TenantData, objectName: string, record: RuntimeRecord): boolean {
   return record.OwnerId === principal.userId
@@ -7637,11 +7639,10 @@ app.get('/api/records/:objectName/:recordId/shares', accessAuthentication, (req:
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
-  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7661,11 +7662,10 @@ app.post('/api/records/:objectName/:recordId/shares', accessAuthentication, (req
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
-  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7704,12 +7704,11 @@ app.delete('/api/records/:objectName/:recordId/shares/:userId', accessAuthentica
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
-  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const userId = routeParam(req, 'userId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7728,12 +7727,11 @@ app.delete('/api/records/:objectName/:recordId/shares/groups/:groupId', accessAu
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
-  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const recordId = routeParam(req, 'recordId');
   const groupId = routeParam(req, 'groupId');
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record) return res.status(404).json({ error: 'Record was not found' });
+  if (isProtectedApiAuditRecord(objectName, record)) return res.status(403).json({ error: 'API audit record shares are managed by the system' });
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
@@ -7752,7 +7750,6 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
@@ -7791,7 +7788,8 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
         UserRoleId: user.role, CreatedDate: user.createdAt, LastModifiedDate: user.createdAt
       })))
     : (tenant.records[objectName] ?? [])
-        .filter((record) => hasRecordAccess(principal, tenant, objectName, record, 'Read'))
+        .filter((record) => hasRecordAccess(principal, tenant, objectName, record, 'Read')
+          && canReadCommunicationRecord(principal, objectName, record))
         .map((record) => sanitizeRecordForRead(principal, tenant, object, record));
   // Search only fields visible to this principal; preserve metadata-configured search layouts.
   const configuredFields = object.searchLayouts?.searchResults;
@@ -7822,7 +7820,6 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
@@ -7855,7 +7852,8 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
     })), ...(lightningPage ? { lightningPage } : {}) });
   }
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
-  if (!record || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
+  if (!record || !canReadCommunicationRecord(principal, objectName, record)
+    || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
   const recordTypeId = typeof record.RecordTypeId === 'string'
     ? record.RecordTypeId
     : object.recordTypes?.find((recordType) => recordType.active && recordType.isDefault)?.id
@@ -8193,14 +8191,13 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
-  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (objectName === 'ConnectorProvider__c' || objectName === 'IntegrationConnection__c') {
     return res.status(403).json({ error: 'Manage connector definitions and Integration Connections in Une Connectors Setup' });
   }
   if (objectName === 'User') return res.status(403).json({ error: 'Users must be provisioned through the security workspace' });
+  if (objectName === 'Communication_Records__c' && req.body?.Communication_Mode__c === 'API') return res.status(403).json({ error: 'API audit records are system-managed' });
   if (objectName === 'Connector_App__c' && !principal.permissions.includes('licence:manage')) {
     return res.status(403).json({error:'Connector app catalogue creation/deletion requires platform licence permission.'});
   }
@@ -8338,6 +8335,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     return res.status(403).json({ error: 'Change Owner is not enabled for this object’s list views' });
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (existing && isProtectedApiAuditRecord(objectName, existing)) return res.status(403).json({ error: 'API audit records are immutable' });
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
@@ -8371,8 +8369,6 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
-  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (objectName === 'ConnectorProvider__c' || objectName === 'IntegrationConnection__c') {
@@ -8434,8 +8430,6 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const objectName = routeParam(req, 'objectName');
-  if (!requireCommunicationAuditAccess(principal, objectName, res)) return;
-  if (objectName === 'Communication_Records__c') return res.status(403).json({ error: 'Communication audit records are immutable through the Records API' });
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (!object) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (objectName === 'ConnectorProvider__c' || objectName === 'IntegrationConnection__c') {
@@ -8447,6 +8441,7 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
   }
   if (!hasObjectPermission(principal, tenant, objectName, 'delete')) return res.status(403).json({ error: `Missing delete permission for object "${objectName}"` });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (existing && isProtectedApiAuditRecord(objectName, existing)) return res.status(403).json({ error: 'API audit records are immutable' });
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Delete')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordActionEnabled(object, 'Delete', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Delete is not enabled for this object or page layout' });
