@@ -9,5 +9,6 @@ export type SqlQueryClient = {
   release():void;
 };
 export type SqlPool={connect():Promise<SqlQueryClient>};
-export function readNormalizedState(pool:SqlPool):Promise<NormalizedSnapshot>;
-export function writeNormalizedState(pool:SqlPool,nextState:unknown,previous:NormalizedSnapshot):Promise<NormalizedSnapshot>;
+export type NormalizedRecordHook=(client:SqlQueryClient,state:unknown)=>Promise<void>;
+export function readNormalizedState(pool:SqlPool,verifyPhysicalRecords?:NormalizedRecordHook|null):Promise<NormalizedSnapshot>;
+export function writeNormalizedState(pool:SqlPool,nextState:unknown,previous:NormalizedSnapshot,synchronizePhysicalRecords?:NormalizedRecordHook|null):Promise<NormalizedSnapshot>;
