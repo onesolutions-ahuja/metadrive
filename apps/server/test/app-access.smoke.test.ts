@@ -126,6 +126,15 @@ test('MD-01C: app permissions, profile assignments and licensed runtime routes',
     assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.data));
     const adminToken = String(adminLogin.data.access_token);
     const adminId = String(adminLogin.data.user.id);
+    const integration = await api('/integration-connections', adminToken, 'POST', {
+      connectorKey: 'META_WHATSAPP', name: 'Managed Provider Test',
+      configuration: {}, credentials: {}, status: 'ACTIVE'
+    });
+    assert.equal(integration.status, 201, JSON.stringify(integration.data));
+    const integrationId = integration.data.connection.id as string;
+    assert.equal((await api('/integration-connections/' + integrationId + '/test',
+      adminToken, 'POST', {})).status, 403,
+      'Testing a managed provider is blocked before credentials/network when its package is not installed or licensed');
     const roles = (await api('/metadata/permissions', adminToken)).data.roles as Array<{ name: string }>;
     const role = roles.find((item) => item.name === 'Standard User') ?? roles.find((item) => item.name !== 'System Administrator');
     assert.ok(role);
