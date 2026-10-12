@@ -21,6 +21,7 @@ export type PrincipalClaims = JWTPayload & {
   roles: string[];
   permissions: string[];
   amr?: string[];
+  mfa_version?: number;
 };
 
 export type Principal = {
@@ -30,6 +31,7 @@ export type Principal = {
   roles: string[];
   permissions: string[];
   mfaVerified?: boolean;
+  mfaVersion?: number;
 };
 
 type JwtConfig = {
@@ -132,7 +134,8 @@ export class JwtService {
       email: principal.email,
       roles: principal.roles,
       permissions: principal.permissions,
-      amr: principal.mfaVerified ? ['pwd', 'otp'] : ['pwd']
+      amr: principal.mfaVerified ? ['pwd', 'otp'] : ['pwd'],
+      mfa_version: principal.mfaVersion ?? 0
     })
       .setProtectedHeader({ alg: 'RS256', kid: this.kid, typ: 'JWT' })
       .setIssuer(this.config.issuer)
