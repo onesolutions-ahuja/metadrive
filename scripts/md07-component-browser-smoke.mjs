@@ -104,6 +104,31 @@ try {
   const published=componentRow.components.find((item)=>item.apiName==='MD07_Browser_Widget');
   if(!published?.surfaces.includes('dashboard')||!published?.surfaces.includes('flow'))
     throw Error('Custom component not advertised for dashboard and Flow surfaces');
+  // A kiosk is an App Page, not just a Page Builder preview. Exercise its activated runtime
+  // with a published custom component at desktop, tablet, and phone widths.
+  const kioskPageApiName='MD07_Browser_Kiosk';
+  await request('/metadata/pages/'+kioskPageApiName,token,'PUT',{
+    apiName:kioskPageApiName,label:'MD07 Kiosk',targetObject:'',pageType:'App Page',
+    status:'Active',layoutMode:'template',template:'one-region',canvasWidth:1920,canvasHeight:1080,
+    devices:['Desktop','Phone'],activationAssignments:[],
+    components:[{id:'md07-kiosk-component',type:'Custom:MD07_Browser_Widget',
+      label:'MD07 Browser Widget',properties:{libraryComponentId:'MD07_Browser_Widget'},
+      visible:true,region:'main'}]
+  });
+  const kioskApp='MD07_Browser_Kiosk_App';
+  await request('/metadata/apps',token,'POST',{
+    apiName:kioskApp,label:'MD07 Kiosk App',description:'Disposable component acceptance kiosk',
+    navigationItems:['Account'],navigationPageApiNames:[kioskPageApiName],
+    brandColor:'#0176d3',utilityItems:[]
+  });
+  for(const [width,height] of [[1440,900],[820,1180],[390,844]]) {
+    await page.setViewportSize({width,height});
+    await page.goto('http://127.0.0.1:5173/une/apps/'+kioskApp+'/pages/'+kioskPageApiName);
+    const kioskFrame=page.locator('iframe[sandbox="allow-scripts"]').first();
+    await kioskFrame.waitFor({state:'attached'});
+    await kioskFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  }
+  await page.setViewportSize({width:1440,height:900});
   // Prove actual custom component rendering on dashboards; advertising a surface is insufficient.
   const dashboardApiName='MD07_Browser_Dashboard';
   await request('/metadata/dashboards/'+dashboardApiName,token,'PUT',{
@@ -141,7 +166,7 @@ try {
   if(uncaught.length)throw Error('Uncaught browser errors: '+uncaught.join('; '));
   console.log(JSON.stringify({module:7,browser:'Chromium',registryCreate:true,publish:true,
     pageSave:true,reopen:true,desktop:true,tablet:true,phone:true,
-    sandbox:true,dashboardRendered:true,flowScreenRendered:true,
+    sandbox:true,kioskAppRendered:true,dashboardRendered:true,flowScreenRendered:true,
     advertisedSurfaces:['page','dashboard','flow'],pageErrors:0,isolated:true}));
 } finally {
   if(browser)await browser.close();
