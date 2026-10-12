@@ -8588,7 +8588,7 @@ function PageBuilder({
             : type === 'Field Section'
               ? { fieldApiNames: [], columns: 2 }
             : {},
-      visible: true, parentId, region,
+      visible: true, parentId: parentId ?? undefined, region,
       ...(freeCanvasPosition ? { position: freeCanvasPosition } : {})
     });
     applyPage({ ...page, components });
