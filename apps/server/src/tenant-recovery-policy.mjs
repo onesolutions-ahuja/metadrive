@@ -33,7 +33,7 @@ export function assertRecoveryEligible(caseFile, now = Date.now()) {
     || typeof caseFile.tenantId !== 'string' || !caseFile.tenantId
     || typeof caseFile.claimantUserId !== 'string' || !caseFile.claimantUserId)
     throw new Error('Invalid pending recovery case');
-  if (!Number.isFinite(now) || validDate(caseFile.createdAt) > now
+  if (!Number.isFinite(now) || !Number.isFinite(validDate(caseFile.createdAt)) || validDate(caseFile.createdAt) > now
     || now - validDate(caseFile.createdAt) < RECOVERY_WAIT_MS)
     throw new Error('Recovery cooling-off period not complete');
   if (caseFile.identityProofStatus !== 'verified'
@@ -50,7 +50,7 @@ export function assertRecoveryEligible(caseFile, now = Date.now()) {
   for (const a of approvers) {
     if (!validActor(a) || a.id === caseFile.claimantUserId
       || a.id === caseFile.requestedBy || ids.has(a.id)
-      || validDate(a.approvedAt) < validDate(caseFile.createdAt)
+      || !Number.isFinite(validDate(a.approvedAt)) || validDate(a.approvedAt) < validDate(caseFile.createdAt)
       || validDate(a.approvedAt) > now)
       throw new Error('Approvals must be independent verified platform operators');
     ids.add(a.id);
@@ -67,6 +67,8 @@ export function assertRecoveryRedemption(caseFile, invitation, {
     || invitation?.caseId !== caseFile.id || invitation?.tenantId !== tenantId
     || invitation?.userId !== userId
     || invitation?.scope !== RECOVERY_GRANT
+    || !Number.isFinite(validDate(invitation?.createdAt))
+    || !Number.isFinite(validDate(invitation?.expiresAt))
     || validDate(invitation?.createdAt) > now
     || now - validDate(invitation?.createdAt) > INVITATION_TTL_MS
     || validDate(invitation?.expiresAt) <= now
