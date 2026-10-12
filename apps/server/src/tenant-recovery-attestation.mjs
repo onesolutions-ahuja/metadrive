@@ -5,6 +5,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 const PURPOSES = Object.freeze({
   identity: 'recovery_identity',
   operator: 'recovery_operator',
+  verifier: 'recovery_verifier',
   contact: 'recovery_contact',
   claimant: 'recovery_claimant'
 });
@@ -47,7 +48,10 @@ export function createRecoveryAttestationVerifier({
     return Object.freeze({
       id: payload.sub, role: purpose.replace(/^recovery_/, 'recovery_'),
       tenantId, claimantUserId, caseId, active: true,
-      trustedMfa: true, attestationId: payload.jti
+      trustedMfa: true, attestationId: payload.jti,
+      preEnrolled: purpose === PURPOSES.contact && payload.pre_enrolled === true,
+      organizationVerified: purpose === PURPOSES.identity && payload.organization_verified === true,
+      evidenceDigest: purpose === PURPOSES.identity ? payload.evidence_digest : undefined
     });
   };
 }
