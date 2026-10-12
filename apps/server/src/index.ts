@@ -3324,14 +3324,14 @@ type TenantDomainRecord = {
 };
 type TenantRegistryEntry = {
   domains?: TenantDomainRecord[];
-  name: string; description: string; status: 'ACTIVE' | 'SUSPENDED'; createdAt: string; updatedAt: string;
+  name: string; description: string; status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'; archivedAt?: string; retentionUntil?: string; legalHold?: boolean; createdAt: string; updatedAt: string;
   // The complete initial workspace and administrator commit together.
   provisioning?: { status: 'READY'; version: number; completedAt: string };
   provisioningRequestHash?: string;
   developerSeed?: { userId: string; email: string; seededAt: string; activatedAt?: string };
 };
 type TenantManagementAuditEvent = {
-  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED' | 'DOMAIN_ADDED' | 'DOMAIN_VERIFIED' | 'DOMAIN_REMOVED';
+  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED' | 'ARCHIVED' | 'RESTORED' | 'RETENTION_UPDATED' | 'DOMAIN_ADDED' | 'DOMAIN_VERIFIED' | 'DOMAIN_REMOVED';
   at: string; previous?: TenantRegistryEntry; next: TenantRegistryEntry;
 };
 type PlatformState = {
@@ -3358,7 +3358,10 @@ const tenantRegistryEntrySchema = z.object({
   }).strict()).max(5000).optional(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).default(''),
-  status: z.enum(['ACTIVE', 'SUSPENDED']),
+  status: z.enum(['ACTIVE', 'SUSPENDED', 'ARCHIVED']),
+  archivedAt: z.string().datetime().optional(),
+  retentionUntil: z.string().datetime().optional(),
+  legalHold: z.boolean().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   provisioning: z.object({
@@ -3374,7 +3377,7 @@ const tenantRegistryEntrySchema = z.object({
 }).strict();
 const tenantManagementAuditSchema = z.object({
   actorId: z.string(), tenantId: z.string(),
-  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED','DOMAIN_ADDED','DOMAIN_VERIFIED','DOMAIN_REMOVED']),
+  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED','ARCHIVED','RESTORED','RETENTION_UPDATED','DOMAIN_ADDED','DOMAIN_VERIFIED','DOMAIN_REMOVED']),
   at: z.string().datetime(),
   previous: tenantRegistryEntrySchema.optional(),
   next: tenantRegistryEntrySchema
@@ -4973,7 +4976,7 @@ if (!maintenanceMode) await bootstrapTenant();
 
 function tenantIsActive(tenantId: string): boolean {
   return !provisioningPendingTenants.has(tenantId)
-    && state.tenantRegistry[tenantId]?.status !== 'SUSPENDED';
+    && (state.tenantRegistry[tenantId]?.status ?? 'ACTIVE') === 'ACTIVE';
 }
 function withSecurityEvent(
   tenant: TenantData,
@@ -6383,7 +6386,7 @@ function commitTenantChange(actorId: string, tenantId: string,
     tenantManagementAudit: [...state.tenantManagementAudit,
       { actorId, tenantId, action, at: new Date().toISOString(), ...(previous ? { previous } : {}), next }
     ].slice(-5000),
-    ...(action === 'SUSPENDED' ? {
+    ...(['SUSPENDED', 'ARCHIVED'].includes(action) ? {
       // Access JWTs are stateless; advance every tenant user's revocation epoch
       // so pre-suspension bearer tokens cannot revive after reactivation.
       users: state.users.map((user) => user.tenantId === tenantId
@@ -6399,7 +6402,7 @@ function commitTenantChange(actorId: string, tenantId: string,
 app.get('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const query = String(req.query.q ?? '').trim().toLowerCase().slice(0,120);
   const status = String(req.query.status ?? 'ALL');
-  if (!['ALL', 'ACTIVE', 'SUSPENDED'].includes(status)) return res.status(400).json({ error: 'Invalid tenant status filter' });
+  if (!['ALL', 'ACTIVE', 'SUSPENDED', 'ARCHIVED'].includes(status)) return res.status(400).json({ error: 'Invalid tenant status filter' });
   const page = Number(req.query.page ?? 1);
   const pageSize = Number(req.query.pageSize ?? 25);
   if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100)
@@ -6706,24 +6709,62 @@ app.delete('/api/tenant/domains/:hostname', accessAuthentication, requirePermiss
 app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const tenantId = routeParam(req, 'tenantId');
   const operation = routeParam(req, 'operation');
-  if (operation !== 'suspend' && operation !== 'reactivate')
+  if (!['suspend', 'reactivate', 'archive', 'restore'].includes(operation))
     return res.status(404).json({ error: 'Unknown tenant operation' });
   if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
   if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
   const previous = tenantRegistryEntry(tenantId);
-  const desired = operation === 'suspend' ? 'SUSPENDED' : 'ACTIVE';
+  const desired = operation === 'archive' ? 'ARCHIVED' : operation === 'restore' ? 'SUSPENDED'
+    : operation === 'suspend' ? 'SUSPENDED' : 'ACTIVE';
+  if (operation === 'archive' && previous.status !== 'SUSPENDED')
+    return res.status(409).json({ error: 'Suspend the tenant before archiving' });
+  if (operation === 'restore' && previous.status !== 'ARCHIVED')
+    return res.status(409).json({ error: 'Only archived tenants can be restored' });
+  if (operation === 'reactivate' && previous.status === 'ARCHIVED')
+    return res.status(409).json({ error: 'Restore the archived tenant before reactivation' });
   if (previous.status === desired) return res.status(409).json({ error: 'Tenant is already ' + desired.toLowerCase() });
-  if (desired === 'SUSPENDED') {
+  if (desired === 'SUSPENDED' && operation === 'suspend') {
     const remaining = state.users.filter((user) => !user.disabled && user.tenantId !== tenantId
       && tenantIsActive(user.tenantId) && (state.platformPolicies[user.id] ?? []).includes('platform:superadmin'));
     if (remaining.length === 0) return res.status(409).json({
       error: 'Cannot suspend the tenant hosting the last active platform administrator.'
     });
   }
-  const next: TenantRegistryEntry = { ...previous, status: desired, updatedAt: new Date().toISOString() };
-  commitTenantChange(getPrincipal(res).userId, tenantId, desired === 'SUSPENDED' ? 'SUSPENDED' : 'REACTIVATED', next, previous);
+  const next: TenantRegistryEntry = { ...previous, status: desired,
+    ...(operation === 'archive' ? { archivedAt: new Date().toISOString() } : {}),
+    ...(operation === 'restore' ? { archivedAt: undefined } : {}),
+    updatedAt: new Date().toISOString() };
+  const action: TenantManagementAuditEvent['action'] = operation === 'archive' ? 'ARCHIVED'
+    : operation === 'restore' ? 'RESTORED' : operation === 'suspend' ? 'SUSPENDED' : 'REACTIVATED';
+  commitTenantChange(getPrincipal(res).userId, tenantId, action, next, previous);
   return res.json({ tenant: tenantSummary(tenantId) });
 });
+
+// MD-03.6: Retention controls are metadata only. No background or automatic purge.
+// Retention and legal holds are auditable and platform-scoped, even for archived tenants.
+const tenantRetentionSchema = z.object({
+  retentionUntil: z.string().datetime().nullable(),
+  legalHold: z.boolean()
+}).strict();
+app.patch('/api/platform/tenants/:tenantId/retention', accessAuthentication, requirePlatformTenantAdmin,
+  (req: Request, res: Response) => {
+    const tenantId = routeParam(req, 'tenantId');
+    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+    if (provisioningPendingTenants.has(tenantId))
+      return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
+    const parsed = tenantRetentionSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid retention policy' });
+    if (parsed.data.retentionUntil && Date.parse(parsed.data.retentionUntil) <= Date.now())
+      return res.status(400).json({ error: 'Retention deadline must be in the future' });
+    const previous = tenantRegistryEntry(tenantId);
+    const next: TenantRegistryEntry = { ...previous,
+      ...(parsed.data.retentionUntil === null ? { retentionUntil: undefined } : { retentionUntil: parsed.data.retentionUntil }),
+      legalHold: parsed.data.legalHold, updatedAt: new Date().toISOString() };
+    commitTenantChange(getPrincipal(res).userId, tenantId, 'RETENTION_UPDATED', next, previous);
+    return res.json({ tenant: tenantSummary(tenantId) });
+  });
+// No destructive endpoint: absence is intentional until an independently verified
+// erasure ceremony and physical backup retention policy exist.
 
 app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
