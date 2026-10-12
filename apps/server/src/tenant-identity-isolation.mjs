@@ -36,9 +36,17 @@ export function assertTenantIdentityIsolation(state) {
     const accessUsers = data?.accessControl?.users;
     if (accessUsers !== undefined) {
       if (!Array.isArray(accessUsers)) throw Error('Tenant isolation: invalid access-control identities');
+      const accessIds = new Set();
       for (const user of accessUsers) {
-        if (user?.id && usersById.has(user.id) && usersById.get(user.id) !== tenantId)
+        if (typeof user?.id !== 'string' || !user.id)
+          throw Error('Tenant isolation: invalid access-control user identity');
+        if (accessIds.has(user.id))
+          throw Error('Tenant isolation: duplicate access-control user identity');
+        accessIds.add(user.id);
+        if (usersById.has(user.id) && usersById.get(user.id) !== tenantId)
           throw Error('Tenant isolation: access-control user belongs to another tenant');
+        if (!usersById.has(user.id))
+          throw Error('Tenant isolation: access-control user has no tenant identity');
       }
     }
   }
