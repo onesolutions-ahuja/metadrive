@@ -64,7 +64,7 @@ import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
-import { childrenOf, canNest, isLayoutContainer, rawLayoutParentId, reparentComponent, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
+import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayoutParentId, reparentComponent, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import NamedCredentials from './NamedCredentials';
@@ -4513,7 +4513,8 @@ function LightningAppRuntime({
             objects={objects} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <RegisteredComponent definition={definition} props={{
-            ...component.properties, label: component.label, properties: component.properties,
+            ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
+            label: component.label, properties: component.properties,
             device: layoutDevice, children: nestedChildren
           }} />;
       return page.layoutMode === 'free-canvas' ? content
@@ -5281,7 +5282,8 @@ function RecordWorkspace({
           ? <div key={component.id} data-layout-component-id={component.id}
               style={resolveLayoutStyle(component.properties, layoutDevice)}>
               <RegisteredComponent definition={definition} props={{
-                ...component.properties, label: component.label, properties: component.properties,
+                ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
+                label: component.label, properties: component.properties,
                 record, recordId: record.Id, object, formFactor, children
               }} />
             </div>
@@ -8908,6 +8910,7 @@ function PageBuilder({
     const customPreviewProps = {
       ...previewProperties,
       ...component.properties,
+      ...componentLayoutProps(component.properties, device),
       label: component.label,
       properties: component.properties,
       object: page.pageType === 'Record Page' ? targetObject : undefined,
@@ -8991,6 +8994,7 @@ function PageBuilder({
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
+                      ...componentLayoutProps(component.properties, device),
                       label: component.label,
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
