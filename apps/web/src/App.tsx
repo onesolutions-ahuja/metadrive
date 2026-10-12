@@ -1338,6 +1338,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const flowHistory = useRef<{ undo: FlowDefinitionMetadata[]; redo: FlowDefinitionMetadata[] }>({ undo: [], redo: [] });
   const flowSnapshots = useRef(new Map<string, string>());
   const [page, setPage] = useState<LightningPageMetadata>(defaultLightningPage);
+  // UI-only wizard handoff; app membership is persisted through metadata navigation on activation.
+  const [pageCreationAppContext, setPageCreationAppContext] = useState<Record<string, string>>({});
   const pageRouteApiName = useRef('');
   const [pages, setPages] = useState<LightningPageMetadata[]>([defaultLightningPage]);
   const [dashboards, setDashboards] = useState<DashboardMetadata[]>([]);
@@ -3582,7 +3584,16 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages}
+            preparedAppId={pageCreationAppContext[page.apiName] ?? ''}
+            onPrepareApp={(pageApiName, appId) => setPageCreationAppContext(current => ({
+              ...current, [pageApiName]: appId
+            }))}
+            onAppLinked={pageApiName => setPageCreationAppContext(current => {
+              const next = { ...current };
+              delete next[pageApiName];
+              return next;
+            })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -8248,7 +8259,8 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
 }
 
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow
+  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
+  preparedAppId, onPrepareApp, onAppLinked
 }: {
   page: LightningPageMetadata;
   pages: LightningPageMetadata[];
@@ -8267,8 +8279,14 @@ function PageBuilder({
   onExit: () => void;
   onNotify: (message: string) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  preparedAppId: string;
+  onPrepareApp: (pageApiName: string, appId: string) => void;
+  onAppLinked: (pageApiName: string) => void;
 }) {
-  const [builderAppApiName, setBuilderAppApiName] = useState('');
+  const [builderAppApiName, setBuilderAppApiName] = useState(preparedAppId);
+  useEffect(() => {
+    if (preparedAppId) setBuilderAppApiName(preparedAppId);
+  }, [preparedAppId]);
   const pageTemplates: Array<{ id: LightningPageTemplate; label: string; regions: Array<'header' | 'main' | 'sidebar'> }> = [
     { id: 'one-region', label: 'One Region', regions: ['main'] },
     { id: 'header-main', label: 'Header and Main', regions: ['header', 'main'] },
@@ -8364,6 +8382,9 @@ function PageBuilder({
   const [newPageType, setNewPageType] = useState<LightningPageMetadata['pageType']>('Record Page');
   const [newPageTemplate, setNewPageTemplate] = useState<LightningPageTemplate>('header-main-sidebar');
   const [newPageLayoutMode, setNewPageLayoutMode] = useState<LightningPageMetadata['layoutMode']>('template');
+  const [newPageTargetObject, setNewPageTargetObject] = useState(page.targetObject || objects[0]?.apiName || '');
+  const [newPageAppId, setNewPageAppId] = useState('');
+  const [newPageDevices, setNewPageDevices] = useState<Array<'Desktop' | 'Phone'>>(['Desktop', 'Phone']);
   const [dragOverId, setDragOverId] = useState('');
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
@@ -8860,6 +8881,24 @@ function PageBuilder({
     try {
       const saved = await onSave(nextPage, savedPageApiName.current);
       if (saved) {
+        if (nextPage.status === 'Active' && nextPage.pageType === 'App Page') {
+          const targetAppId = builderAppApiName || preparedAppId;
+          const destinationApp = apps.find(item => item.apiName === targetAppId);
+          if (destinationApp && !destinationApp.navigationPageApiNames.includes(nextPage.apiName)) {
+            const navigationPageApiNames = [...destinationApp.navigationPageApiNames, nextPage.apiName];
+            try {
+              await onSaveApp({
+                ...destinationApp, navigationPageApiNames,
+                navigationOrder: reconcileNavigationOrder(
+                  destinationApp.navigationItems, navigationPageApiNames, destinationApp.navigationOrder
+                )
+              }, true);
+              onAppLinked(nextPage.apiName);
+            } catch (error) {
+              onNotify(error instanceof Error ? error.message : 'Page activated, but app navigation could not be updated');
+            }
+          } else if (destinationApp) onAppLinked(nextPage.apiName);
+        }
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
         setRedoStack([]);
@@ -8938,32 +8977,58 @@ function PageBuilder({
       setSaving(false);
     }
   };
-  const createPage = () => {
+  const createPage = async () => {
+    if (saving) return;
     const label = newPageLabel.trim();
     if (!label) return;
+    if (!objects.some(item => item.apiName === newPageTargetObject)) {
+      onNotify('Choose an existing data object for the new page');
+      return;
+    }
+    if (!newPageDevices.length) {
+      onNotify('Choose at least one supported device');
+      return;
+    }
     const baseApiName = label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'New_Page';
     const apiName = /^[A-Za-z]/.test(baseApiName) ? baseApiName : `Page_${baseApiName}`;
-    if (page.apiName.toLowerCase() === apiName.toLowerCase() || pages.some((item) => item.apiName.toLowerCase() === apiName.toLowerCase())) {
+    if (page.apiName.toLowerCase() === apiName.toLowerCase()
+      || pages.some(item => item.apiName.toLowerCase() === apiName.toLowerCase())) {
       onNotify('A Lightning page with this API name already exists');
       return;
     }
-    onChange({
-      apiName, label, targetObject: targetObject?.apiName ?? objects[0]?.apiName ?? 'Account',
+    const nextPage: LightningPageMetadata = {
+      apiName, label, targetObject: newPageTargetObject,
       pageType: newPageLayoutMode === 'free-canvas' ? 'Home Page' : newPageType,
-      layoutMode: newPageLayoutMode,
-      template: newPageTemplate,
+      layoutMode: newPageLayoutMode, template: newPageTemplate,
       canvasWidth: newPageLayoutMode === 'free-canvas' ? 1080 : 1920,
       canvasHeight: newPageLayoutMode === 'free-canvas' ? 1920 : 1080,
-      status: 'Draft', devices: ['Desktop', 'Phone'], components: [], activationAssignments: []
-    });
-    savedPageApiName.current = apiName;
-    setSelectedId('');
-    setPageSettingsOpen(true);
-    setCreatePageOpen(false);
-    setNewPageLabel('');
-    setUndoStack([]);
-    setRedoStack([]);
-    setPreviewMode(false);
+      status: 'Draft', devices: [...newPageDevices], components: [],
+      // App Pages belong to app navigation; only Record/Home pages use activation assignments.
+      activationAssignments: newPageAppId && newPageType !== 'App Page'
+        ? [{
+          id: crypto.randomUUID(), scope: 'App Default', appId: newPageAppId,
+          profileId: null, recordTypeId: null, formFactors: [...newPageDevices]
+        }] : []
+    };
+    setSaving(true);
+    try {
+      // Persist first: the route resolver must never replace a new unsaved page
+      // with the previously selected page on its next metadata refresh.
+      if (newPageAppId) onPrepareApp(apiName, newPageAppId);
+      const saved = await onSave(nextPage, apiName, 'Lightning page draft created');
+      if (!saved) { onAppLinked(apiName); return; }
+      savedPageApiName.current = apiName;
+      if (newPageAppId) setBuilderAppApiName(newPageAppId);
+      setSelectedId('');
+      setPageSettingsOpen(true);
+      setCreatePageOpen(false);
+      setNewPageLabel('');
+      setUndoStack([]);
+      setRedoStack([]);
+      setPreviewMode(false);
+    } finally {
+      setSaving(false);
+    }
   };
   const setPageTemplate = (nextTemplate: LightningPageTemplate) => {
     const definition = pageTemplates.find((item) => item.id === nextTemplate);
@@ -9783,7 +9848,86 @@ function PageBuilder({
           </>}
         </aside>
       </div>
-      {createPageOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreatePageOpen(false); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-lightning-page-title"><div className="modal-header"><h2 id="create-lightning-page-title">Create a Lightning page</h2><button className="icon-button dark" onClick={() => setCreatePageOpen(false)} aria-label="Close"><X size={18} /></button></div><p className="modal-copy">Choose a page type and canvas mode.</p><label className="form-label" htmlFor="new-lightning-page-layout-mode">Canvas mode</label><select id="new-lightning-page-layout-mode" className="form-control" value={newPageLayoutMode} onChange={(event) => { const mode = event.target.value as LightningPageMetadata['layoutMode']; setNewPageLayoutMode(mode); if (mode === 'free-canvas') setNewPageType('Home Page'); }}><option value="template">Template</option><option value="free-canvas">Free Canvas</option></select><label className="form-label" htmlFor="new-lightning-page-type">Page type</label><select id="new-lightning-page-type" className="form-control" value={newPageType} disabled={newPageLayoutMode === 'free-canvas'} onChange={(event) => { const type = event.target.value as LightningPageMetadata['pageType']; setNewPageType(type); setNewPageTemplate(type === 'Record Page' ? 'header-main-sidebar' : 'main-sidebar'); }}>{['Record Page', 'App Page', 'Home Page'].map((type) => <option key={type}>{type}</option>)}</select>{newPageLayoutMode === 'template' && <><label className="form-label" htmlFor="new-lightning-page-template">Page template</label><select id="new-lightning-page-template" className="form-control" value={newPageTemplate} onChange={(event) => setNewPageTemplate(event.target.value as LightningPageTemplate)}>{pageTemplates.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></>}<label className="form-label" htmlFor="new-lightning-page-label">Label</label><input id="new-lightning-page-label" className="form-control" autoFocus value={newPageLabel} onChange={(event) => setNewPageLabel(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') createPage(); }} placeholder="For example, Kiosk Ordering" /><div className="modal-actions"><button className="btn" onClick={() => setCreatePageOpen(false)}>Cancel</button><button className="btn btn-brand" disabled={!newPageLabel.trim()} onClick={createPage}><Plus size={14} />Create page</button></div></section></div>}
+      {createPageOpen && <div className="modal-backdrop" role="presentation"
+        onMouseDown={event => { if (event.target === event.currentTarget) setCreatePageOpen(false); }}>
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-lightning-page-title">
+          <div className="modal-header">
+            <h2 id="create-lightning-page-title">Create a Lightning page</h2>
+            <button className="icon-button dark" onClick={() => setCreatePageOpen(false)} aria-label="Close"><X size={18} /></button>
+          </div>
+          <p className="modal-copy">Choose where the page belongs, its data object and device layout. No code or API names required.</p>
+          <label className="form-label" htmlFor="new-lightning-page-label">Page name
+            <input id="new-lightning-page-label" className="form-control" autoFocus
+              value={newPageLabel} onChange={event => setNewPageLabel(event.target.value)}
+              onKeyDown={event => { if (event.key === 'Enter') void createPage(); }}
+              placeholder="For example, Kiosk Ordering" />
+          </label>
+          <label className="form-label" htmlFor="new-lightning-page-layout-mode">Canvas mode
+            <select id="new-lightning-page-layout-mode" className="form-control" value={newPageLayoutMode}
+              onChange={event => {
+                const mode = event.target.value as LightningPageMetadata['layoutMode'];
+                setNewPageLayoutMode(mode);
+                if (mode === 'free-canvas') setNewPageType('Home Page');
+              }}>
+              <option value="template">Responsive template</option><option value="free-canvas">Free Canvas</option>
+            </select>
+          </label>
+          <label className="form-label" htmlFor="new-lightning-page-type">Page type
+            <select id="new-lightning-page-type" className="form-control" value={newPageType}
+              disabled={newPageLayoutMode === 'free-canvas'}
+              onChange={event => {
+                const type = event.target.value as LightningPageMetadata['pageType'];
+                setNewPageType(type);
+                setNewPageTemplate(type === 'Record Page' ? 'header-main-sidebar' : 'main-sidebar');
+              }}>
+              {['Record Page', 'App Page', 'Home Page'].map(type => <option key={type}>{type}</option>)}
+            </select>
+          </label>
+          <label className="form-label" htmlFor="new-lightning-page-object">Data object
+            <select id="new-lightning-page-object" className="form-control" value={newPageTargetObject}
+              onChange={event => setNewPageTargetObject(event.target.value)}>
+              <option value="">Choose an object…</option>
+              {objects.map(object => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+            </select>
+          </label>
+          <label className="form-label" htmlFor="new-lightning-page-app">Application (optional)
+            <select id="new-lightning-page-app" className="form-control" value={newPageAppId}
+              onChange={event => setNewPageAppId(event.target.value)}>
+              <option value="">Assign later</option>
+              {apps.map(app => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
+            </select>
+          </label>
+          <p className="properties-help">
+            {newPageType === 'App Page'
+              ? "When you Activate this page, it will automatically be added to the chosen application's navigation."
+              : 'For Home and Record pages, choosing an application prepares an App Default assignment. You can change it before activation.'}
+          </p>
+          {newPageLayoutMode === 'template' && <label className="form-label" htmlFor="new-lightning-page-template">
+            Layout template
+            <select id="new-lightning-page-template" className="form-control" value={newPageTemplate}
+              onChange={event => setNewPageTemplate(event.target.value as LightningPageTemplate)}>
+              {pageTemplates.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+            </select>
+          </label>}
+          <div className="properties-section-title">Supported devices</div>
+          {(['Desktop', 'Phone'] as const).map(formFactor => <label className="checkbox-row" key={formFactor}>
+            <input type="checkbox" checked={newPageDevices.includes(formFactor)}
+              onChange={event => {
+                const devices = event.target.checked
+                  ? [...newPageDevices, formFactor] : newPageDevices.filter(item => item !== formFactor);
+                if (devices.length) setNewPageDevices(devices);
+                else onNotify('Choose at least one supported device');
+              }} />
+            {formFactor === 'Desktop' ? 'Desktop and tablet' : 'Phone'}
+          </label>)}
+          <div className="modal-actions">
+            <button className="btn" onClick={() => setCreatePageOpen(false)}>Cancel</button>
+            <button className="btn btn-brand"
+              disabled={saving || !newPageLabel.trim() || !newPageTargetObject}
+              onClick={() => void createPage()}><Plus size={14} />{saving ? 'Creating…' : 'Create draft'}</button>
+          </div>
+        </section>
+      </div>}
     </div>
   );
 }
