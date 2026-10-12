@@ -8268,7 +8268,8 @@ function PageBuilder({
   onNotify: (message: string) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
 }) {
-  const [builderAppApiName, setBuilderAppApiName] = useState('');
+  const [builderAppApiName, setBuilderAppApiName] = useState(() =>
+    apps.find(app => app.navigationPageApiNames.includes(page.apiName))?.apiName ?? '');
   const pageTemplates: Array<{ id: LightningPageTemplate; label: string; regions: Array<'header' | 'main' | 'sidebar'> }> = [
     { id: 'one-region', label: 'One Region', regions: ['main'] },
     { id: 'header-main', label: 'Header and Main', regions: ['header', 'main'] },
@@ -8367,7 +8368,6 @@ function PageBuilder({
   const [newPageTargetObject, setNewPageTargetObject] = useState(page.targetObject || objects[0]?.apiName || '');
   const [newPageAppId, setNewPageAppId] = useState('');
   const [newPageDevices, setNewPageDevices] = useState<Array<'Desktop' | 'Phone'>>(['Desktop', 'Phone']);
-  const [pendingAppNavigation, setPendingAppNavigation] = useState<{ pageApiName: string; appId: string } | null>(null);
   const [dragOverId, setDragOverId] = useState('');
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
@@ -8864,22 +8864,6 @@ function PageBuilder({
     try {
       const saved = await onSave(nextPage, savedPageApiName.current);
       if (saved) {
-        if (pendingAppNavigation?.pageApiName === savedPageApiName.current) {
-          const app = apps.find(item => item.apiName === pendingAppNavigation.appId);
-          if (app && !app.navigationPageApiNames.includes(nextPage.apiName)) {
-            try {
-              const navigationPageApiNames = [...app.navigationPageApiNames, nextPage.apiName];
-              await onSaveApp({
-                ...app,
-                navigationPageApiNames,
-                navigationOrder: reconcileNavigationOrder(app.navigationItems, navigationPageApiNames, app.navigationOrder)
-              }, true);
-              setPendingAppNavigation(null);
-            } catch (error) {
-              onNotify(error instanceof Error ? error.message : 'Page saved, but automatic app navigation could not be updated');
-            }
-          } else setPendingAppNavigation(null);
-        }
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
         setRedoStack([]);
@@ -8958,7 +8942,8 @@ function PageBuilder({
       setSaving(false);
     }
   };
-  const createPage = () => {
+  const createPage = async () => {
+    if (saving) return;
     const label = newPageLabel.trim();
     if (!label) return;
     if (!objects.some(item => item.apiName === newPageTargetObject)) {
@@ -8971,35 +8956,58 @@ function PageBuilder({
     }
     const baseApiName = label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'New_Page';
     const apiName = /^[A-Za-z]/.test(baseApiName) ? baseApiName : `Page_${baseApiName}`;
-    if (page.apiName.toLowerCase() === apiName.toLowerCase() || pages.some((item) => item.apiName.toLowerCase() === apiName.toLowerCase())) {
+    if (page.apiName.toLowerCase() === apiName.toLowerCase()
+      || pages.some(item => item.apiName.toLowerCase() === apiName.toLowerCase())) {
       onNotify('A Lightning page with this API name already exists');
       return;
     }
-    onChange({
+    const nextPage: LightningPageMetadata = {
       apiName, label, targetObject: newPageTargetObject,
       pageType: newPageLayoutMode === 'free-canvas' ? 'Home Page' : newPageType,
-      layoutMode: newPageLayoutMode,
-      template: newPageTemplate,
+      layoutMode: newPageLayoutMode, template: newPageTemplate,
       canvasWidth: newPageLayoutMode === 'free-canvas' ? 1080 : 1920,
       canvasHeight: newPageLayoutMode === 'free-canvas' ? 1920 : 1080,
-      status: 'Draft', devices: newPageDevices, components: [],
+      status: 'Draft', devices: [...newPageDevices], components: [],
       activationAssignments: newPageAppId && newPageType !== 'App Page'
         ? [{
           id: crypto.randomUUID(), scope: 'App Default', appId: newPageAppId,
           profileId: null, recordTypeId: null, formFactors: [...newPageDevices]
         }] : []
-    });
-    savedPageApiName.current = apiName;
-    setPendingAppNavigation(newPageType === 'App Page' && newPageAppId
-      ? { pageApiName: apiName, appId: newPageAppId } : null);
-    if (newPageAppId) setBuilderAppApiName(newPageAppId);
-    setSelectedId('');
-    setPageSettingsOpen(true);
-    setCreatePageOpen(false);
-    setNewPageLabel('');
-    setUndoStack([]);
-    setRedoStack([]);
-    setPreviewMode(false);
+    };
+    setSaving(true);
+    try {
+      // Persist first: the route resolver must never replace a new unsaved page
+      // with the previously selected page on its next metadata refresh.
+      const saved = await onSave(nextPage, apiName, 'Lightning page draft created');
+      if (!saved) return;
+      if (nextPage.pageType === 'App Page' && newPageAppId) {
+        const app = apps.find(item => item.apiName === newPageAppId);
+        if (app && !app.navigationPageApiNames.includes(apiName)) {
+          const navigationPageApiNames = [...app.navigationPageApiNames, apiName];
+          try {
+            await onSaveApp({
+              ...app, navigationPageApiNames,
+              navigationOrder: reconcileNavigationOrder(
+                app.navigationItems, navigationPageApiNames, app.navigationOrder
+              )
+            }, true);
+          } catch (error) {
+            onNotify(error instanceof Error ? error.message : 'Page created, but its application navigation could not be updated');
+          }
+        }
+      }
+      savedPageApiName.current = apiName;
+      if (newPageAppId) setBuilderAppApiName(newPageAppId);
+      setSelectedId('');
+      setPageSettingsOpen(true);
+      setCreatePageOpen(false);
+      setNewPageLabel('');
+      setUndoStack([]);
+      setRedoStack([]);
+      setPreviewMode(false);
+    } finally {
+      setSaving(false);
+    }
   };
   const setPageTemplate = (nextTemplate: LightningPageTemplate) => {
     const definition = pageTemplates.find((item) => item.id === nextTemplate);
@@ -9830,7 +9838,7 @@ function PageBuilder({
           <label className="form-label" htmlFor="new-lightning-page-label">Page name
             <input id="new-lightning-page-label" className="form-control" autoFocus
               value={newPageLabel} onChange={event => setNewPageLabel(event.target.value)}
-              onKeyDown={event => { if (event.key === 'Enter') createPage(); }}
+              onKeyDown={event => { if (event.key === 'Enter') void createPage(); }}
               placeholder="For example, Kiosk Ordering" />
           </label>
           <label className="form-label" htmlFor="new-lightning-page-layout-mode">Canvas mode
@@ -9893,8 +9901,9 @@ function PageBuilder({
           </label>)}
           <div className="modal-actions">
             <button className="btn" onClick={() => setCreatePageOpen(false)}>Cancel</button>
-            <button className="btn btn-brand" disabled={!newPageLabel.trim() || !newPageTargetObject}
-              onClick={createPage}><Plus size={14} />Create draft</button>
+            <button className="btn btn-brand"
+              disabled={saving || !newPageLabel.trim() || !newPageTargetObject}
+              onClick={() => void createPage()}><Plus size={14} />{saving ? 'Creating…' : 'Create draft'}</button>
           </div>
         </section>
       </div>}
