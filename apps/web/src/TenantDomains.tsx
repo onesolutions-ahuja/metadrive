@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CircleAlert, Globe2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import './TenantDomains.css';
 
 type Domain = { hostname: string; status: 'PENDING' | 'VERIFIED'; createdAt: string; verifiedAt?: string;
   verification: { type: string; host: string; value: string }; hosting: string };
