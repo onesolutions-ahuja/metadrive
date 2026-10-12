@@ -64,6 +64,7 @@ import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import FlowInputBindingEditor from './FlowInputBindingEditor';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import AppExchange from './AppExchange';
@@ -7937,7 +7938,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
   apps: LightningAppMetadata[];
   pages: LightningPageMetadata[];
   currentAppId: string;
-  flows: Array<{ apiName: string; label: string }>;
+  flows: FlowDefinitionMetadata[];
   onChange: (next: ComponentPropertyRecord) => void;
   kioskMode?: boolean;
 }) {
@@ -8066,6 +8067,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
     {Object.entries(actionFlows ?? {}).map(([eventName, raw]) => {
       const binding = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
       const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
+      const selectedFlow = flows.find(flow => flow.apiName === binding.flowApiName);
       const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
       const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
       const navigationTargetType = binding.navigationTargetType === 'App Home' || binding.navigationTargetType === 'App Page'
@@ -8090,23 +8092,20 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
           <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option>
         </select></label>
         {actionType==='Flow' ? <>
-          <label className="form-label">Flow<select className="form-control" value={String(binding.flowApiName ?? '')}
-            onChange={(e) => setBinding({...binding,flowApiName:e.target.value})}><option value="">Select Flow…</option>
-            {flows.map((flow)=><option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
-          </select></label>
-          <div className="properties-section-title">Flow input mapping</div>
-          {Object.entries(map).map(([name, source]) => <div key={name} className="metadata-array-property">
-            <label className="form-label">Input API name<input className="form-control" value={name} readOnly /></label>
-            <label className="form-label">Source ($event.field, $record.Field, $session, or literal)
-              <input className="form-control" value={String(source ?? '')}
-                onChange={(e) => setBinding({...binding,inputs:{...map,[name]:e.target.value}})} /></label>
-            <button type="button" className="btn btn-small" onClick={() => {const next={...map};delete next[name];setBinding({...binding,inputs:next});}}>Remove input</button>
-          </div>)}
-          <button type="button" className="btn btn-small" onClick={() => {
-            const nextName=window.prompt('Flow input API name');
-            if(!nextName || !/^[A-Za-z][A-Za-z0-9_]*$/.test(nextName)||nextName in map)return;
-            setBinding({...binding,inputs:{...map,[nextName]:''}});
-          }}>Add Flow input</button>
+          <label className="form-label">Flow
+            <select className="form-control" value={String(binding.flowApiName ?? '')}
+              onChange={(e) => setBinding({ ...binding, flowApiName: e.target.value })}>
+              <option value="">Select an active Flow…</option>
+              {flows.filter(flow => flow.status === 'Active'
+                && ['Screen Flow','Autolaunched Flow'].includes(flow.flowType)).map(flow =>
+                  <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
+              {selectedFlow && (selectedFlow.status !== 'Active'
+                || !['Screen Flow','Autolaunched Flow'].includes(selectedFlow.flowType))
+                && <option value={selectedFlow.apiName} disabled>{selectedFlow.label} (not available)</option>}
+            </select>
+          </label>
+          <FlowInputBindingEditor flow={selectedFlow} inputs={map} fields={fields}
+            onChange={inputs => setBinding({ ...binding, inputs })} />
         </> : <div className="metadata-navigation-target" aria-label="Navigation destination">
           <label className="form-label">Destination type
             <select className="form-control" value={navigationTargetType}
