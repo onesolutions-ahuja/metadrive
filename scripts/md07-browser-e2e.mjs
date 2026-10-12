@@ -46,11 +46,10 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 try {
   const url = 'http://127.0.0.1:5173/une/setup/page-builder/' + name;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
-  if (await page.locator('#login-email').isVisible()) {
-    await page.locator('#login-email').fill(email);
-    await page.locator('#login-password').fill(password);
-    await page.getByRole('button', { name: 'Sign in' }).click();
-  }
+  await page.locator('#login-email').waitFor({ state: 'visible', timeout: 45000 });
+  await page.locator('#login-email').fill(email);
+  await page.locator('#login-password').fill(password);
+  await page.getByRole('button', { name: 'Sign in' }).click();
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   const root = page.locator('.free-canvas-stage [data-component-id="md07-root"]');
   const card = page.locator('.free-canvas-stage [data-component-id="md07-card"]');
