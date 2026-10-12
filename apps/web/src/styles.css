@@ -2278,3 +2278,5 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .external-page-preview .component-rendered-preview { transform: none; width: auto; height: auto; min-height: 0; pointer-events: auto; }
 .external-page-preview .component-rendered-preview.free-canvas-component { position: absolute; }
 .external-page-preview .nested-page-component.component-rendered-preview { position: relative; }
+
+.page-nested-empty { padding: 12px; margin: 6px; border: 1px dashed #8daaa0; border-radius: 5px; background: #f7fbf9; color: #50645d; font-size: 11px; text-align: center; pointer-events: none; }
