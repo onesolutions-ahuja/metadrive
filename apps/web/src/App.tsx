@@ -8118,13 +8118,13 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
               <option value="App Page">App page</option>
             </select>
           </label>
-          {<label className="form-label">Application
+          <label className="form-label">Application
             <select className="form-control" value={navigationAppId}
               onChange={(e) => setBinding({ ...binding, navigationAppId: e.target.value, navigationPageApiName: '' })}>
               <option value="">Select application…</option>
               {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
             </select>
-          </label>}
+          </label>
           {navigationTargetType === 'Record List' && <label className="form-label">Destination object
             <select className="form-control" value={String(binding.navigationObjectApiName ?? objectApiName)}
               onChange={(e) => setBinding({ ...binding, navigationObjectApiName: e.target.value })}>
