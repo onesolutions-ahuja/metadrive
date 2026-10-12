@@ -1762,9 +1762,9 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.ok(!communicationRecords.some((record) => String(record.Url__c ?? '').includes('private-api-log-canary')),
       'forged API origin cannot persist query-string secrets');
     const auditDenied = await api.send('/records/Communication_Records__c', developmentReaderToken);
-    assert.equal(auditDenied.status, 200, 'ordinary communication history remains readable under existing object permissions');
-    assert.ok(!(auditDenied.data.records as Array<Record<string, unknown>>).some((record) =>
-      record.Communication_Mode__c === 'API'), 'API audit entries must not appear in non-security record lists');
+    assert.equal(auditDenied.status, 403, 'users without Communication Records object read permission are denied');
+    // Ordinary message access is still governed by the existing object/row permissions.
+    // The admin read above must succeed; this reader has no object read grant.
     assert.equal((await api.send('/records/Communication_Records__c', developmentReaderToken, 'POST',
       { Communication_Mode__c: 'API', Direction__c: 'Incoming' })).status, 403,
       'non-security users cannot insert forged audit records');
