@@ -23,7 +23,11 @@ try {
       const canvas=document.querySelector('.free-canvas-component');
       const header=document.querySelector('.builder-titlebar');
       const buttons=[...document.querySelectorAll('.setup-tree .tree-item')];
-      return {viewport:innerWidth,rootWidth:document.documentElement.scrollWidth,
+      const metrics=el=>{const r=el.getBoundingClientRect();const s=getComputedStyle(el);return {tag:el.tagName,className:String(el.className||'').slice(0,110),left:Math.round(r.left),right:Math.round(r.right),width:Math.round(r.width),scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,overflowX:s.overflowX,position:s.position};};
+      const offenders=[...document.querySelectorAll('body *')].filter(el=>{const r=el.getBoundingClientRect();return r.right>innerWidth+5 && r.width>1}).slice(0,32).map(metrics);
+      const outsideTable=[...document.querySelectorAll('body *')].filter(el=>{const r=el.getBoundingClientRect();return r.right>innerWidth+5 && r.width>1 && !el.closest('.table-scroll')}).slice(0,16).map(metrics);
+      const headerParts=header?[...header.querySelectorAll('.builder-title-controls,.toolbar-actions,.toolbar-actions button,.toolbar-actions span')].slice(0,20).map(metrics):[];
+      return {offenders,outsideTable,headerParts,viewport:innerWidth,rootWidth:document.documentElement.scrollWidth,
         tableOuter:table?.clientWidth??null,tableInner:table?.scrollWidth??null,
         scrollStyle:table?getComputedStyle(table).overflowX:null,
         canvasRole:canvas?.getAttribute('role')??null,
