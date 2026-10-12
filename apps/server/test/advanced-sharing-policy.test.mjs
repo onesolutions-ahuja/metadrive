@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decideAdvancedRecordAccess as decide, validateAdvancedSharingMetadata as validate } from '../src/advanced-sharing-policy.mjs';
+import { decideAdvancedRecordAccess as decide, validateAdvancedSharingMetadata as validate, resolveAdvancedRecordGrant as resolve } from '../src/advanced-sharing-policy.mjs';
 const context = {tenantId:'tenant-a',userId:'member-a',objectApiName:'Account',
   operation:'read',userType:'internal',roleIds:['team-a'],objectPermission:true};
 const record = {tenantId:'tenant-a',Region:'EMEA',Status:'Active'};
@@ -46,4 +46,34 @@ test('metadata rejects malformed and cross-tenant restrictions',()=>{
   assert.throws(()=>validate({tenantId:'tenant-a',objectApiName:'Account',rules:[{...rule,tenantId:'tenant-b'}]}));
   assert.throws(()=>validate({tenantId:'tenant-a',objectApiName:'Account',
     rules:[{...rule,conditions:[{field:'Region',operator:'regex',value:'.*'}]}]}));
+});
+
+test('implicit parent access is scoped, directional, and never escalates edit',()=>{
+  const base={tenantId:'tenant-a',userId:'user-a',recordId:'child-a',
+    operation:'read',readableParentRecordIds:['parent-a'],
+    implicitShares:[{tenantId:'tenant-a',parentId:'parent-a',childId:'child-a',accessLevel:'read'}]};
+  assert.equal(resolve(base).granted,true);
+  assert.equal(resolve({...base,operation:'edit'}).granted,false);
+  assert.equal(resolve({...base,readableParentRecordIds:[]}).granted,false);
+  assert.throws(()=>resolve({...base,implicitShares:[
+    ...base.implicitShares,{tenantId:'tenant-b',parentId:'parent-b',childId:'child-a',accessLevel:'edit'}
+  ]}));
+});
+test('territory grants honor validated ancestor topology and least privilege',()=>{
+  const base={tenantId:'tenant-a',userId:'user-a',recordId:'account-a',
+    recordTerritoryId:'territory-child',operation:'read',
+    territoryEdges:[
+      {tenantId:'tenant-a',id:'territory-parent',parentId:null},
+      {tenantId:'tenant-a',id:'territory-child',parentId:'territory-parent'}],
+    territoryMemberships:[{tenantId:'tenant-a',userId:'user-a',
+      territoryId:'territory-parent',accessLevel:'read',includeSubordinates:true}]};
+  assert.equal(resolve(base).granted,true);
+  assert.equal(resolve({...base,operation:'edit'}).granted,false);
+  assert.equal(resolve({...base,territoryMemberships:[
+    {...base.territoryMemberships[0],includeSubordinates:false}]}).granted,false);
+  assert.equal(resolve({...base,territoryMemberships:[
+    {...base.territoryMemberships[0],userId:'user-b'}]}).granted,false);
+  assert.throws(()=>resolve({...base,territoryEdges:[
+    {tenantId:'tenant-a',id:'territory-child',parentId:'territory-parent'},
+    {tenantId:'tenant-a',id:'territory-parent',parentId:'territory-child'}]}));
 });
