@@ -1202,7 +1202,7 @@ function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }: {
         const stillLoading = content?.querySelector('[aria-busy="true"], [role="progressbar"], .records-loading, .loading-spinner');
         if (stillLoading) schedule();
         else complete();
-      }, 550);
+      }, 120);
     };
     animation = window.requestAnimationFrame(() => {
       const content = document.querySelector('.lightning');
