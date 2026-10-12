@@ -22,10 +22,11 @@ const alignments: Array<[LayoutSettingKey, string, string[]]> = [
 ];
 
 export default function PageComponentStyleEditor({
-  properties, onChange
+  properties, onChange, disabled = false
 }: {
   properties: Record<string, unknown>;
   onChange: (properties: Record<string, unknown>) => void;
+  disabled?: boolean;
 }) {
   const [mode, setMode] = useState<Mode>('Base');
   const [error, setError] = useState('');
@@ -36,6 +37,7 @@ export default function PageComponentStyleEditor({
   const current = mode === 'Base' ? base : overrides[mode] ?? {};
   const inherited = layoutSettings(properties, mode === 'Base' ? 'Desktop' : mode);
   const change = (key: LayoutSettingKey, value: string | number | boolean | null) => {
+    if (disabled) return;
     const validation = value === null ? '' : validateLayoutSetting(key, value);
     if (validation) { setError(`${key}: ${validation}`); return; }
     setError('');
@@ -46,7 +48,7 @@ export default function PageComponentStyleEditor({
     <div className="properties-section-title">Advanced appearance and layout</div>
     <p className="properties-help">All values are stored with the page. Desktop, tablet and phone overrides inherit the base values until changed.</p>
     <label className="form-label">Edit breakpoint
-      <select className="form-control" aria-label="Edit layout breakpoint" value={mode} onChange={(event) => setMode(event.target.value as Mode)}>
+      <select className="form-control" aria-label="Edit layout breakpoint" disabled={disabled} value={mode} onChange={(event) => setMode(event.target.value as Mode)}>
         <option value="Base">Base / default</option>
         <option value="Desktop">Desktop override</option>
         <option value="Tablet">Tablet override</option>
@@ -54,7 +56,7 @@ export default function PageComponentStyleEditor({
       </select>
     </label>
     {numeric.map(([key, label, min, max]) => <label className="form-label" key={key}>{label} (px{key === 'opacity' ? ' or %' : ''})
-      <input className="form-control" type="number" min={min} max={max} step={1}
+      <input className="form-control" type="number" disabled={disabled} min={min} max={max} step={1}
         aria-label={label}
         placeholder={String(inherited[key] ?? inheritedCaption)}
         value={typeof current[key] === 'number' ? current[key] as number : ''}
@@ -70,26 +72,26 @@ export default function PageComponentStyleEditor({
       const transparent = chosen === 'transparent';
       return <div className="metadata-array-property" key={key}>
         <label className="form-label">{key === 'backgroundColor' ? 'Background colour' : 'Border colour'}
-          <input className="form-control" type="color"
+          <input className="form-control" type="color" disabled={disabled}
             aria-label={key === 'backgroundColor' ? 'Background colour picker' : 'Border colour picker'}
             value={/^#[0-9a-f]{6}$/i.test(chosen) ? chosen : '#ffffff'}
             onChange={(event) => change(key, event.target.value)} />
         </label>
-        <label className="checkbox-row"><input type="checkbox" checked={transparent}
+        <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={transparent}
           onChange={(event) => change(key, event.target.checked ? 'transparent' : '#ffffff')} />Transparent</label>
-        {mode !== 'Base' && <button className="btn btn-small" type="button"
+        {mode !== 'Base' && <button className="btn btn-small" type="button" disabled={disabled}
           onClick={() => change(key, null)}>Inherit base colour</button>}
       </div>;
     })}
     {alignments.map(([key, label, options]) => <label className="form-label" key={key}>{label}
-      <select className="form-control" value={String(current[key] ?? '')}
+      <select className="form-control" disabled={disabled} value={String(current[key] ?? '')}
         onChange={(event) => change(key, event.target.value || null)}>
         <option value="">{inheritedCaption}</option>
         {options.map((item) => <option key={item} value={item}>{item.replace('-', ' ')}</option>)}
       </select>
     </label>)}
     <label className="form-label">Visibility on {mode === 'Base' ? 'all devices' : mode}
-      <select className="form-control" aria-label="Component visibility"
+      <select className="form-control" disabled={disabled} aria-label="Component visibility"
         value={current.hidden === true ? 'hidden' : current.hidden === false ? 'visible' : 'inherit'}
         onChange={(event) => change('hidden', event.target.value === 'inherit' ? null : event.target.value === 'hidden')}>
         <option value="inherit">{mode === 'Base' ? 'Visible by default' : 'Inherit base visibility'}</option>
