@@ -10130,7 +10130,8 @@ app.post('/api/metadata/dashboards/:apiName/snapshots', requirePermission('metad
     }
     const formulaContext = formulaContextForUser(tenant, principal.userId);
     const sourceRecords = (tenant.records[object.apiName] ?? [])
-      .filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read'))
+      .filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read')
+        && canReadCommunicationRecord(principal, object.apiName, record))
       .map((record) => calculateFormulaFields(object, record, formulaContext));
     const records = sourceRecords.filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read')
       && reportFilters.every((filter) => reportFilterMatches(record, filter))
@@ -16660,7 +16661,8 @@ function resolveReportCrossFilters(
       relationshipFieldApiName: relationshipField.apiName,
       filters: crossFilter.filters,
       childRecords: (tenant.records[childObject.apiName] ?? []).filter((record) =>
-        hasRecordAccess(principal, tenant, childObject.apiName, record, 'Read'))
+        hasRecordAccess(principal, tenant, childObject.apiName, record, 'Read')
+        && canReadCommunicationRecord(principal, childObject.apiName, record))
         .map((record) => calculateFormulaFields(childObject, record, formulaContextForUser(tenant, principal.userId)))
     });
   }
@@ -16751,7 +16753,8 @@ function resolveDashboardCrossFilters(
     if (!records) {
       const object = tenant.objects.find((item) => item.apiName === objectApiName);
       records = (tenant.records[objectApiName] ?? []).filter((record) =>
-        hasRecordAccess(principal, tenant, objectApiName, record, 'Read'))
+        hasRecordAccess(principal, tenant, objectApiName, record, 'Read')
+        && canReadCommunicationRecord(principal, objectApiName, record))
         .map((record) => object
           ? calculateFormulaFields(object, record, formulaContextForUser(tenant, principal.userId))
           : record);
