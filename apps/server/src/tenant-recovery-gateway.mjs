@@ -1,5 +1,5 @@
 import { approveRecoveryCase, issueRecoveryInvitation, redeemRecoveryInvitation } from './tenant-recovery-transaction.mjs';
-import { disputeRecoveryCase } from './tenant-recovery-cases.mjs';
+import { openRecoveryCase, disputeRecoveryCase } from './tenant-recovery-cases.mjs';
 import { verifyAndNotifyRecovery } from './tenant-recovery-verification.mjs';
 import { PURPOSES } from './tenant-recovery-attestation.mjs';
 
@@ -35,6 +35,16 @@ export function createRecoveryGateway({
     return { ...actor, role: purpose };
   }
   return Object.freeze({
+    async openCase({tenantId,claimantUserId,intakeAttestation}) {
+      const requester = await verifyAttestation(intakeAttestation,{
+        tenantId,claimantUserId,caseId:'new',purpose:PURPOSES.intake
+      });
+      if (requester?.trustedMfa !== true || requester.active !== true ||
+          requester.role !== PURPOSES.intake || requester.tenantId !== tenantId ||
+          requester.claimantUserId !== claimantUserId || requester.id === claimantUserId)
+        throw new Error('Independent recovery intake authorization required');
+      return openRecoveryCase(pool,{tenantId,claimantUserId,requester});
+    },
     async approve({caseId,operatorAttestation}) {
       const operator = await principal(caseId,operatorAttestation,PURPOSES.operator);
       return approveRecoveryCase(pool,{caseId,operator});
