@@ -98,6 +98,32 @@ test('Module 4 Phase 4: tenant restriction rules apply to record APIs, wide priv
     assert.equal(cleared.status,200,JSON.stringify(cleared.data));
     assert.equal((await call(path,token)).status,200,
       'Removing restriction must immediately restore normal RBAC decisions');
+    // An external identity is bound to one tenant Account regardless of its
+    // previously assigned RBAC profile. It cannot reach Setup or mutate data.
+    const second=await call('/records/Account',token,'POST',{Name:'Other Account'});
+    assert.equal(second.status,201,JSON.stringify(second.data));
+    const portalPolicy=await call('/metadata/permissions',token);
+    assert.equal(portalPolicy.status,200);
+    const converted=await call('/metadata/permissions',token,'PUT',{
+      ...portalPolicy.data,
+      users:portalPolicy.data.users.map(user=>user.username===email
+        ?{...user,userType:'external',externalAccountId:id}:user),
+      sharingSettings:{
+        ...portalPolicy.data.sharingSettings,
+        Account:{...portalPolicy.data.sharingSettings.Account,
+          portalEnabled:true,portalAccountField:'Id'}
+      }
+    });
+    assert.equal(converted.status,200,JSON.stringify(converted.data));
+    assert.equal((await call(path,token)).status,200,
+      'Verified external account must remain readable');
+    assert.notEqual((await call('/records/Account/'+second.data.record.Id,token)).status,200,
+      'External identity must never see a different account');
+    assert.equal((await call('/metadata/permissions',token)).status,403,
+      'External sessions must not reach tenant security setup');
+    assert.equal((await call('/records/Account',token,'POST',{Name:'Escalation'})).status,403,
+      'External sessions must not create records');
+
   } finally {
     if(child.exitCode===null){
       child.kill();await Promise.race([once(child,'exit'),
