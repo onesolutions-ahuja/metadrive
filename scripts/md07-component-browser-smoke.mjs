@@ -104,10 +104,45 @@ try {
   const published=componentRow.components.find((item)=>item.apiName==='MD07_Browser_Widget');
   if(!published?.surfaces.includes('dashboard')||!published?.surfaces.includes('flow'))
     throw Error('Custom component not advertised for dashboard and Flow surfaces');
+  // Prove actual custom component rendering on dashboards; advertising a surface is insufficient.
+  const dashboardApiName='MD07_Browser_Dashboard';
+  await request('/metadata/dashboards/'+dashboardApiName,token,'PUT',{
+    apiName:dashboardApiName,label:'MD07 Browser Dashboard',description:'',
+    folderName:'Private Reports',visibility:'Private',sharedUserIds:[],sharedPermissionSetGroupIds:[],
+    filterLogic:'All',status:'Deployed',filters:[],
+    components:[{id:'md07-dashboard-widget',title:'MD07 Browser Widget',type:'Custom',
+      customComponentApiName:'MD07_Browser_Widget',objectApiName:'Account',
+      properties:{title:'MD07 dashboard proof'},width:'Half',height:'Medium',
+      aggregation:'Count',measureFieldApiName:null,groupByFieldApiName:null,
+      chartType:'Bar',displayFieldApiNames:[]}]
+  });
+  await page.goto('http://127.0.0.1:5173/une/dashboards/'+dashboardApiName);
+  const dashboardFrame=page.locator('[data-dashboard-custom-component-id="md07-dashboard-widget"] iframe[sandbox="allow-scripts"]');
+  await dashboardFrame.waitFor({state:'attached'});
+  await dashboardFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  // Screen Flows use the identical registry definition and opaque-origin sandbox.
+  const flowApiName='MD07_Browser_Flow';
+  await request('/metadata/flows/'+flowApiName,token,'PUT',{
+    apiName:flowApiName,label:'MD07 Browser Flow',flowType:'Screen Flow',
+    status:'Active',versionNumber:1,activeVersion:null,triggerObject:null,startConfig:{},
+    elements:[{id:1,type:'Start',label:'Start',config:{}},
+      {id:2,type:'Screen',label:'Custom Component Screen',config:{fields:[
+        {type:'Custom Component',apiName:'MD07_Custom_Field',label:'MD07 Browser Widget',
+          componentApiName:'MD07_Browser_Widget',componentPropsJson:'{}',required:false}
+      ]}}],
+    connectors:[{id:'start-screen',from:1,to:2,label:'',kind:'normal'}],resources:[],versions:[]
+  });
+  await page.goto('http://127.0.0.1:5173/une/setup/flow-builder/'+flowApiName);
+  await page.getByRole('button',{name:'Run',exact:true}).click();
+  const flowFrame=page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]');
+  await flowFrame.waitFor({state:'attached'});
+  await flowFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
   if(uncaught.length)throw Error('Uncaught browser errors: '+uncaught.join('; '));
   console.log(JSON.stringify({module:7,browser:'Chromium',registryCreate:true,publish:true,
     pageSave:true,reopen:true,desktop:true,tablet:true,phone:true,
-    sandbox:true,advertisedSurfaces:['page','dashboard','flow'],pageErrors:0,isolated:true}));
+    sandbox:true,dashboardRendered:true,flowScreenRendered:true,
+    advertisedSurfaces:['page','dashboard','flow'],pageErrors:0,isolated:true}));
 } finally {
   if(browser)await browser.close();
   for(const child of children.reverse())if(child.exitCode===null)child.kill('SIGTERM');
