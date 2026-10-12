@@ -183,6 +183,19 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     assert.equal(firstPage.data.total,51,'Server must count filtered records before pagination');
     assert.equal(firstPage.data.records.length,50);
     assert.equal(finalPage.data.records.length,1);
+    const sortedFirst=await request(port,'/records/Migration_Link__c?sortField=Name&sortDirection=asc&limit=50&offset=0','GET',token);
+    const sortedLast=await request(port,'/records/Migration_Link__c?sortField=Name&sortDirection=asc&limit=50&offset=50','GET',token);
+    assert.equal(sortedFirst.status,200,JSON.stringify(sortedFirst.data));
+    assert.equal(sortedLast.status,200,JSON.stringify(sortedLast.data));
+    assert.equal(sortedFirst.data.records.length,50);
+    assert.equal(sortedLast.data.records.length,1);
+    const sortedNames=[...sortedFirst.data.records,...sortedLast.data.records].map(r=>String(r.Name));
+    const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
+    assert.deepEqual(sortedNames,[...sortedNames].sort(collator.compare),'sort must precede pagination');
+    const invalidSort=await request(port,'/records/Migration_Link__c?sortField=Unregistered_Field&sortDirection=asc&limit=50','GET',token);
+    assert.equal(invalidSort.status,400,'arbitrary sort field must be rejected');
+    const invalidDirection=await request(port,'/records/Migration_Link__c?sortField=Name&sortDirection=sideways&limit=50','GET',token);
+    assert.equal(invalidDirection.status,400,'invalid sort directions must be rejected');
     const immediatePool=new pg.Pool({connectionString:databaseUrl(targetName),ssl:false,max:2});
     try {
       const committed=await readNormalizedState(immediatePool,mode==='typed'?verifyTypedRecords:null);
