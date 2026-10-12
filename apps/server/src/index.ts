@@ -4,7 +4,7 @@ import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
 import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
-import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
+import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, retryBudgetExhausted, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
@@ -1273,6 +1273,7 @@ const flowInterviewSchema = z.object({
 });
 const automationSettingsSchema = z.object({
   autoRetryFailedFlows: z.boolean().default(false),
+  maxRetryAttempts: z.number().int().min(1).max(20).default(10),
   conversationIdleMinutes: z.number().int().min(1).max(1440).default(15)
 });
 const scheduleRetrySchema = z.object({
@@ -17276,7 +17277,8 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
       const expired = conversational
         ? expiredConversationInterview(interview.record, new Date(lastActivityAt).toISOString(), now.getTime(), settings.conversationIdleMinutes)
         : Date.parse(interview.expiresAt) <= now.getTime();
-      if (expired || (!settings.autoRetryFailedFlows && interview.attempts > 0)) {
+      if (expired || (!settings.autoRetryFailedFlows && interview.attempts > 0)
+        || (interview.attempts > 0 && retryBudgetExhausted(interview.attempts, settings.maxRetryAttempts))) {
         const current = tenantData(tenantId);
         if (current) persistTenantRecords(tenantId, {
           ...current, interviews: current.interviews.filter(item => item.id !== interview.id)
@@ -17322,7 +17324,8 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
         const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
         const failedInterview = failedTenant.interviews.find((item) => item.id === interview.id);
         const expired = Date.parse(interview.expiresAt) <= now.getTime();
-        if (expired || !settings.autoRetryFailedFlows) {
+        if (expired || !settings.autoRetryFailedFlows
+          || retryBudgetExhausted((failedInterview?.attempts ?? 0) + 1, settings.maxRetryAttempts)) {
           failedTenant.interviews = failedTenant.interviews.filter((item) => item.id !== interview.id);
         } else if (failedInterview) {
           failedInterview.attempts += 1;
@@ -17352,8 +17355,10 @@ async function executeDueScheduledFlows(now = new Date()): Promise<void> {
       const runKey = `${flow.apiName}@${flow.activeVersion ?? flow.versionNumber}`;
       const latestOccurrence = scheduledOccurrence(flow, now);
       const pendingRetry = currentTenant.scheduleRetries[runKey];
-      const autoRetry = (currentTenant.automationSettings ?? defaultAutomationSettings).autoRetryFailedFlows;
-      if (pendingRetry && !autoRetry) {
+      const settings = currentTenant.automationSettings ?? defaultAutomationSettings;
+      const autoRetry = settings.autoRetryFailedFlows;
+      if (pendingRetry && (!autoRetry
+        || retryBudgetExhausted(pendingRetry.attempts, settings.maxRetryAttempts))) {
         const updated = structuredClone(currentTenant);
         updated.scheduleRuns[runKey] = pendingRetry.occurrenceAt;
         delete updated.scheduleRetries[runKey];
@@ -17402,7 +17407,7 @@ async function executeDueScheduledFlows(now = new Date()): Promise<void> {
         console.error(`Scheduled flow "${flow.apiName}" failed for tenant "${tenantId}": ${error instanceof Error ? error.message : String(error)}`);
         const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
         const attempts = (pendingRetry?.occurrenceAt === occurrence.toISOString() ? pendingRetry.attempts : 0) + 1;
-        if (autoRetry) {
+        if (autoRetry && !retryBudgetExhausted(attempts, settings.maxRetryAttempts)) {
           failedTenant.scheduleRetries[runKey] = {
             occurrenceAt: occurrence.toISOString(),
             attempts,
@@ -17457,8 +17462,10 @@ async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
       let currentTenant = tenantData(tenantId);
       let message = currentTenant?.platformEventMessages.find((item) => item.id === queuedMessage.id);
       if (!currentTenant || !message || message.processedAt || message.deadLettered) continue;
-      const autoRetry = (currentTenant.automationSettings ?? defaultAutomationSettings).autoRetryFailedFlows;
-      if (!autoRetry && message.attempts > 0) {
+      const settings = currentTenant.automationSettings ?? defaultAutomationSettings;
+      const autoRetry = settings.autoRetryFailedFlows;
+      if ((!autoRetry && message.attempts > 0)
+        || (message.attempts > 0 && retryBudgetExhausted(message.attempts, settings.maxRetryAttempts))) {
         persistTenantRecords(tenantId, {
           ...currentTenant,
           platformEventMessages: currentTenant.platformEventMessages.map(item =>
@@ -17523,7 +17530,7 @@ async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
           const failedMessage = failedTenant.platformEventMessages.find((item) => item.id === queuedMessage.id);
           if (!failedMessage) continue;
           const attempts = failedMessage.attempts + 1;
-          const deadLettered = !autoRetry || attempts >= 10;
+          const deadLettered = !autoRetry || retryBudgetExhausted(attempts, settings.maxRetryAttempts);
           const retryAt = deadLettered ? null : new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString();
           const failure = error instanceof Error ? error.message : String(error);
           persistTenantRecords(tenantId, {
