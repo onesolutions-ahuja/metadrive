@@ -50,8 +50,6 @@ test('visual source compiler stores values the existing runtime understands', ()
 
 test('unsafe event paths and stale record references fail closed without changing saved mapping', () => {
   for (const path of ['', 'constructor', 'item.__proto__', 'item[0]', 'item-id', 'item;alert(1)']) {
-    // constructor is syntactically valid but the runtime rejects the dangerous accessor.
-    if (path === 'constructor') continue;
     assert.throws(() => encodeInputSource('Event Field', path, fields));
   }
   assert.throws(() => encodeInputSource('Record Field', 'Gone__c', fields), /available field/);
