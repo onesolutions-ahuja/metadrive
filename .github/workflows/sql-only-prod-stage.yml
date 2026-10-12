@@ -16,6 +16,9 @@ jobs:
     timeout-minutes: 50
     env:
       TARGET_DB: metadrive_sql_20261012
+      # Aiven supplies a private CA; pg verifies TLS is active and PGSSLMODE=require.
+      # The hosted runner does not have the Aiven CA installed by default.
+      METADRIVE_DB_ALLOW_SELF_SIGNED_CERT: 'true'
     services:
       postgres:
         image: postgres:18
