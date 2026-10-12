@@ -1,5 +1,6 @@
 import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection } from './postgres-state.js';
+import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
@@ -4520,6 +4521,7 @@ function loadState(sqlState?: unknown): PlatformState {
 }
 function persistState(next: PlatformState): void {
   if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
+  assertTenantIdentityIsolation(next);
   // Typed SQL mode must never persist an unencrypted local JSON state copy.
   const serialized = JSON.stringify(next);
   if (persistenceMode !== 'typed') {
@@ -4547,6 +4549,7 @@ if (existingPostgresState !== null && persistenceMode !== 'typed') {
 }
 const stateHydrationStartedAt = performance.now();
 let state = loadState(persistenceMode === 'typed' ? existingPostgresState : undefined);
+assertTenantIdentityIsolation(state);
 console.info(`Startup state hydration: ${(performance.now() - stateHydrationStartedAt).toFixed(0)}ms`);
 // Remove legacy internal UI requests from Communication Records before the
 // startup snapshot is persisted. Preserve inbound provider webhooks, genuine

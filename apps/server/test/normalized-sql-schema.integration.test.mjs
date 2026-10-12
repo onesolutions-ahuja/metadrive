@@ -66,6 +66,23 @@ test('typed physical tables, registry FKs, and SQL CRUD work transactionally wit
     const types=await client.query('SELECT column_name,data_type FROM information_schema.columns WHERE table_name=$1',[table.table]);
     assert.ok(types.rows.some(r=>r.column_name===table.columns[1].column&&r.data_type==='numeric'));
     assert.ok(types.rows.every(r=>r.data_type!=='jsonb'));
+    // A valid field from object A must not be stored against object B, nor
+    // against a tenant which does not own object A.
+    await client.query("INSERT INTO metadrive_rel_tenants(tenant_id) VALUES ('other-tenant')");
+    const otherObjectId='9d0584f2-6b05-4e79-bc6c-06aecf8db7a3';
+    await client.query('INSERT INTO md_v2_object_registry (object_id,tenant_id,api_name,object_label,physical_table) VALUES ($1,$2,$3,$4,$5)',
+      [otherObjectId,'sandbox','Other__c','Other','md_obj_other_test']);
+    await client.query('SET CONSTRAINTS ALL IMMEDIATE');
+    await client.query('SAVEPOINT cross_tenant');
+    await assert.rejects(client.query(
+      'INSERT INTO md_v2_field_presence(object_id,tenant_id,record_id,field_id) VALUES($1,$2,$3,$4)',
+      [objectId,'other-tenant','rec-foreign',priceId]),/foreign key/i);
+    await client.query('ROLLBACK TO SAVEPOINT cross_tenant');
+    await client.query('SAVEPOINT cross_object');
+    await assert.rejects(client.query(
+      'INSERT INTO md_v2_field_presence(object_id,tenant_id,record_id,field_id) VALUES($1,$2,$3,$4)',
+      [otherObjectId,'sandbox','rec-foreign',priceId]),/foreign key/i);
+    await client.query('ROLLBACK TO SAVEPOINT cross_object');
     await assert.rejects(client.query('INSERT INTO md_v2_field_registry(field_id,object_id,api_name,field_label,source_data_type,physical_column) VALUES ($1,$2,$3,$4,$5,$6)',
       ['9d0584f2-6b05-4e79-bc6c-06aecf8db7af','00000000-0000-4000-8000-000000000000','bad','Bad','Text','x']), /foreign key/i);
   } finally {
