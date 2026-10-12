@@ -12,6 +12,7 @@ on:
       - 'apps/web/src/styles.css'
       - 'apps/web/test/pageComponentLayout.test.ts'
       - 'apps/server/test/rbac-sharing.smoke.test.ts'
+      - 'scripts/md07-browser-e2e.mjs'
       - '.github/workflows/md07-nested-layout.yml'
   workflow_dispatch:
 permissions:
@@ -37,3 +38,32 @@ jobs:
           NODE_ENV: test
           METADRIVE_TEST_MODE: 'true'
         run: npm run test --workspace apps/server
+      - name: Browser E2E — create, drag into container, style, save and reopen
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+          METADRIVE_BOOTSTRAP_TENANT_ID: md07-browser-test
+          METADRIVE_BOOTSTRAP_TENANT_NAME: MD07 Browser Test
+          METADRIVE_BOOTSTRAP_ADMIN_EMAIL: admin@md07-browser.test
+        run: |
+          set -euo pipefail
+          npm install --no-save --ignore-scripts playwright@1.56.1
+          npx playwright install chromium
+          export METADRIVE_DATA_PATH="$(mktemp -d)/md07-state.json"
+          export METADRIVE_BOOTSTRAP_ADMIN_PASSWORD="$(openssl rand -hex 24)"
+          export MD07_BROWSER_EMAIL="$METADRIVE_BOOTSTRAP_ADMIN_EMAIL"
+          export MD07_BROWSER_PASSWORD="$METADRIVE_BOOTSTRAP_ADMIN_PASSWORD"
+          export METADRIVE_CREDENTIAL_KEYS="$(node -e 'console.log(JSON.stringify({test:Buffer.alloc(32,7).toString("base64")}))')"
+          export METADRIVE_CREDENTIAL_ACTIVE_KEY_ID=test
+          npm run dev:server > /tmp/md07-server.log 2>&1 &
+          server_pid=$!
+          npm run dev:web > /tmp/md07-web.log 2>&1 &
+          web_pid=$!
+          trap 'kill "$server_pid" "$web_pid" || true' EXIT
+          for i in {1..120}; do
+            curl -fsS http://127.0.0.1:3001/health >/dev/null 2>&1 && curl -fsS http://127.0.0.1:5173/ >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3001/health >/dev/null
+          curl -fsS http://127.0.0.1:5173/ >/dev/null
+          node scripts/md07-browser-e2e.mjs || { tail -n 90 /tmp/md07-server.log; tail -n 90 /tmp/md07-web.log; exit 1; }
