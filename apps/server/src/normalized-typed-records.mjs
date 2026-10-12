@@ -199,6 +199,113 @@ async function rewriteObject(client,item,sqlObject){
       [sqlObject.object_id,item.tenantId,record.Id,f.field_id]);
   }
 }
+// Apply only changed/deleted record IDs when the object schema is unchanged.
+// Never touch an unrelated physical row (or its record_version) during an edit.
+// Called within the same SQL transaction as the metadata revision.
+async function applyRecordDelta(client,item,sqlObject,previousRecords){
+  const oldRows=new Map();
+  for(const record of previousRecords){
+    if(typeof record?.Id!=='string'||!record.Id||oldRows.has(record.Id))
+      throw Error('Invalid previous SQL record identity');
+    oldRows.set(record.Id,record);
+  }
+  const newRows=new Map();
+  for(const record of item.records){
+    if(typeof record?.Id!=='string'||!record.Id||newRows.has(record.Id))
+      throw Error('Invalid or duplicate record identity');
+    newRows.set(record.Id,record);
+  }
+  const table=tableName(sqlObject.object_id);
+  for(const recordId of oldRows.keys()){
+    if(newRows.has(recordId)) continue;
+    await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1 AND tenant_id=$2 AND record_id=$3',
+      [sqlObject.object_id,item.tenantId,recordId]);
+    await client.query('DELETE FROM '+table+' WHERE tenant_id=$1 AND record_id=$2',
+      [item.tenantId,recordId]);
+  }
+  const activeFields=[...sqlObject.fields.entries()];
+  const columns=activeFields.map(([,field])=>field.physical_column);
+  for(const [recordId,record] of newRows){
+    const old=oldRows.get(recordId);
+    if(old&&JSON.stringify(old)===JSON.stringify(record)) continue;
+    const names=Object.keys(record).filter(name=>name!=='Id');
+    const fields=names.map(name=>sqlObject.fields.get(name));
+    if(fields.some(field=>!field)) throw Error('Record contains field absent from SQL metadata');
+    // Write every active physical field, including NULL for values removed by
+    // an edit. No deleted/hidden value remains in the physical SQL row.
+    const values=[item.tenantId,recordId,...activeFields.map(([name])=>own(record,name)?record[name]:null)];
+    const insertColumns=['tenant_id','record_id',...columns];
+    const updateColumns=columns.map(column=>column+'=EXCLUDED.'+column);
+    updateColumns.push('record_version='+table+'.record_version+1');
+    await client.query(
+      'INSERT INTO '+table+' ('+insertColumns.join(',')+') VALUES ('+
+      values.map((_,index)=>'
+export async function synchronizeTypedRecords(client,state,previousState=null){
+  // Refresh-session-only updates retain the identical tenants object. They cannot
+  // change physical records, so avoid serialising every object's rows and metadata.
+  if(previousState && previousState.tenants===state.tenants) return;
+  // Flow, permission, session and page edits do not touch physical business rows.
+  // Avoid querying 17+ object tables across network on unrelated state changes.
+  if(previousState){
+    const physicalView=(s)=>JSON.stringify(Object.entries(s?.tenants??{}).map(([id,t])=>[id,t.objects,t.records]));
+    if(physicalView(state)===physicalView(previousState)) return;
+  }
+  const {expected,mapping}=await prepare(client,state);
+  for(const [k,item] of expected){
+    if(previousState){
+      const before=previousState.tenants?.[item.tenantId];
+      const priorObject=before?.objects?.find(o=>o.apiName===item.object.apiName);
+      const priorRecords=before?.records?.[item.object.apiName]??[];
+      if(priorObject && JSON.stringify(priorObject)===JSON.stringify(item.object)
+         && JSON.stringify(priorRecords)===JSON.stringify(item.records)) continue;
+    }
+    const sqlObject=mapping.get(k);
+    if(!sqlObject) throw Error('Missing metadata SQL object registry');
+    const before=previousState?.tenants?.[item.tenantId];
+    const priorObject=before?.objects?.find(o=>o.apiName===item.object.apiName);
+    const priorRecords=before?.records?.[item.object.apiName]??[];
+    if(previousState&&priorObject&&Array.isArray(priorRecords)
+      &&JSON.stringify(priorObject)===JSON.stringify(item.object)){
+      // Delta writes avoid a full delete/reinsert on ordinary record edits.
+      // If SQL had drifted from the source snapshot, repair by rebuilding the
+      // single affected object, then require full field-level readback.
+      await applyRecordDelta(client,item,sqlObject,priorRecords);
+      if(!(await compareObject(client,item,sqlObject)))
+        await rewriteObject(client,item,sqlObject);
+    } else if(!(await compareObject(client,item,sqlObject))) {
+      await rewriteObject(client,item,sqlObject);
+    }
+    if(!(await compareObject(client,item,sqlObject)))
+      throw Error('Physical SQL business record field-level readback failed');
+  }
+}
+/** Also use inside the same REPEATABLE READ snapshot as the normalized graph read. */
+export async function verifyTypedRecords(client,state){
+  const expected=definedObjects(state),mapping=await registry(client);
+  if(expected.size!==mapping.size) throw Error('SQL object registry differs from normalized metadata');
+  for(const [k,item] of expected){
+    const mapped=mapping.get(k);
+    if(!mapped) throw Error('Missing object in typed SQL registry');
+    for(const f of item.fields){
+      const saved=mapped.fields.get(f.apiName);
+      if(!saved||postgresFieldType(saved.source_data_type)!==postgresFieldType(f.dataType))
+        throw Error('Missing or changed typed SQL field registry');
+    }
+    if(!(await compareObject(client,item,mapped)))
+      throw Error('SQL physical records differ from normalized state');
+  }
+}
++(index+1)).join(',')+
+      ') ON CONFLICT (tenant_id,record_id) DO UPDATE SET '+updateColumns.join(','),
+      values);
+    await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1 AND tenant_id=$2 AND record_id=$3',
+      [sqlObject.object_id,item.tenantId,recordId]);
+    for(const field of fields) await client.query(
+      'INSERT INTO md_v2_field_presence(object_id,tenant_id,record_id,field_id) VALUES($1,$2,$3,$4)',
+      [sqlObject.object_id,item.tenantId,recordId,field.field_id]);
+  }
+}
+
 /** Use as normalized-state-runtime transactional beforeCommit callback. */
 export async function synchronizeTypedRecords(client,state,previousState=null){
   // Refresh-session-only updates retain the identical tenants object. They cannot
