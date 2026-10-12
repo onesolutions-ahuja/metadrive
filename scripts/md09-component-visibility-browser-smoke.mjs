@@ -100,7 +100,13 @@ try{
   await editor.getByLabel('Enable visibility conditions').check();
   assert.equal(await editor.getByLabel('Visibility source 1').inputValue(),'Device');
   await editor.getByLabel('Visibility value 1').selectOption('Desktop');
+  // The editor persists metadata asynchronously; a click does not mean the
+  // server commit is complete. Wait for the actual success response.
+  const savedPageResponse=page.waitForResponse(response=>
+    response.url().includes('/api/metadata/pages/'+appPage)
+    && response.request().method()==='PUT' && response.status()===200);
   await page.getByRole('button',{name:'Save',exact:true}).click();
+  await savedPageResponse;
 
   let saved=(await request('/metadata/pages',token)).pages.find(item=>item.apiName===appPage);
   assert.equal(saved.components[0].properties.visibilityRules.conditions[0].value,'Desktop');
