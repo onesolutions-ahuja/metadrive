@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS md_v4_components (
   published_version INTEGER NOT NULL DEFAULT 0 CHECK (published_version >= 0),
   draft_version INTEGER CHECK (draft_version > 0),
   deleted_at TIMESTAMPTZ,
+  CHECK ((registry_scope = 'PLATFORM' AND owner_tenant_id IS NULL) OR (registry_scope = 'TENANT' AND owner_tenant_id IS NOT NULL)),
   UNIQUE(component_id,registry_scope)
 );
 CREATE TABLE IF NOT EXISTS md_v4_component_versions (
@@ -40,3 +41,21 @@ CREATE TABLE IF NOT EXISTS md_v4_component_dependencies (
 );
 CREATE INDEX IF NOT EXISTS md_v4_component_dependency_index ON md_v4_component_dependencies(component_id,surface);
 -- No grant to runtime here: activation requires migration reconciliation and separate verification.
+
+-- Row-level tenant constraint: platform components may be referenced across tenants,
+-- tenant-owned component definitions may only be placed within their owner tenant.
+CREATE OR REPLACE FUNCTION md_v4_enforce_dependency_tenant() RETURNS trigger
+LANGUAGE plpgsql AS $md07$
+DECLARE component_owner TEXT;
+BEGIN
+  SELECT owner_tenant_id INTO component_owner FROM md_v4_components WHERE component_id = NEW.component_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Unknown component reference'; END IF;
+  IF component_owner IS NOT NULL AND component_owner <> NEW.tenant_id THEN
+    RAISE EXCEPTION 'Cross-tenant component reference rejected';
+  END IF;
+  RETURN NEW;
+END
+$md07$;
+DROP TRIGGER IF EXISTS md_v4_dependency_tenant_guard ON md_v4_component_dependencies;
+CREATE TRIGGER md_v4_dependency_tenant_guard BEFORE INSERT OR UPDATE ON md_v4_component_dependencies
+FOR EACH ROW EXECUTE FUNCTION md_v4_enforce_dependency_tenant();
