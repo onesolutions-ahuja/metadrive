@@ -99,6 +99,12 @@ export default function PageComponentStyleEditor({
         <option value="hidden">Hidden</option>
       </select>
     </label>
+    <label className="checkbox-row"><input type="checkbox" disabled={disabled}
+      aria-label="Allow nested components"
+      checked={properties.layoutContainer !== false}
+      onChange={(event) => onChange({ ...properties, layoutContainer: event.target.checked })} />
+      Allow child components (container capability)
+    </label>
     {error && <div className="auth-error" role="alert">{error}</div>}
     <div className="properties-help">Reset a numeric field by clearing it. Values outside the accepted ranges cannot be saved.</div>
   </section>;
