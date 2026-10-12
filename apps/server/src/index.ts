@@ -10618,7 +10618,8 @@ const executeReport = (req: Request, res: Response, previewReport?: ReportMetada
   ) => reportFilterMatches(record, filter);
   const visibleSourceRecords = object.apiName === 'User'
     ? reportSourceRecords
-    : reportSourceRecords.filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read'));
+    : reportSourceRecords.filter((record) => hasRecordAccess(principal, tenant, object.apiName, record, 'Read')
+      && canReadCommunicationRecord(principal, object.apiName, record));
   const crossFilterResolution = resolveDashboardCrossFilters(principal, tenant, object.apiName, crossFilters, matches);
   if ('error' in crossFilterResolution) {
     return res.status(crossFilterResolution.status).json({ error: crossFilterResolution.error });
