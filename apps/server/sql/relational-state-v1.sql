@@ -92,9 +92,16 @@ CREATE TABLE IF NOT EXISTS metadrive_rel_library_components (
 );
 -- Platform-scoped authorisation policy and audit metadata, kept separate from tenants.
 CREATE TABLE IF NOT EXISTS metadrive_rel_platform_settings (
-  setting_name TEXT PRIMARY KEY CHECK (setting_name IN ('platformPolicies','platformPolicyAudit')),
+  setting_name TEXT PRIMARY KEY CHECK (setting_name IN ('platformPolicies','platformPolicyAudit','tenantRegistry','tenantManagementAudit')),
   payload JSONB NOT NULL
 );
+-- Idempotent upgrade for databases provisioned before MD-03.1.
+-- Run this DDL with deployment migrations before tenant-management writes.
+ALTER TABLE metadrive_rel_platform_settings
+  DROP CONSTRAINT IF EXISTS metadrive_rel_platform_settings_setting_name_check;
+ALTER TABLE metadrive_rel_platform_settings
+  ADD CONSTRAINT metadrive_rel_platform_settings_setting_name_check
+  CHECK (setting_name IN ('platformPolicies','platformPolicyAudit','tenantRegistry','tenantManagementAudit'));
 CREATE INDEX IF NOT EXISTS metadrive_rel_collection_api_name_idx ON metadrive_rel_tenant_collection_items (tenant_id, collection_name, (payload->>'apiName'));
 
 -- Runtime revision row used for fail-closed optimistic concurrency and state verification.
