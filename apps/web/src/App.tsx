@@ -1151,6 +1151,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [objectSearch, setObjectSearch] = useState('');
   const [objects, setObjects] = useState(objectMetadata);
   const [metadataLoaded, setMetadataLoaded] = useState(false);
+  const [advancedMetadataLoaded, setAdvancedMetadataLoaded] = useState(false);
   const [metadataLoadError, setMetadataLoadError] = useState('');
   const [object, setObject] = useState<ObjectMetadata>(() =>
     (route.kind === 'setup' && route.objectApiName ? objectMetadata.find((item) => item.apiName === route.objectApiName) : undefined)
@@ -1329,15 +1330,53 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   useEffect(() => {
     const loadMetadata = async () => {
       const failures: string[] = [];
-      const recover = async <T,>(path: string, fallback: T): Promise<T> => {
-        try { return await apiRequest<T>(path); }
-        catch (error) {
-          if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
-          failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
-          return fallback;
-        }
+      const pending = new Map<string, Promise<unknown>>();
+      // Reuse the four essential requests when the optional data loads later.
+      // This avoids fetching the same objects/pages/apps/session twice.
+      const recover = <T,>(path: string, fallback: T): Promise<T> => {
+        const existing = pending.get(path);
+        if (existing) return existing as Promise<T>;
+        const request = (async () => {
+          try { return await apiRequest<T>(path); }
+          catch (error) {
+            if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
+            failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
+            return fallback;
+          }
+        })();
+        pending.set(path, request);
+        return request;
       };
       try {
+        // Setup Home needs only core tenant metadata. Its initial render must
+        // not wait for the Flow Builder, report builders, connectors and dashboards.
+        const fastHome = route.kind === 'setup' && route.workspace === 'home';
+        if (fastHome) {
+          const [firstObjects, firstPages, firstApps, firstSession] = await Promise.all([
+            recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
+            recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
+            recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
+            recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, {read:boolean;edit:boolean}>; recordTypeAccess: Record<string, boolean> } }>('/auth/me',
+              { user: { profileId:'',permissions:[],fieldAccess:{},recordTypeAccess:{} } })
+          ]);
+          if (firstObjects.objects.length) {
+            setObjects(firstObjects.objects);
+            setObject(firstObjects.objects.find((item) => item.apiName === object.apiName) ?? firstObjects.objects[0]);
+          }
+          if (firstPages.pages.length) setPages(firstPages.pages);
+          setApps(firstApps.apps);
+          if (!firstApps.apps.some((item) => item.apiName === currentAppId))
+            setCurrentAppId(firstApps.apps[0]?.apiName ?? '');
+          setCurrentProfileId(firstSession.user.profileId);
+          setCurrentFieldAccess(firstSession.user.fieldAccess);
+          setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
+          setCanManageUserIdentities(firstSession.user.permissions.includes('security:manage'));
+          setMetadataLoaded(true);
+          // Give the landing screen a chance to paint before loading editor-only
+          // data in the background. On direct builder URLs the full load begins
+          // immediately, preserving the previous deep-link behaviour.
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 700));
+        }
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           recover<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows', { flows: [] }),
@@ -1430,6 +1469,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         }
       } finally {
         setMetadataLoaded(true);
+        setAdvancedMetadataLoaded(true);
       }
     };
     void loadMetadata();
@@ -3126,7 +3166,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         </div>
         <div className="header-tools">
           <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt}
-            ready={metadataLoaded} kind={routeTiming.kind} authMs={routeTiming.authMs} />
+            ready={metadataLoaded && (route.kind !== 'setup' || route.workspace === 'home' || advancedMetadataLoaded)}
+            kind={routeTiming.kind} authMs={routeTiming.authMs} />
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
           <ConnectionHealthIndicator />
@@ -3303,7 +3344,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && metadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
+          {route.kind === 'setup' && workspace === 'page-builder' && advancedMetadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
             <section className="setup-card" role="alert" style={{ padding: 24 }}>
               <h2>{metadataLoadError ? "Unable to load Lightning pages" : "Lightning page not found"}</h2>
               <p>{metadataLoadError ? `Metadata API error: ${metadataLoadError}` : `The page "${route.resourceApiName}" was not returned by the metadata API. No other page has been substituted.`}</p>
@@ -3346,7 +3387,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (metadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
