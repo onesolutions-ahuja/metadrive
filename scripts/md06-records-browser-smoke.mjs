@@ -49,7 +49,7 @@ try {
     METADRIVE_SCHEDULE_POLL_MS:'3600000', NODE_ENV:'test', PORT:'3001',
     WEB_ORIGIN:'http://127.0.0.1:5173'
   });
-  const web=service(process.execPath,['node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','5173'],{
+  const web=service(process.execPath,['node_modules/vite/bin/vite.js','apps/web','--host','127.0.0.1','--port','5173'],{
     VITE_API_BASE_URL:'http://127.0.0.1:3001/api'
   });
   await Promise.all([ready('http://127.0.0.1:3001/health',server,'API'),ready('http://127.0.0.1:5173/',web,'Vite')]);
