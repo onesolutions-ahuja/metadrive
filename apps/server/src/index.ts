@@ -6,7 +6,8 @@ import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
-import { lookup } from 'node:dns/promises';
+import { lookup, resolveTxt } from 'node:dns/promises';
+import { normalizeTenantDomain, domainChallenge, matchesDomainChallenge, reservedDomain } from './tenant-domains.mjs';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
@@ -3308,7 +3309,12 @@ type RefreshSession = {
   mfaVerified?: boolean;
   authVersion?: number;
 };
+type TenantDomainRecord = {
+  hostname: string; status: 'PENDING' | 'VERIFIED'; verificationToken: string;
+  createdAt: string; verifiedAt?: string;
+};
 type TenantRegistryEntry = {
+  domains?: TenantDomainRecord[];
   name: string; description: string; status: 'ACTIVE' | 'SUSPENDED'; createdAt: string; updatedAt: string;
   // The complete initial workspace and administrator commit together.
   provisioning?: { status: 'READY'; version: number; completedAt: string };
@@ -3316,7 +3322,7 @@ type TenantRegistryEntry = {
   developerSeed?: { userId: string; email: string; seededAt: string; activatedAt?: string };
 };
 type TenantManagementAuditEvent = {
-  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED';
+  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED' | 'DOMAIN_ADDED' | 'DOMAIN_VERIFIED' | 'DOMAIN_REMOVED';
   at: string; previous?: TenantRegistryEntry; next: TenantRegistryEntry;
 };
 type PlatformState = {
@@ -3335,6 +3341,11 @@ type PlatformState = {
   revokedAccessTokens: Record<string, number>;
 };
 const tenantRegistryEntrySchema = z.object({
+  domains: z.array(z.object({
+    hostname: z.string().min(4).max(253), status: z.enum(['PENDING', 'VERIFIED']),
+    verificationToken: z.string().regex(/^[0-9a-f]{64}$/),
+    createdAt: z.string().datetime(), verifiedAt: z.string().datetime().optional()
+  }).strict()).max(5).optional(),
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(1000).default(''),
   status: z.enum(['ACTIVE', 'SUSPENDED']),
@@ -3353,7 +3364,7 @@ const tenantRegistryEntrySchema = z.object({
 }).strict();
 const tenantManagementAuditSchema = z.object({
   actorId: z.string(), tenantId: z.string(),
-  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED']),
+  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED','DOMAIN_ADDED','DOMAIN_VERIFIED','DOMAIN_REMOVED']),
   at: z.string().datetime(),
   previous: tenantRegistryEntrySchema.optional(),
   next: tenantRegistryEntrySchema
@@ -5226,6 +5237,21 @@ function bearerToken(req: Request): string | undefined {
   const [scheme, token, ...extra] = authorization.split(' ');
   return scheme?.toLowerCase() === 'bearer' && token && extra.length === 0 ? token : undefined;
 }
+// Verified host bindings are lookup-only: no network or SQL query in the login path.
+const tenantHostCache = new WeakMap<PlatformState['tenantRegistry'], Map<string, string>>();
+function tenantForRequestHost(req: Request): string | undefined {
+  const hostname = req.hostname?.toLowerCase();
+  if (!hostname) return undefined;
+  let map = tenantHostCache.get(state.tenantRegistry);
+  if (!map) {
+    map = new Map();
+    for (const [tenantId, entry] of Object.entries(state.tenantRegistry))
+      for (const domain of entry.domains ?? [])
+        if (domain.status === 'VERIFIED') map.set(domain.hostname, tenantId);
+    tenantHostCache.set(state.tenantRegistry, map);
+  }
+  return map.get(hostname);
+}
 function accessAuthentication(req: Request, res: Response, next: NextFunction): void {
   const token = bearerToken(req);
   if (!token) {
@@ -5236,6 +5262,11 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
     const tokenId = claims.jti;
     const tenantId = claims.tenant_id;
     const userId = claims.sub;
+    const hostTenant = tenantForRequestHost(req);
+    if (hostTenant && hostTenant !== tenantId) {
+      res.status(401).json({ error: 'This session belongs to a different tenant domain' });
+      return;
+    }
     if (!tokenId || !tenantId || !userId) {
       res.status(401).json({ error: 'Access token is missing identity claims' });
       return;
@@ -5699,6 +5730,9 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   const limit = loginAttempts.get(key);
   if (limit && limit.resetAt > now && limit.count >= 8) return res.status(429).json({ error: 'Too many login attempts; try again later' });
   const user = state.users.find((item) => item.email.trim().toLowerCase() === parsed.data.email.toLowerCase());
+  const loginHostTenant = tenantForRequestHost(req);
+  if (loginHostTenant && user?.tenantId !== loginHostTenant)
+    return res.status(401).json({ error: 'Invalid email or password' });
   const passwordStartedAt = performance.now();
   const valid = user && (!user.lockedUntil || user.lockedUntil <= now)
     ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
@@ -5742,6 +5776,9 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
   if (!parsed.success) return res.status(400).json({ error: 'Invalid MFA challenge request' });
   const key = hashToken(parsed.data.challenge_token);
   const challenge = mfaLoginChallenges.get(key);
+  const mfaHostTenant = tenantForRequestHost(req);
+  if (mfaHostTenant && challenge?.tenantId !== mfaHostTenant)
+    return res.status(401).json({ error: 'MFA challenge is no longer valid' });
   if (!challenge || challenge.expiresAt <= Date.now() || challenge.attempts >= 5) {
     mfaLoginChallenges.delete(key);
     return res.status(401).json({ error: 'MFA challenge expired; sign in again' });
@@ -5922,6 +5959,11 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   if (!rawToken) return res.status(401).json({ error: 'Refresh token required' });
   const tokenHash = hashToken(rawToken);
   const session = state.refreshSessions.find((item) => item.tokenHash === tokenHash);
+  const refreshHostTenant = tenantForRequestHost(req);
+  if (refreshHostTenant && session?.tenantId !== refreshHostTenant) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Refresh token belongs to a different tenant domain' });
+  }
   if (!session) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Refresh token is invalid or expired' });
@@ -6302,6 +6344,7 @@ function tenantSummary(tenantId: string) {
   return {
     tenantId, name: entry.name, description: entry.description, status: entry.status,
     createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+    domains: entry.domains ?? [],
     // Provisioning request fingerprints remain server-side, never exposed in API responses.
     provisioning: entry.provisioning ?? { status: 'READY' as const, version: 0, completedAt: entry.createdAt },
     developerAccount: entry.developerSeed ? {
@@ -6504,6 +6547,145 @@ app.patch('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatfo
   commitTenantChange(getPrincipal(res).userId, tenantId, 'UPDATED', next, previous);
   return res.json({ tenant: tenantSummary(tenantId) });
 });
+// MD-03.5: domain ownership uses TXT DNS proofs. TLS/host attachment is
+// configured at the edge; a verified domain is NOT an SSL certificate claim.
+const addTenantDomainSchema = z.object({ hostname: z.string().min(4).max(253) }).strict();
+const domainCheckInFlight = new Set<string>();
+const domainCheckLastAttempt = new Map<string, number>();
+let domainCommitUncertain = false;
+function domainContext(req: Request, res: Response, platform: boolean): string | undefined {
+  const tenantId = platform ? routeParam(req, 'tenantId') : getPrincipal(res).tenantId;
+  return Object.hasOwn(state.tenants, tenantId) && !provisioningPendingTenants.has(tenantId)
+    ? tenantId : undefined;
+}
+function checkedDomain(hostname: string): string | null {
+  try { return normalizeTenantDomain(hostname); } catch { return null; }
+}
+function domainResponse(record: TenantDomainRecord) {
+  return { ...record, verification: domainChallenge(record.hostname, record.verificationToken),
+    hosting: 'Attach this hostname to the HTTPS application service and complete provider TLS validation separately.' };
+}
+async function saveDomainChange(actorId: string, tenantId: string,
+  action: TenantManagementAuditEvent['action'], updated: TenantRegistryEntry, previous: TenantRegistryEntry) {
+  if (domainCommitUncertain) throw new Error('Previous domain persistence is uncertain; restart and reconcile');
+  commitTenantChange(actorId, tenantId, action, updated, previous);
+  const committed = latestStateCommit;
+  try { await committed; } catch {
+    domainCommitUncertain = true;
+    throw new Error('Domain change persistence failed; restart and reconcile before further writes');
+  }
+}
+function listTenantDomains(req: Request, res: Response, platform: boolean) {
+  const tenantId = domainContext(req, res, platform);
+  if (!tenantId) return res.status(404).json({ error: 'Tenant not found' });
+  return res.json({ domains: (tenantRegistryEntry(tenantId).domains ?? []).map(domainResponse) });
+}
+async function addTenantDomain(req: Request, res: Response, platform: boolean) {
+  const tenantId = domainContext(req, res, platform);
+  if (!tenantId) return res.status(404).json({ error: 'Tenant not found' });
+  if (domainCommitUncertain) return res.status(503).json({ error: 'Domain persistence requires reconciliation' });
+  const parsed = addTenantDomainSchema.safeParse(req.body);
+  const hostname = parsed.success ? checkedDomain(parsed.data.hostname) : null;
+  if (!hostname) return res.status(400).json({ error: 'Invalid DNS hostname' });
+  if (reservedDomain(hostname, webOrigins))
+    return res.status(409).json({ error: 'Platform-owned hostnames cannot be registered to tenants' });
+  if (Object.values(state.tenantRegistry).some((entry) =>
+    entry.domains?.some((domain) => domain.hostname === hostname)))
+    return res.status(409).json({ error: 'Domain is already registered' });
+  const previous = tenantRegistryEntry(tenantId);
+  if ((previous.domains?.length ?? 0) >= 5)
+    return res.status(409).json({ error: 'Maximum five domains per tenant' });
+  const now = new Date().toISOString();
+  const domain: TenantDomainRecord = {
+    hostname, status: 'PENDING', verificationToken: randomBytes(32).toString('hex'), createdAt: now
+  };
+  const updated: TenantRegistryEntry = {
+    ...previous, updatedAt: now, domains: [...(previous.domains ?? []), domain]
+  };
+  try {
+    await saveDomainChange(getPrincipal(res).userId, tenantId, 'DOMAIN_ADDED', updated, previous);
+    return res.status(201).json({ domain: domainResponse(domain) });
+  } catch { return res.status(503).json({ error: 'Unable to persist tenant domain' }); }
+}
+async function verifyTenantDomain(req: Request, res: Response, platform: boolean) {
+  const tenantId = domainContext(req, res, platform);
+  if (!tenantId) return res.status(404).json({ error: 'Tenant not found' });
+  if (domainCommitUncertain) return res.status(503).json({ error: 'Domain persistence requires reconciliation' });
+  const hostname = checkedDomain(routeParam(req, 'hostname'));
+  if (!hostname) return res.status(400).json({ error: 'Invalid DNS hostname' });
+  const current = tenantRegistryEntry(tenantId).domains?.find((item) => item.hostname === hostname);
+  if (!current) return res.status(404).json({ error: 'Domain does not belong to this tenant' });
+  if (current.status === 'VERIFIED') return res.json({ domain: domainResponse(current) });
+  const lock = tenantId + ':' + hostname;
+  const nowMs = Date.now();
+  if (domainCheckInFlight.has(lock) || nowMs - (domainCheckLastAttempt.get(lock) ?? 0) < 30_000)
+    return res.status(429).json({ error: 'DNS verification may be retried after 30 seconds' });
+  domainCheckInFlight.add(lock);
+  domainCheckLastAttempt.set(lock, nowMs);
+  if (domainCheckLastAttempt.size > 1000)
+    for (const [key, at] of domainCheckLastAttempt)
+      if (nowMs - at > 60_000) domainCheckLastAttempt.delete(key);
+  try {
+    const proof = domainChallenge(hostname, current.verificationToken);
+    let txt: string[][];
+    try { txt = await resolveTxt(proof.host); }
+    catch { return res.status(409).json({ error: 'DNS TXT record is not available yet', verification: proof }); }
+    if (!matchesDomainChallenge(txt, proof.value))
+      return res.status(409).json({ error: 'DNS TXT ownership proof does not match', verification: proof });
+    // DNS await can interleave with a domain deletion/re-registration.
+    const previous = tenantRegistryEntry(tenantId);
+    const latest = previous.domains?.find((item) => item.hostname === hostname);
+    if (!latest || latest.verificationToken !== current.verificationToken)
+      return res.status(409).json({ error: 'Domain registration changed while verifying; retry' });
+    if (latest.status === 'VERIFIED') return res.json({ domain: domainResponse(latest) });
+    const now = new Date().toISOString();
+    const verified: TenantDomainRecord = { ...latest, status: 'VERIFIED', verifiedAt: now };
+    const updated: TenantRegistryEntry = {
+      ...previous, updatedAt: now,
+      domains: previous.domains!.map((item) => item.hostname === hostname ? verified : item)
+    };
+    await saveDomainChange(getPrincipal(res).userId, tenantId, 'DOMAIN_VERIFIED', updated, previous);
+    return res.json({ domain: domainResponse(verified) });
+  } catch { return res.status(503).json({ error: 'Unable to persist domain verification' }); }
+  finally { domainCheckInFlight.delete(lock); }
+}
+async function removeTenantDomain(req: Request, res: Response, platform: boolean) {
+  const tenantId = domainContext(req, res, platform);
+  if (!tenantId) return res.status(404).json({ error: 'Tenant not found' });
+  if (domainCommitUncertain) return res.status(503).json({ error: 'Domain persistence requires reconciliation' });
+  const hostname = checkedDomain(routeParam(req, 'hostname'));
+  if (!hostname) return res.status(400).json({ error: 'Invalid DNS hostname' });
+  const previous = tenantRegistryEntry(tenantId);
+  if (!previous.domains?.some((record) => record.hostname === hostname))
+    return res.status(404).json({ error: 'Domain does not belong to this tenant' });
+  const updated: TenantRegistryEntry = {
+    ...previous, updatedAt: new Date().toISOString(),
+    domains: previous.domains.filter((item) => item.hostname !== hostname)
+  };
+  try {
+    await saveDomainChange(getPrincipal(res).userId, tenantId, 'DOMAIN_REMOVED', updated, previous);
+    return res.json({ removed: true, hostname });
+  } catch { return res.status(503).json({ error: 'Unable to remove tenant domain' }); }
+}
+app.get('/api/platform/tenants/:tenantId/domains', accessAuthentication, requirePlatformTenantAdmin,
+  (req, res) => listTenantDomains(req, res, true));
+app.post('/api/platform/tenants/:tenantId/domains', accessAuthentication, requirePlatformTenantAdmin,
+  (req, res) => { void addTenantDomain(req, res, true); });
+app.post('/api/platform/tenants/:tenantId/domains/:hostname/verify', accessAuthentication, requirePlatformTenantAdmin,
+  (req, res) => { void verifyTenantDomain(req, res, true); });
+app.delete('/api/platform/tenants/:tenantId/domains/:hostname', accessAuthentication, requirePlatformTenantAdmin,
+  (req, res) => { void removeTenantDomain(req, res, true); });
+// Tenants can manage only their own records with security:manage; platform
+// superadmin policy never acts as tenant-admin impersonation.
+app.get('/api/tenant/domains', accessAuthentication, requirePermission('security:manage'),
+  (req, res) => listTenantDomains(req, res, false));
+app.post('/api/tenant/domains', accessAuthentication, requirePermission('security:manage'),
+  (req, res) => { void addTenantDomain(req, res, false); });
+app.post('/api/tenant/domains/:hostname/verify', accessAuthentication, requirePermission('security:manage'),
+  (req, res) => { void verifyTenantDomain(req, res, false); });
+app.delete('/api/tenant/domains/:hostname', accessAuthentication, requirePermission('security:manage'),
+  (req, res) => { void removeTenantDomain(req, res, false); });
+
 app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const tenantId = routeParam(req, 'tenantId');
   const operation = routeParam(req, 'operation');
