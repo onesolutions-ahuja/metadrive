@@ -19244,7 +19244,14 @@ async function dispatchScheduledFlows(): Promise<void> {
       // in-memory replica. SQL revision/CAS guards prevent stale overwrites,
       // but every new dispatcher must start from the committed database head.
       if (persistenceMode !== 'jsonb') {
+        // Requests can persist state while the scheduler is reading SQL.
+        // Do not replace a newer local request mutation with an older read.
+        const snapshotCommit = latestStateCommit;
         const committed = await readPersistedState();
+        if (latestStateCommit !== snapshotCommit) {
+          await waitForPersistedState();
+          return; // retry on the next interval with a fresh committed snapshot
+        }
         if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
         assertTenantIdentityIsolation(committed);
         state = stateSchema.parse(committed);
