@@ -37,3 +37,16 @@ test('changing parent type correctly retires old children',()=>{
   assert.deepEqual(restoreNormalizedTree(plan.nodes),b);
   assert.equal(plan.deleted.length,2);
 });
+\ntest('large metadata graphs retain unchanged rows for login append',()=>{
+  const users=Array.from({length:2500},(_,i)=>({id:'u'+i,email:'u'+i+'@example.test',role:'reader',enabled:true}));
+  const before={users,tenants:{a:{securityEvents:[]}},refreshSessions:[]};
+  const original=projectNormalizedTree(before).nodes;
+  assert.ok(original.length>19000,'Regress against production-sized graphs');
+  const after={...before,tenants:{a:{securityEvents:[{action:'auth.login.succeeded',actor:'u1'}]}},
+    refreshSessions:[{id:'refresh-1',userId:'u1',tenantId:'a'}]};
+  const delta=planNormalizedDelta(original,projectNormalizedTree(after).nodes);
+  assert.equal(delta.deleted.length,0);
+  assert.equal(delta.updated.length,0);
+  assert.ok(delta.inserted.length<30,'An auth append must not rewrite metadata');
+  assert.deepEqual(restoreNormalizedTree(delta.nodes),after);
+});\n
