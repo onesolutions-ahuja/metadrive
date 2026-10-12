@@ -133,7 +133,7 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     const secondaryEmail='secondary-'+suffix+'@metadrive.test';
     const tenantRequest={
       tenantId:secondaryTenantId,tenantName:'SQL Provisioned Tenant',
-      adminName:'Initial Administrator',email:secondaryEmail,password
+      adminName:'Initial Administrator',email:secondaryEmail,password,developerDomain:'sql-tenant.test'
     };
     const provisionHeaders={
       'x-provisioning-key':'md03-2-relational-test-provisioning-secret',
@@ -145,7 +145,7 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     // HTTP 201 must imply the tenant and first login are durably committed in SQL.
     await connected(new pg.Client({connectionString:databaseUrl(targetName),ssl:false}),async(client)=>{
       assert.equal((await client.query('SELECT tenant_id FROM metadrive_rel_tenants WHERE tenant_id=$1',[secondaryTenantId])).rowCount,1);
-      assert.equal((await client.query('SELECT user_id FROM metadrive_rel_users WHERE tenant_id=$1',[secondaryTenantId])).rowCount,1);
+      assert.equal((await client.query('SELECT user_id FROM metadrive_rel_users WHERE tenant_id=$1',[secondaryTenantId])).rowCount,2);
       assert.ok((await client.query("SELECT setting_name FROM metadrive_rel_platform_settings WHERE setting_name='tenantRegistry'")).rowCount===1);
     });
     const provisionRetry=await request(port,'/auth/provision-tenant','POST',null,tenantRequest,provisionHeaders);
@@ -154,6 +154,22 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     const tenantLogin=await request(port,'/auth/login','POST',null,{email:secondaryEmail,password});
     assert.equal(tenantLogin.status,200,JSON.stringify(tenantLogin.data));
     assert.equal(tenantLogin.data.user.tenantId,secondaryTenantId);
+    const seedStatus = await request(port,'/tenant/developer-account','GET',tenantLogin.data.access_token);
+    assert.equal(seedStatus.status,200);
+    assert.equal(seedStatus.data.email,'developer@sql-tenant.test');
+    assert.equal(seedStatus.data.active,false);
+    assert.equal((await request(port,'/auth/login','POST',null,{
+      email:seedStatus.data.email,password
+    })).status,401,'The seeder must not accept a platform-provisioning password');
+    const developerPassword='TenantChosenSQLDeveloperSecret-2026!';
+    const activeSeed=await request(port,'/tenant/developer-account/activate','POST',
+      tenantLogin.data.access_token,{password:developerPassword});
+    assert.equal(activeSeed.status,200,JSON.stringify(activeSeed.data));
+    const developerLogin=await request(port,'/auth/login','POST',null,{
+      email:seedStatus.data.email,password:developerPassword
+    });
+    assert.equal(developerLogin.status,200,JSON.stringify(developerLogin.data));
+    assert.equal(developerLogin.data.user.tenantId,secondaryTenantId);
     const seededObjects=await request(port,'/metadata/objects','GET',tenantLogin.data.access_token);
     assert.equal(seededObjects.status,200);
     assert.ok(seededObjects.data.objects.some(object=>object.apiName==='Account'));
@@ -193,6 +209,12 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     const tenantAfterRestart=await request(port,'/auth/login','POST',null,{email:secondaryEmail,password});
     assert.equal(tenantAfterRestart.status,200,JSON.stringify(tenantAfterRestart.data));
     assert.equal(tenantAfterRestart.data.user.tenantId,secondaryTenantId);
+    const developerAfterRestart=await request(port,'/auth/login','POST',null,{
+      email:'developer@sql-tenant.test',password:'TenantChosenSQLDeveloperSecret-2026!'
+    });
+    assert.equal(developerAfterRestart.status,200,JSON.stringify(developerAfterRestart.data));
+    const stableSeed=await request(port,'/tenant/developer-account','GET',tenantAfterRestart.data.access_token);
+    assert.equal(stableSeed.data.activated,true);
     const replayAfterRestart=await request(port,'/auth/provision-tenant','POST',null,tenantRequest,provisionHeaders);
     assert.equal(replayAfterRestart.status,200,JSON.stringify(replayAfterRestart.data));
     assert.equal(replayAfterRestart.data.replayed,true);

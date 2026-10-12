@@ -32,6 +32,7 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
   const operatorEmail = 'tenant-portal-platform@example.test';
   const operatorPassword = 'PlatformPortalSmokeTest-2026!';
   const tenantPassword = 'InitialTenantSmokeTest-2026!';
+  const developerPassword = 'TenantChosenDeveloperPassword-2026!';
   const bootstrapKey = 'tenant-management-platform-bootstrap-2026';
   const base = 'http://127.0.0.1:' + port + '/api';
   const env = {
@@ -87,7 +88,8 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal((await api('/platform/tenants/platform-owner/suspend', operatorToken, 'POST', {})).status, 409,
       'Cannot suspend the only platform-superadmin tenant');
     const body = { tenantId: 'studio-beta', tenantName: 'Studio Beta', adminName: 'Studio Administrator',
-      email: 'tenant-portal-admin@example.test', password: tenantPassword };
+      email: 'tenant-portal-admin@example.test', password: tenantPassword,
+      developerDomain: 'studio-beta.test' };
     assert.equal((await api('/platform/tenants', operatorToken, 'POST', { ...body, superadmin: true })).status, 400,
       'Unknown privilege escalation fields must fail validation');
     const idem = 'md03-2-create-studio-beta-retry';
@@ -99,7 +101,9 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     const retry = await api('/platform/tenants', operatorToken, 'POST', body, false, '', idem);
     assert.equal(retry.status, 200, JSON.stringify(retry.data));
     assert.equal(retry.data.replayed, true);
-    assert.equal(retry.data.tenant.userCount, 1, 'Retry must never add users');
+    assert.equal(retry.data.tenant.userCount, 2, 'Retry must not add duplicate developer or admin users');
+    assert.equal(created.data.tenant.developerAccount.email, 'developer@studio-beta.test');
+    assert.equal(created.data.tenant.developerAccount.activated, false);
     assert.equal((await api('/platform/tenants', operatorToken, 'POST',
       { ...body, tenantId: 'another-tenant' }, false, '', idem)).status, 409,
       'The same request key must not create a different tenant');
@@ -110,6 +114,8 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.ok(readiness.data.initialized.profiles >= 1);
     assert.ok(readiness.data.initialized.permissionSets >= 1);
     assert.equal(readiness.data.initialized.initialAdministrator, true);
+    assert.equal(readiness.data.initialized.developerAccount.email, 'developer@studio-beta.test');
+    assert.equal(readiness.data.initialized.developerAccount.activated, false);
     assert.equal((await api('/platform/tenants/studio-beta/provisioning')).status, 401);
     assert.equal((await api('/platform/tenants/not-here/provisioning', operatorToken)).status, 404);
     assert.equal(created.data.tenant.name, 'Studio Beta');
@@ -122,7 +128,7 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal((await api('/platform/tenants?section=users&pageSize=999', operatorToken)).status, 400);
     assert.equal((await api('/platform/tenants/not-here', operatorToken)).status, 404);
     const detail = await api('/platform/tenants/studio-beta', operatorToken);
-    assert.equal(detail.data.tenant.userCount, 1);
+    assert.equal(detail.data.tenant.userCount, 2);
     const updated = await api('/platform/tenants/studio-beta', operatorToken, 'PATCH', { name: 'Studio Beta Updated', description: 'Client workspace' });
     assert.equal(updated.status, 200);
     assert.equal(updated.data.tenant.description, 'Client workspace');
@@ -131,12 +137,45 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal(login.status, 200);
     const tenantToken = String(login.data.access_token);
     const tenantRefreshCookie = login.cookie;
+    assert.equal((await api('/tenant/developer-account')).status, 401);
+    const beforeDeveloper = await api('/tenant/developer-account', tenantToken);
+    assert.equal(beforeDeveloper.status, 200, JSON.stringify(beforeDeveloper.data));
+    assert.equal(beforeDeveloper.data.email, 'developer@studio-beta.test');
+    assert.equal(beforeDeveloper.data.seeded, true);
+    assert.equal(beforeDeveloper.data.activated, false);
+    assert.equal(beforeDeveloper.data.active, false);
+    assert.equal((await api('/auth/login', '', 'POST', {
+      email: beforeDeveloper.data.email, password: tenantPassword
+    })).status, 401, 'The platform-known administrator password must not unlock the developer');
+    assert.equal((await api('/tenant/developer-account/activate', tenantToken, 'POST', {
+      password: 'short'
+    })).status, 400);
+    const activated = await api('/tenant/developer-account/activate', tenantToken, 'POST', {
+      password: developerPassword
+    });
+    assert.equal(activated.status, 200, JSON.stringify(activated.data));
+    assert.equal(activated.data.userId, beforeDeveloper.data.userId);
+    assert.equal((await api('/tenant/developer-account/activate', tenantToken, 'POST', {
+      password: 'AnotherTenantPassword-2026!'
+    })).status, 409, 'Activation must never become an ongoing password override');
+    const developerLogin = await api('/auth/login', '', 'POST', {
+      email: beforeDeveloper.data.email, password: developerPassword
+    });
+    assert.equal(developerLogin.status, 200, JSON.stringify(developerLogin.data));
+    const developerToken = String(developerLogin.data.access_token);
+    assert.equal((await api('/auth/me', developerToken)).status, 200);
+    assert.equal((await api('/platform/tenants', developerToken)).status, 403,
+      'Developer never receives platform administration permissions');
     assert.equal((await api('/platform/tenants', tenantToken)).status, 403);
     assert.equal((await api('/platform/tenants/studio-beta/provisioning', tenantToken)).status, 403);
+    assert.equal((await api('/tenant/developer-account', operatorToken)).status, 200,
+      'Platform operator can view only their OWN tenant seeder, not studio-beta');
     assert.equal((await api('/platform/tenants/studio-beta/suspend', tenantToken, 'POST', {})).status, 403);
     assert.equal((await api('/auth/me', tenantToken)).status, 200);
     assert.equal((await api('/platform/tenants/studio-beta/suspend', operatorToken, 'POST', {})).status, 200);
     assert.equal((await api('/auth/me', tenantToken)).status, 401, 'Existing access token must be blocked');
+    assert.equal((await api('/auth/me', developerToken)).status, 401,
+      'Developer must obey the same tenant suspension policy');
     assert.equal((await api('/auth/refresh', '', 'POST', undefined, false, tenantRefreshCookie)).status, 401,
       'Suspension revokes refresh tokens');
     assert.equal((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).status, 401);
@@ -152,6 +191,20 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal(freshLogin.status, 200);
     assert.equal((await api('/auth/me', String(freshLogin.data.access_token))).status, 200,
       'New login must be usable even if reactivation happened within the same second');
+    const afterResumption = await api('/auth/login', '', 'POST', {
+      email: 'developer@studio-beta.test', password: developerPassword
+    });
+    assert.equal(afterResumption.status, 200);
+    const afterActivationStatus = await api('/tenant/developer-account', String(freshLogin.data.access_token));
+    assert.equal(afterActivationStatus.data.activated, true);
+    const disabledDeveloper = await api('/records/User/' + encodeURIComponent(beforeDeveloper.data.userId),
+      String(freshLogin.data.access_token), 'PUT', { IsActive: false });
+    assert.equal(disabledDeveloper.status, 200, JSON.stringify(disabledDeveloper.data));
+    assert.equal((await api('/auth/me', String(afterResumption.data.access_token))).status, 401,
+      'Tenant-admin deactivation must revoke developer access');
+    assert.equal((await api('/tenant/developer-account/activate', String(freshLogin.data.access_token),
+      'POST', { password: developerPassword })).status, 409,
+      'Seeder activation must not override tenant revocation');
     assert.equal((await api('/platform/tenants/studio-beta/reactivate', operatorToken, 'POST', {})).status, 409);
     await stop(child!);
     await start();
@@ -163,7 +216,12 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
       body, false, '', idem);
     assert.equal(persistentRetry.status, 200);
     assert.equal(persistentRetry.data.replayed, true);
-    assert.equal(persistentRetry.data.tenant.userCount, 1);
+    assert.equal(persistentRetry.data.tenant.userCount, 2);
+    assert.equal(persistentRetry.data.tenant.developerAccount.activated, true);
+    const persistedDeveloperStatus = await api('/tenant/developer-account',
+      String((await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword })).data.access_token));
+    assert.equal(persistedDeveloperStatus.data.active, false);
+    assert.equal(persistedDeveloperStatus.data.activated, true);
     const createdSecond = await api('/platform/tenants', String(newLogin.data.access_token), 'POST', {
       tenantId: 'studio-gamma', tenantName: 'Studio Gamma', adminName: 'New Administrator',
       email: 'gamma-admin@example.test', password: tenantPassword
@@ -182,8 +240,8 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
         false, '', 'parallel-studio-idem-1234')
     ]);
     assert.deepEqual([parallelA.status, parallelB.status].sort(), [200, 201]);
-    assert.equal(parallelA.data.tenant.userCount, 1);
-    assert.equal(parallelB.data.tenant.userCount, 1);
+    assert.equal(parallelA.data.tenant.userCount, 2);
+    assert.equal(parallelB.data.tenant.userCount, 2);
     const competingEmail = 'shared-unique-admin@example.test';
     const [raceA, raceB] = await Promise.all(['race-a-studio', 'race-b-studio'].map((tenantId) =>
       api('/platform/tenants', String(newLogin.data.access_token), 'POST', {
