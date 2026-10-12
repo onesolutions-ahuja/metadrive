@@ -99,14 +99,24 @@ export async function readPersistedState(): Promise<unknown | null> {
   if (persistenceMode === 'normalized' || persistenceMode === 'typed') {
     // SQL-only read. Typed mode verifies physical records under the SAME SQL snapshot.
     // No fallback to legacy JSONB, even on first start or lost connections.
-    normalizedSnapshot = await readNormalizedState(pool as unknown as Parameters<typeof readNormalizedState>[0],
+    const previousSnapshot = normalizedSnapshot;
+    const refreshed = await readNormalizedState(pool as unknown as Parameters<typeof readNormalizedState>[0],
       persistenceMode === 'typed' ? verifyTypedRecords : null);
-    return normalizedSnapshot.state;
+    // Reading a stale revision must not replace a local write's newer CAS
+    // baseline. The scheduler retries after concurrent writes settle.
+    if (normalizedSnapshot !== previousSnapshot)
+      throw new Error('Concurrent SQL write while refreshing scheduled state');
+    normalizedSnapshot = refreshed;
+    return refreshed.state;
   }
   if (persistenceMode === 'relational') {
     // Never silently fall back to a stale JSONB blob or empty seed.
-    relationalSnapshot = await readRelationalState(pool as unknown as Parameters<typeof readRelationalState>[0]);
-    return relationalSnapshot.state;
+    const previousSnapshot = relationalSnapshot;
+    const refreshed = await readRelationalState(pool as unknown as Parameters<typeof readRelationalState>[0]);
+    if (relationalSnapshot !== previousSnapshot)
+      throw new Error('Concurrent relational write while refreshing scheduled state');
+    relationalSnapshot = refreshed;
+    return refreshed.state;
   }
   await pool.query(`CREATE TABLE IF NOT EXISTS metadrive_platform_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
