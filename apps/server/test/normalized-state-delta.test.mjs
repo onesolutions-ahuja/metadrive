@@ -50,4 +50,4 @@ test('large metadata graphs retain unchanged rows for login append',()=>{
   assert.equal(delta.updated.length,0);
   assert.ok(delta.inserted.length<30,'An auth append must not rewrite metadata');
   assert.deepEqual(restoreNormalizedTree(delta.nodes),after);
-});\n
+});
