@@ -8989,7 +8989,8 @@ function PageBuilder({
       canvasWidth: newPageLayoutMode === 'free-canvas' ? 1080 : 1920,
       canvasHeight: newPageLayoutMode === 'free-canvas' ? 1920 : 1080,
       status: 'Draft', devices: [...newPageDevices], components: [],
-      activationAssignments: newPageAppId
+      // App Pages belong to app navigation; only Record/Home pages use activation assignments.
+      activationAssignments: newPageAppId && newPageType !== 'App Page'
         ? [{
           id: crypto.randomUUID(), scope: 'App Default', appId: newPageAppId,
           profileId: null, recordTypeId: null, formFactors: [...newPageDevices]
@@ -9001,6 +9002,23 @@ function PageBuilder({
       // with the previously selected page on its next metadata refresh.
       const saved = await onSave(nextPage, apiName, 'Lightning page draft created');
       if (!saved) return;
+      if (nextPage.pageType === 'App Page' && newPageAppId) {
+        const selectedApp = apps.find(item => item.apiName === newPageAppId);
+        if (selectedApp && !selectedApp.navigationPageApiNames.includes(apiName)) {
+          const navigationPageApiNames = [...selectedApp.navigationPageApiNames, apiName];
+          try {
+            await onSaveApp({
+              ...selectedApp, navigationPageApiNames,
+              navigationOrder: reconcileNavigationOrder(
+                selectedApp.navigationItems, navigationPageApiNames, selectedApp.navigationOrder
+              )
+            }, true);
+          } catch (error) {
+            onNotify(error instanceof Error ? error.message
+              : 'Page draft saved, but app navigation must be configured in App Manager');
+          }
+        }
+      }
       savedPageApiName.current = apiName;
       if (newPageAppId) setBuilderAppApiName(newPageAppId);
       setSelectedId('');
