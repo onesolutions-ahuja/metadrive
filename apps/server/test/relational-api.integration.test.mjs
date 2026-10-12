@@ -65,10 +65,10 @@ async function stopApi(child) {
     await once(child,'exit');
   }
 }
-async function request(port,path,method='GET',token=null,payload=undefined) {
+async function request(port,path,method='GET',token=null,payload=undefined,extraHeaders={}) {
   const response=await fetch('http://127.0.0.1:'+port+'/api'+path,{
     method,
-    headers:{...(token?{authorization:'Bearer '+token}:{}),...(payload!==undefined?{'content-type':'application/json'}:{})},
+    headers:{...(token?{authorization:'Bearer '+token}:{}),...(payload!==undefined?{'content-type':'application/json'}:{}),...extraHeaders},
     ...(payload!==undefined?{body:JSON.stringify(payload)}:{})
   });
   const body=await response.text();
@@ -122,15 +122,46 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     const relationalPath=join(dir,'relational-state.json');
     const relationalEnv={
       DATABASE_URL:databaseUrl(targetName), METADRIVE_TEST_MODE:'false',
-      METADRIVE_PERSISTENCE_MODE:'relational',METADRIVE_REL_VERIFY_WRITES:'true'
+      METADRIVE_PERSISTENCE_MODE:'relational',METADRIVE_REL_VERIFY_WRITES:'true',
+      METADRIVE_PROVISIONING_KEY:'md03-2-relational-test-provisioning-secret'
     };
     child=await startApi(port,relationalPath,relationalEnv);
     const login=await request(port,'/auth/login','POST',null,{email,password});
     assert.equal(login.status,200,JSON.stringify(login.data));
     const token=login.data.access_token;
+    const secondaryTenantId='provisioned-'+suffix;
+    const secondaryEmail='secondary-'+suffix+'@metadrive.test';
+    const tenantRequest={
+      tenantId:secondaryTenantId,tenantName:'SQL Provisioned Tenant',
+      adminName:'Initial Administrator',email:secondaryEmail,password
+    };
+    const provisionHeaders={
+      'x-provisioning-key':'md03-2-relational-test-provisioning-secret',
+      'Idempotency-Key':'sql-provision-'+suffix+'-retry-key'
+    };
+    const provisioned=await request(port,'/auth/provision-tenant','POST',null,tenantRequest,provisionHeaders);
+    assert.equal(provisioned.status,201,JSON.stringify(provisioned.data));
+    assert.equal(provisioned.data.replayed,false);
+    // HTTP 201 must imply the tenant and first login are durably committed in SQL.
+    await connected(new pg.Client({connectionString:databaseUrl(targetName),ssl:false}),async(client)=>{
+      assert.equal((await client.query('SELECT tenant_id FROM metadrive_rel_tenants WHERE tenant_id=$1',[secondaryTenantId])).rowCount,1);
+      assert.equal((await client.query('SELECT user_id FROM metadrive_rel_users WHERE tenant_id=$1',[secondaryTenantId])).rowCount,1);
+      assert.ok((await client.query("SELECT setting_name FROM metadrive_rel_platform_settings WHERE setting_name='tenantRegistry'")).rowCount===1);
+    });
+    const provisionRetry=await request(port,'/auth/provision-tenant','POST',null,tenantRequest,provisionHeaders);
+    assert.equal(provisionRetry.status,200,JSON.stringify(provisionRetry.data));
+    assert.equal(provisionRetry.data.replayed,true);
+    const tenantLogin=await request(port,'/auth/login','POST',null,{email:secondaryEmail,password});
+    assert.equal(tenantLogin.status,200,JSON.stringify(tenantLogin.data));
+    assert.equal(tenantLogin.data.user.tenantId,secondaryTenantId);
+    const seededObjects=await request(port,'/metadata/objects','GET',tenantLogin.data.access_token);
+    assert.equal(seededObjects.status,200);
+    assert.ok(seededObjects.data.objects.some(object=>object.apiName==='Account'));
     const account=await request(port,'/records/Account','POST',token,{Name:'Relational Parent'});
     assert.equal(account.status,201,JSON.stringify(account.data));
     const parentId=account.data.record.Id;
+    const wrongTenantRead=await request(port,'/records/Account/'+parentId,'GET',tenantLogin.data.access_token);
+    assert.notEqual(wrongTenantRead.status,200,'New tenants must not read existing tenant data');
     const object=await request(port,'/metadata/objects','POST',token,{
       apiName:'Migration_Link__c',label:'Migration Link',pluralLabel:'Migration Links',
       kind:'Custom Object',description:'Metadata-driven relational persistence smoke',
@@ -159,6 +190,12 @@ test('relational-mode API persists tenant object definitions, linked records, Fl
     const restarted=await request(port,'/auth/login','POST',null,{email,password});
     assert.equal(restarted.status,200,JSON.stringify(restarted.data));
     const freshToken=restarted.data.access_token;
+    const tenantAfterRestart=await request(port,'/auth/login','POST',null,{email:secondaryEmail,password});
+    assert.equal(tenantAfterRestart.status,200,JSON.stringify(tenantAfterRestart.data));
+    assert.equal(tenantAfterRestart.data.user.tenantId,secondaryTenantId);
+    const replayAfterRestart=await request(port,'/auth/provision-tenant','POST',null,tenantRequest,provisionHeaders);
+    assert.equal(replayAfterRestart.status,200,JSON.stringify(replayAfterRestart.data));
+    assert.equal(replayAfterRestart.data.replayed,true);
     const objectAfter=await request(port,'/metadata/objects/Migration_Link__c','GET',freshToken);
     assert.equal(objectAfter.status,200,JSON.stringify(objectAfter.data));
     assert.ok(objectAfter.data.object.fields.some(f=>f.apiName==='Account__c'));

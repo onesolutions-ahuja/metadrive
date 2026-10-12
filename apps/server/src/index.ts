@@ -3290,6 +3290,9 @@ type RefreshSession = {
 };
 type TenantRegistryEntry = {
   name: string; description: string; status: 'ACTIVE' | 'SUSPENDED'; createdAt: string; updatedAt: string;
+  // The complete initial workspace and administrator commit together.
+  provisioning?: { status: 'READY'; version: number; completedAt: string };
+  provisioningRequestHash?: string;
 };
 type TenantManagementAuditEvent = {
   actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED';
@@ -3315,7 +3318,13 @@ const tenantRegistryEntrySchema = z.object({
   description: z.string().trim().max(1000).default(''),
   status: z.enum(['ACTIVE', 'SUSPENDED']),
   createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
+  provisioning: z.object({
+    status: z.literal('READY'),
+    version: z.number().int().min(1),
+    completedAt: z.string().datetime()
+  }).strict().optional(),
+  provisioningRequestHash: z.string().regex(/^[0-9a-f]{64}$/).optional()
 }).strict();
 const tenantManagementAuditSchema = z.object({
   actorId: z.string(), tenantId: z.string(),
@@ -4690,41 +4699,107 @@ function publicNamedCredential(credential: StoredNamedCredential) {
   };
 }
 
-async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string, actorId = 'bootstrap'): Promise<LocalUser> {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId)) throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
-  if (state.tenants[tenantId]) throw new Error('Tenant already exists');
-  const normalizedEmail = email.trim().toLowerCase();
-  const credentials = await hashPassword(password);
-  // Revalidate after the awaited password hash; simultaneous requests may race.
-  if (state.tenants[tenantId]) throw new Error('Tenant already exists');
-  if (state.users.some((user) => user.email.trim().toLowerCase() === normalizedEmail)) {
-    throw new Error('Email is already registered. Each email can belong to only one tenant.');
+// No schema/tenant is visible to a new tenant until its first durable commit.
+// Serialize provisioning within an instance; SQL modes also use optimistic
+// revisions to reject cross-instance stale writers rather than lose data.
+const provisioningPendingTenants = new Set<string>();
+let provisioningCommitFailed = false;
+let tenantProvisioningSerial: Promise<void> = Promise.resolve();
+class TenantProvisioningStoreError extends Error {
+  constructor() { super('Tenant provisioning could not be durably committed. Retry after database recovery.'); }
+}
+function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData): void {
+  if (!data.accessControl.users.some((user) => user.id === admin.id && user.profileId === 'system-administrator'))
+    throw new Error('Initial administrator permissions were not provisioned');
+  for (const apiName of ['Account', 'Contact', 'User']) {
+    if (!data.objects.some((item) => item.apiName === apiName))
+      throw new Error('Required tenant object was not provisioned');
   }
-  if (state.tenants[tenantId]) throw new Error('Tenant already exists');
-  const userId = randomUUID();
-  const admin: LocalUser = {
-    id: userId, tenantId, name: adminName, email: normalizedEmail,
-    passwordSalt: credentials.salt, passwordHash: credentials.hash,
-    role: 'System Administrator', permissionSetIds: ['system-administrator'],
-    permissionSetGroupIds: [],
-    disabled: false, createdAt: new Date().toISOString()
-  };
-  const registryEntry: TenantRegistryEntry = {
-    name: name.trim(), description: '', status: 'ACTIVE',
-    createdAt: admin.createdAt, updatedAt: admin.createdAt
-  };
-  const nextState: PlatformState = {
-    ...state,
-    tenants: { ...state.tenants, [tenantId]: defaultTenantData(admin) },
-    tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
-    tenantManagementAudit: [...state.tenantManagementAudit,
-      { actorId, tenantId, action: 'CREATED' as const, at: admin.createdAt, next: registryEntry }].slice(-5000),
-    users: [...state.users, admin]
-  };
-  persistState(nextState);
-  state = nextState;
-  console.info(`Created tenant "${name}" (${tenantId}) with initial administrator ${admin.email}`);
-  return admin;
+  if (!data.accessControl.permissionSets.some((set) => set.id === 'system-administrator'))
+    throw new Error('Initial system administrator permission set is missing');
+  if (admin.tenantId !== tenantId || data.accessControl.users.some((user) => user.id !== admin.id))
+    throw new Error('Initial tenant user isolation check failed');
+  // The existing tenant template intentionally seeds a disabled WhatsApp dummy
+  // credential, scoped to this tenant. Never inherit a live connection.
+  if (data.integrationConnections.length !== 0)
+    throw new Error('New tenants must not inherit another tenant integration connection');
+}
+async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string,
+  actorId = 'bootstrap', idempotencyKey?: string): Promise<{ user: LocalUser; created: boolean }> {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId))
+    throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedName = name.trim();
+  const normalizedAdminName = adminName.trim();
+  if (!normalizedName || !normalizedAdminName) throw new Error('Tenant and administrator names are required');
+  const requestHash = idempotencyKey ? hashToken(actorId + ':' + idempotencyKey) : undefined;
+  const previous = tenantProvisioningSerial;
+  let release: () => void = () => {};
+  tenantProvisioningSerial = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    if (provisioningCommitFailed)
+      throw new TenantProvisioningStoreError();
+    if (requestHash && Object.entries(state.tenantRegistry).some(([existingId, item]) =>
+      item.provisioningRequestHash === requestHash && existingId !== tenantId))
+      throw new Error('Idempotency key was already used for another tenant');
+    const existing = state.tenants[tenantId];
+    if (existing) {
+      const entry = state.tenantRegistry[tenantId];
+      const user = state.users.find((item) => item.tenantId === tenantId && item.email === normalizedEmail);
+      // A retry with the same actor/key must not change passwords or grant
+      // permissions; return the original result without creating another user.
+      if (requestHash && entry?.provisioningRequestHash === requestHash && user)
+        return { user, created: false };
+      throw new Error('Tenant already exists');
+    }
+    if (state.users.some((user) => user.email.trim().toLowerCase() === normalizedEmail))
+      throw new Error('Email is already registered. Each email can belong to only one tenant.');
+    const credentials = await hashPassword(password);
+    // No other provisioning writer can interleave while this hash is calculated.
+    const createdAt = new Date().toISOString();
+    const admin: LocalUser = {
+      id: randomUUID(), tenantId, name: normalizedAdminName, email: normalizedEmail,
+      passwordSalt: credentials.salt, passwordHash: credentials.hash,
+      role: 'System Administrator', permissionSetIds: ['system-administrator'],
+      permissionSetGroupIds: [], disabled: false, createdAt
+    };
+    const data = defaultTenantData(admin);
+    verifySeededTenant(tenantId, admin, data);
+    const registryEntry: TenantRegistryEntry = {
+      name: normalizedName, description: '', status: 'ACTIVE', createdAt, updatedAt: createdAt,
+      provisioning: { status: 'READY', version: 1, completedAt: createdAt },
+      ...(requestHash ? { provisioningRequestHash: requestHash } : {})
+    };
+    const nextState: PlatformState = {
+      ...state,
+      tenants: { ...state.tenants, [tenantId]: data },
+      tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
+      tenantManagementAudit: [...state.tenantManagementAudit,
+        { actorId, tenantId, action: 'CREATED' as const, at: createdAt, next: registryEntry }].slice(-5000),
+      users: [...state.users, admin]
+    };
+    provisioningPendingTenants.add(tenantId);
+    try {
+      // The persisted state contains registry, objects, permission sets and
+      // login identity in ONE complete database snapshot/SQL transaction.
+      persistState(nextState);
+      state = nextState;
+      const commit = latestStateCommit;
+      await commit;
+    } catch (error) {
+      // Never report success or allow the provisional administrator to log in.
+      // Reconcile uncertain writes through the durable SQL state on restart.
+      provisioningCommitFailed = true;
+      console.error('CRITICAL: tenant provisioning persistence failed', error);
+      throw new TenantProvisioningStoreError();
+    }
+    provisioningPendingTenants.delete(tenantId);
+    console.info('Tenant provisioning committed', { tenantId, actorId });
+    return { user: admin, created: true };
+  } finally {
+    release();
+  }
 }
 
 async function bootstrapTenant(): Promise<void> {
@@ -4795,7 +4870,8 @@ async function bootstrapTenant(): Promise<void> {
 if (!maintenanceMode) await bootstrapTenant();
 
 function tenantIsActive(tenantId: string): boolean {
-  return state.tenantRegistry[tenantId]?.status !== 'SUSPENDED';
+  return !provisioningPendingTenants.has(tenantId)
+    && state.tenantRegistry[tenantId]?.status !== 'SUSPENDED';
 }
 function withSecurityEvent(
   tenant: TenantData,
@@ -5274,11 +5350,17 @@ const loginSchema = z.object({
 });
 const provisioningSchema = z.object({
   tenantId: z.string().min(2).max(63),
-  tenantName: z.string().min(1).max(120),
-  adminName: z.string().min(1).max(120),
-  email: z.string().email().max(254),
+  tenantName: z.string().trim().min(1).max(120),
+  adminName: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(254),
   password: z.string().min(12).max(256)
 });
+function provisioningIdempotencyKey(req: Request): string | undefined {
+  const key = req.header('Idempotency-Key');
+  if (key !== undefined && !/^[a-zA-Z0-9_-]{16,128}$/.test(key))
+    throw new Error('Idempotency-Key must be 16–128 ASCII letters, numbers, dashes or underscores');
+  return key;
+}
 
 app.get('/health', async (_req, res) => {
   const database = await checkDatabaseConnection();
@@ -5305,10 +5387,16 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
   const parsed = provisioningSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant provisioning request', details: parsed.error.flatten() });
   try {
-    const user = await createTenant(parsed.data.tenantId, parsed.data.tenantName, parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key');
-    return res.status(201).json({ tenantId: user.tenantId, administrator: { id: user.id, email: user.email } });
+    const key = provisioningIdempotencyKey(req);
+    const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
+      parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key', key);
+    return res.status(created ? 201 : 200).json({
+      tenantId: user.tenantId, administrator: { id: user.id, email: user.email }, replayed: !created
+    });
   } catch (error) {
-    return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
+    return res.status(error instanceof TenantProvisioningStoreError ? 503
+      : error instanceof Error && error.message.startsWith('Idempotency-Key') ? 400 : 409)
+      .json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
   }
 });
 
@@ -5844,7 +5932,11 @@ function tenantSummary(tenantId: string) {
   const entry = tenantRegistryEntry(tenantId);
   const users = state.users.filter((user) => user.tenantId === tenantId);
   return {
-    tenantId, ...entry, userCount: users.length,
+    tenantId, name: entry.name, description: entry.description, status: entry.status,
+    createdAt: entry.createdAt, updatedAt: entry.updatedAt,
+    // Provisioning request fingerprints remain server-side, never exposed in API responses.
+    provisioning: entry.provisioning ?? { status: 'READY' as const, version: 0, completedAt: entry.createdAt },
+    userCount: users.length,
     activeUserCount: users.filter((user) => !user.disabled).length
   };
 }
@@ -5888,6 +5980,7 @@ app.get('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmi
   // Filter/sort cheap registry metadata first; count users only for one page.
   // This avoids scanning the entire identity store once per tenant.
   const matchedIds = Object.keys(state.tenants)
+    .filter((tenantId) => !provisioningPendingTenants.has(tenantId))
     .filter((tenantId) => {
       const metadata = state.tenantRegistry[tenantId];
       const name = metadata?.name ?? tenantId;
@@ -5905,21 +5998,46 @@ app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdm
   const parsed = tenantManagementCreateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant creation request', details: parsed.error.flatten() });
   try {
-    const user = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
-      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId);
-    return res.status(201).json({ tenant: tenantSummary(user.tenantId) });
+    const key = provisioningIdempotencyKey(req);
+    const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
+      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId, key);
+    return res.status(created ? 201 : 200).json({ tenant: tenantSummary(user.tenantId), replayed: !created });
   } catch (error) {
-    return res.status(409).json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
+    return res.status(error instanceof TenantProvisioningStoreError ? 503
+      : error instanceof Error && error.message.startsWith('Idempotency-Key') ? 400 : 409)
+      .json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
   }
 });
+app.get('/api/platform/tenants/:tenantId/provisioning', accessAuthentication, requirePlatformTenantAdmin,
+  (req: Request, res: Response) => {
+    const tenantId = routeParam(req, 'tenantId');
+    const tenant = Object.hasOwn(state.tenants, tenantId) ? state.tenants[tenantId] : undefined;
+    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
+    if (provisioningPendingTenants.has(tenantId))
+      return res.status(202).json({ tenantId, status: 'PROVISIONING' });
+    const registry = tenantRegistryEntry(tenantId);
+    return res.json({
+      tenantId,
+      status: registry.provisioning?.status ?? 'READY',
+      version: registry.provisioning?.version ?? 0,
+      completedAt: registry.provisioning?.completedAt ?? registry.createdAt,
+      initialized: {
+        objects: tenant.objects.length, profiles: tenant.accessControl.profiles.length,
+        permissionSets: tenant.accessControl.permissionSets.length,
+        initialAdministrator: tenant.accessControl.users.length > 0
+      }
+    });
+  });
 app.get('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const tenantId = routeParam(req, 'tenantId');
   if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
   return res.json({ tenant: tenantSummary(tenantId) });
 });
 app.patch('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const tenantId = routeParam(req, 'tenantId');
   if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
   const parsed = tenantManagementUpdateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant update', details: parsed.error.flatten() });
   const previous = tenantRegistryEntry(tenantId);
@@ -5933,6 +6051,7 @@ app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, req
   if (operation !== 'suspend' && operation !== 'reactivate')
     return res.status(404).json({ error: 'Unknown tenant operation' });
   if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
+  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
   const previous = tenantRegistryEntry(tenantId);
   const desired = operation === 'suspend' ? 'SUSPENDED' : 'ACTIVE';
   if (previous.status === desired) return res.status(409).json({ error: 'Tenant is already ' + desired.toLowerCase() });
