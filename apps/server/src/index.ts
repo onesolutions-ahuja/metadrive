@@ -9633,6 +9633,10 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
       || !object.fields.some((field) => field.apiName === relatedField && field.relationship))) {
     return res.status(400).json({ error: 'Invalid related-list filter' });
   }
+  // Related-list predicates must not expose fields hidden by FLS.
+  if (typeof relatedField === 'string' &&
+      !hasFieldPermission(principal, tenant, objectName, relatedField, 'read'))
+    return res.status(403).json({ error: 'Missing field read permission for related-list filter' });
   const filterField = req.query.filterField;
   const filterValue = req.query.filterValue;
   if ((filterField !== undefined || filterValue !== undefined) &&
@@ -9721,6 +9725,10 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
   const appId = typeof requestedAppId === 'string' && requestedAppId ? requestedAppId : 'Records';
   if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(appId)) return res.status(400).json({ error: 'Invalid app API name' });
   if (!tenant.apps.some((app) => app.apiName === appId)) return res.status(400).json({ error: `Unknown Lightning app "${appId}"` });
+  // Object access does not confer visibility of an explicitly selected app's page.
+  if (typeof requestedAppId === 'string' && requestedAppId &&
+      !canOpenApp(principal, tenant, appId))
+    return res.status(404).json({ error: 'Lightning app was not found' });
   const requestedFormFactor = req.query.formFactor;
   if (requestedFormFactor !== undefined && requestedFormFactor !== 'Desktop' && requestedFormFactor !== 'Phone') {
     return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
