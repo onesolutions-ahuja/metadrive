@@ -1,3 +1,4 @@
+// Post-deployment verification for MetaDrive UI audit PR #123.
 import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 const base='https://onesolutions-ahuja.github.io/metadrive/';
