@@ -9004,6 +9004,8 @@ function PageBuilder({
                     : libraryPreview
                       ? <div className="component-demo-fallback"><strong>{component.label}</strong><span>{selectedComponentDescription || 'Preview of a reusable page component.'}</span><div><i /><i /><i /></div></div>
                       : <div className="component-demo-fallback"><strong>{component.label}</strong><span>This component is no longer registered. Re-register it to restore its live preview.</span><div><i /><i /><i /></div></div>}
+      {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
+        && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
       {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode
         && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
           title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
