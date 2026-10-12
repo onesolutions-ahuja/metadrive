@@ -7931,9 +7931,12 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-function MetadataComponentProperties({ properties, objects, flows, onChange, kioskMode = false }: {
+function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, kioskMode = false }: {
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  currentAppId: string;
   flows: Array<{ apiName: string; label: string }>;
   onChange: (next: ComponentPropertyRecord) => void;
   kioskMode?: boolean;
@@ -8065,6 +8068,11 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
       const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
       const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
       const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
+      const navigationTargetType = binding.navigationTargetType === 'App Home' || binding.navigationTargetType === 'App Page'
+        ? binding.navigationTargetType : 'Record List';
+      const navigationAppId = String(binding.navigationAppId || (navigationTargetType === 'Record List' ? 'Records' : currentAppId));
+      const navigationApp = apps.find((app) => app.apiName === navigationAppId);
+      const navigationPages = navigationApp ? pages.filter((page) => pageIsAvailableInApp(page, navigationApp)) : [];
       return <div className="home-page-assignment" key={eventName}>
         <strong>{eventName}</strong>
         <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
@@ -8090,12 +8098,39 @@ function MetadataComponentProperties({ properties, objects, flows, onChange, kio
             if(!nextName || !/^[A-Za-z][A-Za-z0-9_]*$/.test(nextName)||nextName in map)return;
             setBinding({...binding,inputs:{...map,[nextName]:''}});
           }}>Add Flow input</button>
-        </> : <label className="form-label">Destination object<select className="form-control"
-          value={String(binding.navigationObjectApiName ?? objectApiName)}
-          onChange={(e)=>setBinding({...binding,navigationObjectApiName:e.target.value})}>
-          <option value="">Choose object…</option>
-          {objects.map((object)=><option key={object.apiName} value={object.apiName}>{object.label}</option>)}
-        </select></label>}
+        </> : <div className="metadata-navigation-target" aria-label="Navigation destination">
+          <label className="form-label">Destination type
+            <select className="form-control" value={navigationTargetType}
+              onChange={(e) => setBinding({ ...binding, navigationTargetType: e.target.value, navigationPageApiName: '' })}>
+              <option value="Record List">Record list</option>
+              <option value="App Home">App home</option>
+              <option value="App Page">App page</option>
+            </select>
+          </label>
+          {navigationTargetType !== 'Record List' && <label className="form-label">Application
+            <select className="form-control" value={navigationAppId}
+              onChange={(e) => setBinding({ ...binding, navigationAppId: e.target.value, navigationPageApiName: '' })}>
+              <option value="">Select application…</option>
+              {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
+            </select>
+          </label>}
+          {navigationTargetType === 'Record List' && <label className="form-label">Destination object
+            <select className="form-control" value={String(binding.navigationObjectApiName ?? objectApiName)}
+              onChange={(e) => setBinding({ ...binding, navigationObjectApiName: e.target.value })}>
+              <option value="">Choose object…</option>
+              {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
+            </select>
+          </label>}
+          {navigationTargetType === 'App Page' && <label className="form-label">App page
+            <select className="form-control" value={String(binding.navigationPageApiName ?? '')}
+              onChange={(e) => setBinding({ ...binding, navigationPageApiName: e.target.value })}>
+              <option value="">Select active app page…</option>
+              {navigationPages.map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}
+            </select>
+          </label>}
+          {navigationTargetType === 'App Page' && !navigationPages.length
+            && <p className="properties-help">Activate an App Page and add it to the application in App Settings first.</p>}
+        </div>}
       </div>;
     })}
     <button type="button" className="btn btn-small" onClick={() => {
@@ -9398,6 +9433,9 @@ function PageBuilder({
                 kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
                 properties={selected.properties}
                 objects={objects}
+                apps={apps}
+                pages={pages}
+                currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
                 flows={flows}
                 onChange={(properties) => updateComponent(selected.id, { properties })}
               />
