@@ -61,14 +61,15 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     }
     throw new Error('Server did not start: ' + logs);
   };
-  const api = async (route: string, token = '', method = 'GET', body?: unknown, bootstrap = false, cookie = '', idemKey = '') => {
+  const api = async (route: string, token = '', method = 'GET', body?: unknown, bootstrap = false, cookie = '', idemKey = '', host = '') => {
     const response = await fetch(base + route, {
       method, headers: {
         ...(token ? { Authorization: 'Bearer ' + token } : {}),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(bootstrap ? { 'x-platform-bootstrap-key': bootstrapKey } : {}),
         ...(cookie ? { Cookie: cookie } : {}),
-        ...(idemKey ? { 'Idempotency-Key': idemKey } : {})
+        ...(idemKey ? { 'Idempotency-Key': idemKey } : {}),
+        ...(host ? { Host: host } : {})
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) })
     });
@@ -151,6 +152,12 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal(claimedDomain.data.domain.verification.host, '_metadrive-verification.crm.studio-beta.test');
     assert.match(claimedDomain.data.domain.verification.value, /^metadrive-verification=[0-9a-f]{64}$/);
     assert.equal((await api('/tenant/domains', tenantToken)).data.domains.length, 1);
+    assert.equal((await api('/auth/login', '', 'POST',
+      { email: body.email, password: tenantPassword }, false, '', '', 'crm.studio-beta.test')).status, 401,
+      'Pending domains must never allow authentication');
+    assert.equal((await api('/auth/me', tenantToken, 'GET',
+      undefined, false, '', '', 'crm.studio-beta.test')).status, 401,
+      'Pending domain host must reject an existing bearer token');
     assert.equal((await api('/tenant/domains', tenantToken, 'POST', { hostname: 'crm.studio-beta.test' })).status, 409);
     assert.equal((await api('/platform/tenants/platform-owner/domains', operatorToken,
       'POST', { hostname: 'crm.studio-beta.test' })).status, 409, 'Another tenant cannot claim a pending domain');
