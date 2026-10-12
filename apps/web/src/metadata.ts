@@ -359,6 +359,7 @@ export type PageComponentMetadata = {
   properties: Record<string, unknown>;
   visible: boolean;
   region?: 'header' | 'main' | 'sidebar';
+  parentId?: string;
   position?: { x: number; y: number; width: number; height: number };
 };
 
