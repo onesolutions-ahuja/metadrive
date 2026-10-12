@@ -97,3 +97,23 @@ test('platform policy grants and audit survive relational projection without ten
   assert.throws(()=>restoreState({...rows,platformSettings:[{key:'notAllowed',payload:{}}]}),
     /unknown or duplicate platform setting/);
 });
+
+test('tenant directory entries and management audits round-trip independently of tenant data',()=>{
+  const state=sample();
+  const timestamp='2026-10-12T12:00:00.000Z';
+  state.tenantRegistry={
+    first:{name:'First Studio',description:'A customer',status:'SUSPENDED',createdAt:timestamp,updatedAt:timestamp},
+    second:{name:'Second Studio',description:'',status:'ACTIVE',createdAt:timestamp,updatedAt:timestamp}
+  };
+  state.tenantManagementAudit=[{
+    actorId:'user1',tenantId:'first',action:'SUSPENDED',at:timestamp,
+    previous:{...state.tenantRegistry.first,status:'ACTIVE'},
+    next:state.tenantRegistry.first
+  }];
+  const rows=projectState(state);
+  assert.equal(rows.platformSettings.length,4);
+  assert.deepStrictEqual(restoreState(rows),state);
+  assert.equal(verifyProjection(state,rows).counts.platformSettings,4);
+  assert.throws(()=>restoreState({...rows,platformSettings:[
+    ...rows.platformSettings,{key:'tenantRegistry',payload:{}}]}),/unknown or duplicate platform setting/);
+});
