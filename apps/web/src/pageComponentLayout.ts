@@ -66,3 +66,14 @@ export function canNestComponent(components: PageComponentMetadata[], childId: s
 export function directChildren(components: PageComponentMetadata[], parentId?: string): PageComponentMetadata[] {
   return components.filter((component) => (component.parentId || undefined) === parentId);
 }
+
+export function isDescendantOf(components: PageComponentMetadata[], childId: string, ancestorId: string): boolean {
+  const visited = new Set<string>();
+  let cursor = components.find((item) => item.id === childId);
+  while (cursor?.parentId && !visited.has(cursor.id)) {
+    if (cursor.parentId === ancestorId) return true;
+    visited.add(cursor.id);
+    cursor = components.find((item) => item.id === cursor?.parentId);
+  }
+  return false;
+}
