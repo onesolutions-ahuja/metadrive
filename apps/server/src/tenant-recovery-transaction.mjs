@@ -53,7 +53,9 @@ export async function approveRecoveryCase(pool, { caseId, operator, now = new Da
     return { caseId };
   });
 }
-export async function issueRecoveryInvitation(pool, { caseId, operator, now = new Date() }) {
+export async function issueRecoveryInvitation(pool, { caseId, operator, deliverToVerifiedContact, now = new Date() }) {
+  // Never return bearer invitations to a support or platform operator.
+  if (typeof deliverToVerifiedContact !== 'function') throw new Error('Verified private delivery required');
   requirePrincipal(operator, 'recovery_operator');
   return transaction(pool, async db => {
     const c = await loadCase(db, caseId);
@@ -63,8 +65,13 @@ export async function issueRecoveryInvitation(pool, { caseId, operator, now = ne
     await db.query('INSERT INTO tenant_recovery_invitations(id,case_id,tenant_id,claimant_user_id,token_sha256,scope,issued_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
       [randomUUID(), caseId, c.tenantId, c.claimantUserId, digestRecoveryToken(token), RECOVERY_GRANT, now, expiry]);
     await audit(db, caseId, operator.id, 'invitation_issued');
-    // Deliver only to an independently verified contact; never to a platform operator.
-    return { token, expiresAt: expiry.toISOString(), tenantId: c.tenantId, userId: c.claimantUserId };
+    // Delivery failures roll back token issuance. Delivery may precede commit,
+    // but an undurable invitation is invalid and cannot be redeemed.
+    await deliverToVerifiedContact(Object.freeze({
+      token, caseId, tenantId: c.tenantId, claimantUserId: c.claimantUserId,
+      expiresAt: expiry.toISOString()
+    }));
+    return { caseId, expiresAt: expiry.toISOString(), delivered: true };
   });
 }
 export async function redeemRecoveryInvitation(pool, { caseId, tenantId, claimant, token, now = new Date() }) {
