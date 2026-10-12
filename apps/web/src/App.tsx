@@ -1013,11 +1013,24 @@ function App() {
 const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`;
 
 function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (timing: EntryTiming) => void; onRetry?: () => void }) {
-  const [email, setEmail] = useState('');
+  const recoveryQuery = new URLSearchParams(window.location.search);
+  const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
+  const [resetToken, setResetToken] = useState(recoveryQuery.get('resetToken') ?? '');
+  const [newPassword, setNewPassword] = useState('');
+  const [repeatPassword, setRepeatPassword] = useState('');
+  const [resetFinished, setResetFinished] = useState(false);
+  useEffect(() => {
+    if (!resetToken) return;
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('resetEmail');
+    clean.searchParams.delete('resetToken');
+    window.history.replaceState(window.history.state, '', clean.pathname + clean.search + clean.hash);
+  }, []);
+
   const [mfaChallenge, setMfaChallenge] = useState<{ challenge_token: string; enrollment_required: boolean; setup_secret?: string } | null>(null);
   const [mfaCode, setMfaCode] = useState('');
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [showPasswordReset, setShowPasswordReset] = useState(Boolean(resetToken));
   const [message, setMessage] = useState(error ?? '');
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -1081,17 +1094,57 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
       }}>Back to sign in</button>
     </form>
   </main>;
+  const requestReset = async () => {
+    setSubmitting(true); setMessage('');
+    try {
+      const response = await apiRequest<{ message: string }>('/auth/password-reset/request', {
+        method: 'POST', body: JSON.stringify({ email })
+      });
+      setMessage(response.message);
+    } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to request reset'); }
+    finally { setSubmitting(false); }
+  };
+  const confirmReset = async () => {
+    if (newPassword !== repeatPassword) { setMessage('Passwords do not match.'); return; }
+    setSubmitting(true); setMessage('');
+    try {
+      await apiRequest('/auth/password-reset/confirm', {
+        method: 'POST', body: JSON.stringify({ email, token: resetToken, newPassword })
+      });
+      setResetFinished(true); setResetToken(''); setNewPassword(''); setRepeatPassword('');
+      setMessage('Password changed. Sign in with your new password. Your MFA requirements remain unchanged.');
+    } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to reset password'); }
+    finally { setSubmitting(false); }
+  };
   if (showPasswordReset) return <main className="auth-screen">
     <section className="auth-card" aria-labelledby="password-reset-heading">
       <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
-      <div className="eyebrow">UNEENGINE WORKSPACE</div>
-      <h1 id="password-reset-heading">Reset your password</h1>
-      <p>Enter your account email to request a password reset.</p>
-      <label className="form-label" htmlFor="reset-email">Email</label>
-      <input className="form-control" id="reset-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-      <div className="auth-notice" role="status">Password reset isn’t available yet. Contact your workspace administrator for help.</div>
-      <button className="btn btn-brand auth-submit" type="button" disabled title="Password reset is not configured yet">Send reset link</button>
-      <button className="text-action auth-back" type="button" onClick={() => setShowPasswordReset(false)}>Back to sign in</button>
+      <div className="eyebrow">ACCOUNT RECOVERY</div>
+      <h1 id="password-reset-heading">{resetToken ? 'Choose a new password' : 'Reset your password'}</h1>
+      {message && <div className="auth-notice" role="status">{message}</div>}
+      {!resetFinished && <>
+        <label className="form-label" htmlFor="reset-email">Account email</label>
+        <input className="form-control" id="reset-email" type="email" value={email}
+          onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+        {resetToken ? <>
+          <label className="form-label" htmlFor="reset-password">New password (minimum 12 characters)</label>
+          <input className="form-control" id="reset-password" type="password" minLength={12}
+            autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+          <label className="form-label" htmlFor="reset-confirm">Confirm password</label>
+          <input className="form-control" id="reset-confirm" type="password" minLength={12}
+            autoComplete="new-password" value={repeatPassword} onChange={(event) => setRepeatPassword(event.target.value)} />
+          <button className="btn btn-brand auth-submit" type="button"
+            disabled={submitting || !email || newPassword.length < 12 || !repeatPassword}
+            onClick={() => void confirmReset()}>{submitting ? 'Saving…' : 'Reset password'}</button>
+        </> : <>
+          <p>We'll send a single-use link if email recovery is configured for your tenant. The link expires in 15 minutes.</p>
+          <button className="btn btn-brand auth-submit" type="button" disabled={submitting || !email}
+            onClick={() => void requestReset()}>{submitting ? 'Sending…' : 'Send reset link'}</button>
+        </>}
+      </>}
+      <button className="text-action auth-back" type="button" onClick={() => {
+        setMessage(''); setShowPasswordReset(false); setResetToken(''); setResetFinished(false);
+      }}>Back to sign in</button>
     </section>
   </main>;
   return <main className="auth-screen">
