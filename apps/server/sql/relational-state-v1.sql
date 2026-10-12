@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS metadrive_rel_refresh_sessions (
 -- all existing rows before enabling the constraint. Never delete invalid rows.
 CREATE UNIQUE INDEX IF NOT EXISTS metadrive_rel_users_tenant_user_uidx
   ON metadrive_rel_users(tenant_id,user_id);
-DO $
+DO $md_03_4$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint
     WHERE conrelid='metadrive_rel_refresh_sessions'::regclass
@@ -96,7 +96,7 @@ BEGIN
       FOREIGN KEY (tenant_id,user_id) REFERENCES metadrive_rel_users(tenant_id,user_id)
       DEFERRABLE INITIALLY DEFERRED;
   END IF;
-END $;
+END $md_03_4$;
 CREATE INDEX IF NOT EXISTS metadrive_rel_sessions_by_user ON metadrive_rel_refresh_sessions(user_id);
 CREATE TABLE IF NOT EXISTS metadrive_rel_revoked_tokens (
   token_hash TEXT PRIMARY KEY,
