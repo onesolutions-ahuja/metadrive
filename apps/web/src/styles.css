@@ -2103,3 +2103,52 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   outline: 2px solid #126c8d;
   outline-offset: -2px;
 }
+
+/* The Builder title actions must wrap rather than cover page selection or badges. */
+.builder-titlebar {
+  height: auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.builder-page-select {
+  min-width: 0;
+  flex: 1 1 420px;
+}
+.builder-title-controls {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.builder-titlebar > .toolbar-actions {
+  min-width: 0;
+  flex: 1 1 480px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  overflow: visible;
+}
+.builder-titlebar > .toolbar-actions > * {
+  flex: 0 0 auto;
+}
+.builder-meta-bar {
+  height: auto;
+  min-height: 46px;
+  padding-block: 7px;
+  flex-wrap: wrap;
+}
+.builder-meta-bar > .text-action {
+  margin-left: auto;
+}
+/* Contrast failures observed on warm backgrounds in the 114-screen audit. */
+:root { --muted: #535e5b; }
+.component-group-label,
+.properties-section-title { color: #504e48; }
+.welcome-quick button,
+.shortcut-title { color: #075c9a; }
+@media (max-width: 600px) {
+  .builder-titlebar { align-items: stretch; }
+  .builder-page-select,
+  .builder-titlebar > .toolbar-actions { flex-basis: 100%; justify-content: flex-start; }
+  .builder-title-controls select { max-width: 100%; }
+  .builder-meta-bar { gap: 8px; }
+}
