@@ -781,6 +781,8 @@ export type PermissionSetMetadata = {
   systemPermissions: string[];
   objectPermissions: Record<string, { read: boolean; create: boolean; edit: boolean; delete: boolean; viewAll: boolean; modifyAll: boolean }>;
   recordTypePermissions: Record<string, boolean>;
+  appPermissions?: Record<string, boolean>;
+  tabPermissions?: Record<string, boolean>;
   fieldPermissions: Record<string, { read: boolean; edit: boolean }>;
 };
 
@@ -795,6 +797,8 @@ export type PermissionSetGroupMetadata = {
   mutedSystemPermissions: string[];
   mutedObjectPermissions: Record<string, { read: boolean; create: boolean; edit: boolean; delete: boolean; viewAll: boolean; modifyAll: boolean }>;
   mutedRecordTypePermissions: Record<string, boolean>;
+  mutedAppPermissions?: Record<string, boolean>;
+  mutedTabPermissions?: Record<string, boolean>;
   mutedFieldPermissions: Record<string, { read: boolean; edit: boolean }>;
 };
 
@@ -808,6 +812,8 @@ export type ProfileMetadata = {
   systemPermissions: string[];
   objectPermissions: Record<string, { read: boolean; create: boolean; edit: boolean; delete: boolean; viewAll: boolean; modifyAll: boolean }>;
   recordTypePermissions: Record<string, boolean>;
+  appPermissions?: Record<string, boolean>;
+  tabPermissions?: Record<string, boolean>;
   fieldPermissions: Record<string, { read: boolean; edit: boolean }>;
 };
 
