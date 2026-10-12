@@ -11,6 +11,7 @@ export type TenantSummary = {
   updatedAt: string;
   userCount: number;
   activeUserCount: number;
+  provisioning: { status: 'READY'; version: number; completedAt: string };
 };
 
 type TenantCreate = {
@@ -33,6 +34,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
   const [selected, setSelected] = useState<TenantSummary | null>(null);
   const [editing, setEditing] = useState({ name: '', description: '' });
   const [create, setCreate] = useState<TenantCreate>(emptyCreate);
+  const [createKey, setCreateKey] = useState(() => crypto.randomUUID());
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -79,13 +81,13 @@ export default function TenantManagement({ request, permitted }: { request: Requ
     if (!permitted || busy) return;
     setBusy(true); setError(''); setNotice('');
     try {
-      const result = await request<{ tenant: TenantSummary }>('/platform/tenants', {
-        method: 'POST', body: JSON.stringify(create)
+      const result = await request<{ tenant: TenantSummary; replayed: boolean }>('/platform/tenants', {
+        method: 'POST', headers: { 'Idempotency-Key': createKey }, body: JSON.stringify(create)
       });
-      setShowCreate(false); setCreate(emptyCreate);
+      setShowCreate(false); setCreate(emptyCreate); setCreateKey(crypto.randomUUID());
       setSelected(result.tenant);
       setEditing({ name: result.tenant.name, description: result.tenant.description });
-      setNotice('Tenant created successfully.');
+      setNotice(result.replayed ? 'Existing provisioning request confirmed; no duplicate tenant or account was created.' : 'Tenant provisioned and saved successfully.');
       setPage(1); setRevision((n) => n + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to create tenant');
@@ -138,7 +140,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
         <h1>Tenant Management</h1><p>Create, search and manage tenant organisations.</p></div>
       <div className="tenant-header-actions">
         <button type="button" className="tenant-button" onClick={() => setRevision((n) => n + 1)} disabled={loading || busy}><RefreshCw size={16} /> Refresh</button>
-        <button type="button" className="tenant-button tenant-button-primary" onClick={() => { setCreate(emptyCreate); setShowCreate(true); setSelected(null); setError(''); }}><Plus size={16} /> New tenant</button>
+        <button type="button" className="tenant-button tenant-button-primary" onClick={() => { setCreate(emptyCreate); setCreateKey(crypto.randomUUID()); setShowCreate(true); setSelected(null); setError(''); }}><Plus size={16} /> New tenant</button>
       </div>
     </header>
     {error && <div className="tenant-alert tenant-alert-error" role="alert"><CircleAlert size={17} /> {error}</div>}
@@ -164,16 +166,17 @@ export default function TenantManagement({ request, permitted }: { request: Requ
       </section>
       <section className="tenant-panel tenant-detail" aria-label={showCreate ? 'Create tenant' : 'Tenant details'}>
         {showCreate ? <form onSubmit={(event) => void createTenant(event)}>
-          <div className="tenant-detail-heading"><h2>New tenant</h2><button type="button" className="tenant-button" onClick={() => { setShowCreate(false); setCreate(emptyCreate); }}>Cancel</button></div>
-          <label>Tenant ID<input required minLength={2} maxLength={63} pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,62}" autoComplete="off" value={create.tenantId} onChange={(event) => setCreate((old) => ({ ...old, tenantId: event.target.value }))} /></label>
-          <label>Organisation name<input required maxLength={120} value={create.tenantName} onChange={(event) => setCreate((old) => ({ ...old, tenantName: event.target.value }))} /></label>
-          <label>Initial administrator name<input required maxLength={120} value={create.adminName} onChange={(event) => setCreate((old) => ({ ...old, adminName: event.target.value }))} /></label>
-          <label>Initial administrator email<input type="email" required maxLength={254} autoComplete="off" value={create.email} onChange={(event) => setCreate((old) => ({ ...old, email: event.target.value }))} /></label>
-          <label>Initial administrator password<input type="password" required minLength={12} maxLength={256} autoComplete="new-password" value={create.password} onChange={(event) => setCreate((old) => ({ ...old, password: event.target.value }))} /></label>
-          <p className="tenant-help">A tenant administrator is provisioned using the existing secure authentication service. Never reuse a platform administrator password.</p>
+          <div className="tenant-detail-heading"><h2>New tenant</h2><button type="button" className="tenant-button" onClick={() => { setShowCreate(false); setCreate(emptyCreate); setCreateKey(crypto.randomUUID()); }}>Cancel</button></div>
+          <label>Tenant ID<input required minLength={2} maxLength={63} pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,62}" autoComplete="off" value={create.tenantId} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, tenantId: event.target.value })); }} /></label>
+          <label>Organisation name<input required maxLength={120} value={create.tenantName} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, tenantName: event.target.value })); }} /></label>
+          <label>Initial administrator name<input required maxLength={120} value={create.adminName} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, adminName: event.target.value })); }} /></label>
+          <label>Initial administrator email<input type="email" required maxLength={254} autoComplete="off" value={create.email} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, email: event.target.value })); }} /></label>
+          <label>Initial administrator password<input type="password" required minLength={12} maxLength={256} autoComplete="new-password" value={create.password} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, password: event.target.value })); }} /></label>
+          <p className="tenant-help">Creates tenant records, default objects, profiles and permissions, and an initial administrator in one durable Aiven commit. Safe submission retries will not create duplicate accounts. Never reuse a platform administrator password.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
         </form> : selected ? <form onSubmit={(event) => void saveTenant(event)}>
           <div className="tenant-detail-heading"><div><h2>{selected.name}</h2><code>{selected.tenantId}</code></div><button type="button" className="tenant-button" onClick={() => setSelected(null)}>Close</button></div>
+          <p className="tenant-provisioning-status"><span className="tenant-pill tenant-pill-active">Provisioning ready</span> <small>Version {selected.provisioning.version} · {shortDate(selected.provisioning.completedAt)}</small></p>
           <p><span className={selected.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{selected.status === 'ACTIVE' ? 'Active' : 'Suspended'}</span></p>
           <label>Organisation name<input required maxLength={120} value={editing.name} onChange={(event) => setEditing((old) => ({ ...old, name: event.target.value }))} /></label>
           <label>Description<textarea rows={4} maxLength={1000} value={editing.description} onChange={(event) => setEditing((old) => ({ ...old, description: event.target.value }))} /></label>
