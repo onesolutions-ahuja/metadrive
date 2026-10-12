@@ -15,15 +15,16 @@ const node = (id: string, type: string, properties: Record<string, unknown> = {}
   position: { x: 20, y: 40, width: 320, height: 180 }
 });
 const original: PageComponentMetadata[] = [
-  node('container', 'Custom:KioskContainer'),
-  node('row', 'Custom:KioskRow'),
-  node('card', 'Custom:KioskCard'),
+  node('container', 'Custom:KioskContainer', { layoutContainer: true }),
+  node('row', 'Custom:KioskRow', { layoutContainer: true }),
+  node('card', 'Custom:KioskCard', { layoutContainer: true }),
   node('text', 'Custom:KioskText')
 ];
 
 test('all five supported layout components can contain child components', () => {
   for (const name of ['KioskContainer', 'KioskRow', 'KioskColumn', 'KioskGrid', 'KioskCard'])
-    assert.equal(isLayoutContainer(node(name, 'Custom:' + name)), true);
+    assert.equal(isLayoutContainer(node(name, 'Custom:' + name, { layoutContainer: true })), true);
+  assert.equal(isLayoutContainer(node('text', 'Custom:KioskText')), false);
   assert.equal(isLayoutContainer(node('text', 'Custom:KioskText', { layoutContainer: false })), false);
   assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: true })), true);
   assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: false })), false);
@@ -49,7 +50,7 @@ test('drag and drop nesting persists across JSON save/reopen without mutating or
 test('deleted/unregistered parent and malicious circular metadata recover safely as root nodes', () => {
   const lost = [node('a','Custom:KioskText',{layoutParentId:'missing'})];
   assert.deepEqual(childrenOf(lost,null).map(x=>x.id), ['a']);
-  const cycle = [node('a','Custom:KioskRow',{layoutParentId:'b'}),node('b','Custom:KioskGrid',{layoutParentId:'a'})];
+  const cycle = [node('a','Custom:KioskRow',{layoutParentId:'b',layoutContainer:true}),node('b','Custom:KioskGrid',{layoutParentId:'a',layoutContainer:true})];
   assert.deepEqual(childrenOf(cycle,null).map(x=>x.id), ['a','b']);
   assert.deepEqual(childrenOf(cycle,'a'),[]);
 });
