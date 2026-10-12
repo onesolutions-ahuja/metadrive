@@ -2843,7 +2843,7 @@ type SecurityAuditEvent = {
   id: string; at: string; actorUserId: string; action: string;
   targetUserId?: string; details?: Record<string, string>;
 };
-type TenantData = { metadataHistory?: ObjectMetadataChange[]; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -3276,6 +3276,8 @@ type LocalUser = {
   mfaLastUsedStep?: number;
   mfaVersion?: number;
   authVersion?: number;
+  passwordReset?: { tokenHash: string; expiresAt: number };
+  lockedUntil?: number;
 };
 type RefreshSession = {
   tokenHash: string;
@@ -3353,6 +3355,8 @@ const stateSchema = z.object({
   })).default([]),
   libraryComponents: z.array(libraryComponentSchema).default([]),
   tenants: z.record(z.object({
+    passwordRecovery: z.object({ smtpCredentialId: z.string().default(''), fromEmail: z.string().default('') })
+      .default({ smtpCredentialId: '', fromEmail: '' }),
     securityAudit: z.array(z.object({
       id: z.string(), at: z.string().datetime(), actorUserId: z.string(), action: z.string(),
       targetUserId: z.string().optional(), details: z.record(z.string()).optional()
@@ -3405,7 +3409,12 @@ const stateSchema = z.object({
     mfaSecret: z.object({ keyId: z.string(), iv: z.string(), authTag: z.string(), ciphertext: z.string() }).optional(),
     mfaLastUsedStep: z.number().int().nonnegative().optional(),
     mfaVersion: z.number().int().nonnegative().optional(),
-    authVersion: z.number().int().nonnegative().optional()
+    authVersion: z.number().int().nonnegative().optional(),
+    passwordReset: z.object({
+      tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
+      expiresAt: z.number().int().nonnegative()
+    }).optional(),
+    lockedUntil: z.number().int().nonnegative().optional()
   })),
   refreshSessions: z.array(z.object({
     tokenHash: z.string(), familyId: z.string(), userId: z.string(), tenantId: z.string(),
@@ -4001,7 +4010,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     ]
   });
   return {
-    mfaPolicy: { mode: 'Off' }, securityAudit: [],
+    mfaPolicy: { mode: 'Off' }, passwordRecovery: { smtpCredentialId: '', fromEmail: '' }, securityAudit: [],
     objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
@@ -5169,6 +5178,10 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
+    if (user.lockedUntil && user.lockedUntil > Date.now()) {
+      res.status(401).json({ error: 'Account temporarily locked' });
+      return;
+    }
     if ((claims.auth_version ?? 0) !== (user.authVersion ?? 0)) {
       res.status(401).json({ error: 'Authentication state has changed; sign in again' });
       return;
@@ -5344,6 +5357,31 @@ function revokeUserRefreshSessions(userId: string, tenantId: string): RefreshSes
 }
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const userLoginFailures = new Map<string, { count: number; until: number }>();
+function recordUserLoginFailure(user: LocalUser): void {
+  const now = Date.now();
+  const previous = userLoginFailures.get(user.id);
+  const count = previous && previous.until > now ? previous.count + 1 : 1;
+  userLoginFailures.set(user.id, { count, until: now + 15 * 60_000 });
+  if (userLoginFailures.size > 4096) {
+    for (const [id, item] of userLoginFailures) if (item.until <= now) userLoginFailures.delete(id);
+  }
+  if (count < 8 || (user.lockedUntil ?? 0) > now) return;
+  const tenant = tenantData(user.tenantId);
+  if (!tenant) return;
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+      ? { ...item, lockedUntil: now + 15 * 60_000, authVersion: (item.authVersion ?? 0) + 1 }
+      : item),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
+    tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
+      tenant, user.id, 'auth.account.auto-locked') }
+  };
+  persistState(nextState);
+  state = nextState;
+}
+
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(256)
@@ -5400,6 +5438,153 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
   }
 });
 
+
+const passwordRecoverySettingsSchema = z.object({
+  smtpCredentialId: z.union([z.literal(''), z.string().uuid()]),
+  fromEmail: z.union([z.literal(''), z.string().email()])
+}).strict();
+const passwordResetRequestSchema = z.object({ email: z.string().trim().email().max(254) }).strict();
+const passwordResetConfirmSchema = z.object({
+  email: z.string().trim().email().max(254),
+  token: z.string().regex(/^[A-Za-z0-9_-]{64}$/),
+  newPassword: z.string().min(12).max(256)
+}).strict();
+const passwordResetRate = new Map<string, { count: number; until: number }>();
+function resetAllowed(key: string, max = 3): boolean {
+  const now = Date.now();
+  if (passwordResetRate.size > 4096) {
+    for (const [id, value] of passwordResetRate) if (value.until < now) passwordResetRate.delete(id);
+    if (passwordResetRate.size > 4096) passwordResetRate.delete(passwordResetRate.keys().next().value!);
+  }
+  const previous = passwordResetRate.get(key);
+  if (previous && previous.until > now && previous.count >= max) return false;
+  passwordResetRate.set(key, {
+    count: previous && previous.until > now ? previous.count + 1 : 1,
+    until: now + 15 * 60_000
+  });
+  return true;
+}
+function configuredRecoveryUrl(): URL | null {
+  const raw = process.env.METADRIVE_PASSWORD_RESET_BASE_URL;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    const isLocalTest = process.env.NODE_ENV !== 'production'
+      && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+    if ((url.protocol !== 'https:' && !isLocalTest) || url.username || url.password
+      || url.search || url.hash || url.pathname !== '/' || !webOrigins.has(url.origin)) return null;
+    return url;
+  } catch { return null; }
+}
+app.get('/api/auth/password-recovery/settings', accessAuthentication,
+  requirePermission('security:manage'), (_req: Request, res: Response) => {
+    const tenant = tenantData(getPrincipal(res).tenantId)!;
+    return res.json({ ...tenant.passwordRecovery, linkReady: Boolean(configuredRecoveryUrl()) });
+  });
+app.put('/api/auth/password-recovery/settings', accessAuthentication,
+  requirePermission('security:manage'), (req: Request, res: Response) => {
+    const parsed = passwordRecoverySettingsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid password-recovery settings' });
+    const principal = getPrincipal(res);
+    const tenant = tenantData(principal.tenantId)!;
+    if (parsed.data.smtpCredentialId) {
+      const credential = tenant.namedCredentials.find((item) =>
+        item.id === parsed.data.smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false);
+      if (!credential || !parsed.data.fromEmail)
+        return res.status(400).json({ error: 'Choose an enabled SMTP Named Credential and valid sender email' });
+      if (!configuredRecoveryUrl())
+        return res.status(503).json({ error: 'Trusted password-reset web URL is not configured' });
+    } else if (parsed.data.fromEmail) {
+      return res.status(400).json({ error: 'Sender email requires an SMTP credential' });
+    }
+    persistTenantRecords(principal.tenantId, withSecurityEvent(
+      { ...tenant, passwordRecovery: parsed.data }, principal.userId,
+      'auth.password-recovery.settings.updated'
+    ));
+    return res.json(parsed.data);
+  });
+app.post('/api/auth/password-reset/request', async (req: Request, res: Response) => {
+  const response = { message: 'If this account supports email recovery, a link will be sent.' };
+  if (jwtService.config.mode !== 'local') return res.status(202).json(response);
+  const parsed = passwordResetRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid email' });
+  const email = parsed.data.email.toLowerCase();
+  const ip = req.ip ?? 'unknown';
+  if (!resetAllowed('ip:' + ip, 12) || !resetAllowed('email:' + hashToken(email)))
+    return res.status(202).json(response);
+  const user = state.users.find((item) => item.email.trim().toLowerCase() === email);
+  const tenant = user && tenantData(user.tenantId);
+  const url = configuredRecoveryUrl();
+  if (!user || user.disabled || !tenant || !url) return res.status(202).json(response);
+  const { smtpCredentialId, fromEmail } = tenant.passwordRecovery;
+  if (!smtpCredentialId || !fromEmail) return res.status(202).json(response);
+  const credential = tenant.namedCredentials.find((item) =>
+    item.id === smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false);
+  if (!credential) return res.status(202).json(response);
+  const token = randomBytes(48).toString('base64url');
+  const resetUrl = new URL(url.toString());
+  resetUrl.searchParams.set('resetEmail', email);
+  resetUrl.searchParams.set('resetToken', token);
+  try {
+    await sendTenantEmail(user.tenantId, tenant, smtpCredentialId, fromEmail, [email],
+      'MetaDrive password reset',
+      'A password reset was requested. This link expires in 15 minutes.\n\n' + resetUrl.toString()
+      + '\n\nIgnore this message if you did not request it. MFA requirements remain unchanged.');
+    const current = state.users.find((item) => item.id === user.id && item.tenantId === user.tenantId);
+    if (!current || current.disabled || !tenantData(user.tenantId)) return res.status(202).json(response);
+    const nextState: PlatformState = {
+      ...state,
+      users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+        ? { ...item, passwordReset: { tokenHash: hashToken(token), expiresAt: Date.now() + 15 * 60_000 } }
+        : item),
+      tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
+        state.tenants[user.tenantId], user.id, 'auth.password-reset.requested') }
+    };
+    persistState(nextState);
+    state = nextState;
+  } catch {
+    // Generic outward result. Do not log tokens, URLs, recipients, or request bodies.
+    console.warn('Password recovery delivery/persistence unavailable');
+  }
+  return res.status(202).json(response);
+});
+app.post('/api/auth/password-reset/confirm', async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'Password reset is managed by the identity provider' });
+  const parsed = passwordResetConfirmSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid password-reset request' });
+  const email = parsed.data.email.toLowerCase();
+  if (!resetAllowed('redeem:' + (req.ip ?? 'unknown') + ':' + hashToken(email), 8))
+    return res.status(429).json({ error: 'Too many reset attempts' });
+  const user = state.users.find((item) => item.email.toLowerCase() === email);
+  const request = user?.passwordReset;
+  const valid = Boolean(user && !user.disabled && tenantData(user.tenantId)
+    && request && request.expiresAt > Date.now()
+    && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token))));
+  if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset link' });
+  const hashed = await hashPassword(parsed.data.newPassword);
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => {
+      if (item.id !== user.id || item.tenantId !== user.tenantId) return item;
+      const updated: LocalUser = {
+        ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
+        authVersion: (item.authVersion ?? 0) + 1
+      };
+      delete updated.passwordReset;
+      delete updated.lockedUntil;
+      return updated;
+    }),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
+    tenants: {
+      ...state.tenants, [user.tenantId]: withSecurityEvent(
+        state.tenants[user.tenantId], user.id, 'auth.password-reset.completed')
+    }
+  };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to complete password reset' }); }
+  return res.json({ reset: true, signInRequired: true });
+});
+
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   const loginStartedAt = performance.now();
   if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Password login is disabled in external OIDC mode' });
@@ -5411,14 +5596,18 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   if (limit && limit.resetAt > now && limit.count >= 8) return res.status(429).json({ error: 'Too many login attempts; try again later' });
   const user = state.users.find((item) => item.email.trim().toLowerCase() === parsed.data.email.toLowerCase());
   const passwordStartedAt = performance.now();
-  const valid = user ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
+  const valid = user && (!user.lockedUntil || user.lockedUntil <= now)
+    ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
   const passwordMs = performance.now() - passwordStartedAt;
   if (!user || user.disabled || !valid || !tenantIsActive(user.tenantId)) {
     const attempts = limit && limit.resetAt > now ? limit.count + 1 : 1;
     loginAttempts.set(key, { count: attempts, resetAt: now + 15 * 60 * 1000 });
+    if (user && !user.disabled && !valid && tenantIsActive(user.tenantId) && (!user.lockedUntil || user.lockedUntil <= now))
+      recordUserLoginFailure(user);
     return res.status(401).json({ error: 'Invalid email or password' });
   }
   loginAttempts.delete(key);
+  userLoginFailures.delete(user.id);
   const data = tenantData(user.tenantId);
   if (!data) return res.status(401).json({ error: 'Tenant is unavailable' });
   if (mfaRequiredForUser(data, user)) {
@@ -5647,7 +5836,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         .sort((a, b) => b.expiresAt - a.expiresAt)[0];
       const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
       const data = tenantData(session.tenantId);
-      if (latest && user && data && tenantIsActive(session.tenantId)
+      if (latest && user && data && (!user.lockedUntil || user.lockedUntil <= Date.now()) && tenantIsActive(session.tenantId)
         && (latest.authVersion ?? 0) === (user.authVersion ?? 0)
         && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
         // The old cookie has already been consumed by another tab. Return a
@@ -5690,6 +5879,10 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   if (!user || !data || !tenantIsActive(session.tenantId)) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Tenant membership is no longer active' });
+  }
+  if (user.lockedUntil && user.lockedUntil > Date.now()) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Account temporarily locked' });
   }
   if ((session.authVersion ?? 0) !== (user.authVersion ?? 0)) {
     clearRefreshCookie(res);
@@ -5785,6 +5978,71 @@ app.post('/api/auth/sessions/revoke-all', accessAuthentication, async (req: Requ
   return res.json({ revoked: true, signedOut: true });
 });
 
+
+app.get('/api/auth/user-locks', accessAuthentication, requirePermission('security:manage'),
+  (_req: Request, res: Response) => {
+    const principal = getPrincipal(res);
+    const tenant = tenantData(principal.tenantId)!;
+    const now = Date.now();
+    return res.json({
+      users: state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => ({
+        id: user.id, name: user.name, email: user.email, active: !user.disabled,
+        lockedUntil: user.lockedUntil && user.lockedUntil > now ? user.lockedUntil : null,
+        canManageSecurity: effectivePermissions(user, tenant).includes('security:manage')
+      }))
+    });
+  });
+const accountLockSchema = z.object({ durationMinutes: z.number().int().min(1).max(1440).default(60) }).strict();
+app.post('/api/auth/users/:userId/lock', accessAuthentication, requirePermission('security:manage'),
+  (req: Request, res: Response) => {
+    const principal = getPrincipal(res);
+    const targetId = String(req.params.userId);
+    if (targetId === principal.userId) return res.status(409).json({ error: 'Cannot lock your own administrative account' });
+    const parsed = accountLockSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid lock duration' });
+    const target = state.users.find((item) => item.id === targetId && item.tenantId === principal.tenantId);
+    const tenant = tenantData(principal.tenantId)!;
+    if (!target) return res.status(404).json({ error: 'Tenant user not found' });
+    const lastAdmin = effectivePermissions(target, tenant).includes('security:manage')
+      && !state.users.some((user) => user.tenantId === principal.tenantId && user.id !== targetId
+        && !user.disabled && (!user.lockedUntil || user.lockedUntil <= Date.now())
+        && effectivePermissions(user, tenant).includes('security:manage'));
+    if (lastAdmin) return res.status(409).json({ error: 'Cannot lock the last active tenant security administrator' });
+    const until = Date.now() + parsed.data.durationMinutes * 60_000;
+    const nextState: PlatformState = {
+      ...state,
+      users: state.users.map((user) => user.id === target.id && user.tenantId === target.tenantId
+        ? { ...user, lockedUntil: until, authVersion: (user.authVersion ?? 0) + 1 }
+        : user),
+      refreshSessions: revokeUserRefreshSessions(target.id, target.tenantId),
+      tenants: { ...state.tenants, [principal.tenantId]: withSecurityEvent(
+        tenant, principal.userId, 'auth.account.locked', undefined, target.id) }
+    };
+    persistState(nextState);
+    state = nextState;
+    return res.json({ userId: target.id, lockedUntil: until });
+  });
+app.post('/api/auth/users/:userId/unlock', accessAuthentication, requirePermission('security:manage'),
+  (req: Request, res: Response) => {
+    const principal = getPrincipal(res);
+    const userId = String(req.params.userId);
+    const target = state.users.find((item) => item.id === userId && item.tenantId === principal.tenantId);
+    if (!target) return res.status(404).json({ error: 'Tenant user not found' });
+    const updated: LocalUser = { ...target, authVersion: (target.authVersion ?? 0) + 1 };
+    delete updated.lockedUntil;
+    const nextState: PlatformState = {
+      ...state,
+      users: state.users.map((item) => item.id === target.id && item.tenantId === target.tenantId ? updated : item),
+      refreshSessions: revokeUserRefreshSessions(target.id, target.tenantId),
+      tenants: { ...state.tenants, [principal.tenantId]: withSecurityEvent(
+        tenantData(principal.tenantId)!, principal.userId, 'auth.account.unlocked', undefined, target.id) }
+    };
+    persistState(nextState);
+    state = nextState;
+    userLoginFailures.delete(target.id);
+    return res.json({ userId: target.id, unlocked: true });
+  });
+
 app.get('/api/auth/security-events', accessAuthentication, requirePermission('security:manage'), (req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId)!;
   const max = Number(req.query.limit ?? 100);
@@ -5821,8 +6079,12 @@ app.post('/api/auth/change-password', accessAuthentication, async (req: Request,
   const nextState: PlatformState = {
     ...state,
     users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
-        authVersion: (item.authVersion ?? 0) + 1 }
+      ? (() => {
+        const updated: LocalUser = { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
+          authVersion: (item.authVersion ?? 0) + 1 };
+        delete updated.passwordReset;
+        return updated;
+      })()
       : item),
     refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
       ? { ...session, revokedAt: changedAt } : session),

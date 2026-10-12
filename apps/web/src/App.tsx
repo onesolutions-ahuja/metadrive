@@ -1015,11 +1015,24 @@ function App() {
 const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`;
 
 function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (timing: EntryTiming) => void; onRetry?: () => void }) {
-  const [email, setEmail] = useState('');
+  const recoveryQuery = new URLSearchParams(window.location.search);
+  const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
+  const [resetToken, setResetToken] = useState(recoveryQuery.get('resetToken') ?? '');
+  const [newPassword, setNewPassword] = useState('');
+  const [repeatPassword, setRepeatPassword] = useState('');
+  const [resetFinished, setResetFinished] = useState(false);
+  useEffect(() => {
+    if (!resetToken) return;
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('resetEmail');
+    clean.searchParams.delete('resetToken');
+    window.history.replaceState(window.history.state, '', clean.pathname + clean.search + clean.hash);
+  }, []);
+
   const [mfaChallenge, setMfaChallenge] = useState<{ challenge_token: string; enrollment_required: boolean; setup_secret?: string } | null>(null);
   const [mfaCode, setMfaCode] = useState('');
-  const [showPasswordReset, setShowPasswordReset] = useState(false);
+  const [showPasswordReset, setShowPasswordReset] = useState(Boolean(resetToken));
   const [message, setMessage] = useState(error ?? '');
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -1083,17 +1096,57 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
       }}>Back to sign in</button>
     </form>
   </main>;
+  const requestReset = async () => {
+    setSubmitting(true); setMessage('');
+    try {
+      const response = await apiRequest<{ message: string }>('/auth/password-reset/request', {
+        method: 'POST', body: JSON.stringify({ email })
+      });
+      setMessage(response.message);
+    } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to request reset'); }
+    finally { setSubmitting(false); }
+  };
+  const confirmReset = async () => {
+    if (newPassword !== repeatPassword) { setMessage('Passwords do not match.'); return; }
+    setSubmitting(true); setMessage('');
+    try {
+      await apiRequest('/auth/password-reset/confirm', {
+        method: 'POST', body: JSON.stringify({ email, token: resetToken, newPassword })
+      });
+      setResetFinished(true); setResetToken(''); setNewPassword(''); setRepeatPassword('');
+      setMessage('Password changed. Sign in with your new password. Your MFA requirements remain unchanged.');
+    } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to reset password'); }
+    finally { setSubmitting(false); }
+  };
   if (showPasswordReset) return <main className="auth-screen">
     <section className="auth-card" aria-labelledby="password-reset-heading">
       <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
-      <div className="eyebrow">UNEENGINE WORKSPACE</div>
-      <h1 id="password-reset-heading">Reset your password</h1>
-      <p>Enter your account email to request a password reset.</p>
-      <label className="form-label" htmlFor="reset-email">Email</label>
-      <input className="form-control" id="reset-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-      <div className="auth-notice" role="status">Password reset isn’t available yet. Contact your workspace administrator for help.</div>
-      <button className="btn btn-brand auth-submit" type="button" disabled title="Password reset is not configured yet">Send reset link</button>
-      <button className="text-action auth-back" type="button" onClick={() => setShowPasswordReset(false)}>Back to sign in</button>
+      <div className="eyebrow">ACCOUNT RECOVERY</div>
+      <h1 id="password-reset-heading">{resetToken ? 'Choose a new password' : 'Reset your password'}</h1>
+      {message && <div className="auth-notice" role="status">{message}</div>}
+      {!resetFinished && <>
+        <label className="form-label" htmlFor="reset-email">Account email</label>
+        <input className="form-control" id="reset-email" type="email" value={email}
+          onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+        {resetToken ? <>
+          <label className="form-label" htmlFor="reset-password">New password (minimum 12 characters)</label>
+          <input className="form-control" id="reset-password" type="password" minLength={12}
+            autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+          <label className="form-label" htmlFor="reset-confirm">Confirm password</label>
+          <input className="form-control" id="reset-confirm" type="password" minLength={12}
+            autoComplete="new-password" value={repeatPassword} onChange={(event) => setRepeatPassword(event.target.value)} />
+          <button className="btn btn-brand auth-submit" type="button"
+            disabled={submitting || !email || newPassword.length < 12 || !repeatPassword}
+            onClick={() => void confirmReset()}>{submitting ? 'Saving…' : 'Reset password'}</button>
+        </> : <>
+          <p>We'll send a single-use link if email recovery is configured for your tenant. The link expires in 15 minutes.</p>
+          <button className="btn btn-brand auth-submit" type="button" disabled={submitting || !email}
+            onClick={() => void requestReset()}>{submitting ? 'Sending…' : 'Send reset link'}</button>
+        </>}
+      </>}
+      <button className="text-action auth-back" type="button" onClick={() => {
+        setMessage(''); setShowPasswordReset(false); setResetToken(''); setResetFinished(false);
+      }}>Back to sign in</button>
     </section>
   </main>;
   return <main className="auth-screen">
@@ -3624,7 +3677,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -6093,6 +6146,99 @@ function AutomationSettingsWorkspace() {
 
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 
+
+
+function TenantEmailRecoverySettings() {
+  const [smtpCredentialId, setSmtpCredentialId] = useState('');
+  const [fromEmail, setFromEmail] = useState('');
+  const [ready, setReady] = useState(false);
+  const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ smtpCredentialId: string; fromEmail: string; linkReady: boolean }>('/auth/password-recovery/settings')
+      .then((value) => {
+        if (!active) return;
+        setPermitted(true); setSmtpCredentialId(value.smtpCredentialId);
+        setFromEmail(value.fromEmail); setReady(value.linkReady);
+      }).catch(() => { if (active) setPermitted(false); });
+    void apiRequest<{ credentials: Array<{ id: string; label: string; protocol: string; enabled: boolean }> }>('/named-credentials')
+      .then((response) => { if (active) setCredentials(response.credentials.filter((item) => item.protocol === 'SMTP' && item.enabled)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+  if (!permitted) return null;
+  const save = async () => {
+    setBusy(true); setMessage('');
+    try {
+      await apiRequest('/auth/password-recovery/settings', {
+        method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '' })
+      });
+      setMessage('Password recovery configuration saved.');
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings'); }
+    finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>Tenant password recovery</h2>
+    <p>Email reset links are delivered through your tenant's SMTP Named Credential. They do not bypass MFA or allow platform staff to access tenant accounts.</p>
+    {!ready && <p role="alert">The server must have a trusted METADRIVE_PASSWORD_RESET_BASE_URL matching an allowed HTTPS web origin before recovery can be enabled.</p>}
+    {message && <p role="status">{message}</p>}
+    <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential</label>
+    <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
+      onChange={(event) => setSmtpCredentialId(event.target.value)}>
+      <option value="">Disabled</option>
+      {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+    </select>
+    <label className="form-label" htmlFor="recovery-sender">Sender email</label>
+    <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
+      onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
+    <button className="btn btn-brand" onClick={() => void save()}
+      disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
+      {busy ? 'Saving…' : 'Save recovery configuration'}
+    </button>
+  </section>;
+}
+
+function TenantUserLockSettings() {
+  const [users, setUsers] = useState<Array<{ id: string; name: string; email: string; active: boolean; lockedUntil: number | null }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = async () => {
+    const response = await apiRequest<{ users: Array<{ id: string; name: string; email: string; active: boolean; lockedUntil: number | null }> }>('/auth/user-locks');
+    setUsers(response.users); setPermitted(true);
+  };
+  useEffect(() => { void load().catch(() => setPermitted(false)); }, []);
+  if (!permitted) return null;
+  const changeLock = async (userId: string, lock: boolean) => {
+    setBusy(true); setMessage('');
+    try {
+      await apiRequest('/auth/users/' + encodeURIComponent(userId) + (lock ? '/lock' : '/unlock'), {
+        method: 'POST', body: JSON.stringify(lock ? { durationMinutes: 60 } : {})
+      });
+      await load();
+      setMessage(lock ? 'User locked and existing sessions revoked.' : 'User unlocked.');
+    } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to update account lock'); }
+    finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>User account locks</h2>
+    <p>Security administrators can lock or unlock an account. Locking immediately invalidates its active tokens and sessions.</p>
+    {message && <p role="status">{message}</p>}
+    <ul>{users.map((user) => <li key={user.id}>
+      {user.name} ({user.email}) — {user.lockedUntil && user.lockedUntil > Date.now()
+        ? 'Locked until ' + new Date(user.lockedUntil).toLocaleString()
+        : user.active ? 'Active' : 'Inactive'}
+      {' '}
+      <button className="btn btn-small" disabled={busy || !user.active}
+        onClick={() => void changeLock(user.id, !(user.lockedUntil && user.lockedUntil > Date.now()))}>
+        {user.lockedUntil && user.lockedUntil > Date.now() ? 'Unlock' : 'Lock for 1 hour'}
+      </button>
+    </li>)}</ul>
+  </section>;
+}
 
 function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => void }) {
   const [sessions, setSessions] = useState<Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }>>([]);
