@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import PageComponentStyleEditor from './PageComponentStyleEditor';
+import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import { sourceReportTitleUpdate } from './dashboardComponentTitle';
 import {
   dashboardFilterValue,
@@ -380,6 +382,13 @@ export default function DashboardBuilder({
   dashboards, dashboardFolders, objects, libraryComponents, reports, shareUsers, shareGroups, folderPublicGroups, folderPermissionSetGroups, folderRoles, dashboardTerritories, canManageTerritories, subscriptionUsers, runningUserIds, smtpCredentials, canSchedule, userId, canCreate, canManageAll, viewerMode = false, selectedApiName, onSelect, onOpenViewer, onExitViewer, onLoadRecords, onRunReport, onLoadSnapshots, onCreateSnapshot, onDeleteSnapshot, onLoadSubscriptions, onSaveSubscription, onDeleteSubscription, onRunSubscription, onSave, onDelete, onSaveFolder, onDeleteFolder, onSaveTerritories, onNotify
 }: DashboardBuilderProps) {
   const [draft, setDraft] = useState<DashboardMetadata | null>(null);
+  const [layoutDevice, setLayoutDevice] = useState<LayoutDevice>(() =>
+    window.innerWidth <= 640 ? 'Phone' : window.innerWidth <= 1024 ? 'Tablet' : 'Desktop');
+  useEffect(() => {
+    const updateDevice = () => setLayoutDevice(window.innerWidth <= 640 ? 'Phone' : window.innerWidth <= 1024 ? 'Tablet' : 'Desktop');
+    window.addEventListener('resize', updateDevice);
+    return () => window.removeEventListener('resize', updateDevice);
+  }, []);
   const [creating, setCreating] = useState(false);
   const [newLabel, setNewLabel] = useState('');
   const [selectedComponentId, setSelectedComponentId] = useState('');
@@ -1283,8 +1292,11 @@ export default function DashboardBuilder({
     if (component.type === 'Custom') {
       const definition = libraryComponents.find((item) => item.apiName === component.customComponentApiName);
       return definition
-        ? <div data-dashboard-custom-component-id={component.id}><RegisteredComponent definition={definition} props={{
+        ? <div data-dashboard-custom-component-id={component.id}
+            style={resolveLayoutStyle(component.properties ?? {}, layoutDevice)}>
+            <RegisteredComponent definition={definition} props={{
             ...(component.properties ?? {}),
+            ...componentLayoutProps(component.properties ?? {}, layoutDevice),
             title: component.title,
             properties: component.properties ?? {},
             object: objectFor(component.objectApiName),
@@ -2594,6 +2606,11 @@ export default function DashboardBuilder({
               placeholder="Describe the image" />
           </>}
           {selected.type === 'Custom' && <>
+            <PageComponentStyleEditor
+              properties={selected.properties ?? {}}
+              disabled={!canEditCurrent}
+              onChange={(properties) => updateComponent(selected.id, { properties })}
+            />
             <CustomComponentPropertyEditor
               properties={selected.properties ?? {}}
               disabled={!canEditCurrent}

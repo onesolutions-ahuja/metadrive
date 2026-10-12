@@ -68,6 +68,8 @@ import FlowInputBindingEditor from './FlowInputBindingEditor';
 import RecordFilterEditor from './RecordFilterEditor';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
+import PageComponentStyleEditor from './PageComponentStyleEditor';
+import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayoutParentId, reparentComponent, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
@@ -4487,6 +4489,17 @@ function MetadataBoundPageComponent({
   </div>;
 }
 
+function usePageLayoutDevice(): LayoutDevice {
+  const currentDevice = (): LayoutDevice => window.innerWidth <= 640 ? 'Phone' : window.innerWidth <= 1024 ? 'Tablet' : 'Desktop';
+  const [layoutDevice, setLayoutDevice] = useState<LayoutDevice>(currentDevice);
+  useEffect(() => {
+    const onResize = () => setLayoutDevice(currentDevice());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return layoutDevice;
+}
+
 function LightningAppRuntime({
   appId,
   pageApiName,
@@ -4515,6 +4528,7 @@ function LightningAppRuntime({
   onKioskModeChange: (enabled: boolean) => void;
 }) {
   const [page, setPage] = useState<LightningPageMetadata | null>(null);
+  const layoutDevice = usePageLayoutDevice();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
@@ -4546,17 +4560,35 @@ function LightningAppRuntime({
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
   if (!page) return <div className="records-page"><div className="records-empty">No active Home Page is assigned to this app and profile. Assign one from Lightning App Builder.</div></div>;
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
-  const renderComponent = (component: PageComponentMetadata) => {
+  const renderComponent = (component: PageComponentMetadata): React.ReactNode => {
     if (!component.visible) return null;
+    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{childrenOf(page.components, component.id).map((child) => renderComponent(child))}</div>;
     if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map((child) => <div key={child.id} style={!isLayoutType(child.type) ? componentVisualStyle(child.properties.visualStyle, child.type, formFactor) : undefined}>{renderComponent(child)}</div>)}</div>;
     if (component.type.startsWith('Custom:')) {
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
-      return definition
-        ? <MetadataBoundPageComponent key={component.id} definition={definition} component={component}
-          objects={objects} apps={apps} pages={pages} currentAppId={appId} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
-          onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
-        : <div className="records-message" role="status" key={component.id}>Component is no longer registered: {component.label}</div>;
+      const nestedChildren = isLayoutContainer(component)
+        ? childrenOf(page.components, component.id).map((child) => page.layoutMode === 'free-canvas'
+            ? renderCanvasComponent(child, true) : renderComponent(child))
+        : undefined;
+      if (!definition) return <div className="records-message" role="status" key={component.id}>
+        Component is no longer registered: {component.label}
+      </div>;
+      const content = !isLayoutContainer(component) && typeof component.properties.objectApiName === 'string'
+        && component.properties.objectApiName
+        ? <MetadataBoundPageComponent definition={definition} component={component}
+            objects={objects} apps={apps} pages={pages} currentAppId={appId} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+            onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
+        : <RegisteredComponent definition={definition} props={{
+            ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
+            label: component.label, properties: component.properties,
+            device: layoutDevice, children: nestedChildren
+          }} />;
+      const rendered = nestedChildren?.length && definition.trustedBundled !== true
+        ? <div className="metadata-nested-host" data-nested-host={component.id}>{content}{nestedChildren}</div>
+        : content;
+      return page.layoutMode === 'free-canvas' ? rendered
+        : <div key={component.id} style={resolveLayoutStyle(component.properties, layoutDevice)}>{rendered}</div>;
     }
     if (component.type === 'Report Chart') {
       const reportApiName = typeof component.properties.reportApiName === 'string' ? component.properties.reportApiName : '';
@@ -4588,23 +4620,32 @@ function LightningAppRuntime({
     </details>;
     return <div className="records-message" role="status" key={component.id}>{component.label} is not supported on app pages.</div>;
   };
+  const renderCanvasComponent = (component: PageComponentMetadata, nested = false) => {
+    if (!component.visible) return null;
+    return <div key={component.id} className={nested ? 'free-canvas-runtime-component nested-page-runtime' : 'free-canvas-runtime-component'}
+      data-layout-component-id={component.id}
+      style={{
+        ...(nested
+          ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
+          : {
+              left: component.position?.x ?? 0,
+              top: component.position?.y ?? 0,
+              width: component.position?.width ?? 320,
+              height: component.position?.height ?? 180
+            }),
+        ...resolveLayoutStyle(component.properties, layoutDevice)
+      } as React.CSSProperties}>
+      {renderComponent(component)}
+    </div>;
+  };
   if (page.layoutMode === 'free-canvas') return <div className="free-canvas-runtime"
     data-lightning-page={page.apiName}
     data-layout-mode="free-canvas"
     style={{ width: page.canvasWidth, height: page.canvasHeight }}>
-    {page.components.filter((component) => component.visible && !component.parentId).map((component) => <div key={component.id}
-      className="free-canvas-runtime-component"
-      style={{
-        left: component.position?.x ?? 0,
-        top: component.position?.y ?? 0,
-        width: component.position?.width ?? 320,
-        height: component.position?.height ?? 180
-      }}>
-      <div style={!isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, formFactor) : undefined}>{renderComponent(component)}</div>
-    </div>)}
+    {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
-    page.components.filter((component) => !component.parentId && (component.region ?? 'main') === region).map((component) => <div key={component.id} style={!isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, formFactor) : undefined}>{renderComponent(component)}</div>);
+    childrenOf(page.components, null).filter((component) => (component.region ?? 'main') === region).map(renderComponent);
   return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
     <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18} /></div>
@@ -4647,6 +4688,7 @@ function RecordWorkspace({
   onNavigate: (route: AppRoute) => void;
 }) {
   const object = objects.find((item) => item.apiName === route.objectApiName);
+  const layoutDevice = usePageLayoutDevice();
   const [records, setRecords] = useState<RecordData[]>([]);
   const [record, setRecord] = useState<RecordData | null>(null);
   const [activeLightningPage, setActiveLightningPage] = useState<LightningPageMetadata | null>(null);
@@ -5379,10 +5421,18 @@ function RecordWorkspace({
       if (!component.visible) return null;
       if (component.type.startsWith('Custom:')) {
         const definition = libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
+        const children = isLayoutContainer(component)
+          ? childrenOf(assignedPage?.components ?? [], component.id).map(renderRuntimeComponent)
+          : undefined;
         return definition
-          ? <RegisteredComponent key={component.id} definition={definition} props={{
-            label: component.label, properties: component.properties, record, recordId: record.Id, object, formFactor
-          }} />
+          ? <div key={component.id} data-layout-component-id={component.id}
+              style={resolveLayoutStyle(component.properties, layoutDevice)}>
+              <RegisteredComponent definition={definition} props={{
+                ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
+                label: component.label, properties: component.properties,
+                record, recordId: record.Id, object, formFactor, children
+              }} />
+            </div>
           : <div className="records-message" role="status" key={component.id}>Component “{component.type.slice('Custom:'.length)}” is not available in the component library.</div>;
       }
       if (component.type === 'Highlights Panel') return <section className="record-highlights surface" key={component.id} aria-label="Record highlights">
@@ -5531,7 +5581,7 @@ function RecordWorkspace({
       return <div className="records-message" role="status" key={component.id}>{component.label} is not supported in record runtime.</div>;
     };
     const renderRuntimeRegion = (region: 'header' | 'main' | 'sidebar') =>
-      assignedPage?.components.filter((component) => (component.region ?? 'main') === region).map(renderRuntimeComponent);
+      childrenOf(assignedPage?.components ?? [], null).filter((component) => (component.region ?? 'main') === region).map(renderRuntimeComponent);
     return <div className="records-page">
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
@@ -7967,7 +8017,8 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
     'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'barcodeField', 'skuField',
     'customerObjectApiName', 'customerNameField', 'customerPhoneField', 'customerEmailField', 'customerFilters',
     'fieldApiName', 'checkoutFlowApiName',
-    'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows']);
+    'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows',
+    'layoutContainer', 'layoutParentId', 'layoutStyle', 'layoutResponsive']);
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
@@ -8538,7 +8589,7 @@ function PageBuilder({
       && existing.profileId === assignment.profileId
       && existing.recordTypeId === assignment.recordTypeId
       && existing.formFactors.some((factor) => assignment.formFactors.includes(factor)));
-  const addComponent = (type: string, position = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', canvasPosition?: PageComponentMetadata['position'], parentId?: string) => {
+  const addComponent = (type: string, position = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', canvasPosition?: PageComponentMetadata['position'], parentId: string | null = null) => {
     const customApiName = type.startsWith('Custom:') ? type.slice('Custom:'.length) : '';
     const custom = libraryComponents.find((item) => item.apiName === customApiName && item.surfaces.includes('page'));
     const dynamicFormComponent = type === 'Field Section' && page.pageType === 'Record Page' && dynamicFormsEnabled;
@@ -8561,7 +8612,7 @@ function PageBuilder({
     components.splice(Math.max(0, Math.min(position, components.length)), 0, {
       id, type, label: custom?.label ?? type,
       properties: custom
-        ? { libraryComponentId: custom.apiName }
+        ? { libraryComponentId: custom.apiName, ...(parentId ? { layoutParentId: parentId } : {}) }
         : type === 'Report Chart'
           ? { reportApiName: '' }
           : type === 'Related List'
@@ -8569,7 +8620,7 @@ function PageBuilder({
             : type === 'Field Section'
               ? { fieldApiNames: [], columns: 2 }
             : {},
-      visible: true, parentId, region,
+      visible: true, parentId: parentId ?? undefined, region,
       ...(freeCanvasPosition ? { position: freeCanvasPosition } : {})
     });
     applyPage({ ...page, components });
@@ -8660,9 +8711,16 @@ function PageBuilder({
   };
   const removeSelected = () => {
     if (!selected) return;
-    const remaining = page.components.filter((component) => component.id !== selected.id && !isDescendantOf(page.components, component.id, selected.id));
+    const parentId = rawLayoutParentId(selected);
+    const remaining = page.components.filter((component) => component.id !== selected.id)
+      .map((component) => rawLayoutParentId(component) === selected.id
+        ? { ...component, properties: {
+            ...component.properties,
+            ...(parentId ? { layoutParentId: parentId } : { layoutParentId: undefined })
+          } }
+        : component);
     applyPage({ ...page, components: remaining });
-    setSelectedId(remaining[0]?.id ?? '');
+    setSelectedId(parentId ?? remaining[0]?.id ?? '');
   };
   const addRecordAssignment = () => {
     const needsApp = recordScope !== 'Org Default';
@@ -8733,7 +8791,8 @@ function PageBuilder({
       ...structuredClone(componentClipboard),
       id: `${componentClipboard.type.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${crypto.randomUUID()}`,
       label: `${componentClipboard.label} Copy`,
-      region: selected?.region ?? componentClipboard.region ?? 'main'
+      region: selected?.region ?? componentClipboard.region ?? 'main',
+      properties: { ...structuredClone(componentClipboard.properties), layoutParentId: selected && canNest(page.components, componentClipboard.id, selected.id) ? selected.id : undefined }
     };
     const components = [...page.components];
     const selectedIndex = selected ? components.findIndex((component) => component.id === selected.id) : -1;
@@ -8963,7 +9022,7 @@ function PageBuilder({
       }
     });
   };
-  const handleDrop = (event: React.DragEvent<HTMLElement>, targetIndex = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main') => {
+  const handleDrop = (event: React.DragEvent<HTMLElement>, targetIndex = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', parentId: string | null = null) => {
     event.preventDefault();
     event.stopPropagation();
     const data = event.dataTransfer.getData('text/plain');
@@ -8972,12 +9031,26 @@ function PageBuilder({
       const draggedId = event.dataTransfer.getData('application/x-metadrive-component-id');
       if (!draggedId) {
         addComponent(data.slice('component:'.length), targetIndex, region,
-          page.layoutMode === 'free-canvas' ? canvasPositionFromEvent(event) : undefined);
+          page.layoutMode === 'free-canvas' ? canvasPositionFromEvent(event) : undefined, parentId);
+        return;
+      }
+      if (!canNest(page.components, draggedId, parentId)) {
+        onNotify('Cannot nest a component inside itself or one of its descendants.');
         return;
       }
       if (page.layoutMode === 'free-canvas') {
         const draggedComponent = page.components.find((component) => component.id === draggedId);
-        if (draggedComponent) moveCanvasComponent(event, draggedComponent);
+        if (!draggedComponent) return;
+        const reparented = reparentComponent(page.components, draggedId, parentId);
+        const position = !parentId ? canvasPositionFromEvent(event) : undefined;
+        applyPage({ ...page, components: reparented.map((item) =>
+          item.id === draggedId && position && item.position
+            ? { ...item, position: {
+                ...item.position,
+                x: Math.min(position.x, page.canvasWidth - item.position.width),
+                y: Math.min(position.y, page.canvasHeight - item.position.height)
+              } } : item) });
+        setSelectedId(draggedId);
         return;
       }
       const sourceIndex = page.components.findIndex((component) => component.id === draggedId);
@@ -8992,7 +9065,7 @@ function PageBuilder({
       const dropIndex = targetIndex + (insertAfterTarget ? 1 : 0);
       const insertionIndex = sourceIndex < dropIndex ? dropIndex - 1 : dropIndex;
       components.splice(Math.max(0, Math.min(insertionIndex, components.length)), 0, { ...draggedComponent, parentId: undefined, region });
-      applyPage({ ...page, components });
+      applyPage({ ...page, components: reparentComponent(components, draggedId, parentId) });
       setSelectedId(draggedId);
     } else if (data.startsWith('field:')) {
       const sectionId = event.currentTarget.getAttribute('data-component-id');
@@ -9008,6 +9081,13 @@ function PageBuilder({
     const customDefinition = component.type.startsWith('Custom:')
       ? libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length))
       : undefined;
+    const inPage = page.components.some((item) => item.id === component.id);
+    const nested = inPage && !childrenOf(page.components, null).some((item) => item.id === component.id);
+    const nestedChildren = isLayoutContainer(component) && (!libraryPreview || interactivePreview)
+      ? childrenOf(page.components, component.id).map((child) =>
+          renderPageComponent(child, page.components.findIndex((item) => item.id === child.id), libraryPreview, interactivePreview))
+      : undefined;
+    const visualStyle = { ...(isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, device) : {}), ...resolveLayoutStyle(component.properties, device) };
     const previewProperties = createComponentPreviewProps(
       customDefinition?.apiName ?? component.type,
       component.label,
@@ -9016,6 +9096,7 @@ function PageBuilder({
     const customPreviewProps = {
       ...previewProperties,
       ...component.properties,
+      ...componentLayoutProps(component.properties, device),
       label: component.label,
       properties: component.properties,
       object: page.pageType === 'Record Page' ? targetObject : undefined,
@@ -9024,7 +9105,8 @@ function PageBuilder({
       disabled: true,
       onAction: previewProperties.onAction,
       onChange: previewProperties.onChange,
-      onNavigate: previewProperties.onNavigate
+      onNavigate: previewProperties.onNavigate,
+      children: nestedChildren
     };
     const accordionContent = typeof component.properties.content === 'string' && component.properties.content.trim()
       ? component.properties.content
@@ -9032,37 +9114,29 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${!libraryPreview && page.layoutMode === 'free-canvas' && !component.parentId ? 'free-canvas-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
-      style={!libraryPreview && page.layoutMode === 'free-canvas' && !component.parentId ? {
-        left: component.position?.x ?? 0,
-        top: component.position?.y ?? 0,
-        width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
-        height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
-      } : componentVisualStyle(component.properties.visualStyle, component.type, device)}
+      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      style={{
+        ...((!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas'
+          ? nested
+            ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
+            : {
+                left: component.position?.x ?? 0,
+                top: component.position?.y ?? 0,
+                width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
+                height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
+              }
+          : {}),
+        ...visualStyle
+      } as React.CSSProperties}
       onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
       onKeyDown={!libraryPreview ? (event) => { if (event.currentTarget === event.target && !previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
-      onDragOver={!libraryPreview ? (event) => { event.preventDefault(); setDragOverId(component.id); } : undefined}
+      onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
-      onDrop={!libraryPreview ? (event) => {
-        if (isLayoutType(component.type)) {
-          event.preventDefault(); event.stopPropagation();
-          const draggedId = event.dataTransfer.getData('application/x-metadrive-component-id');
-          const data = event.dataTransfer.getData('text/plain');
-          if (draggedId && canNestComponent(page.components, draggedId, component.id)) {
-            applyPage({ ...page, components: page.components.map((child) => child.id === draggedId ? { ...child, parentId: component.id, region: component.region } : child) });
-            setSelectedId(draggedId);
-          } else if (!draggedId && data.startsWith('component:')) {
-            const type = data.slice('component:'.length);
-            addComponent(type, page.components.length, component.region ?? 'main', undefined, component.id);
-          }
-          setDragOverId('');
-        } else handleDrop(event, index, component.region ?? 'main');
-      } : undefined}
+      onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
       draggable={!previewMode && !libraryPreview}
       data-component-id={libraryPreview ? undefined : component.id}
-      onDragStart={!libraryPreview ? (event) => { event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
-      onDragEnd={!libraryPreview ? (event) => moveCanvasComponent(event, component) : undefined}
+      onDragStart={!libraryPreview ? (event) => { event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
@@ -9102,7 +9176,7 @@ function PageBuilder({
                     ? <div className="component-demo-activity"><strong>Recent activity</strong><span>Call with Jordan Lee <small>Today · 10:30 AM</small></span><span>Follow-up email sent <small>Yesterday</small></span></div>
                     : component.type === 'Chatter' && libraryPreview
                       ? <div className="component-demo-activity"><strong>Latest update</strong><span>Alex Morgan shared a project update.</span><small>2 comments · 4 likes</small></div>
-                  : customDefinition && (!libraryPreview || interactivePreview) && typeof component.properties.objectApiName === 'string'
+                  : customDefinition && !isLayoutContainer(component) && (!libraryPreview || interactivePreview) && typeof component.properties.objectApiName === 'string'
                     && component.properties.objectApiName
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
                         objects={objects} apps={apps} pages={pages} currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
@@ -9112,15 +9186,21 @@ function PageBuilder({
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
+                      ...componentLayoutProps(component.properties, device),
                       label: component.label,
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
-                      device
+                      device,
+                      children: nestedChildren
                     }} />
                     : libraryPreview
                       ? <div className="component-demo-fallback"><strong>{component.label}</strong><span>{selectedComponentDescription || 'Preview of a reusable page component.'}</span><div><i /><i /><i /></div></div>
                       : <div className="component-demo-fallback"><strong>{component.label}</strong><span>This component is no longer registered. Re-register it to restore its live preview.</span><div><i /><i /><i /></div></div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && customDefinition && selectedId === component.id && !previewMode
+      {!libraryPreview && customDefinition && customDefinition.trustedBundled !== true && isLayoutContainer(component)
+        && <div className="metadata-nested-host">{nestedChildren}</div>}
+      {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
+        && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode
         && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
           title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
           onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
@@ -9130,7 +9210,7 @@ function PageBuilder({
   const renderRegion = (region: 'header' | 'main' | 'sidebar') => {
     const regionComponents = page.components
       .map((component, index) => ({ component, index }))
-      .filter(({ component }) => !component.parentId && (component.region ?? 'main') === region);
+      .filter(({ component }) => childrenOf(page.components, null).some((root) => root.id === component.id) && (component.region ?? 'main') === region);
     return <section
       className={`page-region page-region-${region}`}
       aria-label={`${region[0].toUpperCase()}${region.slice(1)} region`}
@@ -9155,7 +9235,8 @@ function PageBuilder({
   const addPaletteComponent = (type: string) => {
     const selectedIndex = page.components.findIndex((component) => component.id === selectedId);
     const selectedRegion = page.components[selectedIndex]?.region ?? 'main';
-    addComponent(type, selectedIndex >= 0 ? selectedIndex + 1 : page.components.length, selectedRegion);
+    const parentId = selected && isLayoutContainer(selected) ? selected.id : selected ? rawLayoutParentId(selected) : null;
+    addComponent(type, selectedIndex >= 0 ? selectedIndex + 1 : page.components.length, selectedRegion, undefined, parentId);
   };
   const renderPaletteComponentPreview = (component: typeof paletteComponents[number]) => renderPageComponent({
     id: `palette-preview-${component.id}`,
@@ -9173,7 +9254,7 @@ function PageBuilder({
             <div className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : 'record-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}>
               {page.layoutMode === 'free-canvas'
                 ? <div className="free-canvas-stage" style={{ width: page.canvasWidth, height: page.canvasHeight, position: 'relative' }}>
-                    {page.components.map((component, index) => renderPageComponent(component, index, true, true))}
+                    {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id), true, true))}
                   </div>
                 : <>
                     {page.components.filter((component) => (component.region ?? 'main') === 'header').map((component, index) => renderPageComponent(component, index, true, true))}
@@ -9375,7 +9456,7 @@ function PageBuilder({
                   transformOrigin: 'top left'
                 }}
               >
-                {page.components.map((component, index) => renderPageComponent(component, index))}
+                {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id)))}
                 {!page.components.length && <div className="free-canvas-empty">Add custom components from the left panel.</div>}
               </div> : <>
               {page.pageType === 'Record Page' ? <>
@@ -9413,6 +9494,43 @@ function PageBuilder({
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
+              <div className="properties-section-title">Container hierarchy</div>
+              {!['Custom:KioskContainer','Custom:KioskRow','Custom:KioskColumn','Custom:KioskCard','Custom:KioskGrid'].includes(selected.type)
+                && <label className="checkbox-row">
+                  <input type="checkbox" checked={isLayoutContainer(selected)}
+                    onChange={(event) => {
+                      if (!event.target.checked && childrenOf(page.components, selected.id).length) {
+                        onNotify('Move all child components out before disabling nesting.');
+                        return;
+                      }
+                      updateComponent(selected.id, { properties: { ...selected.properties, layoutContainer: event.target.checked } });
+                    }} />
+                  Accept nested components (requires a component that renders children)
+                </label>}
+              <label className="form-label">Parent container
+                <select className="form-control" aria-label="Parent container" value={rawLayoutParentId(selected) ?? ''}
+                  onChange={(event) => {
+                    const parentId = event.target.value || null;
+                    if (!canNest(page.components, selected.id, parentId)) {
+                      onNotify('A component cannot be nested inside itself or a descendant.');
+                      return;
+                    }
+                    applyPage({ ...page, components: reparentComponent(page.components, selected.id, parentId) });
+                  }}>
+                  <option value="">Canvas / page root</option>
+                  {page.components.filter((item) => canNest(page.components, selected.id, item.id))
+                    .map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              {isLayoutContainer(selected) && <>
+                <p className="properties-help">Drag components onto this container or select them below to edit. Drop a child onto the canvas to move it back to the root.</p>
+                <div className="properties-section-title">Child components</div>
+                {childrenOf(page.components, selected.id).map((child) => <button className="btn btn-small" type="button" key={child.id}
+                  onClick={() => setSelectedId(child.id)}>{child.label}</button>)}
+                {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
+              </>}
+              <PageComponentStyleEditor properties={selected.properties}
+                onChange={(properties) => updateComponent(selected.id, { properties })} />
               <MetadataComponentProperties
                 kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
                 properties={selected.properties}
@@ -9505,7 +9623,7 @@ function PageBuilder({
                 </select>
               </label>
             </>}
-            {page.layoutMode === 'free-canvas' && selected.position && <div className="free-canvas-component-properties">
+            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
               <div className="properties-section-title">Position and Size (pixels)</div>
               {([
                 ['x', 'Left'], ['y', 'Top'], ['width', 'Width'], ['height', 'Height']

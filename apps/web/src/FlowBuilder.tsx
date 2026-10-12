@@ -1,5 +1,6 @@
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { parseComponentProperties } from './componentProperties';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -749,11 +750,18 @@ export default function FlowBuilder({
                         itemIndex === index ? { ...item, componentPropsJson: '{}' } : item))
                     }>Reset invalid properties</button>
                   </div>
-                : <CustomComponentPropertyEditor
-                    properties={parseComponentProperties(field.componentPropsJson).properties}
-                    onChange={(properties) => setConfig('fields', screenFields.map((item, itemIndex) =>
-                      itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
-                  />}
+                : <>
+                    <PageComponentStyleEditor
+                      properties={parseComponentProperties(field.componentPropsJson).properties}
+                      onChange={(properties) => setConfig('fields', screenFields.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
+                    />
+                    <CustomComponentPropertyEditor
+                      properties={parseComponentProperties(field.componentPropsJson).properties}
+                      onChange={(properties) => setConfig('fields', screenFields.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
+                    />
+                  </>}
 
               <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>
             </>
