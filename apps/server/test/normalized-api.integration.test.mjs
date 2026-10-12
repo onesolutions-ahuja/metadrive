@@ -67,14 +67,15 @@ async function stopApi(child) {
     await once(child,'exit');
   }
 }
-async function request(port,path,method='GET',token=null,payload=undefined) {
+async function request(port,path,method='GET',token=null,payload=undefined,extraHeaders={}) {
   const response=await fetch('http://127.0.0.1:'+port+'/api'+path,{
     method,
-    headers:{...(token?{authorization:'Bearer '+token}:{}),...(payload!==undefined?{'content-type':'application/json'}:{})},
+    headers:{...(token?{authorization:'Bearer '+token}:{}),...(payload!==undefined?{'content-type':'application/json'}:{}),...extraHeaders},
     ...(payload!==undefined?{body:JSON.stringify(payload)}:{})
   });
   const body=await response.text();
-  return {status:response.status,data:body?JSON.parse(body):{}};
+  return {status:response.status,data:body?JSON.parse(body):{},
+    cookie:response.headers.get('set-cookie'),serverTiming:response.headers.get('server-timing')};
 }
 const connected=async(client,fn)=>{await client.connect();try{return await fn(client);}finally{await client.end();}};
 for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata, linked records, Flows, users and sessions across restart',{skip:!base,timeout:240000},async()=>{
@@ -133,9 +134,22 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
       METADRIVE_PERSISTENCE_MODE:mode,METADRIVE_NORMALIZED_ALLOW_RUNTIME:'true'
     };
     child=await startApi(port,relationalPath,relationalEnv);
-    const login=await request(port,'/auth/login','POST',null,{email,password});
+    const login=await request(port,'/auth/login?landing=1','POST',null,{email,password});
     assert.equal(login.status,200,JSON.stringify(login.data));
-    const token=login.data.access_token;
+    assert.ok(login.data.landing?.objects?.some(o=>o.apiName==='Account'),
+      'Authenticated landing must include only permitted tenant object metadata');
+    assert.ok(login.data.landing?.user?.profileId,'Landing requires current RBAC profile');
+    assert.ok(login.cookie,'Login must issue an HttpOnly refresh session');
+    const sessionCookie=login.cookie.split(';')[0];
+    const refreshed=await request(port,'/auth/refresh?landing=1','POST',null,undefined,{cookie:sessionCookie});
+    assert.equal(refreshed.status,200,JSON.stringify(refreshed.data));
+    assert.ok(refreshed.data.landing?.objects?.some(o=>o.apiName==='Account'));
+    assert.ok(refreshed.data.landing?.user?.fieldAccess,'Refresh bootstrap must contain authoritative field permissions');
+    assert.ok(refreshed.cookie && refreshed.cookie!==login.cookie,
+      'Restored session must retain refresh-token rotation');
+    assert.match(refreshed.serverTiming??'',/commit-wait;dur=/,
+      'SQL-only restore must measure durable commit wait');
+    const token=refreshed.data.access_token;
     const account=await request(port,'/records/Account','POST',token,{Name:'Relational Parent'});
     assert.equal(account.status,201,JSON.stringify(account.data));
     const parentId=account.data.record.Id;
