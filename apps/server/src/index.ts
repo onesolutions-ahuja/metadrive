@@ -120,7 +120,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     const apiId = `${req.method} ${typeof routePath === 'string' ? routePath : req.path}`;
     try {
       appendCommunicationRecord(principal.tenantId, principal.userId, {
-        apiId, url: communicationSafeUrl(`${req.protocol}://${req.get('host') ?? 'localhost'}${req.path}`),
+        apiId, url: communicationSafeUrl(`https://api.metadrive.invalid${req.path}`),
         authType: 'Bearer', method: supportedCommunicationMethod(req.method),
         direction: 'Incoming', requestBody: '', responseBody: '', error: '',
         status: res.statusCode, durationMs: Date.now() - startedAt
