@@ -9406,8 +9406,8 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
     if (aMissing !== bMissing) return aMissing ? 1 : -1;
     let comparison = 0;
     if (!aMissing && !bMissing) {
-      if (/^(?:Number|Currency|Percent)(?:\\(|$)/i.test(sortType)) comparison = Number(a) - Number(b);
-      else if (/^(?:Date|Date\\/Time|DateTime)$/i.test(sortType)) comparison = new Date(String(a)).getTime() - new Date(String(b)).getTime();
+      if (sortType.startsWith('Number') || sortType.startsWith('Currency') || sortType.startsWith('Percent')) comparison = Number(a) - Number(b);
+      else if (['Date', 'Date/Time', 'DateTime'].includes(sortType)) comparison = new Date(String(a)).getTime() - new Date(String(b)).getTime();
       else comparison = collator.compare(String(a), String(b));
     }
     if (!Number.isFinite(comparison)) comparison = collator.compare(String(a), String(b));
