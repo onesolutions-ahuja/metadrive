@@ -42,6 +42,13 @@
         "unique": false
       },
       {
+        "apiName": "ProviderConnectorKey__c",
+        "label": "Provider API Name",
+        "dataType": "Text(80)",
+        "required": false,
+        "unique": false
+      },
+      {
         "apiName": "DefaultBaseUrl__c",
         "label": "Default Base URL",
         "dataType": "Text(255)",
@@ -247,7 +254,8 @@
       "TestMethod__c": "GET",
       "TestPath__c": "{!PhoneNumberId}?fields=id,display_phone_number,verified_name",
       "LicenceTermDays__c": 30,
-      "RecordColumns__c": "[\"CreatedDate\",\"Recipient__c\",\"Communication_Mode__c\",\"Status__c\",\"Source__c\"]"
+      "RecordColumns__c": "[\"CreatedDate\",\"Recipient__c\",\"Communication_Mode__c\",\"Status__c\",\"Source__c\"]",
+      "ProviderConnectorKey__c": "META_WHATSAPP"
     },
     {
       "Name": "Uber Eats",
@@ -273,7 +281,8 @@
       "TestMethod__c": "GET",
       "TestPath__c": "",
       "LicenceTermDays__c": 30,
-      "RecordColumns__c": "[]"
+      "RecordColumns__c": "[]",
+      "ProviderConnectorKey__c": "UBER"
     },
     {
       "Name": "Deliveroo",
@@ -299,7 +308,8 @@
       "TestMethod__c": "GET",
       "TestPath__c": "",
       "LicenceTermDays__c": 30,
-      "RecordColumns__c": "[]"
+      "RecordColumns__c": "[]",
+      "ProviderConnectorKey__c": "DELIVEROO"
     },
     {
       "Name": "SMSGate",
@@ -325,7 +335,8 @@
       "TestMethod__c": "GET",
       "TestPath__c": "",
       "LicenceTermDays__c": 30,
-      "RecordColumns__c": "[\"CreatedDate\",\"Recipient__c\",\"Communication_Mode__c\",\"Status__c\",\"Source__c\"]"
+      "RecordColumns__c": "[\"CreatedDate\",\"Recipient__c\",\"Communication_Mode__c\",\"Status__c\",\"Source__c\"]",
+      "ProviderConnectorKey__c": "SMS"
     },
     {
       "Name": "Xero",
