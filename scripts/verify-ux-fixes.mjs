@@ -5,7 +5,8 @@ const profiles=[['desktop',{width:1440,height:900}],['phone',{width:390,height:8
 const browser=await chromium.launch({headless:true});
 try {
  for(const [name,viewport] of profiles){
-  const page=await browser.newPage({viewport});
+  const context=await browser.newContext({viewport});
+  const page=await context.newPage();
   await page.goto(base,{waitUntil:'domcontentloaded',timeout:45000});
   await page.locator('input[type=email]').first().waitFor({state:'visible',timeout:110000});
   await page.locator('input[type=email]').fill(process.env.METADRIVE_TEST_EMAIL);
@@ -33,6 +34,6 @@ try {
     const axe=await new AxeBuilder({page}).withRules(['nested-interactive','button-name','color-contrast','target-size','scrollable-region-focusable']).analyze();
     console.log(JSON.stringify({profile:name,screen,state,violations:axe.violations.map(v=>({id:v.id,nodes:v.nodes.length,targets:v.nodes.slice(0,2).map(x=>x.target)}))}));
   }
-  await page.close();
+  await context.close();
  }
 }finally{await browser.close();}
