@@ -17,6 +17,7 @@ export type RuntimeApp = {
 };
 export type AppViewer = { userId: string; profileId: string };
 export type AppLicenceRecord = {
+  Id?: string;
   AppKey__c?: unknown;
   Installed__c?: unknown;
   TrialUsed__c?: unknown;
