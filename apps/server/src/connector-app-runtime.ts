@@ -43,6 +43,27 @@ export function connectorEntitlement(
   return { allowed: true, message: '', managed: true };
 }
 
+/**
+ * Licensed connector providers use the same package entitlement as managed
+ * Named Credentials. The linkage is server-owned Connector_App__c metadata;
+ * an unlinked custom provider remains an independent connector.
+ */
+export function connectorProviderEntitlement(
+  apps: ConnectorAppRecord[], connectorKey: string, now = new Date()
+): { allowed: boolean; message: string; managed: boolean } {
+  const app = apps.find((record) => text(record.ProviderConnectorKey__c) === connectorKey && Boolean(connectorKey));
+  if (!app) return { allowed: true, message: '', managed: false };
+  const name = appName(app);
+  if (app.Installed__c !== true) return { allowed: false, message: name + ' must be installed in AppExchange.', managed: true };
+  const licensedUntil = Date.parse(text(app.LicenceExpiresAt__c));
+  const trialUntil = Date.parse(text(app.TrialExpiresAt__c));
+  const activePaid = Number.isFinite(licensedUntil) && licensedUntil > now.getTime();
+  const activeTrial = app.TrialUsed__c === true && Number.isFinite(trialUntil) && trialUntil > now.getTime();
+  return activePaid || activeTrial
+    ? { allowed: true, message: '', managed: true }
+    : { allowed: false, message: name + ' requires a valid licence or free trial.', managed: true };
+}
+
 export function applyConnectorLifecycle<T extends ConnectorAppRecord>(
   previous: T,
   requested: T,
@@ -58,7 +79,7 @@ export function applyConnectorLifecycle<T extends ConnectorAppRecord>(
   }
   if (!allowLicenceAdministration) {
     const platformFields = ['LicenceExpiresAt__c', 'TrialDays__c', 'AppKey__c',
-      'CredentialName__c', 'InstallFlow__c', 'UninstallFlow__c', 'TrialFlow__c'];
+      'CredentialName__c', 'ProviderConnectorKey__c', 'InstallFlow__c', 'UninstallFlow__c', 'TrialFlow__c'];
     for (const field of platformFields) {
       if (app[field] !== previous[field]) {
         throw new Error(field + ' is managed by a platform licence administrator.');
