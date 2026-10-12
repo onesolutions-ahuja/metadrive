@@ -147,15 +147,15 @@ export function resolveLayoutStyle(
 ): Record<string, string | number | undefined> {
   const s = layoutSettings(properties, device);
   return {
-    ...(s.padding !== undefined ? { padding: s.padding } : {}),
-    ...(s.margin !== undefined ? { margin: s.margin } : {}),
+    ...(s.padding !== undefined ? { padding: Number(s.padding) } : {}),
+    ...(s.margin !== undefined ? { margin: Number(s.margin) } : {}),
     ...(s.backgroundColor ? { backgroundColor: String(s.backgroundColor) } : {}),
     ...(s.borderColor ? { borderColor: String(s.borderColor) } : {}),
-    ...(s.borderWidth !== undefined ? { borderWidth: s.borderWidth, borderStyle: s.borderWidth ? 'solid' : 'none' } : {}),
-    ...(s.borderRadius !== undefined ? { borderRadius: s.borderRadius } : {}),
+    ...(s.borderWidth !== undefined ? { borderWidth: Number(s.borderWidth), borderStyle: s.borderWidth ? 'solid' : 'none' } : {}),
+    ...(s.borderRadius !== undefined ? { borderRadius: Number(s.borderRadius) } : {}),
     ...(s.alignItems ? { alignItems: String(s.alignItems) } : {}),
     ...(s.justifyContent ? { justifyContent: String(s.justifyContent) } : {}),
-    ...(s.gap !== undefined ? { gap: s.gap } : {}),
+    ...(s.gap !== undefined ? { gap: Number(s.gap) } : {}),
     ...(s.opacity !== undefined ? { opacity: Number(s.opacity) / 100 } : {}),
     ...(s.hidden ? { display: 'none' } : {})
   };
