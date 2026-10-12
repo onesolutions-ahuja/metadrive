@@ -1308,6 +1308,13 @@ const libraryComponentResizeSchema = z.object({
   }
 });
 const defaultLibraryComponentResize = { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 };
+const libraryComponentRevisionSchema = z.object({
+  version: z.number().int().positive(), label: z.string().trim().min(1).max(80),
+  description: z.string().max(500), surfaces: z.array(z.enum(['page','dashboard','flow'])).min(1),
+  resize: libraryComponentResizeSchema, jsxSource: z.string().min(1).max(200_000),
+  cssSource: z.string().max(100_000), compiledJs: z.string().min(1).max(500_000),
+  scopedCss: z.string().max(150_000), updatedAt: z.string().datetime()
+});
 const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
@@ -1319,7 +1326,12 @@ const libraryComponentSchema = z.object({
   compiledJs: z.string().min(1).max(500_000),
   scopedCss: z.string().max(150_000),
   version: z.number().int().positive(),
-  updatedAt: z.string().datetime()
+  updatedAt: z.string().datetime(),
+  status: z.enum(['Draft','Published']).optional(),
+  publishedVersion: z.number().int().nonnegative().optional(),
+  revisions: z.array(libraryComponentRevisionSchema).max(100).optional(),
+  pendingDraft: libraryComponentRevisionSchema.optional(),
+  trustedBundled: z.boolean().optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -1332,13 +1344,27 @@ const libraryComponentInputSchema = z.object({
   surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
   resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
-  cssSource: z.string().max(100_000).default('')
+  cssSource: z.string().max(100_000).default(''),
+  publicationStatus: z.enum(['Draft','Published']).default('Published')
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
   }
 });
 type LibraryComponent = z.infer<typeof libraryComponentSchema>;
+type LibraryComponentRevision = z.infer<typeof libraryComponentRevisionSchema>;
+function libraryRevision(component: LibraryComponent): LibraryComponentRevision {
+  const { version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt } = component;
+  return {version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt};
+}
+function nextLibraryRevision(component: LibraryComponent): number {
+  return Math.max(component.version,component.pendingDraft?.version ?? 0,...(component.revisions ?? []).map((r)=>r.version))+1;
+}
+function libraryHistory(component: LibraryComponent) {
+  return [...(component.revisions ?? []).map((r)=>({version:r.version,status:'Published',updatedAt:r.updatedAt})),
+    {version:component.version,status:component.status ?? 'Published',updatedAt:component.updatedAt},
+    ...(component.pendingDraft?[{version:component.pendingDraft.version,status:'Draft',updatedAt:component.pendingDraft.updatedAt}]:[])];
+}
 const pageActivationAssignmentSchema = z.object({
   id: z.string().min(1),
   scope: z.enum(['Org Default', 'App Default', 'App and Profile', 'App, Record Type, and Profile']),
@@ -10903,7 +10929,8 @@ function syncBundledLibraryComponents(): Promise<void> {
         compiledJs: compiled.code,
         scopedCss: scopeLibraryCss(input.cssSource, input.apiName),
         version: 1,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        status: 'Published', publishedVersion: 1, revisions: [], trustedBundled: true
       });
     }
     if (imported.length) {
@@ -10958,7 +10985,10 @@ app.post('/api/component-library', requirePermission('components:manage'), async
       compiledJs: compiled.code,
       scopedCss,
       version: 1,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      status: parsed.data.publicationStatus,
+      publishedVersion: parsed.data.publicationStatus === 'Published' ? 1 : 0,
+      revisions: [], trustedBundled: false
     };
     const nextState = { ...state, libraryComponents: [...state.libraryComponents, component] };
     persistState(nextState);
@@ -11001,13 +11031,19 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     if (/\brequire\s*\(/.test(compiled.code)) {
       return res.status(400).json({ error: 'Custom components must be self-contained and cannot import external modules' });
     }
-    const component: LibraryComponent = {
-      ...parsed.data,
-      compiledJs: compiled.code,
-      scopedCss: scopeLibraryCss(parsed.data.cssSource, apiName),
-      version: state.libraryComponents[existingIndex].version + 1,
+    const compiledRevision: LibraryComponentRevision = {
+      version: nextLibraryRevision(existing), label: parsed.data.label, description: parsed.data.description,
+      surfaces: parsed.data.surfaces, resize: parsed.data.resize,
+      jsxSource: parsed.data.jsxSource, cssSource: parsed.data.cssSource,
+      compiledJs: compiled.code, scopedCss: scopeLibraryCss(parsed.data.cssSource, apiName),
       updatedAt: new Date().toISOString()
     };
+    const component: LibraryComponent = parsed.data.publicationStatus === 'Draft'
+      ? { ...existing, pendingDraft: compiledRevision }
+      : { ...existing, ...compiledRevision, status: 'Published',
+        publishedVersion: compiledRevision.version,
+        revisions: [...(existing.revisions ?? []), ...(existing.status === 'Draft' ? [] : [libraryRevision(existing)])].slice(-100),
+        pendingDraft: undefined };
     const libraryComponents = [...state.libraryComponents];
     libraryComponents[existingIndex] = component;
     const nextState = { ...state, libraryComponents };
@@ -11017,6 +11053,42 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
   } catch (error) {
     return res.status(400).json({ error: `Unable to compile component: ${error instanceof Error ? error.message : String(error)}` });
   }
+});
+app.get('/api/component-library/:apiName/history', requirePermission('components:manage'), (req: Request, res: Response) => {
+  const component=state.libraryComponents.find((item)=>item.apiName===routeParam(req,'apiName'));
+  if(!component)return res.status(404).json({error:'Library component was not found'});
+  return res.json({apiName:component.apiName,history:libraryHistory(component)});
+});
+app.post('/api/component-library/:apiName/publish', requirePermission('components:manage'), (req: Request, res: Response) => {
+  const apiName=routeParam(req,'apiName'),index=state.libraryComponents.findIndex((item)=>item.apiName===apiName);
+  if(index<0)return res.status(404).json({error:'Library component was not found'});
+  const existing=state.libraryComponents[index],draft=existing.pendingDraft;
+  if(!draft && existing.status!=='Draft')return res.status(409).json({error:'There is no draft to publish'});
+  const next:LibraryComponent=draft
+    ? {...existing,...draft,status:'Published',publishedVersion:draft.version,
+      revisions:[...(existing.revisions??[]),...(existing.status==='Draft'?[]:[libraryRevision(existing)])].slice(-100),pendingDraft:undefined}
+    : {...existing,status:'Published',publishedVersion:existing.version};
+  const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
+  const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
+  return res.json({component:next});
+});
+app.post('/api/component-library/:apiName/rollback', requirePermission('components:manage'), (req: Request, res: Response) => {
+  const apiName=routeParam(req,'apiName'),index=state.libraryComponents.findIndex((item)=>item.apiName===apiName);
+  if(index<0)return res.status(404).json({error:'Library component was not found'});
+  const parsed=z.object({version:z.number().int().positive()}).strict().safeParse(req.body);
+  if(!parsed.success)return res.status(400).json({error:'Select a published historical version'});
+  const existing=state.libraryComponents[index];
+  const previous=(existing.revisions??[]).find((item)=>item.version===parsed.data.version);
+  if(!previous)return res.status(404).json({error:'Published revision not found'});
+  const usages=findLibraryComponentUsages(state,apiName);
+  const removed=existing.surfaces.filter((surface)=>!previous.surfaces.includes(surface)&&usages.some((usage)=>usage.surface===surface));
+  if(removed.length)return res.status(409).json({error:'Rollback would remove surfaces still in use',dependencies:usageBlockerDetails(usages.filter((u)=>removed.includes(u.surface)),getPrincipal(res).tenantId)});
+  const nextVersion=nextLibraryRevision(existing);
+  const next:LibraryComponent={...existing,...previous,version:nextVersion,updatedAt:new Date().toISOString(),status:'Published',
+    publishedVersion:nextVersion,pendingDraft:undefined,revisions:[...(existing.revisions??[]),libraryRevision(existing)].slice(-100)};
+  const libraryComponents=[...state.libraryComponents];libraryComponents[index]=next;
+  const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
+  return res.json({component:next,restoredFrom:parsed.data.version});
 });
 app.delete('/api/component-library/:apiName', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
