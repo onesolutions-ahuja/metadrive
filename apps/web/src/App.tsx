@@ -8864,6 +8864,27 @@ function PageBuilder({
     try {
       const saved = await onSave(nextPage, savedPageApiName.current);
       if (saved) {
+        if (nextPage.status === 'Active' && nextPage.pageType === 'App Page') {
+          const appIds = [...new Set((nextPage.activationAssignments ?? [])
+            .map(assignment => assignment.appId)
+            .filter((appId): appId is string => Boolean(appId)))];
+          for (const appId of appIds) {
+            const app = apps.find(item => item.apiName === appId);
+            if (!app || app.navigationPageApiNames.includes(nextPage.apiName)) continue;
+            const navigationPageApiNames = [...app.navigationPageApiNames, nextPage.apiName];
+            try {
+              await onSaveApp({
+                ...app, navigationPageApiNames,
+                navigationOrder: reconcileNavigationOrder(
+                  app.navigationItems, navigationPageApiNames, app.navigationOrder
+                )
+              }, true);
+            } catch (error) {
+              onNotify(error instanceof Error ? error.message
+                : 'Page activated, but application navigation could not be updated');
+            }
+          }
+        }
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
         setRedoStack([]);
@@ -8968,7 +8989,7 @@ function PageBuilder({
       canvasWidth: newPageLayoutMode === 'free-canvas' ? 1080 : 1920,
       canvasHeight: newPageLayoutMode === 'free-canvas' ? 1920 : 1080,
       status: 'Draft', devices: [...newPageDevices], components: [],
-      activationAssignments: newPageAppId && newPageType !== 'App Page'
+      activationAssignments: newPageAppId
         ? [{
           id: crypto.randomUUID(), scope: 'App Default', appId: newPageAppId,
           profileId: null, recordTypeId: null, formFactors: [...newPageDevices]
@@ -8980,22 +9001,6 @@ function PageBuilder({
       // with the previously selected page on its next metadata refresh.
       const saved = await onSave(nextPage, apiName, 'Lightning page draft created');
       if (!saved) return;
-      if (nextPage.pageType === 'App Page' && newPageAppId) {
-        const app = apps.find(item => item.apiName === newPageAppId);
-        if (app && !app.navigationPageApiNames.includes(apiName)) {
-          const navigationPageApiNames = [...app.navigationPageApiNames, apiName];
-          try {
-            await onSaveApp({
-              ...app, navigationPageApiNames,
-              navigationOrder: reconcileNavigationOrder(
-                app.navigationItems, navigationPageApiNames, app.navigationOrder
-              )
-            }, true);
-          } catch (error) {
-            onNotify(error instanceof Error ? error.message : 'Page created, but its application navigation could not be updated');
-          }
-        }
-      }
       savedPageApiName.current = apiName;
       if (newPageAppId) setBuilderAppApiName(newPageAppId);
       setSelectedId('');
@@ -9878,7 +9883,7 @@ function PageBuilder({
           </label>
           <p className="properties-help">
             {newPageType === 'App Page'
-              ? 'After your first Save, this page will be added to the chosen application’s navigation.'
+              ? 'When you Activate this page, it will automatically be added to the chosen application's navigation.'
               : 'For Home and Record pages, choosing an application prepares an App Default assignment. You can change it before activation.'}
           </p>
           {newPageLayoutMode === 'template' && <label className="form-label" htmlFor="new-lightning-page-template">
