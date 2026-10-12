@@ -843,6 +843,8 @@ export type UserMetadata = {
   timeZone: string;
   locale: string;
   currencyIsoCode?: string;
+  userType?: 'internal' | 'external';
+  externalAccountId?: string;
 };
 
 export type RoleMetadata = {
@@ -894,7 +896,25 @@ export type SharingRuleMetadata = {
   accessLevel: 'Read' | 'Edit';
 };
 
+export type RestrictionConditionMetadata = {
+  field:string;
+  operator:'eq'|'ne'|'in'|'notIn'|'isNull'|'notNull';
+  value?:string|string[]|number|boolean|null;
+};
+export type RestrictionRuleMetadata = {
+  id:string;tenantId:string;objectApiName:string;enabled:boolean;
+  subjectType:'all'|'user'|'role'|'external';subjectId?:string;
+  conditionLogic:'all'|'any';conditions:RestrictionConditionMetadata[];
+};
+export type SharingSettingMetadata = {
+  defaultAccess:'Private'|'Public Read Only'|'Public Read/Write';
+  grantAccessUsingHierarchies:boolean;
+  restrictionRules?:RestrictionRuleMetadata[];
+  portalEnabled?:boolean;
+  portalAccountField?:string;
+};
 export type AccessControlMetadata = {
+  tenantId?:string;
   profiles: ProfileMetadata[];
   permissionSets: PermissionSetMetadata[];
   permissionSetGroups: PermissionSetGroupMetadata[];
@@ -903,7 +923,7 @@ export type AccessControlMetadata = {
   queues: QueueMetadata[];
   sharingRules: SharingRuleMetadata[];
   users: UserMetadata[];
-  sharingSettings: Record<string, { defaultAccess: 'Private' | 'Public Read Only' | 'Public Read/Write'; grantAccessUsingHierarchies: boolean }>;
+  sharingSettings: Record<string, SharingSettingMetadata>;
 };
 
 export type CurrencySettingsMetadata = {

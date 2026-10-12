@@ -4,7 +4,7 @@
 **Inventory date:** 2026-10-08  
 **Scope:** tenant-scoped security and authorization only. Flow Builder, dashboards as a product feature, and unrelated platform work are excluded. Dashboard/report behavior is in scope only where it consumes RBAC decisions.
 
-This plan retains three phases. The Module 4 authorization work of 2026-10-12 permits Phase 2 implementation while **Phase 3 advanced sharing/restriction rules remains explicitly deferred to the last phase**. Salesforce parity is not claimed until that future scope is implemented and verified.
+This plan retains the three frozen Salesforce-parity workstreams. The previously deferred Phase 3 advanced-sharing work is delivered under **Module 4 Phase 4**; its scoped implementation and verification are recorded below. Full Salesforce security parity beyond these named semantics is not implied.
 
 ## Existing implementation
 
@@ -22,7 +22,7 @@ This plan retains three phases. The Module 4 authorization work of 2026-10-12 pe
 |---|---|---|
 | **1 — Complete and verify the implemented RBAC core** | Close inconsistencies in the already-supported profile/permission-set/group, role, record-type, OWD, public-group, and sharing-rule surfaces. Keep metadata references tenant-valid, ensure Setup Quick Find shortcuts reach the correct security-workspace section, and prove current API authorization behavior with end-to-end smoke tests. No new Salesforce security feature family is introduced in this phase. | **Complete in this task** |
 | **2 — Salesforce administration and assignment parity** | Queue membership and protected queue/user ownership transfer; system, application, and tab grants; synchronous Permission Set Group recalculation and muting; tenant-isolated allow/deny tests. | Implemented in PR #152; CI validation required |
-| **3 — Advanced sharing and remaining platform semantics** | Restriction rules, implicit sharing, territory access, external/portal-user security, and advanced cross-surface tests. | Deferred to last phase at user's request |
+| **3 — Advanced sharing and remaining platform semantics** | Restriction rules, implicit sharing, territory access, external/portal-user security, and advanced cross-surface tests. | Implemented as Module 4 Phase 4 in PR #173; staging CI and isolated security tests are the release gate |
 
 ## Phase 1 completion record
 
@@ -44,3 +44,13 @@ This plan retains three phases. The Module 4 authorization work of 2026-10-12 pe
 - Permission Set Groups are resolved synchronously when tenant RBAC is saved. Calculation status and last calculated timestamp are recorded as Updated, and the versioned tenant state immediately invalidates cached effective grants. No background worker, pending recalculation queue, or per-request database lookup is added.
 - `navigation-rbac.smoke.test.ts` covers changes to profile, set/group muting, stale-grant prevention, direct-URL denial, invalid app references, owner transfer and queue/tenant isolation.
 - Final CI and deployment performance results are acceptance evidence, not implied by this source-only record. This phase does not cover advanced sharing, full Salesforce parity, or an unverified platform-assisted tenant rescue ceremony.
+
+## Module 4 Phase 4 — Advanced access implementation (2026-10-12)
+
+- Restriction rules are tenant-/object-bound, schema-validated and configured alongside existing sharing settings. Enabled rules narrow owner, hierarchy, manual-share, public/default and View All/Modify All grants in the central record authorization function. Rule subjects include individual users, roles, external users and all users; conditions support all/any combinations, scalar comparisons, membership and null checks. Unknown fields, foreign tenants/roles/users and duplicate rules are rejected.
+- Master-detail parent access remains implicit and recursive with cycle protection; a new relationship resolver validates additional parent-to-child and territory authorization inputs without granting object or field permissions.
+- Read-only record territory grants consult tenant-validated territory hierarchies and memberships when a record has a matching TerritoryId. Territory ownership and write grants are not inferred from viewer memberships.
+- External-user metadata requires a tenant-local Account ID. The authenticated API allows only account-scoped GET record/list and self-identity operations for those users; other Setup, Named Credentials, reporting and mutation routes are explicitly blocked. Portal access is disabled unless configured for the object.
+- The existing Security workspace exposes restriction editors, portal object settings, and user-type/account-boundary assignment, using the existing tenant RBAC management permission and tenant versioned-state persistence. Other tenants cannot refer to these users or rules.
+- API-level regression coverage verifies restriction enforcement against privileged users, updates and invalid cross-tenant rules, plus immediate permission refresh and portal-user route isolation. Additional pure-function tests cover cyclic territory graphs, cross-tenant relationships and default-deny behavior.
+- No additional infrastructure or external service is required. Code review and CI evidence determine merge readiness. These controls do not claim Salesforce Enterprise Territory Management or an independently operated multi-identity portal product.

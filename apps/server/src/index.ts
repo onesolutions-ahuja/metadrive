@@ -2,6 +2,7 @@ import cors from 'cors';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { tenantUsageSnapshot } from './tenant-usage.mjs';
+import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
@@ -2181,7 +2182,9 @@ const accessUserSchema = z.object({
   permissionSetGroupIds: z.array(z.string()).default([]),
   timeZone: z.string().default('UTC'),
   locale: z.string().default('en-US'),
-  currencyIsoCode: z.string().regex(/^[A-Z]{3}$/).optional()
+  currencyIsoCode: z.string().regex(/^[A-Z]{3}$/).optional(),
+  userType: z.enum(['internal', 'external']).optional(),
+  externalAccountId: z.string().min(1).max(128).optional()
 }).superRefine((user, context) => {
   if (!dashboardTimeZoneSchema.safeParse(user.timeZone).success) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['timeZone'], message: 'User time zone must be a valid IANA time zone' });
@@ -2536,9 +2539,27 @@ const fieldHistoryEntrySchema = z.object({
   changedAt: z.string().datetime()
 });
 type FieldHistoryEntry = z.infer<typeof fieldHistoryEntrySchema>;
+const advancedRestrictionConditionSchema = z.object({
+  field: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  operator: z.enum(['eq', 'ne', 'in', 'notIn', 'isNull', 'notNull']),
+  value: z.unknown().optional()
+});
+const advancedRestrictionRuleSchema = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+  tenantId: z.string().min(1),
+  objectApiName: z.string().min(1),
+  enabled: z.boolean(),
+  subjectType: z.enum(['all', 'user', 'role', 'external']),
+  subjectId: z.string().optional(),
+  conditionLogic: z.enum(['all', 'any']),
+  conditions: z.array(advancedRestrictionConditionSchema).min(1).max(16)
+});
 const sharingSettingSchema = z.object({
   defaultAccess: z.enum(['Private', 'Public Read Only', 'Public Read/Write']),
-  grantAccessUsingHierarchies: z.boolean().default(true)
+  grantAccessUsingHierarchies: z.boolean().default(true),
+  restrictionRules: z.array(advancedRestrictionRuleSchema).max(100).optional(),
+  portalEnabled: z.boolean().optional(),
+  portalAccountField: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional()
 });
 const currencySettingsSchema = z.object({
   corporateCurrency: z.string().regex(/^[A-Z]{3}$/).default('USD'),
@@ -5365,6 +5386,19 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
         (typeof claims.iat !== 'number' || claims.iat <= user.authRevokedBefore)) {
       res.status(401).json({ error: 'Access token was issued before credentials changed' });
       return;
+    }
+    // Portal identities have a deliberately narrow route allowlist, separate
+    // from role and object permissions. They cannot reach Setup, credentials,
+    // sharing administration, Flows, reports, or record mutation endpoints.
+    const accessMetadataUser = state.tenants[tenantId].accessControl.users
+      .find((member) => member.id === user.id);
+    if (accessMetadataUser?.userType === 'external') {
+      const portalRecordRead = req.method === 'GET' &&
+        /^\/api\/records\/[A-Za-z0-9_]+(?:\/[A-Za-z0-9_-]+)?$/.test(req.path);
+      if (!(portalRecordRead || (req.method === 'GET' && req.path === '/api/auth/me'))) {
+        res.status(403).json({ error: 'External identities cannot use this tenant API' });
+        return;
+      }
     }
     res.locals.principal = {
       userId: user.id,
@@ -8938,6 +8972,31 @@ function hasRecordAccess(
   visited.add(recordKey);
   const objectAction = accessLevel === 'Read' ? 'read' : accessLevel === 'Edit' ? 'edit' : 'delete';
   if (!hasObjectPermission(principal, tenant, objectName, objectAction)) return false;
+  const advancedSettings = tenant.sharingSettings[objectName];
+  const advancedUser = tenant.accessControl.users.find((user) => user.id === principal.userId);
+  const advancedRules = advancedSettings?.restrictionRules ?? [];
+  if (advancedRules.length || advancedUser?.userType === 'external') {
+    const accountField = advancedSettings?.portalAccountField ?? 'AccountId';
+    const recordAccountId = accountField === 'Id' ? record.Id : record[accountField];
+    const decision = decideAdvancedRecordAccess({
+      context: {
+        tenantId: principal.tenantId, userId: principal.userId,
+        objectApiName: objectName, operation: objectAction,
+        userType: advancedUser?.userType === 'external' ? 'external' : 'internal',
+        roleIds: advancedUser?.roleId ? [advancedUser.roleId] : [],
+        objectPermission: true,
+        externalAccessEnabled: advancedSettings?.portalEnabled === true,
+        accountId: advancedUser?.externalAccountId
+      },
+      record: {
+        ...record, tenantId: principal.tenantId,
+        accountId: recordAccountId,
+        portalVisible: advancedSettings?.portalEnabled === true
+      },
+      ordinaryAuthorized: true, rules: advancedRules
+    });
+    if (!decision.allowed) return false;
+  }
   if (accessLevel === 'Read' && hasObjectWidePermission(principal, tenant, objectName, 'viewAll')) return true;
   if ((accessLevel === 'Edit' || accessLevel === 'Delete')
     && hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')) return true;
@@ -8964,6 +9023,23 @@ function hasRecordAccess(
     item.userId === principal.userId
       || Boolean(item.groupId && publicGroupContainsUser(item.groupId, principal.userId, tenant)));
   if (share && (share.accessLevel === 'Edit' || accessLevel === 'Read')) return true;
+  if (accessLevel === 'Read' && typeof record.TerritoryId === 'string'
+    && tenant.dashboardTerritories.length) {
+    const territorialGrant = resolveAdvancedRecordGrant({
+      tenantId: principal.tenantId, userId: principal.userId,
+      recordId: record.Id, recordTerritoryId: record.TerritoryId,
+      operation: 'read',
+      territoryEdges: tenant.dashboardTerritories.map((entry) => ({
+        tenantId: principal.tenantId, id: entry.id, parentId: entry.parentTerritoryId
+      })),
+      territoryMemberships: tenant.dashboardTerritories.flatMap((entry) =>
+        entry.userIds.map((userId) => ({
+          tenantId: principal.tenantId, userId, territoryId: entry.id,
+          accessLevel: 'read', includeSubordinates: true
+        })))
+    });
+    if (territorialGrant.granted) return true;
+  }
   if (tenant.accessControl.sharingRules.some((rule) =>
     rule.objectApiName === objectName
     && (rule.accessLevel === 'Edit' || accessLevel === 'Read')
@@ -13415,7 +13491,7 @@ app.put('/api/metadata/currencies', requirePermission('security:manage'), (req: 
 app.get('/api/metadata/permissions', requirePermission('security:read'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId);
   res.json(tenant
-    ? { ...tenant.accessControl, sharingSettings: tenant.sharingSettings }
+    ? { ...tenant.accessControl, sharingSettings: tenant.sharingSettings, tenantId: getPrincipal(res).tenantId }
     : { profiles: [], permissionSets: [], permissionSetGroups: [], roles: [], publicGroups: [], sharingRules: [], users: [], sharingSettings: {} });
 });
 app.put('/api/metadata/permissions', requirePermission('security:manage'), (req: Request, res: Response) => {
@@ -13459,6 +13535,12 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
   if (parsed.data.users.some((user) => !user.roleId)) {
     return res.status(400).json({ error: 'Every tenant user must be assigned to a role' });
   }
+  const invalidExternalUser = parsed.data.users.find((member) =>
+    member.userType === 'external' &&
+    (!member.externalAccountId ||
+      !(tenant.records.Account ?? []).some((record) => record.Id === member.externalAccountId)));
+  if (invalidExternalUser)
+    return res.status(400).json({ error: 'External identity requires a tenant-local account boundary' });
   const identitiesByEmail = new Map(state.users
     .filter((user) => user.tenantId === principal.tenantId)
     .map((user) => [user.email.trim().toLowerCase(), user.id]));
@@ -13478,6 +13560,33 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
     }
   ]));
+  try {
+    for (const [objectName, setting] of Object.entries(sharingSettings)) {
+      const object = tenant.objects.find((entry) => entry.apiName === objectName);
+      if (!object) throw new Error('Sharing references an unknown object');
+      validateAdvancedSharingMetadata({
+        tenantId: principal.tenantId, objectApiName: objectName,
+        rules: setting.restrictionRules ?? []
+      });
+      for (const rule of setting.restrictionRules ?? []) {
+        if (rule.subjectType === 'user' &&
+          !parsed.data.users.some((user) => user.id === rule.subjectId))
+          throw new Error('Restriction references unknown tenant user');
+        if (rule.subjectType === 'role' &&
+          !parsed.data.roles.some((role) => role.id === rule.subjectId))
+          throw new Error('Restriction references unknown tenant role');
+        if (rule.conditions.some((criterion) =>
+          criterion.field !== 'Id' && !object.fields.some((field) => field.apiName === criterion.field)))
+          throw new Error('Restriction references unknown object field');
+      }
+      if (setting.portalEnabled && setting.portalAccountField !== 'Id' &&
+        !object.fields.some((field) =>
+          field.apiName === (setting.portalAccountField ?? 'AccountId')))
+        throw new Error('Portal account boundary must reference an existing object field');
+    }
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid advanced sharing metadata' });
+  }
   const tenantUsers = state.users.filter((user) => user.tenantId === principal.tenantId);
   const usersById = new Map(tenantUsers.map((user) => [user.id, user]));
   if (parsed.data.users.some((user) => !usersById.has(user.id))) {
