@@ -5308,6 +5308,153 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
   }
 });
 
+
+const passwordRecoverySettingsSchema = z.object({
+  smtpCredentialId: z.union([z.literal(''), z.string().uuid()]),
+  fromEmail: z.union([z.literal(''), z.string().email()])
+}).strict();
+const passwordResetRequestSchema = z.object({ email: z.string().trim().email().max(254) }).strict();
+const passwordResetConfirmSchema = z.object({
+  email: z.string().trim().email().max(254),
+  token: z.string().regex(/^[A-Za-z0-9_-]{64}$/),
+  newPassword: z.string().min(12).max(256)
+}).strict();
+const passwordResetRate = new Map<string, { count: number; until: number }>();
+function resetAllowed(key: string, max = 3): boolean {
+  const now = Date.now();
+  if (passwordResetRate.size > 4096) {
+    for (const [id, value] of passwordResetRate) if (value.until < now) passwordResetRate.delete(id);
+    if (passwordResetRate.size > 4096) passwordResetRate.delete(passwordResetRate.keys().next().value!);
+  }
+  const previous = passwordResetRate.get(key);
+  if (previous && previous.until > now && previous.count >= max) return false;
+  passwordResetRate.set(key, {
+    count: previous && previous.until > now ? previous.count + 1 : 1,
+    until: now + 15 * 60_000
+  });
+  return true;
+}
+function configuredRecoveryUrl(): URL | null {
+  const raw = process.env.METADRIVE_PASSWORD_RESET_BASE_URL;
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    const isLocalTest = process.env.NODE_ENV !== 'production'
+      && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+    if ((url.protocol !== 'https:' && !isLocalTest) || url.username || url.password
+      || url.search || url.hash || url.pathname !== '/' || !webOrigins.has(url.origin)) return null;
+    return url;
+  } catch { return null; }
+}
+app.get('/api/auth/password-recovery/settings', accessAuthentication,
+  requirePermission('security:manage'), (_req: Request, res: Response) => {
+    const tenant = tenantData(getPrincipal(res).tenantId)!;
+    return res.json({ ...tenant.passwordRecovery, linkReady: Boolean(configuredRecoveryUrl()) });
+  });
+app.put('/api/auth/password-recovery/settings', accessAuthentication,
+  requirePermission('security:manage'), (req: Request, res: Response) => {
+    const parsed = passwordRecoverySettingsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid password-recovery settings' });
+    const principal = getPrincipal(res);
+    const tenant = tenantData(principal.tenantId)!;
+    if (parsed.data.smtpCredentialId) {
+      const credential = tenant.namedCredentials.find((item) =>
+        item.id === parsed.data.smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false);
+      if (!credential || !parsed.data.fromEmail)
+        return res.status(400).json({ error: 'Choose an enabled SMTP Named Credential and valid sender email' });
+      if (!configuredRecoveryUrl())
+        return res.status(503).json({ error: 'Trusted password-reset web URL is not configured' });
+    } else if (parsed.data.fromEmail) {
+      return res.status(400).json({ error: 'Sender email requires an SMTP credential' });
+    }
+    persistTenantRecords(principal.tenantId, withSecurityEvent(
+      { ...tenant, passwordRecovery: parsed.data }, principal.userId,
+      'auth.password-recovery.settings.updated'
+    ));
+    return res.json(parsed.data);
+  });
+app.post('/api/auth/password-reset/request', async (req: Request, res: Response) => {
+  const response = { message: 'If this account supports email recovery, a link will be sent.' };
+  if (jwtService.config.mode !== 'local') return res.status(202).json(response);
+  const parsed = passwordResetRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid email' });
+  const email = parsed.data.email.toLowerCase();
+  const ip = req.ip ?? 'unknown';
+  if (!resetAllowed('ip:' + ip, 12) || !resetAllowed('email:' + hashToken(email)))
+    return res.status(202).json(response);
+  const user = state.users.find((item) => item.email.trim().toLowerCase() === email);
+  const tenant = user && tenantData(user.tenantId);
+  const url = configuredRecoveryUrl();
+  if (!user || user.disabled || !tenant || !url) return res.status(202).json(response);
+  const { smtpCredentialId, fromEmail } = tenant.passwordRecovery;
+  if (!smtpCredentialId || !fromEmail) return res.status(202).json(response);
+  const credential = tenant.namedCredentials.find((item) =>
+    item.id === smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false);
+  if (!credential) return res.status(202).json(response);
+  const token = randomBytes(48).toString('base64url');
+  const resetUrl = new URL(url.toString());
+  resetUrl.searchParams.set('resetEmail', email);
+  resetUrl.searchParams.set('resetToken', token);
+  try {
+    await sendTenantEmail(user.tenantId, tenant, smtpCredentialId, fromEmail, [email],
+      'MetaDrive password reset',
+      'A password reset was requested. This link expires in 15 minutes.\n\n' + resetUrl.toString()
+      + '\n\nIgnore this message if you did not request it. MFA requirements remain unchanged.');
+    const current = state.users.find((item) => item.id === user.id && item.tenantId === user.tenantId);
+    if (!current || current.disabled || !tenantData(user.tenantId)) return res.status(202).json(response);
+    const nextState: PlatformState = {
+      ...state,
+      users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+        ? { ...item, passwordReset: { tokenHash: hashToken(token), expiresAt: Date.now() + 15 * 60_000 } }
+        : item),
+      tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
+        state.tenants[user.tenantId], user.id, 'auth.password-reset.requested') }
+    };
+    persistState(nextState);
+    state = nextState;
+  } catch {
+    // Generic outward result. Do not log tokens, URLs, recipients, or request bodies.
+    console.warn('Password recovery delivery/persistence unavailable');
+  }
+  return res.status(202).json(response);
+});
+app.post('/api/auth/password-reset/confirm', async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'Password reset is managed by the identity provider' });
+  const parsed = passwordResetConfirmSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid password-reset request' });
+  const email = parsed.data.email.toLowerCase();
+  if (!resetAllowed('redeem:' + (req.ip ?? 'unknown') + ':' + hashToken(email), 8))
+    return res.status(429).json({ error: 'Too many reset attempts' });
+  const user = state.users.find((item) => item.email.toLowerCase() === email);
+  const request = user?.passwordReset;
+  const valid = Boolean(user && !user.disabled && tenantData(user.tenantId)
+    && request && request.expiresAt > Date.now()
+    && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token))));
+  if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset link' });
+  const hashed = await hashPassword(parsed.data.newPassword);
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => {
+      if (item.id !== user.id || item.tenantId !== user.tenantId) return item;
+      const updated: LocalUser = {
+        ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
+        authVersion: (item.authVersion ?? 0) + 1
+      };
+      delete updated.passwordReset;
+      delete updated.lockedUntil;
+      return updated;
+    }),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
+    tenants: {
+      ...state.tenants, [user.tenantId]: withSecurityEvent(
+        state.tenants[user.tenantId], user.id, 'auth.password-reset.completed')
+    }
+  };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to complete password reset' }); }
+  return res.json({ reset: true, signInRequired: true });
+});
+
 app.post('/api/auth/login', async (req: Request, res: Response) => {
   const loginStartedAt = performance.now();
   if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Password login is disabled in external OIDC mode' });
@@ -5729,8 +5876,12 @@ app.post('/api/auth/change-password', accessAuthentication, async (req: Request,
   const nextState: PlatformState = {
     ...state,
     users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
-        authVersion: (item.authVersion ?? 0) + 1 }
+      ? (() => {
+        const updated: LocalUser = { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
+          authVersion: (item.authVersion ?? 0) + 1 };
+        delete updated.passwordReset;
+        return updated;
+      })()
       : item),
     refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
       ? { ...session, revokedAt: changedAt } : session),
