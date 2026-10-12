@@ -73,7 +73,9 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
   if(!previous||!Number.isSafeInteger(previous.version)||!previous.digest ||
      !Number.isSafeInteger(previous.storageRevision)||!Array.isArray(previous.nodes))
     throw Error('A verified normalized SQL snapshot with storage nodes is required');
+  const writeStartedAt=performance.now();
   const {nodes,digest}=projectNormalizedTree(nextState);
+  const projectedAt=performance.now();
   if(digest===previous.digest) return {...previous};
   const delta=planNormalizedDelta(previous.nodes,nodes);
   // One lossless graph roundtrip and checksum verification. Projecting again
@@ -81,8 +83,10 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
   if(stateDigest(restoreNormalizedTree(delta.nodes))!==digest)
     throw Error('Incremental normalized graph did not preserve next state');
 
+  const preparedAt=performance.now();
   const touched=[...delta.updated,...delta.inserted];
   const client=await pool.connect();
+  const connectedAt=performance.now();
   let begun=false;
   try {
     await client.query("BEGIN; SET LOCAL lock_timeout='10s'; SET LOCAL statement_timeout='120s'");
@@ -135,10 +139,12 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
       row=>row.nodeId,row=>row.parentId,row=>row.slotKey,row=>row.ordinal,
       row=>row.kind,row=>row.stringValue,row=>row.numberValue,row=>row.boolValue
     ];
+    const sqlStartedAt=performance.now();
     const results=await client.query(sql,[
       previous.version,previous.digest,digest,previous.storageRevision,
       delta.deleted.map(row=>row.nodeId),...fields.map(select=>touched.map(select))
     ]);
+    const sqlFinishedAt=performance.now();
     const summary=results.rows.find(row=>row.summary===true);
     if(!summary||summary.guarded_rows!==1)
       throw Error('Concurrent writer detected; no state was overwritten');
@@ -147,9 +153,13 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
     verifyDeltaReadback(touched,results.rows.filter(row=>row.summary===false));
     // Physical CRUD remains in the same transaction, never asynchronously
     // deferred. The caller cannot receive a token before durable COMMIT.
+    const verificationFinishedAt=performance.now();
     if(synchronizePhysicalRecords)
       await synchronizePhysicalRecords(client,nextState,previous.state);
+    const physicalSyncFinishedAt=performance.now();
     await client.query('COMMIT');
+    const commitFinishedAt=performance.now();
+    if(commitFinishedAt-writeStartedAt>500) console.info(`SQL state commit phases: projection=${(projectedAt-writeStartedAt).toFixed(1)}ms delta-verify=${(preparedAt-projectedAt).toFixed(1)}ms pool-connect=${(connectedAt-preparedAt).toFixed(1)}ms begin=${(sqlStartedAt-connectedAt).toFixed(1)}ms sql=${(sqlFinishedAt-sqlStartedAt).toFixed(1)}ms readback=${(verificationFinishedAt-sqlFinishedAt).toFixed(1)}ms typed-sync=${(physicalSyncFinishedAt-verificationFinishedAt).toFixed(1)}ms commit=${(commitFinishedAt-physicalSyncFinishedAt).toFixed(1)}ms total=${(commitFinishedAt-writeStartedAt).toFixed(1)}ms changed=${touched.length} removed=${delta.deleted.length}`);
     begun=false;
     return {state:nextState,version:previous.version+1,digest,
       sourceDigest:summary.source_digest.trim(),
