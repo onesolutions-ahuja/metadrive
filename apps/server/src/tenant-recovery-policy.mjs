@@ -29,7 +29,7 @@ function validActor(actor) {
     && actor.active === true;
 }
 export function assertRecoveryEligible(caseFile, now = Date.now()) {
-  if (!caseFile || caseFile.status !== 'pending'
+  if (!caseFile || typeof caseFile.id !== 'string' || !caseFile.id || caseFile.status !== 'pending'
     || typeof caseFile.tenantId !== 'string' || !caseFile.tenantId
     || typeof caseFile.claimantUserId !== 'string' || !caseFile.claimantUserId)
     throw new Error('Invalid pending recovery case');
@@ -47,10 +47,11 @@ export function assertRecoveryEligible(caseFile, now = Date.now()) {
   if (!Array.isArray(approvers) || approvers.length < 2)
     throw new Error('Two independent approvals required');
   const ids = new Set();
+  const earliestApproval = validDate(caseFile.createdAt) + RECOVERY_WAIT_MS;
   for (const a of approvers) {
     if (!validActor(a) || a.id === caseFile.claimantUserId
       || a.id === caseFile.requestedBy || ids.has(a.id)
-      || !Number.isFinite(validDate(a.approvedAt)) || validDate(a.approvedAt) < validDate(caseFile.createdAt)
+      || !Number.isFinite(validDate(a.approvedAt)) || validDate(a.approvedAt) < earliestApproval
       || validDate(a.approvedAt) > now)
       throw new Error('Approvals must be independent verified platform operators');
     ids.add(a.id);
