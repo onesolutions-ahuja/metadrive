@@ -13,7 +13,7 @@ export type PageActionRoutingContext = {
     apiName: string;
     pageType: string;
     status: string;
-    activationAssignments?: ReadonlyArray<{ appId?: string }>;
+    activationAssignments?: ReadonlyArray<{ appId: string | null }>;
   }>;
   currentAppId: string;
   defaultObjectApiName: string;
