@@ -8336,7 +8336,6 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (existing && isProtectedApiAuditRecord(objectName, existing)) return res.status(403).json({ error: 'API audit records are immutable' });
-  if (objectName === 'Communication_Records__c' && (existing?.Communication_Mode__c === 'API' || parsed.data.Communication_Mode__c === 'API')) return res.status(403).json({ error: 'API audit records are system-managed' });
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
@@ -8380,6 +8379,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   const parsed = z.record(z.unknown()).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (objectName === 'Communication_Records__c' && (existing?.Communication_Mode__c === 'API' || parsed.data.Communication_Mode__c === 'API')) return res.status(403).json({ error: 'API audit records are system-managed' });
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (Object.hasOwn(parsed.data, 'OwnerId')) {
     if (parsed.data.OwnerId !== existing.OwnerId) {
