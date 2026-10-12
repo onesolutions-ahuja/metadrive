@@ -86,7 +86,7 @@ async function capture(page, profile, label, findings) {
   // Mask content-bearing regions before uploading artifacts from a public repository.
   const masks = page.locator('input, textarea, [contenteditable="true"], [data-sensitive], table tbody td, [role="gridcell"], img, .user-menu, [class*="customer-info"], [class*="record-row"]');
   await page.screenshot({ path: file, fullPage: true, animations: 'disabled',
-    mask: masks, maskColor: '#cccccc', timeout: 20000 });
+    mask: [masks], maskColor: '#cccccc', timeout: 20000 });
   const comparison = { status: 'baseline-needed' };
   if (baselineDir) {
     const old = path.join(baselineDir, 'screenshots', name);
@@ -381,7 +381,8 @@ async function run() {
         // Login once per browser context; never store credentials in logs or artifacts.
         const loginStart = performance.now();
         await page.goto(base.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        await page.locator('input[type="email"]').first().waitFor({ state: 'visible', timeout: 20000 });
+        // Session restoration may retry through a slow API cold start.
+        await page.locator('input[type="email"]').first().waitFor({ state: 'visible', timeout: 110000 });
         await page.locator('input[type="email"]').first().fill(email);
         await page.locator('input[type="password"]').first().fill(password);
         p.login.validation = await page.locator('form').first().evaluate(form => ({ valid: form.checkValidity() }));
@@ -398,6 +399,15 @@ async function run() {
         }
       } catch (e) {
         p.login.status = 'failed';
+        try {
+          p.login.diagnostic = await page.evaluate(() => ({
+            pageTitle: document.title, urlPath: location.pathname,
+            appLoading: Boolean(document.querySelector('.auth-loading')),
+            loginFormVisible: Boolean(document.querySelector('#login-email')),
+            visibleTextCharacters: document.body?.innerText?.length || 0
+          }));
+          p.login.screenshot = await capture(page, profile.name, 'login-error', p.errors);
+        } catch { /* Preserve original failure without exposing page contents. */ }
         // Do not interpolate response bodies or form values; those may contain secrets.
         findIssue(p.errors, 'AUTHENTICATION_OR_NAVIGATION', 'critical', String(e.message || e).slice(0, 250));
       } finally {
