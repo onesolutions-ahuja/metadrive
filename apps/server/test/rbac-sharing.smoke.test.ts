@@ -2570,6 +2570,31 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal(updatedLibraryComponent.status, 200, JSON.stringify(updatedLibraryComponent.data));
     assert.equal(updatedLibraryComponent.data.component.version, 2,
       'editing a registered default-export component must compile and advance its version');
+    assert.equal(customLibraryComponent.data.component.trustedBundled,false,'uploaded JSX must never execute as trusted built-in code');
+    const draftRevision = await api.send('/component-library/Snapshot_Card', adminToken, 'PUT', {
+      ...customComponentSource,
+      description: 'Unpublished draft v3',
+      publicationStatus: 'Draft'
+    });
+    assert.equal(draftRevision.status,200,JSON.stringify(draftRevision.data));
+    assert.equal(draftRevision.data.component.version,2,'draft changes must not replace the published version');
+    assert.equal(draftRevision.data.component.pendingDraft.version,3);
+    const history = await api.send('/component-library/Snapshot_Card/history',adminToken);
+    assert.equal(history.status,200);
+    assert.ok(history.data.history.some((item: {version:number;status:string})=>item.version===3&&item.status==='Draft'));
+    assert.equal((await api.send('/component-library/Snapshot_Card/publish',undefined,'POST',{})).status,401);
+    const publishedDraft = await api.send('/component-library/Snapshot_Card/publish',adminToken,'POST',{});
+    assert.equal(publishedDraft.status,200,JSON.stringify(publishedDraft.data));
+    assert.equal(publishedDraft.data.component.version,3);
+    assert.equal(publishedDraft.data.component.pendingDraft,undefined);
+    const rolledBack = await api.send('/component-library/Snapshot_Card/rollback',adminToken,'POST',{version:2});
+    assert.equal(rolledBack.status,200,JSON.stringify(rolledBack.data));
+    assert.equal(rolledBack.data.component.version,4,'rollback creates a new monotonic version');
+    assert.equal(rolledBack.data.restoredFrom,2);
+    assert.equal(rolledBack.data.component.description,'Updated custom component version',
+      'rollback must restore historical compiled component metadata');
+    assert.equal(rolledBack.data.component.trustedBundled,false,'rollback must never promote uploaded code to trusted execution');
+
     const invalidLibraryComponentUpdate = await api.send('/component-library/Snapshot_Card', adminToken, 'PUT', {
       ...customComponentSource,
       jsxSource: 'const SnapshotCard=()=> <div />;'
