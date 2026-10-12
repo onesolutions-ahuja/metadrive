@@ -84,8 +84,8 @@ test('one WhatsApp number can switch legal and beauty context without extra mess
       Event_Type__c: 'API Call', Communication_Mode__c: 'API', Source__c: 'API',
       Direction__c: 'Incoming', From_Number__c: '447000000001'
     });
-    assert.equal(audit.status, 201, JSON.stringify(audit.result));
-    assert.equal(audit.result.record.Conversation_Context__c ?? '', '');
+    assert.equal(audit.status, 403, 'generic users cannot forge incoming API audit records');
+    assert.match(String(audit.result.error), /system-managed/);
   } finally {
     if (child && child.exitCode === null) {
       child.kill();

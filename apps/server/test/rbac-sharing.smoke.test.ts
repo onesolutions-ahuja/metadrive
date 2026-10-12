@@ -777,6 +777,7 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     const secondAuditId = randomUUID();
     secondTenant.records.Communication_Records__c = [{
       Id: secondAuditId, Name: 'Tenant B Audit', OwnerId: secondAdminId,
+      CreatedDate: new Date().toISOString(), LastModifiedDate: new Date().toISOString(),
       Communication_Mode__c: 'API', Direction__c: 'Incoming',
       Event_Type__c: 'API Call', Source__c: 'API',
       Request_Body__c: '', Response_Body__c: ''
