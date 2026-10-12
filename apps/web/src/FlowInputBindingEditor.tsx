@@ -12,6 +12,7 @@ export default function FlowInputBindingEditor({
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pendingKinds, setPendingKinds] = useState<Record<string, InputSourceKind>>({});
   const resources = declaredFlowInputs(flow);
   const resourceByName = new Map(resources.map(item => [item.name, item]));
   const names = mappedInputNames(flow, inputs);
@@ -23,6 +24,11 @@ export default function FlowInputBindingEditor({
       else next[name] = value;
       onChange(next);
       setErrors(current => ({ ...current, [name]: '' }));
+      setPendingKinds(current => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
     } catch (error) {
       setErrors(current => ({ ...current, [name]: error instanceof Error ? error.message : 'Invalid input source' }));
     }
@@ -33,6 +39,7 @@ export default function FlowInputBindingEditor({
     {flow && !resources.length && <p className="properties-help">This Flow has no declared input variables. Create an input variable in Flow Builder first.</p>}
     {names.map(name => {
       const source = decodeInputSource(inputs[name], Object.prototype.hasOwnProperty.call(inputs, name));
+      const selectedKind = pendingKinds[name] ?? source.kind;
       const resource = resourceByName.get(name);
       const title = resource?.label || name;
       return <div className="metadata-array-property" key={name} data-flow-input={name}>
@@ -40,7 +47,7 @@ export default function FlowInputBindingEditor({
         <small className="api-name">{name}{resource ? ' · ' + resource.dataType : ' · saved legacy input'}</small>
         {!resource && <p className="properties-help">This input is not declared in the selected active Flow version. Review the binding or remove it.</p>}
         <label className="form-label">Source
-          <select className="form-control" aria-label={name + ' source'} value={source.kind} onChange={event => {
+          <select className="form-control" aria-label={name + ' source'} value={selectedKind} onChange={event => {
             const kind = event.target.value as InputSourceKind;
             if (kind === 'Legacy') return;
             if (kind === 'Unmapped' || kind === 'Session' || kind === 'Event') {
@@ -52,9 +59,10 @@ export default function FlowInputBindingEditor({
               else setErrors(current => ({ ...current, [name]: 'Select a component data object first.' }));
               return;
             }
-            if (kind === 'Event Field') {
-              // Persist only complete references, never a broken expression.
-              setErrors(current => ({ ...current, [name]: 'Enter an event property name below to complete the binding.' }));
+            if (kind === 'Event Field' || kind === 'Literal' || kind === 'Record Field') {
+              // Only persist a valid mapping after the developer chooses a source.
+              setPendingKinds(current => ({ ...current, [name]: kind }));
+              setErrors(current => ({ ...current, [name]: '' }));
               return;
             }
             update(name, 'Literal', '');
@@ -68,27 +76,27 @@ export default function FlowInputBindingEditor({
             {source.kind === 'Legacy' && <option value="Legacy">Existing unsupported value</option>}
           </select>
         </label>
-        {(source.kind === 'Event Field' || (errors[name]?.includes('event property'))) && <label className="form-label">
+        {selectedKind === 'Event Field' && <label className="form-label">
           Event property name
           <input className="form-control" aria-label={name + ' event property'} placeholder="e.g. item.id"
             value={source.kind === 'Event Field' ? source.detail : ''}
             onChange={event => update(name, 'Event Field', event.target.value)} />
         </label>}
-        {source.kind === 'Record Field' && <label className="form-label">Record field
+        {selectedKind === 'Record Field' && <label className="form-label">Record field
           <select className="form-control" aria-label={name + ' record field'} value={source.detail}
             onChange={event => update(name, 'Record Field', event.target.value)}>
             {fields.map(field => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
           </select>
         </label>}
-        {source.kind === 'Literal' && <label className="form-label">Fixed value
+        {selectedKind === 'Literal' && <label className="form-label">Fixed value
           {['Boolean', 'Checkbox'].includes(resource?.dataType ?? '')
             ? <select className="form-control" aria-label={name + ' fixed value'}
-                value={String(source.value)} onChange={event => update(name, 'Literal', event.target.value)}>
-                <option value="true">True</option><option value="false">False</option>
+                value={source.kind === 'Literal' ? String(source.value) : ''} onChange={event => update(name, 'Literal', event.target.value)}>
+                <option value="">Choose value…</option><option value="true">True</option><option value="false">False</option>
               </select>
             : <input className="form-control" aria-label={name + ' fixed value'}
                 type={/^(Number|Currency|Percent|Integer|Decimal|Double)/i.test(resource?.dataType ?? '') ? 'number' : 'text'}
-                value={source.detail} onChange={event => update(name, 'Literal', event.target.value)} />}
+                value={source.kind === 'Literal' ? source.detail : ''} onChange={event => update(name, 'Literal', event.target.value)} />}
         </label>}
         {source.kind === 'Legacy' && <button className="btn btn-small" type="button"
           onClick={() => update(name, 'Unmapped', '')}>Remove old input</button>}
