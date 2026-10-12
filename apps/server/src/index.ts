@@ -4,6 +4,7 @@ import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
+import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
@@ -54,6 +55,13 @@ const webOrigins = new Set([
   ...(process.env.WEB_ORIGIN ?? 'http://localhost:5173').split(','),
   ...(process.env.WEB_ORIGINS ?? '').split(',')
 ].map((origin) => origin.trim()).filter(Boolean));
+const tenantHostRouting = tenantHostConfig(
+  process.env.METADRIVE_TENANT_HOSTS, process.env.METADRIVE_SHARED_API_HOSTS
+);
+function requestTenantMatches(req: Request, tenantId: string): boolean {
+  const route = tenantForRequest(tenantHostRouting, req.header('host'), req.header('origin'));
+  return route.allowed && (route.tenantId === null || route.tenantId === tenantId);
+}
 const refreshCookieName = 'metadrive_refresh';
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtService = await JwtService.create();
@@ -63,7 +71,8 @@ const jwtService = await JwtService.create();
 // Cross-origin use of a customer's domain is never allowed.
 app.use(cors((req, callback) => {
   const origin = req.header('origin');
-  let allowed = !origin || webOrigins.has(origin) || origin === 'http://localhost:4173';
+  let allowed = !origin || webOrigins.has(origin) || origin === 'http://localhost:4173'
+    || (origin !== undefined && mappedTenantOrigin(tenantHostRouting, origin));
   if (!allowed && origin) {
     try {
       const url = new URL(origin);
@@ -5306,6 +5315,10 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
+    if (!requestTenantMatches(req, user.tenantId)) {
+      res.status(403).json({ error: 'This account cannot access the requested tenant hostname.' });
+      return;
+    }
     if (user.lockedUntil && user.lockedUntil > Date.now()) {
       res.status(401).json({ error: 'Account temporarily locked' });
       return;
@@ -5571,7 +5584,8 @@ app.get('/api/auth/config', (_req, res) => res.json({
   issuer: jwtService.config.issuer,
   audience: jwtService.config.audience,
   tenantLoginRequired: false,
-  tenantResolvedFromEmail: true
+  tenantResolvedFromEmail: true,
+  tenantHostBindingEnabled: tenantHostRouting.enabled
 }));
 
 app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
@@ -5773,6 +5787,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   userLoginFailures.delete(user.id);
   const data = tenantData(user.tenantId);
   if (!data) return res.status(401).json({ error: 'Tenant is unavailable' });
+  if (!requestTenantMatches(req, user.tenantId)) return res.status(403).json({ error: 'This account cannot access the requested tenant hostname.' });
   if (mfaRequiredForUser(data, user)) {
     if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts; try later' });
     if (!mfaCredentialReady()) return res.status(503).json({ error: 'MFA encryption is not configured' });
@@ -5993,6 +6008,7 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Refresh token is invalid or expired' });
   }
+  if (!requestTenantMatches(req, session.tenantId)) return res.status(403).json({ error: 'This session cannot access the requested tenant hostname.' });
   if (session.usedAt !== null || session.revokedAt !== null) {
     // Grace window: the frontend fires ~13 parallel metadata requests on load and
     // multiple tabs may refresh concurrently. The first refresh rotates the cookie,

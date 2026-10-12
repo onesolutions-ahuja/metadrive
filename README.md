@@ -15,6 +15,35 @@ The frozen Salesforce parity checklist, including Dashboard Builder criteria, is
 npm install
 npm run dev:web
 npm run dev:server
+
+## Optional tenant subdomain enforcement (MD-01B)
+
+To bind a public tenant hostname to its tenant identity, configure the server:
+
+```env
+METADRIVE_TENANT_HOSTS={"shop-a.example.com":"tenant-a","shop-b.example.com":"tenant-b"}
+METADRIVE_SHARED_API_HOSTS=api.example.com
+```
+
+When `METADRIVE_TENANT_HOSTS` is set, only mapped tenant hosts and explicitly
+allowed shared API hosts are accepted for authenticated requests. Same-origin
+tenant sites are bound through the HTTP Host header. When the browser uses a
+central API domain, its configured tenant frontend Origin determines the tenant
+binding. For programmatic requests to a shared API host without a tenant Origin,
+the authenticated JWT's tenant identity remains authoritative; this is intentional
+for API clients and for legacy central sign-in.
+
+Configure **actual public DNS hostnames** as exact mappings; no wildcards,
+`X-Forwarded-Host` or user-supplied tenant IDs are trusted. A shared API hostname
+needs to be declared explicitly. The hostname map is held in server memory,
+not queried from the database on each request. Cross-origin tenant sites must
+use HTTPS. Requests from mapped tenant origins are included in the server's CORS
+allowlist, but CORS/Origin are not themselves authentication controls.
+
+With `METADRIVE_TENANT_HOSTS` unset, existing email-based login and local
+development continue unchanged. Enable hostname enforcement only after mapping
+all active tenant domains and shared API hosts in staging and confirming routing.
+
 ```
 
 Then open the frontend at `http://localhost:5173`. During Vite development, `/api` is proxied to `http://127.0.0.1:3001` so login, API requests, and refresh cookies share the frontend origin without requiring extra CORS origins. Set `METADRIVE_API_PROXY_TARGET` to use a different development API. For deployments where the API is not reverse-proxied under the frontend origin, set `VITE_API_BASE_URL` to its URL.
