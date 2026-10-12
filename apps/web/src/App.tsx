@@ -69,6 +69,7 @@ import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, i
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
+import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
 import NamedCredentials from './NamedCredentials';
 import TenantManagement from './TenantManagement';
 import TenantDomains from './TenantDomains';
@@ -3481,12 +3482,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={globalSearch} onNavigate={navigateRoute} />}
-          {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} reports={reports}
+          {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
-          {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} reports={reports}
+          {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
@@ -4274,11 +4275,14 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+  definition, component, objects, apps, pages, currentAppId, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  currentAppId: string;
   reports: ReportMetadata[];
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
@@ -4410,10 +4414,12 @@ function MetadataBoundPageComponent({
     }
     const binding = config as Record<string, unknown>;
     if (binding.actionType === 'Navigate') {
-      const destination=String(binding.navigationObjectApiName ?? objectApiName);
-      if (!objects.some((object)=>object.apiName===destination)) throw new Error('Choose an accessible destination object in Page Builder');
-      onNavigate({kind:'record-list',objectApiName:destination,appId:'Records'});
-      return {navigated:true};
+      const target = resolvePageActionRoute(binding, {
+        objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
+      });
+      // Server endpoints enforce the final object and page authorization checks.
+      onNavigate(target);
+      return { navigated: true };
     }
     const flowApiName = String(binding.flowApiName ?? '');
     const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
@@ -4481,6 +4487,8 @@ function LightningAppRuntime({
   appId,
   pageApiName,
   objects,
+  apps,
+  pages,
   reports,
   libraryComponents,
   availableFlows,
@@ -4492,6 +4500,8 @@ function LightningAppRuntime({
   appId: string;
   pageApiName?: string;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
   reports: ReportMetadata[];
   libraryComponents: LibraryComponentMetadata[];
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
@@ -4540,7 +4550,7 @@ function LightningAppRuntime({
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
       return definition
         ? <MetadataBoundPageComponent key={component.id} definition={definition} component={component}
-          objects={objects} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+          objects={objects} apps={apps} pages={pages} currentAppId={appId} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
           onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <div className="records-message" role="status" key={component.id}>Component is no longer registered: {component.label}</div>;
     }
@@ -9076,7 +9086,8 @@ function PageBuilder({
                   : customDefinition && (!libraryPreview || interactivePreview) && typeof component.properties.objectApiName === 'string'
                     && component.properties.objectApiName
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
-                        objects={objects} reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
+                        objects={objects} apps={apps} pages={pages} currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
+                        reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
                         onNavigate={() => {}} onLaunchFlow={(flowApiName, inputs) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
                   : customDefinition
