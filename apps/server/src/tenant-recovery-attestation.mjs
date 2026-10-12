@@ -6,6 +6,7 @@ const PURPOSES = Object.freeze({
   identity: 'recovery_identity',
   operator: 'recovery_operator',
   verifier: 'recovery_verifier',
+  intake: 'recovery_intake',
   contact: 'recovery_contact',
   claimant: 'recovery_claimant'
 });
