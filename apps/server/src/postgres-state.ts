@@ -45,6 +45,40 @@ const pool = databaseUrl ? new Pool({
   connectionTimeoutMillis: 15000
 }) : null;
 
+/**
+ * Only one SQL-backed scheduler may dispatch across API replicas.
+ * A session-level advisory lock on a dedicated connection is released in
+ * finally; PostgreSQL also releases it if the process/connection dies.
+ * Contention skips this poll; the next interval retries outstanding work.
+ */
+export async function withSchedulerLease(run: () => Promise<void>): Promise<boolean> {
+  if (!pool) {
+    if (testOnlyLocalState) { await run(); return true; }
+    throw new Error('Native scheduler requires PostgreSQL persistence');
+  }
+  const client = await (pool as unknown as { connect(): Promise<{ query(sql: string, params?: unknown[]): Promise<{ rows: Array<{ acquired?: boolean; released?: boolean }> }>; release(destroy?: boolean): void }> }).connect();
+  let acquired = false;
+  try {
+    const result = await client.query('SELECT pg_try_advisory_lock($1::integer, $2::integer) AS acquired', [1330463812, 1]);
+    acquired = result.rows[0]?.acquired === true;
+    if (!acquired) return false;
+    await run();
+    return true;
+  } finally {
+    if (acquired) {
+      try {
+        const unlocked = await client.query('SELECT pg_advisory_unlock($1::integer, $2::integer) AS released', [1330463812, 1]);
+        if (unlocked.rows[0]?.released !== true) throw new Error('Scheduler advisory lease release was not confirmed');
+      } catch (error) {
+        // A failed unlock must never return a possibly locked session to the pool.
+        client.release(true);
+        throw error;
+      }
+      client.release();
+    } else client.release();
+  }
+}
+
 export async function checkDatabaseConnection(): Promise<'healthy' | 'unavailable' | 'not_configured'> {
   if (!pool) return 'not_configured';
   try {
