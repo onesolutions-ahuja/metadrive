@@ -90,8 +90,13 @@ export async function redeemRecoveryInvitation(pool, { caseId, tenantId, claiman
     if (updated.rowCount !== 1) throw new Error('Recovery invitation already used');
     const closed = await db.query("UPDATE tenant_recovery_cases SET status='redeemed',updated_at=$2 WHERE id=$1 AND status='pending' RETURNING id", [caseId, now]);
     if (closed.rowCount !== 1) throw new Error('Recovery case no longer pending');
+    // A one-hour, claimant-only repair instruction is written in the SAME
+    // transaction as token consumption. No platform API can redeem this grant.
+    await db.query(
+      'INSERT INTO tenant_recovery_repair_grants(case_id,tenant_id,claimant_user_id,issued_at) VALUES($1,$2,$3,$4)',
+      [caseId, tenantId, claimant.id, now]);
     await audit(db, caseId, claimant.id, 'invitation_redeemed');
-    // This is an instruction, NOT a tenant session or applied privilege.
+    // No password, session, elevated JWT or tenant data is returned.
     return { ...grant, caseId, requiresRestrictedTenantRepair: true };
   });
 }
