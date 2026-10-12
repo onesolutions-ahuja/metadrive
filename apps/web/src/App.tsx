@@ -1553,7 +1553,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         window.history.pushState({}, '', appRoutePath(route));
         return;
       }
-      setRouteTiming({ routeKey: window.location.pathname + window.location.search, startedAt: performance.now() });
+      setRouteTiming({ routeKey: window.location.pathname + window.location.search, startedAt: performance.now(), kind: 'navigation', authMs: null });
       setRoute(nextRoute);
       setCurrentAppId(new URLSearchParams(window.location.search).get('appId') || 'Records');
     };
