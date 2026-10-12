@@ -4944,8 +4944,19 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
       developerSeed: { userId: developer.id, email: developer.email, seededAt: createdAt },
       ...(requestHash ? { provisioningRequestHash: requestHash } : {})
     };
+    // Preserve provenance before opening a second tenant: a legacy unowned
+    // component could only have been authored in the existing sole tenant.
+    // Do this inside the same durable provisioning commit, never on a later
+    // best-effort migration or by guessing ownership with multiple tenants.
+    const previousTenantIds = Object.keys(state.tenants);
+    const libraryComponents = previousTenantIds.length === 1
+      ? state.libraryComponents.map((component) =>
+        component.tenantId || component.trustedBundled
+          ? component : { ...component, tenantId: previousTenantIds[0] })
+      : state.libraryComponents;
     const nextState: PlatformState = {
       ...state,
+      libraryComponents,
       tenants: { ...state.tenants, [tenantId]: data },
       tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
       tenantManagementAudit: [...state.tenantManagementAudit,
@@ -11058,6 +11069,13 @@ app.get('/api/component-library', requirePermission('metadata:read'), async (_re
   });
 });
 app.post('/api/component-library', requirePermission('components:manage'), async (req: Request, res: Response) => {
+  // Reserve bundled component names before any tenant can register an override.
+  // Never allow a private, user-authored component to shadow a trusted primitive.
+  try { await syncBundledLibraryComponents(); }
+  catch (error) {
+    console.error('Bundled component registration failed', error);
+    return res.status(503).json({ error: 'Component registry unavailable' });
+  }
   const parsed = libraryComponentInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid custom component metadata', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
