@@ -3269,6 +3269,7 @@ type LocalUser = {
   mfaSecret?: MfaEncryptedSecret;
   mfaLastUsedStep?: number;
   mfaVersion?: number;
+  authVersion?: number;
 };
 type RefreshSession = {
   tokenHash: string;
@@ -3279,6 +3280,7 @@ type RefreshSession = {
   usedAt: number | null;
   revokedAt: number | null;
   mfaVerified?: boolean;
+  authVersion?: number;
 };
 type PlatformState = {
   // Platform policies are outside tenant-managed profiles and permission sets.
@@ -3346,12 +3348,14 @@ const stateSchema = z.object({
     authRevokedBefore: z.number().int().nonnegative().optional(),
     mfaSecret: z.object({ keyId: z.string(), iv: z.string(), authTag: z.string(), ciphertext: z.string() }).optional(),
     mfaLastUsedStep: z.number().int().nonnegative().optional(),
-    mfaVersion: z.number().int().nonnegative().optional()
+    mfaVersion: z.number().int().nonnegative().optional(),
+    authVersion: z.number().int().nonnegative().optional()
   })),
   refreshSessions: z.array(z.object({
     tokenHash: z.string(), familyId: z.string(), userId: z.string(), tenantId: z.string(),
     expiresAt: z.number(), usedAt: z.number().nullable(), revokedAt: z.number().nullable(),
-    mfaVerified: z.boolean().optional()
+    mfaVerified: z.boolean().optional(),
+    authVersion: z.number().int().nonnegative().optional()
   })),
   revokedAccessTokens: z.record(z.number())
 }).superRefine((state, context) => {
@@ -5015,6 +5019,10 @@ function accessAuthentication(req: Request, res: Response, next: NextFunction): 
       res.status(401).json({ error: 'Tenant membership is no longer active' });
       return;
     }
+    if ((claims.auth_version ?? 0) !== (user.authVersion ?? 0)) {
+      res.status(401).json({ error: 'Authentication state has changed; sign in again' });
+      return;
+    }
     if ((claims.mfa_version ?? 0) !== (user.mfaVersion ?? 0)) {
       res.status(401).json({ error: 'Authentication state has changed; sign in again' });
       return;
@@ -5065,7 +5073,7 @@ function issueRefreshSession(user: LocalUser, previousFamilyId?: string, mfaVeri
       tokenHash: hashToken(token), familyId: previousFamilyId ?? randomUUID(),
       userId: user.id, tenantId: user.tenantId,
       expiresAt: Date.now() / 1000 + jwtService.config.refreshTokenTtlSeconds,
-      usedAt: null, revokedAt: null, mfaVerified
+      usedAt: null, revokedAt: null, mfaVerified, authVersion: user.authVersion ?? 0
     }
   };
 }
@@ -5075,7 +5083,7 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
   const tokenStartedAt = performance.now();
   const issued = await jwtService.issue({
     userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified,
-    mfaVersion: user.mfaVersion ?? 0
+    mfaVersion: user.mfaVersion ?? 0, authVersion: user.authVersion ?? 0
   });
   const tokenMs = performance.now() - tokenStartedAt;
   const refresh = issueRefreshSession(user, familyId, mfaVerified);
@@ -5108,9 +5116,9 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
 
 
 type MfaLoginChallenge = {
-  userId: string; tenantId: string; expiresAt: number; attempts: number; pendingSecret?: string;
+  userId: string; tenantId: string; expiresAt: number; attempts: number; pendingSecret?: string; authVersion: number;
 };
-type MfaEnrollment = { userId: string; tenantId: string; expiresAt: number; attempts: number; secret: string };
+type MfaEnrollment = { userId: string; tenantId: string; expiresAt: number; attempts: number; secret: string; authVersion: number };
 const mfaLoginChallenges = new Map<string, MfaLoginChallenge>();
 const mfaEnrollments = new Map<string, MfaEnrollment>();
 const mfaFailures = new Map<string, { count: number; resetAt: number }>();
@@ -5248,7 +5256,8 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
     const pendingSecret = user.mfaSecret ? undefined : newTotpSecret();
     const challengeToken = newMfaToken(mfaLoginChallenges, {
       tenantId: user.tenantId, userId: user.id, expiresAt: Date.now() + mfaChallengeTtlMs,
-      attempts: 0, ...(pendingSecret ? { pendingSecret } : {})
+      attempts: 0, authVersion: user.authVersion ?? 0,
+      ...(pendingSecret ? { pendingSecret } : {})
     });
     return res.status(202).json({
       mfa_required: true, challenge_token: challengeToken,
@@ -5276,7 +5285,7 @@ app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
   const user = state.users.find((item) =>
     item.id === challenge.userId && item.tenantId === challenge.tenantId && !item.disabled);
   const tenant = tenantData(challenge.tenantId);
-  if (!user || !tenant || !mfaRequiredForUser(tenant, user)
+  if (!user || !tenant || challenge.authVersion !== (user.authVersion ?? 0) || !mfaRequiredForUser(tenant, user)
     || (Boolean(user.mfaSecret) === Boolean(challenge.pendingSecret))) {
     mfaLoginChallenges.delete(key);
     return res.status(401).json({ error: 'MFA challenge is no longer valid' });
@@ -5361,7 +5370,7 @@ app.post('/api/auth/mfa/enroll', accessAuthentication, async (req: Request, res:
   const secret = newTotpSecret();
   const enrollmentToken = newMfaToken(mfaEnrollments, {
     userId: user.id, tenantId: user.tenantId,
-    secret, attempts: 0, expiresAt: Date.now() + mfaChallengeTtlMs
+    secret, attempts: 0, expiresAt: Date.now() + mfaChallengeTtlMs, authVersion: user.authVersion ?? 0
   });
   return res.json({ enrollment_token: enrollmentToken, setup_secret: secret, setup_uri: totpUri(secret, user.email) });
 });
@@ -5375,7 +5384,8 @@ app.post('/api/auth/mfa/enroll/confirm', accessAuthentication, (req: Request, re
   const key = hashToken(parsed.data.enrollment_token);
   const enrollment = mfaEnrollments.get(key);
   if (!enrollment || enrollment.userId !== user.id || enrollment.tenantId !== user.tenantId
-    || enrollment.expiresAt <= Date.now() || enrollment.attempts >= 5 || user.mfaSecret || tenant.mfaPolicy.mode === 'Off') {
+    || enrollment.expiresAt <= Date.now() || enrollment.attempts >= 5
+    || enrollment.authVersion !== (user.authVersion ?? 0) || user.mfaSecret || tenant.mfaPolicy.mode === 'Off') {
     mfaEnrollments.delete(key);
     return res.status(401).json({ error: 'Enrollment expired; start again' });
   }
@@ -5462,7 +5472,8 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         .sort((a, b) => b.expiresAt - a.expiresAt)[0];
       const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
       const data = tenantData(session.tenantId);
-      if (latest && user && data && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
+      if (latest && user && data && (latest.authVersion ?? 0) === (user.authVersion ?? 0)
+        && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
         // The old cookie has already been consumed by another tab. Return a
         // fresh cookie as well as an access token, or the next page load will
         // reuse the stale cookie and lose the authenticated session.
@@ -5475,7 +5486,8 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
         state = nextState;
         setRefreshCookie(res, replacement.token);
         const permissions = effectivePermissions(user, data);
-        const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: latest.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0 });
+        const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: latest.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0,
+          authVersion: user.authVersion ?? 0 });
         return res.json({
           access_token: issued.accessToken, token_type: 'Bearer',
           expires_in: jwtService.config.accessTokenTtlSeconds, expires_at: issued.expiresAt,
@@ -5503,6 +5515,10 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'Tenant membership is no longer active' });
   }
+  if ((session.authVersion ?? 0) !== (user.authVersion ?? 0)) {
+    clearRefreshCookie(res);
+    return res.status(401).json({ error: 'Authentication state has changed; sign in again' });
+  }
   if (mfaRequiredForUser(data, user) && !session.mfaVerified) {
     clearRefreshCookie(res);
     return res.status(401).json({ error: 'MFA verification is required' });
@@ -5516,7 +5532,8 @@ app.post('/api/auth/refresh', async (req: Request, res: Response) => {
   persistState(nextState);
   state = nextState;
   const permissions = effectivePermissions(user, data);
-  const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: session.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0 });
+  const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: session.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0,
+    authVersion: user.authVersion ?? 0 });
   setRefreshCookie(res, nextRefresh.token);
   return res.json({
     access_token: issued.accessToken, token_type: 'Bearer',
@@ -5544,6 +5561,48 @@ app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response)
     clearRefreshCookie(res);
     return res.status(204).end();
   }).catch(() => res.status(401).json({ error: 'Access token is invalid or expired' }));
+});
+
+
+app.get('/api/auth/sessions', accessAuthentication, (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const now = Date.now() / 1000;
+  const active = state.refreshSessions
+    .filter((session) => session.userId === principal.userId && session.tenantId === principal.tenantId
+      && session.revokedAt === null && session.usedAt === null && session.expiresAt > now)
+    .map((session) => ({
+      familyId: session.familyId,
+      expiresAt: session.expiresAt,
+      mfaVerified: session.mfaVerified === true
+    }));
+  // Do not expose raw refresh tokens or their hashes.
+  res.json({ sessions: active });
+});
+
+// Revokes every refresh session AND every bearer token using auth-version
+// invalidation. Requires password proof even when the caller holds a valid JWT.
+app.post('/api/auth/sessions/revoke-all', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') {
+    return res.status(409).json({ error: 'Sessions are managed by the external identity provider' });
+  }
+  const parsed = z.object({ currentPassword: z.string().min(1).max(256) }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Current password required' });
+  const principal = getPrincipal(res);
+  const user = principalUser(principal);
+  if (!user || !await verifyPassword(parsed.data.currentPassword, user.passwordSalt, user.passwordHash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  const nextState: PlatformState = {
+    ...state,
+    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+      ? { ...item, authVersion: (item.authVersion ?? 0) + 1 }
+      : item),
+    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
+  };
+  try { persistState(nextState); state = nextState; }
+  catch { return res.status(503).json({ error: 'Unable to revoke sessions' }); }
+  clearRefreshCookie(res);
+  return res.json({ revoked: true, signedOut: true });
 });
 
 const changePasswordSchema = z.object({
@@ -5574,7 +5633,8 @@ app.post('/api/auth/change-password', accessAuthentication, async (req: Request,
   const nextState: PlatformState = {
     ...state,
     users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash, authRevokedBefore: changedAt }
+      ? { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash, authRevokedBefore: changedAt,
+        authVersion: (item.authVersion ?? 0) + 1 }
       : item),
     refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
       ? { ...session, revokedAt: changedAt } : session)
