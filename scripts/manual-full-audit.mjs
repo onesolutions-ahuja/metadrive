@@ -86,7 +86,7 @@ async function capture(page, profile, label, findings) {
   // Mask content-bearing regions before uploading artifacts from a public repository.
   const masks = page.locator('input, textarea, [contenteditable="true"], [data-sensitive], table tbody td, [role="gridcell"], img, .user-menu, [class*="customer-info"], [class*="record-row"]');
   await page.screenshot({ path: file, fullPage: true, animations: 'disabled',
-    mask: masks, maskColor: '#cccccc', timeout: 20000 });
+    mask: [masks], maskColor: '#cccccc', timeout: 20000 });
   const comparison = { status: 'baseline-needed' };
   if (baselineDir) {
     const old = path.join(baselineDir, 'screenshots', name);
