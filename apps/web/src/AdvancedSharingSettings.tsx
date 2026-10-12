@@ -43,11 +43,12 @@ export default function AdvancedSharingSettings({
     <div className="settings-grid">
       <label className="form-label">
         <input type="checkbox" checked={setting.portalEnabled===true}
-          onChange={e=>onChange({...setting,portalEnabled:e.target.checked})}/>
+          onChange={e=>onChange({...setting,portalEnabled:e.target.checked,
+            portalAccountField:setting.portalAccountField??(fields.some(field=>field.apiName==='AccountId')?'AccountId':'Id')})}/>
         Allow explicitly scoped external portal records
       </label>
       <label className="form-label">Portal account relationship field
-        <select className="form-control" value={setting.portalAccountField??'AccountId'}
+        <select className="form-control" value={setting.portalAccountField??(fields.some(field=>field.apiName==='AccountId')?'AccountId':'Id')}
           onChange={e=>onChange({...setting,portalAccountField:e.target.value})}>
           {fields.map(field=><option key={field.apiName} value={field.apiName}>{field.label}</option>)}
         </select>
@@ -110,9 +111,10 @@ export default function AdvancedSharingSettings({
         </label>
         {!['isNull','notNull'].includes(condition.operator)&&
           <label className="form-label">Value
-            <input className="form-control" value={String(condition.value??'')}
+            <input className="form-control" value={Array.isArray(condition.value)?condition.value.join(','):String(condition.value??'')}
               onChange={e=>change(index,{conditions:rule.conditions.map((c,i)=>
-                i===ci?{...c,value:e.target.value}:c)})}/>
+                i===ci?{...c,value:(c.operator==='in'||c.operator==='notIn')
+                  ?e.target.value.split(',').map(value=>value.trim()).filter(Boolean):e.target.value}:c)})}/>
           </label>}
         <button type="button" className="btn" disabled={rule.conditions.length===1}
           onClick={()=>change(index,{conditions:rule.conditions.filter((_,i)=>i!==ci)})}>
