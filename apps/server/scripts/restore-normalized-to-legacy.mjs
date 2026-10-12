@@ -52,7 +52,13 @@ try {
   if(m.rowCount!==1) throw Error('Normalized SQL runtime marker is missing');
   const rev=Number(m.rows[0].revision);
   if(!Number.isSafeInteger(rev)||rev<0)throw Error('Invalid runtime revision');
-  const rows=await client.query('SELECT node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value FROM md_v3_state_nodes WHERE revision=$1 ORDER BY node_id',[rev]);
+  // Logical runtime revisions advance on delta commits, while stored node IDs
+  // retain one stable SQL revision. Verify exactly one physical snapshot.
+  const physical=await client.query('SELECT DISTINCT revision FROM md_v3_state_nodes LIMIT 2');
+  if(physical.rowCount!==1) throw Error('Invalid normalized storage revision set');
+  const storageRev=Number(physical.rows[0].revision);
+  if(!Number.isSafeInteger(storageRev)||storageRev<0) throw Error('Invalid stored node revision');
+  const rows=await client.query('SELECT node_id,parent_id,slot_key,ordinal,kind,string_value,number_value,bool_value FROM md_v3_state_nodes WHERE revision=$1 ORDER BY node_id',[storageRev]);
   const state=restoreNormalizedTree(rows.rows);
   const digest=stateDigest(state);
   if(digest!==m.rows[0].state_sha256.trim()) throw Error('Normalized state digest mismatch');
