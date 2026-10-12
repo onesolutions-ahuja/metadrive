@@ -6325,12 +6325,13 @@ function SetupHome({ onNavigate }: { onNavigate: (workspace: WorkspaceId) => voi
 
 type AutomationSettingsDraft = {
   autoRetryFailedFlows: boolean;
+  maxRetryAttempts: number;
   conversationIdleMinutes: number;
 };
 
 function AutomationSettingsWorkspace() {
   const [draft, setDraft] = useState<AutomationSettingsDraft>({
-    autoRetryFailedFlows: false, conversationIdleMinutes: 15
+    autoRetryFailedFlows: false, maxRetryAttempts: 10, conversationIdleMinutes: 15
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -6375,6 +6376,12 @@ function AutomationSettingsWorkspace() {
           Automatically retry failed flow executions
         </label>
         <p className="permission-help">OFF by default. When disabled, failed scheduled runs, paused interviews and platform event deliveries are logged but are not retried. New scheduled occurrences are not disabled.</p>
+        <label className="form-label">Maximum failed attempts before stopping automatic retries
+          <input className="form-control" type="number" min="1" max="20" step="1"
+            value={draft.maxRetryAttempts}
+            onChange={(event) => setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
+        </label>
+        <p className="permission-help">Default: 10 failed attempts. Exhausted scheduled occurrences are recorded as failed, paused interviews stop retrying and undelivered platform events are dead-lettered.</p>
         <h2>Conversation inactivity</h2>
         <label className="form-label">Expire inactive conversations after (minutes)
           <input className="form-control" type="number" min="1" max="1440" step="1"
@@ -6385,7 +6392,8 @@ function AutomationSettingsWorkspace() {
         {error && <p role="alert" style={{ color: 'var(--slds-color-text-error, #ba0517)' }}>{error}</p>}
         {notice && <p role="status">{notice}</p>}
         <button className="btn btn-brand" type="button" onClick={() => void save()}
-          disabled={saving || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
+          disabled={saving || !Number.isInteger(draft.maxRetryAttempts) || draft.maxRetryAttempts < 1 || draft.maxRetryAttempts > 20
+            || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
           {saving ? 'Saving…' : 'Save Settings'}
         </button>
       </>}
