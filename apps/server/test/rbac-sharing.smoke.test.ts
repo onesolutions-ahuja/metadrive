@@ -2616,6 +2616,40 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'existing page save payloads must receive the backwards-compatible default template');
     assert.equal(savedComponentPage.data.page.components[0].region, 'main',
       'existing page component payloads must receive the backwards-compatible main-region default');
+    const nestedComponentPage = {
+      ...componentPage,
+      apiName: 'MD07_Nested_Style_Page',
+      label: 'MD07 Nested Style Page',
+      components: [
+        {
+          id: 'md07-container', type: 'Custom:KioskContainer', label: 'Layout Container', visible: true, region: 'main',
+          properties: {
+            libraryComponentId: 'KioskContainer',
+            layoutStyle: { padding: 24, backgroundColor: '#ffffff', gap: 12 },
+            layoutResponsive: { Tablet: { padding: 16 }, Phone: { padding: 8, hidden: false } }
+          }
+        },
+        {
+          ...componentPage.components[0],
+          id: 'md07-child-card',
+          properties: {
+            libraryComponentId: 'Snapshot_Card',
+            layoutParentId: 'md07-container',
+            layoutStyle: { margin: 6, borderRadius: 12, borderWidth: 1, borderColor: '#334455' }
+          }
+        }
+      ]
+    };
+    const nestedSaved = await api.send('/metadata/pages/MD07_Nested_Style_Page', adminToken, 'PUT', nestedComponentPage);
+    assert.equal(nestedSaved.status, 200, JSON.stringify(nestedSaved.data));
+    const nestedFromSqlState = (await api.send('/metadata/pages', adminToken)).data.pages.find(
+      (item: {apiName: string}) => item.apiName === 'MD07_Nested_Style_Page');
+    assert.ok(nestedFromSqlState, 'saved nested page must be available from metadata API');
+    assert.equal(nestedFromSqlState.components[1].properties.layoutParentId, 'md07-container');
+    assert.equal(nestedFromSqlState.components[0].properties.layoutStyle.padding, 24);
+    assert.equal(nestedFromSqlState.components[0].properties.layoutResponsive.Phone.padding, 8);
+    assert.equal(nestedFromSqlState.components[1].properties.layoutStyle.borderRadius, 12);
+
     const blockedSurfaceRemoval = await api.send('/component-library/Snapshot_Card', adminToken, 'PUT', {
       ...customComponentSource,
       surfaces: ['dashboard', 'flow']
