@@ -483,9 +483,9 @@ async function run() {
   // Rewrite the report with its final closure result (do not rely only on job success).
   await fs.writeFile(path.join(root, 'report.json'), JSON.stringify(report, null, 2));
   await fs.appendFile(path.join(root, 'summary.md'),
-    '\\n## Acceptance gate\\n\\nStatus: **' + report.summary.closure.status.toUpperCase() +
+    '\n## Acceptance gate\n\nStatus: **' + report.summary.closure.status.toUpperCase() +
     '**; severe findings: ' + severe.length + '; unresolved acceptance: ' +
-    unresolvedAcceptance.length + '; coverage incomplete: ' + coverageIncomplete + '\\n');
+    unresolvedAcceptance.length + '; coverage incomplete: ' + coverageIncomplete + '\n');
   if (report.summary.closure.status !== 'pass') process.exitCode = 2;
 }
 await run();
