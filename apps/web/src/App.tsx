@@ -3607,7 +3607,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantMfaSettings onReauthenticate={onLogout} /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
@@ -6074,6 +6074,71 @@ function AutomationSettingsWorkspace() {
 
 
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
+
+
+function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => void }) {
+  const [sessions, setSessions] = useState<Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }>>([]);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ sessions: Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }> }>('/auth/sessions')
+      .then((response) => { if (active) setSessions(response.sessions); })
+      .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : String(reason)); });
+    return () => { active = false; };
+  }, []);
+  const revokeAll = async () => {
+    setBusy(true); setError('');
+    try {
+      await apiRequest('/auth/sessions/revoke-all', {
+        method: 'POST', body: JSON.stringify({ currentPassword: password })
+      });
+      setPassword('');
+      onReauthenticate();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to revoke sessions');
+    } finally { setBusy(false); }
+  };
+  return <section className="surface permission-section">
+    <h2>Active sessions</h2>
+    <p>Active refresh sessions for your account. Revoking all sessions immediately invalidates existing access tokens on every device.</p>
+    {error && <p className="auth-error" role="alert">{error}</p>}
+    <p>{sessions.length} active {sessions.length === 1 ? 'session' : 'sessions'}</p>
+    {sessions.length > 0 && <ul>{sessions.slice(0, 10).map((session) =>
+      <li key={session.familyId}>Expires {new Date(session.expiresAt * 1000).toLocaleString()}
+        {session.mfaVerified ? ' · MFA verified' : ''}</li>
+    )}</ul>}
+    <label className="form-label" htmlFor="sessions-revoke-password">Current password</label>
+    <input className="form-control" id="sessions-revoke-password" type="password"
+      autoComplete="current-password" value={password}
+      onChange={(event) => setPassword(event.target.value)} />
+    <button type="button" className="btn" disabled={busy || !password}
+      onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Sign out on all devices'}</button>
+  </section>;
+}
+
+function TenantSecurityAudit() {
+  const [events, setEvents] = useState<Array<{ id: string; at: string; actorUserId: string; action: string; details?: Record<string, string> }>>([]);
+  const [permitted, setPermitted] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void apiRequest<{ events: Array<{ id: string; at: string; actorUserId: string; action: string; details?: Record<string, string> }> }>('/auth/security-events?limit=50')
+      .then((response) => { if (active) { setEvents(response.events); setPermitted(true); } })
+      .catch(() => { if (active) setPermitted(false); });
+    return () => { active = false; };
+  }, []);
+  if (!permitted) return null;
+  return <section className="surface permission-section">
+    <h2>Security activity</h2>
+    <p>Recent tenant security events. Only authorized security administrators can view this history.</p>
+    {!events.length ? <p>No security activity recorded.</p> :
+      <ul>{events.map((event) => <li key={event.id}>
+        <strong>{event.action}</strong> · {new Date(event.at).toLocaleString()}
+        {event.details?.from && event.details?.to ? ' · ' + event.details.from + ' → ' + event.details.to : ''}
+      </li>)}</ul>}
+  </section>;
+}
 
 function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void }) {
   const [mode, setMode] = useState<TenantMfaMode>('Off');
