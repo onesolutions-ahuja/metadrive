@@ -32,7 +32,7 @@ const source = {
   components: [
     { id: 'md07-root', type: 'Custom:KioskContainer', label: 'Test Container', region: 'main', visible: true,
       position: { x: 20, y: 20, width: 850, height: 580 },
-      properties: { libraryComponentId: 'KioskContainer', layoutStyle: { padding: 24, backgroundColor: '#ffffff' } }
+      properties: { libraryComponentId: 'KioskContainer', layoutContainer: true, layoutStyle: { padding: 24, backgroundColor: '#ffffff' } }
     },
     { id: 'md07-card', type: 'Custom:KioskCard', label: 'Test Card', region: 'main', visible: true,
       position: { x: 40, y: 40, width: 310, height: 180 },
