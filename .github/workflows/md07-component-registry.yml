@@ -33,4 +33,7 @@ jobs:
       - name: Verify typed custom-component properties
         run: npx tsx --test apps/web/test/componentProperties.test.ts
       - name: Run backend regression suite
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
         run: npm run test --workspace apps/server
