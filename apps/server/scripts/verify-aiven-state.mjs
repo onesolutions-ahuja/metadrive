@@ -39,7 +39,7 @@ try {
       if (t.rowCount !== 1) throw Error('Wrong database: missing MetaDrive source state');
       const verified = verifyProjection(t.rows[0].payload, projectState(t.rows[0].payload));
       if (process.env.METADRIVE_DIGEST_FILE)
-        writeFileSync(process.env.METADRIVE_DIGEST_FILE,verified.digest+'\\n',{flag:'wx',mode:0o600});
+        writeFileSync(process.env.METADRIVE_DIGEST_FILE,verified.digest+'\n',{flag:'wx',mode:0o600});
       console.log(JSON.stringify({sourceVerified:true,layout:'legacy',sha256:verified.digest,counts:verified.counts}));
     }
     await client.query('ROLLBACK');
@@ -54,7 +54,7 @@ try {
     const count = Object.keys(result.state.tenants ?? {}).length;
     if (count === 0) throw Error('SQL-only restore lost all tenants');
     if (process.env.METADRIVE_DIGEST_FILE)
-      writeFileSync(process.env.METADRIVE_DIGEST_FILE,result.digest+'\\n',{flag:'wx',mode:0o600});
+      writeFileSync(process.env.METADRIVE_DIGEST_FILE,result.digest+'\n',{flag:'wx',mode:0o600});
     console.log(JSON.stringify({sourceVerified:true,layout:'sql-only',sha256:result.digest,tenants:count}));
   }
 } finally { await pool.end(); }
