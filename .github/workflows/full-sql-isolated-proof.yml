@@ -1,0 +1,132 @@
+name: Full SQL-only fresh-backup and isolated restore proof
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/full-sql-isolated-proof.yml'
+      - 'apps/server/src/normalized-state-runtime.mjs'
+      - 'apps/server/src/normalized-state-tree.mjs'
+      - 'apps/server/src/normalized-object-schema.mjs'
+      - 'apps/server/sql/normalized-state-v3.sql'
+      - 'apps/server/sql/normalized-registry-v2.sql'
+      - 'apps/server/scripts/copy-typed-sql-on-restored-db.mjs'
+      - 'apps/server/scripts/copy-normalized-state-on-restore.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-source-and-restore:
+    if: github.repository == 'onesolutions-ahuja/metadrive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate Aiven connection secret without printing credentials
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::METADRIVE_AIVEN_DATABASE_URL is not configured or unavailable"
+            exit 1
+          fi
+          node --input-type=module -e "const u=new URL(process.env.DATABASE_URL); if(!['postgres:','postgresql:'].includes(u.protocol)||!u.hostname.endsWith('.aivencloud.com')||u.searchParams.get('sslmode')!=='require') throw Error('Expected Aiven PostgreSQL URL with sslmode=require'); console.log('Aiven URI format verified. Remote SQL remains read-only for this job.')"
+      - name: Take full consistent PostgreSQL backup into temporary private runner storage
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          const u=new URL(process.env.DATABASE_URL);
+          if(!['postgres:','postgresql:'].includes(u.protocol)) throw Error('Invalid PostgreSQL URL');
+          const params={
+            PGHOST:u.hostname,
+            PGPORT:u.port||'5432',
+            PGUSER:decodeURIComponent(u.username),
+            PGPASSWORD:decodeURIComponent(u.password),
+            PGDATABASE:decodeURIComponent(u.pathname.slice(1)),
+            PGSSLMODE:'require'
+          };
+          if(Object.values(params).some(v=>!v||/[\r\n]/.test(v))) throw Error('Invalid PostgreSQL connection field');
+          writeFileSync(process.env.RUNNER_TEMP+'/aiven-pg.env',
+            Object.entries(params).map(([k,v])=>k+'='+v).join('\n')+'\n',
+            {mode:0o600,flag:'wx'});
+          NODE
+          docker run --rm --network host --env-file "${RUNNER_TEMP}/aiven-pg.env" \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_dump postgres:18 \
+            --format=custom --no-owner --no-acl --file=/work/metadrive-private.dump
+          test -s "${RUNNER_TEMP}/metadrive-private.dump"
+          echo "Full Aiven database backup created without production modifications"
+      - name: Restore backup into isolated PostgreSQL 18 and verify MetaDrive state
+        run: |
+          docker run --rm --network host -e PGPASSWORD=postgres \
+            --entrypoint createdb postgres:18 -h 127.0.0.1 -U postgres metadrive_restored
+          docker run --rm --network host -e PGPASSWORD=postgres \
+            -v "${RUNNER_TEMP}:/work" --entrypoint pg_restore postgres:18 \
+            -h 127.0.0.1 -U postgres -d metadrive_restored \
+            --no-owner --no-acl --exit-on-error /work/metadrive-private.dump
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" \
+            PGSSLMODE=disable METADRIVE_DIGEST_FILE="${RUNNER_TEMP}/restored.sha" \
+            node apps/server/scripts/verify-aiven-state.mjs
+          echo "Independent PostgreSQL restore verified. No backup or customer data uploaded to GitHub."
+      - name: Verify complete typed business-record copy on disposable restored database
+        run: |
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
+            node apps/server/scripts/copy-typed-sql-on-restored-db.mjs --apply
+          echo "Typed SQL shadow backfill and field-by-field readback passed on isolated restore only"
+      - name: Verify all Flow metadata and records as SQL typed nodes on isolated restore
+        run: |
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
+            node apps/server/scripts/copy-normalized-state-on-restore.mjs --apply
+          echo "Nested Flow/RBAC/credential state restored from SQL scalar rows, no JSONB required"
+      - name: Measure normalized SQL full-state read and write latency on isolated restore
+        run: |
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" PGSSLMODE=disable \
+            node apps/server/scripts/benchmark-normalized-state-on-restore.mjs
+      - name: Encrypt full backup, decrypt and verify identical contents
+        env:
+          METADRIVE_BACKUP_ENCRYPTION_KEY: ${{ secrets.METADRIVE_BACKUP_ENCRYPTION_KEY }}
+        run: |
+          test -n "${METADRIVE_BACKUP_ENCRYPTION_KEY:-}" || { echo "::error::Backup encryption secret is missing"; exit 1; }
+          node apps/server/scripts/secure-relational-backup.mjs encrypt \
+            "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/metadrive-verified.dump.enc"
+          node apps/server/scripts/secure-relational-backup.mjs decrypt \
+            "${RUNNER_TEMP}/metadrive-verified.dump.enc" "${RUNNER_TEMP}/verify-decrypted.dump"
+          cmp "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/verify-decrypted.dump"
+          echo "Full encrypted backup round-trip verified"
+      - name: Retain encrypted backup for guarded production rollback
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadrive-aiven-v3-sql-shadow-verified-encrypted-backup
+          path: |
+            ${{ runner.temp }}/metadrive-verified.dump.enc
+            ${{ runner.temp }}/restored.sha
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Delete transient database backup and credentials
+        if: always()
+        run: |
+          rm -f "${RUNNER_TEMP}/aiven-pg.env" "${RUNNER_TEMP}/metadrive-private.dump" "${RUNNER_TEMP}/verify-decrypted.dump" "${RUNNER_TEMP}/metadrive-verified.dump.enc"
