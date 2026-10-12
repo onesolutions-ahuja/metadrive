@@ -925,6 +925,13 @@ export type LightningAppMetadata = {
   apiName: string;
   label: string;
   description: string;
+  access?: {
+    mode: 'AllTenantUsers' | 'Assigned';
+    userIds: string[];
+    profileIds: string[];
+  };
+  /** Platform-controlled linkage; not editable through tenant App Builder. */
+  licenceAppKey?: string | null;
   navigationItems: string[];
   navigationPageApiNames: string[];
   navigationOrder: Array<{ type: 'Object' | 'App Page'; apiName: string }>;
