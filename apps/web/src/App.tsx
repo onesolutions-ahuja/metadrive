@@ -4601,6 +4601,7 @@ function RecordWorkspace({
   useEffect(() => { if (route.kind === 'record-list') { setSearch(headerSearch); setListOffset(0); } }, [headerSearch, route.kind]);
   const [listOffset, setListOffset] = useState(0);
   const [listTotal, setListTotal] = useState(0);
+  const [listSort, setListSort] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
   const listPageSize = 50;
   const [refreshKey, setRefreshKey] = useState(0);
   const [fieldHistory, setFieldHistory] = useState<Array<Record<string, unknown>>>([]);
@@ -4663,6 +4664,7 @@ function RecordWorkspace({
     setListOffset(0);
     setSelectedRecordIds([]);
   }, [route.objectApiName, debouncedSearch]);
+  useEffect(() => { setListSort(null); }, [route.objectApiName]);
 
   useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
@@ -4692,6 +4694,7 @@ function RecordWorkspace({
           const params = new URLSearchParams({
             limit: String(listPageSize),
             offset: String(listOffset),
+            ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
             ...(debouncedSearch ? { search: debouncedSearch } : {}),
             ...(object?.listViewFilter ? {
               filterField: object.listViewFilter.fieldApiName,
@@ -4728,7 +4731,7 @@ function RecordWorkspace({
     };
     void loadRecords();
     return () => { active = false; };
-  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch]);
+  }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch, listSort?.field, listSort?.direction]);
 
   useEffect(() => {
     if (route.kind !== 'record-detail' || !object || !record || record.Id !== route.recordId) {
@@ -5161,6 +5164,7 @@ function RecordWorkspace({
       do {
         const params = new URLSearchParams({
           limit: '200', offset: String(offset),
+          ...(listSort ? { sortField: listSort.field, sortDirection: listSort.direction } : {}),
           ...(debouncedSearch ? { search: debouncedSearch } : {}),
           ...(object.listViewFilter ? { filterField: object.listViewFilter.fieldApiName,
             filterValue: object.listViewFilter.value } : {})
@@ -5610,7 +5614,11 @@ function RecordWorkspace({
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
       {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
-        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName}>{field.label}</th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
+        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+          <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
+            onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
+            {field.label} {listSort?.field === field.apiName ? (listSort.direction === 'asc' ? '▲' : '▼') : '↕'}
+          </button></th>)}{(canEdit || canChangeOwner) && <th>Actions</th>}</tr></thead>
         <tbody>{visibleRecords.map((item) => {
           const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
