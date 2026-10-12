@@ -14,6 +14,7 @@ import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, 
 import { isIP } from 'node:net';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
+import { appAccessDecision, type AppAccess } from './app-access.js';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -1329,6 +1330,17 @@ const pageActivationAssignmentSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: [], message: 'App, record type, and profile assignments require all three values' });
   }
 });
+const appAssignmentSchema = z.object({
+  mode: z.enum(['AllTenantUsers', 'Assigned']),
+  userIds: z.array(z.string().min(1)).default([]),
+  profileIds: z.array(z.string().min(1)).default([])
+}).strict().superRefine((assignment, context) => {
+  if (new Set(assignment.userIds).size !== assignment.userIds.length
+    || new Set(assignment.profileIds).size !== assignment.profileIds.length)
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Duplicate app assignments are not allowed.' });
+});
+const defaultAppAssignment = (): AppAccess =>
+  ({ mode: 'AllTenantUsers', userIds: [], profileIds: [] });
 const lightningAppSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
@@ -1340,7 +1352,12 @@ const lightningAppSchema = z.object({
     apiName: z.string().min(1)
   })).default([]),
   brandColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#0176d3'),
-  utilityItems: z.array(z.enum(['Notes', 'History'])).default([])
+  utilityItems: z.array(z.enum(['Notes', 'History'])).default([]),
+  // Existing apps keep their prior tenant-wide access. New apps are assigned
+  // to their creator by the POST endpoint, not by this migration default.
+  access: appAssignmentSchema.default(defaultAppAssignment),
+  // This is a platform-only linkage to an existing commercial package record.
+  licenceAppKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/).nullable().default(null)
 }).superRefine((app, context) => {
   if (new Set(app.navigationItems).size !== app.navigationItems.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['navigationItems'], message: 'Navigation items must be unique' });
@@ -7833,6 +7850,8 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
   const appId = typeof requestedAppId === 'string' && requestedAppId ? requestedAppId : 'Records';
   if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(appId)) return res.status(400).json({ error: 'Invalid app API name' });
   if (!tenant.apps.some((app) => app.apiName === appId)) return res.status(400).json({ error: `Unknown Lightning app "${appId}"` });
+  if (!canAccessRuntimeApp(principal, tenant, appId))
+    return res.status(403).json({ error: 'This app is not assigned or licensed for the current user.' });
   const requestedFormFactor = req.query.formFactor;
   if (requestedFormFactor !== undefined && requestedFormFactor !== 'Desktop' && requestedFormFactor !== 'Phone') {
     return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
@@ -11208,14 +11227,43 @@ app.delete('/api/metadata/reports/:apiName', requirePermission('metadata:read'),
   state = nextState;
   return res.status(204).end();
 });
+function canAccessRuntimeApp(principal: Principal, tenant: TenantData, appApiName: string): boolean {
+  const app = tenant.apps.find((entry) => entry.apiName === appApiName);
+  if (!app) return false;
+  return appAccessDecision(app, {
+    userId: principal.userId,
+    profileId: profileIdForPrincipal(principal, tenant)
+  }, tenant.records.Connector_App__c ?? []).allowed;
+}
+function validAppAssignments(tenant: TenantData, access: AppAccess): boolean {
+  return access.profileIds.every((id) => tenant.accessControl.profiles.some((profile) => profile.id === id))
+    && access.userIds.every((id) => tenant.accessControl.users.some((user) => user.id === id));
+}
 app.get('/api/metadata/apps', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ apps: tenantData(getPrincipal(res).tenantId)?.apps ?? [] });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const canManageCatalog = ['metadata:write', 'pages:manage', 'security:manage']
+    .some((permission) => principal.permissions.includes(permission));
+  const apps = canManageCatalog ? tenant.apps
+    : tenant.apps.filter((entry) => canAccessRuntimeApp(principal, tenant, entry.apiName));
+  // App navigation consumers need labels, not other users' grant lists.
+  // Preserve full assignments for tenant security administrators only.
+  res.json({ apps: principal.permissions.includes('security:manage') ? apps
+    : apps.map(({ access: _access, ...app }) => app) });
+});
+app.get('/api/apps/accessible', accessAuthentication, (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  return res.json({ apps: tenant.apps.filter((entry) => canAccessRuntimeApp(principal, tenant, entry.apiName))
+    .map((entry) => ({ apiName: entry.apiName, label: entry.label, brandColor: entry.brandColor })) });
 });
 app.get('/api/apps/:appApiName/home-page', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const appApiName = routeParam(req, 'appApiName');
   if (!tenant.apps.some((item) => item.apiName === appApiName)) return res.status(404).json({ error: 'Lightning app was not found' });
+  if (!canAccessRuntimeApp(principal, tenant, appApiName))
+    return res.status(403).json({ error: 'This app is not assigned or licensed for the current user.' });
   const formFactor = req.query.formFactor;
   if (formFactor !== undefined && formFactor !== 'Desktop' && formFactor !== 'Phone') {
     return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
@@ -11229,11 +11277,14 @@ app.get('/api/apps/:appApiName/home-page', accessAuthentication, (req: Request, 
   return res.json({ page: homePage ?? null });
 });
 app.get('/api/apps/:appApiName/pages/:pageApiName', accessAuthentication, (req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
   const appApiName = routeParam(req, 'appApiName');
   const pageApiName = routeParam(req, 'pageApiName');
   const app = tenant.apps.find((item) => item.apiName === appApiName);
   if (!app) return res.status(404).json({ error: 'Lightning app was not found' });
+  if (!canAccessRuntimeApp(principal, tenant, appApiName))
+    return res.status(403).json({ error: 'This app is not assigned or licensed for the current user.' });
   if (!app.navigationPageApiNames.includes(pageApiName)) return res.status(404).json({ error: 'Lightning page is not in this app navigation' });
   const page = tenant.pages.find((item) => item.apiName === pageApiName && item.pageType === 'App Page' && item.status === 'Active');
   if (!page) return res.status(404).json({ error: 'Active App Page was not found' });
@@ -11247,9 +11298,16 @@ app.get('/api/apps/:appApiName/pages/:pageApiName', accessAuthentication, (req: 
   return res.json({ page });
 });
 app.post('/api/metadata/apps', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
-  const parsed = lightningAppSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
+  // New apps start visible only to their creator. A separate security:manage
+  // action grants access to other users/profiles; a platform operator alone
+  // can bind a commercial licence.
+  if (req.body?.access !== undefined || req.body?.licenceAppKey != null)
+    return res.status(403).json({ error: 'Use the dedicated app-access and platform licence endpoints.' });
+  const parsed = lightningAppSchema.safeParse({
+    ...req.body, access: { mode: 'Assigned', userIds: [principal.userId], profileIds: [] }, licenceAppKey: null
+  });
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
   const tenant = tenantData(principal.tenantId)!;
   if (tenant.apps.some((item) => item.apiName.toLowerCase() === parsed.data.apiName.toLowerCase())) {
     return res.status(409).json({ error: `Lightning app "${parsed.data.apiName}" already exists` });
@@ -11267,11 +11325,18 @@ app.post('/api/metadata/apps', requireAnyPermission('metadata:write', 'pages:man
 });
 app.put('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
-  const parsed = lightningAppSchema.safeParse({ ...req.body, apiName });
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
-  if (!tenant.apps.some((item) => item.apiName === apiName)) return res.status(404).json({ error: 'Lightning app was not found' });
+  const original = tenant.apps.find((item) => item.apiName === apiName);
+  if (!original) return res.status(404).json({ error: 'Lightning app was not found' });
+  if ((req.body?.access !== undefined && JSON.stringify(req.body.access) !== JSON.stringify(original.access))
+    || (req.body?.licenceAppKey !== undefined && req.body.licenceAppKey !== original.licenceAppKey)) {
+    return res.status(403).json({ error: 'Use the dedicated app-access and platform licence endpoints.' });
+  }
+  const parsed = lightningAppSchema.safeParse({
+    ...req.body, apiName, access: original.access, licenceAppKey: original.licenceAppKey
+  });
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
   const invalidObject = parsed.data.navigationItems.find((item) => !tenant.objects.some((object) => object.apiName === item));
   if (invalidObject) return res.status(400).json({ error: `Navigation item "${invalidObject}" is not a tenant object` });
   const invalidPage = parsed.data.navigationPageApiNames.find((pageApiName) =>
@@ -11283,6 +11348,39 @@ app.put('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'p
   state = nextState;
   return res.json({ app: parsed.data });
 });
+// Assignment updates are security operations, not App Builder layout edits.
+app.put('/api/metadata/apps/:apiName/access', requirePermission('security:manage'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  const current = tenant.apps.find((item) => item.apiName === apiName);
+  if (!current) return res.status(404).json({ error: 'App was not found.' });
+  const parsed = appAssignmentSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid app assignment.', details: parsed.error.flatten() });
+  if (!validAppAssignments(tenant, parsed.data))
+    return res.status(400).json({ error: 'App assignment references an unknown user or profile in this tenant.' });
+  const apps = tenant.apps.map((item) => item.apiName === apiName ? { ...item, access: parsed.data } : item);
+  persistTenantRecords(principal.tenantId, { ...tenant, apps });
+  return res.json({ apiName, access: parsed.data });
+});
+// The licence binding cannot be changed by tenant app/page editors. A licence
+// can only be activated through the separately guarded commercial licence API.
+app.put('/api/platform/apps/:apiName/licence-link', accessAuthentication, requirePermission('licence:manage'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  if (!tenant.apps.some((item) => item.apiName === apiName))
+    return res.status(404).json({ error: 'App was not found.' });
+  const parsed = z.object({ licenceAppKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]*$/).nullable() }).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid licence linkage.' });
+  if (parsed.data.licenceAppKey && !(tenant.records.Connector_App__c ?? [])
+    .some((record) => record.AppKey__c === parsed.data.licenceAppKey))
+    return res.status(400).json({ error: 'Licence key is not registered for this tenant.' });
+  const apps = tenant.apps.map((item) => item.apiName === apiName ? { ...item, licenceAppKey: parsed.data.licenceAppKey } : item);
+  persistTenantRecords(principal.tenantId, { ...tenant, apps });
+  return res.json({ apiName, licenceAppKey: parsed.data.licenceAppKey });
+});
+
 app.delete('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
   const principal = getPrincipal(res);

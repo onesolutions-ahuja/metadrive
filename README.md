@@ -19,6 +19,42 @@ npm run dev:server
 
 Then open the frontend at `http://localhost:5173`. During Vite development, `/api` is proxied to `http://127.0.0.1:3001` so login, API requests, and refresh cookies share the frontend origin without requiring extra CORS origins. Set `METADRIVE_API_PROXY_TARGET` to use a different development API. For deployments where the API is not reverse-proxied under the frontend origin, set `VITE_API_BASE_URL` to its URL.
 
+## Tenant app assignments and licensed workspace apps (MD-01C)
+
+Existing tenant apps remain visible to all tenant members unless explicitly
+restricted. **New tenant apps** start assigned only to their creator.
+
+The existing App Manager layout is unchanged. A tenant security administrator
+with `security:manage` can use
+`PUT /api/metadata/apps/{apiName}/access` to assign an app:
+
+```json
+{"mode":"Assigned","userIds":["<tenant-user-id>"],"profileIds":["<profile-id>"]}
+```
+
+For free tenant-wide apps, `{"mode":"AllTenantUsers","userIds":[],"profileIds":[]}`
+allows all tenant users (subject to existing object/field/action RBAC).
+
+Paid workspace apps may be linked to an existing managed package by a **platform**
+operator holding the non-tenant-assignable `licence:manage` policy:
+
+```http
+PUT /api/platform/apps/{apiName}/licence-link
+Content-Type: application/json
+
+{"licenceAppKey":"xero"}
+```
+
+The package must exist in this tenant's `Connector_App__c` catalogue. A linked
+app cannot open unless it is installed and has an active paid term or trial.
+Expiry and assignment checks run against in-memory tenant state (no added SQL
+call per app request); assignment revocation takes effect immediately.
+
+`GET /api/apps/accessible` returns only applications usable by the current
+user. Normal App Manager edits cannot change assignments or paid-package
+linkage. Generic object CRUD retains object/field/record RBAC; direct Flow and
+connector invocation enforcement is the separate MD-01D security task.
+
 ## Local authentication
 
 The API is tenant-scoped and the metadata workspaces require an authenticated session. Sign in with **email and password only**; email addresses are unique across all tenants, so the API resolves the tenant from the user’s email and puts that tenant identity in the verified access token. Tenant ID is used only when creating the organization, not during login. Configure bootstrap values in the same PowerShell session before starting the API; use your own tenant ID and admin email/password:
