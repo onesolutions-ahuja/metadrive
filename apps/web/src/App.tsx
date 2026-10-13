@@ -9337,7 +9337,7 @@ function PageBuilder({
   useEffect(() => {
     setSelectedId(page.components[0]?.id ?? '');
     setPaletteTab('Components');
-    setDevice('Desktop');
+    // Render the saved page at its fixed device size; no editor device switch.
     setFitCanvas(true);
     setUndoStack([]);
     setRedoStack([]);
