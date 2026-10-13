@@ -1,5 +1,6 @@
 import { Pencil, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import FlowTriggerExplorer from './FlowTriggerExplorer';
 import type { FlowDefinitionMetadata, ObjectMetadata } from './metadata';
 
 type ScheduledFlowsProps = {
@@ -15,6 +16,7 @@ function configText(value: unknown): string {
 
 export default function ScheduledFlows({ flows, objects, loading, onEdit }: ScheduledFlowsProps) {
   const [search, setSearch] = useState('');
+  const [view, setView] = useState<'scheduled' | 'triggers'>('scheduled');
   const scheduledFlows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return flows
@@ -27,11 +29,15 @@ export default function ScheduledFlows({ flows, objects, loading, onEdit }: Sche
       <div className="page-heading">
         <div>
           <div className="eyebrow">SETUP / AUTOMATION</div>
-          <h1>Scheduled Flows</h1>
-          <p>Review and edit flows that run on a schedule.</p>
+          <h1>Automation Explorer</h1>
+          <p>Review scheduled flows and inspect record-triggered execution order and published versions.</p>
         </div>
       </div>
-      <section className="surface scheduled-flows-surface">
+      <div className="flow-config-row" role="group" aria-label="Automation explorer views" style={{ marginBottom: 12 }}>
+        <button type="button" className={view === 'scheduled' ? 'btn btn-brand' : 'btn'} onClick={() => setView('scheduled')}>Scheduled Flows</button>
+        <button type="button" className={view === 'triggers' ? 'btn btn-brand' : 'btn'} onClick={() => setView('triggers')}>Flow Trigger Explorer</button>
+      </div>
+      {view === 'triggers' ? <FlowTriggerExplorer flows={flows} objects={objects} loading={loading} onEdit={onEdit} /> : <section className="surface scheduled-flows-surface">
         <div className="list-view-header">
           <div>
             <div className="list-view-label">FLOW DEFINITIONS</div>
@@ -98,7 +104,7 @@ export default function ScheduledFlows({ flows, objects, loading, onEdit }: Sche
             </tbody>
           </table>
         </div>
-      </section>
+      </section>}
     </div>
   );
 }
