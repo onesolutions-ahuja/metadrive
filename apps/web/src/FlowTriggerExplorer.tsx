@@ -42,8 +42,8 @@ export default function FlowTriggerExplorer({ flows, objects, loading, onEdit }:
         objectName: definition.triggerObject ?? '', objectLabel: object?.label ?? definition.triggerObject ?? 'Unassigned',
         trigger: String(definition.startConfig.trigger ?? 'created-or-updated'),
         runWhen: String(definition.startConfig.runWhen ?? 'after-save'),
-        triggerOrder: Number.isInteger(definition.startConfig.triggerOrder)
-          ? Number(definition.startConfig.triggerOrder) : null,
+        triggerOrder: typeof definition.startConfig.triggerOrder === 'number' && Number.isInteger(definition.startConfig.triggerOrder)
+          ? definition.startConfig.triggerOrder : null,
         publishedVersion: flow.activeVersion,
         draftVersion: flow.status === 'Draft' ? flow.versionNumber : null,
         hasPendingDraft: flow.status === 'Draft' && flow.activeVersion !== null,
