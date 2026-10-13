@@ -147,7 +147,7 @@ export default function FlowScreenAdvancedField({
     const onFiles = async (event: ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(event.target.files ?? []);
       try {
-        validateFlowScreenUpload(selectedFiles, files, { maxFiles, maxFileSize, allowedTypes });
+        validateFlowScreenUpload(selectedFiles, files.map(file => ({ name: String(file.name ?? ''), type: String(file.type ?? ''), size: Number(file.size ?? 0) })), { maxFiles, maxFileSize, allowedTypes });
         const uploads = await Promise.all(selectedFiles.map(readFile));
         const combined = [...files, ...uploads];
         const totalBytes = combined.reduce((total, file) => total + Number(file.size ?? 0), 0);
