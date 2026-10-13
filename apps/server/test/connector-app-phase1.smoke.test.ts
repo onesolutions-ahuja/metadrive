@@ -202,6 +202,9 @@ test('AppExchange installation and trial run using stored metadata flows', async
     const deviceSession=await api(portNumber,'/auth/me',deviceToken);
     assert.equal(deviceSession.status,200);
     assert.equal(deviceSession.data.user.profileId,'kiosk-user');
+    const kioskOnlyApps=(await api(portNumber,'/metadata/apps',deviceToken)).data.apps as Array<Record<string,any>>;
+    assert.ok(kioskOnlyApps.some(app=>app.apiName==='KioskApp'));
+    assert.equal(kioskOnlyApps.some(app=>app.apiName==='Records'),false,'Kiosk must not access unrelated applications');
     assert.equal(deviceSession.data.user.permissions.includes('security:manage'),false);
     const kioskCannotSeed=await api(portNumber,'/kiosk/devices',deviceToken,{index:2});
     assert.equal(kioskCannotSeed.status,403,'Kiosk login must not manage more devices');
