@@ -10075,6 +10075,10 @@ function PageBuilder({
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device,
+                      ...(component.type === 'Custom:TillSalesWorkspace' && !previewMode
+                        ? { onLayoutChange: (patch: { basketWidthPercent: number }) =>
+                            updateComponent(component.id, { properties: { ...component.properties, ...patch } }) }
+                        : {}),
                       children: nestedChildren
                     }} />
                     : libraryPreview
@@ -10599,7 +10603,7 @@ function PageBuilder({
                   : key === 'height' ? selectedCustomDefinition?.resize?.minHeight ?? 1
                     : 0;
                 return <label className="form-label" key={key}>{label}
-                  <input className="form-control" type="number" min={min}
+                  <input className="form-control" type="number" min={min} disabled={selected.properties.canvasLocked === true}
                     max={max}
                     value={selected.position![key]}
                     onChange={(event) => {
