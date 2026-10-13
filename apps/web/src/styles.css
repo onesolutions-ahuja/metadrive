@@ -732,11 +732,19 @@ h1, h2, h3, p { margin-top: 0; }
 .flow-graph { position: relative; flex: 0 0 auto; margin: auto; transform-origin: top center; }
 .flow-graph-connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .flow-graph-edge path { fill: none; stroke: #8e8e8e; stroke-width: 2; }
+.flow-graph-edge.is-selected path { stroke: #2563a6; stroke-width: 2.5; stroke-dasharray: 7 6; animation: md10-flow-dash 1.2s linear infinite; }
+@keyframes md10-flow-dash { to { stroke-dashoffset: -26; } }
+@media (prefers-reduced-motion: reduce) { .flow-graph-edge.is-selected path { animation: none; } }
+
 .flow-graph-edge.fault path { stroke: #c23934; stroke-dasharray: 5 4; }
 .flow-graph-edge.scheduled path { stroke: #8e8e8e; stroke-dasharray: 5 4; }
 .flow-graph-edge.fault text { fill: #c23934; }
 .flow-graph-edge text { fill: #444; stroke: #f8f8f8; stroke-width: 5px; paint-order: stroke; text-anchor: middle; font-size: 10px; }
 .flow-step.flow-graph-node { position: absolute; min-height: 74px; }
+.flow-node-inline-actions { position: absolute; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+.flow-node-inline-actions .icon-button { min-width: 26px; min-height: 26px; background: #fff; border: 1px solid #c5cbd3; border-radius: 50%; box-shadow: 0 1px 3px #0001; }
+.flow-node-inline-actions .icon-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .flow-outcome-default { padding: 0 7px; color: #706e6b; font-size: 9px; }
 .flow-path { width: 100%; min-width: 560px; display: flex; flex-direction: column; align-items: center; padding: 48px 20px 100px; }
 .flow-step-wrap { width: min(380px, calc(100% - 20px)); display: flex; flex-direction: column; align-items: center; }
@@ -2427,6 +2435,34 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
  .page-embedded-dashboard-tile, .page-embedded-dashboard-tile.half,
  .page-embedded-dashboard-tile.three-quarter,.page-embedded-dashboard-tile.full {grid-column:span 1}
 }
+
+
+/* Metadrive Phase 2: focused, translucent canvas controls without a second editor engine. */
+.modern-canvas-layers{position:absolute;z-index:12;top:58px;left:16px;width:244px;max-height:min(65vh,560px);overflow:auto;padding:10px;background:rgba(255,255,255,.94);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(140,158,181,.3);border-radius:16px;box-shadow:0 16px 45px rgba(25,42,70,.16)}
+.modern-canvas-layers-heading{display:flex;justify-content:space-between;align-items:baseline;padding:8px 10px 12px;font-size:13px}
+.modern-canvas-layers-heading small,.modern-layer small{color:#65748a;font-size:11px}
+.modern-layer{display:flex;align-items:center;border-radius:9px;gap:2px}
+.modern-layer.selected{background:#e7f0ff}
+.modern-layer>button:first-child{display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;border:0;background:transparent;padding:8px;cursor:pointer;text-align:left;color:#26364e}
+.modern-layer>button:first-child span,.modern-layer>button:first-child small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.modern-layer>button:last-child{border:0;background:transparent;padding:8px;color:#64748b;cursor:pointer}
+.modern-inspector-tabs{position:sticky;top:0;z-index:2;display:flex;gap:4px;padding:6px;background:var(--surface,#fff);border-bottom:1px solid #e6eaf0}
+.modern-inspector-tabs button{border:0;border-radius:9px;background:transparent;color:#506077;padding:10px 12px;flex:1;cursor:pointer;font:600 12px system-ui}
+.modern-inspector-tabs button.active{background:#e8f0ff;color:#1557bf}
+.modern-till-layout-controls{padding:12px;border:1px solid #e4eaf4;border-radius:12px;margin:12px 0;background:rgba(238,244,252,.5)}
+.modern-till-layout-controls input[type=range]{width:100%;accent-color:#126be5}
+.page-stage{position:relative}
+.free-canvas-component.selected{outline:2px solid #4e8df7;outline-offset:2px}
+@media(max-width:740px){.modern-canvas-layers{left:8px;width:min(244px,calc(100vw - 36px))}}
+@media(prefers-reduced-motion:no-preference){.modern-layer,.modern-inspector-tabs button,.free-canvas-component.selected{transition:background-color .15s ease,box-shadow .15s ease}}
+
+/* Keep floating layers anchored to the designer viewport, not the document. */
+.page-preview-area{position:relative}
+.modern-canvas-layers{left:16px;top:48px}
+.modern-layer>button:nth-child(n+2){flex:0 0 auto;padding:7px 5px;display:grid;place-items:center;min-width:26px}
+.modern-layer>button:focus-visible,.modern-inspector-tabs button:focus-visible{outline:2px solid #2c79e6;outline-offset:2px}
+.free-canvas-component>.record-component-head[data-canvas-move-handle]{cursor:grab;touch-action:none;user-select:none}
+.free-canvas-component>.record-component-head[data-canvas-move-handle]:active{cursor:grabbing}
 
 /* Metadrive Phase 2: modern, lightweight visual canvas (isolated from Record Builder). */
 .modern-canvas-builder {
