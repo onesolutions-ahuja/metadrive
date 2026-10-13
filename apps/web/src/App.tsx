@@ -30,6 +30,8 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Lock,
+  Unlock,
   FileText,
   Filter,
   GripVertical,
@@ -99,6 +101,7 @@ import EmbeddedDashboard from './EmbeddedDashboard';
 import { inspectPageDependencies } from './pageDependencies';
 import {
   canvasDimensionsForOrientation,
+  canvasBoundPosition,
   canvasOrientation,
   canvasScaleToFitWidth,
   canvasUnitsFromScreenDelta
@@ -9096,6 +9099,11 @@ function PageBuilder({
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null);
   const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
   const [canvasSnap, setCanvasSnap] = useState(true);
+  const canvasMoveStart = useRef<{
+    id: string; pointerId: number; pointerX: number; pointerY: number;
+    original: { x: number; y: number; width: number; height: number };
+    element: HTMLElement; x: number; y: number;
+  } | null>(null);
   const [showLayers, setShowLayers] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions'>('Overview');
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
@@ -9274,8 +9282,60 @@ function PageBuilder({
       setCustomPropertiesError(failure instanceof Error ? failure.message : 'Enter valid JSON properties.');
     }
   };
+  // Move only the selected DOM element while dragging. Commit metadata and
+  // a single undo step on release, avoiding a page-wide render per pointer frame.
+  const startCanvasMove = (event: React.PointerEvent<HTMLDivElement>, component: PageComponentMetadata) => {
+    if (previewMode || !component.position || component.properties.canvasLocked === true
+      || event.button !== 0 || canvasMoveStart.current) return;
+    const element = event.currentTarget.closest<HTMLElement>('.free-canvas-component');
+    if (!element) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    canvasMoveStart.current = {
+      id: component.id, pointerId: event.pointerId,
+      pointerX: event.clientX, pointerY: event.clientY,
+      original: { ...component.position }, element,
+      x: component.position.x, y: component.position.y
+    };
+    setSelectedId(component.id);
+    setPageSettingsOpen(false);
+  };
+  const moveCanvasPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = canvasMoveStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const scale = fitCanvas ? fitScale : 1;
+    const x = start.original.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, scale);
+    const y = start.original.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, scale);
+    const next = canvasBoundPosition({ ...start.original, x, y },
+      { width: page.canvasWidth, height: page.canvasHeight }, canvasSnap);
+    start.x = next.x; start.y = next.y;
+    start.element.style.transform =
+      `translate(${next.x - start.original.x}px, ${next.y - start.original.y}px)`;
+  };
+  const endCanvasMove = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
+    const start = canvasMoveStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    canvasMoveStart.current = null;
+    start.element.style.transform = '';
+    if (!cancelled && (start.x !== start.original.x || start.y !== start.original.y)) {
+      updateComponent(start.id, { position: { ...start.original, x: start.x, y: start.y } });
+    }
+  };
+  const reorderLayer = (id: string, direction: -1 | 1) => {
+    const items = [...page.components];
+    const index = items.findIndex(item => item.id === id);
+    if (index < 0) return;
+    const parent = rawLayoutParentId(items[index]);
+    const siblings = items.map((item, position) => rawLayoutParentId(item) === parent ? position : -1).filter(position => position >= 0);
+    const indexAmongSiblings = siblings.indexOf(index);
+    const target = siblings[indexAmongSiblings + direction];
+    if (target === undefined) return;
+    [items[index], items[target]] = [items[target], items[index]];
+    applyPage({ ...page, components: items });
+  };
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata) => {
-    if (!component.position) return;
+    if (!component.position || component.properties.canvasLocked === true) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -9923,7 +9983,7 @@ function PageBuilder({
          if (event.currentTarget !== event.target || previewMode) return;
          if (event.key === 'Enter' || event.key === ' ') {
            event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false);
-         } else if (page.layoutMode === 'free-canvas' && component.position && !nested
+         } else if (page.layoutMode === 'free-canvas' && component.position && !nested && component.properties.canvasLocked !== true
            && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
            event.preventDefault();
            const delta = event.shiftKey ? 1 : canvasSnap ? 8 : 1;
@@ -9941,11 +10001,19 @@ function PageBuilder({
       onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
       draggable={!previewMode && !libraryPreview}
       data-component-id={libraryPreview ? undefined : component.id}
-      onDragStart={!libraryPreview ? (event) => { event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
+      onDragStart={!libraryPreview ? (event) => { if (component.properties.canvasLocked === true || canvasMoveStart.current?.id === component.id) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
-      {!previewMode && !libraryPreview && <div className="record-component-head"><GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} /></div>}
+      {!previewMode && !libraryPreview && <div className="record-component-head"
+        data-canvas-move-handle={page.layoutMode === 'free-canvas' && !nested ? component.id : undefined}
+        onPointerDown={page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
+        onPointerMove={page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
+        onPointerUp={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
+        onPointerCancel={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}>
+        <GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span>
+        {component.properties.canvasLocked === true ? <Lock size={13} /> : <MoreHorizontal size={16} />}
+      </div>}
       {isLayoutType(component.type)
         ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
           {directChildren(page.components, component.id).map((child) => renderPageComponent(child, page.components.indexOf(child), libraryPreview, interactivePreview))}
