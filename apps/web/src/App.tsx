@@ -3565,8 +3565,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
   // Kiosk is a standalone customer-facing page, not a workspace tab. Resolve it
   // from tenant page metadata so every installed kiosk opens edge-to-edge by URL.
-  const isStandaloneKioskPage = route.kind === 'app-page' && pages.some((candidate) =>
-    candidate.apiName === route.pageApiName && candidate.status === 'Active' &&
+  const isStandaloneKioskPage = (route.kind === 'app-page' || route.kind === 'app-home') && pages.some((candidate) =>
+    candidate.status === 'Active' &&
+    (route.kind === 'app-page' ? candidate.apiName === route.pageApiName && candidate.pageType === 'App Page'
+      : candidate.pageType === 'Home Page' && (candidate.activationAssignments ?? []).some((assignment) =>
+          assignment.appId === route.appId && (assignment.scope === 'App Default' || assignment.scope === 'App and Profile'))) &&
     candidate.components.some((component) => component.type === 'Custom:KioskOrderingExperience')
   );
 
@@ -4584,6 +4587,7 @@ function MetadataBoundPageComponent({
   const objectApiName = String(properties.objectApiName ?? '');
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
   const customerObjectApiName = String(properties.customerObjectApiName ?? '');
+  const categoryObjectApiName = String(properties.categoryObjectApiName ?? '');
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
     try {
@@ -4600,6 +4604,7 @@ function MetadataBoundPageComponent({
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [cartRecords, setCartRecords] = useState<Record<string, unknown>[]>([]);
   const [customerRecords, setCustomerRecords] = useState<Record<string, unknown>[]>([]);
+  const [categoryRecords, setCategoryRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
@@ -4607,7 +4612,7 @@ function MetadataBoundPageComponent({
   const initializedSessions = useRef<Set<string>>(new Set());
   useEffect(() => {
     let active = true;
-    setRecords([]); setCartRecords([]); setCustomerRecords([]); setDataError('');
+    setRecords([]); setCartRecords([]); setCustomerRecords([]); setCategoryRecords([]); setDataError('');
     const tasks: Array<Promise<Record<string, unknown>[]>> = [
       objectApiName ? loadFlowScreenRecords(objectApiName) : Promise.resolve([]),
       cartObjectApiName ? apiRequest<{ records: Record<string, unknown>[] }>(
@@ -4616,16 +4621,17 @@ function MetadataBoundPageComponent({
         + '&filterValue=' + encodeURIComponent(sessionId)
         + '&limit=200'
       ).then((response) => response.records) : Promise.resolve([]),
-      customerObjectApiName ? loadFlowScreenRecords(customerObjectApiName) : Promise.resolve([])
+      customerObjectApiName ? loadFlowScreenRecords(customerObjectApiName) : Promise.resolve([]),
+      categoryObjectApiName ? loadFlowScreenRecords(categoryObjectApiName).catch(() => []) : Promise.resolve([])
     ];
     setDataLoading(true);
-    void Promise.all(tasks).then(([products, basket, customers]) => {
-      if (active) { setRecords(products); setCartRecords(basket); setCustomerRecords(customers); }
+    void Promise.all(tasks).then(([products, basket, customers, categoryRows]) => {
+      if (active) { setRecords(products); setCartRecords(basket); setCustomerRecords(customers); setCategoryRecords(categoryRows); }
     }).catch((error: unknown) => {
       if (active) setDataError(error instanceof Error ? error.message : 'Unable to load page records');
     }).finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
-  }, [objectApiName, cartObjectApiName, customerObjectApiName, sessionId, revision]);
+  }, [objectApiName, cartObjectApiName, customerObjectApiName, categoryObjectApiName, sessionId, revision]);
   // The existing Page Builder filter schema is validated centrally; invalid
   // or inaccessible fields must not silently widen a component's result set.
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
@@ -4648,7 +4654,14 @@ function MetadataBoundPageComponent({
     email: properties.customerEmailField ? String(record[String(properties.customerEmailField)] ?? '') : ''
   }));
   const categories = [...new Set(mappedProducts.map((item) => item.categoryId).filter(Boolean))]
-    .map((id) => ({ id, name: id, icon: '🍽️' }));
+    .map((id) => {
+      const category = categoryRecords.find((item) => String(item.Id ?? '') === id);
+      return {
+        id,
+        name: String(category?.[String(properties.categoryNameField || 'Name')] ?? id),
+        icon: String(category?.[String(properties.categoryIconField || 'Icon__c')] ?? '🍽️')
+      };
+    });
   const cartSessionField = String(properties.cartSessionField ?? 'Session__c');
   const cartProductField = String(properties.cartProductField ?? 'Product__c');
   const cartQuantityField = String(properties.cartQuantityField ?? 'Quantity__c');
@@ -4823,12 +4836,13 @@ function LightningAppRuntime({
     setActiveTab('');
   }, [page?.apiName]);
   useEffect(() => {
-    onKioskModeChange(page?.layoutMode === 'free-canvas');
+    onKioskModeChange(Boolean(page?.components.some((component) => component.type === 'Custom:KioskOrderingExperience')));
     return () => onKioskModeChange(false);
   }, [page?.layoutMode, onKioskModeChange]);
   if (error) return <div className="records-page"><div className="records-message" role="alert">{error}</div></div>;
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
   if (!page) return <div className="records-page"><div className="records-empty">No active Home Page is assigned to this app and profile. Assign one from Lightning App Builder.</div></div>;
+  const isKioskRuntime = page.layoutMode === 'free-canvas' && page.components.some((component) => component.type === 'Custom:KioskOrderingExperience');
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const appVisibilityContext = { formFactor } as const;
   const isAppComponentVisible = (component: PageComponentMetadata) =>
@@ -4908,7 +4922,9 @@ function LightningAppRuntime({
               width: component.position?.width ?? 320,
               height: component.position?.height ?? 180
             }),
-        ...resolvePageComponentStyle(component.properties, component.type, layoutDevice)
+        ...resolvePageComponentStyle(component.properties, component.type, layoutDevice),
+        ...(isKioskRuntime && component.type === 'Custom:KioskOrderingExperience' && !nested
+          ? { left: 0, top: 0, width: '100%', height: '100%' } : {})
       } as React.CSSProperties}>
       {renderComponent(component)}
     </div>;
@@ -4916,7 +4932,7 @@ function LightningAppRuntime({
   if (page.layoutMode === 'free-canvas') return <div className="free-canvas-runtime"
     data-lightning-page={page.apiName}
     data-layout-mode="free-canvas"
-    style={{ width: page.canvasWidth, height: page.canvasHeight }}>
+    style={isKioskRuntime ? { width: '100%', height: '100dvh', maxWidth: 'none' } : { width: page.canvasWidth, height: page.canvasHeight }}>
     {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
@@ -9104,10 +9120,9 @@ function PageBuilder({
       || (item.activationAssignments ?? []).some((assignment) => assignment.appId === builderApp.apiName)
     ))
     : [];
-  const pagePickerPages = builderApp
-    ? [...appPages.filter((item) => item.apiName !== page.apiName), page]
-    : [...pages.filter((item) => item.apiName !== page.apiName), page]
-      .sort((left, right) => (Date.parse(right.updatedAt ?? '') || 0) - (Date.parse(left.updatedAt ?? '') || 0));
+  // Show all tenant pages even if an installation needs activation repair.
+  const pagePickerPages = [...pages.filter((item) => item.apiName !== page.apiName), page]
+    .sort((left, right) => (Date.parse(right.updatedAt ?? '') || 0) - (Date.parse(left.updatedAt ?? '') || 0));
   const currentPageIsAssignedToBuilderApp = appPages.some((item) => item.apiName === page.apiName);
   const targetObject = objects.find((object) => object.apiName === page.targetObject);
   const pageTypeComponents = page.pageType === 'Record Page'
@@ -10319,7 +10334,7 @@ function PageBuilder({
             </select>
             <select aria-label="Select Lightning page" value={page.apiName} onChange={(event) => selectSavedPage(event.target.value)}>
               {pagePickerPages.map((item) => <option key={item.apiName} value={item.apiName}>
-                {item.label} · {item.pageType}{builderApp && item.apiName === page.apiName && !currentPageIsAssignedToBuilderApp ? ' · Current page' : ''}
+                {item.label} · {item.pageType}{builderApp && item.apiName !== page.apiName && !appPages.some((available) => available.apiName === item.apiName) ? ' · Not assigned to this app' : ''}
               </option>)}
             </select>
             <button className="btn btn-small" onClick={() => {

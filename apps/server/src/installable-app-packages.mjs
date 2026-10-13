@@ -85,8 +85,32 @@ export function applyInstallableAppPackages(tenant, catalog) {
             appId,profileId:null,recordTypeId:null,formFactors:['Desktop','Phone']
           });
         }
-        if (assignments.length !== (page.activationAssignments ?? []).length) {
-          pages[index] = {...page,activationAssignments:assignments};
+        // Upgrade only a package-owned, unchanged legacy accent to the
+        // revised kiosk visual preset. Customised tenant colors stay intact.
+        const seeded = pkg.pages?.[0]?.components ?? [];
+        const upgradedComponents = (page.components ?? []).map(component => {
+          const template = seeded.find(item => item.id === component.id && item.type === component.type);
+          if (!template) return component;
+          const missingCategories = template.properties?.categoryObjectApiName &&
+            !component.properties?.categoryObjectApiName;
+          const legacyAccent = component.properties?.accentColor === '#ffca26'
+            && template.properties?.accentColor !== '#ffca26';
+          if (!missingCategories && !legacyAccent) return component;
+          return { ...component, properties: {
+            ...component.properties,
+            ...(missingCategories ? {
+              categoryObjectApiName: template.properties.categoryObjectApiName,
+              categoryNameField: template.properties.categoryNameField
+            } : {}),
+            ...(legacyAccent ? {
+              accentColor: template.properties.accentColor,
+              ...(component.properties.inkColor === '#202124' ? { inkColor: template.properties.inkColor } : {})
+            } : {})
+          } };
+        });
+        if (assignments.length !== (page.activationAssignments ?? []).length ||
+          upgradedComponents.some((item, at) => item !== page.components[at])) {
+          pages[index] = {...page,activationAssignments:assignments,components:upgradedComponents};
           changed = true;
         }
       }

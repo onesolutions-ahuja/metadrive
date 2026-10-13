@@ -15,7 +15,11 @@ export function ensureBundledAppComponents(library, tenant, catalog, bundledRoot
     if (!licence || licence.Installed__c !== true
       || !['Trial','Licensed'].includes(licence.LicenceStatus__c)) continue;
     for (const descriptor of pkg.components ?? []) {
-      if (result.some(item => item.apiName === descriptor.apiName)) continue;
+      const position = result.findIndex(item => item.apiName === descriptor.apiName);
+      const bundleVersion = Number.isInteger(descriptor.version) && descriptor.version > 0 ? descriptor.version : 1;
+      // Upgrade only our own signed bundled component. Never overwrite a tenant
+      // component with the same API name, or a newer user-maintained version.
+      if (position >= 0 && (!result[position].trustedBundled || (result[position].version ?? 1) >= bundleVersion)) continue;
       const readBundled = path => {
         if (typeof path !== 'string' || path.startsWith('/') || path.includes('\\')) throw Error('Invalid app bundle path');
         const full = resolve(root,path);
@@ -27,15 +31,18 @@ export function ensureBundledAppComponents(library, tenant, catalog, bundledRoot
       const compiledJs = transformSync(jsxSource, {
         loader:'jsx',format:'cjs',jsx:'transform',target:'es2020'
       }).code;
-      result.push({
+      const component = {
+        ...(position >= 0 ? result[position] : {}),
         apiName:descriptor.apiName,label:descriptor.label,
         description:descriptor.description,
         surfaces:descriptor.surfaces,resize:descriptor.resize,
         jsxSource,cssSource,compiledJs,scopedCss:cssSource,
-        version:1,publishedVersion:1,status:'Published',
+        version:bundleVersion,publishedVersion:bundleVersion,status:'Published',
         trustedBundled:true,
         updatedAt:new Date().toISOString()
-      });
+      };
+      if (position >= 0) result[position] = component;
+      else result.push(component);
     }
   }
   return result;

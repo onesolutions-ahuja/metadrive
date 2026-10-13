@@ -4808,6 +4808,36 @@ function restoreDurableAuthOverlay(snapshot: PlatformState): PlatformState {
   };
 }
 state = restoreDurableAuthOverlay(state);
+// Reconcile installed, licensed declarative app packages on every startup.
+// Historical installations can have a valid licence but no materialised
+// Home Page or registered component; they must be repaired without a
+// manual reinstall, account impersonation or a Kiosk-specific API bypass.
+if (!maintenanceMode) {
+  const nextTenants = { ...state.tenants };
+  let bundledLibrary = state.libraryComponents;
+  let repaired = 0;
+  for (const [tenantId, tenant] of Object.entries(state.tenants)) {
+    if (!(tenant.records?.Connector_App__c ?? []).some(row =>
+      row.Installed__c === true && ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)) &&
+      installableAppCatalog.packages.some((pkg: { appKey: string }) => pkg.appKey === row.AppKey__c))) continue;
+    try {
+      const installed = applyInstallableAppPackages(tenant, installableAppCatalog) as TenantData;
+      if (JSON.stringify(installed) !== JSON.stringify(tenant)) {
+        nextTenants[tenantId] = installed;
+        repaired++;
+      }
+      bundledLibrary = ensureBundledAppComponents(
+        bundledLibrary, installed, installableAppCatalog, bundledCustomComponentsPath
+      );
+    } catch (error) {
+      console.error('Unable to reconcile licensed app metadata for tenant', tenantId, error);
+    }
+  }
+  if (repaired || bundledLibrary.some((item, index) => item !== state.libraryComponents[index])) {
+    state = { ...state, tenants: nextTenants, libraryComponents: bundledLibrary };
+    console.info('Reconciled licensed app metadata at startup for tenants:', repaired);
+  }
+}
 assertTenantIdentityIsolation(state);
 console.info(`Startup state hydration: ${(performance.now() - stateHydrationStartedAt).toFixed(0)}ms`);
 // Remove legacy internal UI requests from Communication Records before the

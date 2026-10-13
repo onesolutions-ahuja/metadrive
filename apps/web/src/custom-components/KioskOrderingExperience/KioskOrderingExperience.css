@@ -1,98 +1,27 @@
-
-.une-kiosk-demo{--une-kiosk-accent:#ffca26;--une-kiosk-ink:#202124;display:flex;flex-direction:column;width:100%;height:100%;min-height:720px;max-height:100%;background:#f8f9fb;color:var(--une-kiosk-ink);font-family:Inter,Arial,Helvetica,sans-serif;box-sizing:border-box;position:relative;overflow:hidden;font-size:16px}
-.une-kiosk-demo *{box-sizing:border-box}
-.une-kiosk-demo button,.une-kiosk-demo input,.une-kiosk-demo select{font:inherit}
-.une-kiosk-demo button{cursor:pointer}
-.une-kiosk-demo button:disabled{opacity:.5;cursor:not-allowed}
-.une-kiosk-demo button:focus-visible,.une-kiosk-demo input:focus-visible,.une-kiosk-demo select:focus-visible{outline:3px solid #2d6cdf;outline-offset:2px}
-.une-kiosk-head{display:flex;align-items:center;justify-content:space-between;gap:22px;padding:18px 30px;min-height:98px;background:var(--une-kiosk-accent);flex-shrink:0}
-.une-kiosk-brand{display:flex;align-items:center;gap:15px;min-width:0}
-.une-kiosk-brand-symbol{display:grid;place-items:center;width:57px;height:57px;background:#242424;color:var(--une-kiosk-accent);font-size:36px;border-radius:14px;flex-shrink:0}
-.une-kiosk-brand strong{display:block;font-size:25px;font-weight:850;line-height:1.1;letter-spacing:-.8px}
-.une-kiosk-brand small{display:block;font-size:12px;margin-top:5px}
-.une-kiosk-mode{display:flex;align-items:center;gap:8px}
-.une-kiosk-mode button,.une-kiosk-language{background:#fff;border:2px solid transparent;border-radius:14px;color:#222;padding:13px 16px;font-weight:800;white-space:nowrap}
-.une-kiosk-mode button.is-active{border-color:#222}
-.une-kiosk-language{font-size:14px;max-width:160px}
-.une-kiosk-main{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
-.une-kiosk-hero{display:grid;grid-template-columns:1fr 1.07fr;background:linear-gradient(105deg,#fff5d6,#fbe3b8);min-height:292px;overflow:hidden;align-items:center}
-.une-hero-copy{padding:28px 12px 30px 48px;position:relative;z-index:1}
-.une-kiosk-eyebrow,.une-menu-intro small{font-size:12px;letter-spacing:2px;font-weight:900;color:#93651d}
-.une-hero-copy h1{font-size:clamp(34px,4.8vw,60px);letter-spacing:-2px;line-height:1.03;margin:14px 0 13px;font-weight:900;max-width:470px}
-.une-hero-copy p{font-size:17px;line-height:1.45;margin:0 0 21px;max-width:390px}
-.une-pill-action{background:var(--une-kiosk-accent);border:0;border-radius:15px;padding:15px 22px;font-weight:900}
-.une-hero-image{position:relative;height:100%;min-height:292px;display:grid;place-items:center;font-size:140px;overflow:hidden}
-.une-hero-image img{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;mix-blend-mode:multiply}
-.une-kiosk-categories{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px;padding:15px 20px 20px;background:#fff;border-bottom:1px solid #eaeaea}
-.une-kiosk-categories button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-width:0;border:1px solid #f1f1f1;border-radius:16px;padding:10px 5px 12px;background:#fff;font-size:13px;font-weight:750;white-space:nowrap}
-.une-kiosk-categories button span{font-size:31px}
-.une-kiosk-categories button.selected{background:var(--une-kiosk-accent);border-color:var(--une-kiosk-accent);box-shadow:inset 0 -3px rgba(0,0,0,.09)}
-.une-kiosk-menu{padding:27px 25px 42px}
-.une-menu-intro{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:21px}
-.une-menu-intro h2{font-size:30px;letter-spacing:-1.2px;font-weight:900;margin:6px 0 0}
-.une-menu-search{width:260px;max-width:45%;background:#fff;border:1px solid #dddfe4;border-radius:13px;padding:9px 13px;display:flex;align-items:center;gap:7px}
-.une-menu-search span{font-size:26px;color:#7d7d7d}
-.une-menu-search input{border:0;outline:none;background:transparent;min-width:0;width:100%;font-size:14px}
-.une-kiosk-products{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:17px}
-.une-product-card{position:relative;background:#fff;border-radius:19px;overflow:hidden;box-shadow:0 2px 11px rgba(24,28,40,.07);display:flex;flex-direction:column;border:1px solid #efefef}
-.une-product-photo{position:relative;background:#fafafa;border:0;width:100%;padding:0;height:170px;flex-shrink:0}
-.une-food-image{position:relative;display:grid;place-items:center;background:linear-gradient(145deg,#fbf4e9,#f2f3f7);overflow:hidden;width:100%;height:100%}
-.une-food-image span{font-size:72px}
-.une-food-image img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.une-product-badge{position:absolute;top:10px;right:10px;background:#e21c35;color:#fff;font-size:11px;font-weight:900;border-radius:20px;padding:7px 11px}
-.une-product-info{display:flex;flex-direction:column;padding:13px;gap:9px;flex:1;min-width:0}
-.une-product-info h3{font-size:16px;line-height:1.16;font-weight:850;margin:0;min-height:37px}
-.une-product-info p{font-size:11px;color:#676767;line-height:1.3;margin:0;min-height:29px}
-.une-product-info strong{font-size:18px;margin-top:auto}
-.une-product-add{border:0;border-radius:13px;background:var(--une-kiosk-accent);padding:12px 9px;font-weight:900;font-size:14px}
-.une-kiosk-basketbar{background:#222;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:20px;padding:15px 27px;flex-shrink:0;min-height:95px}
-.une-basket-count{display:grid;grid-template-columns:52px auto;column-gap:15px;align-items:center}
-.une-bag-icon{grid-row:span 2;background:#353535;width:52px;height:52px;border-radius:15px;display:grid;place-items:center;font-size:27px}
-.une-basket-count strong{font-size:18px}
-.une-basket-count small{color:#d0d0d0;font-size:12px}
-.une-kiosk-primary{display:inline-flex;justify-content:center;align-items:center;gap:22px;background:var(--une-kiosk-accent);color:#1d1d1d;border:0;border-radius:16px;padding:17px 25px;font-size:17px;font-weight:900;min-height:59px}
-.une-kiosk-primary strong{font-size:21px}
-.une-kiosk-empty{text-align:center;padding:70px 20px;color:#676767}
-.une-kiosk-checkout{overflow:auto;min-height:0;flex:1;padding:30px;background:#f7f7f7}
-.une-kiosk-back{border:0;background:none;font-weight:800;margin:0 0 20px}
-.une-kiosk-checkout-card{max-width:850px;margin:0 auto;background:#fff;border-radius:22px;padding:36px}
-.une-kiosk-checkout-card h2{font-size:36px;margin:6px 0 27px}
-.une-cart-line{display:flex;align-items:center;gap:20px;padding:15px 0;border-bottom:1px solid #ececec}
-.une-cart-photo{height:100px;width:120px;flex-shrink:0;border-radius:12px}
-.une-cart-photo span{font-size:45px}
-.une-cart-copy{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
-.une-cart-copy strong{font-size:17px}
-.une-cart-copy small{font-size:12px;color:#6c6c6c}
-.une-cart-copy span{font-size:13px;color:#555}
-.une-qty{display:inline-flex;align-items:center;border:1px solid #dedede;border-radius:13px;overflow:hidden;background:#fff;flex-shrink:0}
-.une-qty button{width:43px;height:43px;border:0;background:#f5f5f5;font-size:24px;font-weight:700}
-.une-qty strong{min-width:35px;text-align:center;font-size:16px}
-.une-total-row{display:flex;align-items:center;justify-content:space-between;margin:30px 0;padding-top:16px;border-top:2px solid #efefef;font-size:20px}
-.une-total-row strong{font-size:29px}
-.une-checkout-button{width:100%}
-.une-payment-demo{text-align:center;border:1px solid #e5e5e5;border-radius:17px;padding:35px;margin:25px 0}
-.une-payment-demo span{font-size:54px}
-.une-payment-demo h3{font-size:24px}
-.une-payment-demo p{color:#666}
-.une-kiosk-done{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;gap:22px;padding:35px}
-.une-kiosk-done>span{display:grid;place-items:center;width:120px;height:120px;border-radius:100%;background:#c7f6dc;color:#137a41;font-size:80px}
-.une-kiosk-done h2{font-size:40px;margin:0}
-.une-kiosk-done p{color:#666;max-width:420px;margin:0}
-.une-kiosk-done>strong{font-size:28px}
-.une-detail-overlay{position:absolute;z-index:10;inset:0;background:rgba(10,12,17,.65);display:flex;justify-content:center;align-items:center;padding:25px}
-.une-detail-card{width:100%;max-width:700px;background:#fff;border-radius:22px;overflow-y:auto;max-height:100%;position:relative;box-shadow:0 20px 90px rgba(0,0,0,.2)}
-.une-detail-close{position:absolute;z-index:2;right:17px;top:17px;width:42px;height:42px;border:0;background:#fff;border-radius:50%;font-size:30px;box-shadow:0 2px 10px #ccc}
-.une-detail-photo{height:290px}
-.une-detail-photo span{font-size:115px}
-.une-detail-body{padding:27px}
-.une-detail-body h2{font-size:31px;margin:0 0 12px}
-.une-detail-body h3{font-size:24px}
-.une-detail-body p{color:#555;line-height:1.5}
-.une-detail-body fieldset{border:0;border-top:1px solid #eee;padding:20px 0;margin:20px 0}
-.une-detail-body legend{font-weight:800}
-.une-extra-option{display:flex;align-items:center;gap:12px;padding:10px 0;font-size:15px}
-.une-extra-option input{width:21px;height:21px;accent-color:#ffca26}
-.une-extra-option span{margin-left:auto}
-.une-detail-controls{display:flex;gap:16px;justify-content:space-between;align-items:center;flex-wrap:wrap}
-@media(max-width:950px){.une-kiosk-head{padding:13px 17px;gap:10px}.une-kiosk-brand strong{font-size:19px}.une-kiosk-brand-symbol{width:45px;height:45px}.une-kiosk-mode button{font-size:12px;padding:10px 9px}.une-kiosk-language{font-size:12px;padding:11px 8px}.une-kiosk-products{grid-template-columns:repeat(3,minmax(0,1fr))}.une-product-photo{height:160px}.une-kiosk-categories{grid-template-columns:repeat(4,minmax(0,1fr))}.une-hero-copy{padding-left:24px}}
-@media(max-width:580px){.une-kiosk-demo{font-size:14px}.une-kiosk-head{flex-wrap:wrap}.une-kiosk-brand{width:100%}.une-kiosk-mode{flex:1}.une-kiosk-language{max-width:100px}.une-kiosk-hero{grid-template-columns:1fr;min-height:0}.une-hero-copy{padding:26px}.une-hero-copy h1{font-size:38px}.une-hero-image{height:140px;min-height:140px}.une-hero-image img{object-position:center 55%}.une-kiosk-categories{grid-template-columns:repeat(3,minmax(0,1fr));padding:12px}.une-kiosk-menu{padding:19px 13px 30px}.une-menu-intro{flex-wrap:wrap}.une-menu-intro h2{font-size:24px}.une-menu-search{max-width:none;width:100%}.une-kiosk-products{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.une-product-photo{height:130px}.une-product-info{padding:11px;gap:7px}.une-product-info h3{font-size:14px;min-height:34px}.une-product-info p{font-size:10px}.une-product-add{padding:10px 6px}.une-kiosk-basketbar{padding:12px;gap:10px;min-height:75px}.une-basket-count{grid-template-columns:35px auto;gap:7px}.une-bag-icon{width:35px;height:35px;font-size:19px}.une-basket-count strong{font-size:14px}.une-basket-count small{font-size:10px}.une-kiosk-primary{font-size:13px;gap:8px;padding:12px;min-height:45px}.une-kiosk-primary strong{font-size:15px}.une-kiosk-checkout{padding:12px}.une-kiosk-checkout-card{padding:18px}.une-cart-photo{width:65px;height:65px}.une-cart-line{gap:8px}.une-qty button{width:31px;height:35px}.une-qty strong{min-width:26px}.une-detail-overlay{padding:10px}.une-detail-photo{height:190px}.une-detail-body{padding:17px}.une-detail-body h2{font-size:24px}}
+/* Touch-screen restaurant kiosk, inspired by familiar fast-food ordering layouts.
+   All selectors are scoped; colors and content remain page metadata. */
+.kfc-kiosk{--kfc-accent:#d71e28;--kfc-ink:#191919;--kfc-line:#e9e9e9;display:flex;flex-direction:column;width:100%;height:100%;min-height:100%;max-height:100%;overflow:hidden;background:#f6f6f5;color:var(--kfc-ink);font-family:Inter,Arial,Helvetica,sans-serif;font-size:15px}
+.kfc-kiosk *{box-sizing:border-box}
+.kfc-kiosk button,.kfc-kiosk select,.kfc-kiosk input{font:inherit}
+.kfc-kiosk button{cursor:pointer}
+.kfc-kiosk button:disabled{opacity:.45;cursor:not-allowed}
+.kfc-kiosk :is(button,select,input):focus-visible{outline:3px solid #0a6cce;outline-offset:2px}
+.kfc-topbar{height:94px;min-height:94px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 25px;border-bottom:1px solid var(--kfc-line)}
+.kfc-brand{display:flex;align-items:center;gap:12px;min-width:0}.kfc-brand-symbol{display:grid;place-items:center;background:var(--kfc-accent);color:#fff;width:54px;height:54px;border-radius:15px;font-size:33px;font-weight:bold;flex-shrink:0}.kfc-brand strong{display:block;font-size:22px;line-height:1.15;font-weight:850}.kfc-brand small{display:block;color:#767676;margin-top:3px;font-size:12px}
+.kfc-order-mode{display:flex;gap:4px;background:#f0f0f0;border-radius:15px;padding:5px}.kfc-order-mode button{border:0;background:transparent;padding:13px 19px;border-radius:11px;font-weight:800;white-space:nowrap;font-size:14px}.kfc-order-mode button.active{background:var(--kfc-ink);color:#fff}
+.kfc-language{background:#fff;border:1px solid #dedede;border-radius:10px;padding:11px 8px;max-width:125px;font-size:13px}
+.kfc-body{min-height:0;flex:1;display:grid;grid-template-columns:155px minmax(0,1fr) 292px}
+.kfc-category-rail{background:#fff;border-right:1px solid var(--kfc-line);padding:22px 9px;overflow-y:auto;display:flex;flex-direction:column;gap:11px;min-height:0}
+.kfc-rail-title{font-size:20px;font-weight:900;padding:4px 10px 10px}.kfc-category-rail button{border:2px solid transparent;background:#fff;border-radius:16px;min-height:96px;padding:11px 5px;color:var(--kfc-ink);font-size:13px;font-weight:800;display:flex;align-items:center;flex-direction:column;justify-content:center;gap:10px;text-align:center}.kfc-category-rail button.active{background:#fff2f2;border-color:var(--kfc-accent);color:#bd1426}.kfc-category-icon{font-size:32px;line-height:1.1}
+.kfc-menu-area{min-width:0;min-height:0;overflow-y:auto;padding:29px 24px 50px;overscroll-behavior:contain}.kfc-menu-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:26px}.kfc-kicker{font-weight:900;letter-spacing:2px;font-size:11px;color:var(--kfc-accent)}.kfc-menu-heading h1{font-size:clamp(27px,3vw,43px);letter-spacing:-1.5px;font-weight:900;line-height:1.05;margin:10px 0}.kfc-menu-heading p{font-size:14px;color:#777;margin:0}
+.kfc-search{display:flex;align-items:center;gap:7px;border:1px solid #e0e0e0;padding:11px 13px;border-radius:13px;background:#fff;color:#777;font-size:21px}.kfc-search input{font-size:14px;width:125px;min-width:0;outline:0;border:0;background:transparent}
+.kfc-product-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px}.kfc-product{padding:0;text-align:left;display:flex;flex-direction:column;overflow:hidden;background:white;border:1px solid #ececec;border-radius:18px;box-shadow:0 2px 6px #00000006;min-width:0;min-height:250px}.kfc-product:hover{border-color:var(--kfc-accent);box-shadow:0 7px 20px #00000012;transform:translateY(-1px)}.kfc-food-photo{display:grid;place-items:center;background:#f5f0e8;overflow:hidden;position:relative;height:155px;flex-shrink:0}.kfc-food-photo span{font-size:69px}.kfc-food-photo img{display:block;width:100%;height:100%;object-fit:cover}.kfc-product-details{padding:14px 15px 16px;flex:1;display:flex;flex-direction:column;min-width:0}.kfc-product-details>strong{font-size:17px;font-weight:850;line-height:1.2}.kfc-product-details>small{font-size:12px;color:#818181;margin-top:6px;line-height:1.4;min-height:30px}.kfc-product-bottom{margin-top:auto;padding-top:9px;display:flex;justify-content:space-between;align-items:center;gap:6px}.kfc-product-bottom b{font-weight:900;font-size:19px}.kfc-plus{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--kfc-accent);color:#fff;font-size:26px;font-weight:700}
+.kfc-basket-panel{background:#fff;border-left:1px solid var(--kfc-line);display:flex;flex-direction:column;min-height:0}.kfc-basket-heading{display:flex;gap:10px;align-items:center;padding:28px 17px 19px;border-bottom:1px solid var(--kfc-line)}.kfc-basket-heading>span{font-size:27px}.kfc-basket-heading h2{font-size:22px;margin:0;font-weight:900}.kfc-basket-heading small{font-size:12px;color:#777}.kfc-basket-scroll{flex:1;min-height:0;overflow-y:auto;padding:7px 15px}.kfc-empty-basket{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:260px;gap:12px;color:#656565}.kfc-empty-basket>span{font-size:45px}.kfc-empty-basket strong{color:var(--kfc-ink)}.kfc-empty-basket p{font-size:12px;margin:0}
+.kfc-basket-line{display:flex;gap:10px;align-items:flex-start;border-bottom:1px solid #eee;padding:14px 0;font-size:13px}.kfc-basket-line>.kfc-food-photo{width:46px;height:48px;border-radius:9px}.kfc-basket-line>.kfc-food-photo span{font-size:25px}.kfc-basket-line>.kfc-line-info{min-width:0;flex:1}.kfc-basket-line strong{font-size:12px;line-height:1.35}.kfc-line-info>strong{display:block}.kfc-line-info>small{color:#888;display:block;margin:4px 0}.kfc-quantity{display:inline-flex;align-items:center;gap:12px;background:#f1f1f1;border-radius:10px;padding:4px;margin-top:6px;font-weight:bold}.kfc-quantity button{background:#fff;border:0;border-radius:8px;min-width:31px;min-height:31px;font-size:20px;line-height:1}.kfc-basket-footer{padding:18px 17px 21px;box-shadow:0 -7px 20px #0000000a;border-top:1px solid #eee}.kfc-subtotal{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:16px;font-weight:750}.kfc-subtotal strong{font-size:23px;font-weight:900}.kfc-basket-footer>small{display:block;font-size:11px;color:#858585;margin:6px 0 18px}.kfc-primary{border:0!important;background:var(--kfc-accent)!important;color:#fff!important;min-height:53px;padding:13px 19px;border-radius:13px;display:flex;justify-content:center;align-items:center;gap:20px;width:100%;font-weight:900!important}.kfc-primary:hover:not(:disabled){filter:brightness(.93)}
+.kfc-no-products{padding:25px;background:#fff;border-radius:14px;font-weight:650;color:#777}.kfc-error{background:#ffeded;color:#9d1120;padding:13px 24px;border-bottom:1px solid #efb1ba;font-weight:700}.kfc-notice{padding:12px 22px;color:#666;font-size:13px}
+.kfc-checkout{flex:1;min-height:0;overflow:auto;padding:36px 24px;background:#f5f5f5}.kfc-text-back{background:transparent;border:0;font-weight:bold;margin-bottom:20px}.kfc-checkout-card{padding:36px;border-radius:22px;background:#fff;width:min(720px,100%);margin:0 auto}.kfc-checkout-card h1{font-size:40px;margin:12px 0 25px}.kfc-checkout-card .kfc-basket-line{padding:18px 0}.kfc-checkout-card>.kfc-primary{margin-top:22px}.kfc-payment-info{text-align:center;padding:24px;background:#f7f7f7;border-radius:14px;margin-bottom:24px}.kfc-payment-info>span{font-size:64px}.kfc-payment-info h2{margin:8px 0}.kfc-payment-info p{color:#777}.kfc-complete{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:30px}.kfc-complete>span{background:#dcf4e5;color:#138a48;font-size:55px;width:95px;height:95px;border-radius:50%;display:grid;place-items:center}.kfc-complete h1{font-size:44px}.kfc-complete p{color:#777}.kfc-complete>.kfc-primary{max-width:300px;margin-top:22px}
+.kfc-mobile-cart{display:none}.kfc-overlay{position:fixed;inset:0;z-index:999;background:#171717a6;display:grid;place-items:center;padding:16px}.kfc-dialog{width:min(580px,100%);max-height:90dvh;overflow-y:auto;background:#fff;border-radius:22px;position:relative;box-shadow:0 20px 90px #0005}.kfc-dialog-close{position:absolute;right:18px;top:14px;width:43px;height:43px;border:0;border-radius:50%;background:white;font-size:30px;z-index:1}.kfc-detail-photo{height:260px}.kfc-detail-photo span{font-size:115px}.kfc-dialog-copy{padding:25px 27px}.kfc-dialog-copy h2{font-size:30px;margin:0 0 9px}.kfc-dialog-copy p{color:#777;line-height:1.5}.kfc-dialog-copy>strong{font-size:23px}.kfc-dialog-actions{padding:0 27px 27px;display:flex;gap:16px;align-items:center}.kfc-dialog-actions .kfc-primary{flex:1}
+@media(min-width:1400px){.kfc-body{grid-template-columns:185px minmax(0,1fr) 330px}.kfc-product-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.kfc-category-rail button{min-height:111px}}
+@media(max-width:1000px){.kfc-body{grid-template-columns:122px minmax(0,1fr)}.kfc-basket-panel{display:none}.kfc-menu-area{padding:21px 18px 90px}.kfc-category-rail button{min-height:82px}.kfc-mobile-cart{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:11px 19px;background:#fff;border-top:1px solid #ddd;flex-shrink:0;box-shadow:0 -5px 20px #0001}.kfc-mobile-cart strong{font-size:15px}.kfc-mobile-cart button{padding:13px 16px;min-height:45px;border:0;border-radius:11px;color:white;background:var(--kfc-accent);font-weight:800}}
+@media(max-width:600px){.kfc-topbar{padding:10px 12px;gap:8px;min-height:117px;height:auto;flex-wrap:wrap}.kfc-brand-symbol{width:41px;height:41px;font-size:25px}.kfc-brand strong{font-size:17px}.kfc-brand small{font-size:10px}.kfc-order-mode{order:3;width:100%;justify-content:center;padding:3px}.kfc-order-mode button{flex:1;padding:10px 8px}.kfc-language{margin-left:auto;padding:8px}.kfc-body{grid-template-columns:83px minmax(0,1fr)}.kfc-category-rail{padding:14px 4px;gap:6px}.kfc-rail-title{font-size:14px;padding:0 5px 5px}.kfc-category-rail button{font-size:10px;min-height:75px;padding:6px 2px;border-radius:10px;gap:5px}.kfc-category-icon{font-size:25px}.kfc-menu-area{padding:18px 11px 80px}.kfc-menu-heading{display:block}.kfc-menu-heading h1{font-size:26px}.kfc-menu-heading p{font-size:12px}.kfc-search{margin-top:13px}.kfc-search input{width:100%}.kfc-product-grid{gap:9px;grid-template-columns:repeat(2,minmax(0,1fr))}.kfc-product{min-height:200px;border-radius:12px}.kfc-food-photo{height:105px}.kfc-food-photo span{font-size:50px}.kfc-product-details{padding:9px}.kfc-product-details>strong{font-size:12px}.kfc-product-details>small{font-size:10px;min-height:30px}.kfc-product-bottom b{font-size:13px}.kfc-plus{width:30px;height:30px;font-size:22px}.kfc-mobile-cart{padding:9px 12px}.kfc-mobile-cart strong{font-size:12px}.kfc-mobile-cart button{font-size:12px}.kfc-checkout-card{padding:20px}.kfc-checkout-card h1{font-size:29px}.kfc-dialog-actions{flex-direction:column}.kfc-dialog-actions .kfc-primary{width:100%}}
+@media(prefers-reduced-motion:no-preference){.kfc-product{transition:box-shadow .15s,transform .15s,border-color .15s}}
