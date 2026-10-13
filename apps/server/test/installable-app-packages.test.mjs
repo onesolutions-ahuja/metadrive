@@ -71,3 +71,34 @@ test('legacy kiosk seed is a published Home Page eligible for repaired app fallb
   assert.equal(page.layoutMode,'free-canvas');
   assert.equal(installed.apps.find(a=>a.apiName==='KioskApp')?.apiName,'KioskApp');
 });
+
+test('licensed kiosk metadata can be repaired idempotently without replacing tenant custom pages', () => {
+  const installed=applyInstallableAppPackages(tenant(),catalog);
+  const kiosk=installed.pages.find(p=>p.apiName==='UNE_KIOSK');
+  const broken={...installed,
+    pages:[{...kiosk,activationAssignments:[],
+      components:kiosk.components.map(c=>({...c,properties:{...c.properties,
+        accentColor:'#ffca26',categoryObjectApiName:undefined}}))}]};
+  const fixed=applyInstallableAppPackages(broken,catalog);
+  const page=fixed.pages.find(p=>p.apiName==='UNE_KIOSK');
+  assert.equal(page.pageType,'Home Page');
+  assert.equal(page.status,'Active');
+  assert.equal(page.activationAssignments.some(a=>a.appId==='KioskApp' && a.scope==='App Default'),true);
+  assert.equal(page.components[0].properties.categoryObjectApiName,'ProductCategory');
+  assert.equal(page.components[0].properties.accentColor,'#d71e28');
+  assert.deepEqual(applyInstallableAppPackages(fixed,catalog),fixed);
+});
+test('trusted bundled KFC-style kiosk upgrades without overwriting tenant-owned components', () => {
+  const working=applyInstallableAppPackages(tenant(),catalog);
+  const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
+  const first=ensureBundledAppComponents([],working,catalog,root);
+  assert.equal(first[0].version,2);
+  assert.match(first[0].compiledJs,/kfc-product-grid/);
+  assert.match(first[0].cssSource,/kfc-category-rail/);
+  const older=[{...first[0],version:1,publishedVersion:1,compiledJs:'old markup'}];
+  const upgraded=ensureBundledAppComponents(older,working,catalog,root);
+  assert.equal(upgraded[0].version,2);
+  assert.match(upgraded[0].compiledJs,/kfc-product-grid/);
+  const tenantOwned=[{...older[0],trustedBundled:false,compiledJs:'tenant code'}];
+  assert.equal(ensureBundledAppComponents(tenantOwned,working,catalog,root)[0].compiledJs,'tenant code');
+});

@@ -3,7 +3,7 @@
     {
       "appKey": "kiosk",
       "label": "Kiosk",
-      "version": 1,
+      "version": 2,
       "objects": [
         {
           "apiName": "Product",
@@ -537,13 +537,15 @@
                 },
                 "brandName": "Your Restaurant",
                 "tagline": "Made fresh for you",
-                "accentColor": "#ffca26",
-                "inkColor": "#202124",
+                "accentColor": "#d71e28",
+                "inkColor": "#191919",
                 "currency": "£",
                 "language": "English",
                 "heroTitle": "Big flavour. Great food.",
                 "heroSubtitle": "Choose your favourites, customise and enjoy.",
-                "menuTitle": "What are you craving?"
+                "menuTitle": "What are you craving?",
+                "categoryObjectApiName": "ProductCategory",
+                "categoryNameField": "Name"
               }
             }
           ]
@@ -1348,7 +1350,8 @@
             "defaultHeight": 1920,
             "minWidth": 320,
             "minHeight": 600
-          }
+          },
+          "version": 2
         }
       ]
     }
