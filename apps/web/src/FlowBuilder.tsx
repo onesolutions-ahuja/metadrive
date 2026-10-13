@@ -1223,7 +1223,7 @@ export default function FlowBuilder({
                 {connector.label || connector.kind} · {flow.elements.find((element) => element.id === connector.to)?.label ?? connector.to}
               </option>)}
             </select>
-          </label>
+          </label>}
           {toolboxGroups.map((group) => {
             const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type));
             return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" onClick={() => {
