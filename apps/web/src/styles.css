@@ -2464,3 +2464,42 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .modern-layer>button:focus-visible,.modern-inspector-tabs button:focus-visible{outline:2px solid #2c79e6;outline-offset:2px}
 .free-canvas-component>.record-component-head[data-canvas-move-handle]{cursor:grab;touch-action:none;user-select:none}
 .free-canvas-component>.record-component-head[data-canvas-move-handle]:active{cursor:grabbing}
+
+
+/* 2026-10 UI audit: scoped accessibility and readability repairs.
+   Do not enlarge builder canvas nodes or change permission semantics. */
+.permission-matrix td:not(:first-child) { padding-top: 5px; padding-bottom: 5px; }
+.permission-matrix td:not(:first-child) label,
+.permission-matrix td:not(:first-child) input[type="checkbox"] { cursor: pointer; }
+.permission-matrix td:not(:first-child) input[type="checkbox"] {
+  width: 24px; height: 24px; min-width: 24px; vertical-align: middle;
+  accent-color: #016ec4;
+}
+.permission-matrix td small, .permission-list-item small { font-size: 12px; line-height: 1.4; }
+.app-manager-checks label {
+  box-sizing: border-box; min-height: 44px; padding: 8px 10px;
+  border-radius: 6px; cursor: pointer; line-height: 1.35;
+}
+.app-manager-checks label:focus-within { outline: 2px solid #016ec4; outline-offset: 2px; }
+.app-manager-checks input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }
+.quick-find-input, .object-search, .component-search, .mini-search { min-height: 36px; height: auto; }
+.quick-find-input input, .object-search input, .component-search input, .mini-search input {
+  min-height: 32px; font-size: 13px;
+}
+.auth-card .form-control, .auth-card input:not([type="checkbox"]) {
+  box-sizing: border-box; min-height: 44px; font-size: 14px;
+}
+.auth-card .form-label, .auth-forgot, .auth-notice, .auth-error { font-size: 13px; line-height: 1.45; }
+.auth-submit { min-height: 44px; font-size: 14px; }
+.auth-forgot a, .auth-forgot button { display: inline-flex; align-items: center; min-height: 44px; }
+.auth-forgot a:focus-visible, .auth-forgot button:focus-visible {
+  outline: 2px solid #016ec4; outline-offset: 2px;
+}
+.object-search input::placeholder { color: #6e6c6a; }
+.permission-list-item small, .permission-matrix td small { color: #62615e; }
+.exchange-card-meta { color: #67716b; font-size: 12px; }
+.exchange-card-meta small { color: #67716b; font-size: 12px; }
+@media (pointer: coarse) {
+  .permission-matrix td:not(:first-child) { padding-top: 10px; padding-bottom: 10px; }
+  .app-manager-checks label { min-height: 44px; }
+}
