@@ -1010,6 +1010,13 @@ export default function FlowBuilder({
           disabled={Boolean(selectedProvider)} value={displayValue(selected.config.maxAttempts)}
           onChange={(event) => setConfig('maxAttempts', event.target.value)}
           placeholder={selectedProvider ? String(selectedProvider.retryPolicy.maxAttempts) : '1'} /></label>
+        <label className="form-label">Delivery Mode<select className="form-control"
+          value={displayValue(selected.config.deliveryMode) || 'SYNC'}
+          onChange={(event) => setConfig('deliveryMode', event.target.value)}>
+          <option value="SYNC">Synchronous HTTP Callout</option>
+          <option value="DURABLE_ASYNC">Durable Async · SQL Outbox</option>
+        </select></label>
+        <div className="info-callout">Durable Async persists an encrypted, tenant-scoped job and returns HTTP 202 to the Flow. It requires PostgreSQL and an idempotency key, and cannot be used inside a Flow rollback scope. Provider responses arrive in Communication Records rather than synchronous Flow response variables.</div>
         <label className="form-label">Idempotency Key (optional)<input className="form-control"
           maxLength={200} value={displayValue(selected.config.idempotencyKey)}
           onChange={(event) => setConfig('idempotencyKey', event.target.value)}
