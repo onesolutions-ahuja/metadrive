@@ -20,7 +20,7 @@
     "test:route-directory": "tsx --test scripts/md09-route-directory.test.mjs",
     "test:component-metadata": "tsx --test scripts/md10-universal-component-metadata.test.mjs",
     "test:flow-canvas": "node --test scripts/md10-freeform-canvas.test.mjs",
-    "test:flow-connectors": "node --test scripts/md10-flow-connector-insertion.test.mjs",
+    "test:flow-connectors": "node --test scripts/md10-flow-connector-insertion.test.mjs apps/web/test/flow-insert-element.test.mjs",
     "test:modern-canvas": "tsx --test scripts/md10-modern-canvas-contract.test.mjs"
   }
 }

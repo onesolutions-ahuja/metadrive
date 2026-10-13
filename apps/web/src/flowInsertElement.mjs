@@ -12,6 +12,12 @@ export function insertFlowElementAtPath(flow, fromId, element, connectorId, cont
   if (flow.elements.some(item => item.id === element.id)) throw Error('Flow element IDs must be unique.');
   if (flow.elements[previousIndex].type === 'End') throw Error('Cannot add after an End element.');
   const outgoing = flow.connectors.filter(connector => connector.from === fromId);
+  if (outgoing.some(connector => !flow.elements.some(item => item.id === connector.to))) {
+    throw Error('Cannot insert on a path with a missing destination element.');
+  }
+  if (new Set(outgoing.map(connector => connector.id)).size !== outgoing.length) {
+    throw Error('Cannot insert on a path with duplicate connector IDs.');
+  }
   const selected = connectorId
     ? outgoing.find(connector => connector.id === connectorId)
     : outgoing.length === 1 ? outgoing[0] : undefined;
