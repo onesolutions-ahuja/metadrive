@@ -1,4 +1,6 @@
 import AdvancedSharingSettings from './AdvancedSharingSettings';
+import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
+  synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
 import SchemaBuilder from './SchemaBuilder';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
@@ -383,14 +385,14 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
           : '';
     throw new ApiRequestError(
       `${payload.error ?? `Request failed (${response.status})`}${details ? `: ${details}` : ''}`,
-      payload
+      payload, response.status
     );
   }
   return payload;
 }
 
 class ApiRequestError extends Error {
-  constructor(message: string, readonly responseBody: unknown) {
+  constructor(message: string, readonly responseBody: unknown, readonly status: number) {
     super(message);
     this.name = 'ApiRequestError';
   }
@@ -5009,6 +5011,128 @@ function RecordWorkspace({
   const [campaignSaving, setCampaignSaving] = useState(false);
   const [listNotice, setListNotice] = useState('');
 
+  const [offlineOwner, setOfflineOwner] = useState<OfflineQueueOwner | null>(null);
+  const [offlineItems, setOfflineItems] = useState<OfflineRecordItem[]>([]);
+  const [offlineSyncing, setOfflineSyncing] = useState(false);
+  const [offlineMessage, setOfflineMessage] = useState('');
+  const offlineSyncGuard = useRef(false);
+  const reloadOfflineItems = useCallback(async (owner: OfflineQueueOwner) => {
+    setOfflineItems(await listOfflineRecords(owner));
+  }, []);
+  // Require a freshly authenticated identity before displaying or synchronising
+  // local data. Never take tenant/user IDs from the queued payload.
+  useEffect(() => {
+    let mounted = true;
+    void apiRequest<{user:{id:string;tenantId:string}}>('/auth/me')
+      .then(({user}) => {
+        if (mounted && user.id && user.tenantId) setOfflineOwner({userId:user.id,tenantId:user.tenantId});
+      }).catch(() => { /* Offline mode is available after this session was verified online. */ });
+    return () => { mounted = false; };
+  }, []);
+  const syncPendingOfflineItems = useCallback(async (owner: OfflineQueueOwner) => {
+    if (offlineSyncGuard.current || !navigator.onLine || !accessToken) return;
+    offlineSyncGuard.current = true;
+    setOfflineSyncing(true);
+    setOfflineMessage('');
+    try {
+      const counts = await synchronizeOfflineRecords(owner, async write => {
+        try {
+          await apiRequest<{record:RecordData}>(
+            '/records/' + encodeURIComponent(write.objectApiName)
+              + (write.recordId ? '/' + encodeURIComponent(write.recordId) : ''),
+            {
+              method: write.method,
+              headers: {
+                ...(write.originalModifiedAt ? {'If-Unmodified-Since':write.originalModifiedAt} : {}),
+                'X-MetaDrive-Offline-Sync': '1'
+              },
+              body: JSON.stringify(write.values)
+            }
+          );
+          return {outcome:'saved' as const};
+        } catch (error) {
+          // 401 means this client has no usable identity: stop, keep queued data.
+          if (error instanceof ApiRequestError && error.status===401)
+            return {outcome:'unavailable' as const};
+          // Never automatically replay an ambiguous write after transport/5xx
+          // failure: the first request may have committed on the server.
+          const reason = error instanceof Error ? error.message : 'Synchronisation failed';
+          if (error instanceof ApiRequestError && [400,403,404,409,412,422].includes(error.status))
+            return {outcome:'rejected' as const,reason};
+          return {outcome:'needs-review' as const,
+            reason:'Save result could not be confirmed. Check the server before retrying. ' + reason};
+        }
+      });
+      await reloadOfflineItems(owner);
+      if (counts.saved) setRefreshKey(value=>value+1);
+      if (counts.saved || counts.rejected || counts.review)
+        setOfflineMessage(`${counts.saved} synced; ${counts.rejected} rejected; ${counts.review} need review.`);
+    } catch (error) {
+      setOfflineMessage(error instanceof Error ? error.message : 'Unable to read local offline data');
+    } finally {
+      offlineSyncGuard.current = false;
+      setOfflineSyncing(false);
+    }
+  }, [reloadOfflineItems]);
+  useEffect(() => {
+    if (!offlineOwner) return;
+    void reloadOfflineItems(offlineOwner).catch(error => {
+      setOfflineMessage(error instanceof Error ? error.message : 'Offline queue unavailable');
+    });
+    const sync = () => { void syncPendingOfflineItems(offlineOwner); };
+    window.addEventListener('online', sync);
+    if (navigator.onLine) sync();
+    return () => window.removeEventListener('online', sync);
+  }, [offlineOwner, reloadOfflineItems, syncPendingOfflineItems]);
+  const queueRecordLocally = async (
+    values: Record<string, unknown>, status: OfflineRecordItem['status'], reason?: string
+  ) => {
+    if (!offlineOwner) throw Error('Offline identity has not been verified. Reconnect and sign in once before saving offline.');
+    if (object?.apiName==='User') throw Error('User records cannot be saved offline.');
+    await queueOfflineRecord(offlineOwner, {
+      id:crypto.randomUUID(), objectApiName:object!.apiName, method:editingId?'PUT':'POST',
+      ...(editingId ? {recordId:editingId} : {}),
+      ...(editingTimestamp ? {originalModifiedAt:editingTimestamp} : {}),
+      values, createdAt:new Date().toISOString()
+    },status,reason);
+    await reloadOfflineItems(offlineOwner);
+    setFormOpen(false);
+    setFormValues({});
+    setEditingTimestamp('');
+    setListNotice(status==='pending'
+      ? 'Saved securely on this device. This is provisional until permissions are checked during sync.'
+      : 'Outcome uncertain. Your local change was retained for review, not automatically retried.');
+  };
+  const renderOfflineQueue = () => (
+    <section className="surface" aria-label="Offline record changes" style={{marginBlock:12,padding:12}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+        <strong>Offline changes ({offlineItems.length})</strong>
+        <button type="button" className="btn" disabled={!offlineOwner || offlineSyncing || !navigator.onLine}
+          onClick={() => { if(offlineOwner) void syncPendingOfflineItems(offlineOwner); }}>
+          {offlineSyncing?'Syncing…':'Sync pending'}
+        </button>
+      </div>
+      <small>Local changes are provisional; the server checks your current permissions before saving.</small>
+      {offlineMessage && <p role="status">{offlineMessage}</p>}
+      {offlineItems.map(item => <div key={item.id} style={{paddingBlock:8,borderTop:'1px solid var(--border-color, #ddd)'}}>
+        <strong>{item.objectApiName} · {item.method==='POST'?'Create':'Edit'}</strong>
+        <span> — {item.status==='pending'?'Pending sync':item.status==='rejected'?'Sync rejected':'Needs review'}</span>
+        {item.reason && <p role="alert">{item.reason}</p>}
+        {item.status!=='pending' && <button className="btn" type="button"
+          onClick={() => { if(!offlineOwner) return;
+            if(item.status==='needs-review' && !window.confirm('Confirm that this change was NOT saved on the server. Retrying an uncertain create can make a duplicate.'))return;
+            void markOfflineRecord(offlineOwner,item.id,'pending').then(()=>syncPendingOfflineItems(offlineOwner))
+              .catch(error=>setOfflineMessage(error instanceof Error?error.message:'Unable to retry'));
+          }}>Retry after review</button>}
+        <button className="btn" type="button" onClick={() => {
+          if(!offlineOwner || !window.confirm('Discard this local change? It cannot be recovered.'))return;
+          void removeOfflineRecord(offlineOwner,item.id).then(()=>reloadOfflineItems(offlineOwner))
+            .catch(error=>setOfflineMessage(error instanceof Error?error.message:'Unable to discard'));
+        }}>Discard locally</button>
+      </div>)}
+    </section>
+  );
+
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
     return () => window.clearTimeout(timer);
@@ -5326,11 +5450,25 @@ function RecordWorkspace({
         const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'UserRoleId', 'Password']);
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
-      const response = await apiRequest<{ record: RecordData }>(path, {
+      if (!navigator.onLine) {
+        await queueRecordLocally(writableValues, 'pending');
+        return;
+      }
+      let response: {record: RecordData};
+      try {
+        response = await apiRequest<{ record: RecordData }>(path, {
         method: editingId ? 'PUT' : 'POST',
         ...(editingId && editingTimestamp ? { headers: { 'If-Unmodified-Since': editingTimestamp } } : {}),
         body: JSON.stringify(writableValues)
-      });
+        });
+      } catch (failure) {
+        if (failure instanceof TypeError) {
+          await queueRecordLocally(writableValues,'needs-review',
+            'No server response was received. Confirm whether the change saved before retrying.');
+          return;
+        }
+        throw failure;
+      }
       setFormOpen(false);
       setFormValues({});
       setEditingTimestamp('');
@@ -5705,6 +5843,7 @@ function RecordWorkspace({
 
   if (route.kind === 'record-detail') {
     if (!record) return <div className="records-page">
+      {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
         <div className="record-breadcrumb">{object.label} <ChevronRight size={13} /> {route.recordId}</div>
