@@ -18,7 +18,7 @@ test('worker claims tenant scope with skip locked; completion and failure requir
   assert.equal(batch[0].tenantId,'TENANT_A');assert.match(calls[0],/LEASE_EXHAUSTED/);assert.match(calls[1],/FOR UPDATE SKIP LOCKED/);
   await outbox.fail('TENANT_A','worker-1','job-1','HTTP_RATE_LIMIT',1500);
   await outbox.complete('TENANT_A','worker-1','job-1',200);
-  assert.match(calls[2],/WHEN attempts>=max_attempts THEN 'dead'/);
+  assert.match(calls[2],/WHEN attempts>=max_attempts OR \$6::boolean THEN 'dead'/);
   assert.match(calls[3],/encrypted_request=''/);
 });
 test('outbox rejects plaintext, unsafe path and cross-tenant missing lease',async()=>{
