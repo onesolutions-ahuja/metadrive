@@ -162,6 +162,7 @@ export default function FlowBuilder({
     { type: 'Screen Flow', description: 'Guide a user through screens and actions.' },
     { type: 'Record-Triggered Flow', description: 'Run when a record is created or updated.' },
     { type: 'Autolaunched Flow', description: 'Run in the background or from another flow.' },
+    { type: 'Flow Orchestration', description: 'Coordinate durable approval stages and human work items.' },
     { type: 'Schedule-Triggered Flow', description: 'Run records on a scheduled basis.' },
     { type: 'Platform Event-Triggered Flow', description: 'Run when a platform event is published.' }
   ];
@@ -563,7 +564,7 @@ export default function FlowBuilder({
           {renderConditionLogic('Condition Requirements', flow.startConfig.conditionLogic, rowsFrom(flow.startConfig.entryConditions).length, (logic) => setStartConfig('conditionLogic', logic))}
         </>}
       </>}
-      {(flow.flowType === 'Screen Flow' || flow.flowType === 'Autolaunched Flow') && <p className="info-callout">{flow.flowType === 'Screen Flow' ? 'This flow starts when launched by a user or supported Lightning entry point.' : 'This flow runs without screens when invoked by another automation or API.'}</p>}
+      {(['Screen Flow', 'Autolaunched Flow', 'Flow Orchestration'].includes(flow.flowType)) && <p className="info-callout">{flow.flowType === 'Screen Flow' ? 'This flow starts when launched by a user or supported Lightning entry point.' : flow.flowType === 'Flow Orchestration' ? 'Launch this orchestration to coordinate approval stages and persist human work items.' : 'This flow runs without screens when invoked by another automation or API.'}</p>}
     </>
   );
   const renderElementSettings = () => {
@@ -1130,8 +1131,8 @@ export default function FlowBuilder({
         <button className="icon-button subtle" title="Redo" aria-label="Redo" onClick={onRedo} disabled={!canRedo}><Redo2 size={15} /></button>
         <button className="btn" onClick={onValidate}><Check size={14} />Check</button>
         <button className="btn" onClick={onSave}><Save size={14} />Save</button>
-        {(flow.flowType === 'Autolaunched Flow' || flow.flowType === 'Screen Flow' || flow.flowType === 'Record-Triggered Flow') && <button className="btn" onClick={onDebug} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : 'Debug the most recently saved version with sample inputs.'}>Debug</button>}
-        {(flow.flowType === 'Autolaunched Flow' || flow.flowType === 'Screen Flow') && <button className="btn" onClick={onRun} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : isDirty ? 'Runs the most recently saved version; unsaved changes are excluded.' : undefined}>Run</button>}
+        {(['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration', 'Record-Triggered Flow'].includes(flow.flowType)) && <button className="btn" onClick={onDebug} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : 'Debug the most recently saved version with sample inputs.'}>Debug</button>}
+        {(['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) && <button className="btn" onClick={onRun} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : isDirty ? 'Runs the most recently saved version; unsaved changes are excluded.' : undefined}>Run</button>}
         <button className="btn btn-brand" onClick={onActivate}><Check size={14} />Activate</button>
         <button className="icon-button subtle" title="Flow Builder help" onClick={() => onNotify('Configure the Start node, build element paths, check, then save or activate.')}><CircleHelp size={16} /></button>
       </div>
