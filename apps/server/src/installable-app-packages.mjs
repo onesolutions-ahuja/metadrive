@@ -32,7 +32,19 @@ export function applyInstallableAppPackages(tenant, catalog) {
       if (additions.length) changed = true;
       return [...oldItems,...structuredClone(additions)];
     };
-    const flows = mergeByApiName(next.flows, pkg.flows);
+    const flows = mergeByApiName(next.flows, pkg.flows).map(flow => {
+      if (!(pkg.flows ?? []).some(item => item.apiName === flow.apiName)) return flow;
+      let fixed = false;
+      const elements = (flow.elements ?? []).map(element => {
+        if (element.type !== 'Decision' || (element.config?.outcomes ?? []).some(o => o.name === 'Default')) return element;
+        const linked = (flow.connectors ?? []).filter(c => c.from === element.id && c.kind === 'normal' && c.label?.trim().toLowerCase() === 'default outcome');
+        if (linked.length !== 1) return element;
+        fixed = true;
+        return {...element, config:{...element.config,outcomes:[...(element.config?.outcomes ?? []),{name:'Default',label:'Default Outcome',conditions:[]}]}};
+      });
+      if (fixed) changed = true;
+      return fixed ? {...flow,elements} : flow;
+    });
     const apps = mergeByApiName(next.apps, pkg.apps);
     const pages = mergeByApiName(next.pages, pkg.pages);
     const permissionTemplate = pkg.profile;
