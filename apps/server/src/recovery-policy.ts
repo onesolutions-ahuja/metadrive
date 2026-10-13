@@ -20,7 +20,7 @@ export const DEFAULT_RECOVERY_POLICY: RecoveryDeliveryPolicy = {
   templates: {
     email: {
       subject: '{!Tenant.Name} — password recovery',
-      body: 'Your {!Tenant.Name} password recovery code is {!Verification.Value}. It expires in {!Verification.ExpiryMinutes} minutes. If you did not request this, ignore this email.'
+      body: 'Your {!Tenant.Name} password recovery verification is {!Verification.Value}. It expires in {!Verification.ExpiryMinutes} minutes. If you did not request this, ignore this email.'
     },
     sms: { subject: '', body: '{!Tenant.Name}: your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.' },
     whatsapp: { subject: '', body: '{!Tenant.Name}: your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.' }
