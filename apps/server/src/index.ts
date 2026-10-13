@@ -2220,7 +2220,6 @@ const permissionSetSchema = z.object({
   recordTypePermissions: z.record(z.boolean()).default({}),
   appPermissions: navigationGrantSchema,
   tabPermissions: navigationGrantSchema,
-  navigationDefaultAccess: z.enum(['Allow','Deny']).default('Allow'),
   fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean() }).superRefine((permission, context) => {
     if (permission.edit && !permission.read) context.addIssue({ code: z.ZodIssueCode.custom, path: ['read'], message: 'Field edit access requires read access' });
   }))
@@ -2237,6 +2236,7 @@ const profileSchema = z.object({
   recordTypePermissions: z.record(z.boolean()).default({}),
   appPermissions: navigationGrantSchema,
   tabPermissions: navigationGrantSchema,
+  navigationDefaultAccess: z.enum(['Allow','Deny']).default('Allow'),
   fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean() }).superRefine((permission, context) => {
     if (permission.edit && !permission.read) context.addIssue({ code: z.ZodIssueCode.custom, path: ['read'], message: 'Field edit access requires read access' });
   }))
@@ -3854,7 +3854,7 @@ function buildDefaultProfiles(objects: ObjectMetadata[], permissionSets: AccessC
     ...(supportSet ? [{
       ...supportSet, id: 'support-agent', label: 'Support Agent', apiName: 'Support_Agent', isStandard: false
     }] : [])
-  ];
+  ].map((profile) => ({ ...profile, navigationDefaultAccess: 'Allow' as const }));
 }
 
 function defaultRoles(): AccessRole[] {
