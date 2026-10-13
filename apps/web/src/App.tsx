@@ -3904,6 +3904,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             canLicenceAdmin={connectorRights.licence}
             encryptionReady={namedCredentialsEncryptionReady}
             onGrantLicence={grantConnectorLicence}
+            onCreateKioskDevice={(index) => apiRequest<{deviceId:string;username:string;password:string}>('/kiosk/devices', {method:'POST',body:JSON.stringify({index})})}
             loadApps={loadConnectorMarketplaceApps}
             executeLifecycleFlow={executeConnectorAppLifecycleFlow}
             onSave={saveNamedCredential}
