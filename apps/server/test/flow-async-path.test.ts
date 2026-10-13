@@ -94,11 +94,18 @@ test('MD10 asynchronous record path: validation, durable dispatch, failure loggi
       elements: [
         { id: 1, type: 'Start', label: 'Start', config: {} },
         { id: 2, type: 'Create Records', label: 'Write Async Marker', config: {
-          object: 'Account', fieldValues: [{ field: 'Name', value: 'MD10 Async Completed' }]
+          object: 'Account', fieldValues: [{ field: 'Name', value: '{!CreatedAsyncMarker}' }]
         } }
       ],
       connectors: [{ id: 'async-path', from: 1, to: 2, label: '', kind: 'async' }],
-      resources: [], versions: []
+      // The formula is evaluated when the queued path resumes, not when queued.
+      // ISNEW() must use the original record-trigger context after persistence.
+      resources: [{
+        name: 'CreatedAsyncMarker', label: 'Created Async Marker',
+        type: 'Formula', dataType: 'Text', isCollection: false,
+        availableForInput: false, availableForOutput: false,
+        value: 'IF(ISNEW(), "MD10 Async Completed", "MD10 Missing Trigger Context")'
+      }], versions: []
     };
 
     for (const [label, change, expected] of [
