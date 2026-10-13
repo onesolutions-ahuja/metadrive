@@ -2747,6 +2747,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           notify(`Flow completed${result.outputs && typeof result.outputs === 'object' && Object.keys(result.outputs).length
             ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
         }
+        if (interviewId && !screen) notify('Flow interview started and is waiting for an asynchronous stage or approval. View it under Pending Work.');
         setFlowDebug(null);
         return;
       }
@@ -2794,6 +2795,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
         setFlowRun({ interviewId: result.interviewId, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) }, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
+        return;
+      }
+      if (result.interviewId) {
+        notify('Flow interview started. Approval stages and waiting work are visible in Pending Work.');
         return;
       }
       notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
