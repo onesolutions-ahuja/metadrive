@@ -24,7 +24,10 @@ assert(jsMatch && cssMatch, 'Built Pages HTML must load versioned scripts and st
 const js = (await read(jsMatch[1].slice(base.length))).toString('utf8');
 const css = (await read(cssMatch[1].slice(base.length))).toString('utf8');
 assert(js.includes('header-records-link'), 'Built app is missing the global Records navigation');
+assert(js.includes('Software that makes') && js.includes('Client login'), 'Built Pages is missing the public UNE Solutions marketing homepage');
+assert(html.includes('Une Solutions | Smart Software for Growing Businesses'), 'Built Pages has the wrong public title');
 assert(js.includes('auth-brand-logo') && js.includes('brand-logo'), 'Built app is missing UNE Solutions branding');
+assert(css.includes('.une-marketing'), 'Built CSS is missing public marketing design');
 assert(css.includes('.setup-sidebar') && css.includes('overflow-y:auto') && css.includes('position:sticky'),
   'Built CSS is missing sticky header or scrolling Setup navigation');
 const logo = await read('une-solutions-logo.webp');
@@ -58,6 +61,7 @@ if (live) {
       assert(sha256(publishedLogo) === sha256(logo), 'Live Pages is serving an old UNE Solutions logo');
       const publishedJs = await (await get(jsMatch[1])).text();
       assert(publishedJs.includes('header-records-link'), 'Live Records navigation is missing');
+      assert(publishedJs.includes('Software that makes') && publishedJs.includes('Client login'), 'Live UNE marketing site is missing');
       const publishedCss = await (await get(cssMatch[1])).text();
       assert(publishedCss.includes('.setup-sidebar') && publishedCss.includes('position:sticky'),
         'Live sticky header/sidebar styling missing');
