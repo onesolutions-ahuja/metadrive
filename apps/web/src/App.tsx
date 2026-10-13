@@ -28,6 +28,7 @@ import {
   Ellipsis,
   ExternalLink,
   Eye,
+  EyeOff,
   FileText,
   Filter,
   GripVertical,
@@ -9093,6 +9094,9 @@ function PageBuilder({
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null);
   const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
+  const [canvasSnap, setCanvasSnap] = useState(true);
+  const [showLayers, setShowLayers] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<'Design' | 'Data & Actions'>('Design');
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -9283,6 +9287,7 @@ function PageBuilder({
       height: component.position.height
     };
     setSelectedId(component.id);
+    setInspectorTab('Design');
     setCanvasResizePreview({ id: component.id, width: component.position.width, height: component.position.height });
   };
   const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -9299,10 +9304,14 @@ function PageBuilder({
     const y = component.position?.y ?? 0;
     const maxWidth = Math.max(0, page.canvasWidth - x);
     const maxHeight = Math.max(0, page.canvasHeight - y);
+    const bounded = (value: number, minimum: number, maximum: number) => {
+      const snapped = canvasSnap ? Math.round(value / 8) * 8 : Math.round(value);
+      return Math.min(maximum, Math.max(Math.min(minimum, maximum), snapped));
+    };
     setCanvasResizePreview({
       id: component.id,
-      width: Math.min(maxWidth, Math.max(Math.min(minWidth, maxWidth), start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale))),
-      height: Math.min(maxHeight, Math.max(Math.min(minHeight, maxHeight), start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale)))
+      width: bounded(start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale), minWidth, maxWidth),
+      height: bounded(start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale), minHeight, maxHeight)
     });
   };
   const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -10227,6 +10236,14 @@ function PageBuilder({
                 title={fitCanvas ? 'Restore canvas size' : 'Fit canvas to view'}
                 onClick={() => setFitCanvas((current) => !current)}
               ><Maximize2 size={14} /></button>}
+              {page.layoutMode === 'free-canvas' && <>
+                <button type="button" className={canvasSnap ? 'btn btn-small active' : 'btn btn-small'}
+                  aria-pressed={canvasSnap} onClick={() => setCanvasSnap(value => !value)}
+                  aria-label="Snap components to 8 pixel grid">Snap {canvasSnap ? 'On' : 'Off'}</button>
+                <button type="button" className={showLayers ? 'btn btn-small active' : 'btn btn-small'}
+                  aria-expanded={showLayers} onClick={() => setShowLayers(value => !value)}
+                  aria-label="Toggle component layers">Layers</button>
+              </>}
               <button className="icon-button subtle" aria-label="Refresh canvas" title="Refresh canvas" onClick={() => setCanvasRefreshKey((current) => current + 1)}><RefreshCw size={14} /></button>
               <button className="icon-button subtle" aria-label="Undo" title="Undo" disabled={!undoStack.length || previewMode} onClick={undo}><Undo2 size={15} /></button>
               <button className="icon-button subtle" aria-label="Redo" title="Redo" disabled={!redoStack.length || previewMode} onClick={redo}><Redo2 size={15} /></button>
@@ -10237,6 +10254,17 @@ function PageBuilder({
               <a className="icon-button subtle" aria-label="Lightning App Builder help" title="Lightning App Builder help" href="https://trailhead.salesforce.com/content/learn/modules/lightning_app_builder/lightning_app_builder_intro" target="_blank" rel="noreferrer"><CircleHelp size={14} /></a>
             </div>
           </div>
+          {page.layoutMode === 'free-canvas' && showLayers && <nav className="modern-canvas-layers" aria-label="Canvas layers">
+            <div className="modern-canvas-layers-heading"><strong>Layers</strong><small>{page.components.length} components</small></div>
+            {page.components.map((item) => <div className={selectedId === item.id ? 'modern-layer selected' : 'modern-layer'} key={item.id}>
+              <button type="button" style={{ paddingLeft: rawLayoutParentId(item) ? 20 : 8 }}
+                onClick={() => { setSelectedId(item.id); setPageSettingsOpen(false); }} aria-current={selectedId === item.id ? 'true' : undefined}>
+                <span>{item.label}</span><small>{item.type.replace(/^Custom:/, '')}</small>
+              </button>
+              <button type="button" title={item.visible ? 'Hide component' : 'Show component'} aria-label={(item.visible ? 'Hide ' : 'Show ') + item.label}
+                onClick={() => updateComponent(item.id, { visible: !item.visible })}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
+            </div>)}
+          </nav>}
           <div className="page-stage" key={canvasRefreshKey} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event)}>
             <div
               className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : page.pageType === 'Record Page' ? 'record-page-preview' : page.pageType === 'App Page' ? 'app-page-preview' : 'home-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}
@@ -10282,6 +10310,11 @@ function PageBuilder({
         <aside id="lightning-page-properties" className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}>
           <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
           {selected && !pageSettingsOpen ? <>
+            <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
+              {(['Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
+                aria-selected={inspectorTab === tab} className={inspectorTab === tab ? 'active' : ''}
+                onClick={() => setInspectorTab(tab)}>{tab}</button>)}
+            </div>
             <div className="properties-section-title">Component</div>
             <label className="form-label" htmlFor="page-component-type">Component type</label><div className="form-display" id="page-component-type">{selected.type}</div>
             <div className="selected-component-preview">
@@ -10290,11 +10323,25 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
-            <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />
+            {inspectorTab === 'Design' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
-            <PageComponentStyleEditor properties={selected.properties}
-              onChange={(properties) => updateComponent(selected.id, { properties })} />
-            {selectedCustomDefinition && <>
+            {inspectorTab === 'Design' && <PageComponentStyleEditor properties={selected.properties}
+              onChange={(properties) => updateComponent(selected.id, { properties })} />}
+            {inspectorTab === 'Design' && selected.type === 'Custom:TillSalesWorkspace' && <section className="modern-till-layout-controls">
+              <div className="properties-section-title">Till layout</div>
+              <label className="form-label">Basket width: {Number(selected.properties.basketWidthPercent ?? 45)}%
+                <input type="range" min="25" max="70" step="1" aria-label="Till basket width"
+                  value={Number(selected.properties.basketWidthPercent ?? 45)}
+                  onChange={event => updateComponent(selected.id, { properties: {
+                    ...selected.properties, basketWidthPercent: Number(event.target.value)
+                  } })} />
+              </label>
+              <label className="checkbox-row"><input type="checkbox" checked={selected.properties.catalogFirst === true}
+                onChange={event => updateComponent(selected.id, { properties: {
+                  ...selected.properties, catalogFirst: event.target.checked
+                } })} />Show products before basket</label>
+            </section>}
+            {inspectorTab === 'Data & Actions' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
               {!['Custom:KioskContainer','Custom:KioskRow','Custom:KioskColumn','Custom:KioskCard','Custom:KioskGrid'].includes(selected.type)
@@ -10342,25 +10389,25 @@ function PageBuilder({
                 onChange={(properties) => updateComponent(selected.id, { properties })}
               />
             </>}
-            {selected.type === 'Related List' && <>
+            {inspectorTab === 'Data & Actions' && selected.type === 'Related List' && <>
               <div className="properties-section-title">Related Lists</div>
               {componentRelatedListOptions.map((option) => <label className="checkbox-row property-check" key={option.apiName}><input type="checkbox" checked={selectedRelatedLists.includes(option.apiName)} onChange={(event) => {
                 updateComponent(selected.id, { properties: { ...selected.properties, relatedLists: event.target.checked ? [...selectedRelatedLists, option.apiName] : selectedRelatedLists.filter((item) => item !== option.apiName) } });
               }} />{option.label}</label>)}
               {!componentRelatedListOptions.length && <div className="palette-note">No related objects have a relationship to this record object.</div>}
             </>}
-            {selected.type === 'Tabs' && <>
+            {inspectorTab === 'Data & Actions' && selected.type === 'Tabs' && <>
               <div className="properties-section-title">Tabs</div><label className="form-label" htmlFor="page-component-tabs">Tab labels</label>
               <textarea id="page-component-tabs" className="form-control" rows={3} value={stringList(selected.properties.tabs, ['Related', 'Details', 'News']).join('\n')} onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, tabs: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) } })} />
             </>}
-            {selected.type === 'Accordion' && <>
+            {inspectorTab === 'Data & Actions' && selected.type === 'Accordion' && <>
               <div className="properties-section-title">Accordion Content</div>
               <label className="form-label" htmlFor="page-component-accordion-content">Content</label>
               <textarea id="page-component-accordion-content" className="form-control" rows={4}
                 value={typeof selected.properties.content === 'string' ? selected.properties.content : ''}
                 onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, content: event.target.value } })} />
             </>}
-            {selected.type === 'Dashboard' && <>
+            {inspectorTab === 'Data & Actions' && selected.type === 'Dashboard' && <>
               <div className="properties-section-title">Dashboard</div>
               <label className="form-label" htmlFor="page-component-dashboard">Published dashboard</label>
               <select id="page-component-dashboard" className="form-control"
@@ -10372,7 +10419,7 @@ function PageBuilder({
               </select>
               <p className="properties-help">The live dashboard checks tenant, folder, viewer and record permissions at runtime.</p>
             </>}
-            {selected.type === 'Report Chart' && <>
+            {inspectorTab === 'Data & Actions' && selected.type === 'Report Chart' && <>
               <div className="properties-section-title">Report</div>
               <label className="form-label" htmlFor="page-component-report">Source report</label>
               <select id="page-component-report" className="form-control" value={typeof selected.properties.reportApiName === 'string' ? selected.properties.reportApiName : ''}
@@ -10435,7 +10482,7 @@ function PageBuilder({
                 </select>
               </label>
             </>}
-            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
+            {inspectorTab === 'Design' && page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
               <div className="properties-section-title">Position and Size (pixels)</div>
               {([
                 ['x', 'Left'], ['y', 'Top'], ['width', 'Width'], ['height', 'Height']
