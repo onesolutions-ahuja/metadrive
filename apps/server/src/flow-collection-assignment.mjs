@@ -9,9 +9,11 @@ export function applyFlowCollectionAssignment(previous, incoming, operator, reso
   }
   const items = Array.isArray(incoming) ? incoming : [incoming];
   const isRecordCollection = resourceType === 'Record Collection';
+  const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
+    && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
   const requireValidItems = (values) => {
     if (values.some((value) => value === undefined || value === null
-      || (isRecordCollection && (typeof value !== 'object' || Array.isArray(value))))) {
+      || (isRecordCollection && !isRecord(value)))) {
       throw new Error('Collection Assignment contains an invalid value for its data type.');
     }
     return values;
