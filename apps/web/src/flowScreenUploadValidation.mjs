@@ -1,5 +1,13 @@
 /** Pure, pre-read limits for metadata-configured Flow Screen file uploads. */
 export function validateFlowScreenUpload(selectedFiles, existingFiles, { maxFiles, maxFileSize, allowedTypes }) {
+  if (!Number.isSafeInteger(maxFiles) || maxFiles < 1 || maxFiles > 10
+    || !Number.isFinite(maxFileSize) || maxFileSize <= 0 || maxFileSize > 512 * 1024
+    || !Array.isArray(allowedTypes) || allowedTypes.some(type => typeof type !== 'string')) {
+    throw new Error('Flow screen file upload has invalid metadata limits.');
+  }
+  if ([...selectedFiles, ...existingFiles].some(file => !Number.isSafeInteger(file.size) || file.size < 0)) {
+    throw new Error('Flow screen file metadata contains an invalid file size.');
+  }
   if (selectedFiles.length + existingFiles.length > maxFiles) {
     throw new Error(`Choose no more than ${maxFiles} file${maxFiles === 1 ? '' : 's'}.`);
   }
