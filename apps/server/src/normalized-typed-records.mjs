@@ -2,7 +2,7 @@
 // No business object, field or action is hardcoded into SQL identifiers.
 // Registry UUIDs are durable; removed schema is retained for lossless rollback.
 import {randomUUID} from 'node:crypto';
-import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn,canWidenPhysicalFieldType,physicalTenantOwnerConstraint} from './normalized-object-schema.mjs';
+import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn,canWidenPhysicalFieldType,physicalTenantOwnerConstraint,validPhysicalTenantOwnerConstraint} from './normalized-object-schema.mjs';
 
 const platformFields=[
   {apiName:'CreatedDate',dataType:'Date/Time'},
@@ -80,7 +80,7 @@ async function prepare(client,state){
   // Inspect all physical owner constraints in one catalog round trip rather
   // than adding a database request for every object on each Records write.
   const guardRows=await client.query(
-    "SELECT cls.relname AS table_name,c.conname,c.contype,c.convalidated "+
+    "SELECT cls.relname AS table_name,c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) AS definition "+
     "FROM pg_constraint c JOIN pg_class cls ON cls.oid=c.conrelid "+
     "JOIN pg_namespace ns ON ns.oid=cls.relnamespace "+
     "WHERE ns.nspname=current_schema() AND c.conname=cls.relname || '_tenant_owner_ck'");
@@ -137,13 +137,12 @@ async function prepare(client,state){
     const ownership=physicalTenantOwnerConstraint(current.object_id,item.tenantId);
     const existingGuard=guardByTable.get(current.physical_table);
     if(existingGuard) {
-      if(existingGuard.conname!==ownership.name
-        || existingGuard.contype!=='c'||existingGuard.convalidated!==true)
+      if(!validPhysicalTenantOwnerConstraint(current.object_id,item.tenantId,existingGuard))
         throw Error('Physical tenant ownership constraint is not validated');
     } else {
       await client.query(ownership.ddl);
       guardByTable.set(current.physical_table,
-        {conname:ownership.name,contype:'c',convalidated:true});
+        {conname:ownership.name,contype:'c',convalidated:true,definition:"CHECK ((tenant_id = '"+item.tenantId+"'::text))"});
     }
     const objectLabel=item.object.label??item.object.apiName;
     if(current.object_label!==objectLabel) {
@@ -334,10 +333,20 @@ export async function synchronizeTypedRecords(client,state,previousState=null){
 /** Also use inside the same REPEATABLE READ snapshot as the normalized graph read. */
 export async function verifyTypedRecords(client,state){
   const expected=definedObjects(state),mapping=await registry(client);
+  // A named but weakened CHECK is not tenant isolation. Attest its actual
+  // PostgreSQL definition on each SQL-only verified read, including restarts.
+  const guards=await client.query(
+    "SELECT cls.relname AS table_name,c.conname,c.contype,c.convalidated,pg_get_constraintdef(c.oid) AS definition "+
+    "FROM pg_constraint c JOIN pg_class cls ON cls.oid=c.conrelid "+
+    "JOIN pg_namespace ns ON ns.oid=cls.relnamespace "+
+    "WHERE ns.nspname=current_schema() AND c.conname=cls.relname || '_tenant_owner_ck'");
+  const guardsByTable=new Map(guards.rows.map(row=>[row.table_name,row]));
   if(expected.size!==mapping.size) throw Error('SQL object registry differs from normalized metadata');
   for(const [k,item] of expected){
     const mapped=mapping.get(k);
     if(!mapped) throw Error('Missing object in typed SQL registry');
+    if(!validPhysicalTenantOwnerConstraint(mapped.object_id,item.tenantId,guardsByTable.get(mapped.physical_table)))
+      throw Error('Physical tenant ownership constraint is missing, weakened or unvalidated');
     for(const f of item.fields){
       const saved=mapped.fields.get(f.apiName);
       if(!saved||postgresFieldType(saved.source_data_type)!==postgresFieldType(f.dataType))
