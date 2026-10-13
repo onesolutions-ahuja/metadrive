@@ -28,6 +28,7 @@ const profiles = [
   { name: 'zoom-equivalent', viewport: { width: 640, height: 800 } }
 ];
 const routes = [
+  ['Automation Settings','une/setup/automation-settings'],
   ['App home', 'une/apps/Records/home'],
   ['Setup home', 'une/setup/home'],
   ['Object Manager', 'une/setup/object-manager'],
@@ -63,6 +64,8 @@ const report = {
   ]
 };
 const discovered = new Set();
+const discoveredPages = new Set();
+const maxDynamicRoutes = Number(process.env.METADRIVE_AUDIT_MAX_DYNAMIC || 150);
 const severity = { critical: 4, high: 3, medium: 2, low: 1, info: 0 };
 const findIssue = (list, code, level, details) => {
   if (list.some(i => i.code === code && i.details === details)) return;
@@ -129,6 +132,7 @@ async function collectLayout(page) {
     const body = document.body, root = document.documentElement;
     const overflow = Math.max(0, root.scrollWidth, body.scrollWidth) - innerWidth;
     const clipped = [], cramped = [], unlabeled = [], duplicateIds = [];
+    const typography = [], truncated = [], controlSizes = {};
     const ids = new Map();
     const leaves = [];
     for (const el of document.querySelectorAll('body *')) {
@@ -137,6 +141,17 @@ async function collectLayout(page) {
         ids.set(el.id, (ids.get(el.id) || 0) + 1);
       }
       const r = el.getBoundingClientRect(), s = getComputedStyle(el);
+      if (['H1','H2','H3','H4','P','LABEL'].includes(el.tagName) && typography.length < 200) {
+        const fontSize = parseFloat(s.fontSize);
+        typography.push({ kind: el.tagName, fontSize, weight: s.fontWeight,
+          lineHeight: s.lineHeight, text: label(el) });
+      }
+      if (el.children.length === 0 && el.textContent.trim() &&
+          el.scrollWidth > el.clientWidth + 5 && ['hidden','clip'].includes(s.overflowX) &&
+          truncated.length < 15) truncated.push(label(el));
+      if (['BUTTON','INPUT','SELECT','TEXTAREA'].includes(el.tagName)) {
+        (controlSizes[el.tagName] ||= new Set()).add(Math.round(r.height));
+      }
       if (r.left < -5 || r.right > innerWidth + 5) {
         if (r.width > 5 && r.height > 5 && !el.closest('[role="grid"], table, .flow-canvas, .page-builder-canvas')) {
           if (clipped.length < 12 && s.position !== 'fixed' && s.position !== 'absolute' &&
@@ -182,7 +197,9 @@ async function collectLayout(page) {
       .slice(0, 10).map(img => (img.alt || img.src.split('/').pop() || '').slice(0, 70));
     const inViewport = [...document.querySelectorAll('input:not([type="hidden"]), button, a[href]')]
       .filter(visible).length;
-    return { viewport: [innerWidth, innerHeight], document: [root.scrollWidth, root.scrollHeight],
+    return { typography, truncated, controlSizeVariants: Object.fromEntries(
+      Object.entries(controlSizes).map(([k,v]) => [k,[...v].filter(n => n > 0)])),
+      viewport: [innerWidth, innerHeight], document: [root.scrollWidth, root.scrollHeight],
       overflowPx: Math.max(0, overflow), clipped, cramped, unlabeled, duplicateIds, collisions, brokenImages,
       interactiveVisible: inViewport, title: document.title, shell };
   });
@@ -375,6 +392,11 @@ async function run() {
           if (s.layout.unlabeled.length) findIssue(s.issues, 'UNLABELED_BUTTONS', 'medium', s.layout.unlabeled.length + ' examples');
           if (s.layout.duplicateIds.length) findIssue(s.issues, 'DUPLICATE_IDS', 'medium', JSON.stringify(s.layout.duplicateIds));
           if (s.layout.brokenImages.length) findIssue(s.issues, 'BROKEN_IMAGES', 'medium', JSON.stringify(s.layout.brokenImages));
+          if (s.layout.truncated.length) findIssue(s.issues,'TRUNCATED_TEXT','medium',JSON.stringify(s.layout.truncated.slice(0,5)));
+          const tiny = s.layout.typography.filter(t => t.fontSize < 12);
+          if (tiny.length) findIssue(s.issues,'TINY_TEXT','medium',JSON.stringify(tiny.slice(0,5)));
+          const inconsistent = Object.entries(s.layout.controlSizeVariants).filter(([,heights]) => heights.length > 6);
+          if (inconsistent.length) findIssue(s.issues,'CONTROL_HEIGHT_VARIANCE','low',JSON.stringify(inconsistent));
           const accessibility = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
           s.accessibility = accessibility.violations.map(v => ({ id: v.id, impact: v.impact, count: v.nodes.length,
             help: v.help, examples: v.nodes.slice(0, 3).map(n => n.target.join(' ')) }));
@@ -390,8 +412,10 @@ async function run() {
             s.controlInventory.emptySelects.length + ' selects have no options');
           s.links = (await inspectLinks(page)).filter(l => !isSameApp(l.href) && l.href.startsWith(base.origin)).slice(0, 15);
           if (s.links.length) findIssue(s.issues, 'BROKEN_INTERNAL_LINK_CANDIDATES', 'low', JSON.stringify(s.links.slice(0, 3)));
-          for (const link of await inspectLinks(page)) if (isSameApp(link.href) && /\/une\/o\/[^/]+\/list/.test(link.href))
-            discovered.add(link.href);
+          for (const link of await inspectLinks(page)) if (isSameApp(link.href)) {
+            if (/\/une\/o\/[^/]+\/list/.test(link.href)) discovered.add(link.href);
+            discoveredPages.add(link.href);
+          }
           s.screenshot = await capture(page, profile.name, name, s.issues);
           s.status = 'completed';
         } catch (e) {
@@ -415,10 +439,12 @@ async function run() {
         p.login.elapsedMs = Math.round(performance.now() - loginStart);
         if (p.login.elapsedMs > limits.pageMs) findIssue(p.errors, 'SLOW_LOGIN', 'medium', p.login.elapsedMs + 'ms > 1500ms goal');
         for (const [name, relative] of routes) await scan(name, relative);
-        const dynamic = [...discovered].slice(0, 3);
+        const fixed = new Set(routes.map(([,r]) => urlFor(r)));
+        const dynamic = [...new Set([...discovered,...discoveredPages])]
+          .filter(u => !fixed.has(u)).slice(0,maxDynamicRoutes);
         for (let i = 0; i < dynamic.length; i++) {
           const url = new URL(dynamic[i]);
-          await scan('Discovered record list ' + (i+1), url.pathname.replace(base.pathname, '') + url.search);
+          await scan('Discovered page ' + (i+1), url.pathname.replace(base.pathname, '') + url.search);
         }
       } catch (e) {
         p.login.status = 'failed';
