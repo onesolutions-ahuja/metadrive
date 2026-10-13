@@ -27,50 +27,90 @@ function childKey(row, parentKind) {
   if (parentKind === 'object') return 'k:' + row.slotKey;
   throw Error('Scalar node cannot have children');
 }
-export function planNormalizedDelta(previousRows, projectedRows) {
-  const old = previousRows.map(normalizedRow);
-  const next = projectedRows.map(normalizedRow);
-  if (!old.length || !next.length) throw Error('Normalized delta requires nonempty trees');
-  const byOldId = new Map(old.map(row => [row.nodeId, row]));
-  if (byOldId.size !== old.length) throw Error('Duplicate stored node ID');
-  const oldRoot = old.find(row => row.parentId === null);
-  if (!oldRoot || old.filter(row => row.parentId === null).length !== 1)
-    throw Error('Invalid stored tree root');
+// Revision indexes are reusable between commits. The output nodes of one commit
+// become the input nodes of the next; building their indexes while remapping
+// avoids re-indexing an otherwise unchanged platform snapshot on every login.
+const indexedRevisions = new WeakMap();
+function fastNormalizedRow(row) {
+  return Object.prototype.hasOwnProperty.call(row, 'nodeId') &&
+    Object.prototype.hasOwnProperty.call(row, 'parentId') &&
+    Object.prototype.hasOwnProperty.call(row, 'stringValue')
+    ? row : normalizedRow(row);
+}
+function indexRevision(rows) {
+  const cached = indexedRevisions.get(rows);
+  if (cached) return cached;
+  const old = rows.map(fastNormalizedRow);
+  const byId = new Map();
+  let root = null, highestId = 0;
+  for (const row of old) {
+    if (!Number.isSafeInteger(row.nodeId) || row.nodeId < 1 || byId.has(row.nodeId))
+      throw Error('Duplicate or invalid stored node ID');
+    byId.set(row.nodeId, row);
+    highestId = Math.max(highestId, row.nodeId);
+    if (row.parentId === null) {
+      if (root) throw Error('Invalid stored tree root');
+      root = row;
+    }
+  }
+  if (!root) throw Error('Invalid stored tree root');
   const children = new Map();
   for (const row of old) {
     if (row.parentId === null) continue;
-    const parent = byOldId.get(row.parentId);
+    const parent = byId.get(row.parentId);
     if (!parent) throw Error('Orphaned stored node');
     const key = childKey(row, parent.kind);
-    if (!children.has(parent.nodeId)) children.set(parent.nodeId, new Map());
-    if (children.get(parent.nodeId).has(key)) throw Error('Duplicate stored child');
-    children.get(parent.nodeId).set(key, row);
+    let siblings = children.get(parent.nodeId);
+    if (!siblings) { siblings = new Map(); children.set(parent.nodeId, siblings); }
+    if (siblings.has(key)) throw Error('Duplicate stored child');
+    siblings.set(key, row);
   }
+  const indexed = {old, byId, root, children, highestId};
+  indexedRevisions.set(rows, indexed);
+  return indexed;
+}
+export function planNormalizedDelta(previousRows, projectedRows) {
+  if (!previousRows.length || !projectedRows.length)
+    throw Error('Normalized delta requires nonempty trees');
+  const prior = indexRevision(previousRows);
   const assigned = new Map();
   const seen = new Set();
-  const nodes = [];
-  let highestId = 0;
-  for (const row of old) highestId = Math.max(highestId, row.nodeId);
-  for (const row of next) {
+  const nodes = [], inserted = [], updated = [];
+  const byId = new Map(), children = new Map();
+  let highestId = prior.highestId, root = null;
+  for (const source of projectedRows) {
+    const row = fastNormalizedRow(source);
     const parent = row.parentId === null ? null : assigned.get(row.parentId);
     if (row.parentId !== null && !parent) throw Error('Projected parent is missing');
     let matched;
-    if (parent === null) matched = oldRoot;
-    else {
-      const priorParent = byOldId.get(parent.nodeId);
+    if (parent === null) {
+      if (root) throw Error('Invalid projected tree root');
+      matched = prior.root;
+    } else {
+      const priorParent = prior.byId.get(parent.nodeId);
       if (priorParent?.kind === parent.kind && (parent.kind === 'array' || parent.kind === 'object'))
-        matched = children.get(parent.nodeId)?.get(childKey(row, parent.kind));
+        matched = prior.children.get(parent.nodeId)?.get(childKey(row, parent.kind));
     }
     const nodeId = matched?.nodeId ?? ++highestId;
     if (!Number.isSafeInteger(nodeId) || seen.has(nodeId)) throw Error('Invalid delta node identity');
     seen.add(nodeId);
-    const mapped = { ...row, nodeId, parentId: parent?.nodeId ?? null };
+    const mapped = {...row, nodeId, parentId: parent?.nodeId ?? null};
+    if (parent === null) root = mapped;
+    else {
+      const key = childKey(mapped, parent.kind);
+      let siblings = children.get(parent.nodeId);
+      if (!siblings) { siblings = new Map(); children.set(parent.nodeId, siblings); }
+      if (siblings.has(key)) throw Error('Duplicate projected child');
+      siblings.set(key, mapped);
+    }
     assigned.set(row.nodeId, mapped);
+    byId.set(nodeId, mapped);
     nodes.push(mapped);
+    if (!matched) inserted.push(mapped);
+    else if (!equivalent(mapped, matched)) updated.push(mapped);
   }
-  const deleted = old.filter(row => !seen.has(row.nodeId));
-  const inserted = nodes.filter(row => !byOldId.has(row.nodeId));
-  const updated = nodes.filter(row => byOldId.has(row.nodeId) && !equivalent(row, byOldId.get(row.nodeId)));
+  const deleted = prior.old.filter(row => !seen.has(row.nodeId));
+  indexedRevisions.set(nodes, {old:nodes, byId, root, children, highestId});
   return {nodes, deleted, inserted, updated};
 }
 // Verify every scalar and parent edge after stable-ID remapping, without
@@ -88,14 +128,12 @@ export function verifyProjectedDelta(projectedRows, mappedRows) {
         expected.boolValue !== actual.boolValue ||
         !Number.isSafeInteger(actual.nodeId) || seen.has(actual.nodeId))
       throw Error('Projected SQL delta differs from source');
+    const sourceParent = expected.parentId;
+    const expectedParent = sourceParent === null ? null : mappedIds.get(sourceParent);
+    if (expectedParent === undefined || actual.parentId !== expectedParent)
+      throw Error('Projected SQL delta parent differs from source');
     seen.add(actual.nodeId);
     mappedIds.set(expected.nodeId, actual.nodeId);
-  }
-  for (let i = 0; i < projectedRows.length; i++) {
-    const sourceParent = projectedRows[i].parentId;
-    const expectedParent = sourceParent === null ? null : mappedIds.get(sourceParent);
-    if (expectedParent === undefined || mappedRows[i].parentId !== expectedParent)
-      throw Error('Projected SQL delta parent differs from source');
   }
 }
 
