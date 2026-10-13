@@ -87,6 +87,6 @@ replace(`  const valid = Boolean(user && !user.disabled && tenantData(user.tenan
       ? timingSafeEqual(Buffer.from(digest,'hex'), otpDigest)
       : parsed.data.token.length===64 && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token)))));`);
 const importAnchor="import { normalizeRecoveryPolicy, renderRecoveryTemplate, deliverWithFallback } from './recovery-policy.js';";
-replace(importAnchor,importAnchor+"\n// Tenant name is resolved from the tenant registry, never from unauthenticated request input.\nfunction tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {\n  return state.tenantRegistry?.find?.((entry: any) => entry.tenantId === tenantId)?.tenantName ?? tenantId;\n}");
+replace(importAnchor,importAnchor+"\n// Tenant name is resolved from the tenant registry, never from unauthenticated request input.\nfunction tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {\n  return (tenant as unknown as { name?: string }).name || tenantId;\n}");
 writeFileSync(file,src);
 console.log('Applied backend metadata-driven OTP/link recovery with tenant and platform SMTP fallback.');
