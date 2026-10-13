@@ -3565,8 +3565,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
   // Kiosk is a standalone customer-facing page, not a workspace tab. Resolve it
   // from tenant page metadata so every installed kiosk opens edge-to-edge by URL.
-  const isStandaloneKioskPage = route.kind === 'app-page' && pages.some((candidate) =>
-    candidate.apiName === route.pageApiName && candidate.status === 'Active' &&
+  const isStandaloneKioskPage = (route.kind === 'app-page' || route.kind === 'app-home') && pages.some((candidate) =>
+    candidate.status === 'Active' &&
+    (route.kind === 'app-page' ? candidate.apiName === route.pageApiName && candidate.pageType === 'App Page'
+      : candidate.pageType === 'Home Page' && (candidate.activationAssignments ?? []).some((assignment) =>
+          assignment.appId === route.appId && (assignment.scope === 'App Default' || assignment.scope === 'App and Profile'))) &&
     candidate.components.some((component) => component.type === 'Custom:KioskOrderingExperience')
   );
 
