@@ -1190,7 +1190,8 @@ const flowVersionSchema = z.object({
   startConfig: z.record(z.unknown()).optional(),
   elements: z.array(flowElementSchema),
   connectors: z.array(flowConnectorSchema),
-  resources: z.array(flowResourceSchema)
+  resources: z.array(flowResourceSchema),
+  tests: z.array(flowTestCaseSchema).max(100).optional()
 });
 const flowSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
@@ -2522,7 +2523,8 @@ function flowVersionSnapshot(flow: FlowMetadata, savedAt: string): FlowMetadata[
     startConfig: flow.startConfig,
     elements: flow.elements,
     connectors: flow.connectors,
-    resources: flow.resources
+    resources: flow.resources,
+    tests: flow.tests
   };
 }
 
