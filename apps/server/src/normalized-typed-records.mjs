@@ -2,7 +2,7 @@
 // No business object, field or action is hardcoded into SQL identifiers.
 // Registry UUIDs are durable; removed schema is retained for lossless rollback.
 import {randomUUID} from 'node:crypto';
-import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn,canWidenPhysicalFieldType} from './normalized-object-schema.mjs';
+import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn,canWidenPhysicalFieldType,physicalTenantOwnerConstraint} from './normalized-object-schema.mjs';
 
 const platformFields=[
   {apiName:'CreatedDate',dataType:'Date/Time'},
@@ -122,6 +122,19 @@ async function prepare(client,state){
       current={object_id:objectId,tenant_id:item.tenantId,api_name:item.object.apiName,
         object_label:item.object.label??item.object.apiName,physical_table:plan.table,fields:new Map()};
       mapping.set(key(item.tenantId,item.object.apiName),current);
+    }
+    // Retrofitted as well as installed on newly created typed tables. This
+    // rejects foreign-tenant rows in the physical table even if the API were
+    // to omit its tenant scope. Constraint creation validates existing rows.
+    const ownership=physicalTenantOwnerConstraint(current.object_id,item.tenantId);
+    const existingGuard=await client.query(
+      'SELECT conname,contype,convalidated FROM pg_constraint WHERE conrelid=to_regclass($1) AND conname=$2',
+      [current.physical_table,ownership.name]);
+    if(existingGuard.rowCount) {
+      if(existingGuard.rows[0].contype!=='c'||existingGuard.rows[0].convalidated!==true)
+        throw Error('Physical tenant ownership constraint is not validated');
+    } else {
+      await client.query(ownership.ddl);
     }
     const objectLabel=item.object.label??item.object.apiName;
     if(current.object_label!==objectLabel) {
