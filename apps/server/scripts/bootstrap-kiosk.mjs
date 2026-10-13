@@ -220,12 +220,17 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
         };
         state.users.push(user);
       }
-      if (!tenant.accessControl.users.some((u) => u.id === user.id)) {
+      const existingAssignment = tenant.accessControl.users.find((entry) => entry.id === user.id);
+      if (!existingAssignment) {
         tenant.accessControl.users.push({
           id: user.id, name: user.name, username: email, role: user.role,
           roleId: 'role-standard-user', profileId, permissionSetIds: [],
           permissionSetGroupIds: [], timeZone: 'Europe/London', locale: 'en-GB'
         });
+      } else {
+        // Reconcile previously created kiosk/till accounts. A matching identity
+        // with an old profile must not keep losing Product__c read access.
+        existingAssignment.profileId = profileId;
       }
     }
     tenant.flows ??= [];
