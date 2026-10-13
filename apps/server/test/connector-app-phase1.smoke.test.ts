@@ -106,7 +106,8 @@ test('AppExchange installation and trial run using stored metadata flows', async
     const before=await list();
     assert.equal(before.status,200,JSON.stringify(before.data));
     const records=before.data.records as Array<Record<string,any>>;
-    assert.equal(records.length,5);
+    assert.equal(records.length,6);
+    assert.ok(records.some(x=>x.AppKey__c==='kiosk'));
     const app=records.find(x=>x.AppKey__c==='xero');
     assert.ok(app);
     assert.equal(app.Installed__c,false);
