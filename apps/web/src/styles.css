@@ -2654,3 +2654,16 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
  .builder-compact-toolbar { padding-inline:5px; }
  .builder-compact-toolbar .builder-current-page strong { max-width:100px; font-size:12px; }
 }
+
+
+.page-manager-header-actions { display:flex; align-items:center; gap:8px; }
+.page-manager-header-actions .icon-button { width:34px; height:34px; min-width:34px; display:inline-flex; justify-content:center; align-items:center; border:1px solid #dfe5ef; border-radius:7px; background:#fff; }
+.builder-editor-mode .free-canvas-component.selected .free-canvas-resize-handle { position:absolute; z-index:12; width:11px; height:11px; border:2px solid #2b67eb; background:white; padding:0; margin:0; border-radius:3px; touch-action:none; }
+.builder-editor-mode .free-canvas-resize-handle.resize-n { top:-6px; bottom:auto; left:calc(50% - 6px); right:auto; cursor:ns-resize; }
+.builder-editor-mode .free-canvas-resize-handle.resize-s { bottom:-6px; top:auto; left:calc(50% - 6px); right:auto; cursor:ns-resize; }
+.builder-editor-mode .free-canvas-resize-handle.resize-e { right:-6px; left:auto; top:calc(50% - 6px); bottom:auto; cursor:ew-resize; }
+.builder-editor-mode .free-canvas-resize-handle.resize-w { left:-6px; right:auto; top:calc(50% - 6px); bottom:auto; cursor:ew-resize; }
+.builder-editor-mode .free-canvas-resize-handle.resize-nw { top:-6px; left:-6px; right:auto; bottom:auto; cursor:nwse-resize; }
+.builder-editor-mode .free-canvas-resize-handle.resize-ne { top:-6px; right:-6px; left:auto; bottom:auto; cursor:nesw-resize; }
+.builder-editor-mode .free-canvas-resize-handle.resize-sw { bottom:-6px; left:-6px; top:auto; right:auto; cursor:nesw-resize; }
+.builder-editor-mode .free-canvas-resize-handle.resize-se { bottom:-6px; right:-6px; top:auto; left:auto; cursor:nwse-resize; }
