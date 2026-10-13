@@ -29,3 +29,19 @@ test('transient failures defer delivery; no plaintext error is persisted',async(
   await dispatchIntegrationDeliveries({outbox,tenantId:'A',workerId:'worker',dispatch:async()=>{throw Error('private API token leaked');}});
   assert.deepEqual(errors,['DELIVERY_FAILURE']);
 });
+
+test('redirects and malformed provider status are never acknowledged as successful deliveries',async()=>{
+  for(const status of [301,302,307,308,NaN,0,600]){
+    const calls:string[]=[];
+    const outbox={
+      claim:async()=>[{id:'redirect',tenantId:'A',credentialId:'C',operationKey:'x',method:'POST',path:'/safe',encryptedRequest:'enc:test',attempts:1,maxAttempts:3}],
+      complete:async()=>{calls.push('complete');},
+      fail:async(_t:string,_w:string,_id:string,_code:string,_delay:number,permanent:boolean)=>{
+        assert.equal(permanent,true);calls.push('failed');
+      }
+    } as unknown as IntegrationOutbox;
+    const result=await dispatchIntegrationDeliveries({outbox,tenantId:'A',workerId:'worker',dispatch:async()=>({status})});
+    assert.deepEqual(result,{claimed:1,succeeded:0,deferred:1});
+    assert.deepEqual(calls,['failed']);
+  }
+});
