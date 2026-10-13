@@ -97,7 +97,7 @@ try{
   const browserPage=await browser.newPage({viewport:{width:1440,height:900}});
   browserPage.setDefaultTimeout(25000);
   const errors=[];browserPage.on('pageerror',error=>errors.push(error.message));
-  await browserPage.goto(site);
+  await browserPage.goto(site+'/une/login');
   await browserPage.locator('#login-email').fill(login.email);
   await browserPage.locator('#login-password').fill(login.password);
   await browserPage.locator('button.auth-submit').click();
