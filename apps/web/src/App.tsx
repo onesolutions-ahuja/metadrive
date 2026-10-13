@@ -30,8 +30,6 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
-  Lock,
-  Unlock,
   FileText,
   Filter,
   GripVertical,
@@ -9428,6 +9426,15 @@ function PageBuilder({
       width: bounded(start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale), minWidth, maxWidth),
       height: bounded(start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale), minHeight, maxHeight)
     });
+  };
+  const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = canvasResizeStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const size = canvasResizePreview?.id === start.id ? canvasResizePreview : { id: start.id, width: start.width, height: start.height };
+    const component = page.components.find((item) => item.id === start.id);
+    if (component?.position) updateComponent(start.id, { position: { ...component.position, width: size.width, height: size.height } });
+    canvasResizeStart.current = null;
+    setCanvasResizePreview(null);
   };
   const hasOverlappingPageAssignment = (assignment: PageActivationAssignmentMetadata) =>
     (page.activationAssignments ?? []).some((existing) =>
