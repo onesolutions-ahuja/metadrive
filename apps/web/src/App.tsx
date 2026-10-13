@@ -4921,8 +4921,8 @@ function LightningAppRuntime({
         ...(nested
           ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
           : {
-              left: component.position?.x ?? 0,
-              top: component.position?.y ?? 0,
+              left: canvasResizePreview?.id === component.id ? canvasResizePreview.x : component.position?.x ?? 0,
+              top: canvasResizePreview?.id === component.id ? canvasResizePreview.y : component.position?.y ?? 0,
               width: component.position?.width ?? 320,
               height: component.position?.height ?? 180
             }),
@@ -9221,8 +9221,9 @@ function PageBuilder({
   const [dragOverId, setDragOverId] = useState('');
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
-  const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null);
-  const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
+  type ResizeEdge = 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw';
+  const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; x: number; y: number; width: number; height: number; edge: ResizeEdge } | null>(null);
+  const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; x: number; y: number; width: number; height: number } | null>(null);
   const canvasSnap = false;
   const canvasMoveStart = useRef<{
     id: string; pointerId: number; pointerX: number; pointerY: number;
@@ -9499,55 +9500,40 @@ function PageBuilder({
     [items[index], items[target]] = [items[target], items[index]];
     applyPage({ ...page, components: items });
   };
-  const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata) => {
+  const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata, edge: ResizeEdge) => {
     if (!component.position || component.properties.canvasLocked === true) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    canvasResizeStart.current = {
-      id: component.id,
-      pointerId: event.pointerId,
-      pointerX: event.clientX,
-      pointerY: event.clientY,
-      width: component.position.width,
-      height: component.position.height
-    };
-    setSelectedId(component.id);
-    setInspectorTab('Overview');
-    setCanvasResizePreview({ id: component.id, width: component.position.width, height: component.position.height });
+    event.preventDefault(); event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId);
+    canvasResizeStart.current = { id: component.id, pointerId: event.pointerId, pointerX: event.clientX, pointerY: event.clientY,
+      x: component.position.x, y: component.position.y, width: component.position.width, height: component.position.height, edge };
+    setSelectedId(component.id); setInspectorTab('Overview');
+    setCanvasResizePreview({ id: component.id, ...component.position });
   };
   const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = canvasResizeStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
     const component = page.components.find(item => item.id === start.id);
     if (!component?.position) return;
-    const definition = component.type.startsWith('Custom:')
-      ? libraryComponents.find(item => item.apiName === component.type.slice('Custom:'.length))
-      : undefined;
-    const minWidth = definition?.resize?.minWidth ?? 1;
-    const minHeight = definition?.resize?.minHeight ?? 1;
-    const x = component.position?.x ?? 0;
-    const y = component.position?.y ?? 0;
-    const maxWidth = Math.max(0, page.canvasWidth - x);
-    const maxHeight = Math.max(0, page.canvasHeight - y);
-    const bounded = (value: number, minimum: number, maximum: number) => {
-      const snapped = canvasSnap ? Math.round(value / 8) * 8 : Math.round(value);
-      return Math.min(maximum, Math.max(Math.min(minimum, maximum), snapped));
-    };
-    setCanvasResizePreview({
-      id: component.id,
-      width: bounded(start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale), minWidth, maxWidth),
-      height: bounded(start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale), minHeight, maxHeight)
-    });
+    const definition = component.type.startsWith('Custom:') ? libraryComponents.find(item => item.apiName === component.type.slice('Custom:'.length)) : undefined;
+    const minWidth = Math.min(start.width, definition?.resize?.minWidth ?? 20);
+    const minHeight = Math.min(start.height, definition?.resize?.minHeight ?? 20);
+    const dx = Math.round(canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale));
+    const dy = Math.round(canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale));
+    const west = start.edge.includes('w'), east = start.edge.includes('e'), north = start.edge.includes('n'), south = start.edge.includes('s');
+    let x = start.x, y = start.y, width = start.width, height = start.height;
+    if (east) width = Math.max(minWidth, Math.min(page.canvasWidth - start.x, start.width + dx));
+    if (south) height = Math.max(minHeight, Math.min(page.canvasHeight - start.y, start.height + dy));
+    if (west) { x = Math.max(0, Math.min(start.x + start.width - minWidth, start.x + dx)); width = start.width + start.x - x; }
+    if (north) { y = Math.max(0, Math.min(start.y + start.height - minHeight, start.y + dy)); height = start.height + start.y - y; }
+    setCanvasResizePreview({ id: start.id, x, y, width, height });
   };
   const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = canvasResizeStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
-    const size = canvasResizePreview?.id === start.id ? canvasResizePreview : { id: start.id, width: start.width, height: start.height };
-    const component = page.components.find((item) => item.id === start.id);
-    if (component?.position) updateComponent(start.id, { position: { ...component.position, width: size.width, height: size.height } });
-    canvasResizeStart.current = null;
-    setCanvasResizePreview(null);
+    const size = canvasResizePreview?.id === start.id ? canvasResizePreview :
+      { id: start.id, x: start.x, y: start.y, width: start.width, height: start.height };
+    const component = page.components.find(item => item.id === start.id);
+    if (component?.position) updateComponent(start.id, { position: { x:size.x, y:size.y, width:size.width, height:size.height } });
+    canvasResizeStart.current = null; setCanvasResizePreview(null);
   };
   const hasOverlappingPageAssignment = (assignment: PageActivationAssignmentMetadata) =>
     (page.activationAssignments ?? []).some((existing) =>
@@ -10273,11 +10259,13 @@ function PageBuilder({
         && <div className="metadata-nested-host">{nestedChildren}</div>}
       {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
         && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode && component.properties.canvasLocked !== true
-        && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
-          title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
-          onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
-          onClick={(event) => event.stopPropagation()} />}
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && selectedId === component.id && !previewMode && component.properties.canvasLocked !== true
+        && (['n','ne','e','se','s','sw','w','nw'] as const).map(edge =>
+          <button key={edge} type="button" className={`free-canvas-resize-handle resize-${edge}`}
+            aria-label={`Resize ${component.label} ${edge}`} title="Drag edge or corner to resize"
+            onPointerDown={event => startCanvasResize(event, component, edge)}
+            onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
+            onClick={event => event.stopPropagation()}/>)}
     </div>;
   };
   const renderRegion = (region: 'header' | 'main' | 'sidebar') => {
