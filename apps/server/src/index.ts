@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
 import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
@@ -4654,6 +4654,30 @@ if (existingPostgresState !== null && persistenceMode !== 'typed') {
 }
 const stateHydrationStartedAt = performance.now();
 let state = loadState(persistenceMode === 'typed' ? existingPostgresState : undefined);
+// Security tombstones commit separately from the large SQL metadata graph.
+// Merge them before accepting requests, so logout remains revoked after crash
+// recovery even if no subsequent metadata snapshot was written.
+const durableLogouts = maintenanceMode ? [] : await readAuthLogoutRevocations();
+if (durableLogouts.length) {
+  const accessRevocations = { ...state.revokedAccessTokens };
+  const refreshRevocations = new Map<string, number>();
+  const now = Date.now() / 1000;
+  for (const entry of durableLogouts) {
+    if (entry.accessExpiresAt > now)
+      accessRevocations[entry.jti] = Math.max(accessRevocations[entry.jti] ?? 0, entry.accessExpiresAt);
+    if (entry.refreshHash && entry.refreshExpiresAt !== null && entry.refreshExpiresAt > now)
+      refreshRevocations.set(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`, Math.max(refreshRevocations.get(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`) ?? 0, entry.revokedAt));
+  }
+  state = {
+    ...state,
+    revokedAccessTokens: accessRevocations,
+    refreshSessions: state.refreshSessions.map((session) => {
+      const revokedAt = refreshRevocations.get(`${session.tenantId}:${session.userId}:${session.tokenHash}`);
+      return revokedAt === undefined ? session
+        : { ...session, revokedAt: Math.max(session.revokedAt ?? 0, revokedAt) };
+    })
+  };
+}
 assertTenantIdentityIsolation(state);
 console.info(`Startup state hydration: ${(performance.now() - stateHydrationStartedAt).toFixed(0)}ms`);
 // Remove legacy internal UI requests from Communication Records before the
@@ -6182,17 +6206,34 @@ app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response)
   const principal = getPrincipal(res);
   const token = bearerToken(req)!;
   void jwtService.verify(token).then((claims) => {
+    const revokedAt = Date.now() / 1000;
     const revokedAccessTokens = { ...state.revokedAccessTokens };
     if (claims.jti && claims.exp) revokedAccessTokens[claims.jti] = claims.exp;
     const refreshToken = cookieValue(req, refreshCookieName);
     const refreshHash = refreshToken ? hashToken(refreshToken) : '';
+    const matchingRefresh = state.refreshSessions.find((session) =>
+      session.tokenHash === refreshHash && session.userId === principal.userId && session.tenantId === principal.tenantId);
     const refreshSessions = state.refreshSessions.map((session) =>
-      session.tokenHash === refreshHash && session.userId === principal.userId && session.tenantId === principal.tenantId
-        ? { ...session, revokedAt: Date.now() / 1000 }
-        : session
+      session === matchingRefresh ? { ...session, revokedAt } : session
     );
     const nextState = { ...state, revokedAccessTokens, refreshSessions };
-    persistState(nextState);
+    if (persistenceMode === 'typed') {
+      // One SQL INSERT, acknowledged only after commit. The restart overlay
+      // prevents a stale platform snapshot from resurrecting the session.
+      const previousCommit = latestStateCommit;
+      const durableRevocation = persistAuthLogoutRevocation({
+        jti: String(claims.jti), tenantId: principal.tenantId, userId: principal.userId,
+        refreshHash: matchingRefresh?.tokenHash ?? null,
+        accessExpiresAt: Number(claims.exp),
+        refreshExpiresAt: matchingRefresh?.expiresAt ?? null, revokedAt
+      });
+      latestStateCommit = Promise.all([previousCommit, durableRevocation]);
+      void latestStateCommit.catch((error: unknown) => {
+        console.error('CRITICAL: Durable logout revocation failed', error);
+      });
+    } else {
+      persistState(nextState);
+    }
     state = nextState;
     clearRefreshCookie(res);
     return res.status(204).end();
