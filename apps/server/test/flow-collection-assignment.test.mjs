@@ -16,6 +16,7 @@ test('collection Assignment removes matching items and clears the collection', (
   assert.deepEqual(apply(['a', 'b'], undefined, 'Remove All'), []);
   const rows = [{ Id: 'record-1' }, { Id: 'record-2' }];
   assert.deepEqual(apply(rows, { Id: 'record-1' }, 'Remove', 'Record Collection'), [rows[1]]);
+  assert.deepEqual(apply(rows, [{ Id: 'record-1' }, { Id: 'record-2' }], 'Remove', 'Record Collection'), []);
 });
 test('collection Assignment fails closed for incompatible operator and record values', () => {
   assert.throws(() => apply([1], 1, 'Divide'), /unavailable/);
