@@ -1386,7 +1386,7 @@ export default function FlowBuilder({
               const bend = Math.max(35, Math.abs(endY - startY) / 2);
               const labelX = (startX + endX) / 2;
               const labelY = (startY + endY) / 2 - 6;
-              return <g key={connector.id} className={`flow-graph-edge ${connector.kind}`}>
+              return <g key={connector.id} className={`flow-graph-edge ${connector.kind} ${selectedId === connector.from ? 'is-selected' : ''}`}>
                 <path d={`M ${startX} ${startY} C ${startX} ${startY + bend}, ${endX} ${endY - bend}, ${endX} ${endY}`} markerEnd="url(#flow-graph-arrow)" />
                 {(connector.label || connector.kind !== 'normal') && <text x={labelX} y={labelY}>{connector.label || connector.kind}</text>}
               </g>;
