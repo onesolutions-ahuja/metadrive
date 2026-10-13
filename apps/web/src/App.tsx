@@ -10346,7 +10346,11 @@ function PageBuilder({
 
       {!editorMode && <section className="page-manager-view" aria-label="Page management">
         <header className="page-manager-header"><div><h1>Page Builder</h1><p>Manage pages and their device layouts by related record or object.</p></div>
-          <button className="btn btn-brand" type="button" onClick={openCreatePage}><Plus size={16}/> New Page</button></header>
+          <div className="page-manager-header-actions">
+            <button className="icon-button subtle" type="button" aria-label="Open page dependencies" title="Dependencies" onClick={()=>setDependenciesOpen(true)}><Puzzle size={16}/></button>
+            <button className="icon-button subtle" type="button" aria-label="Open page routes" title="Route aliases" onClick={()=>setRouteDirectoryOpen(true)}><ExternalLink size={16}/></button>
+            <button className="btn btn-brand" type="button" onClick={openCreatePage}><Plus size={16}/> New Page</button>
+          </div></header>
         <div className="page-manager-filters">
           <label className="form-label">Related Record / Object<select className="form-control" value={pageListObject} aria-label="Related Record or Object" onChange={event=>setPageListObject(event.target.value)}><option value="">All objects</option>{objects.map(item=><option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label>
           <label className="form-label">Search pages<input className="form-control" type="search" value={pageListSearch} onChange={event=>setPageListSearch(event.target.value)} placeholder="Search page name…"/></label>
