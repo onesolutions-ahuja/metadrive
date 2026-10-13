@@ -63,7 +63,7 @@ try{
   await req('/metadata/apps',token,'POST',{
     apiName:app,label:'Alias App',description:'Disposable SQL route alias QA',
     navigationItems:['Account'],navigationPageApiNames:[page],brandColor:'#0176d3',utilityItems:[]
-  });
+  },201);
   const body={appId:app,slug,kind:'App Page',targetApiName:page,status:'Active',expectedVersion:0};
   const endpoint='/metadata/route-aliases/'+app+'/'+slug;
   assert.equal((await req(endpoint,token,'PUT',body)).alias.version,1);
