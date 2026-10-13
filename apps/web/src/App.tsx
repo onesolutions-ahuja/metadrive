@@ -9150,7 +9150,8 @@ function PageBuilder({
     Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : fallback;
   const [selectedId, setSelectedId] = useState(page.components[0]?.id ?? '');
   const savedPageApiName = useRef(page.apiName);
-  const [device, setDevice] = useState<'Desktop' | 'Tablet' | 'Phone'>('Desktop');
+  const device: 'Desktop' | 'Tablet' | 'Phone' = page.devices.length === 1 && page.devices[0] === 'Phone' || page.canvasWidth <= 600
+    ? 'Phone' : page.canvasWidth < 1400 ? 'Tablet' : 'Desktop';
   const orientation = canvasOrientation(page.canvasWidth, page.canvasHeight);
   const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields' | 'Layers'>('Components');
   const [paletteSearch, setPaletteSearch] = useState('');
