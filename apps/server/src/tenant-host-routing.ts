@@ -67,7 +67,7 @@ export function tenantHostConfig(
   }
   for (const [rawHost, rawTenant] of Object.entries(parsed)) {
     const host = hostname(rawHost);
-    if (!host || typeof rawTenant !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(rawTenant) || shared.has(host) || mapped.has(host)) {
+    if (!host || typeof rawTenant !== 'string' || !rawTenant.trim() || shared.has(host) || mapped.has(host)) {
       throw Error('METADRIVE_TENANT_HOSTS contains an invalid, shared or duplicate hostname mapping');
     }
     mapped.set(host, rawTenant);

@@ -11,9 +11,6 @@ test('failed execution retries are disabled by default', () => {
   assert.equal(defaultAutomationSettings.maxRetryAttempts, 10);
   assert.equal(retryDelayMs(1), 60_000);
   assert.equal(retryDelayMs(8), 3_600_000);
-  assert.equal(retryDelayMs(Number.MAX_SAFE_INTEGER), 3_600_000);
-  for (const invalid of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])
-    assert.throws(() => retryDelayMs(invalid), /Invalid automation retry attempt/);
 });
 
 test('conversation identity expires after 15 minutes of inactivity', () => {

@@ -73,6 +73,32 @@ export function planNormalizedDelta(previousRows, projectedRows) {
   const updated = nodes.filter(row => byOldId.has(row.nodeId) && !equivalent(row, byOldId.get(row.nodeId)));
   return {nodes, deleted, inserted, updated};
 }
+// Verify every scalar and parent edge after stable-ID remapping, without
+// decoding or hashing the entire state tree a second time per transaction.
+export function verifyProjectedDelta(projectedRows, mappedRows) {
+  if (projectedRows.length !== mappedRows.length) throw Error('Projected SQL delta node count mismatch');
+  const mappedIds = new Map();
+  const seen = new Set();
+  for (let i = 0; i < projectedRows.length; i++) {
+    const expected = projectedRows[i], actual = mappedRows[i];
+    if (!actual || expected.slotKey !== actual.slotKey ||
+        expected.ordinal !== actual.ordinal || expected.kind !== actual.kind ||
+        expected.stringValue !== actual.stringValue ||
+        expected.numberValue !== actual.numberValue ||
+        expected.boolValue !== actual.boolValue ||
+        !Number.isSafeInteger(actual.nodeId) || seen.has(actual.nodeId))
+      throw Error('Projected SQL delta differs from source');
+    seen.add(actual.nodeId);
+    mappedIds.set(expected.nodeId, actual.nodeId);
+  }
+  for (let i = 0; i < projectedRows.length; i++) {
+    const sourceParent = projectedRows[i].parentId;
+    const expectedParent = sourceParent === null ? null : mappedIds.get(sourceParent);
+    if (expectedParent === undefined || mappedRows[i].parentId !== expectedParent)
+      throw Error('Projected SQL delta parent differs from source');
+  }
+}
+
 export function verifyDeltaReadback(expectedRows, actualRows) {
   const expected = new Map(expectedRows.map(row => [row.nodeId, normalizedRow(row)]));
   if (actualRows.length !== expected.size) throw Error('SQL delta readback row count mismatch');

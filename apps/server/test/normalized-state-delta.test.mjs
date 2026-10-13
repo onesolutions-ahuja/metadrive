@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {planNormalizedDelta, verifyDeltaReadback} from '../src/normalized-state-delta.mjs';
+import {planNormalizedDelta, verifyDeltaReadback, verifyProjectedDelta} from '../src/normalized-state-delta.mjs';
 import {projectNormalizedTree, restoreNormalizedTree} from '../src/normalized-state-tree.mjs';
 
 test('login session + audit append writes only added typed SQL nodes', () => {
@@ -50,4 +50,18 @@ test('large metadata graphs retain unchanged rows for login append',()=>{
   assert.equal(delta.updated.length,0);
   assert.ok(delta.inserted.length<30,'An auth append must not rewrite metadata');
   assert.deepEqual(restoreNormalizedTree(delta.nodes),after);
+});
+
+test('projection ID remapping checks every value and parent edge',()=>{
+  const before={users:[{id:'u1',roles:['read']}],tenants:{une:{records:{Account:[{Id:'a',Name:'A'}]}}}};
+  const after=structuredClone(before);
+  after.users.push({id:'u2',roles:[]});
+  after.tenants.une.records.Account[0].Name='Updated';
+  const projected=projectNormalizedTree(after).nodes;
+  const plan=planNormalizedDelta(projectNormalizedTree(before).nodes,projected);
+  verifyProjectedDelta(projected,plan.nodes);
+  assert.deepEqual(restoreNormalizedTree(plan.nodes),after);
+  assert.throws(()=>verifyProjectedDelta(projected,plan.nodes.map((r,i)=>i===4?{...r,stringValue:'tampered'}:r)),/differs/);
+  assert.throws(()=>verifyProjectedDelta(projected,plan.nodes.map((r,i)=>i===4?{...r,parentId:9999}:r)),/parent differs/);
+  assert.throws(()=>verifyProjectedDelta(projected,plan.nodes.slice(1)),/count mismatch/);
 });

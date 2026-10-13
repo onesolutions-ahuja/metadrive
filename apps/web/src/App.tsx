@@ -1,4 +1,5 @@
 import AdvancedSharingSettings from './AdvancedSharingSettings';
+import SchemaBuilder from './SchemaBuilder';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -76,6 +77,7 @@ import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayout
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
+import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
 import NamedCredentials from './NamedCredentials';
 import TenantManagement from './TenantManagement';
@@ -83,10 +85,13 @@ import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
 import TenantUsagePanel from './TenantUsagePanel';
 import DeveloperAccountSettings from './DeveloperAccountSettings';
+import SettingsViewRow from './SettingsViewRow';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
 import tillPagePreset from './page-presets/till.editable.json';
 import { standardPageComponents } from './componentCatalog';
+import EmbeddedDashboard from './EmbeddedDashboard';
+import { inspectPageDependencies } from './pageDependencies';
 import {
   canvasDimensionsForOrientation,
   canvasOrientation,
@@ -196,6 +201,8 @@ let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
 function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => Promise<void> | void; onPasswordChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(profileMenuRef, open, () => setOpen(false));
   const [editing, setEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -216,7 +223,7 @@ function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => 
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not change password'); }
     finally { setBusy(false); }
   };
-  return <div className="profile-menu-wrap">
+  return <div className="profile-menu-wrap" ref={profileMenuRef}>
     <button type="button" className="user-menu" aria-label="User profile" aria-expanded={open}
       onClick={() => setOpen((state) => !state)}>Profile <ChevronDown size={13} /></button>
     {open && <div className="profile-menu-panel">
@@ -246,6 +253,8 @@ function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => 
 function ConnectionHealthIndicator() {
   const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; database: string; latency: number | null; checked: string }>({ status: 'checking', database: 'checking', latency: null, checked: '' });
   const [expanded, setExpanded] = useState(false);
+  const healthRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(healthRef, expanded, () => setExpanded(false));
   useEffect(() => {
     let alive = true;
     const check = async () => {
@@ -272,7 +281,7 @@ function ConnectionHealthIndicator() {
     const interval = window.setInterval(() => void check(), 30000);
     return () => { alive = false; window.clearInterval(interval); };
   }, []);
-  return <div className="connection-health-wrap">
+  return <div className="connection-health-wrap" ref={healthRef}>
     <button type="button" className={`icon-button connection-health-${health.status}`} onClick={() => setExpanded((value) => !value)}
       aria-label={`API connection: ${health.status}`} aria-expanded={expanded} title={`API connection: ${health.status}`}>
       {health.status === 'offline' ? <WifiOff size={18} /> : <Wifi size={18} />}
@@ -412,6 +421,7 @@ async function loadFlowScreenRecords(objectApiName: string): Promise<Record<stri
 
 const objectSettings = [
   'Details',
+  'Schema Builder',
   'Fields & Relationships',
   'Page Layouts',
   'Lightning Record Pages',
@@ -427,6 +437,7 @@ const objectSettings = [
 ];
 
 const settingRouteNames: Record<string, string> = {
+  'Schema Builder': 'SchemaBuilder',
   'Fields & Relationships': 'FieldsAndRelationships',
   'Page Layouts': 'PageLayouts',
   'Lightning Record Pages': 'LightningRecordPages',
@@ -653,7 +664,8 @@ function ConnectorSettingsWorkspace({
   onSaveProvider,
   onSaveIntegrationConnection,
   onTestIntegrationConnection,
-  onNotify
+  onNotify,
+  canManage
 }: {
   provider: ConnectorProviderMetadata;
   providers: ConnectorProviderMetadata[];
@@ -663,9 +675,11 @@ function ConnectorSettingsWorkspace({
   onSaveIntegrationConnection: (connection: Omit<Pick<IntegrationConnectionMetadata, 'id' | 'connectorKey' | 'name' | 'configuration' | 'status'>, 'id'> & { id?: string; credentials: Record<string, string> }) => Promise<IntegrationConnectionMetadata>;
   onTestIntegrationConnection: (id: string) => Promise<IntegrationConnectionMetadata>;
   onNotify: (message: string) => void;
+  canManage: boolean;
 }) {
   const providerConnections = integrationConnections.filter((item) => item.connectorKey === provider.connectorKey);
   const [selectedConnectionId, setSelectedConnectionId] = useState('');
+  const [editingConnection, setEditingConnection] = useState(false);
   const [connectionName, setConnectionName] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<IntegrationConnectionMetadata['status']>('ACTIVE');
   const [connectionConfiguration, setConnectionConfiguration] = useState<Record<string, string>>({});
@@ -694,6 +708,7 @@ function ConnectorSettingsWorkspace({
     setConnectionStatus(existing?.status ?? 'ACTIVE');
     setConnectionConfiguration(existing?.configuration ?? {});
     setConnectionCredentials({});
+    setEditingConnection(false);
   }, [provider.connectorKey]);
 
   useEffect(() => {
@@ -712,6 +727,7 @@ function ConnectorSettingsWorkspace({
   }, [provider]);
 
   const saveProvider = async () => {
+    if (!canManage) return;
     setSavingProvider(true);
     try {
       const saved = await onSaveProvider({
@@ -740,6 +756,7 @@ function ConnectorSettingsWorkspace({
   const selectConnection = (id: string) => {
     const selected = providerConnections.find((item) => item.id === id);
     setSelectedConnectionId(id);
+    setEditingConnection(false);
     setConnectionName(selected?.name ?? `${provider.name} connection`);
     setConnectionStatus(selected?.status ?? 'ACTIVE');
     setConnectionConfiguration(selected?.configuration ?? {});
@@ -747,6 +764,7 @@ function ConnectorSettingsWorkspace({
     setConnectionTestError('');
   };
   const saveConnection = async () => {
+    if (!canManage || !editingConnection) return;
     setSavingConnection(true);
     try {
       const saved = await onSaveIntegrationConnection({
@@ -758,6 +776,7 @@ function ConnectorSettingsWorkspace({
         status: connectionStatus
       });
       setSelectedConnectionId(saved.id);
+      setEditingConnection(false);
       setConnectionName(saved.name);
       setConnectionConfiguration(saved.configuration);
       setConnectionStatus(saved.status);
@@ -782,7 +801,7 @@ function ConnectorSettingsWorkspace({
   const testStatusClass = testStatusLabel === 'Connected' ? 'connected'
     : testStatusLabel === 'Failed' || testStatusLabel === 'Not configured' ? 'failed' : '';
   const testConnection = async () => {
-    if (!selectedConnectionId || connectionIsDirty || editingProvider) return;
+    if (!selectedConnectionId || connectionIsDirty || editingProvider || editingConnection) return;
     setTestingConnection(true);
     setConnectionTestError('');
     try {
@@ -819,7 +838,7 @@ function ConnectorSettingsWorkspace({
             <div className="connector-card-heading"><div><h3>Provider Definition</h3><p>Metadata used by flows to build requests for this provider.</p></div>
               {editingProvider
                 ? <div className="connector-connection-actions"><button className="btn btn-small" onClick={() => setEditingProvider(false)}>Cancel</button><button className="btn btn-brand btn-small" onClick={() => void saveProvider()} disabled={savingProvider}><Save size={13} />{savingProvider ? 'Saving…' : 'Save Provider'}</button></div>
-                : <button className="btn btn-small" onClick={() => setEditingProvider(true)}><Pencil size={13} />Edit Definition</button>}
+                : canManage ? <button className="btn btn-small" onClick={() => setEditingProvider(true)}><Pencil size={13} />Edit Definition</button> : null}
             </div>
             {editingProvider ? <div className="connector-definition-form">
               <label className="form-label">Connector Key<input className="form-control" value={provider.connectorKey} readOnly /></label>
@@ -852,29 +871,49 @@ function ConnectorSettingsWorkspace({
             <div className="connector-card-heading"><div><h3>Integration Connection</h3><p>Tenant-owned connection values and encrypted credentials used by flows.</p></div>
               <div className="connector-connection-actions">
                 <select className="form-control" aria-label="Select Integration Connection" value={selectedConnectionId} onChange={(event) => selectConnection(event.target.value)}>
-                  <option value="">New connection</option>
+                  <option value="">No connection selected</option>
                   {providerConnections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <button className="btn btn-small" onClick={() => selectConnection('')}><Plus size={13} />New</button>
+                {canManage && <button className="btn btn-small" onClick={() => { selectConnection(''); setEditingConnection(true); }}><Plus size={13} />New</button>}
               </div>
             </div>
-            <div className="connector-field-list">
-              <label className="form-label">Connection Name<input className="form-control" value={connectionName} onChange={(event) => setConnectionName(event.target.value)} /></label>
-              <label className="form-label">Status<select className="form-control" value={connectionStatus} onChange={(event) => setConnectionStatus(event.target.value as IntegrationConnectionMetadata['status'])}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></label>
-              {provider.credentialsSchema.map((field) => <label className="form-label" key={field.name}>
-                {field.label}{field.required ? ' *' : ''}
-                <input
-                  className="form-control"
-                  type={field.secret ? 'password' : 'text'}
-                  autoComplete="new-password"
-                  value={field.secret ? (connectionCredentials[field.name] ?? '') : (connectionConfiguration[field.name] ?? '')}
-                  placeholder={field.secret && providerConnections.find((item) => item.id === selectedConnectionId)?.credentialFields.some((entry) => entry.name === field.name && entry.configured) ? 'Saved encrypted value; leave blank to keep' : ''}
-                  onChange={(event) => field.secret
-                    ? setConnectionCredentials((current) => ({ ...current, [field.name]: event.target.value }))
-                    : setConnectionConfiguration((current) => ({ ...current, [field.name]: event.target.value }))}
-                />
-              </label>)}
-            </div>
+            {editingConnection && canManage
+              ? <div className="connector-field-list settings-edit-row">
+                  <label className="form-label">Connection Name
+                    <input className="form-control" value={connectionName}
+                      onChange={(event) => setConnectionName(event.target.value)} />
+                  </label>
+                  <label className="form-label">Status
+                    <select className="form-control" value={connectionStatus}
+                      onChange={(event) => setConnectionStatus(event.target.value as IntegrationConnectionMetadata['status'])}>
+                      <option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option>
+                    </select>
+                  </label>
+                  {provider.credentialsSchema.map((field) => <label className="form-label" key={field.name}>
+                    {field.label}{field.required ? ' *' : ''}
+                    <input className="form-control" type={field.secret ? 'password' : 'text'}
+                      autoComplete="new-password"
+                      value={field.secret ? (connectionCredentials[field.name] ?? '') : (connectionConfiguration[field.name] ?? '')}
+                      placeholder={field.secret && selectedConnection?.credentialFields.some((entry) => entry.name === field.name && entry.configured)
+                        ? 'Saved encrypted value; leave blank to keep' : ''}
+                      onChange={(event) => field.secret
+                        ? setConnectionCredentials((current) => ({ ...current, [field.name]: event.target.value }))
+                        : setConnectionConfiguration((current) => ({ ...current, [field.name]: event.target.value }))} />
+                  </label>)}
+                </div>
+              : <div className="settings-read-first-section">
+                  <SettingsViewRow label="Connection name" value={selectedConnection?.name ?? 'No connection configured'}
+                    canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  <SettingsViewRow label="Status" value={selectedConnection?.status ?? 'Not configured'}
+                    canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  {provider.credentialsSchema.map((field) => (
+                    <SettingsViewRow key={field.name} label={field.label}
+                      value={field.secret
+                        ? (selectedConnection?.credentialFields.some((item) => item.name === field.name && item.configured) ? '••••••••' : 'Not configured')
+                        : (selectedConnection?.configuration[field.name] ?? 'Not configured')}
+                      canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  ))}
+                </div>}
             <div className="connector-save-footer">
               <div className="connector-test-state" aria-live="polite">
                 <span className={`connector-test-result ${testStatusClass}`}>{testStatusLabel}</span>
@@ -883,14 +922,20 @@ function ConnectorSettingsWorkspace({
                   : (provider.test || selectedConnection?.testStatus === 'Test unavailable')
                     && selectedConnection?.lastTestMessage && <span>{selectedConnection.lastTestMessage}</span>}
                 {selectedConnection?.lastTestedAt && <time dateTime={selectedConnection.lastTestedAt}>Last tested {new Date(selectedConnection.lastTestedAt).toLocaleString()}</time>}
-                {connectionIsDirty && <span>Save connection changes before testing.</span>}
+                {editingConnection && connectionIsDirty && <span>Save connection changes before testing.</span>}
                 <p className="connector-security-note">Credentials are encrypted at rest and are never returned to the browser. Leave a saved secret blank to keep it unchanged.</p>
               </div>
               <div className="connector-connection-actions">
-                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || savingConnection || testingConnection || editingProvider}>
+                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || editingConnection || savingConnection || testingConnection || editingProvider}>
                   {testingConnection ? 'Testing…' : 'Test Connection'}
                 </button>
-                <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}><Save size={14} />{savingConnection ? 'Saving…' : 'Save Connection'}</button>
+                {editingConnection && canManage && <>
+                  <button type="button" className="btn" disabled={savingConnection}
+                    onClick={() => selectConnection(selectedConnectionId)}>Cancel</button>
+                  <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}>
+                    <Save size={14} />{savingConnection ? 'Saving…' : 'Save changes'}
+                  </button>
+                </>}
               </div>
             </div>
           </div>
@@ -1284,7 +1329,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     window.matchMedia('(max-width: 600px)').matches ? 'Phone' : 'Desktop');
   const [workspace, setWorkspace] = useState<WorkspaceId>(() => route.kind === 'setup' ? route.workspace : 'home');
   const [quickFind, setQuickFind] = useState('');
-  const [globalSearch, setGlobalSearch] = useState('');
+  const [recordSearch, setRecordSearch] = useState('');
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [setupSidebarCollapsed, setSetupSidebarCollapsed] = useState(false);
   const [objectSearch, setObjectSearch] = useState('');
@@ -1311,6 +1356,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [notificationsUnreadCount, setNotificationsUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(notificationRef, notificationsOpen, () => setNotificationsOpen(false));
   const [approvalRequests, setApprovalRequests] = useState<ApprovalRequestMetadata[]>([]);
   const [approvalBusyId, setApprovalBusyId] = useState('');
   const [approvalProcesses, setApprovalProcesses] = useState<ApprovalProcessMetadata[]>([]);
@@ -1846,8 +1893,14 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const currentAppNavigation = currentApp
     ? reconcileNavigationOrder(currentApp.navigationItems ?? [], currentApp.navigationPageApiNames ?? [], currentApp.navigationOrder ?? [])
     : [];
-  const currentAppObjectTabs = currentAppNavigation.filter((entry) =>
-    entry.type === 'Object' && objects.some((object) => object.apiName === entry.apiName)).map((entry) => entry.apiName);
+  // Build the complete navigable object catalogue from tenant metadata, not app tabs.
+  // The field map reflects effective RBAC; record APIs check object permissions again.
+  const readableRecordObjects = useMemo(() => objects.filter((item) =>
+    item.fields.some((field) => currentFieldAccess[`${item.apiName}.${field.apiName}`]?.read)
+  ), [objects, currentFieldAccess]);
+  useEffect(() => { setRecordSearch(''); }, [route.kind, route.kind === 'record-list' || route.kind === 'record-detail' ? route.objectApiName : '']);
+  const appUtilityRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(appUtilityRef, Boolean(activeUtility), () => setActiveUtility(null));
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     const allowedGroups = setupNavigation.filter((group) => group.group !== 'Platform Administration' || canManagePlatformTenants);
@@ -1972,6 +2025,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       return;
     }
     if (item === 'Named Devices') {
+      if (!readableRecordObjects.some((object) => object.apiName === 'NamedDevice__c')) {
+        notify('Named Devices requires Read access in your Profile or Permission Set.');
+        return;
+      }
       navigateRoute({ kind: 'record-list', objectApiName: 'NamedDevice__c' });
       return;
     }
@@ -3363,29 +3420,33 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
-        <button type="button" disabled={!currentAppObjectTabs.length}
+        <button type="button" className="header-home-link" onClick={() =>
+          navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
+          <Monitor size={16} />Home
+        </button>
+        <button type="button" disabled={!readableRecordObjects.length}
           className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
           onClick={() => {
-            const targetObject = currentAppObjectTabs[0];
+            const targetObject = route.kind === 'record-list' || route.kind === 'record-detail'
+              ? route.objectApiName : readableRecordObjects[0]?.apiName;
             if (targetObject) navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
           }}><Database size={16} />Records</button>
-        {currentAppObjectTabs.length > 1 && <select className="header-record-object-select" aria-label="Switch records object"
-          value={(route.kind === 'record-list' || route.kind === 'record-detail') && currentAppObjectTabs.includes(route.objectApiName) ? route.objectApiName : ''}
-          onChange={(event) => {
-            if (event.target.value) navigateRoute({ kind: 'record-list', objectApiName: event.target.value, appId: currentApp?.apiName ?? 'Records' });
-          }}>
-          <option value="">Choose records…</option>
-          {currentAppObjectTabs.map((apiName) => <option key={apiName} value={apiName}>{objects.find((object) => object.apiName === apiName)?.pluralLabel ?? apiName}</option>)}
-        </select>}
-        <div className="global-search">
-          <Search size={15} />
-          <input
-            aria-label="Search this list..."
-            value={globalSearch}
-            onChange={(event) => setGlobalSearch(event.target.value)}
-            placeholder="Search this list..."
-          />
-          <kbd>⌘ K</kbd>
+        <RecordObjectPicker objects={readableRecordObjects}
+          selected={route.kind === 'record-list' || route.kind === 'record-detail' ? route.objectApiName : ''}
+          onSelect={(apiName) => navigateRoute({ kind: 'record-list', objectApiName: apiName, appId: currentApp?.apiName ?? 'Records' })} />
+        <div className="header-searches">
+          <GlobalRecordSearch objects={readableRecordObjects}
+            searchObject={(apiName, term) => apiRequest<{ records: RecordData[] }>(
+              `/records/${encodeURIComponent(apiName)}?${new URLSearchParams({ search: term, limit: '5', offset: '0' })}`)}
+            onSelect={(objectApiName, recordId) => navigateRoute({
+              kind: 'record-detail', objectApiName, recordId, appId: currentApp?.apiName ?? 'Records'
+            })} />
+          {route.kind === 'record-list' && <label className="header-list-search">
+            <Search size={15} aria-hidden="true" />
+            <input type="search" aria-label={`Search ${objects.find((item) => item.apiName === route.objectApiName)?.pluralLabel ?? 'current object'} records`}
+              placeholder={`Search ${objects.find((item) => item.apiName === route.objectApiName)?.pluralLabel ?? 'records'}…`}
+              value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} />
+          </label>}
         </div>
         <div className="header-tools">
           <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt}
@@ -3394,7 +3455,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
           <ConnectionHealthIndicator />
-          <div className="notification-center">
+          <div className="notification-center" ref={notificationRef}>
             <button className="icon-button notification-button" aria-label={`Notifications${notificationsUnreadCount ? `, ${notificationsUnreadCount} unread` : ''}`} aria-expanded={notificationsOpen} aria-controls="notification-panel" onClick={toggleNotifications}>
               <Bell size={17} />{notificationsUnreadCount > 0 && <span className="notification-count">{notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}</span>}
             </button>
@@ -3427,8 +3488,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         </div>
       </header>
 
-      {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
-        <div className="app-title">
+      {route.kind !== 'setup' && <div className="app-strip" ref={appUtilityRef} style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
+        {currentApp?.apiName !== 'Records' && <div className="app-title">
           <span className="app-icon"><Database size={18} /></span>
           {apps.length > 1
             ? <select className="app-title-switcher" aria-label="Switch app" value={currentApp?.apiName ?? ''}
@@ -3436,7 +3497,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
                 {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
               </select>
             : <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>}
-        </div>
+        </div>}
         <nav className="primary-tabs" aria-label="Workspace navigation">
           {currentAppNavigation.filter((entry) => entry.type === 'App Page').map((entry) => {
             const apiName = entry.apiName;
@@ -3445,10 +3506,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             return <button className={route.kind === 'app-page' && route.pageApiName === apiName ? 'primary-tab active' : 'primary-tab'}
               key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp?.apiName ?? '', pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
           })}
-          <button className={route.kind === 'app-home' ? 'primary-tab active' : 'primary-tab'}
-            onClick={() => navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
-            <Monitor className="rail-icon" size={17} />Home
-          </button>
+
         </nav>
         {currentApp?.utilityItems.map((utility) => <button className="app-utility-button" key={utility}
           aria-expanded={activeUtility === utility} onClick={() => setActiveUtility((current) => current === utility ? null : utility)}>{utility}</button>)}
@@ -3522,7 +3580,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
-            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={globalSearch} onNavigate={navigateRoute} />}
+            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={recordSearch} onNavigate={navigateRoute} />}
           {route.kind === 'route-alias' && <section className="setup-card" role="status">
             {routeAliasError ? <p role="alert">{routeAliasError}</p> : <p>Resolving route alias…</p>}
           </section>}
@@ -3622,6 +3680,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           )}
           {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages}
             preparedAppId={pageCreationAppContext[page.apiName] ?? ''}
+            dashboards={dashboards}
             onPrepareApp={(pageApiName, appId) => setPageCreationAppContext(current => ({
               ...current, [pageApiName]: appId
             }))}
@@ -3728,6 +3787,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onSaveProvider={saveConnectorProvider}
               onSaveIntegrationConnection={saveIntegrationConnection}
               onTestIntegrationConnection={testIntegrationConnection}
+              canManage={connectorRights.edit}
               onNotify={notify}
             /> : <div className="connector-settings-page"><div className="surface connector-empty">Connector metadata is loading…</div></div>;
           })()}
@@ -3748,7 +3808,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           {route.kind === 'setup' && workspace === 'flow-logs' && (
             <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
           )}
-          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace />}
+          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace canManage={canManageFlows} />}
           {route.kind === 'setup' && workspace === 'flow-builder' && (
             <FlowBuilderWorkspace
               landing={!route.resourceApiName}
@@ -3804,7 +3864,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -4328,7 +4388,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, apps, pages, currentAppId, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -4336,6 +4396,7 @@ function MetadataBoundPageComponent({
   apps: LightningAppMetadata[];
   pages: LightningPageMetadata[];
   currentAppId: string;
+  pageSessionKey: string;
   reports: ReportMetadata[];
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
@@ -4348,7 +4409,7 @@ function MetadataBoundPageComponent({
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
   const customerObjectApiName = String(properties.customerObjectApiName ?? '');
   const [sessionId, setSessionId] = useState(() => {
-    const key = 'metadrive-page-session:' + component.id;
+    const key = 'metadrive-page-session:' + pageSessionKey;
     try {
       let value = window.sessionStorage.getItem(key);
       if (!value) {
@@ -4502,7 +4563,7 @@ function MetadataBoundPageComponent({
         });
       if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
       if (binding.resetSessionOnSuccess === true) {
-        const key = 'metadrive-page-session:' + component.id;
+        const key = 'metadrive-page-session:' + pageSessionKey;
         const newSession = crypto.randomUUID();
         try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
         setSessionId(newSession);
@@ -4629,7 +4690,7 @@ function LightningAppRuntime({
       const content = !isLayoutContainer(component) && typeof component.properties.objectApiName === 'string'
         && component.properties.objectApiName
         ? <MetadataBoundPageComponent definition={definition} component={component}
-            objects={objects} apps={apps} pages={pages} currentAppId={appId} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+            objects={objects} apps={apps} pages={pages} currentAppId={appId} pageSessionKey={appId + ':' + page.apiName} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <RegisteredComponent definition={definition} props={{
             ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
@@ -4642,6 +4703,10 @@ function LightningAppRuntime({
       return page.layoutMode === 'free-canvas' ? rendered
         : <div key={component.id} style={resolveLayoutStyle(component.properties, layoutDevice)}>{rendered}</div>;
     }
+    if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
+      <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
+        request={apiRequest} libraryComponents={libraryComponents} />
+    </section>;
     if (component.type === 'Report Chart') {
       const reportApiName = typeof component.properties.reportApiName === 'string' ? component.properties.reportApiName : '';
       return <section className="record-fields-card surface" key={component.id}>
@@ -4762,10 +4827,8 @@ function RecordWorkspace({
   const [selectedFieldSetApiName, setSelectedFieldSetApiName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [objectPickerSearch, setObjectPickerSearch] = useState('');
+  const search = headerSearch;
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  useEffect(() => { if (route.kind === 'record-list') { setSearch(headerSearch); setListOffset(0); } }, [headerSearch, route.kind]);
   const [listOffset, setListOffset] = useState(0);
   const [listTotal, setListTotal] = useState(0);
   const [listSort, setListSort] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
@@ -5629,6 +5692,10 @@ function RecordWorkspace({
             </form>
           </li>)}</ol>}
       </section>;
+      if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
+        <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
+          request={apiRequest} libraryComponents={libraryComponents}/>
+      </section>;
       if (component.type === 'Report Chart') return <section className="record-fields-card surface" key={component.id}>
         <div className="record-fields-heading"><h2>{component.label}</h2></div>
         <RuntimeReportChart report={reports.find((report) => report.apiName === component.properties.reportApiName)} objects={objects} />
@@ -5765,17 +5832,6 @@ function RecordWorkspace({
       <div className="record-object-icon"><Database size={18} /></div>
       <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
       <div className="records-heading-actions">
-        <div className="records-object-combobox">
-          <input className="form-control" aria-label="Filter objects" value={objectPickerSearch}
-            onChange={(event) => setObjectPickerSearch(event.target.value)} placeholder="Find object…" />
-          <select className="form-control records-object-select" aria-label="Choose object" value={object.apiName}
-            onChange={(event) => { setObjectPickerSearch(''); onNavigate({ kind: 'record-list', objectApiName: event.target.value, appId: route.appId }); }}>
-            {!objects.some((item) => item.apiName === object.apiName && item.pluralLabel.toLowerCase().includes(objectPickerSearch.trim().toLowerCase())) &&
-              <option value={object.apiName}>{object.pluralLabel}</option>}
-            {objects.filter((item) => item.pluralLabel.toLowerCase().includes(objectPickerSearch.trim().toLowerCase()) || item.apiName.toLowerCase().includes(objectPickerSearch.trim().toLowerCase()))
-              .map((item) => <option key={item.apiName} value={item.apiName}>{item.pluralLabel}</option>)}
-          </select>
-        </div>
         <button className="btn" onClick={() => setRefreshKey((current) => current + 1)}><RefreshCw size={14} />Refresh</button>
       </div>
     </div>
@@ -5783,7 +5839,6 @@ function RecordWorkspace({
       <div className="records-list-toolbar">
         <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
         <div className="records-list-actions">
-          <label className="records-search"><Search size={14} /><input aria-label={`Search ${object.pluralLabel}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this list…" /></label>
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
           {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
@@ -6364,25 +6419,43 @@ type AutomationSettingsDraft = {
   conversationIdleMinutes: number;
 };
 
-function AutomationSettingsWorkspace() {
+function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<AutomationSettingsDraft>({
     autoRetryFailedFlows: false, maxRetryAttempts: 10, conversationIdleMinutes: 15
   });
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const beforeEdit = useRef<AutomationSettingsDraft | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
     let active = true;
     void apiRequest<AutomationSettingsDraft>('/metadata/automation-settings')
-      .then((result) => { if (active) setDraft(result); })
+      .then((result) => { if (active) { setDraft(result); setLoaded(true); } })
       .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
 
+  const startEdit = (field: string) => {
+    if (!canManage || editingRow || loading) return;
+    beforeEdit.current = { ...draft };
+    setEditingRow(field);
+    setNotice('');
+    setError('');
+  };
+  const cancelEdit = () => {
+    if (saving) return;
+    if (beforeEdit.current) setDraft(beforeEdit.current);
+    beforeEdit.current = null;
+    setEditingRow(null);
+    setError('');
+  };
   const save = async () => {
+    if (!canManage || !editingRow || saving) return;
     setError('');
     setNotice('');
     setSaving(true);
@@ -6391,6 +6464,8 @@ function AutomationSettingsWorkspace() {
         method: 'PUT', body: JSON.stringify(draft)
       });
       setDraft(result);
+      setEditingRow(null);
+      beforeEdit.current = null;
       setNotice('Process automation settings saved.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -6399,39 +6474,64 @@ function AutomationSettingsWorkspace() {
     }
   };
 
-  return <div className="connector-settings-page">
+  const editable = (key: string) => canManage && !editingRow && !loading;
+  return <div className="connector-settings-page settings-read-first-page">
     <PageHeading eyebrow="Setup / Automation" title="Process Automation Settings"
-      description="Control retries of failed flow executions and inactivity limits for conversational flows." />
-    <section className="surface" style={{ padding: 24, maxWidth: 760 }}>
-      {loading ? <p>Loading process automation settings…</p> : <>
+      description="Review failed-flow retries and conversational inactivity limits." />
+    <section className="surface permission-section" style={{ maxWidth: 800 }}>
+      {loading ? <p>Loading process automation settings…</p> : loaded ? <>
         <h2>Execution safety</h2>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={draft.autoRetryFailedFlows}
-            onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
-          Automatically retry failed flow executions
-        </label>
-        <p className="permission-help">OFF by default. When disabled, failed scheduled runs, paused interviews and platform event deliveries are logged but are not retried. New scheduled occurrences are not disabled.</p>
-        <label className="form-label">Maximum failed attempts before stopping automatic retries
-          <input className="form-control" type="number" min="1" max="20" step="1"
-            value={draft.maxRetryAttempts}
-            onChange={(event) => setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
-        </label>
-        <p className="permission-help">Default: 10 failed attempts. Exhausted scheduled occurrences are recorded as failed, paused interviews stop retrying and undelivered platform events are dead-lettered.</p>
+        <div className="settings-read-first-section">
+          {editingRow === 'autoRetryFailedFlows'
+            ? <div className="settings-edit-row">
+                <label className="checkbox-row">
+                  <input type="checkbox" checked={draft.autoRetryFailedFlows}
+                    onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
+                  Automatically retry failed flow executions
+                </label>
+              </div>
+            : <SettingsViewRow label="Automatically retry failed flow executions"
+                value={draft.autoRetryFailedFlows ? 'On' : 'Off'}
+                canEdit={editable('autoRetryFailedFlows')} onEdit={() => startEdit('autoRetryFailedFlows')} />}
+          <p className="permission-help">Off by default. Disabled retries are logged; new scheduled occurrences can still run.</p>
+          {editingRow === 'maxRetryAttempts'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Maximum failed attempts
+                  <input className="form-control" type="number" min="1" max="20" step="1"
+                    value={draft.maxRetryAttempts} onChange={(event) =>
+                      setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
+                </label>
+              </div>
+            : <SettingsViewRow label="Maximum failed attempts" value={String(draft.maxRetryAttempts)}
+                canEdit={editable('maxRetryAttempts')} onEdit={() => startEdit('maxRetryAttempts')} />}
+          <p className="permission-help">Default: 10. Exhausted deliveries are recorded as failed or dead-lettered.</p>
+        </div>
         <h2>Conversation inactivity</h2>
-        <label className="form-label">Expire inactive conversations after (minutes)
-          <input className="form-control" type="number" min="1" max="1440" step="1"
-            value={draft.conversationIdleMinutes}
-            onChange={(event) => setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
-        </label>
-        <p className="permission-help">Default: 15 minutes. After inactivity, the next incoming message receives a new conversation key. Pending conversational interviews expire without sending late replies. Previous message records are kept.</p>
-        {error && <p role="alert" style={{ color: 'var(--slds-color-text-error, #ba0517)' }}>{error}</p>}
-        {notice && <p role="status">{notice}</p>}
-        <button className="btn btn-brand" type="button" onClick={() => void save()}
-          disabled={saving || !Number.isInteger(draft.maxRetryAttempts) || draft.maxRetryAttempts < 1 || draft.maxRetryAttempts > 20
-            || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
-          {saving ? 'Saving…' : 'Save Settings'}
-        </button>
-      </>}
+        <div className="settings-read-first-section">
+          {editingRow === 'conversationIdleMinutes'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Expire inactive conversations after (minutes)
+                  <input className="form-control" type="number" min="1" max="1440" step="1"
+                    value={draft.conversationIdleMinutes} onChange={(event) =>
+                      setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
+                </label>
+              </div>
+            : <SettingsViewRow label="Conversation idle timeout"
+                value={`${draft.conversationIdleMinutes} minutes`}
+                canEdit={editable('conversationIdleMinutes')} onEdit={() => startEdit('conversationIdleMinutes')} />}
+          <p className="permission-help">Default: 15 minutes. Existing message records are retained after inactivity.</p>
+        </div>
+        {editingRow && canManage && <div className="settings-read-first-toolbar">
+          <button className="btn" type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
+          <button className="btn btn-brand" type="button" onClick={() => void save()}
+            disabled={saving || !Number.isInteger(draft.maxRetryAttempts) || draft.maxRetryAttempts < 1 || draft.maxRetryAttempts > 20
+              || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
+            <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>}
+      </> : null}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {notice && <p className="form-success" role="status">{notice}</p>}
     </section>
   </div>;
 }
@@ -6441,12 +6541,14 @@ type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 
 
 
-function TenantEmailRecoverySettings() {
+function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
   const [smtpCredentialId, setSmtpCredentialId] = useState('');
   const [fromEmail, setFromEmail] = useState('');
   const [ready, setReady] = useState(false);
   const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
   const [permitted, setPermitted] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const original = useRef<{ smtpCredentialId: string; fromEmail: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   useEffect(() => {
@@ -6463,34 +6565,70 @@ function TenantEmailRecoverySettings() {
     return () => { active = false; };
   }, []);
   if (!permitted) return null;
+  const beginEdit = () => {
+    if (!canManage || busy) return;
+    original.current = { smtpCredentialId, fromEmail };
+    setEditing(true);
+    setMessage('');
+  };
+  const cancelEdit = () => {
+    if (busy) return;
+    if (original.current) {
+      setSmtpCredentialId(original.current.smtpCredentialId);
+      setFromEmail(original.current.fromEmail);
+    }
+    original.current = null;
+    setEditing(false);
+    setMessage('');
+  };
   const save = async () => {
+    if (!canManage || !editing || busy) return;
     setBusy(true); setMessage('');
     try {
       await apiRequest('/auth/password-recovery/settings', {
         method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '' })
       });
+      original.current = null;
+      setEditing(false);
       setMessage('Password recovery configuration saved.');
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings'); }
     finally { setBusy(false); }
   };
   return <section className="surface permission-section">
     <h2>Tenant password recovery</h2>
-    <p>Email reset links are delivered through your tenant's SMTP Named Credential. They do not bypass MFA or allow platform staff to access tenant accounts.</p>
-    {!ready && <p role="alert">The server must have a trusted METADRIVE_PASSWORD_RESET_BASE_URL matching an allowed HTTPS web origin before recovery can be enabled.</p>}
-    {message && <p role="status">{message}</p>}
-    <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential</label>
-    <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
-      onChange={(event) => setSmtpCredentialId(event.target.value)}>
-      <option value="">Disabled</option>
-      {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-    </select>
-    <label className="form-label" htmlFor="recovery-sender">Sender email</label>
-    <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
-      onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
-    <button className="btn btn-brand" onClick={() => void save()}
-      disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
-      {busy ? 'Saving…' : 'Save recovery configuration'}
-    </button>
+    <p>Email reset links use the tenant's SMTP Named Credential. They never bypass MFA.</p>
+    {!ready && <p role="alert" className="permission-help">
+      Configure a trusted HTTPS password-reset origin on the server before enabling recovery.
+    </p>}
+    <div className="settings-read-first-section">
+      {editing ? <div className="settings-edit-row">
+        <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential
+          <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
+            onChange={(event) => setSmtpCredentialId(event.target.value)}>
+            <option value="">Disabled</option>
+            {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        <label className="form-label" htmlFor="recovery-sender">Sender email
+          <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
+            onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
+        </label>
+      </div> : <>
+        <SettingsViewRow label="SMTP Named Credential"
+          value={credentials.find((item) => item.id === smtpCredentialId)?.label ?? (smtpCredentialId ? 'Configured' : 'Disabled')}
+          canEdit={canManage} onEdit={beginEdit} />
+        <SettingsViewRow label="Sender email" value={smtpCredentialId ? fromEmail : 'Not configured'}
+          canEdit={canManage} onEdit={beginEdit} />
+      </>}
+    </div>
+    {editing && canManage && <div className="settings-read-first-toolbar">
+      <button type="button" className="btn" disabled={busy} onClick={cancelEdit}>Cancel</button>
+      <button type="button" className="btn btn-brand" onClick={() => void save()}
+        disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
+        <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
+      </button>
+    </div>}
+    {message && <p role="status" className="settings-view-row-help">{message}</p>}
   </section>;
 }
 
@@ -6536,6 +6674,7 @@ function TenantUserLockSettings() {
 function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => void }) {
   const [sessions, setSessions] = useState<Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }>>([]);
   const [password, setPassword] = useState('');
+  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -6551,7 +6690,7 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
       await apiRequest('/auth/sessions/revoke-all', {
         method: 'POST', body: JSON.stringify({ currentPassword: password })
       });
-      setPassword('');
+      setPassword(''); setConfirmingRevoke(false);
       onReauthenticate();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to revoke sessions');
@@ -6566,12 +6705,21 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
       <li key={session.familyId}>Expires {new Date(session.expiresAt * 1000).toLocaleString()}
         {session.mfaVerified ? ' · MFA verified' : ''}</li>
     )}</ul>}
-    <label className="form-label" htmlFor="sessions-revoke-password">Current password</label>
-    <input className="form-control" id="sessions-revoke-password" type="password"
-      autoComplete="current-password" value={password}
-      onChange={(event) => setPassword(event.target.value)} />
-    <button type="button" className="btn" disabled={busy || !password}
-      onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Sign out on all devices'}</button>
+    {!confirmingRevoke && <button type="button" className="btn"
+      onClick={() => setConfirmingRevoke(true)}>Sign out on all devices</button>}
+    {confirmingRevoke && <div className="settings-edit-row">
+      <label className="form-label" htmlFor="sessions-revoke-password">Confirm current password
+        <input className="form-control" id="sessions-revoke-password" type="password"
+          autoComplete="current-password" value={password}
+          onChange={(event) => setPassword(event.target.value)} />
+      </label>
+      <div className="settings-read-first-toolbar">
+        <button type="button" className="btn" disabled={busy}
+          onClick={() => { setPassword(''); setConfirmingRevoke(false); }}>Cancel</button>
+        <button type="button" className="btn btn-brand" disabled={busy || !password}
+          onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Confirm sign out on all devices'}</button>
+      </div>
+    </div>}
   </section>;
 }
 
@@ -6597,9 +6745,11 @@ function TenantSecurityAudit() {
   </section>;
 }
 
-function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void }) {
+function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: () => void; canManage: boolean }) {
   const [mode, setMode] = useState<TenantMfaMode>('Off');
   const [draftMode, setDraftMode] = useState<TenantMfaMode>('Off');
+  const [editingPolicy, setEditingPolicy] = useState(false);
+  const [authenticatorAction, setAuthenticatorAction] = useState<'enroll' | 'disable' | null>(null);
   const [canConfigure, setCanConfigure] = useState(false);
   const [enrolled, setEnrolled] = useState(false);
   const [password, setPassword] = useState('');
@@ -6619,6 +6769,7 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
     return () => { active = false; };
   }, []);
   const savePolicy = async () => {
+    if (!canManage || !canConfigure || !editingPolicy || busy) return;
     setBusy(true); setError(''); setNotice('');
     try {
       await apiRequest('/auth/mfa/policy', { method: 'PUT', body: JSON.stringify({ mode: draftMode }) });
@@ -6665,27 +6816,39 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
     <p>Authenticator-based MFA is configured separately for each tenant. Server-side policy controls sign-in and API access.</p>
     {error && <p className="auth-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {canConfigure && <>
-      <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy</label>
-      <select className="form-control" id="tenant-mfa-mode" value={draftMode}
-        onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
-        <option value="Off">Off — no MFA challenge</option>
-        <option value="Optional">Optional — individual users can enroll</option>
-        <option value="Required">Required — every user must enroll and verify</option>
-      </select>
-      <p>Changing the policy applies to this tenant only. Affected users must sign in again with the required verification.</p>
-      <button className="btn btn-brand" disabled={busy || draftMode === mode} onClick={() => void savePolicy()}>
-        {busy ? 'Saving…' : 'Save tenant MFA policy'}
-      </button>
-    </>}
+    <>
+      <div className="settings-read-first-section">
+        {editingPolicy ? <div className="settings-edit-row">
+          <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy
+            <select className="form-control" id="tenant-mfa-mode" value={draftMode}
+              onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
+              <option value="Off">Off — no MFA challenge</option>
+              <option value="Optional">Optional — individual users can enroll</option>
+              <option value="Required">Required — every user must enroll and verify</option>
+            </select>
+          </label>
+          <p className="settings-view-row-help">Changing the policy may require users to sign in again.</p>
+        </div> : <SettingsViewRow label="Tenant MFA policy" value={mode}
+          canEdit={canManage && canConfigure} onEdit={() => { setDraftMode(mode); setEditingPolicy(true); }} />}
+      </div>
+      {editingPolicy && canManage && <div className="settings-read-first-toolbar">
+        <button className="btn" type="button" disabled={busy}
+          onClick={() => { setDraftMode(mode); setEditingPolicy(false); }}>Cancel</button>
+        <button className="btn btn-brand" type="button" disabled={busy || draftMode === mode}
+          onClick={() => void savePolicy()}>
+          <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>}
+    </>
     <h3>My authenticator</h3>
     <p>{enrolled ? 'Your account has an authenticator enrolled.' : 'Your account has no authenticator enrolled.'}</p>
     {mode === 'Off' && <p>Ask a tenant security administrator to enable Optional MFA before enrolling.</p>}
-    {mode !== 'Off' && !enrolled && <>
+    {mode !== 'Off' && !enrolled && !authenticatorAction && <button className="btn" type="button" onClick={() => setAuthenticatorAction('enroll')}>Set up authenticator</button>}
+    {mode !== 'Off' && !enrolled && authenticatorAction === 'enroll' && <div className="settings-edit-row">
       <label className="form-label" htmlFor="mfa-current-password">Current password</label>
       <input className="form-control" id="mfa-current-password" type="password" autoComplete="current-password"
         value={password} onChange={(event) => setPassword(event.target.value)} />
-      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Set up authenticator</button>}
+      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Continue setup</button>}
       {pending && <>
         <p>Add this key to your authenticator app, then enter its six-digit code.</p>
         <p><strong>Setup key:</strong> <code style={{ overflowWrap: 'anywhere' }}>{pending.setup_secret}</code></p>
@@ -6695,8 +6858,13 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
           value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
         <button className="btn btn-brand" disabled={busy || !/^[0-9]{6}$/.test(code)} onClick={() => void confirmEnrollment()}>Confirm enrollment</button>
       </>}
-    </>}
-    {enrolled && mode !== 'Required' && <>
+      <button type="button" className="btn" disabled={busy} onClick={() => {
+        setAuthenticatorAction(null); setPending(null); setPassword(''); setCode('');
+      }}>Cancel</button>
+    </div>}
+    {enrolled && mode !== 'Required' && !authenticatorAction && <button className="btn" type="button"
+      onClick={() => setAuthenticatorAction('disable')}>Disable authenticator</button>}
+    {enrolled && mode !== 'Required' && authenticatorAction === 'disable' && <div className="settings-edit-row">
       <p>To disable your authenticator, confirm your password and a fresh code.</p>
       <label className="form-label" htmlFor="mfa-disable-password">Current password</label>
       <input className="form-control" id="mfa-disable-password" type="password" autoComplete="current-password"
@@ -6706,19 +6874,25 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
         pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
         value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
       <button className="btn" disabled={busy || !password || !/^[0-9]{6}$/.test(code)}
-        onClick={() => void disableEnrollment()}>Disable my MFA</button>
-    </>}
+        onClick={() => void disableEnrollment()}>Confirm disable MFA</button>
+      <button type="button" className="btn" disabled={busy} onClick={() => {
+        setAuthenticatorAction(null); setPassword(''); setCode('');
+      }}>Cancel</button>
+    </div>}
   </section>;
 }
 
-function CompanySettings() {
+function CompanySettings({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<CurrencySettingsMetadata>({
     corporateCurrency: 'USD',
     currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }]
   });
   const [corporateCode, setCorporateCode] = useState('USD');
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const previousValue = useRef<{ draft: CurrencySettingsMetadata; corporateCode: string } | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -6729,6 +6903,7 @@ function CompanySettings() {
         if (active) {
           setDraft(settings);
           setCorporateCode(settings.corporateCurrency);
+          setLoaded(true);
         }
       })
       .catch((loadError: unknown) => {
@@ -6740,6 +6915,23 @@ function CompanySettings() {
     return () => { active = false; };
   }, []);
 
+  const beginEdit = (row: string) => {
+    if (!canManage || saving || loading || editingRow) return;
+    previousValue.current = { draft, corporateCode };
+    setEditingRow(row);
+    setError('');
+    setNotice('');
+  };
+  const cancelEdit = () => {
+    if (saving) return;
+    if (previousValue.current) {
+      setDraft(previousValue.current.draft);
+      setCorporateCode(previousValue.current.corporateCode);
+    }
+    previousValue.current = null;
+    setEditingRow(null);
+    setError('');
+  };
   const setCorporateCurrency = () => {
     const normalized = corporateCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalized)) {
@@ -6753,8 +6945,7 @@ function CompanySettings() {
         corporateCurrency: normalized,
         currencies: hasCorporate
           ? current.currencies.map((currency) => currency.currencyIsoCode === normalized
-            ? { ...currency, conversionRate: 1 }
-            : currency)
+            ? { ...currency, conversionRate: 1 } : currency)
           : [...current.currencies, { currencyIsoCode: normalized, conversionRate: 1 }]
       };
     });
@@ -6763,6 +6954,7 @@ function CompanySettings() {
   };
 
   const save = async () => {
+    if (!canManage || !editingRow || saving) return;
     const normalizedCorporateCode = corporateCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalizedCorporateCode)) {
       setError('Corporate currency must be a three-letter ISO 4217 code.');
@@ -6773,8 +6965,7 @@ function CompanySettings() {
       corporateCurrency: normalizedCorporateCode,
       currencies: hasCorporateCurrency
         ? draft.currencies.map((currency) => currency.currencyIsoCode === normalizedCorporateCode
-          ? { ...currency, conversionRate: 1 }
-          : currency)
+          ? { ...currency, conversionRate: 1 } : currency)
         : [...draft.currencies, { currencyIsoCode: normalizedCorporateCode, conversionRate: 1 }]
     };
     setSaving(true);
@@ -6782,11 +6973,12 @@ function CompanySettings() {
     setNotice('');
     try {
       const saved = await apiRequest<CurrencySettingsMetadata>('/metadata/currencies', {
-        method: 'PUT',
-        body: JSON.stringify(settings)
+        method: 'PUT', body: JSON.stringify(settings)
       });
       setDraft(saved);
       setCorporateCode(saved.corporateCurrency);
+      previousValue.current = null;
+      setEditingRow(null);
       setNotice('Company currency settings saved.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -6795,83 +6987,96 @@ function CompanySettings() {
     }
   };
 
-  return (
-    <div className="home-content">
-      <PageHeading eyebrow="Company Settings" title="Company Information" description="Configure the corporate currency and active conversion rates used by currency formulas." />
-      <section className="surface permission-section">
-        <div className="section-toolbar">
-          <div><h2>Currency Settings</h2><p>Rates express units of corporate currency per one unit of the active currency.</p></div>
-          <button className="btn btn-brand" type="button" onClick={() => void save()} disabled={loading || saving}>
-            <Save size={14} />{saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-        {loading ? <p className="permission-help">Loading currency settings…</p> : <>
-          <label className="form-label">Corporate Currency (ISO 4217)
-            <input className="form-control" value={corporateCode} maxLength={3}
-              onChange={(event) => {
-                setCorporateCode(event.target.value.toUpperCase());
-                setError('');
-              }}
-              onBlur={setCorporateCurrency} />
-          </label>
-          <h3 className="permission-section-heading">Active Currencies</h3>
-          <div className="currency-settings-list">
-            {draft.currencies.map((currency, index) => (
-              <div className="currency-setting-row" key={`${currency.currencyIsoCode}-${index}`}>
-                <label className="form-label">Currency Code
-                  <input className="form-control" value={currency.currencyIsoCode} maxLength={3}
-                    disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                    onChange={(event) => {
-                      const currencyIsoCode = event.target.value.toUpperCase();
-                      setDraft((current) => ({
-                        ...current,
-                        currencies: current.currencies.map((item, itemIndex) => itemIndex === index
-                          ? { ...item, currencyIsoCode }
-                          : item)
-                      }));
-                      setNotice('');
-                    }} />
+  const addCurrency = () => {
+    if (!canManage || editingRow || loading) return;
+    const index = draft.currencies.length;
+    beginEdit(`currency-${index}`);
+    setDraft((current) => ({
+      ...current, currencies: [...current.currencies, { currencyIsoCode: '', conversionRate: 1 }]
+    }));
+  };
+
+  return <div className="home-content settings-read-first-page">
+    <PageHeading eyebrow="Company Settings" title="Company Information"
+      description="View your corporate currency and active conversion rates used by currency formulas." />
+    <section className="surface permission-section">
+      <div className="section-toolbar">
+        <div><h2>Currency Settings</h2>
+          <p>Rates express units of corporate currency per one unit of the active currency.</p></div>
+      </div>
+      {loading ? <p className="permission-help">Loading currency settings…</p> : loaded ? <>
+        <div className="settings-read-first-section">
+          {editingRow === 'corporate'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Corporate Currency (ISO 4217)
+                  <input autoFocus className="form-control" value={corporateCode} maxLength={3}
+                    onChange={(event) => { setCorporateCode(event.target.value.toUpperCase()); setError(''); }}
+                    onBlur={setCorporateCurrency} />
                 </label>
-                <label className="form-label">Conversion Rate
-                  <input className="form-control" type="number" min="0" step="any"
-                    value={currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}
-                    disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                    onChange={(event) => {
-                      const conversionRate = Number(event.target.value);
-                      setDraft((current) => ({
-                        ...current,
-                        currencies: current.currencies.map((item, itemIndex) => itemIndex === index
-                          ? { ...item, conversionRate }
-                          : item)
-                      }));
-                      setNotice('');
-                    }} />
-                </label>
-                <button className="btn" type="button" aria-label={`Remove ${currency.currencyIsoCode || 'currency'}`}
-                  disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                  onClick={() => {
-                    setDraft((current) => ({
-                      ...current,
-                      currencies: current.currencies.filter((_item, itemIndex) => itemIndex !== index)
-                    }));
-                    setNotice('');
-                  }}><Trash2 size={14} />Remove</button>
               </div>
-            ))}
-          </div>
-          <button className="btn" type="button" onClick={() => {
-            setDraft((current) => ({
-              ...current,
-              currencies: [...current.currencies, { currencyIsoCode: '', conversionRate: 1 }]
-            }));
-            setNotice('');
-          }}><Plus size={14} />Add Currency</button>
-        </>}
-        {error && <p className="form-error" role="alert">{error}</p>}
-        {notice && <p className="form-success" role="status">{notice}</p>}
-      </section>
-    </div>
-  );
+            : <SettingsViewRow label="Corporate Currency (ISO 4217)" value={draft.corporateCurrency}
+                canEdit={canManage && !editingRow} onEdit={() => beginEdit('corporate')} />}
+        </div>
+        <h3 className="permission-section-heading">Active Currencies</h3>
+        <div className="settings-read-first-section">
+          {draft.currencies.map((currency, index) => (
+            editingRow === `currency-${index}`
+              ? <div className="settings-edit-row" key={`currency-edit-${index}`}>
+                  <div className="settings-edit-row-grid">
+                    <label className="form-label">Currency Code
+                      <input autoFocus className="form-control" value={currency.currencyIsoCode} maxLength={3}
+                        disabled={currency.currencyIsoCode === draft.corporateCurrency}
+                        onChange={(event) => {
+                          const currencyIsoCode = event.target.value.toUpperCase();
+                          setDraft((current) => ({
+                            ...current, currencies: current.currencies.map((item, itemIndex) => itemIndex === index
+                              ? { ...item, currencyIsoCode } : item)
+                          }));
+                        }} />
+                    </label>
+                    <label className="form-label">Conversion Rate
+                      <input className="form-control" type="number" min="0" step="any"
+                        value={currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}
+                        disabled={currency.currencyIsoCode === draft.corporateCurrency}
+                        onChange={(event) => {
+                          const conversionRate = Number(event.target.value);
+                          setDraft((current) => ({
+                            ...current, currencies: current.currencies.map((item, itemIndex) => itemIndex === index
+                              ? { ...item, conversionRate } : item)
+                          }));
+                        }} />
+                    </label>
+                  </div>
+                  {currency.currencyIsoCode !== draft.corporateCurrency && <div className="settings-read-first-toolbar">
+                    <button type="button" className="btn" onClick={() => {
+                      setDraft((current) => ({
+                        ...current, currencies: current.currencies.filter((_item, itemIndex) => itemIndex !== index)
+                      }));
+                      setEditingRow('removed-currency');
+                    }}><Trash2 size={14} />Remove Currency</button>
+                  </div>}
+                </div>
+              : <SettingsViewRow key={`currency-view-${index}`}
+                  label={currency.currencyIsoCode || 'New currency'}
+                  value={`Conversion rate: ${currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}`}
+                  canEdit={canManage && !editingRow && currency.currencyIsoCode !== draft.corporateCurrency}
+                  onEdit={() => beginEdit(`currency-${index}`)} />
+          ))}
+        </div>
+        {canManage && !editingRow && <button className="btn" type="button" onClick={addCurrency}>
+          <Plus size={14} />Add Currency
+        </button>}
+        {canManage && editingRow && <div className="settings-read-first-toolbar">
+          <button className="btn" type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
+          <button className="btn btn-brand" type="button" onClick={() => void save()} disabled={saving}>
+            <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>}
+      </> : null}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {notice && <p className="form-success" role="status">{notice}</p>}
+    </section>
+  </div>;
 }
 
 function ObjectManager({
@@ -7866,6 +8071,7 @@ function ObjectManager({
     </div>}
   </section>;
   const renderSetting = () => {
+    if (selectedSetting === 'Schema Builder') return <SchemaBuilder objects={objects} selectedObjectApiName={object.apiName} onOpenObject={onObjectSelect} onCreateObject={onCreateObject} onNewField={onNewField} />;
     if (selectedSetting === 'Change History') return renderHistory();
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
@@ -8303,7 +8509,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
 }
 
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
+  page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
   preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes
 }: {
   page: LightningPageMetadata;
@@ -8312,6 +8518,7 @@ function PageBuilder({
   apps: LightningAppMetadata[];
   profiles: ProfileMetadata[];
   reports: ReportMetadata[];
+  dashboards: DashboardMetadata[];
   libraryComponents: LibraryComponentMetadata[];
   flows: FlowDefinitionMetadata[];
   onChange: (page: LightningPageMetadata) => void;
@@ -8357,7 +8564,7 @@ function PageBuilder({
   const pageTypeComponents = page.pageType === 'Record Page'
     ? standardPageComponents.map((component) => component.apiName)
     : standardPageComponents
-      .filter((component) => ['Accordion', 'Tabs', 'Report Chart'].includes(component.apiName))
+      .filter((component) => ['Accordion', 'Tabs', 'Report Chart', 'Dashboard'].includes(component.apiName))
       .map((component) => component.apiName);
   const relatedListOptions = [...new Map(objects.flatMap((childObject) => childObject.fields.flatMap((field) => {
     const relationship = field.relationship;
@@ -8375,7 +8582,7 @@ function PageBuilder({
   const savedPageApiName = useRef(page.apiName);
   const [device, setDevice] = useState<'Desktop' | 'Tablet' | 'Phone'>('Desktop');
   const orientation = canvasOrientation(page.canvasWidth, page.canvasHeight);
-  const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields'>('Components');
+  const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields' | 'Layers'>('Components');
   const [paletteSearch, setPaletteSearch] = useState('');
   const [paletteCategory, setPaletteCategory] = useState<(typeof pageBuilderPaletteCategories)[number]>('All Components');
   const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
@@ -8425,6 +8632,7 @@ function PageBuilder({
   const [canvasRefreshKey, setCanvasRefreshKey] = useState(0);
   const [createPageOpen, setCreatePageOpen] = useState(false);
   const [routeDirectoryOpen, setRouteDirectoryOpen] = useState(false);
+  const [dependenciesOpen, setDependenciesOpen] = useState(false);
   const [newPageLabel, setNewPageLabel] = useState('');
   const [newPageType, setNewPageType] = useState<LightningPageMetadata['pageType']>('Record Page');
   const [newPageTemplate, setNewPageTemplate] = useState<LightningPageTemplate>('header-main-sidebar');
@@ -8691,6 +8899,8 @@ function PageBuilder({
         ? { libraryComponentId: custom.apiName, ...(parentId ? { layoutParentId: parentId } : {}) }
         : type === 'Report Chart'
           ? { reportApiName: '' }
+          : type === 'Dashboard'
+            ? { dashboardApiName: '' }
           : type === 'Related List'
             ? { relatedLists: defaultRelatedLists }
             : type === 'Field Section'
@@ -9283,7 +9493,12 @@ function PageBuilder({
               ? libraryPreview
                 ? <div className="component-demo-highlights"><strong>Northwind Traders</strong><div><span>Account owner <b>Alex Morgan</b></span><span>Industry <b>Technology</b></span><span>Annual revenue <b>$2.4M</b></span></div></div>
                 : <div className="component-content-hint">Record actions and key fields appear in the highlights panel.</div>
-              : component.type === 'Report Chart'
+              : component.type === 'Dashboard'
+                ? <div className="report-chart-preview" role="img" aria-label="Dashboard preview">
+                    <strong>{dashboards.find((item) => item.apiName === component.properties.dashboardApiName)?.label ?? 'Choose a published dashboard'}</strong>
+                    <div className="report-chart-bars"><span/><span/><span/><span/></div>
+                  </div>
+                : component.type === 'Report Chart'
                 ? <div className="report-chart-preview">
                   <strong>{reports.find((report) => report.apiName === component.properties.reportApiName)?.label ?? 'Opportunities by stage'}</strong>
                   <div className="report-chart-bars"><span /><span /><span /><span /><span /></div>
@@ -9300,6 +9515,7 @@ function PageBuilder({
                     && component.properties.objectApiName
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
                         objects={objects} apps={apps} pages={pages} currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
+                        pageSessionKey={(builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName}
                         reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
                         onNavigate={() => {}} onLaunchFlow={(flowApiName, inputs) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
@@ -9416,6 +9632,7 @@ function PageBuilder({
           <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
           <button className="btn" type="button" onClick={() => setRouteDirectoryOpen(true)}
             aria-label="Open page routes">Routes</button>
+          <button className="btn" type="button" aria-label="Open page dependencies" onClick={() => setDependenciesOpen(true)}>Dependencies</button>
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
           {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('kiosk')}>Load Kiosk Layout</button>}
           {page.apiName === 'UNE_TILL' && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('till')}>Load Till Layout</button>}
@@ -9476,10 +9693,23 @@ function PageBuilder({
         <aside className="component-panel">
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
+            <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
             {page.pageType === 'Record Page' && <button className={paletteTab === 'Fields' ? 'active' : ''} onClick={() => setPaletteTab('Fields')}>Fields</button>}
           </div>
           <div className="component-search"><Search size={14} /><input value={paletteSearch} onChange={(event) => setPaletteSearch(event.target.value)} placeholder={`Search ${paletteTab.toLowerCase()}…`} aria-label={`Search ${paletteTab.toLowerCase()}`} /></div>
-          {paletteTab === 'Components' ? <>
+          {paletteTab === 'Layers' ? <nav className="page-layer-tree" aria-label="Page component layers">
+            {page.components.filter(component => !paletteSearch || (component.label + ' ' + component.type).toLowerCase().includes(paletteSearch.toLowerCase())).map(component => {
+              const parent = component.parentId ?? (typeof component.properties.layoutParentId === 'string' ? component.properties.layoutParentId : '');
+              return <div key={component.id} className="page-layer-row" style={{paddingLeft:parent ? 20 : 6}}>
+                <button type="button" className={selectedId === component.id ? 'active btn btn-small' : 'btn btn-small'}
+                  onClick={() => { setSelectedId(component.id); setPageSettingsOpen(false); }}
+                  aria-label={'Select layer ' + component.label}>{component.label}</button>
+                <button type="button" className="icon-button subtle" aria-label={'Toggle layer ' + component.label}
+                  onClick={() => updateComponent(component.id, {visible: !component.visible})}>{component.visible ? '◉' : '○'}</button>
+              </div>;
+            })}
+            {!page.components.length && <p className="properties-help">Add a component to see its layer.</p>}
+          </nav> : paletteTab === 'Components' ? <>
             {page.layoutMode === 'free-canvas' && <div className="palette-note">Free Canvas uses registered components from the shared library.</div>}
             <nav className="component-category-list" aria-label="Component categories">
               {pageBuilderPaletteCategories.map((category) => {
@@ -9681,6 +9911,18 @@ function PageBuilder({
               <textarea id="page-component-accordion-content" className="form-control" rows={4}
                 value={typeof selected.properties.content === 'string' ? selected.properties.content : ''}
                 onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, content: event.target.value } })} />
+            </>}
+            {selected.type === 'Dashboard' && <>
+              <div className="properties-section-title">Dashboard</div>
+              <label className="form-label" htmlFor="page-component-dashboard">Published dashboard</label>
+              <select id="page-component-dashboard" className="form-control"
+                value={typeof selected.properties.dashboardApiName === 'string' ? selected.properties.dashboardApiName : ''}
+                onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, dashboardApiName: event.target.value } })}>
+                <option value="">Select a published dashboard…</option>
+                {dashboards.filter(dashboard => dashboard.status === 'Deployed').map(dashboard =>
+                  <option key={dashboard.apiName} value={dashboard.apiName}>{dashboard.label}</option>)}
+              </select>
+              <p className="properties-help">The live dashboard checks tenant, folder, viewer and record permissions at runtime.</p>
             </>}
             {selected.type === 'Report Chart' && <>
               <div className="properties-section-title">Report</div>
@@ -9897,6 +10139,22 @@ function PageBuilder({
           </>}
         </aside>
       </div>
+      {dependenciesOpen && <div className="modal-backdrop" role="presentation"
+        onMouseDown={event => { if (event.target === event.currentTarget) setDependenciesOpen(false); }}>
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="page-dependencies-title"
+          style={{maxHeight:'85vh',overflowY:'auto'}}>
+          <div className="modal-header"><h2 id="page-dependencies-title">Page dependencies</h2>
+            <button className="btn btn-small" type="button" onClick={() => setDependenciesOpen(false)}>Close</button></div>
+          <p className="modal-copy">References use saved objects, apps, reports, dashboards, components and Flows.</p>
+          <table className="records-table" aria-label="Page dependencies"><thead><tr><th>Type</th><th>Reference</th><th>Status</th><th>Source</th></tr></thead><tbody>
+            {inspectPageDependencies(page, {apps,pages,objects,reports,dashboards,flows,libraryComponents}).map((entry,idx) =>
+              <tr key={entry.kind + ':' + entry.name + ':' + idx}><td>{entry.kind}</td><td>{entry.name}</td>
+                <td>{entry.status}</td><td>{entry.componentId
+                  ? <button className="btn btn-small" type="button" onClick={() => {setSelectedId(entry.componentId!);setDependenciesOpen(false);}}>{entry.description}</button>
+                  : entry.description}</td></tr>)}
+          </tbody></table>
+        </section>
+      </div>}
       {routeDirectoryOpen && <PageRouteDirectory apps={apps} pages={pages} objects={objects}
         initialAppId={builderAppApiName} basePath={import.meta.env.BASE_URL}
         request={request} canManage={canManageRoutes}

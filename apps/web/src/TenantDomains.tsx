@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CircleAlert, Globe2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { CircleAlert, Globe2, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import './TenantDomains.css';
 
 type Domain = { hostname: string; status: 'PENDING' | 'VERIFIED'; createdAt: string; verifiedAt?: string;
@@ -14,6 +14,7 @@ export default function TenantDomains({ request, permitted, tenantId }: {
   const base = tenantId ? '/platform/tenants/' + encodeURIComponent(tenantId) + '/domains' : '/tenant/domains';
   const [domains, setDomains] = useState<Domain[]>([]);
   const [hostname, setHostname] = useState('');
+  const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -35,7 +36,7 @@ export default function TenantDomains({ request, permitted, tenantId }: {
     setBusy(true); setError(''); setNotice('');
     try {
       await request(path, { method, ...(body ? {body: JSON.stringify(body)} : {}) });
-      if (body) setHostname('');
+      if (body) { setHostname(''); setAdding(false); }
       setNotice(method === 'DELETE' ? 'Domain removed and routing revoked.' :
         path.endsWith('/verify') ? 'DNS ownership verified. HTTPS hosting configuration is still required.' :
           'Domain registered. Publish the TXT proof, then verify.');
@@ -69,9 +70,23 @@ export default function TenantDomains({ request, permitted, tenantId }: {
             void perform(base + '/' + encodeURIComponent(domain.hostname), 'DELETE'); }}><Trash2 size={14} /> Remove</button>
       </div>
     </div>)}
-    <div className="tenant-domain-add"><label>Register a domain<input type="text" autoComplete="off" maxLength={253}
-      placeholder="crm.customer.example" value={hostname} onChange={(event) => setHostname(event.target.value)} /></label>
-      <button type="button" className="tenant-button tenant-button-primary" disabled={busy || !hostname.trim() || domains.length >= 5}
-        onClick={() => void perform(base, 'POST', {hostname: hostname.trim()})}>Add domain</button></div>
+    {!adding && domains.length < 5 && <div className="tenant-domain-add">
+      <button type="button" className="tenant-button tenant-button-primary" disabled={busy || loading}
+        onClick={() => setAdding(true)}><Plus size={14} /> Add domain</button>
+    </div>}
+    {adding && <div className="tenant-domain-add tenant-domain-add-edit">
+      <label className="form-label">Domain hostname
+        <input className="form-control" type="text" autoComplete="off" maxLength={253}
+          placeholder="crm.customer.example" value={hostname}
+          onChange={(event) => setHostname(event.target.value)} />
+      </label>
+      <div className="tenant-domain-actions">
+        <button type="button" className="tenant-button" disabled={busy}
+          onClick={() => { setAdding(false); setHostname(''); }}>Cancel</button>
+        <button type="button" className="tenant-button tenant-button-primary"
+          disabled={busy || !hostname.trim() || domains.length >= 5}
+          onClick={() => void perform(base, 'POST', {hostname: hostname.trim()})}>Save domain</button>
+      </div>
+    </div>}
   </section>;
 }
