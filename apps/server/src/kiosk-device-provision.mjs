@@ -15,10 +15,16 @@ export function prepareKioskDevice(tenant, kioskEmail, id, createdAt) {
   if ((tenant.accessControl.users ?? []).some(u => u.username.toLowerCase() === kioskEmail.toLowerCase())) {
     throw Error('This kiosk login already exists');
   }
+  // One-time compatibility migration for kiosks installed before
+  // metadata:read was part of the restricted device profile. The tenant can
+  // still change permissions later through its own RBAC management.
+  const profiles = tenant.accessControl.profiles.map(profile => profile.id !== 'kiosk-user'
+    ? profile : {...profile,systemPermissions:[...new Set([...(profile.systemPermissions ?? []),'metadata:read','flows:run'])]});
   return {
     ...tenant,
     accessControl: {
       ...tenant.accessControl,
+      profiles,
       users: [...(tenant.accessControl.users ?? []), {
         id, name:'Kiosk Device',username:kioskEmail,role:'Kiosk',
         roleId:(tenant.accessControl.roles ?? []).find(r=>r.id==='role-standard-user')?.id
