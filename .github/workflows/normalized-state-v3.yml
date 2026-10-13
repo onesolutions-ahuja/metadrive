@@ -10,6 +10,9 @@ on:
       - 'apps/server/test/normalized-state-*.mjs'
       - 'apps/server/scripts/copy-normalized-state-on-restore.mjs'
       - 'apps/server/src/postgres-state.ts'
+      - 'apps/server/src/normalized-object-schema.mjs'
+      - 'apps/server/src/normalized-typed-records.mjs'
+      - 'apps/server/test/normalized-typed-field-widen.integration.test.mjs'
       - 'apps/server/scripts/copy-runtime-assets.mjs'
       - 'apps/server/test/normalized-api.integration.test.mjs'
       - '.github/workflows/normalized-state-v3.yml'
@@ -51,6 +54,8 @@ jobs:
         run: node --test --test-concurrency=1 apps/server/test/normalized-state-tree.test.mjs apps/server/test/normalized-state-runtime.integration.test.mjs
       - name: Verify original application build
         run: npm run build
+      - name: Verify safe typed field widening and no-loss rollback
+        run: node --test apps/server/test/normalized-object-schema.test.mjs apps/server/test/normalized-typed-field-widen.integration.test.mjs
       - name: End-to-end SQL-only login, CRUD, Flow execution and restart
         run: node --test --test-concurrency=1 apps/server/test/normalized-api.integration.test.mjs
       - name: Existing Flow, named-credential and RBAC tests
