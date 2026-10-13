@@ -1166,6 +1166,19 @@ const flowResourceSchema = z.object({
   availableForOutput: z.boolean(),
   value: z.unknown().optional()
 });
+// Declarative, version-safe Flow Test cases. Tests never run during normal
+// record processing; authoring and explicit debug/run-tests actions are isolated.
+const flowTestCaseSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().trim().min(1).max(120),
+  input: z.record(z.unknown()).default({}),
+  event: z.enum(['created', 'updated', 'deleted']).optional(),
+  record: z.record(z.unknown()).optional(),
+  prior: z.record(z.unknown()).nullable().optional(),
+  isClone: z.boolean().default(false),
+  expectedStatus: z.enum(['completed', 'waiting', 'skipped']).default('completed'),
+  expectedOutputs: z.record(z.unknown()).default({})
+}).strict();
 const flowVersionSchema = z.object({
   versionNumber: z.number().int().positive(),
   status: z.enum(['Draft', 'Active', 'Obsolete']),
@@ -1196,8 +1209,23 @@ const flowSchema = z.object({
   elements: z.array(flowElementSchema).min(1),
   connectors: z.array(flowConnectorSchema),
   resources: z.array(flowResourceSchema),
-  versions: z.array(flowVersionSchema)
+  versions: z.array(flowVersionSchema),
+  tests: z.array(flowTestCaseSchema).max(100).optional()
 }).superRefine((flow, context) => {
+  if (flow.tests && new Set(flow.tests.map((item) => item.id)).size !== flow.tests.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['tests'], message: 'Flow Test IDs must be unique' });
+  }
+  if (flow.tests) {
+    flow.tests.forEach((item, index) => {
+      if (flow.flowType === 'Record-Triggered Flow') {
+        if (!item.event || !item.record) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['tests', index], message: 'Record-triggered tests require an event and record sample' });
+        }
+      } else if (item.event || item.record || item.prior) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['tests', index], message: 'Only record-triggered Flow tests can contain record/trigger fixtures' });
+      }
+    });
+  }
   const ids = new Set<number>();
   for (const [index, element] of flow.elements.entries()) {
     if (ids.has(element.id)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['elements', index, 'id'], message: 'Element IDs must be unique' });
