@@ -1559,7 +1559,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         if (fastEntryRoute) {
           // Trusted tenant-scoped RBAC bootstrap is returned with successful
           // refresh/login: render immediately without 4 more HTTP round trips.
-          let [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
+          const [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
             ? [
                 { objects: entryTiming.landing.objects },
                 { pages: entryTiming.landing.pages },
@@ -1581,20 +1581,21 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             && (!firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length)
             ? await readOfflineMetadata({ userId:signedIn.id, tenantId:signedIn.tenantId }).catch(() => null)
             : null;
+          const displayObjects = firstObjects.objects.length ? firstObjects.objects : (offlineView?.objects ?? []) as ObjectMetadata[];
+          const displayPages = firstPages.pages.length ? firstPages.pages : (offlineView?.pages ?? []) as LightningPageMetadata[];
+          const displayApps = firstApps.apps.length ? firstApps.apps : (offlineView?.apps ?? []) as LightningAppMetadata[];
           if (offlineView) {
-            if (!firstObjects.objects.length) firstObjects.objects = offlineView.objects as ObjectMetadata[];
-            if (!firstPages.pages.length) firstPages.pages = offlineView.pages as LightningPageMetadata[];
-            if (!firstApps.apps.length) firstApps.apps = offlineView.apps as LightningAppMetadata[];
+            setLibraryComponents(offlineView.components as LibraryComponentMetadata[]);
             setToast('Showing last saved page layout. Cloud actions require a connection.');
           }
-          if (firstObjects.objects.length) {
-            setObjects(firstObjects.objects);
-            setObject(firstObjects.objects.find((item) => item.apiName === object.apiName) ?? firstObjects.objects[0]);
+          if (displayObjects.length) {
+            setObjects(displayObjects);
+            setObject(displayObjects.find((item) => item.apiName === object.apiName) ?? displayObjects[0]);
           }
-          if (firstPages.pages.length) setPages(firstPages.pages);
-          setApps(firstApps.apps);
-          if (!firstApps.apps.some((item) => item.apiName === currentAppId))
-            setCurrentAppId(firstApps.apps[0]?.apiName ?? '');
+          if (displayPages.length) setPages(displayPages);
+          setApps(displayApps);
+          if (!displayApps.some((item) => item.apiName === currentAppId))
+            setCurrentAppId(displayApps[0]?.apiName ?? '');
           setCurrentProfileId(firstSession.user.profileId);
           setCurrentFieldAccess(firstSession.user.fieldAccess);
           setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
