@@ -82,7 +82,7 @@ export default function PageRouteDirectory({
     setAliasError('');
   }
   async function saveAlias() {
-    if (!chosen || !/^[a-z][a-z0-9-]{1,62}$/.test(aliasSlug)) {
+    if (!chosen || !/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$/.test(aliasSlug)) {
       setAliasError('Choose an active destination and a lowercase alias of 2–63 characters.');
       return;
     }
