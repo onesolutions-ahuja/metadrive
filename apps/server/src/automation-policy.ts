@@ -23,11 +23,7 @@ export function retryBudgetExhausted(nextAttempt: number, maximum: number): bool
 }
 
 export function retryDelayMs(attempt: number): number {
-  // Retry counters are durable metadata; reject corrupt counters rather than
-  // passing NaN or an unsafe delay into the scheduler's next-run timestamp.
-  if (!Number.isSafeInteger(attempt) || attempt < 1)
-    throw new Error('Invalid automation retry attempt');
-  return Math.min(60 * 60_000, 60_000 * 2 ** Math.min(attempt - 1, 6));
+  return Math.min(60 * 60_000, 60_000 * 2 ** Math.min(Math.max(attempt - 1, 0), 6));
 }
 
 export function expiredConversationInterview(
