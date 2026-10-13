@@ -2552,3 +2552,39 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 
 .audit-page-heading { margin: 0 0 6px; font-size: 22px; font-weight: 700; line-height: 1.25; }
 .audit-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+
+/* UI visual audit Phase 1: App Manager control geometry.
+   Keep dense builders and data tables unchanged; clickable checkbox labels
+   already provide a 44px hit area. */
+.setup-layout .permission-section label.form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-layout .permission-section label.form-label > .form-control,
+.setup-layout .permission-section label.form-label > .app-manager-color-control {
+  margin-top: 0;
+}
+.setup-layout .permission-section label.form-label > input.form-control:not([type="checkbox"]):not([type="radio"]),
+.setup-layout .permission-section label.form-label > select.form-control,
+.setup-layout .permission-section .app-manager-color-control > input {
+  box-sizing: border-box;
+  min-height: 40px;
+}
+.setup-layout .quick-find-input {
+  box-sizing: border-box;
+  min-height: 40px;
+}
+.setup-layout .quick-find-input > input {
+  min-height: 38px;
+}
+.setup-layout .app-manager-fieldset {
+  padding: 20px;
+}
+.setup-layout .app-manager-checks label {
+  min-height: 44px;
+}
+@media (max-width: 520px) {
+  .setup-layout .app-manager-fieldset { padding: 16px; }
+}
