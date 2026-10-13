@@ -45,13 +45,13 @@ export function postgresFieldType(dataType) {
 export function canWidenPhysicalFieldType(beforeDataType, afterDataType) {
   const before=postgresFieldType(beforeDataType),after=postgresFieldType(afterDataType);
   if(before===after) return true;
-  const varchar=(type)=>/^VARCHAR\\((\\d+)\\)$/.exec(type);
+  const varchar=(type)=>/^VARCHAR\((\d+)\)$/.exec(type);
   const oldText=varchar(before),newText=varchar(after);
   if(oldText) {
     if(after==='TEXT') return true;
     return Boolean(newText && Number(newText[1])>=Number(oldText[1]));
   }
-  const numeric=(type)=>/^NUMERIC\\((\\d+),(\\d+)\\)$/.exec(type);
+  const numeric=(type)=>/^NUMERIC\((\d+),(\d+)\)$/.exec(type);
   const oldNumeric=numeric(before),newNumeric=numeric(after);
   if(oldNumeric) {
     if(after==='NUMERIC') return true;
