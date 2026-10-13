@@ -55,3 +55,31 @@ test('Installed POS provisions editable landing page before licence activation',
  assert.equal(installed.apps.find(a=>a.apiName==='POSApp')?.navigationPageApiNames?.includes('UNE_POS'),true);
  assert.deepEqual(applyInstallableAppPackages(installed,catalog),installed);
 });
+
+test('POS installer backfills missing administrator object and field permissions without changing explicit denies',()=>{
+  const tenant=baseTenant();
+  tenant.accessControl.profiles.push({
+    id:'system-administrator',label:'System Administrator',
+    objectPermissions:{Contact:{read:false,create:false,edit:false,delete:false}},
+    fieldPermissions:{'Contact.Name':{read:false,edit:false}},
+    systemPermissions:[],appPermissions:{},tabPermissions:{}
+  });
+  const installed=applyInstallableAppPackages(tenant,catalog);
+  const admin=installed.accessControl.profiles.find(p=>p.id==='system-administrator');
+  for(const apiName of ['Product','Cart__c','CartLine__c','Sale__c','SaleItem__c']){
+    assert.equal(admin.objectPermissions[apiName].read,true,apiName+' read');
+    assert.equal(admin.fieldPermissions[apiName+'.Name'].read,true,apiName+' Name field');
+  }
+  assert.equal(admin.objectPermissions['CartLine__c'].create,true);
+  assert.deepEqual(admin.objectPermissions.Contact,{read:false,create:false,edit:false,delete:false});
+  assert.deepEqual(admin.fieldPermissions['Contact.Name'],{read:false,edit:false});
+  assert.deepEqual(applyInstallableAppPackages(installed,catalog),installed);
+});
+test('POS installer preserves explicitly denied product read permission',()=>{
+  const tenant=baseTenant();
+  tenant.accessControl.profiles.push({id:'system-administrator',objectPermissions:{Product:{read:false,create:false,edit:false,delete:false}},fieldPermissions:{'Product.Name':{read:false,edit:false}},systemPermissions:[],appPermissions:{},tabPermissions:{}});
+  const installed=applyInstallableAppPackages(tenant,catalog);
+  const admin=installed.accessControl.profiles.find(p=>p.id==='system-administrator');
+  assert.equal(admin.objectPermissions.Product.read,false);
+  assert.equal(admin.fieldPermissions['Product.Name'].read,false);
+});
