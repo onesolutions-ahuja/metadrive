@@ -141,7 +141,7 @@ try {
   // Verify Page Builder offers typed destinations and the computed safe route.
   await page.goto(site + '/une/setup/page-builder/' + sourceId);
   await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
-  await page.getByRole('tab', { name: 'Data & Actions' }).click();
+  await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const inspector = page.locator('.metadata-navigation-target').first();
   await inspector.waitFor();
   assert.equal(await inspector.locator('select').nth(0).inputValue(), 'App Page');
@@ -168,7 +168,7 @@ try {
   assert.equal(saved.components[0].properties.actionFlows.browse.navigationPageApiName, targetId);
   await page.reload();
   await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
-  await page.getByRole('tab', { name: 'Data & Actions' }).click();
+  await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const reopened = page.locator('.metadata-navigation-target').first();
   await reopened.waitFor();
   assert.equal(await reopened.locator('select').nth(0).inputValue(), 'App Page');
