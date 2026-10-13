@@ -188,6 +188,32 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     assert.equal((await api('/component-library/' + privateComponent.apiName + '/history', operatorToken)).status, 404);
     assert.equal((await api('/component-library/' + privateComponent.apiName, operatorToken, 'PUT', privateComponent)).status, 404);
     assert.equal((await api('/component-library/' + privateComponent.apiName, operatorToken, 'DELETE')).status, 404);
+
+    // Same API name is a tenant-local identity, not a global registry lock.
+    const operatorVersion = {
+      ...privateComponent,
+      label: 'Platform owner tile',
+      jsxSource: 'export default function Component() { return <div>Operator-only tile</div>; }'
+    };
+    const operatorCreate = await api('/component-library', operatorToken, 'POST', operatorVersion);
+    assert.equal(operatorCreate.status, 201, JSON.stringify(operatorCreate.data));
+    assert.notEqual(operatorCreate.data.component.tenantId, createdComponent.data.component.tenantId);
+    const operatorCatalogAfter = await api('/component-library', operatorToken);
+    const operatorOwn = operatorCatalogAfter.data.components.find((item: any) => item.apiName === privateComponent.apiName);
+    assert.equal(operatorOwn?.jsxSource, operatorVersion.jsxSource);
+    const betaCatalogAfter = await api('/component-library', tenantToken);
+    const betaOwn = betaCatalogAfter.data.components.find((item: any) => item.apiName === privateComponent.apiName);
+    assert.equal(betaOwn?.jsxSource, privateComponent.jsxSource);
+    const operatorUpdated = await api('/component-library/' + privateComponent.apiName,
+      operatorToken, 'PUT', {...operatorVersion,label:'Platform tile version two'});
+    assert.equal(operatorUpdated.status, 200, JSON.stringify(operatorUpdated.data));
+    assert.equal(operatorUpdated.data.component.label, 'Platform tile version two');
+    assert.equal((await api('/component-library/' + privateComponent.apiName + '/history', operatorToken)).status, 200);
+    assert.equal((await api('/component-library/' + privateComponent.apiName, operatorToken, 'DELETE')).status, 204);
+    const betaAfterOtherTenantDelete = await api('/component-library', tenantToken);
+    assert.equal(betaAfterOtherTenantDelete.data.components.find((item: any) =>
+      item.apiName === privateComponent.apiName)?.jsxSource, privateComponent.jsxSource,
+      'Deleting one tenant component must preserve the other tenant record');
     assert.equal((await api('/component-library/' + privateComponent.apiName, tenantToken, 'DELETE')).status, 204);
 
     // MD-03.8: tenant usage is scoped, count-only, platform-authorized for
