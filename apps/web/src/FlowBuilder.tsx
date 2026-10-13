@@ -750,6 +750,44 @@ export default function FlowBuilder({
       const outputResources = flow.resources.filter((resource) => resource.type === (recordLimit === 'all' ? 'Record Collection' : 'Record'));
       return <>
         <label className="form-label">Object<select className="form-control" value={displayValue(selected.config.object)} onChange={(event) => setConfig('object', event.target.value)}><option value="">Select object</option>{objects.map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label>
+        {selected.type === 'Create Records' && <>
+          <label className="form-label">How to Set Record Values
+            <select className="form-control" value={displayValue(selected.config.recordSource) || 'fields'}
+              onChange={(event) => onFlowChange({
+                ...flow, elements: flow.elements.map((element) => element.id === selected.id
+                  ? { ...element, config: {
+                    ...element.config, recordSource: event.target.value,
+                    fieldValues: [], field: '', value: '',
+                    sourceCollection: '', outputCollection: ''
+                  } } : element)
+              })}>
+              <option value="fields">Use separate field values (one record)</option>
+              <option value="collection">Use records in a Record Collection</option>
+            </select>
+          </label>
+          {displayValue(selected.config.recordSource) === 'collection' && <>
+            <label className="form-label">Record Collection to Create
+              <select className="form-control" value={displayValue(selected.config.sourceCollection)}
+                onChange={(event) => setConfig('sourceCollection', event.target.value)}>
+                <option value="">Select a collection</option>
+                {flow.resources.filter((resource) => resource.type === 'Record Collection'
+                  && resource.dataType === selected.config.object && resource.isCollection)
+                  .map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}
+              </select>
+            </label>
+            <label className="form-label">Store Created Records In (optional)
+              <select className="form-control" value={displayValue(selected.config.outputCollection)}
+                onChange={(event) => setConfig('outputCollection', event.target.value)}>
+                <option value="">Do not store returned records</option>
+                {flow.resources.filter((resource) => resource.type === 'Record Collection'
+                  && resource.dataType === selected.config.object && resource.isCollection
+                  && resource.name !== selected.config.sourceCollection)
+                  .map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}
+              </select>
+            </label>
+            <p className="settings-panel-copy">Creates up to 200 records from a collection of the selected object. Current-user record and field permissions, object rules, triggers, and rollback apply to every record.</p>
+          </>}
+        </>}
         {selected.type === 'Get Records' && <>
           <label className="form-label">How Many Records to Store<select className="form-control" value={recordLimit} onChange={(event) => setConfig('recordLimit', event.target.value)}><option value="1">Only the first record</option><option value="all">All records</option></select></label>
           <label className="form-label">Sort By<select className="form-control" value={displayValue(selected.config.sortField)} onChange={(event) => setConfig('sortField', event.target.value)}><option value="">No sorting</option>{object?.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select></label>
@@ -759,7 +797,7 @@ export default function FlowBuilder({
           {fieldsToStore && <div className="field-selector-list">{object?.fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={fieldsToStore.includes(field.apiName)} onChange={() => setConfig('fields', fieldsToStore.includes(field.apiName) ? fieldsToStore.filter((name) => name !== field.apiName) : [...fieldsToStore, field.apiName])} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>}
         </>}
         {selected.type !== 'Create Records' && <>{renderConditionLogic('Filter Logic', selected.config.conditionLogic ?? 'All', rowsFrom(selected.config.conditions).length, (logic) => setConfig('conditionLogic', logic))}<label className="form-label">Filter Conditions</label>{renderConditions('conditions', object?.fields ?? [])}</>}
-        {selected.type !== 'Delete Records' && selected.type !== 'Get Records' && <><label className="form-label">Set Field Values</label>{renderFieldValues()}</>}
+        {selected.type !== 'Delete Records' && selected.type !== 'Get Records' && !(selected.type === 'Create Records' && selected.config.recordSource === 'collection') && <><label className="form-label">Set Field Values</label>{renderFieldValues()}</>}
       </>;
     }
     if (selected.type === 'Screen') {

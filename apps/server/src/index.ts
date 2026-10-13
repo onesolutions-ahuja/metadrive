@@ -1,5 +1,6 @@
 import cors from 'cors';
 import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
+import { prepareFlowCreateCollection } from './flow-create-collection.mjs';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation, readDurableAuthLogins, persistDurableAuthLogin, type DurableAuthLogin } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
@@ -17663,25 +17664,50 @@ async function executeFlow(
           const variableName = typeof config.outputVariable === 'string' && config.outputVariable ? config.outputVariable : `element${element.id}`;
           context.variables[variableName] = result;
         } else if (element.type === 'Create Records') {
-          const configuredValues = normalizeRuntimeValues(object, flowFieldValues(config, context));
-          assertFieldEditPermissions(runningPrincipal, tenant, object, configuredValues);
-          const values = applyRecordDefaults(tenantId, tenant, object, configuredValues, currentUserId);
-          validateRuntimeRecord(tenantId, tenant, object, values);
-          const now = new Date().toISOString();
-          let created = calculateFormulaFields(object, stampRecordAuditFields({ ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now }, currentUserId, now), context);
-          await runBeforeSaveRecordTriggeredFlows(
-            tenantId, tenant, currentUserId, objectName, 'created', created, undefined,
-            triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
-          );
-          const beforeSaveValues = normalizeFlowRecordAssignments(object, created, values);
-          created = calculateFormulaFields(object, created, context);
-          validateRuntimeRecord(tenantId, tenant, object, { ...values, ...beforeSaveValues }, created);
-          tenant.records[objectName] = [...records, created];
-          await runRecordTriggeredFlows(
-            tenantId, tenant, currentUserId, objectName, 'created', created, undefined,
-            triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
-          );
-          context.variables[`record${element.id}`] = created;
+          const fromCollection = config.recordSource === 'collection';
+          const collectionName = typeof config.sourceCollection === 'string' ? config.sourceCollection : '';
+          const configuredBatch = fromCollection
+            ? prepareFlowCreateCollection(flow.resources, collectionName, object, context.variables[collectionName])
+            : [flowFieldValues(config, context)];
+          // Validate the whole input collection first; the same tenant transaction
+          // and current-user permissions apply to every DML operation.
+          const normalizedBatch = configuredBatch.map((values) => {
+            const normalized = normalizeRuntimeValues(object, values);
+            assertFieldEditPermissions(runningPrincipal, tenant, object, normalized);
+            return normalized;
+          });
+          const createdRecords: RuntimeRecord[] = [];
+          for (const configuredValues of normalizedBatch) {
+            const values = applyRecordDefaults(tenantId, tenant, object, configuredValues, currentUserId);
+            validateRuntimeRecord(tenantId, tenant, object, values);
+            const now = new Date().toISOString();
+            let created = calculateFormulaFields(object, stampRecordAuditFields({ ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now }, currentUserId, now), context);
+            await runBeforeSaveRecordTriggeredFlows(
+              tenantId, tenant, currentUserId, objectName, 'created', created, undefined,
+              triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
+            );
+            const beforeSaveValues = normalizeFlowRecordAssignments(object, created, values);
+            created = calculateFormulaFields(object, created, context);
+            validateRuntimeRecord(tenantId, tenant, object, { ...values, ...beforeSaveValues }, created);
+            tenant.records[objectName] = [...(tenant.records[objectName] ?? []), created];
+            await runRecordTriggeredFlows(
+              tenantId, tenant, currentUserId, objectName, 'created', created, undefined,
+              triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
+            );
+            createdRecords.push(created);
+          }
+          if (fromCollection) {
+            const outputCollection = typeof config.outputCollection === 'string' ? config.outputCollection : '';
+            if (outputCollection) {
+              const output = flow.resources.find((resource) => resource.name === outputCollection
+                && resource.type === 'Record Collection' && resource.dataType === objectName && resource.isCollection);
+              if (!output) throw new Error(`Create Records "${element.label}" has an invalid output Record Collection resource.`);
+              context.variables[outputCollection] = createdRecords;
+            }
+            context.variables[`record${element.id}`] = createdRecords;
+          } else {
+            context.variables[`record${element.id}`] = createdRecords[0];
+          }
         } else if (element.type === 'Update Records') {
           const values = normalizeRuntimeValues(object, flowFieldValues(config, context));
           assertFieldEditPermissions(runningPrincipal, tenant, object, values);
@@ -18664,6 +18690,32 @@ function validateFlow(
   for (const element of flow.elements) {
     if (!['Start', 'End', 'Assignment', 'Decision', 'Loop', 'Collection Filter', 'Collection Sort', 'Transform', 'Get Records', 'Create Records', 'Update Records', 'Delete Records', 'Roll Back Records', 'Publish Platform Event', 'Subflow', 'Screen', 'Wait', 'Action', 'HTTP Callout', 'Orchestration Stage'].includes(element.type)) {
       errors.push(`Flow element type "${element.type}" is not supported.`);
+    }
+    if (element.type === 'Create Records') {
+      const recordSource = element.config.recordSource ?? 'fields';
+      if (!['fields', 'collection'].includes(String(recordSource))) {
+        errors.push(`Create Records "${element.label}" has an unsupported record source.`);
+      }
+      if (recordSource === 'collection') {
+        const objectName = typeof element.config.object === 'string' ? element.config.object : '';
+        const collectionName = typeof element.config.sourceCollection === 'string'
+          ? element.config.sourceCollection : '';
+        if (!flow.resources.some((resource) => resource.name === collectionName
+          && resource.type === 'Record Collection' && resource.isCollection && resource.dataType === objectName)) {
+          errors.push(`Create Records "${element.label}" requires a Record Collection of the selected object.`);
+        }
+        if (asConfigRows(element.config.fieldValues).length
+          || (typeof element.config.field === 'string' && element.config.field)) {
+          errors.push(`Create Records "${element.label}" cannot mix collection input with individual field assignments.`);
+        }
+        const outputName = typeof element.config.outputCollection === 'string'
+          ? element.config.outputCollection : '';
+        if (outputName && !flow.resources.some((resource) => resource.name === outputName
+          && resource.type === 'Record Collection' && resource.isCollection
+          && resource.dataType === objectName && resource.name !== collectionName)) {
+          errors.push(`Create Records "${element.label}" requires a different writable output Record Collection of the same object.`);
+        }
+      }
     }
     // Validate literal picklist writes against Object Manager metadata before activation.
     if (element.type === 'Create Records' || element.type === 'Update Records') {
