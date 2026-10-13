@@ -2,7 +2,7 @@
 // No business object, field or action is hardcoded into SQL identifiers.
 // Registry UUIDs are durable; removed schema is retained for lossless rollback.
 import {randomUUID} from 'node:crypto';
-import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn} from './normalized-object-schema.mjs';
+import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn,canWidenPhysicalFieldType} from './normalized-object-schema.mjs';
 
 const platformFields=[
   {apiName:'CreatedDate',dataType:'Date/Time'},
@@ -34,8 +34,8 @@ function equal(sqlType,a,b){
   return typeof a==='string'&&a===b;
 }
 async function registry(client) {
-  const objects=await client.query('SELECT object_id,tenant_id,api_name,physical_table FROM md_v2_object_registry WHERE active=true');
-  const fields=await client.query('SELECT field_id,object_id,api_name,physical_column,source_data_type FROM md_v2_field_registry WHERE active=true');
+  const objects=await client.query('SELECT object_id,tenant_id,api_name,object_label,physical_table FROM md_v2_object_registry WHERE active=true');
+  const fields=await client.query('SELECT field_id,object_id,api_name,field_label,physical_column,source_data_type FROM md_v2_field_registry WHERE active=true');
   const byObject=new Map();
   for(const row of objects.rows){
     if(row.physical_table!==tableName(row.object_id)) throw Error('Invalid immutable SQL object table mapping');
@@ -86,7 +86,7 @@ async function prepare(client,state){
   for(const item of expected.values()){
     let current=mapping.get(key(item.tenantId,item.object.apiName));
     if(!current){
-      const dormant=await client.query('SELECT object_id,tenant_id,api_name,physical_table FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=false',[item.tenantId,item.object.apiName]);
+      const dormant=await client.query('SELECT object_id,tenant_id,api_name,object_label,physical_table FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=false',[item.tenantId,item.object.apiName]);
       if(dormant.rowCount){
         const saved=dormant.rows[0];
         if(saved.physical_table!==tableName(saved.object_id)) throw Error('Invalid retired object table identity');
@@ -95,7 +95,7 @@ async function prepare(client,state){
         // field registry rows when restoring it; otherwise creating fresh field
         // IDs would duplicate schema and lose the original column mapping.
         const restored=await client.query(
-          'SELECT field_id,api_name,source_data_type,physical_column,active FROM md_v2_field_registry WHERE object_id=$1',
+          'SELECT field_id,api_name,field_label,source_data_type,physical_column,active FROM md_v2_field_registry WHERE object_id=$1',
           [saved.object_id]);
         const restoredFields=new Map();
         for(const field of restored.rows){
@@ -119,14 +119,21 @@ async function prepare(client,state){
         [objectId,item.tenantId,item.object.apiName,item.object.label??item.object.apiName,plan.table]);
       await client.query(plan.createTable);
       for(const ddl of plan.addColumns) await client.query(ddl);
-      current={object_id:objectId,tenant_id:item.tenantId,api_name:item.object.apiName,physical_table:plan.table,fields:new Map()};
+      current={object_id:objectId,tenant_id:item.tenantId,api_name:item.object.apiName,
+        object_label:item.object.label??item.object.apiName,physical_table:plan.table,fields:new Map()};
       mapping.set(key(item.tenantId,item.object.apiName),current);
+    }
+    const objectLabel=item.object.label??item.object.apiName;
+    if(current.object_label!==objectLabel) {
+      await client.query('UPDATE md_v2_object_registry SET object_label=$2 WHERE object_id=$1',
+        [current.object_id,objectLabel]);
+      current.object_label=objectLabel;
     }
     for(const f of item.fields){
       const sqlType=postgresFieldType(f.dataType);
       let saved=current.fields.get(f.apiName);
       if(!saved){
-        const dormantField=await client.query('SELECT field_id,api_name,source_data_type,physical_column FROM md_v2_field_registry WHERE object_id=$1 AND api_name=$2 AND active=false',[current.object_id,f.apiName]);
+        const dormantField=await client.query('SELECT field_id,api_name,field_label,source_data_type,physical_column FROM md_v2_field_registry WHERE object_id=$1 AND api_name=$2 AND active=false',[current.object_id,f.apiName]);
         if(dormantField.rowCount){
           saved=dormantField.rows[0];
           if(saved.physical_column!==physicalFieldColumn(saved.field_id)) throw Error('Invalid retired field identity');
@@ -139,10 +146,25 @@ async function prepare(client,state){
         await client.query('ALTER TABLE '+current.physical_table+' ADD COLUMN '+column+' '+sqlType);
         await client.query('INSERT INTO md_v2_field_registry(field_id,object_id,api_name,field_label,source_data_type,physical_column) VALUES($1,$2,$3,$4,$5,$6)',
           [fieldId,current.object_id,f.apiName,f.label??f.apiName,String(f.dataType),column]);
-        saved={field_id:fieldId,api_name:f.apiName,source_data_type:String(f.dataType),physical_column:column};
+        saved={field_id:fieldId,api_name:f.apiName,field_label:f.label??f.apiName,source_data_type:String(f.dataType),physical_column:column};
         current.fields.set(f.apiName,saved);
       }
-      if(postgresFieldType(saved.source_data_type)!==sqlType) throw Error('SQL type changed without explicit field migration: '+f.apiName);
+      // All schema changes and registry updates execute in the same transaction
+      // as the normalized graph revision and physical record readback.
+      const oldType=postgresFieldType(saved.source_data_type);
+      if(oldType!==sqlType) {
+        if(!canWidenPhysicalFieldType(saved.source_data_type,f.dataType))
+          throw Error('SQL field type narrowing or incompatible change requires an explicit migration: '+f.apiName);
+        await client.query('ALTER TABLE '+current.physical_table+
+          ' ALTER COLUMN '+saved.physical_column+' TYPE '+sqlType);
+      }
+      const label=f.label??f.apiName;
+      if(saved.source_data_type!==String(f.dataType)||saved.field_label!==label) {
+        await client.query('UPDATE md_v2_field_registry SET source_data_type=$2,field_label=$3 WHERE field_id=$1',
+          [saved.field_id,String(f.dataType),label]);
+        saved.source_data_type=String(f.dataType);
+        saved.field_label=label;
+      }
     }
     const declared=new Set(item.fields.map(f=>f.apiName));
     for(const [name,field] of [...current.fields]){

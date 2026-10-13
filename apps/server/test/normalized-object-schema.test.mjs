@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable} from '../src/normalized-object-schema.mjs';
+import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,canWidenPhysicalFieldType} from '../src/normalized-object-schema.mjs';
 const oid='96120ef5-5b50-4905-bd71-09c85a200000';
 const fid='96120ef5-5b50-4905-bd71-09c85a200001';
 const valid={objectId:oid, fields:{Price__c:{fieldId:fid}}};
@@ -67,4 +67,22 @@ test('metadata planner preserves typed fields and tenant-scoped record identity'
   assert.deepEqual(plan.columns.map(c=>c.sqlType),['BOOLEAN','DATE','TIMESTAMPTZ']);
   assert.match(plan.createTable,/PRIMARY KEY \(tenant_id,record_id\)/);
   assert.ok(![plan.createTable,...plan.addColumns].join(' ').toUpperCase().includes('JSONB'));
+});
+
+test('typed SQL accepts only lossless text and numeric schema expansions',()=>{
+  const widen=canWidenPhysicalFieldType;
+  assert.equal(widen('Text(80)','Text(120)'),true);
+  assert.equal(widen('Text(80)','Long Text Area'),true);
+  assert.equal(widen('Text(120)','Text(80)'),false);
+  assert.equal(widen('Text','Text(120)'),false);
+  assert.equal(widen('Currency(10,2)','Currency(12,2)'),true);
+  assert.equal(widen('Currency(10,2)','Currency(12,4)'),true);
+  assert.equal(widen('Currency(10,2)','Currency(10,4)'),false);
+  assert.equal(widen('Currency(10,2)','Currency(10,1)'),false);
+  assert.equal(widen('Number(10,2)','Number'),true);
+  assert.equal(widen('Number','Number(12,2)'),false);
+  assert.equal(widen('Date','Date/Time'),false);
+  assert.equal(widen('Checkbox','Text'),false);
+  assert.equal(widen('Picklist','Text'),true);
+  assert.equal(widen('Email','Phone'),true);
 });

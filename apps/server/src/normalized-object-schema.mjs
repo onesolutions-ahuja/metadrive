@@ -38,6 +38,31 @@ export function postgresFieldType(dataType) {
   throw Error('Unsupported field type; migration must stop rather than flatten values');
 }
 
+/** Safe, no-loss type expansions for tenant-owned physical SQL columns.
+ * Reductions in text length, integer digits or decimal scale are rejected even
+ * when current records happen to fit: narrowings need an explicit data migration.
+ */
+export function canWidenPhysicalFieldType(beforeDataType, afterDataType) {
+  const before=postgresFieldType(beforeDataType),after=postgresFieldType(afterDataType);
+  if(before===after) return true;
+  const varchar=(type)=>/^VARCHAR\((\d+)\)$/.exec(type);
+  const oldText=varchar(before),newText=varchar(after);
+  if(oldText) {
+    if(after==='TEXT') return true;
+    return Boolean(newText && Number(newText[1])>=Number(oldText[1]));
+  }
+  const numeric=(type)=>/^NUMERIC\((\d+),(\d+)\)$/.exec(type);
+  const oldNumeric=numeric(before),newNumeric=numeric(after);
+  if(oldNumeric) {
+    if(after==='NUMERIC') return true;
+    return Boolean(newNumeric &&
+      Number(newNumeric[2])>=Number(oldNumeric[2]) &&
+      Number(newNumeric[1])-Number(newNumeric[2])>=
+        Number(oldNumeric[1])-Number(oldNumeric[2]));
+  }
+  return false;
+}
+
 /** registry: {objectId: UUID, fields: { [fieldApiName]: {fieldId: UUID} }}.
  * The registry MUST come from a durable SQL mapping; never regenerate IDs on rename.
  * Caller creates/matches metadata registry separately, then executes DDL in a transaction.

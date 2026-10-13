@@ -10939,9 +10939,10 @@ function containsLibraryComponentReference(value: unknown, apiName: string): boo
     (/component(?:api)?name/i.test(key) && item === apiName)
     || containsLibraryComponentReference(item, apiName));
 }
-function findLibraryComponentUsages(platformState: PlatformState, apiName: string): LibraryComponentUsage[] {
+function findLibraryComponentUsages(platformState: PlatformState, apiName: string, ownerTenantId: string): LibraryComponentUsage[] {
   const usages: LibraryComponentUsage[] = [];
   for (const [tenantId, tenant] of Object.entries(platformState.tenants)) {
+    if (tenantId !== ownerTenantId) continue;
     for (const page of tenant.pages) {
       if (page.components.some((component) => component.type === `Custom:${apiName}`
         || containsLibraryComponentReference(component.properties, apiName))) {
@@ -10965,6 +10966,17 @@ function findLibraryComponentUsages(platformState: PlatformState, apiName: strin
     }
   }
   return usages;
+}
+function ownedComponentIndex(apiName: string, tenantId: string): number {
+  return state.libraryComponents.findIndex((component) =>
+    component.apiName === apiName
+    && libraryComponentEditable(component, tenantId, Object.keys(state.tenants)));
+}
+function componentNameTaken(apiName: string, tenantId: string): boolean {
+  return state.libraryComponents.some((component) =>
+    component.apiName.toLowerCase() === apiName.toLowerCase()
+    && (component.trustedBundled === true
+      || libraryComponentVisible(component, tenantId, Object.keys(state.tenants))));
 }
 function usageBlockerDetails(usages: LibraryComponentUsage[], tenantId: string) {
   const own = usages.filter((usage) => usage.tenantId === tenantId)
@@ -10991,7 +11003,13 @@ function syncBundledLibraryComponents(): Promise<void> {
     const imported: LibraryComponent[] = [];
     const trustedUpgrades = new Set<string>();
     for (const entry of manifest) {
-      const existingBundled = state.libraryComponents.find((component) => component.apiName.toLowerCase() === entry.apiName.toLowerCase());
+      const existingBundled = state.libraryComponents.find((component) =>
+      component.apiName.toLowerCase() === entry.apiName.toLowerCase()
+      && component.trustedBundled === true);
+    const legacyCandidate = state.libraryComponents.find((component) =>
+      component.apiName.toLowerCase() === entry.apiName.toLowerCase()
+      && component.trustedBundled !== true);
+
       const jsxPath = resolve(bundledCustomComponentsPath, entry.jsx);
       const cssPath = resolve(bundledCustomComponentsPath, entry.css);
       const jsxRelativePath = relative(bundledCustomComponentsPath, jsxPath);
@@ -11000,13 +11018,17 @@ function syncBundledLibraryComponents(): Promise<void> {
         || isAbsolute(jsxRelativePath) || isAbsolute(cssRelativePath)) {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
       }
-      if (existingBundled) {
-        // Historical bundles are trusted only if their stored source exactly matches the
-        // immutable repository source. A registry override must remain sandboxed.
-        if (existingBundled.jsxSource === readFileSync(jsxPath,'utf8')
-          && existingBundled.cssSource === readFileSync(cssPath,'utf8')
-          && existingBundled.trustedBundled !== true) trustedUpgrades.add(existingBundled.apiName);
-        continue;
+      if (existingBundled) continue;
+      if (legacyCandidate) {
+        // Only old unowned repository-identical bundles can be upgraded.
+        // Never promote tenant-authored code into a globally trusted primitive.
+        if (legacyCandidate.tenantId === undefined
+          && legacyCandidate.jsxSource === readFileSync(jsxPath,'utf8')
+          && legacyCandidate.cssSource === readFileSync(cssPath,'utf8')) {
+          trustedUpgrades.add(legacyCandidate.apiName);
+          continue;
+        }
+        throw new Error('Component API name collides with a reserved trusted component');
       }
       const input = libraryComponentInputSchema.parse({
         apiName: entry.apiName,
@@ -11042,7 +11064,9 @@ function syncBundledLibraryComponents(): Promise<void> {
     }
     if (imported.length || trustedUpgrades.size) {
       const nextState = { ...state, libraryComponents: [
-        ...state.libraryComponents.map((item) => trustedUpgrades.has(item.apiName) ? {...item,trustedBundled:true} : item),
+        ...state.libraryComponents.map((item) =>
+          trustedUpgrades.has(item.apiName) && item.tenantId === undefined
+            ? {...item,trustedBundled:true} : item),
         ...imported
       ] };
       persistState(nextState);
@@ -11080,7 +11104,7 @@ app.post('/api/component-library', requirePermission('components:manage'), async
   const parsed = libraryComponentInputSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid custom component metadata', details: parsed.error.flatten() });
   const principal = getPrincipal(res);
-  if (state.libraryComponents.some((component) => component.apiName.toLowerCase() === parsed.data.apiName.toLowerCase())) {
+  if (componentNameTaken(parsed.data.apiName, principal.tenantId)) {
     return res.status(409).json({ error: `A library component named "${parsed.data.apiName}" already exists` });
   }
   try {
@@ -11110,6 +11134,9 @@ app.post('/api/component-library', requirePermission('components:manage'), async
       publishedVersion: parsed.data.publicationStatus === 'Published' ? 1 : 0,
       revisions: [], trustedBundled: false
     };
+    // JSX compilation yields; another request can register the name meanwhile.
+    if (componentNameTaken(parsed.data.apiName, principal.tenantId))
+      return res.status(409).json({ error: 'Component API name was registered concurrently' });
     const nextState = { ...state, libraryComponents: [...state.libraryComponents, component] };
     persistState(nextState);
     state = nextState;
@@ -11122,13 +11149,13 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
   const apiName = routeParam(req, 'apiName');
   const parsed = libraryComponentInputSchema.safeParse({ ...req.body, apiName });
   if (!parsed.success) return res.status(400).json({ error: 'Invalid custom component metadata', details: parsed.error.flatten() });
-  const existingIndex = state.libraryComponents.findIndex((component) => component.apiName === apiName);
-  if (existingIndex < 0) return res.status(404).json({ error: 'Library component was not found' });
   const principal = getPrincipal(res);
+  const existingIndex = ownedComponentIndex(apiName, principal.tenantId);
+  if (existingIndex < 0) return res.status(404).json({ error: 'Library component was not found' });
   const existing = state.libraryComponents[existingIndex];
   if (!libraryComponentEditable(existing, principal.tenantId, Object.keys(state.tenants)))
     return res.status(404).json({ error: 'Library component was not found' });
-  const usages = findLibraryComponentUsages(state, apiName);
+  const usages = findLibraryComponentUsages(state, apiName, principal.tenantId);
   const unavailableSurfaces = existing.surfaces.filter((surface) =>
     !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
   if (unavailableSurfaces.length) {
@@ -11167,6 +11194,9 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
         revisions: [...(existing.revisions ?? []), ...(existing.status === 'Draft' ? [] : [libraryRevision(existing)])].slice(-100),
         pendingDraft: undefined };
     component.tenantId = principal.tenantId;
+    // Reject stale writes after an asynchronous compiler pass.
+    if (state.libraryComponents[existingIndex] !== existing)
+      return res.status(409).json({ error: 'Component changed while compiling; reload and retry' });
     const libraryComponents = [...state.libraryComponents];
     libraryComponents[existingIndex] = component;
     const nextState = { ...state, libraryComponents };
@@ -11178,13 +11208,14 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
   }
 });
 app.get('/api/component-library/:apiName/history', requirePermission('components:manage'), (req: Request, res: Response) => {
-  const component=state.libraryComponents.find((item)=>item.apiName===routeParam(req,'apiName'));
-  if (!component || !libraryComponentVisible(component, getPrincipal(res).tenantId, Object.keys(state.tenants)))
+  const principal = getPrincipal(res);
+  const component=state.libraryComponents[ownedComponentIndex(routeParam(req,'apiName'), principal.tenantId)];
+  if (!component || !libraryComponentVisible(component, principal.tenantId, Object.keys(state.tenants)))
     return res.status(404).json({error:'Library component was not found'});
   return res.json({apiName:component.apiName,history:libraryHistory(component)});
 });
 app.post('/api/component-library/:apiName/publish', requirePermission('components:manage'), (req: Request, res: Response) => {
-  const apiName=routeParam(req,'apiName'),index=state.libraryComponents.findIndex((item)=>item.apiName===apiName);
+  const apiName=routeParam(req,'apiName'),index=ownedComponentIndex(apiName,getPrincipal(res).tenantId);
   if(index<0)return res.status(404).json({error:'Library component was not found'});
   const existing=state.libraryComponents[index],draft=existing.pendingDraft;
   const principal=getPrincipal(res);
@@ -11201,7 +11232,7 @@ app.post('/api/component-library/:apiName/publish', requirePermission('component
   return res.json({component:next});
 });
 app.post('/api/component-library/:apiName/rollback', requirePermission('components:manage'), (req: Request, res: Response) => {
-  const apiName=routeParam(req,'apiName'),index=state.libraryComponents.findIndex((item)=>item.apiName===apiName);
+  const apiName=routeParam(req,'apiName'),index=ownedComponentIndex(apiName,getPrincipal(res).tenantId);
   if(index<0)return res.status(404).json({error:'Library component was not found'});
   const parsed=z.object({version:z.number().int().positive()}).strict().safeParse(req.body);
   if(!parsed.success)return res.status(400).json({error:'Select a published historical version'});
@@ -11211,7 +11242,7 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
     return res.status(404).json({error:'Library component was not found'});
   const previous=(existing.revisions??[]).find((item)=>item.version===parsed.data.version);
   if(!previous)return res.status(404).json({error:'Published revision not found'});
-  const usages=findLibraryComponentUsages(state,apiName);
+  const usages=findLibraryComponentUsages(state,apiName,principal.tenantId);
   const removed=existing.surfaces.filter((surface)=>!previous.surfaces.includes(surface)&&usages.some((usage)=>usage.surface===surface));
   if(removed.length)return res.status(409).json({error:'Rollback would remove surfaces still in use',dependencies:usageBlockerDetails(usages.filter((u)=>removed.includes(u.surface)),getPrincipal(res).tenantId)});
   const nextVersion=nextLibraryRevision(existing);
@@ -11225,10 +11256,11 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
 app.delete('/api/component-library/:apiName', requirePermission('components:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
   const principal = getPrincipal(res);
-  const component=state.libraryComponents.find((item)=>item.apiName===apiName);
+  const componentIndex=ownedComponentIndex(apiName, principal.tenantId);
+  const component=state.libraryComponents[componentIndex];
   if (!libraryComponentEditable(component,principal.tenantId,Object.keys(state.tenants)))
     return res.status(404).json({ error: 'Library component was not found' });
-  const usages = findLibraryComponentUsages(state, apiName);
+  const usages = findLibraryComponentUsages(state, apiName, principal.tenantId);
   if (usages.length) {
     const dependencies = usageBlockerDetails(usages, principal.tenantId);
     return res.status(409).json({
@@ -11236,7 +11268,7 @@ app.delete('/api/component-library/:apiName', requirePermission('components:mana
       dependencies
     });
   }
-  const nextState = { ...state, libraryComponents: state.libraryComponents.filter((component) => component.apiName !== apiName) };
+  const nextState = { ...state, libraryComponents: state.libraryComponents.filter((_, index) => index !== componentIndex) };
   persistState(nextState);
   state = nextState;
   return res.status(204).end();
