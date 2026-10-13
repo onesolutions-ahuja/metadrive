@@ -12001,3 +12001,122 @@ function Permissions({
             return <tr key={key}><td><strong>{recordType.label}</strong><small>{recordType.developerName}</small></td><td><input type="checkbox" aria-label={`${selectedProfile.label} ${object.label} ${recordType.label} available`} checked={selectedProfile.recordTypePermissions[key] !== false} onChange={() => patchProfile(selectedProfile.id, { recordTypePermissions: { ...selectedProfile.recordTypePermissions, [key]: selectedProfile.recordTypePermissions[key] === false } })} /></td></tr>;
           })}</tbody></table></div>)}
           <h3 className="permission-section-heading">Field Permissions</h3>
+          {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Read</th><th>Edit</th></tr></thead><tbody>{object.fields.map((field) => {
+            const fieldName = `${object.apiName}.${field.apiName}`;
+            const permissions = selectedProfile.fieldPermissions[fieldName] ?? { read: false, edit: false };
+            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['read', 'edit'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${selectedProfile.label} ${object.label}.${field.label} ${permission}`} checked={permissions[permission]} onChange={() => patchProfile(selectedProfile.id, { fieldPermissions: { ...selectedProfile.fieldPermissions, [fieldName]: { ...permissions, [permission]: !permissions[permission] } } })} /></td>)}</tr>;
+          })}</tbody></table></div></details>)}
+        </>}
+        {tab === 'sets' && selectedSet && <>
+          <div className="section-toolbar"><div><h2>{selectedSet.label}</h2><p>Permission Set · {selectedSet.apiName}</p></div><button className="btn" onClick={() => {
+            if (selectedSet.id === 'system-administrator'
+              || draft.users.some((user) => user.permissionSetIds.includes(selectedSet.id))
+              || draft.permissionSetGroups.some((group) => group.permissionSetIds.includes(selectedSet.id))) return;
+            setDraft((current) => ({ ...current, permissionSets: current.permissionSets.filter((item) => item.id !== selectedSet.id) }));
+            setSelectedId('');
+          }} disabled={selectedSet.id === 'system-administrator' || draft.users.some((user) => user.permissionSetIds.includes(selectedSet.id)) || draft.permissionSetGroups.some((group) => group.permissionSetIds.includes(selectedSet.id))}><Trash2 size={14} />Delete</button></div>
+          <div className="permission-form-grid">
+            <label className="form-label">Label<input className="form-control" value={selectedSet.label} onChange={(event) => patchSet(selectedSet.id, { label: event.target.value })} /></label>
+            <label className="form-label">API Name<input className="form-control" value={selectedSet.apiName} onChange={(event) => patchSet(selectedSet.id, { apiName: event.target.value })} /></label>
+            <label className="form-label">License<input className="form-control" value={selectedSet.license} onChange={(event) => patchSet(selectedSet.id, { license: event.target.value })} /></label>
+            <label className="form-label">Description<input className="form-control" value={selectedSet.description} onChange={(event) => patchSet(selectedSet.id, { description: event.target.value })} /></label>
+          </div>
+          <h3 className="permission-section-heading">System Permissions</h3>
+          <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedSet.systemPermissions.includes(key)} onChange={() => patchSet(selectedSet.id, { systemPermissions: toggleString(selectedSet.systemPermissions, key) })} />{label}</label>)}</div>
+          
+          <h3 className="permission-section-heading">Application Access</h3>
+          <p className="permission-help">Navigation access does not grant underlying data permissions.</p>
+          <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
+            <input type="checkbox" checked={Boolean(selectedSet.appPermissions?.[app.apiName])}
+              onChange={(event) => patchSet(selectedSet.id, { appPermissions: { ...selectedSet.appPermissions, [app.apiName]: event.target.checked } })} />
+            {app.label}
+          </label>)}</div>
+          <h3 className="permission-section-heading">Tab Visibility</h3>
+          <div className="permission-check-grid">{objects.map((object) => <label className="checkbox-row" key={object.apiName}>
+            <input type="checkbox" checked={Boolean(selectedSet.tabPermissions?.[object.apiName])}
+              onChange={(event) => patchSet(selectedSet.id, { tabPermissions: { ...selectedSet.tabPermissions, [object.apiName]: event.target.checked } })} />
+            {object.label}
+          </label>)}</div>
+          <h3 className="permission-section-heading">Object Permissions</h3>
+          <div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Object</th>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <th key={permission}>{permission === 'viewAll' ? 'View All' : permission === 'modifyAll' ? 'Modify All' : permission[0].toUpperCase() + permission.slice(1)}</th>)}</tr></thead><tbody>{objects.map((object) => <tr key={object.apiName}><td><strong>{object.label}</strong><small>{object.apiName}</small></td>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${object.label} ${permission}`} checked={Boolean(selectedSet.objectPermissions[object.apiName]?.[permission])} onChange={() => toggleObjectPermission(selectedSet, object.apiName, permission)} /></td>)}</tr>)}</tbody></table></div>
+          <h3 className="permission-section-heading">Record Type Access</h3>
+          {objects.filter((object) => object.recordTypes?.length).map((object) => <div className="permission-table-wrap" key={object.apiName}><table className="slds-table permission-matrix"><thead><tr><th>{object.label}</th><th>Available</th></tr></thead><tbody>{object.recordTypes?.filter((recordType) => recordType.active).map((recordType) => {
+            const key = `${object.apiName}.${recordType.id}`;
+            return <tr key={key}><td><strong>{recordType.label}</strong><small>{recordType.developerName}</small></td><td><input type="checkbox" aria-label={`${selectedSet.label} ${object.label} ${recordType.label} available`} checked={selectedSet.recordTypePermissions[key] === true} onChange={() => patchSet(selectedSet.id, { recordTypePermissions: { ...selectedSet.recordTypePermissions, [key]: selectedSet.recordTypePermissions[key] !== true } })} /></td></tr>;
+          })}</tbody></table></div>)}
+          <h3 className="permission-section-heading">Field Permissions</h3>
+          {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Read</th><th>Edit</th></tr></thead><tbody>{object.fields.map((field) => {
+            const fieldName = `${object.apiName}.${field.apiName}`;
+            const permissions = selectedSet.fieldPermissions[fieldName] ?? { read: false, edit: false };
+            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['read', 'edit'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${object.label}.${field.label} ${permission}`} checked={permissions[permission]} onChange={() => toggleFieldPermission(selectedSet, fieldName, permission)} /></td>)}</tr>;
+          })}</tbody></table></div></details>)}
+        </>}
+        {tab === 'groups' && selectedGroup && <>
+          <div className="section-toolbar"><div><h2>{selectedGroup.label}</h2><p>Permission Set Group · {selectedGroup.apiName}</p></div><button className="btn" onClick={() => {
+            if (draft.users.some((user) => user.permissionSetGroupIds.includes(selectedGroup.id))) return;
+            setDraft((current) => ({ ...current, permissionSetGroups: current.permissionSetGroups.filter((item) => item.id !== selectedGroup.id) }));
+            setSelectedId('');
+          }} disabled={draft.users.some((user) => user.permissionSetGroupIds.includes(selectedGroup.id))}><Trash2 size={14} />Delete</button></div>
+          <div className="permission-form-grid">
+            <label className="form-label">Label<input className="form-control" value={selectedGroup.label} onChange={(event) => patchGroup(selectedGroup.id, { label: event.target.value })} /></label>
+            <label className="form-label">API Name<input className="form-control" value={selectedGroup.apiName} onChange={(event) => patchGroup(selectedGroup.id, { apiName: event.target.value })} /></label>
+            <label className="form-label">Description<input className="form-control" value={selectedGroup.description} onChange={(event) => patchGroup(selectedGroup.id, { description: event.target.value })} /></label>
+          </div>
+          <h3 className="permission-section-heading">Permission Sets in Group</h3>
+          <div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={selectedGroup.permissionSetIds.includes(permissionSet.id)} onChange={() => patchGroup(selectedGroup.id, { permissionSetIds: toggleString(selectedGroup.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div>
+          <h3 className="permission-section-heading">Muted System Permissions</h3>
+          <p className="permission-help">Muted permissions remove grants contributed by this group; direct permission-set assignments remain in effect.</p>
+          <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedGroup.mutedSystemPermissions.includes(key)} onChange={() => patchGroup(selectedGroup.id, { mutedSystemPermissions: toggleString(selectedGroup.mutedSystemPermissions, key) })} />{label}</label>)}</div>
+          
+          <h3 className="permission-section-heading">Muted Application Access</h3>
+          <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
+            <input type="checkbox" checked={Boolean(selectedGroup.mutedAppPermissions?.[app.apiName])}
+              onChange={(event) => patchGroup(selectedGroup.id, { mutedAppPermissions: { ...selectedGroup.mutedAppPermissions, [app.apiName]: event.target.checked } })} />
+            {app.label}
+          </label>)}</div>
+          <h3 className="permission-section-heading">Muted Tab Visibility</h3>
+          <div className="permission-check-grid">{objects.map((object) => <label className="checkbox-row" key={object.apiName}>
+            <input type="checkbox" checked={Boolean(selectedGroup.mutedTabPermissions?.[object.apiName])}
+              onChange={(event) => patchGroup(selectedGroup.id, { mutedTabPermissions: { ...selectedGroup.mutedTabPermissions, [object.apiName]: event.target.checked } })} />
+            {object.label}
+          </label>)}</div>
+          <h3 className="permission-section-heading">Muted Object Permissions</h3>
+          <div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Object</th>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <th key={permission}>{permission === 'viewAll' ? 'View All' : permission === 'modifyAll' ? 'Modify All' : permission[0].toUpperCase() + permission.slice(1)}</th>)}</tr></thead><tbody>{objects.map((object) => <tr key={object.apiName}><td><strong>{object.label}</strong><small>{object.apiName}</small></td>{(['read', 'create', 'edit', 'delete', 'viewAll', 'modifyAll'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`Mute ${object.label} ${permission}`} checked={Boolean(selectedGroup.mutedObjectPermissions[object.apiName]?.[permission])} onChange={() => patchGroup(selectedGroup.id, { mutedObjectPermissions: { ...selectedGroup.mutedObjectPermissions, [object.apiName]: { ...selectedGroup.mutedObjectPermissions[object.apiName], [permission]: !selectedGroup.mutedObjectPermissions[object.apiName]?.[permission] } } })} /></td>)}</tr>)}</tbody></table></div>
+          <h3 className="permission-section-heading">Muted Record Type Access</h3>
+          {objects.filter((object) => object.recordTypes?.length).map((object) => <div className="permission-table-wrap" key={object.apiName}><table className="slds-table permission-matrix"><thead><tr><th>{object.label}</th><th>Mute Access</th></tr></thead><tbody>{object.recordTypes?.filter((recordType) => recordType.active).map((recordType) => {
+            const key = `${object.apiName}.${recordType.id}`;
+            return <tr key={key}><td><strong>{recordType.label}</strong><small>{recordType.developerName}</small></td><td><input type="checkbox" aria-label={`Mute ${object.label} ${recordType.label}`} checked={Boolean(selectedGroup.mutedRecordTypePermissions[key])} onChange={() => patchGroup(selectedGroup.id, { mutedRecordTypePermissions: { ...selectedGroup.mutedRecordTypePermissions, [key]: !selectedGroup.mutedRecordTypePermissions[key] } })} /></td></tr>;
+          })}</tbody></table></div>)}
+          <h3 className="permission-section-heading">Muted Field Permissions</h3>
+          {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Mute Read</th><th>Mute Edit</th></tr></thead><tbody>{object.fields.map((field) => {
+            const fieldName = `${object.apiName}.${field.apiName}`;
+            const permissions = selectedGroup.mutedFieldPermissions[fieldName] ?? {};
+            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['read', 'edit'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`Mute ${object.label}.${field.label} ${permission}`} checked={Boolean(permissions[permission])} onChange={() => patchGroup(selectedGroup.id, { mutedFieldPermissions: { ...selectedGroup.mutedFieldPermissions, [fieldName]: { ...permissions, [permission]: !permissions[permission] } } })} /></td>)}</tr>;
+          })}</tbody></table></div></details>)}
+        </>}
+        {tab === 'users' && <>
+          <div className="section-toolbar"><div><h2>User Assignments</h2><p>Direct permission-set and permission-set-group memberships for this tenant.</p></div><button className="btn btn-brand" onClick={onOpenUserRecords}>Manage Users (CRUD)</button></div>
+          {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label><label className="form-label">User Type
+          <select className="form-control" value={user.userType ?? 'internal'}
+            onChange={(event) => patchUser(user.id, {
+              userType: event.target.value as 'internal' | 'external',
+              externalAccountId: event.target.value === 'external' ? user.externalAccountId : undefined
+            })}>
+            <option value="internal">Internal</option><option value="external">External portal</option>
+          </select></label>
+          {user.userType === 'external' && <label className="form-label">Verified tenant Account ID
+            <input className="form-control" value={user.externalAccountId ?? ''}
+              onChange={(event) => patchUser(user.id, { externalAccountId: event.target.value })}
+              placeholder="Tenant account record ID" />
+          </label>}<h3 className="permission-section-heading">Permission Sets</h3><div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={user.permissionSetIds.includes(permissionSet.id)} onChange={() => patchUser(user.id, { permissionSetIds: toggleString(user.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div><h3 className="permission-section-heading">Permission Set Groups</h3><div className="permission-check-grid">{draft.permissionSetGroups.map((group) => <label className="checkbox-row" key={group.id}><input type="checkbox" checked={user.permissionSetGroupIds.includes(group.id)} onChange={() => patchUser(user.id, { permissionSetGroupIds: toggleString(user.permissionSetGroupIds, group.id) })} />{group.label}</label>)}</div></details>)}
+        </>}
+        {tab === 'profiles' && !selectedProfile && <div className="empty-state">Select a profile or create one to get started.</div>}
+        {tab === 'sets' && !selectedSet && <div className="empty-state">Select a permission set or create one to get started.</div>}
+        {tab === 'groups' && !selectedGroup && <div className="empty-state">Select a permission set group or create one to get started.</div>}
+      </div>
+    </section>
+    <div className="permission-info"><ShieldCheck size={17} /><span>Tenant-scoped grants are evaluated by the API. Permission-set groups combine their member grants and can mute group-contributed system and object permissions; direct assignments are unaffected by group muting.</span></div>
+  </div>;
+}
+
+export default App;
