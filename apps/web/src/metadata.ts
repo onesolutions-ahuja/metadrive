@@ -290,6 +290,7 @@ export type FlowVersionMetadata = {
   elements: FlowElementMetadata[];
   connectors: FlowConnectorMetadata[];
   resources: FlowResourceMetadata[];
+  tests?: FlowTestCaseMetadata[];
 };
 
 export type FlowValidationMetadata = {
