@@ -151,7 +151,7 @@ async function drainStateWrites(): Promise<void> {
         normalizedSnapshot = await writeNormalizedState(
           pool as unknown as Parameters<typeof writeNormalizedState>[0],
           JSON.parse(payload), normalizedSnapshot,
-          persistenceMode === 'typed' ? synchronizeTypedRecords : null, true,
+          persistenceMode === 'typed' ? synchronizeTypedRecords : null,
           true // queue has already JSON.parse'd this payload
         );
       } else if (persistenceMode === 'relational') {
