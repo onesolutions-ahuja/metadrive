@@ -42,8 +42,8 @@ export function normalizeRecoveryPolicy(value: unknown): RecoveryDeliveryPolicy 
   const p = value as Partial<RecoveryDeliveryPolicy>;
   const channel = (p.defaultChannel === 'sms' || p.defaultChannel === 'whatsapp') ? p.defaultChannel : 'email';
   const allowed = Array.isArray(p.allowedChannels)
-    ? [...new Set(p.allowedChannels.filter((x) => x === 'email' || x === 'sms' || x === 'whatsapp'))]
-    : ['email'];
+    ? [...new Set(p.allowedChannels.filter((x) => x === 'email' || x === 'sms' || x === 'whatsapp'))] as RecoveryChannel[]
+    : ['email'] as RecoveryChannel[];
   if (!allowed.includes('email')) allowed.unshift('email');
   const templates = structuredClone(DEFAULT_RECOVERY_POLICY.templates);
   for (const key of ['email', 'sms', 'whatsapp'] as const) {
