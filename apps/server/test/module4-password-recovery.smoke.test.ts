@@ -206,12 +206,12 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     const otpLogin = await api('/auth/login', '', 'POST', { email, password: 'Recovered-Again-2026!' });
     assert.equal(otpLogin.status, 200, JSON.stringify(otpLogin.data));
 
-    const locked = await api('/auth/users/' + newLogin.data.user.id + '/lock',
-      String(newLogin.data.access_token), 'POST', { durationMinutes: 60 });
+    const locked = await api('/auth/users/' + otpLogin.data.user.id + '/lock',
+      String(otpLogin.data.access_token), 'POST', { durationMinutes: 60 });
     assert.equal(locked.status, 409, 'Security admins must not lock themselves out');
     assert.equal((await api('/auth/users/' + otherLogin.data.user.id + '/unlock',
-      String(newLogin.data.access_token), 'POST', {})).status, 404, 'Cross-tenant unlock rejected');
-    const events = await api('/auth/security-events', String(newLogin.data.access_token));
+      String(otpLogin.data.access_token), 'POST', {})).status, 404, 'Cross-tenant unlock rejected');
+    const events = await api('/auth/security-events', String(otpLogin.data.access_token));
     assert.equal(events.status, 200);
     assert.ok(events.data.events.some((item: { action: string }) => item.action === 'auth.password-reset.completed'));
     assert.equal(JSON.stringify(events.data).includes(resetToken), false, 'Audit must never leak reset tokens');
