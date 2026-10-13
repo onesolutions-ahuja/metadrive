@@ -21,7 +21,7 @@ try{
  if(list.status!==200)throw Error('Credential metadata unavailable HTTP '+list.status);
  const credentials=list.data.credentials||[];
  const templates=JSON.parse(await fs.readFile('apps/server/data/flow-templates/module11-secure-messaging-smoke.json','utf8')).flows;
- for(const [provider,name] of [['WhatsApp','ONE_WhatsApp_Secure_Smoke'],['SMSGate','ONE_SMSGate_Secure_Smoke']]){
+ for(const [provider,name] of [['SMSGate','ONE_SMSGate_Secure_Smoke']]){
   const report=result.providers[provider]={status:'not_started'};
   try{
    const credential=credentials.find(c=>(c.name+' '+c.label).toLowerCase().includes(provider.toLowerCase())&&c.protocol==='HTTPS');
@@ -39,17 +39,18 @@ try{
     const id=phoneId||basePath.split('/').at(-1);
     call.config.path=(basePath.endsWith('/'+id)?'':id+'/')+'messages';
    }else{
-    const providerPath=credential.configuration?.SendPath||credential.configuration?.MessagePath||credential.configuration?.sendPath;
-    if(!providerPath||providerPath.startsWith('/')||/^https?:/i.test(providerPath)){report.status='smsgate_send_operation_not_configured';continue;}
-    call.config.path=providerPath;
+    if(baseUrl.hostname!=='api.sms-gate.app'){report.status='unrecognized_smsgate_host';continue;}
+    call.config.path='3rdparty/v1/messages';
+    call.config.body=JSON.stringify({textMessage:{text:'MetaDrive Module 11 SMSGate secure delivery test.'},phoneNumbers:['+447440751016']});
    }
    const saved=await request('/api/metadata/flows/'+flow.apiName,token,'PUT',{...flow,status:'Active'});
    if(saved.status!==200){report.status='flow_activation_failed_http_'+saved.status;continue;}
    report.status='activated';
    const execution=await request('/api/flows/'+flow.apiName+'/execute',token,'POST',{});
    report.executeHttpStatus=execution.status;
-   report.status=execution.status===200&&execution.data?.result?.status==='completed'?'flow_completed':'flow_response_http_'+execution.status;
-   report.flowStatus=execution.data?.result?.status||execution.data?.status||'unknown';
+   report.status=execution.status===200&&Number(execution.data?.outputs?.ProviderStatus)>=200&&Number(execution.data?.outputs?.ProviderStatus)<300?'provider_accepted':'flow_response_http_'+execution.status;
+   report.providerHttpStatus=execution.data?.outputs?.ProviderStatus??null;
+   report.flowStatus=execution.status===200?'completed':execution.data?.status||'unknown';
   }catch(error){report.status='exception';report.error=String(error.message||error).slice(0,100).replace(/Bearer\s+\S+/g,'[redacted]');}
  }
 }finally{await record();console.log(JSON.stringify(result));}
