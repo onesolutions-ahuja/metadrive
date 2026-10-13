@@ -24,3 +24,12 @@ test('collection Assignment fails closed for incompatible operator and record va
   assert.throws(() => apply(undefined, 'single', 'Assign'), /collection value/);
   assert.throws(() => apply('not-list', 'value', 'Add'), /collection variable/);
 });
+
+test('record collection Assignment refuses non-record objects while preserving valid rows', () => {
+  const valid = { Id: 'record-1', Name: 'Example' };
+  assert.deepEqual(apply([], valid, 'Add', 'Record Collection'), [valid]);
+  for (const invalid of [new Date(), new Map(), new Set(), /pattern/, [valid]]) {
+    assert.throws(() => apply([], invalid, 'Add', 'Record Collection'), /invalid value/);
+    assert.throws(() => apply([], [invalid], 'Assign', 'Record Collection'), /invalid value/);
+  }
+});
