@@ -92,13 +92,13 @@ test('trusted bundled KFC-style kiosk upgrades without overwriting tenant-owned 
   const working=applyInstallableAppPackages(tenant(),catalog);
   const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
   const first=ensureBundledAppComponents([],working,catalog,root);
-  assert.equal(first[0].version,2);
-  assert.match(first[0].compiledJs,/kfc-product-grid/);
-  assert.match(first[0].cssSource,/kfc-category-rail/);
+  assert.equal(first[0].version,3);
+  assert.match(first[0].compiledJs,/mdk-products/);
+  assert.match(first[0].cssSource,/mdk-categories/);
   const older=[{...first[0],version:1,publishedVersion:1,compiledJs:'old markup'}];
   const upgraded=ensureBundledAppComponents(older,working,catalog,root);
-  assert.equal(upgraded[0].version,2);
-  assert.match(upgraded[0].compiledJs,/kfc-product-grid/);
+  assert.equal(upgraded[0].version,3);
+  assert.match(upgraded[0].compiledJs,/mdk-products/);
   const tenantOwned=[{...older[0],trustedBundled:false,compiledJs:'tenant code'}];
   assert.equal(ensureBundledAppComponents(tenantOwned,working,catalog,root)[0].compiledJs,'tenant code');
 });
