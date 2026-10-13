@@ -81,7 +81,7 @@ import { isComponentVisible } from './componentVisibility';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
-import { isCanvasLocked, snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
+import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
@@ -9069,6 +9069,7 @@ function PageBuilder({
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
   const [customPropertiesError, setCustomPropertiesError] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+  const [showCanvasConditions, setShowCanvasConditions] = useState(false);
   const externalPreviewWindowRef = useRef<Window | null>(null);
   const [externalPreviewTarget, setExternalPreviewTarget] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -9129,7 +9130,7 @@ function PageBuilder({
     element: HTMLElement; x: number; y: number;
   } | null>(null);
   const [showLayers, setShowLayers] = useState(false);
-  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions' | 'Conditions'>('Overview');
+  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions'>('Overview');
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -9360,9 +9361,8 @@ function PageBuilder({
     const scale = fitCanvas ? fitScale : 1;
     const x = start.original.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, scale);
     const y = start.original.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, scale);
-    const { position: next } = snapCanvasPosition({ ...start.original, x, y },
-      { width: page.canvasWidth, height: page.canvasHeight },
-      page.components.filter(item => item.id !== start.id && item.position && !rawLayoutParentId(item)).map(item => item.position!), canvasSnap);
+    const next = canvasBoundPosition({ ...start.original, x, y },
+      { width: page.canvasWidth, height: page.canvasHeight }, canvasSnap);
     start.x = next.x; start.y = next.y;
     start.element.style.transform =
       `translate(${next.x - start.original.x}px, ${next.y - start.original.y}px)`;
@@ -9919,7 +9919,7 @@ function PageBuilder({
     return { ...bound, width, height };
   };
   const moveCanvasComponent = (event: React.DragEvent<HTMLElement>, component: PageComponentMetadata) => {
-    if (page.layoutMode !== 'free-canvas' || previewMode || isCanvasLocked(component)) return;
+    if (page.layoutMode !== 'free-canvas' || previewMode) return;
     const nextPosition = canvasPositionFromEvent(event, component.position?.width ?? 320, component.position?.height ?? 180);
     if (!nextPosition || !component.position) return;
     updateComponent(component.id, {
@@ -10464,8 +10464,8 @@ function PageBuilder({
               >
                 {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id)))}
                 {!page.components.length && <div className="free-canvas-empty">Add custom components from the left panel.</div>}
-                {!previewMode && <><div className="canvas-magnet-guide canvas-magnet-guide-x" ref={xGuideRef} aria-hidden="true" />
-                  <div className="canvas-magnet-guide canvas-magnet-guide-y" ref={yGuideRef} aria-hidden="true" /></>}
+                {!previewMode && <><div className="canvas-magnet-guide canvas-magnet-guide-x"  aria-hidden="true" />
+                  <div className="canvas-magnet-guide canvas-magnet-guide-y"  aria-hidden="true" /></>}
               </div> : <>
               {page.pageType === 'Record Page' ? <>
                 <div className="record-preview-nav">
@@ -10503,13 +10503,11 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
+            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
+            {page.layoutMode === 'free-canvas' && selected.type === 'Container' && <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
+            <button type="button" className="btn btn-small" aria-expanded={showCanvasConditions} onClick={() => setShowCanvasConditions(value => !value)}>Conditions</button>
             {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
-            {rawLayoutParentId(selected) && <button type="button" className="btn btn-small"
-              onClick={() => applyPage({ ...page, components: reparentComponent(page.components, selected.id, null) })}>Move out of container</button>}
-            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected)
-              && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
-            {page.layoutMode === 'free-canvas' && selected.type === 'Container' &&
-              <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
+            {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
               onChange={(properties) => updateComponent(selected.id, { properties })} />}
             {inspectorTab !== 'Data & Actions' && selected.type === 'Custom:TillSalesWorkspace' && <section className="modern-till-layout-controls">
@@ -10697,7 +10695,7 @@ function PageBuilder({
             <div className="properties-section-title">Position</div>
             <div className="property-position-actions"><button className="btn" disabled={page.components[0]?.id === selected.id} onClick={() => moveSelected(-1)}><ArrowDown className="move-up-icon" size={13} />Move up</button><button className="btn" disabled={page.components[page.components.length - 1]?.id === selected.id} onClick={() => moveSelected(1)}><ArrowDown size={13} />Move down</button></div>
             </>}
-            {inspectorTab === 'Conditions' && <>
+            {showCanvasConditions && <>
             <div className="properties-section-title">Visibility</div>
             <label className="checkbox-row"><input type="checkbox" checked={selected.visible}
               onChange={(event) => updateComponent(selected.id, { visible: event.target.checked })} />
