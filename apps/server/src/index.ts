@@ -34,6 +34,7 @@ import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-r
 import { applyInstallableAppPackages } from './installable-app-packages.mjs';
 import { kioskDeviceIdentity, prepareKioskDevice } from './kiosk-device-provision.mjs';
 import { ensureBundledAppComponents } from './bundled-app-components.mjs';
+import { bundledLegacyMigrationDecision } from './bundled-component-migration.mjs';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -11639,7 +11640,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       css: z.string().min(1)
     })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')));
     const imported: LibraryComponent[] = [];
-    const trustedUpgrades = new Set<string>();
+    const trustedUpgrades = new Map<string, LibraryComponent>();
     for (const entry of manifest) {
       const existingBundled = state.libraryComponents.find((component) =>
       component.apiName.toLowerCase() === entry.apiName.toLowerCase()
@@ -11657,16 +11658,15 @@ function syncBundledLibraryComponents(): Promise<void> {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
       }
       if (existingBundled) continue;
+      const jsxSource = readFileSync(jsxPath, 'utf8');
+      const cssSource = readFileSync(cssPath, 'utf8');
       if (legacyCandidate) {
-        // Only old unowned repository-identical bundles can be upgraded.
-        // Never promote tenant-authored code into a globally trusted primitive.
-        if (legacyCandidate.tenantId === undefined
-          && legacyCandidate.jsxSource === readFileSync(jsxPath,'utf8')
-          && legacyCandidate.cssSource === readFileSync(cssPath,'utf8')) {
-          trustedUpgrades.add(legacyCandidate.apiName);
+        const decision = bundledLegacyMigrationDecision(legacyCandidate, entry.apiName, jsxSource, cssSource);
+        if (decision === 'preserve') {
+          // A tenant-owned or unknown component must not abort the entire library.
+          console.warn('Preserved untrusted bundled-component name collision:', entry.apiName);
           continue;
         }
-        throw new Error('Component API name collides with a reserved trusted component');
       }
       const input = libraryComponentInputSchema.parse({
         apiName: entry.apiName,
@@ -11674,8 +11674,8 @@ function syncBundledLibraryComponents(): Promise<void> {
         description: entry.description,
         surfaces: entry.surfaces,
         resize: entry.resize,
-        jsxSource: readFileSync(jsxPath, 'utf8'),
-        cssSource: readFileSync(cssPath, 'utf8')
+        jsxSource,
+        cssSource
       });
       const compiled = await transform(input.jsxSource, {
         loader: 'tsx',
@@ -11691,20 +11691,27 @@ function syncBundledLibraryComponents(): Promise<void> {
       if (/\brequire\s*\(/.test(compiled.code)) {
         throw new Error(`Bundled component "${input.apiName}" cannot import external modules`);
       }
-      imported.push({
+      const version = entry.apiName === 'KioskOrderingExperience' ? 2 : 1;
+      const registered: LibraryComponent = {
         ...input,
         compiledJs: compiled.code,
         scopedCss: scopeLibraryCss(input.cssSource, input.apiName),
-        version: 1,
+        version,
         updatedAt: new Date().toISOString(),
-        status: 'Published', publishedVersion: 1, revisions: [], trustedBundled: true
-      });
+        status: 'Published', publishedVersion: version, revisions: [], trustedBundled: true
+      };
+      if (legacyCandidate) {
+        trustedUpgrades.set(entry.apiName.toLowerCase(), {
+          ...legacyCandidate, ...registered,
+          version: Math.max(version, legacyCandidate.version ?? 1),
+          publishedVersion: Math.max(version, legacyCandidate.publishedVersion ?? 1)
+        });
+      } else imported.push(registered);
     }
     if (imported.length || trustedUpgrades.size) {
       const nextState = { ...state, libraryComponents: [
         ...state.libraryComponents.map((item) =>
-          trustedUpgrades.has(item.apiName) && item.tenantId === undefined
-            ? {...item,trustedBundled:true} : item),
+          trustedUpgrades.get(item.apiName.toLowerCase()) ?? item),
         ...imported
       ] };
       persistState(nextState);
