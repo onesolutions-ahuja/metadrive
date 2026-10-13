@@ -3574,7 +3574,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   );
 
   return (
-    <div className={kioskMode || isStandaloneKioskPage ? 'lightning kiosk-mode' : 'lightning'}>
+    <div className={kioskMode || isStandaloneKioskPage ? 'lightning kiosk-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
         <button type="button" className="header-home-link" onClick={() =>
@@ -3683,7 +3683,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       }
 
       <main className={route.kind === 'setup' ? 'setup-layout setup-no-tabs' : 'setup-layout'}>
-        {route.kind === 'setup' && !route.dashboardView && workspace !== 'flow-builder' && (
+        {route.kind === 'setup' && !route.dashboardView && workspace !== 'flow-builder' && !(workspace === 'page-builder' && Boolean(route.resourceApiName)) && (
           <aside className={setupSidebarCollapsed ? 'setup-sidebar setup-sidebar-collapsed' : 'setup-sidebar'}>
             <div className="setup-sidebar-toolbar">
               <strong>Setup</strong>
@@ -3835,7 +3835,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
-          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages}
+          {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? 'page-list'} editorMode={Boolean(route.resourceApiName)} onBackToPages={() => { setPage(pages.find(item => item.apiName === page.apiName) ?? page); navigateRoute({ kind: 'setup', workspace: 'page-builder' }); }} page={page} pages={pages}
             preparedAppId={pageCreationAppContext[page.apiName] ?? ''}
             dashboards={dashboards}
             onPrepareApp={(pageApiName, appId) => setPageCreationAppContext(current => ({
@@ -9079,7 +9079,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
 
 function PageBuilder({
   page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
-  preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes
+  preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes, editorMode, onBackToPages
 }: {
   page: LightningPageMetadata;
   pages: LightningPageMetadata[];
@@ -9104,6 +9104,8 @@ function PageBuilder({
   onAppLinked: (pageApiName: string) => void;
   request: <T>(path: string, init?: RequestInit) => Promise<T>;
   canManageRoutes: boolean;
+  editorMode: boolean;
+  onBackToPages: () => void;
 }) {
   const [builderAppApiName, setBuilderAppApiName] = useState(preparedAppId);
   useEffect(() => {
@@ -9156,6 +9158,10 @@ function PageBuilder({
   const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
   const [favouritesLoaded, setFavouritesLoaded] = useState(false);
   const [componentPanelWidth, setComponentPanelWidth] = useState(280);
+  const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(310);
+  const propertiesResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
+  const [pageListObject, setPageListObject] = useState(page.targetObject || objects[0]?.apiName || '');
+  const [pageListSearch, setPageListSearch] = useState('');
   const paletteResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
   const [customPropertiesError, setCustomPropertiesError] = useState('');
@@ -9214,7 +9220,7 @@ function PageBuilder({
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null);
   const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
-  const [canvasSnap, setCanvasSnap] = useState(true);
+  const canvasSnap = false;
   const canvasMoveStart = useRef<{
     id: string; pointerId: number; pointerX: number; pointerY: number;
     original: { x: number; y: number; width: number; height: number };
@@ -9422,6 +9428,9 @@ function PageBuilder({
   const endComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (paletteResizeStart.current?.pointerId === event.pointerId) paletteResizeStart.current = null;
   };
+  const startPropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); propertiesResizeStart.current = { pointerId: event.pointerId, pointerX: event.clientX, width: propertiesPanelWidth }; };
+  const movePropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { const start = propertiesResizeStart.current; if (start?.pointerId === event.pointerId) setPropertiesPanelWidth(Math.max(240, Math.min(520, start.width + start.pointerX - event.clientX))); };
+  const endPropertiesResize = (event: React.PointerEvent<HTMLButtonElement>) => { if (propertiesResizeStart.current?.pointerId === event.pointerId) propertiesResizeStart.current = null; };
   const updateCustomProperties = (value: string) => {
     setCustomPropertiesDraft(value);
     try {
@@ -9797,32 +9806,32 @@ function PageBuilder({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
-  const savePage = async (status?: 'Active' | 'Draft') => {
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(page.apiName)) {
+  const savePage = async (status?: 'Active' | 'Draft', candidate: LightningPageMetadata = page, returnToList = false) => {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(candidate.apiName)) {
       onNotify('API Name must start with a letter and contain only letters, numbers, and underscores');
       return;
     }
-    if (pages.some((item) => item.apiName.toLowerCase() === page.apiName.toLowerCase()
+    if (pages.some((item) => item.apiName.toLowerCase() === candidate.apiName.toLowerCase()
       && item.apiName !== savedPageApiName.current)) {
       onNotify('A Lightning page with this API name already exists');
       return;
     }
-    if (status === 'Active' && page.pageType === 'Record Page' && !page.activationAssignments?.length) {
+    if (status === 'Active' && candidate.pageType === 'Record Page' && !candidate.activationAssignments?.length) {
       onNotify('Add at least one activation assignment before activating this record page');
       return;
     }
-    if (status === 'Active' && page.pageType === 'Home Page' && !page.activationAssignments?.length) {
+    if (status === 'Active' && candidate.pageType === 'Home Page' && !candidate.activationAssignments?.length) {
       onNotify('Assign this Home Page to an app or app and profile before activating it');
       return;
     }
-    if (status === 'Active' && page.pageType === 'App Page' && apps.length === 0) {
+    if (status === 'Active' && candidate.pageType === 'App Page' && apps.length === 0) {
       onNotify('Create a Lightning app before activating an App Page');
       return;
     }
-    const nextPage = status ? { ...page, status } : page;
+    const nextPage = status ? { ...candidate, status } : page;
     setSaving(true);
     try {
-      const saved = await onSave(nextPage, savedPageApiName.current);
+      const saved = await onSave(nextPage, candidate.apiName);
       if (saved) {
         if (nextPage.status === 'Active' && nextPage.pageType === 'App Page') {
           const targetAppId = builderAppApiName || preparedAppId;
@@ -9845,6 +9854,7 @@ function PageBuilder({
         savedPageApiName.current = nextPage.apiName;
         setUndoStack([]);
         setRedoStack([]);
+        if (returnToList) onBackToPages();
       }
     } finally {
       setSaving(false);
@@ -9920,6 +9930,9 @@ function PageBuilder({
       setSaving(false);
     }
   };
+  const pageDeviceLabel = (item: LightningPageMetadata) => item.canvasWidth <= 600 || (item.devices.length === 1 && item.devices[0] === 'Phone') ? 'Phone' : item.canvasWidth < 1400 ? 'Tablet' : 'Desktop';
+  const visiblePages = pages.filter(item => (!pageListObject || item.targetObject === pageListObject) && `${item.label} ${item.apiName}`.toLowerCase().includes(pageListSearch.trim().toLowerCase())).sort((a,b) => (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0));
+  const openCreatePage = () => { setNewPageTargetObject(pageListObject || page.targetObject || objects[0]?.apiName || ''); setNewPageLayoutMode('free-canvas'); setNewPageType('Home Page'); setCreatePageOpen(true); };
   const createPage = async () => {
     if (saving) return;
     const label = newPageLabel.trim();
@@ -10304,7 +10317,7 @@ function PageBuilder({
     region: 'main'
   }, -1, true);
   return (
-    <div className="builder-page">
+    <div className={`builder-page ${editorMode ? "builder-editor-mode" : "builder-list-mode"}`}>
       {externalPreviewTarget && createPortal(
         <div className="external-page-preview">
           <div className={`external-preview-viewport ${device.toLowerCase()}`}>
@@ -10327,90 +10340,40 @@ function PageBuilder({
         externalPreviewTarget
       )}
 
-      <div className="builder-titlebar">
-        <div className="builder-page-select">
-          <div className="eyebrow">Lightning App Builder</div>
-          <div className="builder-title-controls">
-            <button className="btn btn-small" title="Return to Setup without saving" aria-label="Return to Setup without saving" onClick={onExit}><ArrowLeft size={13} />Setup</button>
-            <select className="builder-app-select" aria-label="Select Lightning app context" value={builderAppApiName} onChange={(event) => setBuilderAppApiName(event.target.value)}>
-              <option value="">All pages</option>
-              {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
-            </select>
-            <select aria-label="Select Lightning page" value={page.apiName} onChange={(event) => selectSavedPage(event.target.value)}>
-              {pagePickerPages.map((item) => <option key={item.apiName} value={item.apiName}>
-                {item.label} · {item.pageType}{builderApp && item.apiName !== page.apiName && !appPages.some((available) => available.apiName === item.apiName) ? ' · Not assigned to this app' : ''}
-              </option>)}
-            </select>
-            <button className="btn btn-small" onClick={() => {
-              setNewPageLayoutMode('template');
-              setNewPageType('Record Page');
-              setNewPageTemplate('header-main-sidebar');
-              setCreatePageOpen(true);
-            }}><Plus size={13} />New Page</button>
-          </div>
+
+      {!editorMode && <section className="page-manager-view" aria-label="Page management">
+        <header className="page-manager-header"><div><h1>Page Builder</h1><p>Manage pages and their device layouts by related record or object.</p></div>
+          <button className="btn btn-brand" type="button" onClick={openCreatePage}><Plus size={16}/> New Page</button></header>
+        <div className="page-manager-filters">
+          <label className="form-label">Related Record / Object<select className="form-control" value={pageListObject} aria-label="Related Record or Object" onChange={event=>setPageListObject(event.target.value)}><option value="">All objects</option>{objects.map(item=><option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label>
+          <label className="form-label">Search pages<input className="form-control" type="search" value={pageListSearch} onChange={event=>setPageListSearch(event.target.value)} placeholder="Search page name…"/></label>
+        </div>
+        <div className="page-manager-table-scroll"><table className="records-table page-manager-table"><thead><tr><th>Page name</th><th>Type</th><th>Device</th><th>Dimensions</th><th>Orientation</th><th>Last modified</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>{visiblePages.map(item=><tr key={item.apiName}>
+          <td><button type="button" className="page-manager-page-link" onClick={()=>selectSavedPage(item.apiName)}>{item.label}</button><small>{item.apiName}</small></td>
+          <td>{item.pageType}</td><td>{pageDeviceLabel(item)}</td><td>{item.canvasWidth} × {item.canvasHeight} px</td><td>{canvasOrientation(item.canvasWidth,item.canvasHeight)}</td>
+          <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</td>
+          <td><span className={item.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{item.status}</span></td>
+          <td className="page-manager-actions"><button className="btn btn-small" type="button" aria-label={'Edit '+item.label} onClick={()=>selectSavedPage(item.apiName)}><Pencil size={14}/> Edit</button>
+          <button className="btn btn-small" type="button" disabled={saving} aria-label={(item.status==='Active'?'Deactivate ':'Activate ')+item.label} onClick={()=>void savePage(item.status==='Active'?'Draft':'Active',item,true)}>{item.status==='Active'?'Deactivate':'Activate'}</button></td>
+        </tr>)}</tbody></table>{!visiblePages.length && <div className="records-empty">No pages found for this object. Create a new page to begin.</div>}</div>
+      </section>}
+      {editorMode && <>
+      <div className="builder-titlebar builder-compact-toolbar">
+        <div className="builder-current-page">
+          <button type="button" className="icon-button subtle" aria-label="Back to page list" title="Back to pages" onClick={onBackToPages}><ArrowLeft size={18}/></button>
+          <strong>{page.label}</strong>
+          <span className="builder-layout-chip">{pageDeviceLabel(page)} · {page.canvasWidth} × {page.canvasHeight}px · {canvasOrientation(page.canvasWidth,page.canvasHeight)}</span>
         </div>
         <div className="toolbar-actions">
-          <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
-          <button className="btn" type="button" onClick={() => setRouteDirectoryOpen(true)}
-            aria-label="Open page routes">Routes</button>
-          <button className="btn" type="button" aria-label="Open page dependencies" onClick={() => setDependenciesOpen(true)}>Dependencies</button>
-          <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
-          {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('kiosk')}>Load Kiosk Layout</button>}
-          {page.apiName === 'UNE_TILL' && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('till')}>Load Till Layout</button>}
-          <button className="btn" disabled={saving} onClick={() => void clonePage()}><Copy size={14} />Clone</button>
-          <button className="btn" onClick={openExternalPreview}><ExternalLink size={14} />Preview</button>
-          <button className="btn" disabled={saving} onClick={() => void savePage()}><Save size={14} />{saving ? 'Saving…' : 'Save'}</button>
-          {page.status === 'Active'
-            ? <button className="btn" disabled={saving} onClick={() => void savePage('Draft')}><Check size={14} />Deactivate</button>
-            : <button className="btn btn-brand" disabled={saving} onClick={() => void savePage('Active')}><Check size={14} />Activate</button>}
+          <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={()=>{setSelectedId('');setPageSettingsOpen(true)}}><Settings2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Fit canvas to view" title="Fit canvas" onClick={()=>setFitCanvas(v=>!v)}><Maximize2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Preview page" title="Preview in new window" onClick={openExternalPreview}><Eye size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Save page" title="Save" disabled={saving} onClick={()=>void savePage()}><Save size={17}/></button>
+          <button type="button" className="btn btn-small" title="Cancel editing" onClick={onBackToPages}><X size={14}/> Cancel</button>
         </div>
       </div>
-      <div className="builder-meta-bar">
-        <span>{page.pageType}</span><span className="meta-separator">·</span>
-        {page.pageType === 'Record Page' && <select aria-label="Page object" value={page.targetObject} onChange={(event) => onTargetObjectChange(event.target.value)}>{objects.map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select>}
-        <span className="meta-separator">·</span>
-        <div className="device-picker" role="group" aria-label="Preview device">
-          <button aria-label="Desktop preview" className={device === 'Desktop' ? 'device-choice active' : 'device-choice'} onClick={() => setDevice('Desktop')}><Monitor size={14} /><span>Desktop</span></button>
-          <button aria-label="Tablet preview" className={device === 'Tablet' ? 'device-choice active' : 'device-choice'} onClick={() => setDevice('Tablet')}><Tablet size={14} /><span>Tablet</span></button>
-          <button aria-label="Phone preview" className={device === 'Phone' ? 'device-choice active' : 'device-choice'} onClick={() => setDevice('Phone')}><Smartphone size={14} /><span>Phone</span></button>
-        </div>
-        <div className="device-picker orientation-picker" role="group" aria-label="Canvas orientation">
-          <button aria-label="Portrait orientation" aria-pressed={orientation === 'Portrait'} className={orientation === 'Portrait' ? 'device-choice active' : 'device-choice'}
-            onClick={() => { const dimensions = canvasDimensionsForOrientation(page.canvasWidth, page.canvasHeight, 'Portrait'); applyPage({ ...page, canvasWidth: dimensions.width, canvasHeight: dimensions.height }); }}>
-            <span>Portrait</span>
-          </button>
-          <button aria-label="Landscape orientation" aria-pressed={orientation === 'Landscape'} className={orientation === 'Landscape' ? 'device-choice active' : 'device-choice'}
-            onClick={() => { const dimensions = canvasDimensionsForOrientation(page.canvasWidth, page.canvasHeight, 'Landscape'); applyPage({ ...page, canvasWidth: dimensions.width, canvasHeight: dimensions.height }); }}>
-            <span>Landscape</span>
-          </button>
-        </div>
-        <button
-          className={pageSettingsOpen ? 'text-action settings-active' : 'text-action'}
-          aria-expanded={pageSettingsOpen || Boolean(selected)}
-          aria-controls="lightning-page-properties"
-          onClick={() => { setSelectedId(''); setPageSettingsOpen((current) => !current); }}
-        >Page properties</button>
-      </div>
-      {appSettingsOpen && <div className="app-builder-settings-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAppSettingsOpen(false); }}>
-        <section className="app-builder-settings-modal" role="dialog" aria-modal="true" aria-label="Lightning app settings" onMouseDown={(event) => event.stopPropagation()}>
-          <AppManager
-            apps={apps}
-            objects={objects}
-            pages={pages}
-            onSave={onSaveApp}
-            onDelete={onDeleteApp}
-            embedded
-            onClose={() => setAppSettingsOpen(false)}
-            initialSelectedApiName={builderAppApiName}
-            onSelectedAppChange={setBuilderAppApiName}
-            onOpenPage={(apiName) => {
-              setAppSettingsOpen(false);
-              selectSavedPage(apiName);
-            }}
-          />
-        </section>
-      </div>}
-      <div className={`page-builder-layout ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''}`} style={{ '--component-panel-width': `${componentPanelWidth}px` } as React.CSSProperties}>
+      <div className={`page-builder-layout ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''}`} style={{ '--component-panel-width': `${componentPanelWidth}px`, '--properties-panel-width': `${propertiesPanelWidth}px` } as React.CSSProperties}>
         <aside className="component-panel">
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
@@ -10497,60 +10460,6 @@ function PageBuilder({
             onPointerUp={endComponentPanelResize} onPointerCancel={endComponentPanelResize} />
         </aside>
         <div className="page-preview-area" ref={pagePreviewAreaRef}>
-          <div className="preview-toolbar">
-            <span><strong>{page.label}</strong><small>{page.pageType} · {page.status}{page.layoutMode === 'free-canvas' ? ` · ${page.canvasWidth} × ${page.canvasHeight}px` : ''}</small></span>
-            <div>
-              {page.layoutMode === 'free-canvas' && <button type="button" className={previewMode ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
-                aria-pressed={previewMode} aria-label={previewMode ? 'Return to design mode' : 'Preview page without editing'}
-                onClick={() => setPreviewMode(current => !current)}>{previewMode ? '✎ Design mode' : '▷ Preview'}</button>}
-              {page.layoutMode === 'free-canvas' && <button type="button" className={canvasSnap ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
-                aria-pressed={canvasSnap} aria-label="Snap to 8 pixel grid" title="Toggle snap to grid"
-                onClick={() => setCanvasSnap(current => !current)}>⌗ Snap {canvasSnap ? 'on' : 'off'}</button>}
-              {page.layoutMode === 'free-canvas' && <button
-                className={fitCanvas ? 'icon-button subtle active' : 'icon-button subtle'}
-                aria-label={fitCanvas ? 'Restore canvas size' : 'Fit canvas to view'}
-                title={fitCanvas ? 'Restore canvas size' : 'Fit canvas to view'}
-                onClick={() => setFitCanvas((current) => !current)}
-              ><Maximize2 size={14} /></button>}
-              {page.layoutMode === 'free-canvas' && <>
-                <button type="button" className={canvasSnap ? 'btn btn-small active' : 'btn btn-small'}
-                  aria-pressed={canvasSnap} onClick={() => setCanvasSnap(value => !value)}
-                  aria-label="Snap components to 8 pixel grid">Snap {canvasSnap ? 'On' : 'Off'}</button>
-                <button type="button" className={showLayers ? 'btn btn-small active' : 'btn btn-small'}
-                  aria-expanded={showLayers} onClick={() => setShowLayers(value => !value)}
-                  aria-label="Toggle component layers">Layers</button>
-              </>}
-              <button className="icon-button subtle" aria-label="Refresh canvas" title="Refresh canvas" onClick={() => setCanvasRefreshKey((current) => current + 1)}><RefreshCw size={14} /></button>
-              <button className="icon-button subtle" aria-label="Undo" title="Undo" disabled={!undoStack.length || previewMode} onClick={undo}><Undo2 size={15} /></button>
-              <button className="icon-button subtle" aria-label="Redo" title="Redo" disabled={!redoStack.length || previewMode} onClick={redo}><Redo2 size={15} /></button>
-              <button className="icon-button subtle" aria-label="Cut component" title="Cut" disabled={!selected || previewMode} onClick={cutSelected}><Scissors size={14} /></button>
-              <button className="icon-button subtle" aria-label="Copy component" title="Copy" disabled={!selected || previewMode} onClick={copySelected}><Copy size={14} /></button>
-              <button className="icon-button subtle" aria-label="Paste component" title="Paste" disabled={!componentClipboard || previewMode} onClick={pasteComponent}><ClipboardPaste size={14} /></button>
-              <button className="icon-button subtle" aria-label="Open preview in a separate window" title="Open preview window" onClick={openExternalPreview}><ExternalLink size={15} /></button>
-              <a className="icon-button subtle" aria-label="Lightning App Builder help" title="Lightning App Builder help" href="https://trailhead.salesforce.com/content/learn/modules/lightning_app_builder/lightning_app_builder_intro" target="_blank" rel="noreferrer"><CircleHelp size={14} /></a>
-            </div>
-          </div>
-          {page.layoutMode === 'free-canvas' && showLayers && <nav className="modern-canvas-layers" aria-label="Canvas layers">
-            <div className="modern-canvas-layers-heading"><strong>Layers</strong><small>{page.components.length} components</small></div>
-            {page.components.map((item) => <div className={selectedId === item.id ? 'modern-layer selected' : 'modern-layer'} key={item.id}>
-              <button type="button" style={{ paddingLeft: rawLayoutParentId(item) ? 20 : 8 }}
-                onClick={() => { setSelectedId(item.id); setPageSettingsOpen(false); }} aria-current={selectedId === item.id ? 'true' : undefined}>
-                <span>{item.label}</span><small>{item.type.replace(/^Custom:/, '')}</small>
-              </button>
-              <button type="button" title="Move layer down" aria-label={'Move ' + item.label + ' down'}
-                onClick={() => reorderLayer(item.id, 1)}><ArrowDown size={13} /></button>
-              <button type="button" title="Move layer up" aria-label={'Move ' + item.label + ' up'}
-                onClick={() => reorderLayer(item.id, -1)}><ArrowUp size={13} /></button>
-              <button type="button" title={item.properties.canvasLocked === true ? 'Unlock placement' : 'Lock placement'}
-                aria-pressed={item.properties.canvasLocked === true}
-                aria-label={(item.properties.canvasLocked === true ? 'Unlock ' : 'Lock ') + item.label}
-                onClick={() => updateComponent(item.id, { properties: {
-                  ...item.properties, canvasLocked: item.properties.canvasLocked !== true
-                } })}>{item.properties.canvasLocked === true ? <Lock size={13} /> : <Unlock size={13} />}</button>
-              <button type="button" title={item.visible ? 'Hide component' : 'Show component'} aria-label={(item.visible ? 'Hide ' : 'Show ') + item.label}
-                onClick={() => updateComponent(item.id, { visible: !item.visible })}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
-            </div>)}
-          </nav>}
           <div className="page-stage" key={canvasRefreshKey} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event)}>
             <div
               className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : page.pageType === 'Record Page' ? 'record-page-preview' : page.pageType === 'App Page' ? 'app-page-preview' : 'home-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}
@@ -10595,19 +10504,8 @@ function PageBuilder({
             </div>
           </div>
         </div>
-        <aside id="lightning-page-properties" className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}>
+        <aside id="lightning-page-properties" className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}><button className="properties-panel-resize" type="button" aria-label="Resize properties panel" title="Drag to resize" onPointerDown={startPropertiesResize} onPointerMove={movePropertiesResize} onPointerUp={endPropertiesResize} onPointerCancel={endPropertiesResize}/>
           <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
-          {page.components.length > 0 && <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
-            {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
-              aria-selected={inspectorTab === tab && Boolean(selected) && !pageSettingsOpen} className={inspectorTab === tab && Boolean(selected) && !pageSettingsOpen ? 'active' : ''}
-              onClick={() => {
-                if (!selected || pageSettingsOpen) {
-                  setSelectedId(page.components[0]?.id ?? '');
-                  setPageSettingsOpen(false);
-                }
-                setInspectorTab(tab);
-              }}>{tab}</button>)}
-          </div>}
           {selected && !pageSettingsOpen ? <>
             <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
               {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
@@ -10892,55 +10790,13 @@ function PageBuilder({
               </label>)}</div>
               <button className="btn btn-full" type="button" onClick={addHomeAssignment}>Add Home Page Assignment</button>
             </div>}
-            <label className="form-label" htmlFor="lightning-page-layout-mode">Canvas mode</label>
-            <select id="lightning-page-layout-mode" className="form-control" value={page.layoutMode}
-              onChange={(event) => setPageLayoutMode(event.target.value as LightningPageMetadata['layoutMode'])}>
-              <option value="template">Template</option>
-              <option value="free-canvas" disabled={page.pageType !== 'Home Page'}>Free Canvas (Home Pages)</option>
-            </select>
-            {page.layoutMode === 'free-canvas' ? <>
-              <p className="properties-help">A header-free canvas for custom library components, assigned using this Home Page's app/profile activation rules.</p>
-              <div className="permission-form-grid">
-                <label className="form-label" htmlFor="lightning-canvas-width">Width (px)<input id="lightning-canvas-width" className="form-control" type="number" min={320} max={7680} value={page.canvasWidth} onChange={(event) => {
-                  const canvasWidth = Number(event.target.value);
-                  if (!Number.isInteger(canvasWidth) || canvasWidth < 320 || canvasWidth > 7680) return;
-                  applyPage({ ...page, canvasWidth, components: page.components.map((component) => {
-                    if (!component.position) return component;
-                    const width = Math.min(component.position.width, canvasWidth);
-                    return { ...component, position: { ...component.position, width, x: Math.min(component.position.x, canvasWidth - width) } };
-                  }) });
-                }} /></label>
-                <label className="form-label" htmlFor="lightning-canvas-height">Height (px)<input id="lightning-canvas-height" className="form-control" type="number" min={320} max={7680} value={page.canvasHeight} onChange={(event) => {
-                  const canvasHeight = Number(event.target.value);
-                  if (!Number.isInteger(canvasHeight) || canvasHeight < 320 || canvasHeight > 7680) return;
-                  applyPage({ ...page, canvasHeight, components: page.components.map((component) => {
-                    if (!component.position) return component;
-                    const height = Math.min(component.position.height, canvasHeight);
-                    return { ...component, position: { ...component.position, height, y: Math.min(component.position.y, canvasHeight - height) } };
-                  }) });
-                }} /></label>
-              </div>
-            </> : <label className="form-label" htmlFor="lightning-page-template">Page template</label>}
-            {page.layoutMode === 'template' && <select id="lightning-page-template" className="form-control" value={template.id} onChange={(event) => setPageTemplate(event.target.value as LightningPageTemplate)}>{pageTemplates.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select>}
-            <div className="properties-section-title">Supported Form Factors</div>
-            {(['Desktop', 'Phone'] as const).map((formFactor) => <label className="checkbox-row property-check" key={formFactor}><input type="checkbox" checked={page.devices.includes(formFactor)} onChange={(event) => {
-              const devices = event.target.checked ? [...page.devices, formFactor] : page.devices.filter((item) => item !== formFactor);
-              if (!devices.length) { onNotify('At least one form factor must be selected'); return; }
-              const activationAssignments = (page.activationAssignments ?? [])
-                .map((assignment) => ({ ...assignment, formFactors: assignment.formFactors.filter((factor) => devices.includes(factor)) }))
-                .filter((assignment) => assignment.formFactors.length > 0);
-              applyPage({
-                ...page,
-                devices,
-                activationAssignments,
-                status: page.status === 'Active' && !activationAssignments.length ? 'Draft' : page.status
-              });
-            }} />{formFactor}</label>)}
+            <p className="properties-help">Device, dimensions and orientation are selected when creating a page. Create another page for a different layout size.</p>
             <div className="page-property-summary"><strong>{page.components.length}</strong> components <span>·</span> <strong>{page.status}</strong></div>
-            <button className="btn btn-full" disabled={saving} onClick={() => void savePage()}>Save page properties</button>
+
           </>}
         </aside>
       </div>
+      </>}
       {dependenciesOpen && <div className="modal-backdrop" role="presentation"
         onMouseDown={event => { if (event.target === event.currentTarget) setDependenciesOpen(false); }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="page-dependencies-title"
