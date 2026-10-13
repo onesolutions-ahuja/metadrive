@@ -112,7 +112,7 @@ try{
   await browserPage.getByRole('button',{name:'Layers'}).click();
   await browserPage.getByRole('navigation',{name:'Page component layers'})
     .getByRole('button',{name:'Select layer Dashboard'}).click();
-  await browserPage.getByRole('tab',{name:'Data & Actions'}).click();
+  await browserPage.getByRole('tab', { name: 'Data & Actions' }).first().click();
   await browserPage.locator('#page-component-dashboard').waitFor();
   assert.equal(await browserPage.locator('#page-component-dashboard').inputValue(),dashboardApi);
   await browserPage.getByRole('button',{name:'Save',exact:true}).click();
