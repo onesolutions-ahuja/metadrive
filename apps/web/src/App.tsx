@@ -9143,6 +9143,14 @@ function PageBuilder({
   const fields = targetObject?.fields ?? [];
   const pageLayouts = targetObject?.pageLayouts ?? [];
   const selected = page.components.find((component) => component.id === selectedId);
+  // Metadata pages may hydrate after PageBuilder mounts; select their first
+  // component when records arrive so the inspector is immediately usable.
+  useEffect(() => {
+    if (pageSettingsOpen || page.components.length === 0) return;
+    if (!page.components.some(component => component.id === selectedId)) {
+      setSelectedId(page.components[0].id);
+    }
+  }, [page.apiName, page.components.length]);
   const selectedCustomDefinition = selected?.type.startsWith('Custom:')
     ? libraryComponents.find((item) => item.apiName === selected.type.slice('Custom:'.length))
     : undefined;
