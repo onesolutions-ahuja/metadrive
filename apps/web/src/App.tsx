@@ -654,7 +654,8 @@ function ConnectorSettingsWorkspace({
   onSaveProvider,
   onSaveIntegrationConnection,
   onTestIntegrationConnection,
-  onNotify
+  onNotify,
+  canManage
 }: {
   provider: ConnectorProviderMetadata;
   providers: ConnectorProviderMetadata[];
@@ -664,9 +665,11 @@ function ConnectorSettingsWorkspace({
   onSaveIntegrationConnection: (connection: Omit<Pick<IntegrationConnectionMetadata, 'id' | 'connectorKey' | 'name' | 'configuration' | 'status'>, 'id'> & { id?: string; credentials: Record<string, string> }) => Promise<IntegrationConnectionMetadata>;
   onTestIntegrationConnection: (id: string) => Promise<IntegrationConnectionMetadata>;
   onNotify: (message: string) => void;
+  canManage: boolean;
 }) {
   const providerConnections = integrationConnections.filter((item) => item.connectorKey === provider.connectorKey);
   const [selectedConnectionId, setSelectedConnectionId] = useState('');
+  const [editingConnection, setEditingConnection] = useState(false);
   const [connectionName, setConnectionName] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<IntegrationConnectionMetadata['status']>('ACTIVE');
   const [connectionConfiguration, setConnectionConfiguration] = useState<Record<string, string>>({});
@@ -695,6 +698,7 @@ function ConnectorSettingsWorkspace({
     setConnectionStatus(existing?.status ?? 'ACTIVE');
     setConnectionConfiguration(existing?.configuration ?? {});
     setConnectionCredentials({});
+    setEditingConnection(false);
   }, [provider.connectorKey]);
 
   useEffect(() => {
@@ -713,6 +717,7 @@ function ConnectorSettingsWorkspace({
   }, [provider]);
 
   const saveProvider = async () => {
+    if (!canManage) return;
     setSavingProvider(true);
     try {
       const saved = await onSaveProvider({
@@ -741,6 +746,7 @@ function ConnectorSettingsWorkspace({
   const selectConnection = (id: string) => {
     const selected = providerConnections.find((item) => item.id === id);
     setSelectedConnectionId(id);
+    setEditingConnection(false);
     setConnectionName(selected?.name ?? `${provider.name} connection`);
     setConnectionStatus(selected?.status ?? 'ACTIVE');
     setConnectionConfiguration(selected?.configuration ?? {});
@@ -748,6 +754,7 @@ function ConnectorSettingsWorkspace({
     setConnectionTestError('');
   };
   const saveConnection = async () => {
+    if (!canManage || !editingConnection) return;
     setSavingConnection(true);
     try {
       const saved = await onSaveIntegrationConnection({
@@ -759,6 +766,7 @@ function ConnectorSettingsWorkspace({
         status: connectionStatus
       });
       setSelectedConnectionId(saved.id);
+      setEditingConnection(false);
       setConnectionName(saved.name);
       setConnectionConfiguration(saved.configuration);
       setConnectionStatus(saved.status);
@@ -783,7 +791,7 @@ function ConnectorSettingsWorkspace({
   const testStatusClass = testStatusLabel === 'Connected' ? 'connected'
     : testStatusLabel === 'Failed' || testStatusLabel === 'Not configured' ? 'failed' : '';
   const testConnection = async () => {
-    if (!selectedConnectionId || connectionIsDirty || editingProvider) return;
+    if (!selectedConnectionId || connectionIsDirty || editingProvider || editingConnection) return;
     setTestingConnection(true);
     setConnectionTestError('');
     try {
@@ -820,7 +828,7 @@ function ConnectorSettingsWorkspace({
             <div className="connector-card-heading"><div><h3>Provider Definition</h3><p>Metadata used by flows to build requests for this provider.</p></div>
               {editingProvider
                 ? <div className="connector-connection-actions"><button className="btn btn-small" onClick={() => setEditingProvider(false)}>Cancel</button><button className="btn btn-brand btn-small" onClick={() => void saveProvider()} disabled={savingProvider}><Save size={13} />{savingProvider ? 'Saving…' : 'Save Provider'}</button></div>
-                : <button className="btn btn-small" onClick={() => setEditingProvider(true)}><Pencil size={13} />Edit Definition</button>}
+                : canManage ? <button className="btn btn-small" onClick={() => setEditingProvider(true)}><Pencil size={13} />Edit Definition</button> : null}
             </div>
             {editingProvider ? <div className="connector-definition-form">
               <label className="form-label">Connector Key<input className="form-control" value={provider.connectorKey} readOnly /></label>
@@ -853,29 +861,49 @@ function ConnectorSettingsWorkspace({
             <div className="connector-card-heading"><div><h3>Integration Connection</h3><p>Tenant-owned connection values and encrypted credentials used by flows.</p></div>
               <div className="connector-connection-actions">
                 <select className="form-control" aria-label="Select Integration Connection" value={selectedConnectionId} onChange={(event) => selectConnection(event.target.value)}>
-                  <option value="">New connection</option>
+                  <option value="">No connection selected</option>
                   {providerConnections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <button className="btn btn-small" onClick={() => selectConnection('')}><Plus size={13} />New</button>
+                {canManage && <button className="btn btn-small" onClick={() => { selectConnection(''); setEditingConnection(true); }}><Plus size={13} />New</button>}
               </div>
             </div>
-            <div className="connector-field-list">
-              <label className="form-label">Connection Name<input className="form-control" value={connectionName} onChange={(event) => setConnectionName(event.target.value)} /></label>
-              <label className="form-label">Status<select className="form-control" value={connectionStatus} onChange={(event) => setConnectionStatus(event.target.value as IntegrationConnectionMetadata['status'])}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></label>
-              {provider.credentialsSchema.map((field) => <label className="form-label" key={field.name}>
-                {field.label}{field.required ? ' *' : ''}
-                <input
-                  className="form-control"
-                  type={field.secret ? 'password' : 'text'}
-                  autoComplete="new-password"
-                  value={field.secret ? (connectionCredentials[field.name] ?? '') : (connectionConfiguration[field.name] ?? '')}
-                  placeholder={field.secret && providerConnections.find((item) => item.id === selectedConnectionId)?.credentialFields.some((entry) => entry.name === field.name && entry.configured) ? 'Saved encrypted value; leave blank to keep' : ''}
-                  onChange={(event) => field.secret
-                    ? setConnectionCredentials((current) => ({ ...current, [field.name]: event.target.value }))
-                    : setConnectionConfiguration((current) => ({ ...current, [field.name]: event.target.value }))}
-                />
-              </label>)}
-            </div>
+            {editingConnection && canManage
+              ? <div className="connector-field-list settings-edit-row">
+                  <label className="form-label">Connection Name
+                    <input className="form-control" value={connectionName}
+                      onChange={(event) => setConnectionName(event.target.value)} />
+                  </label>
+                  <label className="form-label">Status
+                    <select className="form-control" value={connectionStatus}
+                      onChange={(event) => setConnectionStatus(event.target.value as IntegrationConnectionMetadata['status'])}>
+                      <option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option>
+                    </select>
+                  </label>
+                  {provider.credentialsSchema.map((field) => <label className="form-label" key={field.name}>
+                    {field.label}{field.required ? ' *' : ''}
+                    <input className="form-control" type={field.secret ? 'password' : 'text'}
+                      autoComplete="new-password"
+                      value={field.secret ? (connectionCredentials[field.name] ?? '') : (connectionConfiguration[field.name] ?? '')}
+                      placeholder={field.secret && selectedConnection?.credentialFields.some((entry) => entry.name === field.name && entry.configured)
+                        ? 'Saved encrypted value; leave blank to keep' : ''}
+                      onChange={(event) => field.secret
+                        ? setConnectionCredentials((current) => ({ ...current, [field.name]: event.target.value }))
+                        : setConnectionConfiguration((current) => ({ ...current, [field.name]: event.target.value }))} />
+                  </label>)}
+                </div>
+              : <div className="settings-read-first-section">
+                  <SettingsViewRow label="Connection name" value={selectedConnection?.name ?? 'No connection configured'}
+                    canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  <SettingsViewRow label="Status" value={selectedConnection?.status ?? 'Not configured'}
+                    canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  {provider.credentialsSchema.map((field) => (
+                    <SettingsViewRow key={field.name} label={field.label}
+                      value={field.secret
+                        ? (selectedConnection?.credentialFields.some((item) => item.name === field.name && item.configured) ? '••••••••' : 'Not configured')
+                        : (selectedConnection?.configuration[field.name] ?? 'Not configured')}
+                      canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  ))}
+                </div>}
             <div className="connector-save-footer">
               <div className="connector-test-state" aria-live="polite">
                 <span className={`connector-test-result ${testStatusClass}`}>{testStatusLabel}</span>
@@ -884,14 +912,20 @@ function ConnectorSettingsWorkspace({
                   : (provider.test || selectedConnection?.testStatus === 'Test unavailable')
                     && selectedConnection?.lastTestMessage && <span>{selectedConnection.lastTestMessage}</span>}
                 {selectedConnection?.lastTestedAt && <time dateTime={selectedConnection.lastTestedAt}>Last tested {new Date(selectedConnection.lastTestedAt).toLocaleString()}</time>}
-                {connectionIsDirty && <span>Save connection changes before testing.</span>}
+                {editingConnection && connectionIsDirty && <span>Save connection changes before testing.</span>}
                 <p className="connector-security-note">Credentials are encrypted at rest and are never returned to the browser. Leave a saved secret blank to keep it unchanged.</p>
               </div>
               <div className="connector-connection-actions">
-                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || savingConnection || testingConnection || editingProvider}>
+                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || editingConnection || savingConnection || testingConnection || editingProvider}>
                   {testingConnection ? 'Testing…' : 'Test Connection'}
                 </button>
-                <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}><Save size={14} />{savingConnection ? 'Saving…' : 'Save Connection'}</button>
+                {editingConnection && canManage && <>
+                  <button type="button" className="btn" disabled={savingConnection}
+                    onClick={() => selectConnection(selectedConnectionId)}>Cancel</button>
+                  <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}>
+                    <Save size={14} />{savingConnection ? 'Saving…' : 'Save changes'}
+                  </button>
+                </>}
               </div>
             </div>
           </div>
@@ -3729,6 +3763,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onSaveProvider={saveConnectorProvider}
               onSaveIntegrationConnection={saveIntegrationConnection}
               onTestIntegrationConnection={testIntegrationConnection}
+              canManage={connectorRights.edit}
               onNotify={notify}
             /> : <div className="connector-settings-page"><div className="surface connector-empty">Connector metadata is loading…</div></div>;
           })()}
