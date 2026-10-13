@@ -818,5 +818,51 @@
       "minWidth": 640,
       "minHeight": 480
     }
+  },
+  {
+    "apiName": "ChatterInbox",
+    "label": "Chatter Inbox",
+    "category": "Communication",
+    "description": "Responsive object-bound conversation list and thread. Sending and assignment require Flow action bindings; no direct provider calls.",
+    "surfaces": [
+      "page",
+      "dashboard",
+      "flow"
+    ],
+    "defaults": {
+      "title": "Chatter",
+      "accentColor": "#168657",
+      "conversationsObjectApiName": "Communication_Records__c",
+      "messagesObjectApiName": "Communication_Records__c",
+      "channelAccountObjectApiName": "Connector_App__c",
+      "restrictToAssigned": false,
+      "enableAssignment": true,
+      "actionFlows": {
+        "send": {
+          "flowApiName": "CHATTER_SEND_MESSAGE",
+          "inputs": {
+            "ConversationId": "$event.conversationId",
+            "ChannelAccountId": "$event.channelAccountId",
+            "RecipientPhone": "$event.recipientPhone",
+            "Body": "$event.body"
+          }
+        },
+        "assign": {
+          "flowApiName": "CHATTER_ASSIGN_CONVERSATION",
+          "inputs": {
+            "ConversationId": "$event.conversationId",
+            "ChannelAccountId": "$event.channelAccountId"
+          }
+        }
+      }
+    },
+    "jsx": "ChatterInbox/ChatterInbox.jsx",
+    "css": "ChatterInbox/ChatterInbox.css",
+    "resize": {
+      "defaultWidth": 900,
+      "defaultHeight": 650,
+      "minWidth": 320,
+      "minHeight": 380
+    }
   }
 ]
