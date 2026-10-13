@@ -316,9 +316,11 @@ function isAuthErrorMessage(message: string): boolean {
     || text.includes('unable to refresh the login session');
 }
 
-function withAuthRefreshLock(refresh: () => Promise<Response>): Promise<Response> {
+function withAuthRefreshLock(refresh: () => Promise<Response>, signal?: AbortSignal): Promise<Response> {
   if (typeof navigator === 'undefined' || !navigator.locks) return refresh();
-  return navigator.locks.request('metadrive-auth-refresh', refresh).then((response) => response);
+  // A request can wait behind another tab's Web Lock before fetch even starts.
+  // Applying the abort signal to the lock itself bounds that wait as well.
+  return navigator.locks.request('metadrive-auth-refresh', { signal }, refresh);
 }
 
 function refreshAccessToken() {
@@ -1012,18 +1014,20 @@ function App() {
   const restoreSession = async () => {
     const restoreStartedAt = performance.now();
     const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
-    const retryDelaysMs = [1500, 3000, 5000, 7000];
+    // Do not hold the login screen for more than ~20 seconds when the free API is waking.
+    // A visible retry option is safer than hiding errors behind a minute-long spinner.
+    const retryDelaysMs = [1500];
 
     for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 12000);
+      const timeout = window.setTimeout(() => controller.abort(), 9000);
       try {
         const response = await withAuthRefreshLock(() =>
           fetch(`${apiBase}/auth/refresh?landing=1`, {
             method: 'POST',
             credentials: 'include',
             signal: controller.signal
-          })
+          }), controller.signal
         );
 
         if (response.status === 401) {
@@ -1052,7 +1056,7 @@ function App() {
 
         if (!retryableNetworkFailure || attempt === retryDelaysMs.length) {
           setAuthError(error instanceof DOMException && error.name === 'AbortError'
-            ? 'The workspace API took too long to start. Please retry.'
+            ? 'The workspace API is not responding yet. Check the API connection and retry.'
             : error instanceof Error ? error.message : String(error));
           setAuthState('error');
           return;
