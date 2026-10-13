@@ -28,6 +28,7 @@ jobs:
       - name: Build web and server
         env:
           GITHUB_PAGES: 'true'
+          GITHUB_PAGES_BASE_PATH: '/'
           VITE_API_BASE_URL: https://metadrive.onrender.com/api
         run: npm run build
       - name: Validate Pages UI navigation, branding and layout artifact
