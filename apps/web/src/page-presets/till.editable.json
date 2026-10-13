@@ -96,10 +96,7 @@
         "terminalLabel": "",
         "cashierLabel": "",
         "statusLabel": "Ready",
-        "walkInLabel": "Walk-in customer",
-        "basketSide": "left",
-        "basketWidthPercent": 45,
-        "catalogColumns": 3
+        "walkInLabel": "Walk-in customer"
       }
     }
   ]
