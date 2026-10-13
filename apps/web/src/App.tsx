@@ -3749,7 +3749,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           {route.kind === 'setup' && workspace === 'flow-logs' && (
             <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
           )}
-          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace />}
+          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace canManage={canManageFlows} />}
           {route.kind === 'setup' && workspace === 'flow-builder' && (
             <FlowBuilderWorkspace
               landing={!route.resourceApiName}
@@ -6365,12 +6365,14 @@ type AutomationSettingsDraft = {
   conversationIdleMinutes: number;
 };
 
-function AutomationSettingsWorkspace() {
+function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<AutomationSettingsDraft>({
     autoRetryFailedFlows: false, maxRetryAttempts: 10, conversationIdleMinutes: 15
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const beforeEdit = useRef<AutomationSettingsDraft | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -6383,7 +6385,22 @@ function AutomationSettingsWorkspace() {
     return () => { active = false; };
   }, []);
 
+  const startEdit = (field: string) => {
+    if (!canManage || editingRow || loading) return;
+    beforeEdit.current = { ...draft };
+    setEditingRow(field);
+    setNotice('');
+    setError('');
+  };
+  const cancelEdit = () => {
+    if (saving) return;
+    if (beforeEdit.current) setDraft(beforeEdit.current);
+    beforeEdit.current = null;
+    setEditingRow(null);
+    setError('');
+  };
   const save = async () => {
+    if (!canManage || !editingRow || saving) return;
     setError('');
     setNotice('');
     setSaving(true);
@@ -6392,6 +6409,8 @@ function AutomationSettingsWorkspace() {
         method: 'PUT', body: JSON.stringify(draft)
       });
       setDraft(result);
+      setEditingRow(null);
+      beforeEdit.current = null;
       setNotice('Process automation settings saved.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -6400,39 +6419,64 @@ function AutomationSettingsWorkspace() {
     }
   };
 
-  return <div className="connector-settings-page">
+  const editable = (key: string) => canManage && !editingRow && !loading;
+  return <div className="connector-settings-page settings-read-first-page">
     <PageHeading eyebrow="Setup / Automation" title="Process Automation Settings"
-      description="Control retries of failed flow executions and inactivity limits for conversational flows." />
-    <section className="surface" style={{ padding: 24, maxWidth: 760 }}>
+      description="Review failed-flow retries and conversational inactivity limits." />
+    <section className="surface permission-section" style={{ maxWidth: 800 }}>
       {loading ? <p>Loading process automation settings…</p> : <>
         <h2>Execution safety</h2>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={draft.autoRetryFailedFlows}
-            onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
-          Automatically retry failed flow executions
-        </label>
-        <p className="permission-help">OFF by default. When disabled, failed scheduled runs, paused interviews and platform event deliveries are logged but are not retried. New scheduled occurrences are not disabled.</p>
-        <label className="form-label">Maximum failed attempts before stopping automatic retries
-          <input className="form-control" type="number" min="1" max="20" step="1"
-            value={draft.maxRetryAttempts}
-            onChange={(event) => setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
-        </label>
-        <p className="permission-help">Default: 10 failed attempts. Exhausted scheduled occurrences are recorded as failed, paused interviews stop retrying and undelivered platform events are dead-lettered.</p>
+        <div className="settings-read-first-section">
+          {editingRow === 'autoRetryFailedFlows'
+            ? <div className="settings-edit-row">
+                <label className="checkbox-row">
+                  <input type="checkbox" checked={draft.autoRetryFailedFlows}
+                    onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
+                  Automatically retry failed flow executions
+                </label>
+              </div>
+            : <SettingsViewRow label="Automatically retry failed flow executions"
+                value={draft.autoRetryFailedFlows ? 'On' : 'Off'}
+                canEdit={editable('autoRetryFailedFlows')} onEdit={() => startEdit('autoRetryFailedFlows')} />}
+          <p className="permission-help">Off by default. Disabled retries are logged; new scheduled occurrences can still run.</p>
+          {editingRow === 'maxRetryAttempts'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Maximum failed attempts
+                  <input className="form-control" type="number" min="1" max="20" step="1"
+                    value={draft.maxRetryAttempts} onChange={(event) =>
+                      setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
+                </label>
+              </div>
+            : <SettingsViewRow label="Maximum failed attempts" value={String(draft.maxRetryAttempts)}
+                canEdit={editable('maxRetryAttempts')} onEdit={() => startEdit('maxRetryAttempts')} />}
+          <p className="permission-help">Default: 10. Exhausted deliveries are recorded as failed or dead-lettered.</p>
+        </div>
         <h2>Conversation inactivity</h2>
-        <label className="form-label">Expire inactive conversations after (minutes)
-          <input className="form-control" type="number" min="1" max="1440" step="1"
-            value={draft.conversationIdleMinutes}
-            onChange={(event) => setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
-        </label>
-        <p className="permission-help">Default: 15 minutes. After inactivity, the next incoming message receives a new conversation key. Pending conversational interviews expire without sending late replies. Previous message records are kept.</p>
-        {error && <p role="alert" style={{ color: 'var(--slds-color-text-error, #ba0517)' }}>{error}</p>}
-        {notice && <p role="status">{notice}</p>}
-        <button className="btn btn-brand" type="button" onClick={() => void save()}
-          disabled={saving || !Number.isInteger(draft.maxRetryAttempts) || draft.maxRetryAttempts < 1 || draft.maxRetryAttempts > 20
-            || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
-          {saving ? 'Saving…' : 'Save Settings'}
-        </button>
+        <div className="settings-read-first-section">
+          {editingRow === 'conversationIdleMinutes'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Expire inactive conversations after (minutes)
+                  <input className="form-control" type="number" min="1" max="1440" step="1"
+                    value={draft.conversationIdleMinutes} onChange={(event) =>
+                      setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
+                </label>
+              </div>
+            : <SettingsViewRow label="Conversation idle timeout"
+                value={`${draft.conversationIdleMinutes} minutes`}
+                canEdit={editable('conversationIdleMinutes')} onEdit={() => startEdit('conversationIdleMinutes')} />}
+          <p className="permission-help">Default: 15 minutes. Existing message records are retained after inactivity.</p>
+        </div>
+        {editingRow && canManage && <div className="settings-read-first-toolbar">
+          <button className="btn" type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
+          <button className="btn btn-brand" type="button" onClick={() => void save()}
+            disabled={saving || !Number.isInteger(draft.maxRetryAttempts) || draft.maxRetryAttempts < 1 || draft.maxRetryAttempts > 20
+              || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
+            <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>}
       </>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {notice && <p className="form-success" role="status">{notice}</p>}
     </section>
   </div>;
 }
