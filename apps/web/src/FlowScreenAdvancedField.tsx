@@ -146,6 +146,20 @@ export default function FlowScreenAdvancedField({
     const onFiles = async (event: ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(event.target.files ?? []);
       try {
+        if (selectedFiles.length + files.length > maxFiles) {
+          throw new Error(`Choose no more than ${maxFiles} file${maxFiles === 1 ? '' : 's'}.`);
+        }
+        if (selectedFiles.reduce((total, file) => total + file.size, files.reduce((total, file) => total + Number(file.size ?? 0), 0)) > 512 * 1024) {
+          throw new Error('Selected files exceed the 512 KB total limit.');
+        }
+        if (allowedTypes.length > 0 && selectedFiles.some((file) => !allowedTypes.some((allowed) => {
+          const normalized = allowed.trim().toLowerCase();
+          const mime = file.type.toLowerCase();
+          return normalized === mime || (normalized.endsWith('/*') && mime.startsWith(normalized.slice(0, -1)))
+            || (normalized.startsWith('.') && file.name.toLowerCase().endsWith(normalized));
+        }))) {
+          throw new Error('A selected file type is not allowed for this Flow screen field.');
+        }
         if (selectedFiles.some((file) => file.size > maxFileSize)) {
           throw new Error(`Each file must be no larger than ${Math.ceil(maxFileSize / 1024)} KB.`);
         }
