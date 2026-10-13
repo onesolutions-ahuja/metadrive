@@ -10,6 +10,11 @@ export type ClaimedDelivery = { id: string; tenantId: string; credentialId: stri
 const bounded = (value: number, min: number, max: number) => Number.isSafeInteger(value) && value >= min && value <= max;
 export class IntegrationOutbox {
   constructor(private readonly db: SqlClient) {}
+  /** An unapplied additive migration must not interrupt unrelated scheduled Flows. */
+  async ready(): Promise<boolean> {
+    const result = await this.db.query("SELECT to_regclass('md_integration_outbox') IS NOT NULL AS installed");
+    return result.rows[0]?.installed === true;
+  }
   async enqueue(input: DeliveryInput): Promise<string> {
     if (!input.tenantId || !input.credentialId || !input.operationKey || input.operationKey.length > 200 ||
       !/^[A-Z]+$/.test(input.method) || !input.path.startsWith('/') || input.path.startsWith('//') ||
