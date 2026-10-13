@@ -2455,3 +2455,11 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .free-canvas-component.selected{outline:2px solid #4e8df7;outline-offset:2px}
 @media(max-width:740px){.modern-canvas-layers{left:8px;width:min(244px,calc(100vw - 36px))}}
 @media(prefers-reduced-motion:no-preference){.modern-layer,.modern-inspector-tabs button,.free-canvas-component.selected{transition:background-color .15s ease,box-shadow .15s ease}}
+
+/* Keep floating layers anchored to the designer viewport, not the document. */
+.page-preview-area{position:relative}
+.modern-canvas-layers{left:16px;top:48px}
+.modern-layer>button:nth-child(n+2){flex:0 0 auto;padding:7px 5px;display:grid;place-items:center;min-width:26px}
+.modern-layer>button:focus-visible,.modern-inspector-tabs button:focus-visible{outline:2px solid #2c79e6;outline-offset:2px}
+.free-canvas-component>.record-component-head[data-canvas-move-handle]{cursor:grab;touch-action:none;user-select:none}
+.free-canvas-component>.record-component-head[data-canvas-move-handle]:active{cursor:grabbing}
