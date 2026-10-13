@@ -61,3 +61,13 @@ test('kiosk virtual device seeder requires a licensed installation and restricte
   assert.equal(seeded.pages.find(p=>p.apiName==='UNE_KIOSK').activationAssignments
     .some(a=>a.appId==='KioskApp' && a.scope==='App Default'),true);
 });
+
+test('legacy kiosk seed is a published Home Page eligible for repaired app fallback',()=>{
+  const installed=applyInstallableAppPackages(tenant(),catalog);
+  const page=installed.pages.find(p=>p.apiName==='UNE_KIOSK');
+  assert.equal(page.pageType,'Home Page');
+  assert.equal(page.status,'Active');
+  assert.ok(page.devices.includes('Desktop'));
+  assert.equal(page.layoutMode,'free-canvas');
+  assert.equal(installed.apps.find(a=>a.apiName==='KioskApp')?.apiName,'KioskApp');
+});

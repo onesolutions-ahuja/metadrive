@@ -9611,7 +9611,19 @@ function resolveActiveLightningRecordPage(
     }
   }
   matches.sort((left, right) => right.specificity - left.specificity);
-  return matches[0]?.page;
+  if (matches.length) return matches[0].page;
+  // Older installed Kiosk packages may have a Home Page but lack the
+  // App Default activation introduced after installation. Resolve the
+  // packaged page without broadening permissions for other apps.
+  if (appId === 'KioskApp') {
+    const entitlement = (tenant.records.Connector_App__c ?? []).find(row =>
+      row.AppKey__c === 'kiosk' && row.Installed__c === true
+      && ['Trial','Licensed'].includes(String(row.LicenceStatus__c)));
+    if (entitlement) return tenant.pages.find(page =>
+      page.apiName === 'UNE_KIOSK' && page.pageType === 'Home Page'
+      && page.status === 'Active' && page.devices.includes(formFactor));
+  }
+  return undefined;
 }
 
 function resolveActiveLightningHomePage(
