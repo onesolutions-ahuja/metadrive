@@ -137,6 +137,8 @@ jobs:
         run: node --test --test-concurrency=1 apps/server/test/relational-projection.test.mjs apps/server/test/relational-staging.integration.test.mjs apps/server/test/relational-runtime.integration.test.mjs apps/server/test/relational-api.integration.test.mjs apps/server/test/relational-in-place.integration.test.mjs
       - name: Verify Module 11 integration outbox against disposable PostgreSQL
         run: node --test apps/server/test/connector-outbox.postgres.integration.test.mjs
+      - name: Verify Module 11 single-use OAuth callback challenge against disposable PostgreSQL
+        run: node --test apps/server/test/connector-oauth.postgres.integration.test.mjs
       - name: Verify SQL-only component registry schema and tenant-owned dependencies
         run: node --test apps/server/test/component-registry-sql.integration.test.mjs
       - name: Verify typed SQL records, login, relationships and Flow API end to end
