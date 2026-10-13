@@ -38,21 +38,42 @@
               "label": "Category Id",
               "dataType": "Lookup(ProductCategory)",
               "required": false,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "ProductCategory",
+                "relationshipName": "CategoryId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "UnitId",
               "label": "Unit Id",
               "dataType": "Lookup(UnitOfMeasure)",
               "required": false,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "UnitOfMeasure",
+                "relationshipName": "UnitId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "TaxId",
               "label": "Tax Id",
               "dataType": "Lookup(Tax)",
               "required": false,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Tax",
+                "relationshipName": "TaxId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "IsActive",
@@ -89,7 +110,14 @@
               "label": "Parent Id",
               "dataType": "Lookup(ProductCategory)",
               "required": false,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "ProductCategory",
+                "relationshipName": "ParentId",
+                "childRelationshipName": "ProductCategory_Children",
+                "deleteBehavior": "Restrict"
+              }
             }
           ]
         },
@@ -163,14 +191,28 @@
               "label": "Sale",
               "dataType": "Lookup(Sale__c)",
               "required": true,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Sale__c",
+                "relationshipName": "Sale",
+                "childRelationshipName": "SaleItem__c_Children",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "Product__c",
               "label": "Product",
               "dataType": "Lookup(Product)",
               "required": false,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Product",
+                "relationshipName": "Product",
+                "childRelationshipName": "SaleItem__c_Children",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "Quantity__c",
@@ -251,7 +293,14 @@
               "label": "Product",
               "dataType": "Lookup(Product)",
               "required": false,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Product",
+                "relationshipName": "Product",
+                "childRelationshipName": "CartLine__c_Children",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "Quantity__c",
@@ -339,7 +388,14 @@
               "label": "Payment Device",
               "dataType": "Lookup(NamedDevice__c)",
               "required": false,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "NamedDevice__c",
+                "relationshipName": "Payment_Device",
+                "childRelationshipName": "KioskSettings__c_Children",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "Payment_Named_Credential__c",
@@ -1269,7 +1325,27 @@
             "create": true
           }
         }
-      }
+      },
+      "components": [
+        {
+          "apiName": "KioskOrderingExperience",
+          "label": "Kiosk Ordering Experience",
+          "description": "Metadata-bound ordering UI with configured Flow actions",
+          "jsxFile": "KioskOrderingExperience/KioskOrderingExperience.jsx",
+          "cssFile": "KioskOrderingExperience/KioskOrderingExperience.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 1080,
+            "defaultHeight": 1920,
+            "minWidth": 320,
+            "minHeight": 600
+          }
+        }
+      ]
     }
   ]
 }
