@@ -6,6 +6,94 @@
       "version": 1,
       "objects": [
         {
+          "apiName": "Product",
+          "label": "Product",
+          "pluralLabel": "Products",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Type",
+              "label": "Type",
+              "dataType": "Picklist",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "SKU",
+              "label": "SKU",
+              "dataType": "Text(100)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "CategoryId",
+              "label": "Category Id",
+              "dataType": "Lookup(ProductCategory)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "UnitId",
+              "label": "Unit Id",
+              "dataType": "Lookup(UnitOfMeasure)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "TaxId",
+              "label": "Tax Id",
+              "dataType": "Lookup(Tax)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "IsActive",
+              "label": "Is Active",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "DefaultPrice",
+              "label": "Default Price",
+              "dataType": "Currency(18, 2)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "ProductCategory",
+          "label": "Product Category",
+          "pluralLabel": "Product Categories",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "ParentId",
+              "label": "Parent Id",
+              "dataType": "Lookup(ProductCategory)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
           "apiName": "Sale__c",
           "label": "Sale",
           "pluralLabel": "Sales",
@@ -1141,7 +1229,47 @@
           "brandColor": "#ffca26",
           "utilityItems": []
         }
-      ]
+      ],
+      "profile": {
+        "id": "kiosk-user",
+        "apiName": "Kiosk_User",
+        "label": "Kiosk User",
+        "systemPermissions": [
+          "flows:run"
+        ],
+        "objectPermissions": {
+          "Product": {
+            "read": true
+          },
+          "ProductCategory": {
+            "read": true
+          },
+          "Cart__c": {
+            "read": true,
+            "create": true,
+            "edit": true
+          },
+          "CartLine__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true
+          },
+          "Sale__c": {
+            "read": true,
+            "create": true,
+            "edit": true
+          },
+          "SaleItem__c": {
+            "read": true,
+            "create": true
+          },
+          "Payment": {
+            "read": true,
+            "create": true
+          }
+        }
+      }
     }
   ]
 }
