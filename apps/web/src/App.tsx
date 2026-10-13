@@ -2138,6 +2138,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       notify('The Start element cannot be removed');
       return;
     }
+    if (flow.connectors.some((connector) => connector.from === id)) {
+      notify('Disconnect child paths before removing this Flow element.');
+      return;
+    }
     const incoming = flow.connectors.filter((connector) => connector.to === id);
     const outgoing = flow.connectors.filter((connector) => connector.from === id);
     const remaining = flow.elements.filter((item) => item.id !== id);
