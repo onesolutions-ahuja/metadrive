@@ -16,8 +16,8 @@ export function prepareKioskDevice(tenant, kioskEmail, id, createdAt) {
       ...tenant.accessControl,
       users: [...(tenant.accessControl.users ?? []), {
         id, name:'Kiosk Device',username:kioskEmail,role:'Kiosk',
-        roleId:tenant.accessControl.roles.find(r=>r.id==='role-standard-user')?.id
-          ?? tenant.accessControl.roles[0]?.id,
+        roleId:(tenant.accessControl.roles ?? []).find(r=>r.id==='role-standard-user')?.id
+          ?? (tenant.accessControl.roles ?? [])[0]?.id,
         profileId:'kiosk-user',permissionSetIds:[],permissionSetGroupIds:[],
         timeZone:'Europe/London',locale:'en-GB'
       }]
