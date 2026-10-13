@@ -51,3 +51,19 @@ test('formula grammar limits input length and recursion depth', () => {
   assert.throws(() => validateFlowFormulaSyntax('1+'.repeat(1001) + '1'), /2,000-token/);
   assert.throws(() => validateFlowFormulaSyntax(' '.repeat(10001) + '1'), /10,000-character/);
 });
+
+test('common formula functions reject invalid arity even when branches depend on runtime values', () => {
+  for (const expression of [
+    'ISBLANK()', 'LOWER()', 'ABS(1, 2)', 'POWER(2)',
+    'BLANKVALUE({!Amount})', 'CONTAINS({!Name})',
+    'MIN(1)', 'TEXT(1, 2)', 'IF({!Ready}, TRIM(), 3)'
+  ]) {
+    assert.throws(() => validateFlowFormulaSyntax(expression), /requires/, expression);
+  }
+  for (const expression of [
+    'ISBLANK({!Name})', 'BLANKVALUE({!Amount}, 0)',
+    'MIN(1, 2, 3)', 'POWER(2, 3)', 'TRIM({!Name})'
+  ]) {
+    assert.doesNotThrow(() => validateFlowFormulaSyntax(expression), expression);
+  }
+});
