@@ -173,13 +173,13 @@ test('Collection Filter and Collection Sort execute and validate record collecti
       token, 'PUT', createCollectionDefinition);
     assert.equal(createdBatchFlow.status, 200, JSON.stringify(createdBatchFlow.data));
     const createdBatch = await send('/flows/Flow_Create_Collection_Smoke/execute', token, 'POST', {
-      NewAccounts: [{ Name: 'Flow Collection Create A' }, { Name: 'Flow Collection Create B' }]
+      NewAccounts: [{ Name: 'MD10 Batch Insert A' }, { Name: 'MD10 Batch Insert B' }]
     });
     assert.equal(createdBatch.status, 200, JSON.stringify(createdBatch.data));
     assert.equal(createdBatch.data.outputs.CreatedAccounts.length, 2);
     assert.equal(new Set(createdBatch.data.outputs.CreatedAccounts.map((item: any) => item.Id)).size, 2);
     const persistedBatch = await send('/records/Account', token);
-    for (const name of ['Flow Collection Create A', 'Flow Collection Create B']) {
+    for (const name of ['MD10 Batch Insert A', 'MD10 Batch Insert B']) {
       assert.equal(persistedBatch.data.records.filter((item: any) => item.Name === name).length, 1,
         'each created record must persist exactly once');
     }
