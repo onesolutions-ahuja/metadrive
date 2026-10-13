@@ -51,6 +51,8 @@ test('kiosk virtual device seeder requires a licensed installation and restricte
   assert.equal(user.profileId,'kiosk-user');
   const profile=seeded.accessControl.profiles.find(p=>p.id==='kiosk-user');
   assert.equal(profile.navigationDefaultAccess,'Deny');
+  assert.ok(profile.systemPermissions.includes('metadata:read'));
+  assert.ok(profile.systemPermissions.includes('flows:run'));
   assert.equal(profile.appPermissions.KioskApp,true);
   assert.equal(profile.tabPermissions.Product,true);
   assert.equal(user.username,id);
