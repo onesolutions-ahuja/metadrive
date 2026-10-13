@@ -54,7 +54,7 @@ function configFields(metadata?: string): { values: Record<string, string>; labe
 export default function ConnectorAppWorkspace({
   app, credentials, flows, canManageCredentials, canView, canManageSecrets, canTest,
   canInstall, canLicenceAdmin, onGrantLicence, canManageFlows, encryptionReady, onBack,
-  onSave, onDelete, onRotate, onTest, loadHistory, onOpenRecord, onOpenFlow, onLifecycle
+  onSave, onDelete, onRotate, onTest, onOAuthAuthorize, loadHistory, onOpenRecord, onOpenFlow, onLifecycle
 }: {
   app: ConnectorApp;
   credentials: NamedCredentialMetadata[];
@@ -73,6 +73,7 @@ export default function ConnectorAppWorkspace({
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{connected: boolean; status?: number; message: string}>;
+  onOAuthAuthorize?: (id: string) => Promise<string>;
   loadHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<CommunicationPage>;
   onOpenRecord: (objectName: string, id: string) => void;
   onOpenFlow: (apiName: string) => void;
@@ -156,7 +157,7 @@ export default function ConnectorAppWorkspace({
         fieldLabels={configFields(app.ConfigFields__c).labels}
         credentials={matched} canManage={canManageCredentials && licensed}
         canManageSecrets={canManageSecrets} canTest={canTest && licensed}
-        encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest}/>
+        encryptionReady={encryptionReady} onSave={onSave} onDelete={onDelete} onRotate={onRotate} onTest={onTest} onOAuthAuthorize={onOAuthAuthorize}/>
     </>}
     {section === 'licence' && <section className="surface" style={{padding:18}}>
       <h2>App Licence</h2>
