@@ -1253,6 +1253,9 @@ const flowInterviewSchema = z.object({
   versionNumber: z.number().int().positive(),
   userId: z.string(),
   kind: z.enum(['screen', 'wait', 'scheduled', 'async']),
+  // Persist record-trigger formula context across process restarts and version changes.
+  recordEvent: z.enum(['created', 'updated', 'deleted']).nullable().default(null),
+  isClone: z.boolean().default(false),
   screenElementId: z.number().int().positive().nullable(),
   waitUntil: z.string().datetime().nullable(),
   nextElementId: z.number().int().positive().nullable(),
@@ -10877,7 +10880,7 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
     }
     const result = await executeFlow(flow, working, principal.tenantId, principal.userId, {}, interview.record ?? undefined, interview.prior ?? undefined, 0, {
       startAt: nextElementId, variables, interviewGuid: interview.id, interviewStartTime: interview.createdAt
-    }, 0, undefined, false, undefined, true);
+    }, 0, interview.recordEvent ?? undefined, interview.isClone, undefined, true);
     if (result.status === 'waiting') {
       const updatedInterview = createFlowInterview(flow, principal.userId, result);
       updatedInterview.history = [
@@ -16216,8 +16219,8 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
 
 type FlowExecutionResult =
   | { status: 'completed'; outputs: Record<string, unknown>; variables: Record<string, unknown>; debugTrace: FlowDebugTraceEntry[] }
-  | { status: 'waiting'; kind: 'screen'; screen: FlowMetadata['elements'][number]; nextElementId: number | null; outcomes: Array<{ name: string; label: string }>; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; debugTrace: FlowDebugTraceEntry[] }
-  | { status: 'waiting'; kind: 'wait' | 'scheduled' | 'async'; waitUntil: string; nextElementId: number | null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; debugTrace: FlowDebugTraceEntry[] };
+  | { status: 'waiting'; kind: 'screen'; screen: FlowMetadata['elements'][number]; nextElementId: number | null; outcomes: Array<{ name: string; label: string }>; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] }
+  | { status: 'waiting'; kind: 'wait' | 'scheduled' | 'async'; waitUntil: string; nextElementId: number | null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] };
 
 function scheduledPathTimestamp(
   field: ObjectMetadata['fields'][number] | undefined,
@@ -16278,6 +16281,8 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
     userId,
     allowDraft: flow.status === 'Draft',
     kind: result.kind,
+    recordEvent: result.recordEvent ?? null,
+    isClone: result.isClone ?? false,
     screenElementId: result.kind === 'screen' ? result.screen.id : null,
     waitUntil: result.kind === 'screen' ? null : result.waitUntil,
     nextElementId: result.nextElementId,
@@ -16672,6 +16677,8 @@ async function executeFlow(
               interviewStartTime: new Date().toISOString(),
               record: structuredClone(context.record),
               prior: context.prior ? structuredClone(context.prior) : undefined,
+              recordEvent: context.recordEvent,
+              isClone: context.isClone,
               debugTrace: context.debugTrace ?? []
             }));
           }
@@ -17130,7 +17137,9 @@ async function executeFlow(
             outcomes: configuredOutcomes.length ? configuredOutcomes : [{ name: 'Default', label: 'Next' }],
             variables: context.variables,
             ...flowInterviewIdentity(context),
-            record: context.record, prior: context.prior, debugTrace: context.debugTrace ?? []
+            record: context.record, prior: context.prior,
+            recordEvent: context.recordEvent, isClone: context.isClone,
+            debugTrace: context.debugTrace ?? []
           };
         }
       case 'Wait': {
@@ -17169,7 +17178,9 @@ async function executeFlow(
           status: 'waiting', kind: 'wait', waitUntil: waitUntil.toISOString(),
           nextElementId: nextConnectors[0]?.to ?? null, variables: context.variables,
           ...flowInterviewIdentity(context),
-          record: context.record, prior: context.prior, debugTrace: context.debugTrace ?? []
+          record: context.record, prior: context.prior,
+          recordEvent: context.recordEvent, isClone: context.isClone,
+          debugTrace: context.debugTrace ?? []
         };
       }
       case 'Action':
@@ -17515,7 +17526,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
           variables: interview.variables,
           interviewGuid: interview.id,
           interviewStartTime: interview.createdAt
-        }, 0, undefined, false, undefined, interview.allowDraft);
+        }, 0, interview.recordEvent ?? undefined, interview.isClone, undefined, interview.allowDraft);
         if (result.status === 'waiting') {
           const updated = createFlowInterview(flow, interview.userId, result);
           working.interviews = working.interviews.map((item) => item.id === interview.id ? updated : item);
