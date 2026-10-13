@@ -4921,8 +4921,8 @@ function LightningAppRuntime({
         ...(nested
           ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
           : {
-              left: canvasResizePreview?.id === component.id ? canvasResizePreview.x : component.position?.x ?? 0,
-              top: canvasResizePreview?.id === component.id ? canvasResizePreview.y : component.position?.y ?? 0,
+              left: component.position?.x ?? 0,
+              top: component.position?.y ?? 0,
               width: component.position?.width ?? 320,
               height: component.position?.height ?? 180
             }),
@@ -10145,8 +10145,8 @@ function PageBuilder({
           ? nested
             ? { position: 'relative', left: 'auto', top: 'auto', width: '100%', height: 'auto', minHeight: 40 }
             : {
-                left: component.position?.x ?? 0,
-                top: component.position?.y ?? 0,
+                left: canvasResizePreview?.id === component.id ? canvasResizePreview.x : component.position?.x ?? 0,
+                top: canvasResizePreview?.id === component.id ? canvasResizePreview.y : component.position?.y ?? 0,
                 width: canvasResizePreview?.id === component.id ? canvasResizePreview.width : component.position?.width ?? customDefinition?.resize?.defaultWidth ?? 320,
                 height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
               }
