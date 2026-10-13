@@ -10721,6 +10721,11 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
     appendFieldHistory(working, object, existing, updated, principal.userId);
     working.records[objectName] = (working.records[objectName] ?? []).map((item) => item.Id === existing.Id ? updated : item);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
+    // A queued offline edit may arrive after an administrator revoked access.
+    // Recheck current server-side object, field, record and record-type grants
+    // AFTER asynchronous Flows and BEFORE any state/SQL mutation is queued.
+    const commitDenial = currentRecordCommitDenial(principal, objectName, 'edit', values, existing);
+    if (commitDenial) return res.status(commitDenial.status).json({ error: commitDenial.error });
     persistTenantRecords(principal.tenantId, working);
     // Do not acknowledge a record write before its transactional SQL commit.
     await waitForPersistedState();
