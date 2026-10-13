@@ -73,6 +73,7 @@ import { isComponentVisible } from './componentVisibility';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
+import { isCanvasLocked, snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, type CanvasPosition } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
@@ -8899,6 +8900,8 @@ function PageBuilder({
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
   const [customPropertiesError, setCustomPropertiesError] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<'Design' | 'Data & Actions' | 'Conditions'>('Design');
+  const [snapEnabled, setSnapEnabled] = useState(true);
   const externalPreviewWindowRef = useRef<Window | null>(null);
   const [externalPreviewTarget, setExternalPreviewTarget] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -8952,6 +8955,14 @@ function PageBuilder({
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null);
   const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
+  const canvasResizeValue = useRef<{ id: string; width: number; height: number } | null>(null);
+  const canvasMoveStart = useRef<{
+    id: string; pointerId: number; pointerX: number; pointerY: number;
+    position: CanvasPosition; root: HTMLElement
+  } | null>(null);
+  const canvasMoveValue = useRef<CanvasPosition | null>(null);
+  const xGuideRef = useRef<HTMLDivElement | null>(null);
+  const yGuideRef = useRef<HTMLDivElement | null>(null);
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -9100,7 +9111,27 @@ function PageBuilder({
     onChange(nextPage);
   };
   const updateComponent = (id: string, update: Partial<LightningPageMetadata['components'][number]>) => {
+    const target = page.components.find(component => component.id === id);
+    if (!target) return;
+    // Lock prevents accidental edits; an explicit unlock is always allowed.
+    if (isCanvasLocked(target) && update.properties?.editorLocked !== false) return;
     applyPage({ ...page, components: page.components.map((component) => component.id === id ? { ...component, ...update } : component) });
+  };
+  const toggleCanvasLock = (component: PageComponentMetadata) =>
+    updateComponent(component.id, { properties: { ...component.properties, editorLocked: !isCanvasLocked(component) } });
+  const moveLayer = (id: string, offset: -1 | 1) => {
+    const index = page.components.findIndex(component => component.id === id);
+    const target = index + offset;
+    if (index < 0 || target < 0 || target >= page.components.length ||
+      isCanvasLocked(page.components[index]) || isCanvasLocked(page.components[target])) return;
+    const components = [...page.components];
+    [components[index], components[target]] = [components[target], components[index]];
+    applyPage({ ...page, components });
+  };
+  const wrapSelectedInContainer = () => {
+    if (!selected || !selected.position || isCanvasLocked(selected) || rawLayoutParentId(selected)) return;
+    applyPage({ ...page, components: wrapCanvasComponent(page.components, selected.id, 'group-' + crypto.randomUUID()) });
+    setPaletteTab('Layers');
   };
   const startComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -9129,7 +9160,7 @@ function PageBuilder({
     }
   };
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata) => {
-    if (!component.position) return;
+    if (!component.position || isCanvasLocked(component)) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -9142,36 +9173,85 @@ function PageBuilder({
       height: component.position.height
     };
     setSelectedId(component.id);
+    canvasResizeValue.current = { id: component.id, width: component.position.width, height: component.position.height };
     setCanvasResizePreview({ id: component.id, width: component.position.width, height: component.position.height });
   };
   const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = canvasResizeStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
-    const component = page.components.find((item) => item.id === start.id);
-    if (!component) return;
+    const component = page.components.find(item => item.id === start.id);
+    if (!component?.position) return;
     const definition = component.type.startsWith('Custom:')
-      ? libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length))
+      ? libraryComponents.find(item => item.apiName === component.type.slice('Custom:'.length))
       : undefined;
-    const minWidth = definition?.resize?.minWidth ?? 1;
-    const minHeight = definition?.resize?.minHeight ?? 1;
-    const x = component.position?.x ?? 0;
-    const y = component.position?.y ?? 0;
-    const maxWidth = Math.max(0, page.canvasWidth - x);
-    const maxHeight = Math.max(0, page.canvasHeight - y);
-    setCanvasResizePreview({
-      id: component.id,
-      width: Math.min(maxWidth, Math.max(Math.min(minWidth, maxWidth), start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale))),
-      height: Math.min(maxHeight, Math.max(Math.min(minHeight, maxHeight), start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale)))
-    });
+    const next = snapCanvasSize(component.position,
+      start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale),
+      start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale),
+      { width: page.canvasWidth, height: page.canvasHeight },
+      { width: definition?.resize?.minWidth ?? 1, height: definition?.resize?.minHeight ?? 1 },
+      snapEnabled);
+    canvasResizeValue.current = { id: component.id, width: next.width, height: next.height };
+    // Direct DOM preview avoids re-rendering every component on every pointer move.
+    const root = event.currentTarget.closest<HTMLElement>('[data-component-id]');
+    if (root) { root.style.width = next.width + 'px'; root.style.height = next.height + 'px'; }
   };
-  const endCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const finishCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, commit: boolean) => {
     const start = canvasResizeStart.current;
     if (!start || start.pointerId !== event.pointerId) return;
-    const size = canvasResizePreview?.id === start.id ? canvasResizePreview : { id: start.id, width: start.width, height: start.height };
-    const component = page.components.find((item) => item.id === start.id);
-    if (component?.position) updateComponent(start.id, { position: { ...component.position, width: size.width, height: size.height } });
+    const size = canvasResizeValue.current;
+    const component = page.components.find(item => item.id === start.id);
+    const root = event.currentTarget.closest<HTMLElement>('[data-component-id]');
+    if (root) { root.style.removeProperty('width'); root.style.removeProperty('height'); }
     canvasResizeStart.current = null;
+    canvasResizeValue.current = null;
     setCanvasResizePreview(null);
+    if (commit && component?.position && size && (size.width !== start.width || size.height !== start.height))
+      updateComponent(start.id, { position: { ...component.position, width: size.width, height: size.height } });
+  };
+  const startCanvasMove = (event: React.PointerEvent<HTMLDivElement>, component: PageComponentMetadata) => {
+    if (page.layoutMode !== 'free-canvas' || previewMode || !component.position ||
+      isCanvasLocked(component) || rawLayoutParentId(component) || event.button !== 0) return;
+    const root = event.currentTarget.closest<HTMLElement>('[data-component-id]');
+    if (!root) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    canvasMoveStart.current = {
+      id: component.id, pointerId: event.pointerId, pointerX: event.clientX,
+      pointerY: event.clientY, position: { ...component.position }, root
+    };
+    canvasMoveValue.current = component.position;
+    setSelectedId(component.id);
+    setPageSettingsOpen(false);
+  };
+  const moveCanvasPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = canvasMoveStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const draft = {
+      ...start.position,
+      x: start.position.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale),
+      y: start.position.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale)
+    };
+    const { position, guides } = snapCanvasPosition(
+      draft, { width: page.canvasWidth, height: page.canvasHeight },
+      page.components.filter(component => component.id !== start.id && component.position
+        && !rawLayoutParentId(component)).map(component => component.position!), snapEnabled);
+    canvasMoveValue.current = position;
+    start.root.style.translate = (position.x - start.position.x) + 'px ' + (position.y - start.position.y) + 'px';
+    if (xGuideRef.current) { xGuideRef.current.style.display = guides.x ? 'block' : 'none'; xGuideRef.current.style.left = position.x + 'px'; }
+    if (yGuideRef.current) { yGuideRef.current.style.display = guides.y ? 'block' : 'none'; yGuideRef.current.style.top = position.y + 'px'; }
+  };
+  const finishCanvasMove = (event: React.PointerEvent<HTMLDivElement>, commit: boolean) => {
+    const start = canvasMoveStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const position = canvasMoveValue.current;
+    start.root.style.removeProperty('translate');
+    if (xGuideRef.current) xGuideRef.current.style.display = 'none';
+    if (yGuideRef.current) yGuideRef.current.style.display = 'none';
+    canvasMoveStart.current = null;
+    canvasMoveValue.current = null;
+    if (commit && position && (position.x !== start.position.x || position.y !== start.position.y))
+      updateComponent(start.id, { position });
   };
   const hasOverlappingPageAssignment = (assignment: PageActivationAssignmentMetadata) =>
     (page.activationAssignments ?? []).some((existing) =>
