@@ -4625,10 +4625,14 @@ function MetadataBoundPageComponent({
       categoryObjectApiName ? loadFlowScreenRecords(categoryObjectApiName).catch(() => []) : Promise.resolve([])
     ];
     setDataLoading(true);
-    void Promise.all(tasks).then(([products, basket, customers, categoryRows]) => {
-      if (active) { setRecords(products); setCartRecords(basket); setCustomerRecords(customers); setCategoryRecords(categoryRows); }
-    }).catch((error: unknown) => {
-      if (active) setDataError(error instanceof Error ? error.message : 'Unable to load page records');
+    void Promise.allSettled(tasks).then(([products, basket, customers, categoryRows]) => {
+      if (!active) return;
+      if (products.status === 'fulfilled') setRecords(products.value);
+      else setDataError(products.reason instanceof Error ? products.reason.message : 'Unable to load products');
+      if (basket.status === 'fulfilled') setCartRecords(basket.value);
+      else setActionError(basket.reason instanceof Error ? basket.reason.message : 'Cart read permission required');
+      if (customers.status === 'fulfilled') setCustomerRecords(customers.value);
+      if (categoryRows.status === 'fulfilled') setCategoryRecords(categoryRows.value);
     }).finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
   }, [objectApiName, cartObjectApiName, customerObjectApiName, categoryObjectApiName, sessionId, revision]);
