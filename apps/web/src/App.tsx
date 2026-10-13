@@ -320,7 +320,7 @@ function withAuthRefreshLock(refresh: () => Promise<Response>, signal?: AbortSig
   if (typeof navigator === 'undefined' || !navigator.locks) return refresh();
   // A request can wait behind another tab's Web Lock before fetch even starts.
   // Applying the abort signal to the lock itself bounds that wait as well.
-  return navigator.locks.request<Response>('metadrive-auth-refresh', { signal }, async () => await refresh());
+  return navigator.locks.request('metadrive-auth-refresh', { signal }, refresh).then(async (response) => await response);
 }
 
 function refreshAccessToken() {
