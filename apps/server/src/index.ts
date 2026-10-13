@@ -4414,6 +4414,21 @@ function loadState(sqlState?: unknown): PlatformState {
   try {
     const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
+    // Earlier signed Kiosk demo seeds omitted the record audit timestamps.
+    // Heal only known demo record IDs before strict schema validation so
+    // production can start and persist the recovered state.
+    let kioskDemoAuditRepaired = false;
+    const tenantState = (storedState as { tenants?: Record<string, { records?: Record<string, Array<Record<string, unknown>>> }> })?.tenants;
+    for (const tenant of Object.values(tenantState ?? {})) {
+      for (const objectName of ['Product', 'ProductCategory']) {
+        for (const record of tenant?.records?.[objectName] ?? []) {
+          if (!/^a9130000-0000-4000-8000-00000000000[1-9]$/.test(String(record.Id ?? ''))) continue;
+          const now = new Date().toISOString();
+          if (!record.CreatedDate) { record.CreatedDate = now; kioskDemoAuditRepaired = true; }
+          if (!record.LastModifiedDate) { record.LastModifiedDate = now; kioskDemoAuditRepaired = true; }
+        }
+      }
+    }
     let parsed: z.infer<typeof stateSchema>;
     hydratingPersistedMetadata = true;
     try {
@@ -4707,7 +4722,7 @@ function loadState(sqlState?: unknown): PlatformState {
       migrated.tenants[tenantId] = removeObjectMetadata(tenant, legacyWhatsappObjectApiName);
       console.info('Retired unused legacy WhatsApp object metadata', { tenantId });
     }
-    if (!maintenanceMode && (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
+    if (!maintenanceMode && (leadStreetFieldAdded || kioskDemoAuditRepaired || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
     return migrated;
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
@@ -11657,8 +11672,10 @@ function syncBundledLibraryComponents(): Promise<void> {
         || isAbsolute(jsxRelativePath) || isAbsolute(cssRelativePath)) {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
       }
-      if (existingBundled && !(entry.apiName === 'KioskOrderingExperience' && (existingBundled.version ?? 1) < 4)) continue;
+      if (existingBundled && entry.apiName !== 'KioskOrderingExperience') continue;
       const jsxSource = readFileSync(jsxPath, 'utf8');
+      if (existingBundled && existingBundled.jsxSource === jsxSource
+        && existingBundled.cssSource === readFileSync(cssPath, 'utf8')) continue;
       const cssSource = readFileSync(cssPath, 'utf8');
       if (legacyCandidate) {
         const decision = bundledLegacyMigrationDecision(legacyCandidate, entry.apiName, jsxSource, cssSource);
@@ -11691,7 +11708,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       if (/\brequire\s*\(/.test(compiled.code)) {
         throw new Error(`Bundled component "${input.apiName}" cannot import external modules`);
       }
-      const version = entry.apiName === 'KioskOrderingExperience' ? 4 : 1;
+      const version = entry.apiName === 'KioskOrderingExperience' ? 3 : 1;
       const registered: LibraryComponent = {
         ...input,
         compiledJs: compiled.code,
@@ -11701,11 +11718,11 @@ function syncBundledLibraryComponents(): Promise<void> {
         status: 'Published', publishedVersion: version, revisions: [], trustedBundled: true
       };
       if (legacyCandidate || existingBundled) {
-        const previousComponent = existingBundled ?? legacyCandidate;
         trustedUpgrades.set(entry.apiName.toLowerCase(), {
-          ...previousComponent, ...registered,
-          version,
-          publishedVersion: version
+          ...(existingBundled ?? {}),
+          ...(legacyCandidate ?? {}), ...registered,
+          version: Math.max(version, legacyCandidate?.version ?? existingBundled?.version ?? 1),
+          publishedVersion: Math.max(version, legacyCandidate?.publishedVersion ?? existingBundled?.publishedVersion ?? 1)
         });
       } else imported.push(registered);
     }

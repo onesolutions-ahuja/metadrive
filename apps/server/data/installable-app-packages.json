@@ -1,1 +1,3118 @@
-{"packages":[{"appKey":"kiosk","label":"Kiosk","version":3,"objects":[{"apiName":"Product","label":"Product","pluralLabel":"Products","kind":"Standard Object","description":"Metadata-seeded universal business object. Extend through Object Manager.","fields":[{"apiName":"Name","label":"Name","dataType":"Text(255)","required":true,"unique":false},{"apiName":"Type","label":"Type","dataType":"Picklist","required":false,"unique":false},{"apiName":"SKU","label":"SKU","dataType":"Text(100)","required":false,"unique":false},{"apiName":"CategoryId","label":"Category Id","dataType":"Lookup(ProductCategory)","required":false,"unique":false,"relationship":{"type":"Lookup","targetObject":"ProductCategory","relationshipName":"CategoryId","childRelationshipName":"Product_Children","deleteBehavior":"Restrict"}},{"apiName":"UnitId","label":"Unit Id","dataType":"Lookup(UnitOfMeasure)","required":false,"unique":false,"relationship":{"type":"Lookup","targetObject":"UnitOfMeasure","relationshipName":"UnitId","childRelationshipName":"Product_Children","deleteBehavior":"Restrict"}},{"apiName":"TaxId","label":"Tax Id","dataType":"Lookup(Tax)","required":false,"unique":false,"relationship":{"type":"Lookup","targetObject":"Tax","relationshipName":"TaxId","childRelationshipName":"Product_Children","deleteBehavior":"Restrict"}},{"apiName":"IsActive","label":"Is Active","dataType":"Checkbox","required":false,"unique":false},{"apiName":"DefaultPrice","label":"Default Price","dataType":"Currency(18, 2)","required":false,"unique":false},{"apiName":"ImageUrl__c","label":"Image URL","dataType":"URL","required":false,"unique":false},{"apiName":"Description__c","label":"Menu Description","dataType":"LongTextArea","required":false,"unique":false}]},{"apiName":"ProductCategory","label":"Product Category","pluralLabel":"Product Categories","kind":"Standard Object","description":"Metadata-seeded universal business object. Extend through Object Manager.","fields":[{"apiName":"Name","label":"Name","dataType":"Text(255)","required":true,"unique":false},{"apiName":"ParentId","label":"Parent Id","dataType":"Lookup(ProductCategory)","required":false,"unique":false,"relationship":{"type":"Lookup","targetObject":"ProductCategory","relationshipName":"ParentId","childRelationshipName":"ProductCategory_Children","deleteBehavior":"Restrict"}}]},{"apiName":"Sale__c","label":"Sale","pluralLabel":"Sales","kind":"Custom Object","description":"Reusable metadata for the installable app","fields":[{"apiName":"Name","label":"Sale Number","dataType":"Text(120)","required":true,"unique":false},{"apiName":"Order_Type__c","label":"Order Source","dataType":"Text(40)","required":false,"unique":false},{"apiName":"Payment_Status__c","label":"Payment Status","dataType":"Text(40)","required":false,"unique":false},{"apiName":"Order_Total__c","label":"Order Total","dataType":"Currency(18,2)","required":false,"unique":false},{"apiName":"Session__c","label":"Session","dataType":"Text(120)","required":false,"unique":false},{"apiName":"Currency__c","label":"Currency","dataType":"Text(3)","required":false,"unique":false}]},{"apiName":"SaleItem__c","label":"Sale Item","pluralLabel":"Sale Items","kind":"Custom Object","description":"Reusable metadata for the installable app","fields":[{"apiName":"Name","label":"Item Name","dataType":"Text(255)","required":true,"unique":false},{"apiName":"Sale__c","label":"Sale","dataType":"Lookup(Sale__c)","required":true,"unique":false,"relationship":{"type":"Lookup","targetObject":"Sale__c","relationshipName":"Sale","childRelationshipName":"SaleItem__c_Children","deleteBehavior":"Restrict"}},{"apiName":"Product__c","label":"Product","dataType":"Lookup(Product)","required":false,"unique":false,"relationship":{"type":"Lookup","targetObject":"Product","relationshipName":"Product","childRelationshipName":"SaleItem__c_Children","deleteBehavior":"Restrict"}},{"apiName":"Quantity__c","label":"Quantity","dataType":"Number(18,4)","required":false,"unique":false},{"apiName":"Unit_Price__c","label":"Unit Price","dataType":"Currency(18,2)","required":false,"unique":false}]},{"apiName":"Cart__c","label":"Cart","pluralLabel":"Carts","kind":"Custom Object","description":"Reusable metadata for the installable app","fields":[{"apiName":"Name","label":"Cart","dataType":"Text(255)","required":true,"unique":false},{"apiName":"Session__c","label":"Session","dataType":"Text(120)","required":true,"unique":false},{"apiName":"Status__c","label":"Status","dataType":"Text(40)","required":false,"unique":false},{"apiName":"Order_Type__c","label":"Order Type","dataType":"Text(40)","required":false,"unique":false}]},{"apiName":"CartLine__c","label":"Cart Line","pluralLabel":"Cart Lines","kind":"Custom Object","description":"Reusable metadata for the installable app","fields":[{"apiName":"Name","label":"Line Name","dataType":"Text(255)","required":true,"unique":false},{"apiName":"Session__c","label":"Session","dataType":"Text(120)","required":true,"unique":false},{"apiName":"Product__c","label":"Product","dataType":"Lookup(Product)","required":false,"unique":false,"relationship":{"type":"Lookup","targetObject":"Product","relationshipName":"Product","childRelationshipName":"CartLine__c_Children","deleteBehavior":"Restrict"}},{"apiName":"Quantity__c","label":"Quantity","dataType":"Number(18,4)","required":false,"unique":false},{"apiName":"Unit_Price__c","label":"Price","dataType":"Currency(18,2)","required":false,"unique":false}]},{"apiName":"NamedDevice__c","label":"Named Device","pluralLabel":"Named Devices","kind":"Custom Object","description":"Reusable metadata for the installable app","fields":[{"apiName":"Name","label":"Device Name","dataType":"Text(255)","required":true,"unique":false},{"apiName":"Type__c","label":"Device Type","dataType":"Text(80)","required":false,"unique":false},{"apiName":"Connection_Type__c","label":"Connection Type","dataType":"Text(80)","required":false,"unique":false},{"apiName":"Named_Credential_Id__c","label":"Named Credential","dataType":"Text(80)","required":false,"unique":false},{"apiName":"Enabled__c","label":"Enabled","dataType":"Checkbox","required":false,"unique":false},{"apiName":"Agent_Endpoint__c","label":"Local Service URL","dataType":"URL","required":false,"unique":false}]},{"apiName":"KioskSettings__c","label":"Kiosk Settings","pluralLabel":"Kiosk Settings","kind":"Custom Object","description":"Reusable metadata for the installable app","fields":[{"apiName":"Name","label":"Settings","dataType":"Text(120)","required":true,"unique":false},{"apiName":"Payment_Device__c","label":"Payment Device","dataType":"Lookup(NamedDevice__c)","required":false,"unique":false,"relationship":{"type":"Lookup","targetObject":"NamedDevice__c","relationshipName":"Payment_Device","childRelationshipName":"KioskSettings__c_Children","deleteBehavior":"Restrict"}},{"apiName":"Payment_Named_Credential__c","label":"Payment Credential","dataType":"Text(80)","required":false,"unique":false},{"apiName":"Checkout_Flow__c","label":"Checkout Flow","dataType":"Text(80)","required":false,"unique":false},{"apiName":"Offline_Gateway__c","label":"Local Gateway","dataType":"URL","required":false,"unique":false}]}],"extendObjects":[{"apiName":"Product","fields":[{"apiName":"ImageUrl__c","label":"Kiosk Image","dataType":"URL","required":false,"unique":false},{"apiName":"Description__c","label":"Menu Description","dataType":"Long Text Area","required":false,"unique":false}]}],"pages":[{"apiName":"UNE_KIOSK","label":"UNE KIOSK","targetObject":"Sale__c","pageType":"Home Page","layoutMode":"free-canvas","canvasWidth":1080,"canvasHeight":1920,"status":"Active","devices":["Desktop","Phone"],"template":"header-main-sidebar","components":[{"id":"kiosk-ordering-experience","type":"Custom:KioskOrderingExperience","label":"Object-bound Ordering Kiosk","region":"main","visible":true,"position":{"x":0,"y":0,"width":1080,"height":1920},"properties":{"libraryComponentId":"KioskOrderingExperience","objectApiName":"Product","nameField":"Name","priceField":"DefaultPrice","imageField":"ImageUrl__c","categoryField":"CategoryId","descriptionField":"Description__c","filters":[{"field":"IsActive","operator":"Equals","value":"true"}],"cartObjectApiName":"CartLine__c","cartSessionField":"Session__c","cartProductField":"Product__c","cartQuantityField":"Quantity__c","cartPriceField":"Unit_Price__c","actionFlows":{"add":{"flowApiName":"KIOSK_CART_ADD","inputs":{"SessionId":"$session","ProductId":"$event.productId","Quantity":"$event.quantity"}},"quantity":{"flowApiName":"KIOSK_CART_QUANTITY","inputs":{"SessionId":"$session","LineId":"$event.lineId","Quantity":"$event.quantity"}},"remove":{"flowApiName":"KIOSK_CART_REMOVE","inputs":{"SessionId":"$session","LineId":"$event.lineId"}},"reset":{"flowApiName":"KIOSK_CART_RESET","inputs":{"SessionId":"$session"},"resetSessionOnSuccess":true},"start":{"flowApiName":"KIOSK_SESSION_START","inputs":{"SessionId":"$session"}},"checkout":{"flowApiName":"KIOSK_CHECKOUT","inputs":{"SessionId":"$session","OrderType":"$event.orderType"}}},"brandName":"Your Restaurant","tagline":"Made fresh for you","accentColor":"#d71e28","inkColor":"#191919","currency":"£","language":"English","menuTitle":"What are you craving?","categoryObjectApiName":"ProductCategory","categoryNameField":"Name","welcomeImage":"https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=1200","labels":{"welcomeEyebrow":"FRESH FOOD, YOUR WAY","welcomeTitle":"Welcome!","welcomeSubtitle":"Choose your favourites in just a few taps.","startOrder":"START ORDERING","serviceQuestion":"How would you like your food?","eatIn":"Eat In","takeaway":"Takeaway","all":"All items","menuTitle":"Choose your favourites","yourOrder":"Your order","review":"Review order","checkout":"Proceed to checkout","paymentNotice":"Payment is processed securely through the configured checkout Flow and named payment device."}}}]}],"flows":[{"apiName":"KIOSK_SESSION_START","label":"Kiosk - Start session","description":"Editable metadata Flow; uses record permissions and tenant objects","flowType":"Autolaunched Flow","status":"Active","versionNumber":1,"activeVersion":null,"triggerObject":null,"startConfig":{},"elements":[{"id":1,"type":"Start","label":"Start","config":{}},{"id":2,"type":"Get Records","label":"Find session","config":{"object":"Cart__c","conditions":[{"field":"Session__c","operator":"Equals","value":"{!SessionId}"}],"outputVariable":"CartHeader"}},{"id":3,"type":"Decision","label":"Create session if missing","config":{"outcomes":[{"name":"Missing","label":"Missing","conditions":[{"field":"{!CartHeader.Id}","operator":"Is Null"}]},{"name":"Default","label":"Default Outcome","conditions":[],"isDefault":true}]}},{"id":4,"type":"Create Records","label":"Create session header","config":{"object":"Cart__c","fieldValues":[{"field":"Name","value":"Kiosk Cart"},{"field":"Session__c","value":"{!SessionId}"},{"field":"Status__c","value":"Open"}]}},{"id":5,"type":"End","label":"End","config":{}}],"connectors":[{"id":"kiosk-1-2-next","from":1,"to":2,"label":"","kind":"normal"},{"id":"kiosk-2-3-next","from":2,"to":3,"label":"","kind":"normal"},{"id":"kiosk-3-4-Missing","from":3,"to":4,"label":"Missing","kind":"normal"},{"id":"kiosk-3-5-Default Outcome","from":3,"to":5,"label":"Default Outcome","kind":"normal"},{"id":"kiosk-4-5-next","from":4,"to":5,"label":"","kind":"normal"}],"resources":[{"name":"SessionId","label":"Session Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"CartHeader","label":"Cart Header","type":"Record","dataType":"Cart__c","isCollection":false,"availableForInput":false,"availableForOutput":false}],"versions":[]},{"apiName":"KIOSK_CART_ADD","label":"Kiosk - Add product","description":"Editable metadata Flow; uses record permissions and tenant objects","flowType":"Autolaunched Flow","status":"Active","versionNumber":1,"activeVersion":null,"triggerObject":null,"startConfig":{},"elements":[{"id":1,"type":"Start","label":"Add","config":{}},{"id":2,"type":"Get Records","label":"Read current product and price","config":{"object":"Product","conditions":[{"field":"Id","operator":"Equals","value":"{!ProductId}"},{"field":"IsActive","operator":"Equals","value":true}],"outputVariable":"SelectedProduct"}},{"id":3,"type":"Decision","label":"Product exists?","config":{"outcomes":[{"name":"Found","label":"Found","conditions":[{"field":"{!SelectedProduct.Id}","operator":"Is Not Null"},{"field":"{!Quantity}","operator":"Greater Than","value":0}]},{"name":"Default","label":"Default Outcome","conditions":[],"isDefault":true}]}},{"id":4,"type":"Create Records","label":"Create cart line","config":{"object":"CartLine__c","fieldValues":[{"field":"Name","value":"{!SelectedProduct.Name}"},{"field":"Session__c","value":"{!SessionId}"},{"field":"Product__c","value":"{!ProductId}"},{"field":"Quantity__c","value":"{!Quantity}"},{"field":"Unit_Price__c","value":"{!SelectedProduct.DefaultPrice}"}]}},{"id":5,"type":"End","label":"End","config":{}}],"connectors":[{"id":"kiosk-1-2-next","from":1,"to":2,"label":"","kind":"normal"},{"id":"kiosk-2-3-next","from":2,"to":3,"label":"","kind":"normal"},{"id":"kiosk-3-4-Found","from":3,"to":4,"label":"Found","kind":"normal"},{"id":"kiosk-3-5-Default Outcome","from":3,"to":5,"label":"Default Outcome","kind":"normal"},{"id":"kiosk-4-5-next","from":4,"to":5,"label":"","kind":"normal"}],"resources":[{"name":"SessionId","label":"Session Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"ProductId","label":"Product Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"Quantity","label":"Quantity","type":"Variable","dataType":"Number","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"SelectedProduct","label":"Selected Product","type":"Record","dataType":"Product","isCollection":false,"availableForInput":false,"availableForOutput":false}],"versions":[]},{"apiName":"KIOSK_CART_QUANTITY","label":"Kiosk - Change quantity","description":"Editable metadata Flow; uses record permissions and tenant objects","flowType":"Autolaunched Flow","status":"Active","versionNumber":1,"activeVersion":null,"triggerObject":null,"startConfig":{},"elements":[{"id":1,"type":"Start","label":"Edit quantity","config":{}},{"id":2,"type":"Decision","label":"Positive quantity?","config":{"outcomes":[{"name":"Positive","label":"Positive","conditions":[{"field":"{!Quantity}","operator":"Greater Than","value":0}]},{"name":"Default","label":"Default Outcome","conditions":[],"isDefault":true}]}},{"id":3,"type":"Update Records","label":"Update own session line","config":{"object":"CartLine__c","conditions":[{"field":"Id","operator":"Equals","value":"{!LineId}"},{"field":"Session__c","operator":"Equals","value":"{!SessionId}"}],"fieldValues":[{"field":"Quantity__c","value":"{!Quantity}"}]}},{"id":4,"type":"End","label":"End","config":{}}],"connectors":[{"id":"kiosk-1-2-next","from":1,"to":2,"label":"","kind":"normal"},{"id":"kiosk-2-3-Positive","from":2,"to":3,"label":"Positive","kind":"normal"},{"id":"kiosk-2-4-Default Outcome","from":2,"to":4,"label":"Default Outcome","kind":"normal"},{"id":"kiosk-3-4-next","from":3,"to":4,"label":"","kind":"normal"}],"resources":[{"name":"SessionId","label":"Session Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"LineId","label":"Line Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"Quantity","label":"Quantity","type":"Variable","dataType":"Number","isCollection":false,"availableForInput":true,"availableForOutput":false}],"versions":[]},{"apiName":"KIOSK_CART_REMOVE","label":"Kiosk - Remove line","description":"Editable metadata Flow; uses record permissions and tenant objects","flowType":"Autolaunched Flow","status":"Active","versionNumber":1,"activeVersion":null,"triggerObject":null,"startConfig":{},"elements":[{"id":1,"type":"Start","label":"Remove","config":{}},{"id":2,"type":"Delete Records","label":"Delete own session line","config":{"object":"CartLine__c","conditions":[{"field":"Id","operator":"Equals","value":"{!LineId}"},{"field":"Session__c","operator":"Equals","value":"{!SessionId}"}]}},{"id":3,"type":"End","label":"End","config":{}}],"connectors":[{"id":"kiosk-1-2-next","from":1,"to":2,"label":"","kind":"normal"},{"id":"kiosk-2-3-next","from":2,"to":3,"label":"","kind":"normal"}],"resources":[{"name":"SessionId","label":"Session Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"LineId","label":"Line Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false}],"versions":[]},{"apiName":"KIOSK_CART_RESET","label":"Kiosk - Close session","description":"Editable metadata Flow; uses record permissions and tenant objects","flowType":"Autolaunched Flow","status":"Active","versionNumber":1,"activeVersion":null,"triggerObject":null,"startConfig":{},"elements":[{"id":1,"type":"Start","label":"Clear","config":{}},{"id":2,"type":"Delete Records","label":"Remove all session lines","config":{"object":"CartLine__c","conditions":[{"field":"Session__c","operator":"Equals","value":"{!SessionId}"}]}},{"id":3,"type":"Update Records","label":"Close session header","config":{"object":"Cart__c","conditions":[{"field":"Session__c","operator":"Equals","value":"{!SessionId}"}],"fieldValues":[{"field":"Status__c","value":"Completed"}]}},{"id":4,"type":"End","label":"End","config":{}}],"connectors":[{"id":"kiosk-1-2-next","from":1,"to":2,"label":"","kind":"normal"},{"id":"kiosk-2-3-next","from":2,"to":3,"label":"","kind":"normal"},{"id":"kiosk-3-4-next","from":3,"to":4,"label":"","kind":"normal"}],"resources":[{"name":"SessionId","label":"Session Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false}],"versions":[]},{"apiName":"KIOSK_CHECKOUT","label":"Kiosk - Payment and receipt (configure device)","description":"Editable metadata Flow; uses record permissions and tenant objects","flowType":"Screen Flow","status":"Draft","versionNumber":1,"activeVersion":null,"triggerObject":null,"startConfig":{},"elements":[{"id":1,"type":"Start","label":"Start checkout","config":{}},{"id":2,"type":"Screen","label":"Payment provider required","config":{"fields":[{"type":"Display Text","label":"Device setup","text":"Configure a payment Named Credential and a Named Device. Add payment confirmation, receipt and Sale creation steps before activating this Flow."}]}},{"id":3,"type":"End","label":"End","config":{}}],"connectors":[{"id":"kiosk-1-2-next","from":1,"to":2,"label":"","kind":"normal"},{"id":"kiosk-2-3-next","from":2,"to":3,"label":"","kind":"normal"}],"resources":[{"name":"SessionId","label":"Session Id","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false},{"name":"OrderType","label":"Order Type","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":true,"availableForOutput":false}],"versions":[]}],"apps":[{"apiName":"KioskApp","label":"Kiosk","description":"Metadata driven self-order kiosk","navigationItems":["Product"],"navigationPageApiNames":[],"navigationOrder":[{"type":"Object","apiName":"Product"}],"brandColor":"#ffca26","utilityItems":[]}],"profile":{"id":"kiosk-user","apiName":"Kiosk_User","label":"Kiosk User","systemPermissions":["metadata:read","flows:run"],"objectPermissions":{"Product":{"read":true},"ProductCategory":{"read":true},"Cart__c":{"read":true,"create":true,"edit":true},"CartLine__c":{"read":true,"create":true,"edit":true,"delete":true},"Sale__c":{"read":true,"create":true,"edit":true},"SaleItem__c":{"read":true,"create":true},"Payment":{"read":true,"create":true}},"navigationDefaultAccess":"Deny","tabPermissions":{"Product":true}},"components":[{"apiName":"KioskOrderingExperience","label":"Kiosk Ordering Experience","description":"Metadata-bound ordering UI with configured Flow actions","jsxFile":"KioskOrderingExperience/KioskOrderingExperience.jsx","cssFile":"KioskOrderingExperience/KioskOrderingExperience.css","surfaces":["page","dashboard","flow"],"resize":{"defaultWidth":1080,"defaultHeight":1920,"minWidth":320,"minHeight":600},"version":3}],"demoRecords":{"ProductCategory":[{"Id":"a9130000-0000-4000-8000-000000000001","Name":"Burgers","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"},{"Id":"a9130000-0000-4000-8000-000000000002","Name":"Chicken","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"},{"Id":"a9130000-0000-4000-8000-000000000003","Name":"Sides","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"},{"Id":"a9130000-0000-4000-8000-000000000004","Name":"Drinks","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"}],"Product":[{"Id":"a9130000-0000-4000-8000-000000000005","Name":"Classic Burger","SKU":"KIOSK-DEMO-001","CategoryId":"a9130000-0000-4000-8000-000000000001","DefaultPrice":6.99,"IsActive":true,"Description__c":"Grilled patty, salad and house sauce","ImageUrl__c":"https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=650","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"},{"Id":"a9130000-0000-4000-8000-000000000006","Name":"Crispy Chicken Burger","SKU":"KIOSK-DEMO-002","CategoryId":"a9130000-0000-4000-8000-000000000002","DefaultPrice":7.49,"IsActive":true,"Description__c":"Crispy chicken, lettuce and creamy sauce","ImageUrl__c":"https://images.unsplash.com/photo-1606755962773-d324e0a13086?w=650","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"},{"Id":"a9130000-0000-4000-8000-000000000007","Name":"French Fries","SKU":"KIOSK-DEMO-003","CategoryId":"a9130000-0000-4000-8000-000000000003","DefaultPrice":2.99,"IsActive":true,"Description__c":"Golden crispy fries","ImageUrl__c":"https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=650","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"},{"Id":"a9130000-0000-4000-8000-000000000008","Name":"Loaded Fries","SKU":"KIOSK-DEMO-004","CategoryId":"a9130000-0000-4000-8000-000000000003","DefaultPrice":4.49,"IsActive":true,"Description__c":"Seasoned fries topped with melted cheese","ImageUrl__c":"https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?w=650","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"},{"Id":"a9130000-0000-4000-8000-000000000009","Name":"Cold Lemonade","SKU":"KIOSK-DEMO-005","CategoryId":"a9130000-0000-4000-8000-000000000004","DefaultPrice":2.5,"IsActive":true,"Description__c":"Refreshing chilled lemonade","ImageUrl__c":"https://images.unsplash.com/photo-1513558161293-cdaf765edfd4?w=650","CreatedDate":"2026-10-13T00:00:00.000Z","LastModifiedDate":"2026-10-13T00:00:00.000Z"}]}}]}
+{
+  "packages": [
+    {
+      "appKey": "kiosk",
+      "label": "Kiosk",
+      "version": 3,
+      "objects": [
+        {
+          "apiName": "Product",
+          "label": "Product",
+          "pluralLabel": "Products",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Type",
+              "label": "Type",
+              "dataType": "Picklist",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "SKU",
+              "label": "SKU",
+              "dataType": "Text(100)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "CategoryId",
+              "label": "Category Id",
+              "dataType": "Lookup(ProductCategory)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "ProductCategory",
+                "relationshipName": "CategoryId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "UnitId",
+              "label": "Unit Id",
+              "dataType": "Lookup(UnitOfMeasure)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "UnitOfMeasure",
+                "relationshipName": "UnitId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "TaxId",
+              "label": "Tax Id",
+              "dataType": "Lookup(Tax)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Tax",
+                "relationshipName": "TaxId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "IsActive",
+              "label": "Is Active",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "DefaultPrice",
+              "label": "Default Price",
+              "dataType": "Currency(18, 2)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "ImageUrl__c",
+              "label": "Image URL",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Description__c",
+              "label": "Menu Description",
+              "dataType": "LongTextArea",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "ProductCategory",
+          "label": "Product Category",
+          "pluralLabel": "Product Categories",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "ParentId",
+              "label": "Parent Id",
+              "dataType": "Lookup(ProductCategory)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "ProductCategory",
+                "relationshipName": "ParentId",
+                "childRelationshipName": "ProductCategory_Children",
+                "deleteBehavior": "Restrict"
+              }
+            }
+          ]
+        },
+        {
+          "apiName": "Sale__c",
+          "label": "Sale",
+          "pluralLabel": "Sales",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Sale Number",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Order_Type__c",
+              "label": "Order Source",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Payment_Status__c",
+              "label": "Payment Status",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Order_Total__c",
+              "label": "Order Total",
+              "dataType": "Currency(18,2)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Session__c",
+              "label": "Session",
+              "dataType": "Text(120)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Currency__c",
+              "label": "Currency",
+              "dataType": "Text(3)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "SaleItem__c",
+          "label": "Sale Item",
+          "pluralLabel": "Sale Items",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Item Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Sale__c",
+              "label": "Sale",
+              "dataType": "Lookup(Sale__c)",
+              "required": true,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Sale__c",
+                "relationshipName": "Sale",
+                "childRelationshipName": "SaleItem__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Product__c",
+              "label": "Product",
+              "dataType": "Lookup(Product)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Product",
+                "relationshipName": "Product",
+                "childRelationshipName": "SaleItem__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Quantity__c",
+              "label": "Quantity",
+              "dataType": "Number(18,4)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Unit_Price__c",
+              "label": "Unit Price",
+              "dataType": "Currency(18,2)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "Cart__c",
+          "label": "Cart",
+          "pluralLabel": "Carts",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Cart",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Session__c",
+              "label": "Session",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Status__c",
+              "label": "Status",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Order_Type__c",
+              "label": "Order Type",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "CartLine__c",
+          "label": "Cart Line",
+          "pluralLabel": "Cart Lines",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Line Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Session__c",
+              "label": "Session",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Product__c",
+              "label": "Product",
+              "dataType": "Lookup(Product)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Product",
+                "relationshipName": "Product",
+                "childRelationshipName": "CartLine__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Quantity__c",
+              "label": "Quantity",
+              "dataType": "Number(18,4)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Unit_Price__c",
+              "label": "Price",
+              "dataType": "Currency(18,2)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "NamedDevice__c",
+          "label": "Named Device",
+          "pluralLabel": "Named Devices",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Device Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Type__c",
+              "label": "Device Type",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Connection_Type__c",
+              "label": "Connection Type",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Named_Credential_Id__c",
+              "label": "Named Credential",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Enabled__c",
+              "label": "Enabled",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Agent_Endpoint__c",
+              "label": "Local Service URL",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "KioskSettings__c",
+          "label": "Kiosk Settings",
+          "pluralLabel": "Kiosk Settings",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Settings",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Payment_Device__c",
+              "label": "Payment Device",
+              "dataType": "Lookup(NamedDevice__c)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "NamedDevice__c",
+                "relationshipName": "Payment_Device",
+                "childRelationshipName": "KioskSettings__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Payment_Named_Credential__c",
+              "label": "Payment Credential",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Checkout_Flow__c",
+              "label": "Checkout Flow",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Offline_Gateway__c",
+              "label": "Local Gateway",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            }
+          ]
+        }
+      ],
+      "extendObjects": [
+        {
+          "apiName": "Product",
+          "fields": [
+            {
+              "apiName": "ImageUrl__c",
+              "label": "Kiosk Image",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Description__c",
+              "label": "Menu Description",
+              "dataType": "Long Text Area",
+              "required": false,
+              "unique": false
+            }
+          ]
+        }
+      ],
+      "pages": [
+        {
+          "apiName": "UNE_KIOSK",
+          "label": "UNE KIOSK",
+          "targetObject": "Sale__c",
+          "pageType": "Home Page",
+          "layoutMode": "free-canvas",
+          "canvasWidth": 1080,
+          "canvasHeight": 1920,
+          "status": "Active",
+          "devices": [
+            "Desktop",
+            "Phone"
+          ],
+          "template": "header-main-sidebar",
+          "components": [
+            {
+              "id": "kiosk-ordering-experience",
+              "type": "Custom:KioskOrderingExperience",
+              "label": "Object-bound Ordering Kiosk",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 0,
+                "y": 0,
+                "width": 1080,
+                "height": 1920
+              },
+              "properties": {
+                "libraryComponentId": "KioskOrderingExperience",
+                "objectApiName": "Product",
+                "nameField": "Name",
+                "priceField": "DefaultPrice",
+                "imageField": "ImageUrl__c",
+                "categoryField": "CategoryId",
+                "descriptionField": "Description__c",
+                "filters": [
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": "true"
+                  }
+                ],
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "actionFlows": {
+                  "add": {
+                    "flowApiName": "KIOSK_CART_ADD",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "ProductId": "$event.productId",
+                      "Quantity": "$event.quantity"
+                    }
+                  },
+                  "quantity": {
+                    "flowApiName": "KIOSK_CART_QUANTITY",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "LineId": "$event.lineId",
+                      "Quantity": "$event.quantity"
+                    }
+                  },
+                  "remove": {
+                    "flowApiName": "KIOSK_CART_REMOVE",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "LineId": "$event.lineId"
+                    }
+                  },
+                  "reset": {
+                    "flowApiName": "KIOSK_CART_RESET",
+                    "inputs": {
+                      "SessionId": "$session"
+                    },
+                    "resetSessionOnSuccess": true
+                  },
+                  "start": {
+                    "flowApiName": "KIOSK_SESSION_START",
+                    "inputs": {
+                      "SessionId": "$session"
+                    }
+                  },
+                  "checkout": {
+                    "flowApiName": "KIOSK_CHECKOUT",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "OrderType": "$event.orderType"
+                    }
+                  }
+                },
+                "brandName": "Your Restaurant",
+                "tagline": "Made fresh for you",
+                "accentColor": "#d71e28",
+                "inkColor": "#191919",
+                "currency": "£",
+                "language": "English",
+                "menuTitle": "What are you craving?",
+                "categoryObjectApiName": "ProductCategory",
+                "categoryNameField": "Name",
+                "welcomeImage": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=1200",
+                "labels": {
+                  "welcomeEyebrow": "FRESH FOOD, YOUR WAY",
+                  "welcomeTitle": "Welcome!",
+                  "welcomeSubtitle": "Choose your favourites in just a few taps.",
+                  "startOrder": "START ORDERING",
+                  "serviceQuestion": "How would you like your food?",
+                  "eatIn": "Eat In",
+                  "takeaway": "Takeaway",
+                  "all": "All items",
+                  "menuTitle": "Choose your favourites",
+                  "yourOrder": "Your order",
+                  "review": "Review order",
+                  "checkout": "Proceed to checkout",
+                  "paymentNotice": "Payment is processed securely through the configured checkout Flow and named payment device."
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "flows": [
+        {
+          "apiName": "KIOSK_SESSION_START",
+          "label": "Kiosk - Start session",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Start",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Get Records",
+              "label": "Find session",
+              "config": {
+                "object": "Cart__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "outputVariable": "CartHeader"
+              }
+            },
+            {
+              "id": 3,
+              "type": "Decision",
+              "label": "Create session if missing",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "Missing",
+                    "label": "Missing",
+                    "conditions": [
+                      {
+                        "field": "{!CartHeader.Id}",
+                        "operator": "Is Null"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "Create Records",
+              "label": "Create session header",
+              "config": {
+                "object": "Cart__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "Kiosk Cart"
+                  },
+                  {
+                    "field": "Session__c",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Status__c",
+                    "value": "Open"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 5,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-Missing",
+              "from": 3,
+              "to": 4,
+              "label": "Missing",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-5-Default Outcome",
+              "from": 3,
+              "to": 5,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-4-5-next",
+              "from": 4,
+              "to": 5,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "CartHeader",
+              "label": "Cart Header",
+              "type": "Record",
+              "dataType": "Cart__c",
+              "isCollection": false,
+              "availableForInput": false,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_ADD",
+          "label": "Kiosk - Add product",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Add",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Get Records",
+              "label": "Read current product and price",
+              "config": {
+                "object": "Product",
+                "conditions": [
+                  {
+                    "field": "Id",
+                    "operator": "Equals",
+                    "value": "{!ProductId}"
+                  },
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": true
+                  }
+                ],
+                "outputVariable": "SelectedProduct"
+              }
+            },
+            {
+              "id": 3,
+              "type": "Decision",
+              "label": "Product exists?",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "Found",
+                    "label": "Found",
+                    "conditions": [
+                      {
+                        "field": "{!SelectedProduct.Id}",
+                        "operator": "Is Not Null"
+                      },
+                      {
+                        "field": "{!Quantity}",
+                        "operator": "Greater Than",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "Create Records",
+              "label": "Create cart line",
+              "config": {
+                "object": "CartLine__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "{!SelectedProduct.Name}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Product__c",
+                    "value": "{!ProductId}"
+                  },
+                  {
+                    "field": "Quantity__c",
+                    "value": "{!Quantity}"
+                  },
+                  {
+                    "field": "Unit_Price__c",
+                    "value": "{!SelectedProduct.DefaultPrice}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 5,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-Found",
+              "from": 3,
+              "to": 4,
+              "label": "Found",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-5-Default Outcome",
+              "from": 3,
+              "to": 5,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-4-5-next",
+              "from": 4,
+              "to": 5,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "ProductId",
+              "label": "Product Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "Quantity",
+              "label": "Quantity",
+              "type": "Variable",
+              "dataType": "Number",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "SelectedProduct",
+              "label": "Selected Product",
+              "type": "Record",
+              "dataType": "Product",
+              "isCollection": false,
+              "availableForInput": false,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_QUANTITY",
+          "label": "Kiosk - Change quantity",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Edit quantity",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Decision",
+              "label": "Positive quantity?",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "Positive",
+                    "label": "Positive",
+                    "conditions": [
+                      {
+                        "field": "{!Quantity}",
+                        "operator": "Greater Than",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "Update Records",
+              "label": "Update own session line",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Id",
+                    "operator": "Equals",
+                    "value": "{!LineId}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "fieldValues": [
+                  {
+                    "field": "Quantity__c",
+                    "value": "{!Quantity}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-Positive",
+              "from": 2,
+              "to": 3,
+              "label": "Positive",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-4-Default Outcome",
+              "from": 2,
+              "to": 4,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-next",
+              "from": 3,
+              "to": 4,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "LineId",
+              "label": "Line Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "Quantity",
+              "label": "Quantity",
+              "type": "Variable",
+              "dataType": "Number",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_REMOVE",
+          "label": "Kiosk - Remove line",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Remove",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Delete Records",
+              "label": "Delete own session line",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Id",
+                    "operator": "Equals",
+                    "value": "{!LineId}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "LineId",
+              "label": "Line Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_RESET",
+          "label": "Kiosk - Close session",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Clear",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Delete Records",
+              "label": "Remove all session lines",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "Update Records",
+              "label": "Close session header",
+              "config": {
+                "object": "Cart__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "fieldValues": [
+                  {
+                    "field": "Status__c",
+                    "value": "Completed"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-next",
+              "from": 3,
+              "to": 4,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CHECKOUT",
+          "label": "Kiosk - Payment and receipt (configure device)",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Screen Flow",
+          "status": "Draft",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Start checkout",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Screen",
+              "label": "Payment provider required",
+              "config": {
+                "fields": [
+                  {
+                    "type": "Display Text",
+                    "label": "Device setup",
+                    "text": "Configure a payment Named Credential and a Named Device. Add payment confirmation, receipt and Sale creation steps before activating this Flow."
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "OrderType",
+              "label": "Order Type",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        }
+      ],
+      "apps": [
+        {
+          "apiName": "KioskApp",
+          "label": "Kiosk",
+          "description": "Metadata driven self-order kiosk",
+          "navigationItems": [
+            "Product"
+          ],
+          "navigationPageApiNames": [],
+          "navigationOrder": [
+            {
+              "type": "Object",
+              "apiName": "Product"
+            }
+          ],
+          "brandColor": "#ffca26",
+          "utilityItems": []
+        }
+      ],
+      "profile": {
+        "id": "kiosk-user",
+        "apiName": "Kiosk_User",
+        "label": "Kiosk User",
+        "systemPermissions": [
+          "metadata:read",
+          "flows:run"
+        ],
+        "objectPermissions": {
+          "Product": {
+            "read": true
+          },
+          "ProductCategory": {
+            "read": true
+          },
+          "Cart__c": {
+            "read": true,
+            "create": true,
+            "edit": true
+          },
+          "CartLine__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true
+          },
+          "Sale__c": {
+            "read": true,
+            "create": true,
+            "edit": true
+          },
+          "SaleItem__c": {
+            "read": true,
+            "create": true
+          },
+          "Payment": {
+            "read": true,
+            "create": true
+          }
+        },
+        "navigationDefaultAccess": "Deny",
+        "tabPermissions": {
+          "Product": true
+        }
+      },
+      "components": [
+        {
+          "apiName": "KioskOrderingExperience",
+          "label": "Kiosk Ordering Experience",
+          "description": "Metadata-bound ordering UI with configured Flow actions",
+          "jsxFile": "KioskOrderingExperience/KioskOrderingExperience.jsx",
+          "cssFile": "KioskOrderingExperience/KioskOrderingExperience.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 1080,
+            "defaultHeight": 1920,
+            "minWidth": 320,
+            "minHeight": 600
+          },
+          "version": 3
+        }
+      ],
+      "demoRecords": {
+        "ProductCategory": [
+          {
+            "Id": "a9130000-0000-4000-8000-000000000001",
+            "Name": "Burgers"
+          },
+          {
+            "Id": "a9130000-0000-4000-8000-000000000002",
+            "Name": "Chicken"
+          },
+          {
+            "Id": "a9130000-0000-4000-8000-000000000003",
+            "Name": "Sides"
+          },
+          {
+            "Id": "a9130000-0000-4000-8000-000000000004",
+            "Name": "Drinks"
+          }
+        ],
+        "Product": [
+          {
+            "Id": "a9130000-0000-4000-8000-000000000005",
+            "Name": "Classic Burger",
+            "SKU": "KIOSK-DEMO-001",
+            "CategoryId": "a9130000-0000-4000-8000-000000000001",
+            "DefaultPrice": 6.99,
+            "IsActive": true,
+            "Description__c": "Grilled patty, salad and house sauce",
+            "ImageUrl__c": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=650"
+          },
+          {
+            "Id": "a9130000-0000-4000-8000-000000000006",
+            "Name": "Crispy Chicken Burger",
+            "SKU": "KIOSK-DEMO-002",
+            "CategoryId": "a9130000-0000-4000-8000-000000000002",
+            "DefaultPrice": 7.49,
+            "IsActive": true,
+            "Description__c": "Crispy chicken, lettuce and creamy sauce",
+            "ImageUrl__c": "https://images.unsplash.com/photo-1606755962773-d324e0a13086?w=650"
+          },
+          {
+            "Id": "a9130000-0000-4000-8000-000000000007",
+            "Name": "French Fries",
+            "SKU": "KIOSK-DEMO-003",
+            "CategoryId": "a9130000-0000-4000-8000-000000000003",
+            "DefaultPrice": 2.99,
+            "IsActive": true,
+            "Description__c": "Golden crispy fries",
+            "ImageUrl__c": "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=650"
+          },
+          {
+            "Id": "a9130000-0000-4000-8000-000000000008",
+            "Name": "Loaded Fries",
+            "SKU": "KIOSK-DEMO-004",
+            "CategoryId": "a9130000-0000-4000-8000-000000000003",
+            "DefaultPrice": 4.49,
+            "IsActive": true,
+            "Description__c": "Seasoned fries topped with melted cheese",
+            "ImageUrl__c": "https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?w=650"
+          },
+          {
+            "Id": "a9130000-0000-4000-8000-000000000009",
+            "Name": "Cold Lemonade",
+            "SKU": "KIOSK-DEMO-005",
+            "CategoryId": "a9130000-0000-4000-8000-000000000004",
+            "DefaultPrice": 2.5,
+            "IsActive": true,
+            "Description__c": "Refreshing chilled lemonade",
+            "ImageUrl__c": "https://images.unsplash.com/photo-1513558161293-cdaf765edfd4?w=650"
+          }
+        ]
+      }
+    },
+    {
+      "appKey": "pos",
+      "objects": [
+        {
+          "apiName": "Product",
+          "label": "Product",
+          "pluralLabel": "Products",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Type",
+              "label": "Type",
+              "dataType": "Picklist",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "SKU",
+              "label": "SKU",
+              "dataType": "Text(100)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "CategoryId",
+              "label": "Category Id",
+              "dataType": "Lookup(ProductCategory)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "ProductCategory",
+                "relationshipName": "CategoryId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "UnitId",
+              "label": "Unit Id",
+              "dataType": "Lookup(UnitOfMeasure)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "UnitOfMeasure",
+                "relationshipName": "UnitId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "TaxId",
+              "label": "Tax Id",
+              "dataType": "Lookup(Tax)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Tax",
+                "relationshipName": "TaxId",
+                "childRelationshipName": "Product_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "IsActive",
+              "label": "Is Active",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "DefaultPrice",
+              "label": "Default Price",
+              "dataType": "Currency(18, 2)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "ImageUrl__c",
+              "label": "Image URL",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Description__c",
+              "label": "Menu Description",
+              "dataType": "LongTextArea",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "ProductCategory",
+          "label": "Product Category",
+          "pluralLabel": "Product Categories",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "ParentId",
+              "label": "Parent Id",
+              "dataType": "Lookup(ProductCategory)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "ProductCategory",
+                "relationshipName": "ParentId",
+                "childRelationshipName": "ProductCategory_Children",
+                "deleteBehavior": "Restrict"
+              }
+            }
+          ]
+        },
+        {
+          "apiName": "Sale__c",
+          "label": "Sale",
+          "pluralLabel": "Sales",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Sale Number",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Order_Type__c",
+              "label": "Order Source",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Payment_Status__c",
+              "label": "Payment Status",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Order_Total__c",
+              "label": "Order Total",
+              "dataType": "Currency(18,2)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Session__c",
+              "label": "Session",
+              "dataType": "Text(120)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Currency__c",
+              "label": "Currency",
+              "dataType": "Text(3)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Tender_Method__c",
+              "label": "Recorded Tender Method",
+              "dataType": "Text",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Requested_Tender__c",
+              "label": "Cashier Selected Tender",
+              "dataType": "Text",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "SaleItem__c",
+          "label": "Sale Item",
+          "pluralLabel": "Sale Items",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Item Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Sale__c",
+              "label": "Sale",
+              "dataType": "Lookup(Sale__c)",
+              "required": true,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Sale__c",
+                "relationshipName": "Sale",
+                "childRelationshipName": "SaleItem__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Product__c",
+              "label": "Product",
+              "dataType": "Lookup(Product)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Product",
+                "relationshipName": "Product",
+                "childRelationshipName": "SaleItem__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Quantity__c",
+              "label": "Quantity",
+              "dataType": "Number(18,4)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Unit_Price__c",
+              "label": "Unit Price",
+              "dataType": "Currency(18,2)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "Cart__c",
+          "label": "Cart",
+          "pluralLabel": "Carts",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Cart",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Session__c",
+              "label": "Session",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Status__c",
+              "label": "Status",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Order_Type__c",
+              "label": "Order Type",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "CartLine__c",
+          "label": "Cart Line",
+          "pluralLabel": "Cart Lines",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Line Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Session__c",
+              "label": "Session",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Product__c",
+              "label": "Product",
+              "dataType": "Lookup(Product)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "Product",
+                "relationshipName": "Product",
+                "childRelationshipName": "CartLine__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Quantity__c",
+              "label": "Quantity",
+              "dataType": "Number(18,4)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Unit_Price__c",
+              "label": "Price",
+              "dataType": "Currency(18,2)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "NamedDevice__c",
+          "label": "Named Device",
+          "pluralLabel": "Named Devices",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Device Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Type__c",
+              "label": "Device Type",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Connection_Type__c",
+              "label": "Connection Type",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Named_Credential_Id__c",
+              "label": "Named Credential",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Enabled__c",
+              "label": "Enabled",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Agent_Endpoint__c",
+              "label": "Local Service URL",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            }
+          ]
+        },
+        {
+          "apiName": "KioskSettings__c",
+          "label": "Kiosk Settings",
+          "pluralLabel": "Kiosk Settings",
+          "kind": "Custom Object",
+          "description": "Reusable metadata for the installable app",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Settings",
+              "dataType": "Text(120)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "Payment_Device__c",
+              "label": "Payment Device",
+              "dataType": "Lookup(NamedDevice__c)",
+              "required": false,
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "NamedDevice__c",
+                "relationshipName": "Payment_Device",
+                "childRelationshipName": "KioskSettings__c_Children",
+                "deleteBehavior": "Restrict"
+              }
+            },
+            {
+              "apiName": "Payment_Named_Credential__c",
+              "label": "Payment Credential",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Checkout_Flow__c",
+              "label": "Checkout Flow",
+              "dataType": "Text(80)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Offline_Gateway__c",
+              "label": "Local Gateway",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            }
+          ]
+        }
+      ],
+      "apps": [
+        {
+          "apiName": "POSApp",
+          "label": "Metadrive POS",
+          "description": "Configurable touchscreen EPOS built on core objects and Flow actions",
+          "navigationItems": [
+            "Product",
+            "Sale__c"
+          ],
+          "navigationPageApiNames": [
+            "UNE_POS"
+          ],
+          "navigationOrder": [
+            {
+              "type": "Page",
+              "apiName": "UNE_POS"
+            },
+            {
+              "type": "Object",
+              "apiName": "Sale__c"
+            },
+            {
+              "type": "Object",
+              "apiName": "Product"
+            }
+          ],
+          "brandColor": "#1769e8",
+          "utilityItems": []
+        }
+      ],
+      "pages": [
+        {
+          "apiName": "UNE_POS",
+          "label": "Metadrive POS",
+          "targetObject": "Sale__c",
+          "pageType": "Home Page",
+          "layoutMode": "free-canvas",
+          "canvasWidth": 1440,
+          "canvasHeight": 900,
+          "status": "Active",
+          "devices": [
+            "Desktop",
+            "Phone"
+          ],
+          "template": "one-region",
+          "components": [
+            {
+              "id": "pos-sales-workspace",
+              "type": "Custom:TillSalesWorkspace",
+              "label": "Configurable POS Till",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 0,
+                "y": 0,
+                "width": 1440,
+                "height": 900
+              },
+              "properties": {
+                "libraryComponentId": "TillSalesWorkspace",
+                "objectApiName": "Product",
+                "nameField": "Name",
+                "priceField": "DefaultPrice",
+                "imageField": "ImageUrl__c",
+                "categoryField": "CategoryId",
+                "descriptionField": "Description__c",
+                "filters": [
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": "true"
+                  }
+                ],
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "actionFlows": {
+                  "add": {
+                    "flowApiName": "KIOSK_CART_ADD",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "ProductId": "$event.productId",
+                      "Quantity": "$event.quantity"
+                    }
+                  },
+                  "quantity": {
+                    "flowApiName": "KIOSK_CART_QUANTITY",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "LineId": "$event.lineId",
+                      "Quantity": "$event.quantity"
+                    }
+                  },
+                  "remove": {
+                    "flowApiName": "KIOSK_CART_REMOVE",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "LineId": "$event.lineId"
+                    }
+                  },
+                  "reset": {
+                    "flowApiName": "KIOSK_CART_RESET",
+                    "inputs": {
+                      "SessionId": "$session"
+                    },
+                    "resetSessionOnSuccess": true
+                  },
+                  "start": {
+                    "flowApiName": "KIOSK_SESSION_START",
+                    "inputs": {
+                      "SessionId": "$session"
+                    }
+                  },
+                  "checkout": {
+                    "flowApiName": "POS_CASH_SETTLE",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "PaymentMethod": "$event.paymentMethod"
+                    },
+                    "resetSessionOnSuccess": true
+                  }
+                },
+                "brandName": "Your Restaurant",
+                "tagline": "Made fresh for you",
+                "accentColor": "#1769e8",
+                "inkColor": "#191919",
+                "currency": "£",
+                "language": "English",
+                "menuTitle": "What are you craving?",
+                "categoryObjectApiName": "ProductCategory",
+                "categoryNameField": "Name",
+                "welcomeImage": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=1200",
+                "labels": {
+                  "welcomeEyebrow": "FRESH FOOD, YOUR WAY",
+                  "welcomeTitle": "Welcome!",
+                  "welcomeSubtitle": "Choose your favourites in just a few taps.",
+                  "startOrder": "START ORDERING",
+                  "serviceQuestion": "How would you like your food?",
+                  "eatIn": "Eat In",
+                  "takeaway": "Takeaway",
+                  "all": "All items",
+                  "menuTitle": "Choose your favourites",
+                  "yourOrder": "Your order",
+                  "review": "Review order",
+                  "checkout": "Proceed to checkout",
+                  "paymentNotice": "Payment is processed securely through the configured checkout Flow and named payment device."
+                },
+                "barcodeField": "SKU",
+                "skuField": "SKU",
+                "customerObjectApiName": "Contact",
+                "customerNameField": "Name",
+                "customerPhoneField": "Phone",
+                "customerEmailField": "Email",
+                "customerFilters": [],
+                "basketSide": "right",
+                "catalogFirst": true,
+                "basketWidthPercent": 35,
+                "catalogColumns": 4,
+                "title": "Metadrive POS",
+                "cashFallbackNotice": "Temporary mode: Card selection records a cash payment. No card is charged."
+              }
+            }
+          ]
+        }
+      ],
+      "flows": [
+        {
+          "apiName": "KIOSK_SESSION_START",
+          "label": "Kiosk - Start session",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Start",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Get Records",
+              "label": "Find session",
+              "config": {
+                "object": "Cart__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "outputVariable": "CartHeader"
+              }
+            },
+            {
+              "id": 3,
+              "type": "Decision",
+              "label": "Create session if missing",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "Missing",
+                    "label": "Missing",
+                    "conditions": [
+                      {
+                        "field": "{!CartHeader.Id}",
+                        "operator": "Is Null"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "Create Records",
+              "label": "Create session header",
+              "config": {
+                "object": "Cart__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "Kiosk Cart"
+                  },
+                  {
+                    "field": "Session__c",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Status__c",
+                    "value": "Open"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 5,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-Missing",
+              "from": 3,
+              "to": 4,
+              "label": "Missing",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-5-Default Outcome",
+              "from": 3,
+              "to": 5,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-4-5-next",
+              "from": 4,
+              "to": 5,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "CartHeader",
+              "label": "Cart Header",
+              "type": "Record",
+              "dataType": "Cart__c",
+              "isCollection": false,
+              "availableForInput": false,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_ADD",
+          "label": "Kiosk - Add product",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Add",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Get Records",
+              "label": "Read current product and price",
+              "config": {
+                "object": "Product",
+                "conditions": [
+                  {
+                    "field": "Id",
+                    "operator": "Equals",
+                    "value": "{!ProductId}"
+                  },
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": true
+                  }
+                ],
+                "outputVariable": "SelectedProduct"
+              }
+            },
+            {
+              "id": 3,
+              "type": "Decision",
+              "label": "Product exists?",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "Found",
+                    "label": "Found",
+                    "conditions": [
+                      {
+                        "field": "{!SelectedProduct.Id}",
+                        "operator": "Is Not Null"
+                      },
+                      {
+                        "field": "{!Quantity}",
+                        "operator": "Greater Than",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "Create Records",
+              "label": "Create cart line",
+              "config": {
+                "object": "CartLine__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "{!SelectedProduct.Name}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Product__c",
+                    "value": "{!ProductId}"
+                  },
+                  {
+                    "field": "Quantity__c",
+                    "value": "{!Quantity}"
+                  },
+                  {
+                    "field": "Unit_Price__c",
+                    "value": "{!SelectedProduct.DefaultPrice}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 5,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-Found",
+              "from": 3,
+              "to": 4,
+              "label": "Found",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-5-Default Outcome",
+              "from": 3,
+              "to": 5,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-4-5-next",
+              "from": 4,
+              "to": 5,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "ProductId",
+              "label": "Product Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "Quantity",
+              "label": "Quantity",
+              "type": "Variable",
+              "dataType": "Number",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "SelectedProduct",
+              "label": "Selected Product",
+              "type": "Record",
+              "dataType": "Product",
+              "isCollection": false,
+              "availableForInput": false,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_QUANTITY",
+          "label": "Kiosk - Change quantity",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Edit quantity",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Decision",
+              "label": "Positive quantity?",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "Positive",
+                    "label": "Positive",
+                    "conditions": [
+                      {
+                        "field": "{!Quantity}",
+                        "operator": "Greater Than",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "Update Records",
+              "label": "Update own session line",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Id",
+                    "operator": "Equals",
+                    "value": "{!LineId}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "fieldValues": [
+                  {
+                    "field": "Quantity__c",
+                    "value": "{!Quantity}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-Positive",
+              "from": 2,
+              "to": 3,
+              "label": "Positive",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-4-Default Outcome",
+              "from": 2,
+              "to": 4,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-next",
+              "from": 3,
+              "to": 4,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "LineId",
+              "label": "Line Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "Quantity",
+              "label": "Quantity",
+              "type": "Variable",
+              "dataType": "Number",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_REMOVE",
+          "label": "Kiosk - Remove line",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Remove",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Delete Records",
+              "label": "Delete own session line",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Id",
+                    "operator": "Equals",
+                    "value": "{!LineId}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "LineId",
+              "label": "Line Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "KIOSK_CART_RESET",
+          "label": "Kiosk - Close session",
+          "description": "Editable metadata Flow; uses record permissions and tenant objects",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Clear",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Delete Records",
+              "label": "Remove all session lines",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "Update Records",
+              "label": "Close session header",
+              "config": {
+                "object": "Cart__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "fieldValues": [
+                  {
+                    "field": "Status__c",
+                    "value": "Completed"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "End",
+              "label": "End",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "kiosk-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "kiosk-3-4-next",
+              "from": 3,
+              "to": 4,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "Session Id",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "POS_CASH_SETTLE",
+          "label": "POS - Record cash settlement (temporary card mapping)",
+          "description": "Temporary cash-only POS checkout. Both requested cash and card are recorded as CASH. This flow does not charge a payment provider. Replace with verified payment Flow later.",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Begin checkout",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Get Records",
+              "label": "Load session lines",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "recordLimit": "all",
+                "outputVariable": "CheckoutLines"
+              }
+            },
+            {
+              "id": 3,
+              "type": "Decision",
+              "label": "Only settle nonempty basket",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "HasItems",
+                    "label": "HasItems",
+                    "conditions": [
+                      {
+                        "field": "{!CheckoutLines}",
+                        "operator": "Is Not Null"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "Create Records",
+              "label": "Record sale as cash",
+              "config": {
+                "object": "Sale__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Order_Type__c",
+                    "value": "POS"
+                  },
+                  {
+                    "field": "Payment_Status__c",
+                    "value": "Cash Recorded"
+                  },
+                  {
+                    "field": "Tender_Method__c",
+                    "value": "Cash"
+                  },
+                  {
+                    "field": "Requested_Tender__c",
+                    "value": "{!PaymentMethod}"
+                  },
+                  {
+                    "field": "Currency__c",
+                    "value": "GBP"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 5,
+              "type": "Get Records",
+              "label": "Read created sale",
+              "config": {
+                "object": "Sale__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "outputVariable": "CompletedSale"
+              }
+            },
+            {
+              "id": 6,
+              "type": "Loop",
+              "label": "Create sale lines",
+              "config": {
+                "collection": "CheckoutLines",
+                "loopVariable": "CheckoutLine",
+                "direction": "First to last"
+              }
+            },
+            {
+              "id": 7,
+              "type": "Create Records",
+              "label": "Persist sale line",
+              "config": {
+                "object": "SaleItem__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "{!CheckoutLine.Name}"
+                  },
+                  {
+                    "field": "Sale__c",
+                    "value": "{!CompletedSale.Id}"
+                  },
+                  {
+                    "field": "Product__c",
+                    "value": "{!CheckoutLine.Product__c}"
+                  },
+                  {
+                    "field": "Quantity__c",
+                    "value": "{!CheckoutLine.Quantity__c}"
+                  },
+                  {
+                    "field": "Unit_Price__c",
+                    "value": "{!CheckoutLine.Unit_Price__c}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 8,
+              "type": "Update Records",
+              "label": "Mark session completed",
+              "config": {
+                "object": "Cart__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "fieldValues": [
+                  {
+                    "field": "Status__c",
+                    "value": "Completed"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 9,
+              "type": "Delete Records",
+              "label": "Clear settled cart lines",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 10,
+              "type": "End",
+              "label": "Sale recorded",
+              "config": {}
+            },
+            {
+              "id": 11,
+              "type": "End",
+              "label": "Empty basket, no sale",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "pos-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-3-4-HasItems",
+              "from": 3,
+              "to": 4,
+              "label": "HasItems",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-3-11-Default Outcome",
+              "from": 3,
+              "to": 11,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-4-5-next",
+              "from": 4,
+              "to": 5,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-5-6-next",
+              "from": 5,
+              "to": 6,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-6-7-For Each",
+              "from": 6,
+              "to": 7,
+              "label": "For Each",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-7-6-next",
+              "from": 7,
+              "to": 6,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-6-8-After Last",
+              "from": 6,
+              "to": 8,
+              "label": "After Last",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-8-9-next",
+              "from": 8,
+              "to": 9,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-9-10-next",
+              "from": 9,
+              "to": 10,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "SessionId",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "PaymentMethod",
+              "label": "PaymentMethod",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "CheckoutLines",
+              "label": "CheckoutLines",
+              "type": "Record Collection",
+              "dataType": "CartLine__c",
+              "isCollection": true,
+              "availableForInput": false,
+              "availableForOutput": false
+            },
+            {
+              "name": "CheckoutLine",
+              "label": "CheckoutLine",
+              "type": "Record",
+              "dataType": "CartLine__c",
+              "isCollection": false,
+              "availableForInput": false,
+              "availableForOutput": false
+            },
+            {
+              "name": "CompletedSale",
+              "label": "CompletedSale",
+              "type": "Record",
+              "dataType": "Sale__c",
+              "isCollection": false,
+              "availableForInput": false,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        }
+      ],
+      "components": [
+        {
+          "apiName": "TillSalesWorkspace",
+          "label": "Metadrive POS Till",
+          "description": "Metadata-driven touchscreen POS with editable product grid, cart, customer and Flow action bindings",
+          "jsxFile": "TillSalesWorkspace/TillSalesWorkspace.jsx",
+          "cssFile": "TillSalesWorkspace/TillSalesWorkspace.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 1440,
+            "defaultHeight": 900,
+            "minWidth": 320,
+            "minHeight": 600
+          },
+          "version": 1
+        }
+      ],
+      "profile": {
+        "id": "pos-user",
+        "apiName": "POS_User",
+        "label": "POS User",
+        "systemPermissions": [
+          "metadata:read",
+          "flows:run"
+        ],
+        "objectPermissions": {
+          "Product": {
+            "read": true
+          },
+          "ProductCategory": {
+            "read": true
+          },
+          "Cart__c": {
+            "read": true,
+            "create": true,
+            "edit": true
+          },
+          "CartLine__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true
+          },
+          "Sale__c": {
+            "read": true,
+            "create": true,
+            "edit": true
+          },
+          "SaleItem__c": {
+            "read": true,
+            "create": true
+          },
+          "Contact": {
+            "read": true
+          }
+        },
+        "tabPermissions": {
+          "Product": true,
+          "Sale__c": true
+        },
+        "navigationDefaultAccess": "Deny"
+      }
+    }
+  ]
+}

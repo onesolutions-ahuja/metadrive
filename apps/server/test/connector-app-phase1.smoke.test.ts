@@ -112,8 +112,10 @@ test('AppExchange installation and trial run using stored metadata flows', async
     const before=await list();
     assert.equal(before.status,200,JSON.stringify(before.data));
     const records=before.data.records as Array<Record<string,any>>;
-    assert.equal(records.length,6);
+    assert.equal(records.length,7);
     assert.ok(records.some(x=>x.AppKey__c==='kiosk'));
+    assert.ok(records.some(x=>x.AppKey__c==='pos'));
+    assert.equal(new Set(records.map(x=>x.AppKey__c)).size,records.length,'AppExchange package keys must be unique');
     const app=records.find(x=>x.AppKey__c==='xero');
     assert.ok(app);
     assert.equal(app.Installed__c,false);

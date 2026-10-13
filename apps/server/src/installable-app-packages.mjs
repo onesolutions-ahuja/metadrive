@@ -135,23 +135,18 @@ export function applyInstallableAppPackages(tenant, catalog) {
     for (const [objectName, examples] of Object.entries(pkg.demoRecords ?? {})) {
       if (!objects.some(item => item.apiName === objectName)) continue;
       const existing = records[objectName] ?? [];
-      if (existing.length > 0) {
-        // Repair metadata-only demo records from earlier installs, identified
-        // by exact stable IDs. Never alter customer-created product records.
-        const demoById = new Map(examples.map(row => [row.Id, row]));
-        const repaired = existing.map(row => {
-          const demo = demoById.get(row.Id);
-          if (!demo || (row.CreatedDate && row.LastModifiedDate)) return row;
-          changed = true;
-          return { ...row,
-            CreatedDate: row.CreatedDate ?? demo.CreatedDate,
-            LastModifiedDate: row.LastModifiedDate ?? demo.LastModifiedDate };
-        });
-        if (changed) records = { ...records, [objectName]: repaired };
-        continue;
+      const exampleIds = new Set(examples.map(item => item.Id));
+      const stamp = new Date().toISOString();
+      const repaired = existing.map(item => exampleIds.has(item.Id) && (!item.CreatedDate || !item.LastModifiedDate)
+        ? { ...item, CreatedDate: item.CreatedDate || stamp, LastModifiedDate: item.LastModifiedDate || stamp }
+        : item);
+      const additions = existing.length ? [] : examples.map(item => ({
+        ...structuredClone(item), CreatedDate: item.CreatedDate || stamp, LastModifiedDate: item.LastModifiedDate || stamp
+      }));
+      if (additions.length || repaired.some((item, index) => item !== existing[index])) {
+        records = { ...records, [objectName]: [...repaired, ...additions] };
+        changed = true;
       }
-      records = { ...records, [objectName]: structuredClone(examples) };
-      changed = true;
     }
     if (changed) next = {...next,objects,flows,apps,pages,records,accessControl};
   }
