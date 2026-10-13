@@ -6,7 +6,7 @@ const source = readFileSync(new URL('../apps/web/src/App.tsx', import.meta.url),
 
 test('session refresh aborts while waiting on another browser tab lock', () => {
   assert.match(source, /function withAuthRefreshLock\(refresh: \(\) => Promise<Response>, signal\?: AbortSignal\)/);
-  assert.match(source, /navigator\.locks\.request\('metadrive-auth-refresh', \{ signal \}, refresh\)/);
+  assert.match(source, /navigator\.locks\.request<Response>\('metadrive-auth-refresh', \{ signal \}, async \(\) => await refresh\(\)\)/);
   assert.match(source, /\}\), controller\.signal\s*\)/);
 });
 
