@@ -7140,13 +7140,45 @@ app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res
     decidedAt: now,
     decidedBy: principal.userId
   };
+  const peers = tenant.approvalRequests.filter((item) => item.groupId === request.groupId);
+  const allApproved = peers.every((item) => item.id === request.id || item.status === 'Approved');
+  const finalized = parsed.data.decision === 'Rejected' || request.approvalMode !== 'ALL' || allApproved;
   const requests = tenant.approvalRequests.map((item) => item.groupId !== request.groupId || item.status !== 'Pending'
     ? item
     : item.id === request.id
       ? decided
-      : { ...item, status: 'Canceled' as const, decisionComments: 'Resolved by another approver.', decidedAt: now, decidedBy: principal.userId });
+      : finalized
+        ? { ...item, status: 'Canceled' as const, decisionComments: 'Resolved by another approver.', decidedAt: now, decidedBy: principal.userId }
+        : item);
+  let interviews = tenant.interviews;
+  // A human decision only releases its own tenant-scoped, version-pinned
+  // orchestration stage. No other pending Flow interview is affected.
+  if (finalized && request.orchestrationInterviewId) {
+    const interview = tenant.interviews.find((item) =>
+      item.id === request.orchestrationInterviewId && item.kind === 'orchestration'
+      && item.flowApiName === request.flowApiName);
+    if (!interview) return res.status(409).json({ error: 'The orchestration stage is no longer pending' });
+    const saved = tenant.flows.find((item) => item.apiName === interview.flowApiName);
+    const active = activeFlowDefinition(saved);
+    const flow = interview.allowDraft && saved?.status === 'Draft' && saved.versionNumber === interview.versionNumber
+      ? saved
+      : active?.versionNumber === interview.versionNumber ? active : undefined;
+    const stage = flow?.elements.find((item) => item.id === interview.screenElementId && item.type === 'Orchestration Stage');
+    const outcome = parsed.data.decision;
+    const connectors = flow?.connectors.filter((item) =>
+      item.from === stage?.id && item.kind === 'normal' && item.label.toLowerCase() === outcome.toLowerCase()) ?? [];
+    if (!stage || connectors.length !== 1) {
+      return res.status(409).json({ error: 'The orchestration stage has no valid decision path' });
+    }
+    const statusVariable = typeof stage.config.statusVariable === 'string' ? stage.config.statusVariable : '';
+    interviews = tenant.interviews.map((item) => item.id !== interview.id ? item : {
+      ...item, kind: 'async' as const, waitUntil: now, retryAt: null, attempts: 0,
+      nextElementId: connectors[0].to,
+      variables: { ...item.variables, ...(statusVariable ? { [statusVariable]: outcome } : {}) }
+    });
+  }
   const submitter = state.users.find((user) => user.id === request.submittedBy && user.tenantId === principal.tenantId && !user.disabled);
-  const notifications = submitter ? [...tenant.notifications, customNotificationSchema.parse({
+  const notifications = finalized && submitter ? [...tenant.notifications, customNotificationSchema.parse({
     id: randomUUID(),
     recipientId: submitter.id,
     title: `Approval ${parsed.data.decision.toLowerCase()}`,
@@ -7156,7 +7188,7 @@ app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res
     createdAt: now,
     readAt: null
   })] : tenant.notifications;
-  persistTenantRecords(principal.tenantId, { ...tenant, approvalRequests: requests, notifications });
+  persistTenantRecords(principal.tenantId, { ...tenant, approvalRequests: requests, notifications, interviews });
   return res.json({ request: decided });
 });
 
@@ -7889,7 +7921,12 @@ app.delete('/api/metadata/flow-interviews/:interviewId', requireAnyPermission('m
   }
   persistTenantRecords(principal.tenantId, {
     ...tenant,
-    interviews: tenant.interviews.filter((interview) => interview.id !== interviewId)
+    interviews: tenant.interviews.filter((interview) => interview.id !== interviewId),
+    approvalRequests: tenant.approvalRequests.map((request) =>
+      request.orchestrationInterviewId === interviewId && request.status === 'Pending'
+        ? { ...request, status: 'Canceled' as const, decisionComments: 'Flow interview canceled.',
+          decidedAt: new Date().toISOString(), decidedBy: principal.userId }
+        : request)
   });
   return res.status(204).end();
 });
