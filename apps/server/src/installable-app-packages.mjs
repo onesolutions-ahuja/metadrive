@@ -32,7 +32,19 @@ export function applyInstallableAppPackages(tenant, catalog) {
       if (additions.length) changed = true;
       return [...oldItems,...structuredClone(additions)];
     };
-    const flows = mergeByApiName(next.flows, pkg.flows);
+    const flows = mergeByApiName(next.flows, pkg.flows).map(flow => {
+      if (!(pkg.flows ?? []).some(item => item.apiName === flow.apiName)) return flow;
+      let fixed = false;
+      const elements = (flow.elements ?? []).map(element => {
+        if (element.type !== 'Decision' || (element.config?.outcomes ?? []).some(o => o.name === 'Default')) return element;
+        const linked = (flow.connectors ?? []).filter(c => c.from === element.id && c.kind === 'normal' && c.label?.trim().toLowerCase() === 'default outcome');
+        if (linked.length !== 1) return element;
+        fixed = true;
+        return {...element, config:{...element.config,outcomes:[...(element.config?.outcomes ?? []),{name:'Default',label:'Default Outcome',conditions:[]}]}};
+      });
+      if (fixed) changed = true;
+      return fixed ? {...flow,elements} : flow;
+    });
     const apps = mergeByApiName(next.apps, pkg.apps);
     const pages = mergeByApiName(next.pages, pkg.pages);
     const permissionTemplate = pkg.profile;
@@ -95,9 +107,11 @@ export function applyInstallableAppPackages(tenant, catalog) {
             !component.properties?.categoryObjectApiName;
           const legacyAccent = component.properties?.accentColor === '#ffca26'
             && template.properties?.accentColor !== '#ffca26';
-          if (!missingCategories && !legacyAccent) return component;
+          const missingWelcome = template.properties?.welcomeImage && !component.properties?.welcomeImage;
+          if (!missingCategories && !legacyAccent && !missingWelcome) return component;
           return { ...component, properties: {
             ...component.properties,
+            ...(missingWelcome ? { welcomeImage: template.properties.welcomeImage, labels: template.properties.labels } : {}),
             ...(missingCategories ? {
               categoryObjectApiName: template.properties.categoryObjectApiName,
               categoryNameField: template.properties.categoryNameField
@@ -115,7 +129,16 @@ export function applyInstallableAppPackages(tenant, catalog) {
         }
       }
     }
-    if (changed) next = {...next,objects,flows,apps,pages,accessControl};
+    // Sample menu lives in ordinary tenant records, never inside the React UI.
+    // Only seed an empty object collection; never replace customer records.
+    let records = next.records;
+    for (const [objectName, examples] of Object.entries(pkg.demoRecords ?? {})) {
+      if (!objects.some(item => item.apiName === objectName)) continue;
+      if ((records[objectName] ?? []).length > 0) continue;
+      records = { ...records, [objectName]: structuredClone(examples) };
+      changed = true;
+    }
+    if (changed) next = {...next,objects,flows,apps,pages,records,accessControl};
   }
   return next;
 }
