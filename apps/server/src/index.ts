@@ -3552,7 +3552,7 @@ const stateSchema = z.object({
   })).default([]),
   libraryComponents: z.array(libraryComponentSchema).default([]),
   tenants: z.record(z.object({
-    passwordRecovery: z.object({ smtpCredentialId: z.string().default(''), fromEmail: z.string().default('') })
+    passwordRecovery: z.object({ smtpCredentialId: z.string().default(''), fromEmail: z.string().default(''), policy: z.unknown().optional() })
       .default({ smtpCredentialId: '', fromEmail: '' }),
     securityAudit: z.array(z.object({
       id: z.string(), at: z.string().datetime(), actorUserId: z.string(), action: z.string(),
@@ -3608,7 +3608,7 @@ const stateSchema = z.object({
     mfaVersion: z.number().int().nonnegative().optional(),
     authVersion: z.number().int().nonnegative().optional(),
     passwordReset: z.object({
-      tokenHash: z.string().regex(/^[0-9a-f]{64}$/),
+      tokenHash: z.string().regex(/^(?:[0-9a-f]{64}|[0-9a-f]{32}:[0-9a-f]{64})$/),
       expiresAt: z.number().int().nonnegative()
     }).optional(),
     lockedUntil: z.number().int().nonnegative().optional()
