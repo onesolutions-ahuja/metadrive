@@ -60,7 +60,7 @@ jobs:
           gh run download "$BASELINE_RUN" --repo "$GITHUB_REPOSITORY" -n metadrive-full-audit -D audit-baselines
       - name: Audit live UI (read-only)
         env:
-          METADRIVE_BASE_URL: https://onesolutions-ahuja.github.io/metadrive/
+          METADRIVE_BASE_URL: https://unesolutions.co.uk/une/
           METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
           METADRIVE_AUDIT_OUTPUT: audit-results
@@ -70,7 +70,7 @@ jobs:
         if: always()
         run: |
           mkdir -p audit-results/lighthouse
-          npx --yes lighthouse@12 https://onesolutions-ahuja.github.io/metadrive/ --chrome-flags="--headless --no-sandbox" --output=json --output-path=audit-results/lighthouse/mobile.json --quiet || true
+          npx --yes lighthouse@12 https://unesolutions.co.uk/une/ --chrome-flags="--headless --no-sandbox" --output=json --output-path=audit-results/lighthouse/mobile.json --quiet || true
           npx --yes lighthouse@12 https://onesolutions-ahuja.github.io/metadrive/ --preset=desktop --chrome-flags="--headless --no-sandbox" --output=json --output-path=audit-results/lighthouse/desktop.json --quiet || true
       - name: Publish audit summary
         if: always()
