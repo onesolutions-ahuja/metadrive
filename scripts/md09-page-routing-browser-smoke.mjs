@@ -168,6 +168,7 @@ try {
   assert.equal(saved.components[0].properties.actionFlows.browse.navigationPageApiName, targetId);
   await page.reload();
   await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
+  await page.getByRole('button', { name: 'Data & Actions' }).click();
   const reopened = page.locator('.metadata-navigation-target').first();
   await reopened.waitFor();
   assert.equal(await reopened.locator('select').nth(0).inputValue(), 'App Page');
