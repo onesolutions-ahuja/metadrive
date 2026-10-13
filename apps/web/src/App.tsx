@@ -85,6 +85,7 @@ import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
 import TenantUsagePanel from './TenantUsagePanel';
 import DeveloperAccountSettings from './DeveloperAccountSettings';
+import SettingsViewRow from './SettingsViewRow';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
 import tillPagePreset from './page-presets/till.editable.json';
@@ -661,7 +662,8 @@ function ConnectorSettingsWorkspace({
   onSaveProvider,
   onSaveIntegrationConnection,
   onTestIntegrationConnection,
-  onNotify
+  onNotify,
+  canManage
 }: {
   provider: ConnectorProviderMetadata;
   providers: ConnectorProviderMetadata[];
@@ -671,9 +673,11 @@ function ConnectorSettingsWorkspace({
   onSaveIntegrationConnection: (connection: Omit<Pick<IntegrationConnectionMetadata, 'id' | 'connectorKey' | 'name' | 'configuration' | 'status'>, 'id'> & { id?: string; credentials: Record<string, string> }) => Promise<IntegrationConnectionMetadata>;
   onTestIntegrationConnection: (id: string) => Promise<IntegrationConnectionMetadata>;
   onNotify: (message: string) => void;
+  canManage: boolean;
 }) {
   const providerConnections = integrationConnections.filter((item) => item.connectorKey === provider.connectorKey);
   const [selectedConnectionId, setSelectedConnectionId] = useState('');
+  const [editingConnection, setEditingConnection] = useState(false);
   const [connectionName, setConnectionName] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<IntegrationConnectionMetadata['status']>('ACTIVE');
   const [connectionConfiguration, setConnectionConfiguration] = useState<Record<string, string>>({});
@@ -702,6 +706,7 @@ function ConnectorSettingsWorkspace({
     setConnectionStatus(existing?.status ?? 'ACTIVE');
     setConnectionConfiguration(existing?.configuration ?? {});
     setConnectionCredentials({});
+    setEditingConnection(false);
   }, [provider.connectorKey]);
 
   useEffect(() => {
@@ -720,6 +725,7 @@ function ConnectorSettingsWorkspace({
   }, [provider]);
 
   const saveProvider = async () => {
+    if (!canManage) return;
     setSavingProvider(true);
     try {
       const saved = await onSaveProvider({
@@ -748,6 +754,7 @@ function ConnectorSettingsWorkspace({
   const selectConnection = (id: string) => {
     const selected = providerConnections.find((item) => item.id === id);
     setSelectedConnectionId(id);
+    setEditingConnection(false);
     setConnectionName(selected?.name ?? `${provider.name} connection`);
     setConnectionStatus(selected?.status ?? 'ACTIVE');
     setConnectionConfiguration(selected?.configuration ?? {});
@@ -755,6 +762,7 @@ function ConnectorSettingsWorkspace({
     setConnectionTestError('');
   };
   const saveConnection = async () => {
+    if (!canManage || !editingConnection) return;
     setSavingConnection(true);
     try {
       const saved = await onSaveIntegrationConnection({
@@ -766,6 +774,7 @@ function ConnectorSettingsWorkspace({
         status: connectionStatus
       });
       setSelectedConnectionId(saved.id);
+      setEditingConnection(false);
       setConnectionName(saved.name);
       setConnectionConfiguration(saved.configuration);
       setConnectionStatus(saved.status);
@@ -790,7 +799,7 @@ function ConnectorSettingsWorkspace({
   const testStatusClass = testStatusLabel === 'Connected' ? 'connected'
     : testStatusLabel === 'Failed' || testStatusLabel === 'Not configured' ? 'failed' : '';
   const testConnection = async () => {
-    if (!selectedConnectionId || connectionIsDirty || editingProvider) return;
+    if (!selectedConnectionId || connectionIsDirty || editingProvider || editingConnection) return;
     setTestingConnection(true);
     setConnectionTestError('');
     try {
@@ -827,7 +836,7 @@ function ConnectorSettingsWorkspace({
             <div className="connector-card-heading"><div><h3>Provider Definition</h3><p>Metadata used by flows to build requests for this provider.</p></div>
               {editingProvider
                 ? <div className="connector-connection-actions"><button className="btn btn-small" onClick={() => setEditingProvider(false)}>Cancel</button><button className="btn btn-brand btn-small" onClick={() => void saveProvider()} disabled={savingProvider}><Save size={13} />{savingProvider ? 'Saving…' : 'Save Provider'}</button></div>
-                : <button className="btn btn-small" onClick={() => setEditingProvider(true)}><Pencil size={13} />Edit Definition</button>}
+                : canManage ? <button className="btn btn-small" onClick={() => setEditingProvider(true)}><Pencil size={13} />Edit Definition</button> : null}
             </div>
             {editingProvider ? <div className="connector-definition-form">
               <label className="form-label">Connector Key<input className="form-control" value={provider.connectorKey} readOnly /></label>
@@ -860,29 +869,49 @@ function ConnectorSettingsWorkspace({
             <div className="connector-card-heading"><div><h3>Integration Connection</h3><p>Tenant-owned connection values and encrypted credentials used by flows.</p></div>
               <div className="connector-connection-actions">
                 <select className="form-control" aria-label="Select Integration Connection" value={selectedConnectionId} onChange={(event) => selectConnection(event.target.value)}>
-                  <option value="">New connection</option>
+                  <option value="">No connection selected</option>
                   {providerConnections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                 </select>
-                <button className="btn btn-small" onClick={() => selectConnection('')}><Plus size={13} />New</button>
+                {canManage && <button className="btn btn-small" onClick={() => { selectConnection(''); setEditingConnection(true); }}><Plus size={13} />New</button>}
               </div>
             </div>
-            <div className="connector-field-list">
-              <label className="form-label">Connection Name<input className="form-control" value={connectionName} onChange={(event) => setConnectionName(event.target.value)} /></label>
-              <label className="form-label">Status<select className="form-control" value={connectionStatus} onChange={(event) => setConnectionStatus(event.target.value as IntegrationConnectionMetadata['status'])}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></label>
-              {provider.credentialsSchema.map((field) => <label className="form-label" key={field.name}>
-                {field.label}{field.required ? ' *' : ''}
-                <input
-                  className="form-control"
-                  type={field.secret ? 'password' : 'text'}
-                  autoComplete="new-password"
-                  value={field.secret ? (connectionCredentials[field.name] ?? '') : (connectionConfiguration[field.name] ?? '')}
-                  placeholder={field.secret && providerConnections.find((item) => item.id === selectedConnectionId)?.credentialFields.some((entry) => entry.name === field.name && entry.configured) ? 'Saved encrypted value; leave blank to keep' : ''}
-                  onChange={(event) => field.secret
-                    ? setConnectionCredentials((current) => ({ ...current, [field.name]: event.target.value }))
-                    : setConnectionConfiguration((current) => ({ ...current, [field.name]: event.target.value }))}
-                />
-              </label>)}
-            </div>
+            {editingConnection && canManage
+              ? <div className="connector-field-list settings-edit-row">
+                  <label className="form-label">Connection Name
+                    <input className="form-control" value={connectionName}
+                      onChange={(event) => setConnectionName(event.target.value)} />
+                  </label>
+                  <label className="form-label">Status
+                    <select className="form-control" value={connectionStatus}
+                      onChange={(event) => setConnectionStatus(event.target.value as IntegrationConnectionMetadata['status'])}>
+                      <option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option>
+                    </select>
+                  </label>
+                  {provider.credentialsSchema.map((field) => <label className="form-label" key={field.name}>
+                    {field.label}{field.required ? ' *' : ''}
+                    <input className="form-control" type={field.secret ? 'password' : 'text'}
+                      autoComplete="new-password"
+                      value={field.secret ? (connectionCredentials[field.name] ?? '') : (connectionConfiguration[field.name] ?? '')}
+                      placeholder={field.secret && selectedConnection?.credentialFields.some((entry) => entry.name === field.name && entry.configured)
+                        ? 'Saved encrypted value; leave blank to keep' : ''}
+                      onChange={(event) => field.secret
+                        ? setConnectionCredentials((current) => ({ ...current, [field.name]: event.target.value }))
+                        : setConnectionConfiguration((current) => ({ ...current, [field.name]: event.target.value }))} />
+                  </label>)}
+                </div>
+              : <div className="settings-read-first-section">
+                  <SettingsViewRow label="Connection name" value={selectedConnection?.name ?? 'No connection configured'}
+                    canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  <SettingsViewRow label="Status" value={selectedConnection?.status ?? 'Not configured'}
+                    canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  {provider.credentialsSchema.map((field) => (
+                    <SettingsViewRow key={field.name} label={field.label}
+                      value={field.secret
+                        ? (selectedConnection?.credentialFields.some((item) => item.name === field.name && item.configured) ? '••••••••' : 'Not configured')
+                        : (selectedConnection?.configuration[field.name] ?? 'Not configured')}
+                      canEdit={canManage && Boolean(selectedConnection)} onEdit={() => setEditingConnection(true)} />
+                  ))}
+                </div>}
             <div className="connector-save-footer">
               <div className="connector-test-state" aria-live="polite">
                 <span className={`connector-test-result ${testStatusClass}`}>{testStatusLabel}</span>
@@ -891,14 +920,20 @@ function ConnectorSettingsWorkspace({
                   : (provider.test || selectedConnection?.testStatus === 'Test unavailable')
                     && selectedConnection?.lastTestMessage && <span>{selectedConnection.lastTestMessage}</span>}
                 {selectedConnection?.lastTestedAt && <time dateTime={selectedConnection.lastTestedAt}>Last tested {new Date(selectedConnection.lastTestedAt).toLocaleString()}</time>}
-                {connectionIsDirty && <span>Save connection changes before testing.</span>}
+                {editingConnection && connectionIsDirty && <span>Save connection changes before testing.</span>}
                 <p className="connector-security-note">Credentials are encrypted at rest and are never returned to the browser. Leave a saved secret blank to keep it unchanged.</p>
               </div>
               <div className="connector-connection-actions">
-                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || savingConnection || testingConnection || editingProvider}>
+                <button className="btn" onClick={() => void testConnection()} disabled={!selectedConnectionId || connectionIsDirty || editingConnection || savingConnection || testingConnection || editingProvider}>
                   {testingConnection ? 'Testing…' : 'Test Connection'}
                 </button>
-                <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}><Save size={14} />{savingConnection ? 'Saving…' : 'Save Connection'}</button>
+                {editingConnection && canManage && <>
+                  <button type="button" className="btn" disabled={savingConnection}
+                    onClick={() => selectConnection(selectedConnectionId)}>Cancel</button>
+                  <button className="btn btn-brand" onClick={() => void saveConnection()} disabled={savingConnection || !connectionName.trim()}>
+                    <Save size={14} />{savingConnection ? 'Saving…' : 'Save changes'}
+                  </button>
+                </>}
               </div>
             </div>
           </div>
@@ -3749,6 +3784,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onSaveProvider={saveConnectorProvider}
               onSaveIntegrationConnection={saveIntegrationConnection}
               onTestIntegrationConnection={testIntegrationConnection}
+              canManage={connectorRights.edit}
               onNotify={notify}
             /> : <div className="connector-settings-page"><div className="surface connector-empty">Connector metadata is loading…</div></div>;
           })()}
@@ -3769,7 +3805,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           {route.kind === 'setup' && workspace === 'flow-logs' && (
             <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
           )}
-          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace />}
+          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace canManage={canManageFlows} />}
           {route.kind === 'setup' && workspace === 'flow-builder' && (
             <FlowBuilderWorkspace
               landing={!route.resourceApiName}
@@ -3825,7 +3861,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -6371,25 +6407,43 @@ type AutomationSettingsDraft = {
   conversationIdleMinutes: number;
 };
 
-function AutomationSettingsWorkspace() {
+function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<AutomationSettingsDraft>({
     autoRetryFailedFlows: false, maxRetryAttempts: 10, conversationIdleMinutes: 15
   });
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const beforeEdit = useRef<AutomationSettingsDraft | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
     let active = true;
     void apiRequest<AutomationSettingsDraft>('/metadata/automation-settings')
-      .then((result) => { if (active) setDraft(result); })
+      .then((result) => { if (active) { setDraft(result); setLoaded(true); } })
       .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, []);
 
+  const startEdit = (field: string) => {
+    if (!canManage || editingRow || loading) return;
+    beforeEdit.current = { ...draft };
+    setEditingRow(field);
+    setNotice('');
+    setError('');
+  };
+  const cancelEdit = () => {
+    if (saving) return;
+    if (beforeEdit.current) setDraft(beforeEdit.current);
+    beforeEdit.current = null;
+    setEditingRow(null);
+    setError('');
+  };
   const save = async () => {
+    if (!canManage || !editingRow || saving) return;
     setError('');
     setNotice('');
     setSaving(true);
@@ -6398,6 +6452,8 @@ function AutomationSettingsWorkspace() {
         method: 'PUT', body: JSON.stringify(draft)
       });
       setDraft(result);
+      setEditingRow(null);
+      beforeEdit.current = null;
       setNotice('Process automation settings saved.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -6406,39 +6462,64 @@ function AutomationSettingsWorkspace() {
     }
   };
 
-  return <div className="connector-settings-page">
+  const editable = (key: string) => canManage && !editingRow && !loading;
+  return <div className="connector-settings-page settings-read-first-page">
     <PageHeading eyebrow="Setup / Automation" title="Process Automation Settings"
-      description="Control retries of failed flow executions and inactivity limits for conversational flows." />
-    <section className="surface" style={{ padding: 24, maxWidth: 760 }}>
-      {loading ? <p>Loading process automation settings…</p> : <>
+      description="Review failed-flow retries and conversational inactivity limits." />
+    <section className="surface permission-section" style={{ maxWidth: 800 }}>
+      {loading ? <p>Loading process automation settings…</p> : loaded ? <>
         <h2>Execution safety</h2>
-        <label className="checkbox-row">
-          <input type="checkbox" checked={draft.autoRetryFailedFlows}
-            onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
-          Automatically retry failed flow executions
-        </label>
-        <p className="permission-help">OFF by default. When disabled, failed scheduled runs, paused interviews and platform event deliveries are logged but are not retried. New scheduled occurrences are not disabled.</p>
-        <label className="form-label">Maximum failed attempts before stopping automatic retries
-          <input className="form-control" type="number" min="1" max="20" step="1"
-            value={draft.maxRetryAttempts}
-            onChange={(event) => setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
-        </label>
-        <p className="permission-help">Default: 10 failed attempts. Exhausted scheduled occurrences are recorded as failed, paused interviews stop retrying and undelivered platform events are dead-lettered.</p>
+        <div className="settings-read-first-section">
+          {editingRow === 'autoRetryFailedFlows'
+            ? <div className="settings-edit-row">
+                <label className="checkbox-row">
+                  <input type="checkbox" checked={draft.autoRetryFailedFlows}
+                    onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
+                  Automatically retry failed flow executions
+                </label>
+              </div>
+            : <SettingsViewRow label="Automatically retry failed flow executions"
+                value={draft.autoRetryFailedFlows ? 'On' : 'Off'}
+                canEdit={editable('autoRetryFailedFlows')} onEdit={() => startEdit('autoRetryFailedFlows')} />}
+          <p className="permission-help">Off by default. Disabled retries are logged; new scheduled occurrences can still run.</p>
+          {editingRow === 'maxRetryAttempts'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Maximum failed attempts
+                  <input className="form-control" type="number" min="1" max="20" step="1"
+                    value={draft.maxRetryAttempts} onChange={(event) =>
+                      setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
+                </label>
+              </div>
+            : <SettingsViewRow label="Maximum failed attempts" value={String(draft.maxRetryAttempts)}
+                canEdit={editable('maxRetryAttempts')} onEdit={() => startEdit('maxRetryAttempts')} />}
+          <p className="permission-help">Default: 10. Exhausted deliveries are recorded as failed or dead-lettered.</p>
+        </div>
         <h2>Conversation inactivity</h2>
-        <label className="form-label">Expire inactive conversations after (minutes)
-          <input className="form-control" type="number" min="1" max="1440" step="1"
-            value={draft.conversationIdleMinutes}
-            onChange={(event) => setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
-        </label>
-        <p className="permission-help">Default: 15 minutes. After inactivity, the next incoming message receives a new conversation key. Pending conversational interviews expire without sending late replies. Previous message records are kept.</p>
-        {error && <p role="alert" style={{ color: 'var(--slds-color-text-error, #ba0517)' }}>{error}</p>}
-        {notice && <p role="status">{notice}</p>}
-        <button className="btn btn-brand" type="button" onClick={() => void save()}
-          disabled={saving || !Number.isInteger(draft.maxRetryAttempts) || draft.maxRetryAttempts < 1 || draft.maxRetryAttempts > 20
-            || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
-          {saving ? 'Saving…' : 'Save Settings'}
-        </button>
-      </>}
+        <div className="settings-read-first-section">
+          {editingRow === 'conversationIdleMinutes'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Expire inactive conversations after (minutes)
+                  <input className="form-control" type="number" min="1" max="1440" step="1"
+                    value={draft.conversationIdleMinutes} onChange={(event) =>
+                      setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
+                </label>
+              </div>
+            : <SettingsViewRow label="Conversation idle timeout"
+                value={`${draft.conversationIdleMinutes} minutes`}
+                canEdit={editable('conversationIdleMinutes')} onEdit={() => startEdit('conversationIdleMinutes')} />}
+          <p className="permission-help">Default: 15 minutes. Existing message records are retained after inactivity.</p>
+        </div>
+        {editingRow && canManage && <div className="settings-read-first-toolbar">
+          <button className="btn" type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
+          <button className="btn btn-brand" type="button" onClick={() => void save()}
+            disabled={saving || !Number.isInteger(draft.maxRetryAttempts) || draft.maxRetryAttempts < 1 || draft.maxRetryAttempts > 20
+              || !Number.isInteger(draft.conversationIdleMinutes) || draft.conversationIdleMinutes < 1 || draft.conversationIdleMinutes > 1440}>
+            <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>}
+      </> : null}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {notice && <p className="form-success" role="status">{notice}</p>}
     </section>
   </div>;
 }
@@ -6448,12 +6529,14 @@ type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 
 
 
-function TenantEmailRecoverySettings() {
+function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
   const [smtpCredentialId, setSmtpCredentialId] = useState('');
   const [fromEmail, setFromEmail] = useState('');
   const [ready, setReady] = useState(false);
   const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
   const [permitted, setPermitted] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const original = useRef<{ smtpCredentialId: string; fromEmail: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   useEffect(() => {
@@ -6470,34 +6553,70 @@ function TenantEmailRecoverySettings() {
     return () => { active = false; };
   }, []);
   if (!permitted) return null;
+  const beginEdit = () => {
+    if (!canManage || busy) return;
+    original.current = { smtpCredentialId, fromEmail };
+    setEditing(true);
+    setMessage('');
+  };
+  const cancelEdit = () => {
+    if (busy) return;
+    if (original.current) {
+      setSmtpCredentialId(original.current.smtpCredentialId);
+      setFromEmail(original.current.fromEmail);
+    }
+    original.current = null;
+    setEditing(false);
+    setMessage('');
+  };
   const save = async () => {
+    if (!canManage || !editing || busy) return;
     setBusy(true); setMessage('');
     try {
       await apiRequest('/auth/password-recovery/settings', {
         method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '' })
       });
+      original.current = null;
+      setEditing(false);
       setMessage('Password recovery configuration saved.');
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings'); }
     finally { setBusy(false); }
   };
   return <section className="surface permission-section">
     <h2>Tenant password recovery</h2>
-    <p>Email reset links are delivered through your tenant's SMTP Named Credential. They do not bypass MFA or allow platform staff to access tenant accounts.</p>
-    {!ready && <p role="alert">The server must have a trusted METADRIVE_PASSWORD_RESET_BASE_URL matching an allowed HTTPS web origin before recovery can be enabled.</p>}
-    {message && <p role="status">{message}</p>}
-    <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential</label>
-    <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
-      onChange={(event) => setSmtpCredentialId(event.target.value)}>
-      <option value="">Disabled</option>
-      {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-    </select>
-    <label className="form-label" htmlFor="recovery-sender">Sender email</label>
-    <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
-      onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
-    <button className="btn btn-brand" onClick={() => void save()}
-      disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
-      {busy ? 'Saving…' : 'Save recovery configuration'}
-    </button>
+    <p>Email reset links use the tenant's SMTP Named Credential. They never bypass MFA.</p>
+    {!ready && <p role="alert" className="permission-help">
+      Configure a trusted HTTPS password-reset origin on the server before enabling recovery.
+    </p>}
+    <div className="settings-read-first-section">
+      {editing ? <div className="settings-edit-row">
+        <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential
+          <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
+            onChange={(event) => setSmtpCredentialId(event.target.value)}>
+            <option value="">Disabled</option>
+            {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        <label className="form-label" htmlFor="recovery-sender">Sender email
+          <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
+            onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
+        </label>
+      </div> : <>
+        <SettingsViewRow label="SMTP Named Credential"
+          value={credentials.find((item) => item.id === smtpCredentialId)?.label ?? (smtpCredentialId ? 'Configured' : 'Disabled')}
+          canEdit={canManage} onEdit={beginEdit} />
+        <SettingsViewRow label="Sender email" value={smtpCredentialId ? fromEmail : 'Not configured'}
+          canEdit={canManage} onEdit={beginEdit} />
+      </>}
+    </div>
+    {editing && canManage && <div className="settings-read-first-toolbar">
+      <button type="button" className="btn" disabled={busy} onClick={cancelEdit}>Cancel</button>
+      <button type="button" className="btn btn-brand" onClick={() => void save()}
+        disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
+        <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
+      </button>
+    </div>}
+    {message && <p role="status" className="settings-view-row-help">{message}</p>}
   </section>;
 }
 
@@ -6543,6 +6662,7 @@ function TenantUserLockSettings() {
 function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => void }) {
   const [sessions, setSessions] = useState<Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }>>([]);
   const [password, setPassword] = useState('');
+  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -6558,7 +6678,7 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
       await apiRequest('/auth/sessions/revoke-all', {
         method: 'POST', body: JSON.stringify({ currentPassword: password })
       });
-      setPassword('');
+      setPassword(''); setConfirmingRevoke(false);
       onReauthenticate();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to revoke sessions');
@@ -6573,12 +6693,21 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
       <li key={session.familyId}>Expires {new Date(session.expiresAt * 1000).toLocaleString()}
         {session.mfaVerified ? ' · MFA verified' : ''}</li>
     )}</ul>}
-    <label className="form-label" htmlFor="sessions-revoke-password">Current password</label>
-    <input className="form-control" id="sessions-revoke-password" type="password"
-      autoComplete="current-password" value={password}
-      onChange={(event) => setPassword(event.target.value)} />
-    <button type="button" className="btn" disabled={busy || !password}
-      onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Sign out on all devices'}</button>
+    {!confirmingRevoke && <button type="button" className="btn"
+      onClick={() => setConfirmingRevoke(true)}>Sign out on all devices</button>}
+    {confirmingRevoke && <div className="settings-edit-row">
+      <label className="form-label" htmlFor="sessions-revoke-password">Confirm current password
+        <input className="form-control" id="sessions-revoke-password" type="password"
+          autoComplete="current-password" value={password}
+          onChange={(event) => setPassword(event.target.value)} />
+      </label>
+      <div className="settings-read-first-toolbar">
+        <button type="button" className="btn" disabled={busy}
+          onClick={() => { setPassword(''); setConfirmingRevoke(false); }}>Cancel</button>
+        <button type="button" className="btn btn-brand" disabled={busy || !password}
+          onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Confirm sign out on all devices'}</button>
+      </div>
+    </div>}
   </section>;
 }
 
@@ -6604,9 +6733,11 @@ function TenantSecurityAudit() {
   </section>;
 }
 
-function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void }) {
+function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: () => void; canManage: boolean }) {
   const [mode, setMode] = useState<TenantMfaMode>('Off');
   const [draftMode, setDraftMode] = useState<TenantMfaMode>('Off');
+  const [editingPolicy, setEditingPolicy] = useState(false);
+  const [authenticatorAction, setAuthenticatorAction] = useState<'enroll' | 'disable' | null>(null);
   const [canConfigure, setCanConfigure] = useState(false);
   const [enrolled, setEnrolled] = useState(false);
   const [password, setPassword] = useState('');
@@ -6626,6 +6757,7 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
     return () => { active = false; };
   }, []);
   const savePolicy = async () => {
+    if (!canManage || !canConfigure || !editingPolicy || busy) return;
     setBusy(true); setError(''); setNotice('');
     try {
       await apiRequest('/auth/mfa/policy', { method: 'PUT', body: JSON.stringify({ mode: draftMode }) });
@@ -6672,27 +6804,39 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
     <p>Authenticator-based MFA is configured separately for each tenant. Server-side policy controls sign-in and API access.</p>
     {error && <p className="auth-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {canConfigure && <>
-      <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy</label>
-      <select className="form-control" id="tenant-mfa-mode" value={draftMode}
-        onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
-        <option value="Off">Off — no MFA challenge</option>
-        <option value="Optional">Optional — individual users can enroll</option>
-        <option value="Required">Required — every user must enroll and verify</option>
-      </select>
-      <p>Changing the policy applies to this tenant only. Affected users must sign in again with the required verification.</p>
-      <button className="btn btn-brand" disabled={busy || draftMode === mode} onClick={() => void savePolicy()}>
-        {busy ? 'Saving…' : 'Save tenant MFA policy'}
-      </button>
-    </>}
+    <>
+      <div className="settings-read-first-section">
+        {editingPolicy ? <div className="settings-edit-row">
+          <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy
+            <select className="form-control" id="tenant-mfa-mode" value={draftMode}
+              onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
+              <option value="Off">Off — no MFA challenge</option>
+              <option value="Optional">Optional — individual users can enroll</option>
+              <option value="Required">Required — every user must enroll and verify</option>
+            </select>
+          </label>
+          <p className="settings-view-row-help">Changing the policy may require users to sign in again.</p>
+        </div> : <SettingsViewRow label="Tenant MFA policy" value={mode}
+          canEdit={canManage && canConfigure} onEdit={() => { setDraftMode(mode); setEditingPolicy(true); }} />}
+      </div>
+      {editingPolicy && canManage && <div className="settings-read-first-toolbar">
+        <button className="btn" type="button" disabled={busy}
+          onClick={() => { setDraftMode(mode); setEditingPolicy(false); }}>Cancel</button>
+        <button className="btn btn-brand" type="button" disabled={busy || draftMode === mode}
+          onClick={() => void savePolicy()}>
+          <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>}
+    </>
     <h3>My authenticator</h3>
     <p>{enrolled ? 'Your account has an authenticator enrolled.' : 'Your account has no authenticator enrolled.'}</p>
     {mode === 'Off' && <p>Ask a tenant security administrator to enable Optional MFA before enrolling.</p>}
-    {mode !== 'Off' && !enrolled && <>
+    {mode !== 'Off' && !enrolled && !authenticatorAction && <button className="btn" type="button" onClick={() => setAuthenticatorAction('enroll')}>Set up authenticator</button>}
+    {mode !== 'Off' && !enrolled && authenticatorAction === 'enroll' && <div className="settings-edit-row">
       <label className="form-label" htmlFor="mfa-current-password">Current password</label>
       <input className="form-control" id="mfa-current-password" type="password" autoComplete="current-password"
         value={password} onChange={(event) => setPassword(event.target.value)} />
-      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Set up authenticator</button>}
+      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Continue setup</button>}
       {pending && <>
         <p>Add this key to your authenticator app, then enter its six-digit code.</p>
         <p><strong>Setup key:</strong> <code style={{ overflowWrap: 'anywhere' }}>{pending.setup_secret}</code></p>
@@ -6702,8 +6846,13 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
           value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
         <button className="btn btn-brand" disabled={busy || !/^[0-9]{6}$/.test(code)} onClick={() => void confirmEnrollment()}>Confirm enrollment</button>
       </>}
-    </>}
-    {enrolled && mode !== 'Required' && <>
+      <button type="button" className="btn" disabled={busy} onClick={() => {
+        setAuthenticatorAction(null); setPending(null); setPassword(''); setCode('');
+      }}>Cancel</button>
+    </div>}
+    {enrolled && mode !== 'Required' && !authenticatorAction && <button className="btn" type="button"
+      onClick={() => setAuthenticatorAction('disable')}>Disable authenticator</button>}
+    {enrolled && mode !== 'Required' && authenticatorAction === 'disable' && <div className="settings-edit-row">
       <p>To disable your authenticator, confirm your password and a fresh code.</p>
       <label className="form-label" htmlFor="mfa-disable-password">Current password</label>
       <input className="form-control" id="mfa-disable-password" type="password" autoComplete="current-password"
@@ -6713,19 +6862,25 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
         pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
         value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
       <button className="btn" disabled={busy || !password || !/^[0-9]{6}$/.test(code)}
-        onClick={() => void disableEnrollment()}>Disable my MFA</button>
-    </>}
+        onClick={() => void disableEnrollment()}>Confirm disable MFA</button>
+      <button type="button" className="btn" disabled={busy} onClick={() => {
+        setAuthenticatorAction(null); setPassword(''); setCode('');
+      }}>Cancel</button>
+    </div>}
   </section>;
 }
 
-function CompanySettings() {
+function CompanySettings({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<CurrencySettingsMetadata>({
     corporateCurrency: 'USD',
     currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }]
   });
   const [corporateCode, setCorporateCode] = useState('USD');
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const previousValue = useRef<{ draft: CurrencySettingsMetadata; corporateCode: string } | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -6736,6 +6891,7 @@ function CompanySettings() {
         if (active) {
           setDraft(settings);
           setCorporateCode(settings.corporateCurrency);
+          setLoaded(true);
         }
       })
       .catch((loadError: unknown) => {
@@ -6747,6 +6903,23 @@ function CompanySettings() {
     return () => { active = false; };
   }, []);
 
+  const beginEdit = (row: string) => {
+    if (!canManage || saving || loading || editingRow) return;
+    previousValue.current = { draft, corporateCode };
+    setEditingRow(row);
+    setError('');
+    setNotice('');
+  };
+  const cancelEdit = () => {
+    if (saving) return;
+    if (previousValue.current) {
+      setDraft(previousValue.current.draft);
+      setCorporateCode(previousValue.current.corporateCode);
+    }
+    previousValue.current = null;
+    setEditingRow(null);
+    setError('');
+  };
   const setCorporateCurrency = () => {
     const normalized = corporateCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalized)) {
@@ -6760,8 +6933,7 @@ function CompanySettings() {
         corporateCurrency: normalized,
         currencies: hasCorporate
           ? current.currencies.map((currency) => currency.currencyIsoCode === normalized
-            ? { ...currency, conversionRate: 1 }
-            : currency)
+            ? { ...currency, conversionRate: 1 } : currency)
           : [...current.currencies, { currencyIsoCode: normalized, conversionRate: 1 }]
       };
     });
@@ -6770,6 +6942,7 @@ function CompanySettings() {
   };
 
   const save = async () => {
+    if (!canManage || !editingRow || saving) return;
     const normalizedCorporateCode = corporateCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalizedCorporateCode)) {
       setError('Corporate currency must be a three-letter ISO 4217 code.');
@@ -6780,8 +6953,7 @@ function CompanySettings() {
       corporateCurrency: normalizedCorporateCode,
       currencies: hasCorporateCurrency
         ? draft.currencies.map((currency) => currency.currencyIsoCode === normalizedCorporateCode
-          ? { ...currency, conversionRate: 1 }
-          : currency)
+          ? { ...currency, conversionRate: 1 } : currency)
         : [...draft.currencies, { currencyIsoCode: normalizedCorporateCode, conversionRate: 1 }]
     };
     setSaving(true);
@@ -6789,11 +6961,12 @@ function CompanySettings() {
     setNotice('');
     try {
       const saved = await apiRequest<CurrencySettingsMetadata>('/metadata/currencies', {
-        method: 'PUT',
-        body: JSON.stringify(settings)
+        method: 'PUT', body: JSON.stringify(settings)
       });
       setDraft(saved);
       setCorporateCode(saved.corporateCurrency);
+      previousValue.current = null;
+      setEditingRow(null);
       setNotice('Company currency settings saved.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -6802,83 +6975,96 @@ function CompanySettings() {
     }
   };
 
-  return (
-    <div className="home-content">
-      <PageHeading eyebrow="Company Settings" title="Company Information" description="Configure the corporate currency and active conversion rates used by currency formulas." />
-      <section className="surface permission-section">
-        <div className="section-toolbar">
-          <div><h2>Currency Settings</h2><p>Rates express units of corporate currency per one unit of the active currency.</p></div>
-          <button className="btn btn-brand" type="button" onClick={() => void save()} disabled={loading || saving}>
-            <Save size={14} />{saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-        {loading ? <p className="permission-help">Loading currency settings…</p> : <>
-          <label className="form-label">Corporate Currency (ISO 4217)
-            <input className="form-control" value={corporateCode} maxLength={3}
-              onChange={(event) => {
-                setCorporateCode(event.target.value.toUpperCase());
-                setError('');
-              }}
-              onBlur={setCorporateCurrency} />
-          </label>
-          <h3 className="permission-section-heading">Active Currencies</h3>
-          <div className="currency-settings-list">
-            {draft.currencies.map((currency, index) => (
-              <div className="currency-setting-row" key={`${currency.currencyIsoCode}-${index}`}>
-                <label className="form-label">Currency Code
-                  <input className="form-control" value={currency.currencyIsoCode} maxLength={3}
-                    disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                    onChange={(event) => {
-                      const currencyIsoCode = event.target.value.toUpperCase();
-                      setDraft((current) => ({
-                        ...current,
-                        currencies: current.currencies.map((item, itemIndex) => itemIndex === index
-                          ? { ...item, currencyIsoCode }
-                          : item)
-                      }));
-                      setNotice('');
-                    }} />
+  const addCurrency = () => {
+    if (!canManage || editingRow || loading) return;
+    const index = draft.currencies.length;
+    beginEdit(`currency-${index}`);
+    setDraft((current) => ({
+      ...current, currencies: [...current.currencies, { currencyIsoCode: '', conversionRate: 1 }]
+    }));
+  };
+
+  return <div className="home-content settings-read-first-page">
+    <PageHeading eyebrow="Company Settings" title="Company Information"
+      description="View your corporate currency and active conversion rates used by currency formulas." />
+    <section className="surface permission-section">
+      <div className="section-toolbar">
+        <div><h2>Currency Settings</h2>
+          <p>Rates express units of corporate currency per one unit of the active currency.</p></div>
+      </div>
+      {loading ? <p className="permission-help">Loading currency settings…</p> : loaded ? <>
+        <div className="settings-read-first-section">
+          {editingRow === 'corporate'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Corporate Currency (ISO 4217)
+                  <input autoFocus className="form-control" value={corporateCode} maxLength={3}
+                    onChange={(event) => { setCorporateCode(event.target.value.toUpperCase()); setError(''); }}
+                    onBlur={setCorporateCurrency} />
                 </label>
-                <label className="form-label">Conversion Rate
-                  <input className="form-control" type="number" min="0" step="any"
-                    value={currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}
-                    disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                    onChange={(event) => {
-                      const conversionRate = Number(event.target.value);
-                      setDraft((current) => ({
-                        ...current,
-                        currencies: current.currencies.map((item, itemIndex) => itemIndex === index
-                          ? { ...item, conversionRate }
-                          : item)
-                      }));
-                      setNotice('');
-                    }} />
-                </label>
-                <button className="btn" type="button" aria-label={`Remove ${currency.currencyIsoCode || 'currency'}`}
-                  disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                  onClick={() => {
-                    setDraft((current) => ({
-                      ...current,
-                      currencies: current.currencies.filter((_item, itemIndex) => itemIndex !== index)
-                    }));
-                    setNotice('');
-                  }}><Trash2 size={14} />Remove</button>
               </div>
-            ))}
-          </div>
-          <button className="btn" type="button" onClick={() => {
-            setDraft((current) => ({
-              ...current,
-              currencies: [...current.currencies, { currencyIsoCode: '', conversionRate: 1 }]
-            }));
-            setNotice('');
-          }}><Plus size={14} />Add Currency</button>
-        </>}
-        {error && <p className="form-error" role="alert">{error}</p>}
-        {notice && <p className="form-success" role="status">{notice}</p>}
-      </section>
-    </div>
-  );
+            : <SettingsViewRow label="Corporate Currency (ISO 4217)" value={draft.corporateCurrency}
+                canEdit={canManage && !editingRow} onEdit={() => beginEdit('corporate')} />}
+        </div>
+        <h3 className="permission-section-heading">Active Currencies</h3>
+        <div className="settings-read-first-section">
+          {draft.currencies.map((currency, index) => (
+            editingRow === `currency-${index}`
+              ? <div className="settings-edit-row" key={`currency-edit-${index}`}>
+                  <div className="settings-edit-row-grid">
+                    <label className="form-label">Currency Code
+                      <input autoFocus className="form-control" value={currency.currencyIsoCode} maxLength={3}
+                        disabled={currency.currencyIsoCode === draft.corporateCurrency}
+                        onChange={(event) => {
+                          const currencyIsoCode = event.target.value.toUpperCase();
+                          setDraft((current) => ({
+                            ...current, currencies: current.currencies.map((item, itemIndex) => itemIndex === index
+                              ? { ...item, currencyIsoCode } : item)
+                          }));
+                        }} />
+                    </label>
+                    <label className="form-label">Conversion Rate
+                      <input className="form-control" type="number" min="0" step="any"
+                        value={currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}
+                        disabled={currency.currencyIsoCode === draft.corporateCurrency}
+                        onChange={(event) => {
+                          const conversionRate = Number(event.target.value);
+                          setDraft((current) => ({
+                            ...current, currencies: current.currencies.map((item, itemIndex) => itemIndex === index
+                              ? { ...item, conversionRate } : item)
+                          }));
+                        }} />
+                    </label>
+                  </div>
+                  {currency.currencyIsoCode !== draft.corporateCurrency && <div className="settings-read-first-toolbar">
+                    <button type="button" className="btn" onClick={() => {
+                      setDraft((current) => ({
+                        ...current, currencies: current.currencies.filter((_item, itemIndex) => itemIndex !== index)
+                      }));
+                      setEditingRow('removed-currency');
+                    }}><Trash2 size={14} />Remove Currency</button>
+                  </div>}
+                </div>
+              : <SettingsViewRow key={`currency-view-${index}`}
+                  label={currency.currencyIsoCode || 'New currency'}
+                  value={`Conversion rate: ${currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}`}
+                  canEdit={canManage && !editingRow && currency.currencyIsoCode !== draft.corporateCurrency}
+                  onEdit={() => beginEdit(`currency-${index}`)} />
+          ))}
+        </div>
+        {canManage && !editingRow && <button className="btn" type="button" onClick={addCurrency}>
+          <Plus size={14} />Add Currency
+        </button>}
+        {canManage && editingRow && <div className="settings-read-first-toolbar">
+          <button className="btn" type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
+          <button className="btn btn-brand" type="button" onClick={() => void save()} disabled={saving}>
+            <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>}
+      </> : null}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {notice && <p className="form-success" role="status">{notice}</p>}
+    </section>
+  </div>;
 }
 
 function ObjectManager({

@@ -13,3 +13,21 @@
 .tenant-domain-add input { width: 100%; }
 .tenant-domain-error { color: #b42318; display:flex; align-items:center; gap:8px; }
 .tenant-domain-notice { color: #087443; }
+
+/* Settings list consistency and responsive inline registration. */
+.tenant-domains { margin: 18px 0 22px; padding: 18px 20px; border: 1px solid #e2e7ed; border-radius: 9px; background: #fff; }
+.tenant-domain-header { margin-bottom: 14px; align-items: flex-start; }
+.tenant-domain-header h3 { color: #181818; font-size: 16px; line-height: 1.4; }
+.tenant-domain-header p { color: #606a77; line-height: 1.55; margin: 5px 0 0; }
+.tenant-domain-item { background: #fff; border-color: #e2e7ed; }
+.tenant-domain-add { margin-top: 12px; }
+.tenant-domain-add-edit { display: grid; grid-template-columns: minmax(0, 1fr); padding: 14px; background: #f8fbff; border: 1px solid #c9e4fa; border-radius: 8px; }
+.tenant-domain-add-edit label { min-width: 0; display: grid; gap: 6px; margin: 0; }
+.tenant-domain-add-edit input { min-height: 38px; box-sizing: border-box; }
+.tenant-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; border: 1px solid #d1d9e0; border-radius: 7px; padding: 6px 11px; background: #fff; color: #181818; cursor: pointer; font: inherit; font-size: 13px; }
+.tenant-button:hover:not(:disabled) { background: #f2f7fc; }
+.tenant-button-primary { background: #0b4550; color: #fff; border-color: #0b4550; }
+.tenant-button-primary:hover:not(:disabled) { background: #126474; }
+.tenant-button-danger { color: #b42318; }
+.tenant-help { color: #606a77; font-size: 13px; }
+@media(max-width: 640px) { .tenant-domains { padding: 14px; } .tenant-domain-proof { grid-template-columns: minmax(0, 1fr); } }
