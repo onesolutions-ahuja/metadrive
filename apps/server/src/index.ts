@@ -7,6 +7,12 @@ import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, retryBudgetExhausted, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
+import { mayRetry, retryAfterMs, CalloutFault } from './connector-reliability.js';
+import { sealIntegrationEnvelope, openIntegrationEnvelope } from './connector-envelope.js';
+import { IntegrationOutbox } from './connector-outbox.js';
+import { dispatchIntegrationDeliveries } from './connector-delivery-worker.js';
+import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorization, validatedOAuthUrl, type OAuthVault, type OAuthToken } from './connector-oauth.js';
+import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -17,7 +23,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
@@ -1054,7 +1060,7 @@ const namedCredentialSchema = z.object({
   label: z.string().min(1),
   protocol: z.enum(['HTTPS', 'SMTP']).default('HTTPS'),
   baseUrl: z.string().url(),
-  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key']),
+  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code']),
   headerName: z.string().optional(),
   configuration: z.record(z.string()).optional(),
   keyId: z.string().min(1),
@@ -1084,13 +1090,28 @@ const namedCredentialSchema = z.object({
   if (credential.headerName && ['authorization', 'proxy-authorization', 'host', 'cookie', 'content-length', 'transfer-encoding', 'connection'].includes(credential.headerName.toLowerCase())) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['headerName'], message: 'This header cannot be used to transmit an API Key' });
   }
+  if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code') {
+    const oauth = credential.configuration ?? {};
+    if (credential.authType === 'OAuth Authorization Code') {
+      if (!oauth.AuthorizationEndpoint?.trim())
+        context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth AuthorizationEndpoint is required' });
+      else try { validatedOAuthUrl(oauth.AuthorizationEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth authorization URL must be public HTTPS' }); }
+    }
+    if (!oauth.ClientId?.trim() || !oauth.OAuthEndpoint?.trim()) {
+      context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration'],message:'OAuth ClientId and OAuthEndpoint are required' });
+    } else {
+      try { validatedOAuthUrl(oauth.OAuthEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','OAuthEndpoint'],message:'OAuth endpoint must be public HTTPS' }); }
+    }
+  }
 });
 const namedCredentialRequestSchema = z.object({
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   protocol: z.enum(['HTTPS', 'SMTP']).default('HTTPS'),
   baseUrl: z.string().url(),
-  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key']),
+  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code']),
   headerName: z.string().trim().optional(),
   configuration: z.record(z.string()).optional(),
   username: z.string().max(512).optional(),
@@ -1121,6 +1142,21 @@ const namedCredentialRequestSchema = z.object({
   if (credential.authType === 'Basic' && credential.secret && !credential.username?.trim()) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['username'], message: 'Basic authentication requires a username' });
   }
+  if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code') {
+    const oauth = credential.configuration ?? {};
+    if (credential.authType === 'OAuth Authorization Code') {
+      if (!oauth.AuthorizationEndpoint?.trim())
+        context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth AuthorizationEndpoint is required' });
+      else try { validatedOAuthUrl(oauth.AuthorizationEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth authorization URL must be public HTTPS' }); }
+    }
+    if (!oauth.ClientId?.trim() || !oauth.OAuthEndpoint?.trim()) {
+      context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration'],message:'OAuth ClientId and OAuthEndpoint are required' });
+    } else {
+      try { validatedOAuthUrl(oauth.OAuthEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','OAuthEndpoint'],message:'OAuth endpoint must be public HTTPS' }); }
+    }
+  }
 });
 type StoredNamedCredential = z.infer<typeof namedCredentialSchema>;
 const emailAlertSchema = z.object({
@@ -1142,7 +1178,7 @@ const emailAlertRequestSchema = emailAlertSchema.omit({
   updatedAt: true
 }).strict();
 type EmailAlert = z.infer<typeof emailAlertSchema>;
-type NamedCredentialPayload = { username?: string; secret?: string };
+type NamedCredentialPayload = { username?: string; secret?: string; oauthToken?: OAuthToken };
 type CredentialKeyRing = { activeKeyId: string; keys: Map<string, Buffer> };
 const flowConnectorSchema = z.object({
   id: z.string().min(1),
@@ -8508,6 +8544,77 @@ app.get('/api/named-credentials', requireAnyPermission('metadata:read', 'namedCr
       enabled: false, keyId: '', updatedAt: credential.updatedAt };
   }) });
 });
+function configuredOAuthCallback():string {
+  const raw=process.env.METADRIVE_OAUTH_CALLBACK_URL;
+  if(!raw)throw new Error('OAuth callback URL is not configured.');
+  const parsed=validatedOAuthUrl(raw);
+  if(parsed.pathname!=='/api/oauth/callback' || parsed.search || parsed.hash)
+    throw new Error('OAuth callback URL must identify the dedicated /api/oauth/callback endpoint.');
+  return parsed.toString();
+}
+// Setup permission controls connection authorization. This endpoint never exposes tokens.
+app.post('/api/named-credentials/:id/oauth/start',
+  requireAnyPermission('namedCredentials:manage','connectorApps:edit'),async(req:Request,res:Response)=>{
+  const principal=getPrincipal(res);
+  const tenant=tenantData(principal.tenantId);
+  const credential=tenant?.namedCredentials.find(item=>item.id===routeParam(req,'id'));
+  if(!tenant || !credential)return res.status(404).json({error:'Named Credential not found.'});
+  const managed=managedConnector(tenant,credential.name);
+  if(managed) {
+    if(!connectorRight(principal,'edit') || !connectorRight(principal,'secrets'))
+      return res.status(403).json({error:'Missing connector configuration or secret permission.'});
+  } else if(!principal.permissions.includes('namedCredentials:manage'))
+    return res.status(403).json({error:'Named Credential management permission required.'});
+  if(credential.authType!=='OAuth Authorization Code'||credential.protocol!=='HTTPS')
+    return res.status(400).json({error:'Credential is not configured for OAuth Authorization Code.'});
+  const entitlement=connectorEntitlement(tenant.records.Connector_App__c??[],credential);
+  if(!entitlement.allowed)return res.status(403).json({error:entitlement.message});
+  if(credential.enabled===false)return res.status(409).json({error:'Enable the connection before authorization.'});
+  const conf=credential.configuration??{};
+  if(!conf.AuthorizationEndpoint || !conf.OAuthEndpoint || !conf.ClientId)
+    return res.status(400).json({error:'OAuth endpoints and ClientId are required.'});
+  try {
+    const callback=configuredOAuthCallback();
+    const url=await beginOAuthAuthorization({
+      authorizationUrl:conf.AuthorizationEndpoint,tokenUrl:conf.OAuthEndpoint,
+      clientId:conf.ClientId,scope:conf.Scope,redirectUri:callback
+    },{tenantId:principal.tenantId,credentialId:credential.id},oauthChallengeStore());
+    return res.json({authorizationUrl:url});
+  } catch {
+    return res.status(503).json({error:'OAuth authorization could not start. Verify the configured callback, encryption and PostgreSQL challenge table.'});
+  }
+});
+// The external provider redirects here; an unguessable, SQL-backed one-time state authorizes the callback.
+app.get('/api/oauth/callback',async(req:Request,res:Response)=>{
+  const stateValue=typeof req.query.state==='string'?req.query.state:'';
+  const code=typeof req.query.code==='string'?req.query.code:'';
+  if(!/^[A-Za-z0-9_-]{20,1024}$/.test(stateValue) || !code || code.length>8192)
+    return res.status(400).type('text/plain').send('OAuth authorization was not completed.');
+  try {
+    const stateDigest=createHash('sha256').update(stateValue).digest('hex');
+    const challenges=oauthChallengeStore();
+    const scope=await challenges.findScope(stateDigest);
+    const tenant=scope?tenantData(scope.tenantId):null;
+    const credential=tenant?.namedCredentials.find(item=>item.id===scope?.credentialId);
+    if(!scope || !credential || credential.authType!=='OAuth Authorization Code'||credential.protocol!=='HTTPS'
+      || credential.enabled===false)throw new Error('OAuth session unavailable.');
+    const entitlement=connectorEntitlement(tenant?.records.Connector_App__c??[],credential);
+    if(!entitlement.allowed)throw new Error('Connector is not licensed.');
+    const conf=credential.configuration??{};
+    const clientSecret=openCredentialPayload(scope.tenantId,credential).secret;
+    if(!clientSecret || !conf.ClientId || !conf.OAuthEndpoint)throw new Error('OAuth settings unavailable.');
+    await completeOAuthAuthorization({
+      clientId:conf.ClientId,clientSecret,tokenUrl:conf.OAuthEndpoint,scope:conf.Scope
+    },scope,{state:stateValue,code},challenges,oauthCredentialVault(scope.tenantId,scope.credentialId),
+      safeOAuthTokenRequest);
+    res.setHeader('Cache-Control','no-store');
+    return res.status(200).type('text/plain').send('Connection authorized. You may close this window.');
+  } catch {
+    res.setHeader('Cache-Control','no-store');
+    return res.status(400).type('text/plain').send('OAuth authorization failed or expired. Start authorization again from Named Credentials.');
+  }
+});
+
 app.post('/api/named-credentials', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
@@ -8587,7 +8694,7 @@ app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:man
     if (parsed.data.authType !== 'None' && !parsed.data.secret && !shouldPreserveSecret) {
       return res.status(400).json({ error: 'Provide a new secret when changing the authentication type' });
     }
-    const payload = shouldPreserveSecret
+    const payload: NamedCredentialPayload = shouldPreserveSecret
       ? {
           ...openCredentialPayload(principal.tenantId, existing),
           ...(parsed.data.authType === 'Basic' && parsed.data.username?.trim() ? { username: parsed.data.username.trim() } : {})
@@ -8596,6 +8703,9 @@ app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:man
           ...(parsed.data.authType === 'Basic' && parsed.data.username?.trim() ? { username: parsed.data.username.trim() } : {}),
           ...(parsed.data.authType !== 'None' && parsed.data.secret ? { secret: parsed.data.secret } : {})
         };
+    if (sameAuthType && ['OAuth Client Credentials','OAuth Authorization Code'].includes(parsed.data.authType)
+      && JSON.stringify(existing.configuration ?? {}) !== JSON.stringify(parsed.data.configuration ?? {}))
+      delete payload.oauthToken;
     if (parsed.data.authType === 'Basic' && !payload.username) {
       return res.status(400).json({ error: 'Basic authentication requires a username and password' });
     }
@@ -8728,6 +8838,8 @@ app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentia
     if (credential.authType !== 'None' && !payload.secret) return res.status(400).json({ error: 'Authentication secret is not configured' });
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (credential.authType === 'Bearer') headers.Authorization = `Bearer ${payload.secret}`;
+    if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code')
+      headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(principal.tenantId,credential)}`;
     if (credential.authType === 'Basic') headers.Authorization = `Basic ${Buffer.from(`${payload.username ?? ''}:${payload.secret}`).toString('base64')}`;
     if (credential.authType === 'API Key') headers[credential.headerName!] = payload.secret!;
     const status = await new Promise<number>((resolve, reject) => {
@@ -14448,7 +14560,9 @@ type FlowDebugTraceEntry = { flowApiName: string; elementId: number; type: strin
 type RecordEvent = 'created' | 'updated' | 'deleted';
 const namedCredentialPayloadSchema = z.object({
   username: z.string().optional(),
-  secret: z.string().optional()
+  secret: z.string().optional(),
+  oauthToken: z.object({accessToken:z.string(),refreshToken:z.string().optional(),
+    tokenType:z.literal('Bearer'),expiresAtMs:z.number()}).optional()
 });
 
 function asConfigRows(value: unknown): Array<Record<string, unknown>> {
@@ -14665,6 +14779,93 @@ function resolveFlowTemplate(value: string, context: FlowRuntimeContext): string
   });
 }
 
+/** OAuth transport is deliberately server-side and DNS-pinned to public HTTPS hosts. */
+async function safeOAuthTokenRequest(endpoint: URL, params: URLSearchParams): Promise<{ status:number; body:unknown }> {
+  assertCalloutHostAllowed(endpoint.hostname, process.env.METADRIVE_PAUSED_CALLOUT_HOSTS);
+  validatedOAuthUrl(endpoint.toString());
+  const encoded=params.toString();
+  return new Promise((resolve,reject)=>{
+    const chunks:Buffer[]=[];
+    let size=0;
+    const request=httpsRequest(endpoint,{
+      method:'POST',timeout:15000,maxHeaderSize:8192,
+      headers:{'Content-Type':'application/x-www-form-urlencoded','Content-Length':String(Buffer.byteLength(encoded)),'Accept':'application/json'},
+      lookup:(hostname,options,callback)=>{
+        void lookup(hostname,{all:true,verbatim:true}).then(addresses=>{
+          if (!addresses.length || addresses.some(item=>!isPublicAddress(item.address))) {
+            callback(new Error('OAuth token host failed public DNS validation'),'',0);return;
+          }
+          const first=addresses[0];
+          if(options && typeof options==='object' && 'all' in options && options.all) callback(null,[first]);
+          else callback(null,first.address,first.family);
+        }).catch(()=>callback(new Error('OAuth token DNS unavailable'),'',0));
+      }
+    }, incoming=>{
+      incoming.on('data',(chunk:Buffer|string)=>{
+        const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=data.length;
+        if(size>65536){request.destroy(new Error('OAuth response exceeded limit'));return;}
+        chunks.push(data);
+      });
+      incoming.on('end',()=>{
+        try {resolve({status:incoming.statusCode??0,body:JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown});}
+        catch {reject(new Error('OAuth endpoint returned invalid JSON'));}
+      });
+      incoming.on('error',()=>reject(new Error('OAuth token response failed')));
+    });
+    request.on('timeout',()=>request.destroy(new Error('OAuth token request timed out')));
+    request.on('error',()=>reject(new Error('OAuth token transport failed')));
+    request.end(encoded);
+  });
+}
+
+function oauthCredentialVault(tenantId:string, credentialId:string):OAuthVault {
+  return {
+    load:async scope=>{
+      if(scope.tenantId!==tenantId || scope.credentialId!==credentialId) throw new Error('OAuth tenant scope mismatch.');
+      const credential=tenantData(tenantId)?.namedCredentials.find(row=>row.id===credentialId);
+      if(!credential || !['OAuth Client Credentials','OAuth Authorization Code'].includes(credential.authType)
+        || credential.enabled===false) throw new Error('OAuth credential unavailable.');
+      return openCredentialPayload(tenantId,credential).oauthToken??null;
+    },
+    save:async (scope,token)=>{
+      if(scope.tenantId!==tenantId || scope.credentialId!==credentialId) throw new Error('OAuth tenant scope mismatch.');
+      const currentTenant=tenantData(tenantId);
+      const current=currentTenant?.namedCredentials.find(row=>row.id===credentialId);
+      if(!currentTenant || !current || !['OAuth Client Credentials','OAuth Authorization Code'].includes(current.authType)
+        || current.enabled===false) throw new Error('OAuth credential changed during refresh.');
+      const payload=openCredentialPayload(tenantId,current);
+      const updated=namedCredentialSchema.parse({...current,
+        ...sealCredentialPayload(tenantId,current.id,{...payload,oauthToken:token}),
+        updatedAt:new Date().toISOString()});
+      persistTenantRecords(tenantId,{...currentTenant,namedCredentials:currentTenant.namedCredentials.map(row=>row.id===current.id?updated:row)});
+    }
+  };
+}
+function oauthChallengeStore():SqlOAuthChallengeStore {
+  const sql=getRouteAliasPool();
+  if(!sql) throw new Error('OAuth authorization requires the configured PostgreSQL database.');
+  const cipher:ChallengeCipher={
+    seal:(tenantId,digest,verifier)=>sealCredentialPayload(tenantId,'oauth-pkce:'+digest,{secret:verifier}),
+    open:(tenantId,digest,sealed)=>{
+      const synthetic={id:'oauth-pkce:'+digest,name:'OAuth challenge',...sealed} as StoredNamedCredential;
+      return openCredentialPayload(tenantId,synthetic).secret??'';
+    }
+  };
+  return new SqlOAuthChallengeStore(sql,cipher);
+}
+async function oauthAccessTokenForCredential(tenantId:string,credential:StoredNamedCredential):Promise<string> {
+  if (!['OAuth Client Credentials','OAuth Authorization Code'].includes(credential.authType) || credential.protocol!=='HTTPS')
+    throw new Error('OAuth credential is not configured for HTTPS.');
+  const configuration=credential.configuration??{};
+  if (!configuration.ClientId || !configuration.OAuthEndpoint) throw new Error('OAuth ClientId/OAuthEndpoint missing.');
+  const clientSecret=openCredentialPayload(tenantId,credential).secret;
+  if(!clientSecret)throw new Error('OAuth client secret is not configured.');
+  return getOAuthAccessToken({tenantId,credentialId:credential.id},{
+    tokenUrl:configuration.OAuthEndpoint,clientId:configuration.ClientId,clientSecret,
+    scope:configuration.Scope,grantType:credential.authType==='OAuth Client Credentials'?'client_credentials':'authorization_code'
+  },oauthCredentialVault(tenantId,credential.id),safeOAuthTokenRequest);
+}
+
 async function performHttpCallout(
   tenantId: string,
   tenant: TenantData,
@@ -14797,6 +14998,10 @@ async function performHttpCallout(
   } else if (credential.authType === 'API Key') {
     if (!credential.headerName || !secretPayload.secret) throw new Error(`Named Credential "${credential.name}" has incomplete API Key authentication data.`);
     headers[credential.headerName] = secretPayload.secret;
+  } else if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code') {
+    if (!namedCredential) throw new Error('OAuth authentication requires a tenant Named Credential.');
+    // Debug must never contact external OAuth token endpoints.
+    if (!context.debug && config.deliveryMode !== 'DURABLE_ASYNC') headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(tenantId,namedCredential)}`;
   }
   // Resolve JSON fields individually instead of substituting inside serialized JSON:
   // recipient names, quotes and line breaks must remain valid JSON after mapping.
@@ -14826,7 +15031,59 @@ async function performHttpCallout(
   }
   if (Buffer.byteLength(body, 'utf8') > 256 * 1024) throw new Error(`HTTP Callout "${elementLabel}" request body exceeded the 256 KB limit.`);
   if (body && !Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
+  // A metadata-supplied stable key enables safe provider-side deduplication on mutating calls.
+  const idempotencyKey = typeof config.idempotencyKey === 'string'
+    ? resolveFlowTemplate(config.idempotencyKey, context).trim() : '';
+  if (idempotencyKey && (!/^[\x21-\x7e]{1,200}$/.test(idempotencyKey) || idempotencyKey.includes(':')))
+    throw new Error(`HTTP Callout "${elementLabel}" has an invalid idempotency key.`);
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  if (!connection && config.maxAttempts !== undefined) {
+    const requestedAttempts = Number(config.maxAttempts);
+    if (!Number.isInteger(requestedAttempts) || requestedAttempts < 1 || requestedAttempts > 5)
+      throw new Error(`HTTP Callout "${elementLabel}" retry attempts must be between 1 and 5.`);
+    maxAttempts = requestedAttempts;
+  }
   if (context.debug) return { body: { debugExecution: true, requestBody: communicationPayload(body) }, status: 200 };
+  if (config.deliveryMode === 'DURABLE_ASYNC') {
+    // Never queue work inside a Flow rollback scope: a later fault could commit an external
+    // side-effect after the transaction's local records have been rolled back.
+    if (context.rollbackSnapshot) throw new Error('Durable integration delivery cannot run inside a rollback scope.');
+    if (persistenceMode === 'jsonb') throw new Error('Durable integration delivery requires SQL-only persistence.');
+    if (!idempotencyKey) throw new Error('Durable integration delivery requires a stable idempotency key.');
+    if (method === 'GET' && body) throw new Error('GET HTTP Callouts cannot include a request body.');
+    const pool = getRouteAliasPool();
+    if (!pool) throw new Error('Durable integration delivery requires PostgreSQL.');
+    const chosenCredentialId = connection?.id ?? namedCredential?.id;
+    if (!chosenCredentialId) throw new Error('Durable integration credential is unavailable.');
+    const preparedConfig = {
+      ...config, namedCredentialId: namedCredential?.id ?? '',
+      integrationConnectionId: connection?.id ?? '',
+      namedCredentialResource: '', integrationConnectionResource: '',
+      deliveryMode: 'SYNC', maxAttempts: 1, idempotencyKey
+    };
+    // Encrypt the entire execution snapshot; never queue authorization headers or bearer tokens.
+    const snapshot = {
+      config: preparedConfig,
+      label: elementLabel,
+      context: {
+        currentUserId: context.currentUserId, currentUser: context.currentUser,
+        flowVariables: context.flowVariables, variables: context.variables,
+        record: context.record, prior: context.prior, recordEvent: context.recordEvent,
+        triggerObjectName: context.triggerObjectName, resourceDefinitions: context.resourceDefinitions,
+        timeZone: context.timeZone, locale: context.locale, corporateCurrency: context.corporateCurrency,
+        currencyRates: context.currencyRates, userCurrencyIsoCode: context.userCurrencyIsoCode,
+        currencyIsoCode: context.currencyIsoCode
+      }
+    };
+    const encryptedRequest = sealIntegrationEnvelope(tenantId, idempotencyKey, snapshot, ring);
+    const queuedId = await new IntegrationOutbox(pool).enqueue({
+      tenantId, credentialId: chosenCredentialId, operationKey: idempotencyKey,
+      method, path: target.pathname, encryptedRequest,
+      maxAttempts: Math.max(1, Math.min(5, maxAttempts))
+    });
+    return { body: { queued: true, deliveryId: queuedId }, status: 202 };
+  }
+  let lastRetryAfter: string | undefined;
   let attempt = 0;
   let response: { body: unknown; status: number };
   do {
@@ -14864,6 +15121,8 @@ async function performHttpCallout(
       });
       incoming.on('end', () => {
         clearTimeout(timer);
+        const retryHeader = incoming.headers['retry-after'];
+        lastRetryAfter = Array.isArray(retryHeader) ? retryHeader[0] : retryHeader;
         const text = Buffer.concat(chunks).toString('utf8');
         let parsed: unknown = text;
         if (text) {
@@ -14912,12 +15171,14 @@ async function performHttpCallout(
       error: response.status >= 400 ? communicationError(response.body) : '',
       durationMs: Date.now() - attemptStartedAt
     });
-    if (attempt < maxAttempts && ['GET', 'PUT', 'DELETE'].includes(method)
-      && [429, 500, 502, 503, 504].includes(response.status)) {
-      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * (2 ** (attempt - 1)), 2000)));
+    if (attempt < maxAttempts && mayRetry(method, idempotencyKey)
+      && [408, 425, 429, 500, 502, 503, 504].includes(response.status)) {
+      const backoffMs = Math.min(250 * (2 ** (attempt - 1)), 2000);
+      const delayMs = retryAfterMs(lastRetryAfter ? { 'Retry-After': lastRetryAfter } : undefined) ?? backoffMs;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
-  } while (attempt < maxAttempts && ['GET', 'PUT', 'DELETE'].includes(method)
-    && [429, 500, 502, 503, 504].includes(response.status));
+  } while (attempt < maxAttempts && mayRetry(method, idempotencyKey)
+    && [408, 425, 429, 500, 502, 503, 504].includes(response.status));
   if (connection && response.status >= 400) {
     throw new Error(`HTTP Callout "${elementLabel}" received HTTP status ${response.status} from provider "${definition?.name}".`);
   }
@@ -19861,6 +20122,52 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
 }
 
 let scheduledDispatchRunning = false;
+async function dispatchDueIntegrationJobs(): Promise<void> {
+  if (persistenceMode === 'jsonb') return;
+  const pool = getRouteAliasPool();
+  if (!pool) return;
+  const outbox = new IntegrationOutbox(pool);
+  const workerId = 'metadrive-outbox-' + process.pid;
+  for (const tenantId of Object.keys(state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
+    await dispatchIntegrationDeliveries({
+      outbox, tenantId, workerId, limit: 1,
+      dispatch: async delivery => {
+        const value = openIntegrationEnvelope(tenantId, delivery.operationKey,
+          delivery.encryptedRequest, credentialKeyRing());
+        const decoded = z.object({
+          label: z.string().min(1).max(255),
+          config: z.record(z.unknown()),
+          context: z.object({
+            currentUserId: z.string().min(1),
+            variables: z.record(z.unknown())
+          }).passthrough()
+        }).parse(value);
+        const credentialRef = decoded.config.integrationConnectionId || decoded.config.namedCredentialId;
+        if (credentialRef !== delivery.credentialId ||
+            decoded.config.idempotencyKey !== delivery.operationKey ||
+            decoded.config.deliveryMode !== 'SYNC') {
+          throw new CalloutFault('OUTBOX_IDENTITY_MISMATCH', undefined, 1, false);
+        }
+        const currentTenant = tenantData(tenantId);
+        const user = state.users.find(item => item.id === decoded.context.currentUserId &&
+          item.tenantId === tenantId && !item.disabled);
+        if (!currentTenant || !user ||
+            !effectivePermissions(user,currentTenant).includes('callouts:execute')) {
+          throw new CalloutFault('OUTBOX_PERMISSION_DENIED', undefined, 1, false);
+        }
+        const restored = { ...decoded.context,
+          formulaStack: new Set<string>(), currentUserId:user.id, debug:false,
+          rollbackSnapshot:undefined } as FlowRuntimeContext;
+        const response = await performHttpCallout(tenantId, currentTenant,
+          { ...decoded.config, maxAttempts: 1, deliveryMode:'SYNC' },
+          restored, decoded.label);
+        return { status: response.status };
+      }
+    });
+  }
+}
+
 async function dispatchScheduledFlows(): Promise<void> {
   if (maintenanceMode) return;
   if (scheduledDispatchRunning) return;
@@ -19890,6 +20197,7 @@ async function dispatchScheduledFlows(): Promise<void> {
       }
       await deliverPendingPlatformEvents();
       await executeDueScheduledFlows();
+      await dispatchDueIntegrationJobs();
       const now = Date.now();
       const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
         tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>

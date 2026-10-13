@@ -20,6 +20,7 @@ type Props = {
   onDelete: (id: string) => Promise<void>;
   onRotate: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{connected: boolean; status?: number; message: string}>;
+  onOAuthAuthorize?: (id: string) => Promise<string>;
   onGrantLicence: (appKey: string) => Promise<void>;
   loadHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<CommunicationPage>;
   onOpenRecord: (objectName: string, id: string) => void;
@@ -80,7 +81,7 @@ export default function AppExchange(props: Props) {
     canInstall={props.canInstall} canLicenceAdmin={props.canLicenceAdmin}
     onGrantLicence={async (key) => { await props.onGrantLicence(key); await refresh(); }}
     canManageFlows={props.canManageFlows} encryptionReady={props.encryptionReady}
-    onSave={props.onSave} onDelete={props.onDelete} onRotate={props.onRotate} onTest={props.onTest}
+    onSave={props.onSave} onDelete={props.onDelete} onRotate={props.onRotate} onTest={props.onTest} onOAuthAuthorize={props.onOAuthAuthorize}
     loadHistory={props.loadHistory} onOpenRecord={props.onOpenRecord} onOpenFlow={props.onOpenFlow}
     onLifecycle={(app, operation) => action(app, operation)}
     onBack={() => {setOpenedKey(null);void refresh().catch(()=>{});}}/>;

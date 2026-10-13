@@ -2571,6 +2571,13 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     notify('Named Credential deleted');
   };
 
+  const authorizeNamedCredential = async (id: string): Promise<string> => {
+    const result = await apiRequest<{ authorizationUrl: string }>(
+      `/named-credentials/${encodeURIComponent(id)}/oauth/start`, { method: 'POST' }
+    );
+    return result.authorizationUrl;
+  };
+
   const testNamedCredential = async (id: string): Promise<{ connected: boolean; status?: number; message: string }> => {
     return apiRequest<{ connected: boolean; status?: number; message: string }>(
       `/named-credentials/${encodeURIComponent(id)}/test`, { method: 'POST' }
@@ -3835,6 +3842,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onDelete={deleteNamedCredential}
             onRotate={rotateNamedCredential}
             onTest={testNamedCredential}
+            onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
           />}
           {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange
@@ -3858,6 +3866,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onDelete={deleteNamedCredential}
             onRotate={rotateNamedCredential}
             onTest={testNamedCredential}
+            onOAuthAuthorize={authorizeNamedCredential}
             loadHistory={loadAppCommunicationHistory}
             onOpenFlow={selectFlow}
             onOpenRecord={(objectName,id) => navigateRoute({kind:'record-detail', objectApiName:objectName, recordId:id})}

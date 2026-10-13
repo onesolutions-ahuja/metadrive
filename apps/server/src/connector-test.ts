@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { executeReliableCallout, CalloutFault } from './connector-reliability.js';
 
 export type ConnectorTestResult = {
   status: 'Connected' | 'Failed' | 'Not configured' | 'Test unavailable';
@@ -18,6 +19,7 @@ type Definition = {
     responseValidation?: { jsonPath: string; equals: string };
   };
   timeoutMs: number;
+  retryPolicy?: { maxAttempts: number };
 };
 
 type TestResponse = { status: number; body: unknown; headers: unknown };
@@ -91,7 +93,12 @@ export async function executeConnectorTest(
     return { status: 'Failed', message: 'Test URL may not leave the provider host.' };
 
   try {
-    const response = await request(url, test.method, headers, definition.timeoutMs);
+    // Provider metadata controls retries. Only read-only probes are eligible.
+    const response = await executeReliableCallout({
+      tenantId: 'connector-probe', credentialId: url.hostname, method: test.method,
+      policy: definition.retryPolicy,
+      send: () => request(url, test.method, headers, definition.timeoutMs)
+    });
     if (response.status !== test.expectedStatus)
       return { status: 'Failed', message: `Provider returned HTTP ${response.status}; expected ${test.expectedStatus}.` };
     if (test.responseValidation) {
@@ -107,7 +114,9 @@ export async function executeConnectorTest(
         return { status: 'Failed', message: 'Provider response did not match the configured validation.' };
     }
     return { status: 'Connected', message: 'Provider test completed successfully.' };
-  } catch {
+  } catch (error) {
+    if (error instanceof CalloutFault && error.status)
+      return { status: 'Failed', message: `Provider returned HTTP ${error.status}.` };
     return { status: 'Failed', message: 'Could not reach the provider or the request timed out.' };
   }
 }

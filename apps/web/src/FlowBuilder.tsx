@@ -1009,6 +1009,22 @@ export default function FlowBuilder({
         <HttpCalloutFieldEditor label="Query Parameters" mode="query" value={displayValue(selected.config.queryParameters)} onChange={(value) => setConfig('queryParameters', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
         <HttpCalloutFieldEditor label="Request Body" mode="body" value={displayValue(selected.config.body)} onChange={(value) => setConfig('body', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
         <label className="form-label">Timeout (milliseconds)<input className="form-control" type="number" min={1000} max={120000} value={displayValue(selected.config.timeoutMs)} onChange={(event) => setConfig('timeoutMs', event.target.value)} placeholder={selectedProvider ? String(selectedProvider.timeoutMs) : '15000'} /></label>
+        <label className="form-label">Maximum Retry Attempts<input className="form-control" type="number" min={1} max={5} step={1}
+          disabled={Boolean(selectedProvider)} value={displayValue(selected.config.maxAttempts)}
+          onChange={(event) => setConfig('maxAttempts', event.target.value)}
+          placeholder={selectedProvider ? String(selectedProvider.retryPolicy.maxAttempts) : '1'} /></label>
+        <label className="form-label">Delivery Mode<select className="form-control"
+          value={displayValue(selected.config.deliveryMode) || 'SYNC'}
+          onChange={(event) => setConfig('deliveryMode', event.target.value)}>
+          <option value="SYNC">Synchronous HTTP Callout</option>
+          <option value="DURABLE_ASYNC">Durable Async · SQL Outbox</option>
+        </select></label>
+        <div className="info-callout">Durable Async persists an encrypted, tenant-scoped job and returns HTTP 202 to the Flow. It requires PostgreSQL and an idempotency key, and cannot be used inside a Flow rollback scope. Provider responses arrive in Communication Records rather than synchronous Flow response variables.</div>
+        <label className="form-label">Idempotency Key (optional)<input className="form-control"
+          maxLength={200} value={displayValue(selected.config.idempotencyKey)}
+          onChange={(event) => setConfig('idempotencyKey', event.target.value)}
+          placeholder="{!$Flow.InterviewGuid}" /></label>
+        <div className="info-callout">Retries for POST, PUT, PATCH and DELETE require a stable idempotency key. Use a provider that supports the Idempotency-Key header; otherwise a retry may duplicate a write. GET retries are safe without a key.</div>
         <HttpCalloutFieldEditor label="Response Mapping" mode="response" value={displayValue(selected.config.responseMapping)} onChange={(value) => setConfig('responseMapping', value)} resources={flow.resources} fields={selectedObject?.fields ?? []} />
         <label className="form-label">Response Variable<select className="form-control" value={displayValue(selected.config.responseVariable)} onChange={(event) => setConfig('responseVariable', event.target.value)}><option value="">Do not store response</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
         <label className="form-label">Status Code Variable<select className="form-control" value={displayValue(selected.config.statusVariable)} onChange={(event) => setConfig('statusVariable', event.target.value)}><option value="">Do not store status</option>{flow.resources.filter((resource) => resource.type !== 'Constant').map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
