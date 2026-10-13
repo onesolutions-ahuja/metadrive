@@ -134,9 +134,19 @@ export function applyInstallableAppPackages(tenant, catalog) {
     let records = next.records;
     for (const [objectName, examples] of Object.entries(pkg.demoRecords ?? {})) {
       if (!objects.some(item => item.apiName === objectName)) continue;
-      if ((records[objectName] ?? []).length > 0) continue;
-      records = { ...records, [objectName]: structuredClone(examples) };
-      changed = true;
+      const existing = records[objectName] ?? [];
+      const exampleIds = new Set(examples.map(item => item.Id));
+      const stamp = new Date().toISOString();
+      const repaired = existing.map(item => exampleIds.has(item.Id) && (!item.CreatedDate || !item.LastModifiedDate)
+        ? { ...item, CreatedDate: item.CreatedDate || stamp, LastModifiedDate: item.LastModifiedDate || stamp }
+        : item);
+      const additions = existing.length ? [] : examples.map(item => ({
+        ...structuredClone(item), CreatedDate: item.CreatedDate || stamp, LastModifiedDate: item.LastModifiedDate || stamp
+      }));
+      if (additions.length || repaired.some((item, index) => item !== existing[index])) {
+        records = { ...records, [objectName]: [...repaired, ...additions] };
+        changed = true;
+      }
     }
     if (changed) next = {...next,objects,flows,apps,pages,records,accessControl};
   }
