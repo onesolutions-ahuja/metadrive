@@ -1,6 +1,7 @@
 import cors from 'cors';
 import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
 import { prepareFlowCreateCollection } from './flow-create-collection.mjs';
+import { applyFlowCollectionAssignment } from './flow-collection-assignment.mjs';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation, readDurableAuthLogins, persistDurableAuthLogin, type DurableAuthLogin } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
@@ -17370,6 +17371,9 @@ async function executeFlow(
             if (recordFieldName && context.record) context.record[recordFieldName] = next;
             else context.variables[variable] = next;
           };
+          if (variableResource?.isCollection) {
+            assign(applyFlowCollectionAssignment(previous, value, String(config.operator ?? 'Assign'), variableResource.type));
+          } else {
           switch (String(config.operator ?? 'Assign')) {
             case 'Assign': assign(value); break;
             case 'Add': assign(Number(previous ?? 0) + Number(value)); break;
@@ -17384,6 +17388,8 @@ async function executeFlow(
             case 'Remove All': assign(''); break;
             default: throw new Error(`Unsupported assignment operator "${String(config.operator)}".`);
           }
+          }
+
         }
         break;
       }
@@ -19220,7 +19226,7 @@ function validateFlow(
     if (element.type === 'Assignment') {
       const target = typeof element.config.variable === 'string' ? element.config.variable : '';
       const operator = String(element.config.operator ?? 'Assign');
-      if (!['Assign', 'Add', 'Subtract', 'Multiply', 'Divide', 'Add At Beginning', 'Add At End', 'Remove All'].includes(operator)) {
+      if (!['Assign', 'Add', 'Subtract', 'Multiply', 'Divide', 'Add At Beginning', 'Add At End', 'Remove', 'Remove All'].includes(operator)) {
         errors.push(`Assignment "${element.label}" uses unsupported operator "${operator}".`);
       }
       const recordFieldName = /^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(target)?.[1];
@@ -19237,6 +19243,12 @@ function validateFlow(
         errors.push(`Assignment "${element.label}" references unknown variable "${target || '(not selected)'}".`);
       } else {
         const resource = flow.resources.find((item) => item.name === target);
+        if (resource?.isCollection && !['Assign', 'Add', 'Add At Beginning', 'Add At End', 'Remove', 'Remove All'].includes(operator)) {
+          errors.push(`Assignment "${element.label}" uses an operator unavailable for collection resource "${target}".`);
+        }
+        if (operator === 'Remove' && !resource?.isCollection) {
+          errors.push(`Assignment "${element.label}" uses Remove on a non-collection resource.`);
+        }
         if (resource && ['Formula', 'Constant', 'Choice', 'Text Template'].includes(resource.type)) {
           errors.push(`Assignment "${element.label}" cannot target ${resource.type} resource "${target}".`);
         }
