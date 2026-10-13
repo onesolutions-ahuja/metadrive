@@ -9214,7 +9214,10 @@ function PageBuilder({
   const [newPageLayoutMode, setNewPageLayoutMode] = useState<LightningPageMetadata['layoutMode']>('template');
   const [newPageTargetObject, setNewPageTargetObject] = useState(page.targetObject || objects[0]?.apiName || '');
   const [newPageAppId, setNewPageAppId] = useState('');
-  const [newPageDevices, setNewPageDevices] = useState<Array<'Desktop' | 'Phone'>>(['Desktop', 'Phone']);
+  const [newPageDevices, setNewPageDevices] = useState<Array<'Desktop' | 'Phone'>>(['Desktop']);
+  const [newPageDeviceChoice, setNewPageDeviceChoice] = useState<'Desktop' | 'Tablet' | 'Phone'>('Desktop');
+  const [newPageCanvasWidth, setNewPageCanvasWidth] = useState(1440);
+  const [newPageCanvasHeight, setNewPageCanvasHeight] = useState(900);
   const [dragOverId, setDragOverId] = useState('');
   const [undoStack, setUndoStack] = useState<LightningPageMetadata[]>([]);
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
@@ -9932,7 +9935,7 @@ function PageBuilder({
   };
   const pageDeviceLabel = (item: LightningPageMetadata) => item.canvasWidth <= 600 || (item.devices.length === 1 && item.devices[0] === 'Phone') ? 'Phone' : item.canvasWidth < 1400 ? 'Tablet' : 'Desktop';
   const visiblePages = pages.filter(item => (!pageListObject || item.targetObject === pageListObject) && `${item.label} ${item.apiName}`.toLowerCase().includes(pageListSearch.trim().toLowerCase())).sort((a,b) => (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0));
-  const openCreatePage = () => { setNewPageTargetObject(pageListObject || page.targetObject || objects[0]?.apiName || ''); setNewPageLayoutMode('free-canvas'); setNewPageType('Home Page'); setCreatePageOpen(true); };
+  const openCreatePage = () => { setNewPageTargetObject(pageListObject || page.targetObject || objects[0]?.apiName || ''); setNewPageLayoutMode('free-canvas'); setNewPageType('Home Page'); setNewPageDeviceChoice('Desktop'); setNewPageDevices(['Desktop']); setNewPageCanvasWidth(1440); setNewPageCanvasHeight(900); setCreatePageOpen(true); };
   const createPage = async () => {
     if (saving) return;
     const label = newPageLabel.trim();
@@ -9956,8 +9959,8 @@ function PageBuilder({
       apiName, label, targetObject: newPageTargetObject,
       pageType: newPageLayoutMode === 'free-canvas' ? 'Home Page' : newPageType,
       layoutMode: newPageLayoutMode, template: newPageTemplate,
-      canvasWidth: newPageLayoutMode === 'free-canvas' ? 1080 : 1920,
-      canvasHeight: newPageLayoutMode === 'free-canvas' ? 1920 : 1080,
+      canvasWidth: newPageCanvasWidth,
+      canvasHeight: newPageCanvasHeight,
       status: 'Draft', devices: [...newPageDevices], components: [],
       // App Pages belong to app navigation; only Record/Home pages use activation assignments.
       activationAssignments: newPageAppId && newPageType !== 'App Page'
@@ -10878,17 +10881,30 @@ function PageBuilder({
               {pageTemplates.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
           </label>}
-          <div className="properties-section-title">Supported devices</div>
-          {(['Desktop', 'Phone'] as const).map(formFactor => <label className="checkbox-row" key={formFactor}>
-            <input type="checkbox" checked={newPageDevices.includes(formFactor)}
-              onChange={event => {
-                const devices = event.target.checked
-                  ? [...newPageDevices, formFactor] : newPageDevices.filter(item => item !== formFactor);
-                if (devices.length) setNewPageDevices(devices);
-                else onNotify('Choose at least one supported device');
-              }} />
-            {formFactor === 'Desktop' ? 'Desktop and tablet' : 'Phone'}
-          </label>)}
+          <label className="form-label">Target device
+            <select className="form-control" aria-label="Target device" value={newPageDeviceChoice} onChange={event => {
+              const target = event.target.value as 'Desktop' | 'Tablet' | 'Phone';
+              setNewPageDeviceChoice(target);
+              setNewPageDevices([target === 'Phone' ? 'Phone' : 'Desktop']);
+              const size = target === 'Phone' ? [390,844] : target === 'Tablet' ? [1024,768] : [1440,900];
+              setNewPageCanvasWidth(size[0]); setNewPageCanvasHeight(size[1]);
+            }}>
+              <option value="Desktop">Desktop</option><option value="Tablet">Tablet</option><option value="Phone">Phone</option>
+            </select>
+          </label>
+          <div className="permission-form-grid">
+            <label className="form-label">Canvas width (px)<input className="form-control" type="number" min={320} max={7680} value={newPageCanvasWidth}
+              onChange={event => setNewPageCanvasWidth(Math.min(7680, Math.max(320, Number(event.target.value) || 320)))}/></label>
+            <label className="form-label">Canvas height (px)<input className="form-control" type="number" min={320} max={7680} value={newPageCanvasHeight}
+              onChange={event => setNewPageCanvasHeight(Math.min(7680, Math.max(320, Number(event.target.value) || 320)))}/></label>
+          </div>
+          <div className="device-picker orientation-picker" role="group" aria-label="Page orientation">
+            {(['Portrait','Landscape'] as const).map(value => <button type="button" key={value}
+              className={canvasOrientation(newPageCanvasWidth,newPageCanvasHeight) === value ? 'device-choice active' : 'device-choice'}
+              aria-pressed={canvasOrientation(newPageCanvasWidth,newPageCanvasHeight) === value}
+              onClick={() => { const size = canvasDimensionsForOrientation(newPageCanvasWidth,newPageCanvasHeight,value); setNewPageCanvasWidth(size.width);setNewPageCanvasHeight(size.height); }}>{value}</button>)}
+          </div>
+          {newPageDeviceChoice === 'Tablet' && <p className="properties-help">Tablet uses the existing Desktop runtime form factor and a tablet-sized canvas.</p>}
           <div className="modal-actions">
             <button className="btn" onClick={() => setCreatePageOpen(false)}>Cancel</button>
             <button className="btn btn-brand"
