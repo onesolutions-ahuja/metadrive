@@ -225,8 +225,13 @@ export default function NamedCredentials({
           updateDraft({ protocol, authType: protocol === 'SMTP' && !['None', 'Basic'].includes(draft.authType) ? 'Basic' : draft.authType });
         }}><option>HTTPS</option><option>SMTP</option></select></label>
         <label className="form-label">{draft.protocol === 'SMTP' ? 'SMTP Server URL' : 'Base URL'}<input className="form-control" type="url" value={draft.baseUrl} onChange={(event) => updateDraft({ baseUrl: event.target.value })} placeholder={draft.protocol === 'SMTP' ? 'smtp://smtp.example.com:587' : 'https://api.example.com/'} /></label>
-        <label className="form-label">Authentication<select className="form-control" value={draft.authType} onChange={(event) => updateDraft({ authType: event.target.value as NamedCredentialMetadata['authType'] })}>
-          {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key']).map((authType) => <option key={authType}>{authType}</option>)}
+        <label className="form-label">Authentication<select className="form-control" value={draft.authType} onChange={(event) => {
+          const authType = event.target.value as NamedCredentialMetadata['authType'];
+          updateDraft({ authType, configuration: authType === 'OAuth Client Credentials'
+            ? { OAuthEndpoint: '', ClientId: '', Scope: '', ...draft.configuration }
+            : draft.configuration });
+        }}>
+          {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials']).map((authType) => <option key={authType}>{authType}</option>)}
         </select></label>
         <fieldset className="connector-config-fields named-credential-span-full" style={{ border: 0, padding: 0, margin: '12px 0' }}>
           <legend>Configuration variables</legend>
@@ -241,9 +246,10 @@ export default function NamedCredentials({
             if (key && /^[A-Za-z][A-Za-z0-9_]*$/.test(key)) updateDraft({ configuration: { ...draft.configuration, [key]: '' } });
           }}>Add variable</button>}
         </fieldset>
+        {draft.authType === 'OAuth Client Credentials' && <div className="info-callout named-credential-span-full">Configure OAuthEndpoint (public HTTPS token URL), ClientId and optional Scope. Enter the client secret in the encrypted Secret field. Tokens are refreshed automatically; no provider credentials are placed in Flow metadata.</div>}
         {draft.authType === 'API Key' && <label className="form-label">API Key Header<input className="form-control" value={draft.headerName ?? ''} onChange={(event) => updateDraft({ headerName: event.target.value })} placeholder="X-API-Key" /></label>}
         {draft.authType === 'Basic' && canManageSecrets && <label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label>}
-        {draft.authType !== 'None' && canManageSecrets && <label className="form-label">{draft.authType === 'Basic' ? 'Password' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
+        {draft.authType !== 'None' && canManageSecrets && <label className="form-label">{draft.authType === 'Basic' ? 'Password' : draft.authType === 'OAuth Client Credentials' ? 'Client Secret' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label>}
         </div>
         {draft.id && !embedded && <div className="named-credential-activation"><strong>Connection status</strong><label className="credential-switch"><input type="checkbox" role="switch" checked={credentials.find((item) => item.id === draft.id)?.enabled !== false} disabled={viewing || !canManage || !onToggleEnabled || Boolean(toggleBusyId)} onChange={() => { const credential = credentials.find((item) => item.id === draft.id); if (credential) void toggleEnabled(credential); }} /><span className="credential-switch-track" aria-hidden="true" /><span>{toggleBusyId ? 'Updating…' : credentials.find((item) => item.id === draft.id)?.enabled === false ? 'Disabled' : 'Enabled'}</span></label></div>}
         {draft.id && <div className="info-callout">Leave the secret blank to keep the existing secret. Changing authentication type requires a new secret.</div>}
