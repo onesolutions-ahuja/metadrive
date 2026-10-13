@@ -41,6 +41,7 @@ test('typed metadata widening alters physical columns transactionally without lo
       upgraded.tenants.alpha.objects[0].fields[0].dataType='Text(120)';
       upgraded.tenants.alpha.objects[0].fields[1].dataType='Currency(12,4)';
       upgraded.tenants.alpha.objects[0].fields[0].label='Product Code';
+      upgraded.tenants.alpha.objects[0].label='Inventory Catalogue';
       await client.query('BEGIN');
       try {
         await synchronizeTypedRecords(client,upgraded,original);
@@ -49,6 +50,8 @@ test('typed metadata widening alters physical columns transactionally without lo
       } catch(error) {await client.query('ROLLBACK');throw error;}
       const objects=await client.query("SELECT object_id FROM md_v2_object_registry WHERE tenant_id='alpha' AND api_name='Inventory__c'");
       const table=physicalObjectTable(objects.rows[0].object_id);
+      const objectLabel=await client.query('SELECT object_label FROM md_v2_object_registry WHERE object_id=$1',[objects.rows[0].object_id]);
+      assert.equal(objectLabel.rows[0].object_label,'Inventory Catalogue');
       const physical=await client.query('SELECT * FROM '+table+' WHERE tenant_id=$1',['alpha']);
       assert.equal(physical.rows.length,1);
       const columns=await client.query("SELECT data_type,character_maximum_length,numeric_precision,numeric_scale FROM information_schema.columns WHERE table_name=$1 AND column_name IN (SELECT physical_column FROM md_v2_field_registry WHERE object_id=$2)",[table,objects.rows[0].object_id]);
