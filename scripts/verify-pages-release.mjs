@@ -3,8 +3,8 @@ import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 
 const dist = resolve('apps/web/dist');
-const origin = 'https://onesolutions-ahuja.github.io';
-const base = '/metadrive/';
+const origin = 'https://unesolutions.co.uk';
+const base = '/';
 const live = process.argv.includes('--live');
 const sha = process.env.GITHUB_SHA || 'manual';
 
@@ -18,9 +18,9 @@ async function read(assetPath) {
   return readFile(resolve(dist, assetPath));
 }
 const html = (await read('index.html')).toString('utf8');
-const jsMatch = html.match(/src="(\/metadrive\/assets\/[^"]+\.js)"/);
-const cssMatch = html.match(/href="(\/metadrive\/assets\/[^"]+\.css)"/);
-assert(jsMatch && cssMatch, 'Built Pages HTML must load versioned scripts and styles from /metadrive/assets');
+const jsMatch = html.match(/src="(\/assets\/[^"]+\.js)"/);
+const cssMatch = html.match(/href="(\/assets\/[^"]+\.css)"/);
+assert(jsMatch && cssMatch, 'Built Pages HTML must load versioned scripts and styles from /assets on the custom domain');
 const js = (await read(jsMatch[1].slice(base.length))).toString('utf8');
 const css = (await read(cssMatch[1].slice(base.length))).toString('utf8');
 assert(js.includes('header-records-link'), 'Built app is missing the global Records navigation');
@@ -29,7 +29,10 @@ assert(css.includes('.setup-sidebar') && css.includes('overflow-y:auto') && css.
   'Built CSS is missing sticky header or scrolling Setup navigation');
 const logo = await read('une-solutions-logo.webp');
 assert(logo.length > 1000 && logo.toString('ascii', 0, 4) === 'RIFF', 'Transparent logo asset missing or invalid');
-assert((await read('404.html')).toString('utf8').includes('__spa='), 'Client-side deep-link fallback missing');
+const fallback = (await read('404.html')).toString('utf8');
+assert(fallback.includes("window.location.replace('/?__spa='"), 'Custom-domain client-side deep-link fallback missing');
+assert(html.includes('window.history.replaceState({}, \'\', restored)'), 'Custom-domain route restoration is missing');
+assert(!html.includes("'/metadrive' + restored"), 'Custom-domain route restoration uses the old GitHub project prefix');
 console.log('Pages artifact contains logo, Records navigation, sticky header, scrolling sidebar and deep-link fallback.');
 
 if (live) {
@@ -43,6 +46,12 @@ if (live) {
         return response;
       };
       const publishedHtml = await (await get(base)).text();
+      const fallbackResponse = await fetch(origin + '/une/setup/home?release_check=' + encodeURIComponent(sha), {
+        cache: 'no-store', signal: AbortSignal.timeout(15000)
+      });
+      const publishedFallback = await fallbackResponse.text();
+      assert((fallbackResponse.status === 404 || fallbackResponse.ok) && publishedFallback.includes("window.location.replace('/?__spa='"),
+        'Published custom-domain deep link does not serve the SPA fallback');
       assert(publishedHtml.includes(jsMatch[1]) && publishedHtml.includes(cssMatch[1]),
         'Live Pages HTML does not point to this commit\'s compiled JS/CSS assets');
       const publishedLogo = Buffer.from(await (await get(base + 'une-solutions-logo.webp')).arrayBuffer());
