@@ -1084,18 +1084,28 @@ function App() {
     if (authState !== 'authenticated') return;
     const currentRoute = parseAppRoute(window.location.pathname, window.location.search);
     if (currentRoute.kind !== 'setup' || currentRoute.workspace !== 'home') return;
-    const appId = new URLSearchParams(window.location.search).get('appId') || 'Records';
+    const preferredApp = new URLSearchParams(window.location.search).get('appId') || 'Records';
     const formFactor = window.matchMedia('(max-width: 600px)').matches ? 'Phone' : 'Desktop';
     let cancelled = false;
-    void apiRequest<{ page: { apiName: string } | null }>(
-      '/apps/' + encodeURIComponent(appId) + '/home-page?formFactor=' + formFactor
-    ).then(({ page }) => {
+    void (async () => {
+      // Select only an app authorised by the server for this login.
+      // This lets the SAME Metadrive binary open Kiosk, Till or Records
+      // without hardcoded role-to-application routes.
+      const allowed = entryTiming?.landing?.apps?.length
+        ? entryTiming.landing.apps
+        : (await apiRequest<{apps: LightningAppMetadata[]}>('/metadata/apps')).apps;
+      const appId = allowed.some(app => app.apiName === preferredApp)
+        ? preferredApp : allowed[0]?.apiName;
+      if (!appId) return;
+      const {page} = await apiRequest<{page:{apiName:string}|null}>(
+        '/apps/' + encodeURIComponent(appId) + '/home-page?formFactor=' + formFactor
+      );
       if (cancelled || !page || parseAppRoute(window.location.pathname, window.location.search).kind !== 'setup') return;
-      window.history.replaceState({}, '', appRoutePath({ kind: 'app-home', appId }));
+      window.history.replaceState({}, '', appRoutePath({kind:'app-home',appId}));
       window.dispatchEvent(new PopStateEvent('popstate'));
-    }).catch(() => { /* No assigned Home Page: preserve the normal workspace. */ });
+    })().catch(() => { /* No authorised Home Page: keep existing workspace. */ });
     return () => { cancelled = true; };
-  }, [authState]);
+  }, [authState,entryTiming]);
 
   if (authState === 'loading') return <div className="auth-loading">Loading your workspace…</div>;
   const loginSuccess = (timing: EntryTiming) => { setEntryTiming(timing); setAuthState('authenticated'); };
