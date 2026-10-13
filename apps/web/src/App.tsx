@@ -418,7 +418,7 @@ async function loadAppCommunicationHistory(objectName: string, field: string, so
 }
 
 async function loadConnectorMarketplaceApps() {
-  const result = await apiRequest<{records: import('./ConnectorAppWorkspace').ConnectorApp[]}>(`/records/Connector_App__c?limit=100&offset=0`);
+  const result = await apiRequest<{records: import('./ConnectorAppWorkspace').ConnectorApp[]}>(`/connector-apps/catalog`);
   return result.records;
 }
 async function executeConnectorAppLifecycleFlow(apiName: string, appKey: string): Promise<void> {
