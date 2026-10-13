@@ -10504,12 +10504,18 @@ function PageBuilder({
         </div>
         <aside id="lightning-page-properties" className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}>
           <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
+          {page.components.length > 0 && <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
+            {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
+              aria-selected={inspectorTab === tab && Boolean(selected) && !pageSettingsOpen} className={inspectorTab === tab && Boolean(selected) && !pageSettingsOpen ? 'active' : ''}
+              onClick={() => {
+                if (!selected || pageSettingsOpen) {
+                  setSelectedId(page.components[0]?.id ?? '');
+                  setPageSettingsOpen(false);
+                }
+                setInspectorTab(tab);
+              }}>{tab}</button>)}
+          </div>}
           {selected && !pageSettingsOpen ? <>
-            <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
-              {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
-                aria-selected={inspectorTab === tab} className={inspectorTab === tab ? 'active' : ''}
-                onClick={() => setInspectorTab(tab)}>{tab}</button>)}
-            </div>
             <div className="properties-section-title">Component</div>
             <label className="form-label" htmlFor="page-component-type">Component type</label><div className="form-display" id="page-component-type">{selected.type}</div>
             <div className="selected-component-preview">
