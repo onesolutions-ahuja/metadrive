@@ -168,7 +168,7 @@ test('connector providers and tenant connections are metadata-backed and keep cr
     assert.equal(privateTestProvider.status, 200, JSON.stringify(privateTestProvider.data));
     const privateEndpointTest = await request(`/integration-connections/${unsupportedConnection.data.connection.id}/test`, token, 'POST');
     assert.equal(privateEndpointTest.data.result.status, 'Failed');
-    assert.match(privateEndpointTest.data.result.message, /safely/);
+    assert.match(privateEndpointTest.data.result.message, /public HTTPS provider URL/);
   } finally {
     if (child) await stopApi(child);
     await rm(dataDirectory, { recursive: true, force: true });
