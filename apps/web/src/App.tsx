@@ -10724,10 +10724,10 @@ function PageBuilder({
             </>}
             <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); }}>Done</button>
           </> : <>
-            <p className="properties-help">Configure the page definition and supported form factors.</p>
+            <p className="properties-help">Edit page details and activation assignments. The related object and device layout are fixed at creation.</p>
             <label className="form-label" htmlFor="lightning-page-label">Label</label><input id="lightning-page-label" className="form-control" value={page.label} onChange={(event) => applyPage({ ...page, label: event.target.value })} />
             <label className="form-label" htmlFor="lightning-page-api">API Name</label><input id="lightning-page-api" className="form-control" value={page.apiName} onChange={(event) => applyPage({ ...page, apiName: event.target.value })} />
-            {page.pageType === 'Record Page' && <><label className="form-label" htmlFor="lightning-page-object">Object</label><select id="lightning-page-object" className="form-control" value={page.targetObject} onChange={(event) => { setRecordTypeId(''); changeTargetObject(event.target.value); }}>{objects.map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></>}
+            {page.pageType === 'Record Page' && <><label className="form-label">Related object</label><div className="form-display">{targetObject?.label ?? page.targetObject}</div></>}
             {page.pageType === 'Record Page' && <div className="home-page-assignments">
               <div className="properties-section-title">Activation Assignments</div>
               <p className="properties-help">Set the apps, profiles, record types, and form factors that use this Record Page. More specific assignments take precedence over broader defaults.</p>
@@ -10787,7 +10787,7 @@ function PageBuilder({
               <button className="btn btn-full" type="button" onClick={addHomeAssignment}>Add Home Page Assignment</button>
             </div>}
             <p className="properties-help">Device, dimensions and orientation are selected when creating a page. Create another page for a different layout size.</p>
-            <div className="page-property-summary"><strong>{page.components.length}</strong> components <span>·</span> <strong>{page.status}</strong></div>
+            <div className="page-property-summary"><strong>{page.components.length}</strong> components</div>
 
           </>}
         </aside>
