@@ -11657,7 +11657,7 @@ function syncBundledLibraryComponents(): Promise<void> {
         || isAbsolute(jsxRelativePath) || isAbsolute(cssRelativePath)) {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
       }
-      if (existingBundled) continue;
+      if (existingBundled && !(entry.apiName === 'KioskOrderingExperience' && (existingBundled.version ?? 1) < 4)) continue;
       const jsxSource = readFileSync(jsxPath, 'utf8');
       const cssSource = readFileSync(cssPath, 'utf8');
       if (legacyCandidate) {
@@ -11691,7 +11691,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       if (/\brequire\s*\(/.test(compiled.code)) {
         throw new Error(`Bundled component "${input.apiName}" cannot import external modules`);
       }
-      const version = entry.apiName === 'KioskOrderingExperience' ? 2 : 1;
+      const version = entry.apiName === 'KioskOrderingExperience' ? 4 : 1;
       const registered: LibraryComponent = {
         ...input,
         compiledJs: compiled.code,
@@ -11700,11 +11700,12 @@ function syncBundledLibraryComponents(): Promise<void> {
         updatedAt: new Date().toISOString(),
         status: 'Published', publishedVersion: version, revisions: [], trustedBundled: true
       };
-      if (legacyCandidate) {
+      if (legacyCandidate || existingBundled) {
+        const previousComponent = existingBundled ?? legacyCandidate;
         trustedUpgrades.set(entry.apiName.toLowerCase(), {
-          ...legacyCandidate, ...registered,
-          version: Math.max(version, legacyCandidate.version ?? 1),
-          publishedVersion: Math.max(version, legacyCandidate.publishedVersion ?? 1)
+          ...previousComponent, ...registered,
+          version,
+          publishedVersion: version
         });
       } else imported.push(registered);
     }
