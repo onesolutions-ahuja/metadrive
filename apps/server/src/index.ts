@@ -8520,6 +8520,19 @@ function assertConnectorLifecycleAccess(previous: RuntimeRecord, requested: Runt
     throw new Error('Missing connectorApps:install permission to install, uninstall or start a trial.');
   }
 }
+// AppExchange is a tenant-scoped package catalogue, not an ordinary privately-owned
+// business record list. Require connector viewing rights, then return only metadata
+// for the authenticated tenant (never credentials or records from other tenants).
+app.get('/api/connector-apps/catalog', accessAuthentication, (_req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  if (!connectorRight(principal, 'view')) return res.status(403).json({ error: 'Missing connectorApps:view permission.' });
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant) return res.status(404).json({ error: 'Tenant not found.' });
+  const current = ensureConnectorAppRecords(tenant.records.Connector_App__c, principal.userId);
+  // The default catalogue is refreshed during state loading. This read path is
+  // also resilient when tenant upgrades were seeded before the latest packages.
+  return res.json({ records: current });
+});
 app.get('/api/connector-apps/capabilities', accessAuthentication, (_req: Request, res: Response) => {
   const principal = getPrincipal(res);
   res.json({
