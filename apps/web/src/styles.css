@@ -732,6 +732,10 @@ h1, h2, h3, p { margin-top: 0; }
 .flow-graph { position: relative; flex: 0 0 auto; margin: auto; transform-origin: top center; }
 .flow-graph-connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .flow-graph-edge path { fill: none; stroke: #8e8e8e; stroke-width: 2; }
+.flow-graph-edge.is-selected path { stroke: #2563a6; stroke-width: 2.5; stroke-dasharray: 7 6; animation: md10-flow-dash 1.2s linear infinite; }
+@keyframes md10-flow-dash { to { stroke-dashoffset: -26; } }
+@media (prefers-reduced-motion: reduce) { .flow-graph-edge.is-selected path { animation: none; } }
+
 .flow-graph-edge.fault path { stroke: #c23934; stroke-dasharray: 5 4; }
 .flow-graph-edge.scheduled path { stroke: #8e8e8e; stroke-dasharray: 5 4; }
 .flow-graph-edge.fault text { fill: #c23934; }
