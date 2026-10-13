@@ -4866,11 +4866,21 @@ function RecordWorkspace({
   const [saving, setSaving] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const [massDeleting, setMassDeleting] = useState(false);
+  const [bulkUpdateOpen, setBulkUpdateOpen] = useState(false);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkFieldApiName, setBulkFieldApiName] = useState('');
+  const [bulkFieldValue, setBulkFieldValue] = useState('');
+  const [bulkFieldBoolean, setBulkFieldBoolean] = useState(false);
+  const [bulkUpdateError, setBulkUpdateError] = useState('');
   const [ownerDialogRecord, setOwnerDialogRecord] = useState<RecordData | null>(null);
   const [ownerRecords, setOwnerRecords] = useState<RecordData[]>([]);
   const [ownerValue, setOwnerValue] = useState('');
   const [ownerError, setOwnerError] = useState('');
   const [ownerSaving, setOwnerSaving] = useState(false);
+  const [bulkOwnerDialogOpen, setBulkOwnerDialogOpen] = useState(false);
+  const [bulkOwnerValue, setBulkOwnerValue] = useState('');
+  const [bulkOwnerError, setBulkOwnerError] = useState('');
+  const [bulkOwnerSaving, setBulkOwnerSaving] = useState(false);
   const [importRows, setImportRows] = useState<Array<Record<string, unknown>>>([]);
   const [importFileName, setImportFileName] = useState('');
   const [importError, setImportError] = useState('');
@@ -4896,6 +4906,9 @@ function RecordWorkspace({
     setSelectedRecordIds([]);
   }, [route.objectApiName, debouncedSearch]);
   useEffect(() => { setListSort(null); }, [route.objectApiName]);
+  // Selection belongs to the visible authorised page, never an earlier
+  // offset or sort order after a list navigation.
+  useEffect(() => { setSelectedRecordIds([]); }, [listOffset, listSort?.field, listSort?.direction]);
 
   useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
@@ -5089,7 +5102,7 @@ function RecordWorkspace({
   }, [formOpen, object?.apiName]);
 
   useEffect(() => {
-    if (!ownerDialogRecord) return;
+    if (!ownerDialogRecord && !bulkOwnerDialogOpen) return;
     let active = true;
     const loadOwners = async () => {
       setOwnerError('');
@@ -5102,7 +5115,7 @@ function RecordWorkspace({
     };
     void loadOwners();
     return () => { active = false; };
-  }, [ownerDialogRecord?.Id]);
+  }, [ownerDialogRecord?.Id, bulkOwnerDialogOpen]);
 
   const navigateLink = (event: React.MouseEvent<HTMLAnchorElement>, nextRoute: AppRoute) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -5141,6 +5154,15 @@ function RecordWorkspace({
   const canEdit = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Edit' && action.enabled) !== false;
   const canDelete = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Delete' && action.enabled) !== false;
   const canMassDelete = canDelete && object?.listViewButtons?.includes('Mass Delete') === true;
+  const bulkEditableFields = (object?.fields ?? []).filter((field) =>
+    fieldAccess[`${object?.apiName}.${field.apiName}`]?.edit === true
+    && !field.relationship && !field.formula
+    && !['Id', 'RecordTypeId', 'OwnerId', 'CreatedById', 'LastModifiedById', 'CreatedDate',
+      'LastModifiedDate', 'SystemModstamp', 'IsDeleted'].includes(field.apiName)
+    && /^(?:Text(?:\(|$)|Text Area|Long Text Area|Email|Phone|URL|Picklist|Number(?:\(|$)|Currency(?:\(|$)|Percent(?:\(|$)|Checkbox|Boolean|Date(?:\/Time)?$|DateTime$)/i.test(field.dataType)
+  );
+  const canBulkUpdate = canEdit && object?.listViewButtons?.includes('Bulk Update') === true && bulkEditableFields.length > 0;
+  const bulkSelectedField = bulkEditableFields.find((field) => field.apiName === bulkFieldApiName);
   const ownerField = object?.fields.find((field) => field.apiName === 'OwnerId' && field.relationship?.targetObject === 'User');
   const canChangeOwner = Boolean(ownerField && canEdit && fieldAccess[`${object?.apiName}.OwnerId`]?.edit && object?.listViewButtons?.includes('Change Owner'));
   const canImport = object?.apiName !== 'User' && object?.listViewButtons?.includes('Import') === true
@@ -5262,6 +5284,93 @@ function RecordWorkspace({
     } finally {
       setMassDeleting(false);
     }
+  };
+  const updateSelectedRecords = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!object || !canBulkUpdate || !bulkSelectedField) return;
+    const items = selectedRecordIds.flatMap((id) => {
+      const item = records.find((candidate) => candidate.Id === id);
+      if (!item) return [];
+      const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+      return !layout || layout.actions.includes('Edit') ? [item] : [];
+    });
+    if (!items.length) return;
+    let value: string | number | boolean = bulkFieldValue;
+    const kind = bulkSelectedField.dataType;
+    if (/^(?:Number|Currency|Percent)(?:\(|$)/i.test(kind)) {
+      if (!bulkFieldValue.trim() || !Number.isFinite(Number(bulkFieldValue))) {
+        setBulkUpdateError('Enter a valid numeric value.');
+        return;
+      }
+      value = Number(bulkFieldValue);
+    } else if (/^(?:Checkbox|Boolean)$/i.test(kind)) value = bulkFieldBoolean;
+    else if (/^(?:Date\/Time|DateTime)$/i.test(kind)) {
+      const timestamp = new Date(bulkFieldValue);
+      if (!Number.isFinite(timestamp.getTime())) {
+        setBulkUpdateError('Enter a valid date and time.');
+        return;
+      }
+      value = timestamp.toISOString();
+    }
+    setBulkUpdating(true);
+    setBulkUpdateError('');
+    const failed: string[] = [];
+    const failures: string[] = [];
+    // Preserve the platform's durable SQL revision ordering. A bounded,
+    // sequential update avoids concurrent writes against one tenant snapshot.
+    for (const item of items) {
+      try {
+        await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(item.Id)}`, {
+          method: 'PUT',
+          ...(typeof item.LastModifiedDate === 'string' ? {
+            headers: { 'If-Unmodified-Since': item.LastModifiedDate }
+          } : {}),
+          body: JSON.stringify({ [bulkSelectedField.apiName]: value })
+        });
+      } catch (error) {
+        failed.push(item.Id);
+        failures.push(error instanceof Error ? error.message : 'Record update rejected');
+      }
+    }
+    setBulkUpdating(false);
+    setSelectedRecordIds(failed);
+    setRefreshKey((current) => current + 1);
+    const updated = items.length - failed.length;
+    setListNotice(`${updated} of ${items.length} selected record${items.length === 1 ? '' : 's'} updated.`);
+    if (failed.length) setBulkUpdateError(`${failed.length} update(s) rejected: ${failures.join('; ')}`);
+    else { setBulkUpdateOpen(false); setBulkFieldValue(''); setBulkFieldApiName(''); }
+  };
+  const saveBulkRecordOwner = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!object || !canChangeOwner || !bulkOwnerValue) return;
+    const items = selectedRecordIds.flatMap((id) => {
+      const item = records.find((candidate) => candidate.Id === id);
+      if (!item) return [];
+      const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+      return !layout || layout.actions.includes('Edit') ? [item] : [];
+    });
+    setBulkOwnerSaving(true); setBulkOwnerError('');
+    const failed: string[] = [], messages: string[] = [];
+    for (const item of items) {
+      try {
+        await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(item.Id)}/owner`, {
+          method: 'PUT',
+          ...(typeof item.LastModifiedDate === 'string' ? {
+            headers: { 'If-Unmodified-Since': item.LastModifiedDate }
+          } : {}),
+          body: JSON.stringify({ ownerId: bulkOwnerValue })
+        });
+      } catch (reason) {
+        failed.push(item.Id);
+        messages.push(reason instanceof Error ? reason.message : 'Owner change was rejected');
+      }
+    }
+    setBulkOwnerSaving(false);
+    setSelectedRecordIds(failed);
+    setRefreshKey((current) => current + 1);
+    setListNotice(`${items.length - failed.length} of ${items.length} record owner(s) changed.`);
+    if (failed.length) setBulkOwnerError(messages.join('; '));
+    else { setBulkOwnerDialogOpen(false); setBulkOwnerValue(''); }
   };
   const saveRecordOwner = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -5814,11 +5923,28 @@ function RecordWorkspace({
     ? configuredListFields ?? []
     : [...readableFields].sort((left, right) => Number(right.apiName === 'Name') - Number(left.apiName === 'Name'))
       .filter((field) => records.length === 0 || records.some((item) => field.apiName in item));
-  const selectableRecordIds = (canMassDelete || canAddToCampaign) ? visibleRecords.flatMap((item) => {
+  const selectableRecordIds = (canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) ? visibleRecords.flatMap((item) => {
     const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
     const recordLayout = pageLayoutForRecord(object, recordTypeId, profileId);
-    return canAddToCampaign || canMassDelete && (!recordLayout || recordLayout.actions.includes('Delete')) ? [item.Id] : [];
+    return canAddToCampaign
+      || canMassDelete && (!recordLayout || recordLayout.actions.includes('Delete'))
+      || (canBulkUpdate || canChangeOwner) && (!recordLayout || recordLayout.actions.includes('Edit'))
+      ? [item.Id] : [];
   }) : [];
+  const selectedOwnerChangeIds = selectedRecordIds.filter((id) => {
+    if (!canChangeOwner) return false;
+    const item = records.find((candidate) => candidate.Id === id);
+    if (!item) return false;
+    const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+    return !layout || layout.actions.includes('Edit');
+  });
+  const selectedEditableRecordIds = selectedRecordIds.filter((id) => {
+    if (!canBulkUpdate) return false;
+    const item = records.find((candidate) => candidate.Id === id);
+    if (!item) return false;
+    const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+    return !layout || layout.actions.includes('Edit');
+  });
   const selectedDeletableRecordIds = selectedRecordIds.filter((id) => selectableRecordIds.includes(id)
     && canMassDelete
     && (() => {
@@ -5844,6 +5970,14 @@ function RecordWorkspace({
           {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
           {canAddToCampaign && selectedRecordIds.length > 0 && <button className="btn" onClick={() => void openAddToCampaign()}>Add to Campaign ({selectedRecordIds.length})</button>}
           {object.listViewButtons?.includes('Printable View') && <button className="btn" onClick={() => window.print()}>Printable View</button>}
+          {canChangeOwner && selectedOwnerChangeIds.length > 0 && <button type="button" className="btn"
+            onClick={() => { setBulkOwnerError(''); setBulkOwnerValue(''); setBulkOwnerDialogOpen(true); }}>
+            Change Owner ({selectedOwnerChangeIds.length})
+          </button>}
+          {canBulkUpdate && selectedEditableRecordIds.length > 0 && <button type="button" className="btn"
+            onClick={() => { setBulkFieldApiName(bulkEditableFields[0]?.apiName ?? ''); setBulkFieldValue(''); setBulkFieldBoolean(false); setBulkUpdateError(''); setBulkUpdateOpen(true); }}>
+            Bulk Update ({selectedEditableRecordIds.length})
+          </button>}
           {canMassDelete && selectedDeletableRecordIds.length > 0 && <button className="btn btn-danger" onClick={() => void deleteSelectedRecords()} disabled={massDeleting}>{massDeleting ? 'Deleting…' : `Delete (${selectedDeletableRecordIds.length})`}</button>}
           <input ref={importInputRef} type="file" accept=".csv,text/csv" hidden aria-label={`Choose ${object.label} CSV file`}
             onChange={(event) => {
@@ -5859,7 +5993,7 @@ function RecordWorkspace({
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
       {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
-        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <thead><tr>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
           <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
             onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
             {field.label} {listSort?.field === field.apiName ? (listSort.direction === 'asc' ? '▲' : '▼') : '↕'}
@@ -5869,8 +6003,8 @@ function RecordWorkspace({
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
           const rowAllowsEdit = !rowLayout || rowLayout.actions.includes('Edit');
           const rowAllowsDelete = !rowLayout || rowLayout.actions.includes('Delete');
-          const selectable = canAddToCampaign || canMassDelete && rowAllowsDelete;
-          return <tr key={item.Id}>{(canMassDelete || canAddToCampaign) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName}>
+          const selectable = canAddToCampaign || canMassDelete && rowAllowsDelete || (canBulkUpdate || canChangeOwner) && rowAllowsEdit;
+          return <tr key={item.Id}>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName}>
             {index === 0
               ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })}>{formatFieldValue(field, item[field.apiName] ?? item.Id)}</a>
               : formatFieldValue(field, item[field.apiName])}
@@ -5891,6 +6025,72 @@ function RecordWorkspace({
         </div>
       </nav>}
     </section>
+    {bulkOwnerDialogOpen && <div className="record-form-backdrop" role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !bulkOwnerSaving) setBulkOwnerDialogOpen(false); }}>
+      <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="bulk-owner-title">
+        <header><div><div className="eyebrow">{object.label}</div><h2 id="bulk-owner-title">Change Owners</h2></div>
+          <button className="icon-button" aria-label="Close" disabled={bulkOwnerSaving} onClick={() => setBulkOwnerDialogOpen(false)}><X size={16} /></button>
+        </header>
+        <form onSubmit={(event) => void saveBulkRecordOwner(event)}>
+          <p className="modal-copy">Assign {selectedOwnerChangeIds.length} selected record(s) to a tenant user. Each change checks object permissions and record concurrency.</p>
+          <label className="form-label" htmlFor="bulk-owner-select">New owner
+            <select id="bulk-owner-select" className="form-control" value={bulkOwnerValue}
+              onChange={(event) => setBulkOwnerValue(event.target.value)} disabled={bulkOwnerSaving} required>
+              <option value="">Select user…</option>
+              {ownerRecords.map((owner) => <option key={owner.Id} value={owner.Id}>{String(owner.Name ?? owner.Email ?? owner.Id)}</option>)}
+            </select>
+          </label>
+          {bulkOwnerError && <div className="records-message" role="alert">{bulkOwnerError}</div>}
+          <footer><button className="btn" type="button" disabled={bulkOwnerSaving} onClick={() => setBulkOwnerDialogOpen(false)}>Cancel</button>
+            <button className="btn btn-brand" type="submit" disabled={bulkOwnerSaving || !bulkOwnerValue || !selectedOwnerChangeIds.length}>
+              {bulkOwnerSaving ? 'Updating…' : 'Assign Selected'}
+            </button></footer>
+        </form>
+      </section>
+    </div>}
+    {bulkUpdateOpen && <div className="record-form-backdrop" role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !bulkUpdating) setBulkUpdateOpen(false); }}>
+      <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="bulk-update-title">
+        <header><div><div className="eyebrow">{object.label}</div><h2 id="bulk-update-title">Bulk Update</h2></div>
+          <button className="icon-button" aria-label="Close" disabled={bulkUpdating} onClick={() => setBulkUpdateOpen(false)}><X size={16} /></button>
+        </header>
+        <form onSubmit={(event) => void updateSelectedRecords(event)}>
+          <p className="modal-copy">Update one metadata field on {selectedEditableRecordIds.length} selected record(s) from this page. Each record is validated independently and existing values on other fields are preserved.</p>
+          <label className="form-label" htmlFor="bulk-field">Field
+            <select id="bulk-field" className="form-control" value={bulkFieldApiName} disabled={bulkUpdating} required
+              onChange={(event) => { setBulkFieldApiName(event.target.value); setBulkFieldValue(''); setBulkFieldBoolean(false); }}>
+              {bulkEditableFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+            </select>
+          </label>
+          {bulkSelectedField && <label className="form-label" htmlFor="bulk-value">New value
+            {/^(?:Checkbox|Boolean)$/i.test(bulkSelectedField.dataType)
+              ? <select id="bulk-value" className="form-control" value={String(bulkFieldBoolean)} disabled={bulkUpdating}
+                  onChange={(event) => setBulkFieldBoolean(event.target.value === 'true')}>
+                  <option value="false">False</option><option value="true">True</option>
+                </select>
+              : bulkSelectedField.picklistValues?.length && /Picklist/i.test(bulkSelectedField.dataType)
+              ? <select id="bulk-value" className="form-control" value={bulkFieldValue} disabled={bulkUpdating}
+                  onChange={(event) => setBulkFieldValue(event.target.value)} required>
+                  <option value="">Select value…</option>
+                  {bulkSelectedField.picklistValues.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              : <input id="bulk-value" className="form-control" disabled={bulkUpdating} value={bulkFieldValue}
+                  type={/^(?:Number|Currency|Percent)(?:\(|$)/i.test(bulkSelectedField.dataType) ? 'number'
+                    : /^(?:Date\/Time|DateTime)$/i.test(bulkSelectedField.dataType) ? 'datetime-local'
+                    : /^Date$/i.test(bulkSelectedField.dataType) ? 'date' : 'text'}
+                  step={/^(?:Number|Currency|Percent)(?:\(|$)/i.test(bulkSelectedField.dataType) ? 'any' : undefined}
+                  onChange={(event) => setBulkFieldValue(event.target.value)} required />}
+          </label>}
+          {bulkUpdateError && <div className="records-message" role="alert">{bulkUpdateError}</div>}
+          <footer><button type="button" className="btn" disabled={bulkUpdating} onClick={() => setBulkUpdateOpen(false)}>Cancel</button>
+            <button type="submit" className="btn btn-brand" disabled={bulkUpdating || !selectedEditableRecordIds.length || !bulkSelectedField ||
+              (!/^(?:Checkbox|Boolean)$/i.test(bulkSelectedField.dataType) && !bulkFieldValue)}>
+              {bulkUpdating ? 'Updating…' : 'Update Selected'}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>}
     {importFileName && <div className="record-form-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !importSaving) { setImportFileName(''); setImportRows([]); setImportError(''); } }}>
       <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="import-records-title">
         <header><div><div className="eyebrow">{object.label}</div><h2 id="import-records-title">Import Records</h2></div><button className="icon-button" aria-label="Close" disabled={importSaving} onClick={() => { setImportFileName(''); setImportRows([]); setImportError(''); }}><X size={16} /></button></header>
@@ -8035,7 +8235,7 @@ function ObjectManager({
     const supportsOwnership = draft.fields.some((field) =>
       field.apiName === 'OwnerId' && field.relationship?.targetObject === 'User');
     const standard = [
-      ...(draft.apiName === 'User' ? [] : ['New', 'Import', 'Mass Delete']),
+      ...(draft.apiName === 'User' ? [] : ['New', 'Import', 'Bulk Update', 'Mass Delete']),
       ...(supportsOwnership ? ['Change Owner'] : []),
       'Printable View',
       ...(draft.apiName === 'Contact' && objects.some((item) => item.apiName === 'Campaign') ? ['Add to Campaign'] : [])
