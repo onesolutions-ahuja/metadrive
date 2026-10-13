@@ -3854,7 +3854,7 @@ function buildDefaultProfiles(objects: ObjectMetadata[], permissionSets: AccessC
     ...(supportSet ? [{
       ...supportSet, id: 'support-agent', label: 'Support Agent', apiName: 'Support_Agent', isStandard: false
     }] : [])
-  ];
+  ].map((profile) => ({ ...profile, navigationDefaultAccess: 'Allow' as const }));
 }
 
 function defaultRoles(): AccessRole[] {
