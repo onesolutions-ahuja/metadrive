@@ -2518,3 +2518,15 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 @media (pointer: coarse) {
   .app-manager-order-controls .btn, .exchange-category-row button { min-height: 44px; }
 }
+
+
+/* Audit-measured contrast pairs; verify live composite backgrounds in CI. */
+.create-object { color: #016ec4; min-height: 36px; padding-inline: 8px; }
+.object-manager .object-search,
+.object-manager .object-search input::placeholder { color: #6e6c6a; }
+.exchange-tabs button:not(.active) { color: #67716b; }
+.company-information .permission-help,
+.company-settings .permission-help { color: #617087; }
+@media (pointer: coarse) {
+  .create-object { min-height: 44px; }
+}
