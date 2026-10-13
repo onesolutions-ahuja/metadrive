@@ -1,4 +1,5 @@
 import AdvancedSharingSettings from './AdvancedSharingSettings';
+import SchemaBuilder from './SchemaBuilder';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -412,6 +413,7 @@ async function loadFlowScreenRecords(objectApiName: string): Promise<Record<stri
 
 const objectSettings = [
   'Details',
+  'Schema Builder',
   'Fields & Relationships',
   'Page Layouts',
   'Lightning Record Pages',
@@ -427,6 +429,7 @@ const objectSettings = [
 ];
 
 const settingRouteNames: Record<string, string> = {
+  'Schema Builder': 'SchemaBuilder',
   'Fields & Relationships': 'FieldsAndRelationships',
   'Page Layouts': 'PageLayouts',
   'Lightning Record Pages': 'LightningRecordPages',
@@ -7866,6 +7869,7 @@ function ObjectManager({
     </div>}
   </section>;
   const renderSetting = () => {
+    if (selectedSetting === 'Schema Builder') return <SchemaBuilder objects={objects} selectedObjectApiName={object.apiName} onOpenObject={onObjectSelect} onCreateObject={onCreateObject} onNewField={onNewField} />;
     if (selectedSetting === 'Change History') return renderHistory();
     if (selectedSetting === 'Details') return renderDetails();
     if (selectedSetting === 'Fields & Relationships') return renderFields();
