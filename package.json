@@ -8,7 +8,7 @@
   "scripts": {
     "dev:web": "npm run dev --workspace apps/web",
     "dev:server": "npm run dev --workspace apps/server",
-    "build": "npm run test:foundation && npm run test:page-routing && npm run test:route-directory && npm run test:flow-binding && npm run test:record-filter && npm run test:visibility && npm run test:component-metadata && npm run test:modern-canvas && npm run test:flow-canvas && npm run test:flow-connectors && npm run build --workspace apps/web && npm run build --workspace apps/server",
+    "build": "npm run test:foundation && npm run test:page-routing && npm run test:route-directory && npm run test:flow-binding && npm run test:record-filter && npm run test:visibility && npm run test:component-metadata && npm run test:modern-canvas && npm run test:flow-canvas && npm run test:flow-connectors && npm run test:flow-screen-upload && npm run build --workspace apps/web && npm run build --workspace apps/server",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
     "test:foundation": "node --test scripts/foundation-contract.test.mjs",
@@ -21,6 +21,7 @@
     "test:component-metadata": "tsx --test scripts/md10-universal-component-metadata.test.mjs",
     "test:flow-canvas": "node --test scripts/md10-freeform-canvas.test.mjs",
     "test:flow-connectors": "node --test scripts/md10-flow-connector-insertion.test.mjs apps/web/test/flow-insert-element.test.mjs",
+    "test:flow-screen-upload": "node --test scripts/md10-flow-screen-upload.test.mjs",
     "test:modern-canvas": "tsx --test scripts/md10-modern-canvas-contract.test.mjs"
   }
 }
