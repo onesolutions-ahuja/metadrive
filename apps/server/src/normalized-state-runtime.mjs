@@ -3,7 +3,7 @@
 // until Flow, credential, row-based record and rollback parity are verified.
 import {projectNormalizedTree,restoreNormalizedTree,verifyNormalizedTree} from './normalized-state-tree.mjs';
 import {stateDigest} from './relational-projection.mjs';
-import {planNormalizedDelta,verifyDeltaReadback} from './normalized-state-delta.mjs';
+import {planNormalizedDelta,verifyDeltaReadback,verifyProjectedDelta} from './normalized-state-delta.mjs';
 
 function asRevision(value) {
   const n=Number(value);
@@ -69,19 +69,19 @@ export async function readNormalizedState(pool,verifyPhysicalRecords=null) {
     throw error;
   } finally {client.release();}
 }
-export async function writeNormalizedState(pool,nextState,previous,synchronizePhysicalRecords=null) {
+export async function writeNormalizedState(pool,nextState,previous,synchronizePhysicalRecords=null,alreadyNormalized=false) {
   if(!previous||!Number.isSafeInteger(previous.version)||!previous.digest ||
      !Number.isSafeInteger(previous.storageRevision)||!Array.isArray(previous.nodes))
     throw Error('A verified normalized SQL snapshot with storage nodes is required');
   const writeStartedAt=performance.now();
-  const {nodes,digest}=projectNormalizedTree(nextState);
+  const {nodes,digest}=projectNormalizedTree(nextState,alreadyNormalized);
   const projectedAt=performance.now();
   if(digest===previous.digest) return {...previous};
   const delta=planNormalizedDelta(previous.nodes,nodes);
-  // One lossless graph roundtrip and checksum verification. Projecting again
-  // separately used to repeat this full 20k-node operation on every refresh.
-  if(stateDigest(restoreNormalizedTree(delta.nodes))!==digest)
-    throw Error('Incremental normalized graph did not preserve next state');
+  // Verify the remapped tree against every source node without a second
+  // whole-platform JSON restore, sort and SHA256. The canonical digest above,
+  // transactional SQL readback and verified startup checksum remain intact.
+  verifyProjectedDelta(nodes,delta.nodes);
 
   const preparedAt=performance.now();
   const touched=[...delta.updated,...delta.inserted];
