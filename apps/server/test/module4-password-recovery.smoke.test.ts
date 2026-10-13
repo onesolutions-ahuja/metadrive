@@ -25,6 +25,13 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
   const messages: string[] = [];
   const smtp = createServer((socket) => {
     socket.setEncoding('utf8');
+    // The client can disconnect while the fake SMTP server is still replying.
+    // Consume expected transport errors so a closed test socket cannot crash CI.
+    socket.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EPIPE' && error.code !== 'ECONNRESET') {
+        console.error('Unexpected mock SMTP socket error:', error);
+      }
+    });
     socket.write('220 localhost ESMTP MetaDrive test\r\n');
     let buffer = '', inData = false, body: string[] = [];
     socket.on('data', (part: string) => {
