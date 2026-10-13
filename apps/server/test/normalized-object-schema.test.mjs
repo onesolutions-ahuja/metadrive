@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,canWidenPhysicalFieldType} from '../src/normalized-object-schema.mjs';
+import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,canWidenPhysicalFieldType,physicalTenantOwnerConstraint} from '../src/normalized-object-schema.mjs';
 const oid='96120ef5-5b50-4905-bd71-09c85a200000';
 const fid='96120ef5-5b50-4905-bd71-09c85a200001';
 const valid={objectId:oid, fields:{Price__c:{fieldId:fid}}};
@@ -85,4 +85,14 @@ test('typed SQL accepts only lossless text and numeric schema expansions',()=>{
   assert.equal(widen('Checkbox','Text'),false);
   assert.equal(widen('Picklist','Text'),true);
   assert.equal(widen('Email','Phone'),true);
+});
+
+test('typed object owner constraint is stable across metadata changes and rejects unsafe tenants',()=>{
+  const guard=physicalTenantOwnerConstraint(oid,'tenant-alpha');
+  assert.match(guard.ddl,/CHECK \(tenant_id = 'tenant-alpha'\)/);
+  assert.ok(guard.name.startsWith(physicalObjectTable(oid)));
+  assert.ok(guard.name.length<=63);
+  assert.equal(physicalTenantOwnerConstraint(oid,'tenant-alpha').ddl,guard.ddl);
+  assert.throws(()=>physicalTenantOwnerConstraint(oid,"alpha'; DROP TABLE users; --"));
+  assert.throws(()=>physicalTenantOwnerConstraint('Inventory__c','tenant-alpha'));
 });

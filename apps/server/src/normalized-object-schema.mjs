@@ -8,6 +8,19 @@ function stableIdentifier(kind, id) {
 export function physicalObjectTable(objectId) {return stableIdentifier('obj',objectId);}
 export function physicalFieldColumn(fieldId) {return stableIdentifier('fld',fieldId);}
 
+/** Per-object tenant owner constraint for immutable physical tables.
+ * Identifiers come from validated UUIDs; tenant IDs must match the strict
+ * platform identifier alphabet before interpolation into DDL.
+ */
+export function physicalTenantOwnerConstraint(objectId, tenantId) {
+  const table=physicalObjectTable(objectId);
+  if(typeof tenantId!=='string'||!/^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$/.test(tenantId))
+    throw Error('Invalid SQL physical table tenant identifier');
+  const name=table+'_tenant_owner_ck';
+  return {name,ddl:'ALTER TABLE '+table+' ADD CONSTRAINT '+name+
+    " CHECK (tenant_id = '"+tenantId+"')"};
+}
+
 function precision(type, family) {
   const match=type.match(new RegExp('^'+family+'\\((\\d+),\\s*(\\d+)\\)$','i'));
   if(!match) return null;
