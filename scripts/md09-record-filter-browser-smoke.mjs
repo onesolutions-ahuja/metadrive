@@ -102,7 +102,7 @@ try {
   });
   await page.goto(web+'/une/setup/page-builder/'+pageId);
   await page.getByRole('button',{name:'Desktop preview'}).waitFor();
-  await page.getByRole('button',{name:'Data & Actions'}).click();
+  await page.getByRole('tab',{name:'Data & Actions'}).click();
   const editor=page.getByLabel('Record Filters filter editor').first();
   await editor.waitFor();
   await editor.getByRole('button',{name:'Add filter'}).click();
@@ -118,7 +118,7 @@ try {
   ]);
   await page.reload();
   await page.getByRole('button',{name:'Desktop preview'}).waitFor();
-  await page.getByRole('button',{name:'Data & Actions'}).click();
+  await page.getByRole('tab',{name:'Data & Actions'}).click();
   assert.equal(await page.getByLabel('Record Filters value 1').inputValue(),'MD09 Blue');
 
   await page.goto(web+'/une/apps/'+app+'/pages/'+pageId);
