@@ -200,3 +200,6 @@ export async function closeStateStore(): Promise<void> {
   if (writeFailure !== null) throw writeFailure;
   if (pool) await pool.end();
 }
+
+// Optional tenant-scoped route-alias SQL registry; never silently fall back to JSONB.
+export function getRouteAliasPool() { return pool; }

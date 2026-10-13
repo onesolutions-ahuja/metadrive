@@ -1,0 +1,54 @@
+name: MD-09 Route Aliases SQL and Chromium
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/server/src/route-aliases*'
+      - 'apps/server/src/postgres-state.ts'
+      - 'apps/server/src/index.ts'
+      - 'apps/server/sql/route-aliases-v1.sql'
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/PageRouteDirectory.tsx'
+      - 'scripts/md09-route-alias-browser-smoke.mjs'
+      - 'package.json'
+      - '.github/workflows/md09-route-aliases.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  alias-sql-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: metadrive_alias_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d metadrive_alias_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate strict alias metadata
+        run: node --test apps/server/test/route-aliases.test.mjs
+      - name: Build frontend and backend
+        run: npm run build
+      - name: Install disposable Chromium
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Isolated PostgreSQL + Chromium route alias regression
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+          METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_alias_test
+        run: node scripts/md09-route-alias-browser-smoke.mjs

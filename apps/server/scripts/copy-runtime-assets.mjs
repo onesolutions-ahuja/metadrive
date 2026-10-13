@@ -28,6 +28,7 @@ for(const name of [
   'tenant-recovery-readiness.mjs',
   'advanced-sharing-policy.mjs',
   'component-scope.mjs',
+  'route-aliases.mjs',
   'tenant-usage.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));

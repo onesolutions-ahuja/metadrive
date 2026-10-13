@@ -468,6 +468,7 @@ type AppRoute =
   | { kind: 'setup'; workspace: WorkspaceId; objectApiName?: string; setting?: string; resourceApiName?: string; resourceId?: string; dashboardView?: boolean }
   | { kind: 'app-home'; appId: string }
   | { kind: 'app-page'; appId: string; pageApiName: string }
+  | { kind: 'route-alias'; appId: string; slug: string }
   | { kind: 'record-list'; objectApiName: string; appId?: string }
   | { kind: 'record-detail'; objectApiName: string; recordId: string; appId?: string };
 
@@ -560,6 +561,9 @@ function parseAppRoute(pathname: string, search = ''): AppRoute {
     if (segments.length === 3 && segments[0] === 'apps' && segments[2] === 'home') {
       return { kind: 'app-home', appId: decodeURIComponent(segments[1]) };
     }
+    if (segments.length === 4 && segments[0] === 'apps' && segments[2] === 'routes') {
+      return { kind: 'route-alias', appId: decodeURIComponent(segments[1]), slug: decodeURIComponent(segments[3]) };
+    }
     if (segments.length === 4 && segments[0] === 'apps' && segments[2] === 'pages') {
       return { kind: 'app-page', appId: decodeURIComponent(segments[1]), pageApiName: decodeURIComponent(segments[3]) };
     }
@@ -628,6 +632,7 @@ function appRoutePathWithoutBase(route: AppRoute): string {
   }
   if (route.kind === 'app-home') return `/une/apps/${encodeURIComponent(route.appId)}/home`;
   if (route.kind === 'app-page') return `/une/apps/${encodeURIComponent(route.appId)}/pages/${encodeURIComponent(route.pageApiName)}`;
+  if (route.kind === 'route-alias') return `/une/apps/${encodeURIComponent(route.appId)}/routes/${encodeURIComponent(route.slug)}`;
   if (route.kind === 'record-list') {
     const query = new URLSearchParams({ filterName: `All${route.objectApiName}s` });
     if (route.appId) query.set('appId', route.appId);
@@ -1266,6 +1271,7 @@ function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }: {
 
 function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming: EntryTiming | null }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppRoute(window.location.pathname, window.location.search));
+  const [routeAliasError, setRouteAliasError] = useState('');
   const [routeTiming, setRouteTiming] = useState(() => ({
     routeKey: window.location.pathname + window.location.search,
     startedAt: entryTiming?.startedAt ?? performance.now(),
@@ -1431,6 +1437,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       ? workspaces.find((item) => item.id === route.workspace)?.label ?? 'Setup'
       : route.kind === 'app-home' ? `${apps.find((app) => app.apiName === route.appId)?.label ?? route.appId} Home`
         : route.kind === 'app-page' ? pages.find((page) => page.apiName === route.pageApiName)?.label ?? route.pageApiName
+          : route.kind === 'route-alias' ? route.slug
           : `${objects.find((item) => item.apiName === route.objectApiName)?.pluralLabel ?? route.objectApiName}${route.kind === 'record-detail' ? ' Record' : ''}`;
     setRecentRoutes((current) => current[0]?.key === key
       ? current
@@ -1778,6 +1785,31 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   }, [route, connectorProviders]);
 
+  // Resolve friendly metadata aliases via an authenticated tenant-scoped API.
+  // The server checks the destination again, so an old alias never grants access.
+  useEffect(() => {
+    if (route.kind !== 'route-alias') { setRouteAliasError(''); return; }
+    const pending = route;
+    let cancelled = false;
+    setRouteAliasError('');
+    void apiRequest<{ path: string }>('/routes/resolve/' + encodeURIComponent(pending.appId) +
+      '/' + encodeURIComponent(pending.slug)).then(({ path }) => {
+      if (cancelled || typeof path !== 'string' || !path.startsWith('/une/')) return;
+      const targetUrl = new URL(path, window.location.origin);
+      if (targetUrl.origin !== window.location.origin || !targetUrl.pathname.startsWith('/une/'))
+        throw Error('Invalid route alias destination');
+      const destination = parseAppRoute(targetUrl.pathname, targetUrl.search);
+      if (destination.kind === 'setup' || destination.kind === 'route-alias'
+          || (destination.appId && destination.appId !== pending.appId))
+        throw Error('Route alias target is unavailable');
+      window.history.replaceState({}, '', appRoutePath(destination));
+      setRoute(destination);
+    }).catch(error => {
+      if (!cancelled) setRouteAliasError(error instanceof Error ? error.message : 'Unable to resolve route alias');
+    });
+    return () => { cancelled = true; };
+  }, [route]);
+ 
   const openSetupWorkspace = (nextWorkspace: WorkspaceId) => {
     const nextRoute: AppRoute = nextWorkspace === 'object-manager'
       ? { kind: 'setup', workspace: nextWorkspace, objectApiName: object.apiName, setting: objectSetting }
@@ -3491,6 +3523,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={globalSearch} onNavigate={navigateRoute} />}
+          {route.kind === 'route-alias' && <section className="setup-card" role="status">
+            {routeAliasError ? <p role="alert">{routeAliasError}</p> : <p>Resolving route alias…</p>}
+          </section>}
           {route.kind === 'app-home' && <LightningAppRuntime appId={route.appId} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
@@ -3594,7 +3629,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               const next = { ...current };
               delete next[pageApiName];
               return next;
-            })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+            })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} request={apiRequest} canManageRoutes={canManageApps} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -8269,7 +8304,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
 
 function PageBuilder({
   page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
-  preparedAppId, onPrepareApp, onAppLinked
+  preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes
 }: {
   page: LightningPageMetadata;
   pages: LightningPageMetadata[];
@@ -8291,6 +8326,8 @@ function PageBuilder({
   preparedAppId: string;
   onPrepareApp: (pageApiName: string, appId: string) => void;
   onAppLinked: (pageApiName: string) => void;
+  request: <T>(path: string, init?: RequestInit) => Promise<T>;
+  canManageRoutes: boolean;
 }) {
   const [builderAppApiName, setBuilderAppApiName] = useState(preparedAppId);
   useEffect(() => {
@@ -9862,6 +9899,7 @@ function PageBuilder({
       </div>
       {routeDirectoryOpen && <PageRouteDirectory apps={apps} pages={pages} objects={objects}
         initialAppId={builderAppApiName} basePath={import.meta.env.BASE_URL}
+        request={request} canManage={canManageRoutes}
         onNotify={onNotify} onClose={() => setRouteDirectoryOpen(false)} />}
       {createPageOpen && <div className="modal-backdrop" role="presentation"
         onMouseDown={event => { if (event.target === event.currentTarget) setCreatePageOpen(false); }}>
