@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation, readDurableAuthLogins, persistDurableAuthLogin, type DurableAuthLogin } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
 import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
@@ -109,7 +109,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.end = ((...args: unknown[]) => {
     if (ending) return res;
     ending = true;
-    const commit = latestStateCommit;
+    const commit = res.locals.authSqlCommitted === true ? Promise.resolve() : latestStateCommit;
     const gateStartedAt = performance.now();
     void commit.then(() => {
       if (req.path === '/api/auth/login' || req.path === '/api/auth/mfa/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/logout') {
@@ -4689,27 +4689,65 @@ let state = loadState(persistenceMode === 'typed' ? existingPostgresState : unde
 // Security tombstones commit separately from the large SQL metadata graph.
 // Merge them before accepting requests, so logout remains revoked after crash
 // recovery even if no subsequent metadata snapshot was written.
+const durableAuthLogins: DurableAuthLogin[] = maintenanceMode ? [] : await readDurableAuthLogins();
 const durableLogouts = maintenanceMode ? [] : await readAuthLogoutRevocations();
-if (durableLogouts.length) {
-  const accessRevocations = { ...state.revokedAccessTokens };
-  const refreshRevocations = new Map<string, number>();
+let authOverlayRevision = 0;
+// Replay the independent durable auth records after every SQL snapshot refresh,
+// not just restart: otherwise the scheduler can overwrite live session changes.
+function restoreDurableAuthOverlay(snapshot: PlatformState): PlatformState {
+  if (persistenceMode !== 'typed') return snapshot;
   const now = Date.now() / 1000;
+  const usersById = new Map(snapshot.users.map(user => [user.id, user.tenantId]));
+  const existingSessionHashes = new Set(snapshot.refreshSessions.map(session => session.tokenHash));
+  const refreshSessions = [...snapshot.refreshSessions];
+  const securityByTenant = new Map<string, SecurityAuditEvent[]>();
+  for (const entry of durableAuthLogins) {
+    if (!snapshot.tenants[entry.tenantId] || usersById.get(entry.userId) !== entry.tenantId) continue;
+    if (entry.expiresAt > now && !existingSessionHashes.has(entry.tokenHash)) {
+      refreshSessions.push({
+        tokenHash: entry.tokenHash, familyId: entry.familyId,
+        userId: entry.userId, tenantId: entry.tenantId, expiresAt: entry.expiresAt,
+        usedAt: entry.usedAt, revokedAt: entry.revokedAt,
+        mfaVerified: entry.mfaVerified, authVersion: entry.authVersion
+      });
+      existingSessionHashes.add(entry.tokenHash);
+    }
+    if (!securityByTenant.has(entry.tenantId)) securityByTenant.set(entry.tenantId, []);
+    securityByTenant.get(entry.tenantId)!.push({
+      id: entry.auditId, at: entry.auditAt,
+      actorUserId: entry.userId, action: 'auth.login.succeeded'
+    });
+  }
+  const tenants = { ...snapshot.tenants };
+  for (const [tenantId, events] of securityByTenant) {
+    const tenant = tenants[tenantId];
+    const audit = new Map(tenant.securityAudit.map(event => [event.id, event]));
+    for (const event of events) if (!audit.has(event.id)) audit.set(event.id, event);
+    tenants[tenantId] = {
+      ...tenant,
+      securityAudit: [...audit.values()].sort((a, b) => a.at.localeCompare(b.at)).slice(-5000)
+    };
+  }
+  const revokedAccessTokens = { ...snapshot.revokedAccessTokens };
+  const refreshRevocations = new Map<string, number>();
   for (const entry of durableLogouts) {
     if (entry.accessExpiresAt > now)
-      accessRevocations[entry.jti] = Math.max(accessRevocations[entry.jti] ?? 0, entry.accessExpiresAt);
-    if (entry.refreshHash && entry.refreshExpiresAt !== null && entry.refreshExpiresAt > now)
-      refreshRevocations.set(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`, Math.max(refreshRevocations.get(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`) ?? 0, entry.revokedAt));
+      revokedAccessTokens[entry.jti] = Math.max(revokedAccessTokens[entry.jti] ?? 0, entry.accessExpiresAt);
+    if (entry.refreshHash && entry.refreshExpiresAt !== null && entry.refreshExpiresAt > now) {
+      const key = entry.tenantId + ':' + entry.userId + ':' + entry.refreshHash;
+      refreshRevocations.set(key, Math.max(refreshRevocations.get(key) ?? 0, entry.revokedAt));
+    }
   }
-  state = {
-    ...state,
-    revokedAccessTokens: accessRevocations,
-    refreshSessions: state.refreshSessions.map((session) => {
-      const revokedAt = refreshRevocations.get(`${session.tenantId}:${session.userId}:${session.tokenHash}`);
+  return {
+    ...snapshot, tenants, revokedAccessTokens,
+    refreshSessions: refreshSessions.map(session => {
+      const revokedAt = refreshRevocations.get(session.tenantId + ':' + session.userId + ':' + session.tokenHash);
       return revokedAt === undefined ? session
         : { ...session, revokedAt: Math.max(session.revokedAt ?? 0, revokedAt) };
     })
   };
 }
+state = restoreDurableAuthOverlay(state);
 assertTenantIdentityIsolation(state);
 console.info(`Startup state hydration: ${(performance.now() - stateHydrationStartedAt).toFixed(0)}ms`);
 // Remove legacy internal UI requests from Communication Records before the
@@ -5560,18 +5598,57 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
   });
   const tokenMs = performance.now() - tokenStartedAt;
   const refresh = issueRefreshSession(user, familyId, mfaVerified);
-  const nextState = {
-    ...state,
-    refreshSessions: [...state.refreshSessions, refresh.session],
-    tenants: {
-      ...state.tenants, [user.tenantId]: withSecurityEvent(data, user.id, 'auth.login.succeeded')
-    },
-    revokedAccessTokens: Object.fromEntries(Object.entries(state.revokedAccessTokens).filter(([, expiry]) => expiry > Date.now() / 1000))
-  };
   const sessionStateStartedAt = performance.now();
-  persistState(nextState);
+  if (persistenceMode === 'typed') {
+    const securityEvent: SecurityAuditEvent = {
+      id: randomUUID(), at: new Date().toISOString(),
+      actorUserId: user.id, action: 'auth.login.succeeded'
+    };
+    const durableEntry: DurableAuthLogin = {
+      ...refresh.session, mfaVerified, authVersion: user.authVersion ?? 0,
+      auditId: securityEvent.id, auditAt: securityEvent.at
+    };
+    try {
+      // A single durable SQL INSERT replaces full graph serialization,
+      // projection, delta verification and the congested state-write pool.
+      await persistDurableAuthLogin(durableEntry);
+    } catch (error) {
+      console.error('Secure login session persistence failed', error);
+      return void res.status(503).json({ error: 'Unable to establish a durable session' });
+    }
+    durableAuthLogins.push(durableEntry);
+    authOverlayRevision++;
+    // Merge onto the latest state after awaiting SQL; concurrent metadata
+    // changes must not be overwritten by an older captured state object.
+    const latestTenant = state.tenants[user.tenantId];
+    state = {
+      ...state,
+      refreshSessions: [...state.refreshSessions, refresh.session],
+      tenants: {
+        ...state.tenants,
+        [user.tenantId]: {
+          ...latestTenant,
+          securityAudit: [...latestTenant.securityAudit, securityEvent].slice(-5000)
+        }
+      }
+    };
+    // Authentication has already committed to its own SQL session table.
+    // No unrelated metadata commit may delay acknowledgment of this token.
+    res.locals.authSqlCommitted = true;
+  } else {
+    const nextState = {
+      ...state,
+      refreshSessions: [...state.refreshSessions, refresh.session],
+      tenants: {
+        ...state.tenants, [user.tenantId]: withSecurityEvent(data, user.id, 'auth.login.succeeded')
+      },
+      revokedAccessTokens: Object.fromEntries(
+        Object.entries(state.revokedAccessTokens).filter(([, expiry]) => expiry > Date.now() / 1000))
+    };
+    persistState(nextState);
+    state = nextState;
+  }
   const sessionStateMs = performance.now() - sessionStateStartedAt;
-  state = nextState;
   setRefreshCookie(res, refresh.token);
   if (loginTiming) {
     // Distinguish password verification, signing and synchronous whole-state
@@ -6253,11 +6330,15 @@ app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response)
       // One SQL INSERT, acknowledged only after commit. The restart overlay
       // prevents a stale platform snapshot from resurrecting the session.
       const previousCommit = latestStateCommit;
-      const durableRevocation = persistAuthLogoutRevocation({
+      const revocation = {
         jti: String(claims.jti), tenantId: principal.tenantId, userId: principal.userId,
         refreshHash: matchingRefresh?.tokenHash ?? null,
         accessExpiresAt: Number(claims.exp),
         refreshExpiresAt: matchingRefresh?.expiresAt ?? null, revokedAt
+      };
+      const durableRevocation = persistAuthLogoutRevocation(revocation).then(() => {
+        durableLogouts.push(revocation);
+        authOverlayRevision++;
       });
       latestStateCommit = Promise.all([previousCommit, durableRevocation]);
       void latestStateCommit.catch((error: unknown) => {
@@ -19796,14 +19877,16 @@ async function dispatchScheduledFlows(): Promise<void> {
         // Requests can persist state while the scheduler is reading SQL.
         // Do not replace a newer local request mutation with an older read.
         const snapshotCommit = latestStateCommit;
+        const snapshotAuthRevision = authOverlayRevision;
         const committed = await readPersistedState();
-        if (latestStateCommit !== snapshotCommit) {
+        if (latestStateCommit !== snapshotCommit || authOverlayRevision !== snapshotAuthRevision) {
           await waitForPersistedState();
           return; // retry on the next interval with a fresh committed snapshot
         }
         if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
-        assertTenantIdentityIsolation(committed);
-        state = stateSchema.parse(committed);
+        const restored = restoreDurableAuthOverlay(stateSchema.parse(committed));
+        assertTenantIdentityIsolation(restored);
+        state = restored;
       }
       await deliverPendingPlatformEvents();
       await executeDueScheduledFlows();

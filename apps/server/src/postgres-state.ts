@@ -45,6 +45,24 @@ const pool = databaseUrl ? new Pool({
   connectionTimeoutMillis: 15000
 }) : null;
 
+
+/**
+ * Authentication writes do not require traversing the platform metadata graph.
+ * A separate warm, single-connection pool prevents a long Flow/scheduler SQL
+ * query from queuing an independent login. Same DB/TLS configuration.
+ */
+const authPool = databaseUrl && persistenceMode === 'typed' ? new Pool({
+  connectionString: databaseUrl.toString(),
+  ssl: process.env.PGSSLMODE === 'disable' ? false : {
+    rejectUnauthorized: process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT !== 'true',
+    ...(process.env.METADRIVE_DB_CA_CERT ? { ca: process.env.METADRIVE_DB_CA_CERT.replace(/\\\\n/g, '\\n') } : {})
+  },
+  max: 1,
+  connectionTimeoutMillis: 15000,
+  idleTimeoutMillis: 600000,
+  keepAlive: true
+}) : null;
+
 /**
  * Only one SQL-backed scheduler may dispatch across API replicas.
  * A session-level advisory lock on a dedicated connection is released in
@@ -200,6 +218,7 @@ export async function closeStateStore(): Promise<void> {
   if (drainActive) await new Promise<void>((resolve) => idleWaiters.push(resolve));
   if (writeFailure !== null) throw writeFailure;
   if (pool) await pool.end();
+  if (authPool) await authPool.end();
 }
 
 // Optional tenant-scoped route-alias SQL registry; never silently fall back to JSONB.
@@ -274,4 +293,74 @@ export async function persistAuthLogoutRevocation(revocation: AuthLogoutRevocati
       ON CONFLICT (jti) DO NOTHING`,
     [revocation.jti,revocation.tenantId,revocation.userId,revocation.refreshHash,
      revocation.accessExpiresAt,revocation.refreshExpiresAt,revocation.revokedAt]);
+}
+
+/**
+ * Typed SQL authentication session fast path.
+ * The INSERT is atomic, returns only after commit and contains only hashed
+ * refresh tokens, session fields and a security-audit event (never a cookie).
+ * The startup overlay makes it safe if a full metadata snapshot predates login.
+ */
+export type DurableAuthLogin = {
+  tokenHash: string; familyId: string; userId: string; tenantId: string;
+  expiresAt: number; usedAt: number | null; revokedAt: number | null;
+  mfaVerified: boolean; authVersion: number;
+  auditId: string; auditAt: string;
+};
+const authLoginSchemaSql = `CREATE TABLE IF NOT EXISTS md_auth_login_sessions (
+  token_hash TEXT PRIMARY KEY,
+  family_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  tenant_id TEXT NOT NULL,
+  expires_at DOUBLE PRECISION NOT NULL,
+  used_at DOUBLE PRECISION,
+  revoked_at DOUBLE PRECISION,
+  mfa_verified BOOLEAN NOT NULL,
+  auth_version INTEGER NOT NULL,
+  audit_id TEXT NOT NULL UNIQUE,
+  audit_at TIMESTAMPTZ NOT NULL
+)`;
+let authLoginSchemaReady: Promise<void> | null = null;
+async function ensureAuthLoginSchema(): Promise<void> {
+  if (!authPool) throw Error('Typed SQL auth-session store unavailable');
+  if (!authLoginSchemaReady) {
+    authLoginSchemaReady = authPool.query(authLoginSchemaSql).then(() => undefined)
+      .catch((error: unknown) => { authLoginSchemaReady = null; throw error; });
+  }
+  await authLoginSchemaReady;
+}
+export async function readDurableAuthLogins(): Promise<DurableAuthLogin[]> {
+  if (persistenceMode !== 'typed') return [];
+  await ensureAuthLoginSchema(); // Startup validates and warms the auth connection.
+  const result = await authPool!.query(
+    `SELECT token_hash,family_id,user_id,tenant_id,expires_at,used_at,revoked_at,
+            mfa_verified,auth_version,audit_id,audit_at
+       FROM md_auth_login_sessions ORDER BY audit_at ASC,token_hash ASC`);
+  return result.rows.map((row: Record<string, unknown>) => ({
+    tokenHash: String(row.token_hash), familyId: String(row.family_id),
+    userId: String(row.user_id), tenantId: String(row.tenant_id),
+    expiresAt: Number(row.expires_at),
+    usedAt: row.used_at === null ? null : Number(row.used_at),
+    revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
+    mfaVerified: row.mfa_verified === true,
+    authVersion: Number(row.auth_version),
+    auditId: String(row.audit_id),
+    auditAt: new Date(String(row.audit_at)).toISOString()
+  }));
+}
+export async function persistDurableAuthLogin(entry: DurableAuthLogin): Promise<void> {
+  if (persistenceMode !== 'typed' || !authPool) throw Error('Typed SQL auth-session store unavailable');
+  if (!entry.tokenHash || !entry.familyId || !entry.userId || !entry.tenantId ||
+      !entry.auditId || !Number.isFinite(entry.expiresAt) ||
+      !Number.isSafeInteger(entry.authVersion) || !Number.isFinite(Date.parse(entry.auditAt)))
+    throw Error('Invalid durable auth-session write');
+  await ensureAuthLoginSchema();
+  await authPool.query(
+    `INSERT INTO md_auth_login_sessions
+      (token_hash,family_id,user_id,tenant_id,expires_at,used_at,revoked_at,
+       mfa_verified,auth_version,audit_id,audit_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [entry.tokenHash,entry.familyId,entry.userId,entry.tenantId,entry.expiresAt,
+     entry.usedAt,entry.revokedAt,entry.mfaVerified,entry.authVersion,
+     entry.auditId,entry.auditAt]);
 }
