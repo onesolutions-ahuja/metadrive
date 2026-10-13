@@ -20,3 +20,17 @@ export function canvasScaleToFitWidth(canvasWidth: number, availableWidth: numbe
 export function canvasUnitsFromScreenDelta(delta: number, scale: number): number {
   return delta / (Number.isFinite(scale) && scale > 0 ? scale : 1);
 }
+
+/** Page Builder only: snap canvas positions while keeping legacy coordinates valid. */
+export function canvasBoundPosition(
+  position: { x: number; y: number; width: number; height: number },
+  canvas: { width: number; height: number },
+  snap = true
+): { x: number; y: number } {
+  const nearest = (value: number) => snap ? Math.round(value / 8) * 8 : Math.round(value);
+  const clamp = (value: number, limit: number) => Math.max(0, Math.min(value, Math.max(0, limit)));
+  return {
+    x: clamp(nearest(position.x), canvas.width - position.width),
+    y: clamp(nearest(position.y), canvas.height - position.height)
+  };
+}
