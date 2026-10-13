@@ -4610,6 +4610,17 @@ function MetadataBoundPageComponent({
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   const initializedSessions = useRef<Set<string>>(new Set());
+  // Synchronise independent POS Page Builder layers after any Flow mutation.
+  useEffect(() => {
+    const sync = (event: Event) => {
+      const detail = (event as CustomEvent<{pageSessionKey:string;sessionId:string}>).detail;
+      if (detail?.pageSessionKey !== pageSessionKey) return;
+      if (detail.sessionId && detail.sessionId !== sessionId) setSessionId(detail.sessionId);
+      setRevision(value => value + 1);
+    };
+    window.addEventListener('metadrive:page-flow-mutated',sync);
+    return () => window.removeEventListener('metadrive:page-flow-mutated',sync);
+  },[pageSessionKey,sessionId]);
   useEffect(() => {
     let active = true;
     setRecords([]); setCartRecords([]); setCustomerRecords([]); setCategoryRecords([]); setDataError('');
@@ -4745,6 +4756,9 @@ function MetadataBoundPageComponent({
         setSessionId(newSession);
       }
       setRevision((value) => value + 1);
+      window.dispatchEvent(new CustomEvent('metadrive:page-flow-mutated', {
+        detail: {pageSessionKey,sessionId: binding.resetSessionOnSuccess === true ? window.sessionStorage.getItem('metadrive-page-session:' + pageSessionKey) ?? sessionId : sessionId}
+      }));
       return {
         ...response,
         completed: typeof binding.successOutput === 'string'
