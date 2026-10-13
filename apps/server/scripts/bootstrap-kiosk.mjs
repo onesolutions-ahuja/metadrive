@@ -111,12 +111,19 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
     if (!Array.isArray(tenant.records.Product__c)) tenant.records.Product__c = [];
     // Demonstration catalogue is ordinary records, never embedded inside the page or component code.
     const demoProducts = [
-      ['Classic Burger', 4.99, 'Burgers', 'Beef patty with cheese and salad', 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=620'],
-      ['Chicken Burger', 5.99, 'Burgers', 'Crispy chicken with lettuce', 'https://images.unsplash.com/photo-1606755962773-d324e0a13086?w=620'],
-      ['French Fries', 2.49, 'Sides', 'Golden crispy fries', 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=620'],
-      ['Loaded Fries', 3.99, 'Sides', 'Fries with cheese sauce', 'https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?w=620'],
-      ['Cola', 1.99, 'Drinks', 'Chilled sparkling drink', 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=620'],
-      ['Vanilla Ice Cream', 2.79, 'Desserts', 'Smooth vanilla ice cream', 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=620']
+      ['Classic Beef Burger', 5.49, 'Burgers', 'Grilled beef, cheddar, lettuce and house sauce', 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=620'],
+      ['Double Cheese Burger', 7.49, 'Burgers', 'Two grilled beef patties and melted cheese', 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=620'],
+      ['Crispy Chicken Burger', 5.99, 'Chicken', 'Crunchy chicken fillet with fresh lettuce', 'https://images.unsplash.com/photo-1606755962773-d324e0a13086?w=620'],
+      ['Spicy Chicken Burger', 6.29, 'Chicken', 'Spiced crispy chicken with creamy sauce', 'https://images.unsplash.com/photo-1606755962531-cb2edb0e1a8f?w=620'],
+      ['Chicken Tenders', 4.99, 'Chicken', 'Golden seasoned chicken breast strips', 'https://images.unsplash.com/photo-1562967914-608f82629710?w=620'],
+      ['Chicken Wrap', 5.49, 'Wraps', 'Crispy chicken, salad and dressing in a soft wrap', 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=620'],
+      ['Classic Fries', 2.49, 'Sides', 'Golden, lightly salted potato fries', 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=620'],
+      ['Cheesy Loaded Fries', 3.99, 'Sides', 'Crispy fries topped with warm cheese sauce', 'https://images.unsplash.com/photo-1630384060421-cb20d0e0649d?w=620'],
+      ['Garden Side Salad', 2.99, 'Sides', 'Fresh lettuce, tomato and cucumber', 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=620'],
+      ['Sparkling Cola', 1.99, 'Drinks', 'Chilled sparkling soft drink', 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=620'],
+      ['Orange Juice', 2.49, 'Drinks', 'Refreshing orange juice', 'https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=620'],
+      ['Vanilla Sundae', 2.79, 'Desserts', 'Creamy vanilla ice cream', 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=620'],
+      ['Chocolate Brownie', 3.29, 'Desserts', 'Rich chocolate brownie', 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=620']
     ];
     for (const [name, price, category, description, image] of demoProducts) {
       if (!tenant.records.Product__c.some((r) => r.Name === name)) {
@@ -207,7 +214,7 @@ if (process.env.METADRIVE_KIOSK_BOOTSTRAP === 'true') {
     const credentials = promisify(scryptCallback);
     for (const [email, label, profileId] of [
       ['till@unesolutions.co.uk', 'Till Test User', 'till-user'],
-      ['kisosk@unesolutions.co.uk', 'Kiosk Test User', 'kiosk-user']
+      ['kiosk@unesolutions.co.uk', 'Kiosk Test User', 'kiosk-user']
     ]) {
       let user = state.users.find((u) => u.email.toLowerCase() === email);
       if (!user) {
