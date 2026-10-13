@@ -127,7 +127,7 @@ try {
 
   await page.goto(base + '/une/setup/page-builder/' + pageApiName);
   await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
-  await page.getByRole('button', { name: 'Data & Actions' }).click();
+  await page.getByRole('tab', { name: 'Data & Actions' }).click();
   const mapping = page.getByLabel('Flow input mapping').first();
   await mapping.waitFor();
   for (const name of ['ItemId', 'Quantity', 'SessionId', 'Confirmed']) {
@@ -151,7 +151,7 @@ try {
 
   await page.reload();
   await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
-  await page.getByRole('button', { name: 'Data & Actions' }).click();
+  await page.getByRole('tab', { name: 'Data & Actions' }).click();
   const restored = page.getByLabel('Flow input mapping').first();
   assert.equal(await restored.getByLabel('ItemId source').inputValue(), 'Event Field');
   assert.equal(await restored.getByLabel('ItemId event property').inputValue(), 'item.id');
