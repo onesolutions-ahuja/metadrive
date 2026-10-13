@@ -88,7 +88,7 @@ try{
   await tab.locator('#login-password').fill(password);
   await tab.locator('button.auth-submit').click();
   await tab.locator('.auth-screen').waitFor({state:'hidden'});
-  await tab.goto(site+'/une/setup/page-builder/'+page);
+  await tab.goto(site+'/une/setup/page-builder');
   await tab.getByRole('button',{name:'Open page routes'}).click();
   const modal=tab.getByRole('dialog',{name:'Page routes'});
   await modal.getByLabel('Alias application').selectOption(app);
@@ -105,7 +105,7 @@ try{
     await tab.locator('[data-lightning-page="'+page+'"]').waitFor();
   }
   await tab.setViewportSize({width:1440,height:900});
-  await tab.goto(site+'/une/setup/page-builder/'+page);
+  await tab.goto(site+'/une/setup/page-builder');
   await tab.getByRole('button',{name:'Open page routes'}).click();
   const aliasRow=tab.getByRole('table',{name:'Route aliases'})
     .getByRole('row').filter({hasText:'my-checkout'});

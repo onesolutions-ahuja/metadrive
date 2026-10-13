@@ -65,17 +65,17 @@ try{
   const catalog=(await request('/metadata/pages',token)).pages;
   const initial=catalog.find(item=>item.pageType==='Record Page'&&item.targetObject==='Account')??catalog[0];
   assert(initial,'Page Builder requires a bootstrap page');
-  await page.goto(origin+'/une/setup/page-builder/'+initial.apiName);
-  await page.getByRole('button',{name:'Desktop preview'}).waitFor();
+  await page.goto(origin+'/une/setup/page-builder');
+  await page.getByRole('button',{name:'New Page'}).waitFor();
   await page.getByRole('button',{name:'New Page'}).click();
   await page.locator('#new-lightning-page-label').fill('MD09 Guided App');
+  await page.locator('#new-lightning-page-layout-mode').selectOption('template');
   await page.locator('#new-lightning-page-type').selectOption('App Page');
   await page.locator('#new-lightning-page-object').selectOption('Account');
   await page.locator('#new-lightning-page-app').selectOption(appId);
   await page.locator('#new-lightning-page-template').selectOption('header-main');
   const wizard=page.getByRole('dialog',{name:'Create a Lightning page'});
-  await wizard.getByLabel('Phone').check();
-  await wizard.getByLabel('Desktop and tablet').uncheck();
+  await wizard.getByLabel('Target device').selectOption('Phone');
   const failedRequests=[];
   page.on('response',async response=>{
     if(response.url().includes('/api/metadata/pages/')&&!response.ok()) {
@@ -104,7 +104,8 @@ try{
   assert.equal(saved.template,'header-main');
   assert.deepEqual(saved.devices,['Phone']);
   assert.deepEqual(saved.activationAssignments,[], 'App Pages must not use record/home activation assignments');
-  await page.getByRole('button',{name:'Activate'}).click();
+  await page.getByRole('button',{name:'Back to page list'}).click();
+  await page.getByRole('row').filter({hasText:newApi}).getByRole('button',{name:'Activate MD09 Guided App'}).click();
   let updatedApp;
   for(let i=0;i<35;i++){
     updatedApp=(await request('/metadata/apps',token)).apps.find(item=>item.apiName===appId);
@@ -114,11 +115,12 @@ try{
   assert(updatedApp?.navigationPageApiNames.includes(newApi),'Activation must attach the page to the selected application');
   assert(updatedApp.navigationOrder.some(entry=>entry.type==='App Page'&&entry.apiName===newApi));
   await page.reload();
-  await page.getByRole('button',{name:'Phone preview'}).waitFor();
+  await page.getByRole('button',{name:'New Page'}).waitFor();
 
   // A Record Page must not silently inherit an unrelated object's API name.
   await page.getByRole('button',{name:'New Page'}).click();
   await page.locator('#new-lightning-page-label').fill('MD09 Guided Record');
+  await page.locator('#new-lightning-page-layout-mode').selectOption('template');
   await page.locator('#new-lightning-page-type').selectOption('Record Page');
   await page.locator('#new-lightning-page-object').selectOption('Contact');
   await page.locator('#new-lightning-page-app').selectOption('');
