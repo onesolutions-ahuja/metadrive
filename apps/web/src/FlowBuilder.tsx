@@ -1,4 +1,5 @@
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
+import FlowTestsPanel from './FlowTestsPanel';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { parseComponentProperties } from './componentProperties';
@@ -84,6 +85,7 @@ type FlowBuilderProps = {
   onActivate: () => void;
   onRun: () => void;
   onDebug: () => void;
+  onRunTests: (flow: FlowDefinitionMetadata) => Promise<Array<{ id: string; label: string; passed: boolean; actualStatus: string; details: string }>>;
   onNotify: (message: string) => void;
   onSaveNamedCredential: (credential: {
     id?: string; name: string; label: string; protocol: NamedCredentialMetadata['protocol']; baseUrl: string;
@@ -132,7 +134,7 @@ function displayValue(value: unknown): string {
 export default function FlowBuilder({
   landing = false, flow, flows, onListFlows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
-  onAdd, onUpdateLabel, onUpdateConfig, onRemove, onValidate, onSave, onActivate, onRun, onDebug, onNotify,
+  onAdd, onUpdateLabel, onUpdateConfig, onRemove, onValidate, onSave, onActivate, onRun, onDebug, onRunTests, onNotify,
   onSaveNamedCredential, onDeleteNamedCredential, onRotateNamedCredential, onSaveEmailAlert, onDeleteEmailAlert, onSavePlatformEvent, onDeletePlatformEvent
 }: FlowBuilderProps) {
   const flowComponents = libraryComponents.filter((component) => component.surfaces.includes('flow'));
@@ -1164,6 +1166,7 @@ export default function FlowBuilder({
             if (file) onImportFlow(file);
             event.target.value = '';
           }} /></label><p className="settings-panel-copy">Import creates a separate Draft and will not overwrite an existing Flow.</p></div>
+          <FlowTestsPanel flow={flow} isDirty={isDirty} canRun={canRunFlows} onChange={onFlowChange} onRunTests={onRunTests} onNotify={onNotify} />
           <div className="toolbox-group"><h3>Flow Description</h3><label className="form-label">Description<textarea className="form-control" rows={3} value={flow.description ?? ''} onChange={(event) => onFlowChange({ ...flow, description: event.target.value })} /></label></div>
           <div className="toolbox-group"><h3>New Flow</h3><label className="form-label">Flow Type<select className="form-control" value={newFlowType ?? ''} onChange={(event) => setNewFlowType(event.target.value ? event.target.value as FlowDefinitionMetadata['flowType'] : null)}><option value="">Select flow type</option>{flowTypeOptions.map((option) => <option key={option.type} value={option.type}>{option.type}</option>)}</select></label>{newFlowType && <><label className="form-label">Flow Name<input className="form-control" value={newFlowLabel} onChange={(event) => setNewFlowLabel(event.target.value)} /></label><button className="btn btn-brand" disabled={!newFlowLabel.trim()} onClick={() => { onCreateFlow(newFlowLabel.trim(), newFlowType); setNewFlowLabel(''); }}><Plus size={13} />Create Flow</button></>}</div>
           <div className="toolbox-group"><h3>Platform Events</h3>
