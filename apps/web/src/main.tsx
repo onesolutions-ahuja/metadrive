@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
 import MarketingSite from './MarketingSite';
-import './styles.css';
 
-// The public website lives at /; customer workspaces and deep links stay in
-// the existing authenticated application. Do not run session refresh on /.
+// Keep the authenticated workspace, including its large builder code and CSS,
+// out of the initial public marketing bundle.
+const Workspace = lazy(async () => {
+  await import('./styles.css');
+  return import('./App');
+});
+
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
 const pathname = basePath && window.location.pathname.startsWith(basePath + '/')
   ? window.location.pathname.slice(basePath.length)
@@ -14,6 +17,8 @@ const isMarketingHome = pathname === '/' || pathname === '/index.html' || (Boole
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {isMarketingHome ? <MarketingSite /> : <App />}
+    {isMarketingHome
+      ? <MarketingSite />
+      : <Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', fontFamily: 'system-ui,sans-serif' }}>Loading your workspace…</div>}><Workspace /></Suspense>}
   </React.StrictMode>
 );
