@@ -83,7 +83,7 @@ try{
   browser=await chromium.launch({headless:true,args:['--no-sandbox']});
   const tab=await browser.newPage({viewport:{width:1440,height:900}});
   const errors=[];tab.on('pageerror',e=>errors.push(e.message));
-  await tab.goto(site);
+  await tab.goto(site+'/une/login');
   await tab.locator('#login-email').fill(email);
   await tab.locator('#login-password').fill(password);
   await tab.locator('button.auth-submit').click();

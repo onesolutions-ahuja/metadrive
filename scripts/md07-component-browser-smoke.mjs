@@ -48,7 +48,7 @@ try {
   const page=await browser.newPage({viewport:{width:1440,height:900}});
   page.setDefaultTimeout(20000);
   const uncaught=[];page.on('pageerror',(error)=>uncaught.push(error.message));
-  await page.goto('http://127.0.0.1:5173/');
+  await page.goto('http://127.0.0.1:5173/une/login');
   await page.locator('#login-email').fill(login.email);
   await page.locator('#login-password').fill(login.password);
   await page.locator('button.auth-submit').click();
