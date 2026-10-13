@@ -1,5 +1,6 @@
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
+import { readOfflineMetadata, saveOfflineMetadata } from './offlineMetadataCache';
 import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
 import SchemaBuilder from './SchemaBuilder';
@@ -1576,14 +1577,29 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, {read:boolean;edit:boolean}>; recordTypeAccess: Record<string, boolean> } }>('/auth/me',
               { user: { profileId:'',permissions:[],fieldAccess:{},recordTypeAccess:{} } })
           ]);
-          if (firstObjects.objects.length) {
-            setObjects(firstObjects.objects);
-            setObject(firstObjects.objects.find((item) => item.apiName === object.apiName) ?? firstObjects.objects[0]);
+          // A snapshot is display-only and is never accepted in place of
+          // authenticated identity or server-side permissions. Restore solely
+          // when the live session was verified but presentation endpoints failed.
+          const signedIn = firstSession.user as typeof firstSession.user & {id?:string;tenantId?:string};
+          const offlineView = signedIn.id && signedIn.tenantId
+            && (!firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length)
+            ? await readOfflineMetadata({ userId:signedIn.id, tenantId:signedIn.tenantId }).catch(() => null)
+            : null;
+          const displayObjects = firstObjects.objects.length ? firstObjects.objects : (offlineView?.objects ?? []) as ObjectMetadata[];
+          const displayPages = firstPages.pages.length ? firstPages.pages : (offlineView?.pages ?? []) as LightningPageMetadata[];
+          const displayApps = firstApps.apps.length ? firstApps.apps : (offlineView?.apps ?? []) as LightningAppMetadata[];
+          if (offlineView) {
+            setLibraryComponents(offlineView.components as LibraryComponentMetadata[]);
+            setToast('Showing last saved page layout. Cloud actions require a connection.');
           }
-          if (firstPages.pages.length) setPages(firstPages.pages);
-          setApps(firstApps.apps);
-          if (!firstApps.apps.some((item) => item.apiName === currentAppId))
-            setCurrentAppId(firstApps.apps[0]?.apiName ?? '');
+          if (displayObjects.length) {
+            setObjects(displayObjects);
+            setObject(displayObjects.find((item) => item.apiName === object.apiName) ?? displayObjects[0]);
+          }
+          if (displayPages.length) setPages(displayPages);
+          setApps(displayApps);
+          if (!displayApps.some((item) => item.apiName === currentAppId))
+            setCurrentAppId(displayApps[0]?.apiName ?? '');
           setCurrentProfileId(firstSession.user.profileId);
           setCurrentFieldAccess(firstSession.user.fieldAccess);
           setCurrentRecordTypeAccess(firstSession.user.recordTypeAccess);
@@ -1618,7 +1634,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           recover<{ territories: DashboardTerritoryMetadata[]; canManage: boolean }>('/metadata/dashboard-territories', { territories: [], canManage: false }),
           recover<{ folders: ReportFolderMetadata[]; canManageAll: boolean }>('/metadata/report-folders', { folders: [], canManageAll: false }),
           recover<{ reports: ReportMetadata[] }>('/metadata/reports', { reports: [] }),
-          recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } })
+          recover<{ user: { id?: string; tenantId?: string; profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } })
         ]);
         // RBAC settings are optional for initial page rendering. Fetch them
         // independently so a slow permissions response cannot block all pages.
@@ -1668,6 +1684,17 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         setCanManageReportFolders(reportFolderPayload.canManageAll);
         setDashboardUserId(dashboardPayload.userId);
         setDashboardRunningUserIds(dashboardPayload.runningUserIds);
+        // Cache presentation metadata only after /auth/me confirms the live user and
+        // all authorised metadata endpoints return successfully. Do not cache
+        // credentials, permissions, business records or executable checkout state.
+        if (sessionPayload.user.id && sessionPayload.user.tenantId
+          && !failures.length && objectPayload.objects.length && pagePayload.pages.length) {
+          void saveOfflineMetadata(
+            { userId: sessionPayload.user.id, tenantId: sessionPayload.user.tenantId },
+            { objects: objectPayload.objects, pages: pagePayload.pages, apps: appPayload.apps,
+              components: libraryPayload.components }
+          ).catch(() => { /* Offline storage is optional; online rendering still works. */ });
+        }
         setCurrentProfileId(sessionPayload.user.profileId);
         setCanManageUserIdentities(sessionPayload.user.permissions.includes('security:manage'));
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')

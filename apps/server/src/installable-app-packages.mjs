@@ -1,0 +1,84 @@
+/**
+ * Install declarative business-app metadata through the shared AppExchange lifecycle.
+ * Neither this primitive nor Object/Flow execution contains kiosk-specific logic.
+ * Existing tenant definitions and customisations are never overwritten.
+ */
+export function applyInstallableAppPackages(tenant, catalog) {
+  let next = tenant;
+  const packages = Array.isArray(catalog?.packages) ? catalog.packages : [];
+  for (const pkg of packages) {
+    const installed = (next.records?.Connector_App__c ?? []).find(row => row.AppKey__c === pkg.appKey);
+    if (!installed || installed.Installed__c !== true || !['Trial','Licensed'].includes(installed.LicenceStatus__c)) continue;
+    const objects = [...next.objects];
+    let changed = false;
+    for (const candidate of [...(pkg.objects ?? []), ...(pkg.extendObjects ?? [])]) {
+      const at = objects.findIndex(item => item.apiName === candidate.apiName);
+      if (at < 0) {
+        if (!candidate.label || !candidate.kind) throw Error('A new package object needs its complete metadata definition');
+        objects.push(structuredClone(candidate));
+        changed = true;
+      } else {
+        const old = objects[at];
+        const additions = (candidate.fields ?? []).filter(field =>
+          !(old.fields ?? []).some(existing => existing.apiName === field.apiName));
+        if (additions.length) {
+          objects[at] = {...old, fields:[...old.fields,...structuredClone(additions)]};
+          changed = true;
+        }
+      }
+    }
+    const mergeByApiName = (oldItems, newItems) => {
+      const additions = (newItems ?? []).filter(item => !oldItems.some(old => old.apiName === item.apiName));
+      if (additions.length) changed = true;
+      return [...oldItems,...structuredClone(additions)];
+    };
+    const flows = mergeByApiName(next.flows, pkg.flows);
+    const apps = mergeByApiName(next.apps, pkg.apps);
+    const pages = mergeByApiName(next.pages, pkg.pages);
+    const permissionTemplate = pkg.profile;
+    let accessControl = next.accessControl;
+    if (permissionTemplate && !accessControl.profiles.some(p => p.id === permissionTemplate.id)) {
+      const standard = accessControl.profiles.find(p=>p.id === 'standard-user')
+        ?? accessControl.profiles.find(p=>p.id !== 'system-administrator');
+      if (!standard) throw Error('No assignable profile is available for app installation');
+      const perms = {};
+      for (const [name, rights] of Object.entries(permissionTemplate.objectPermissions ?? {})) {
+        perms[name] = {read:false,create:false,edit:false,delete:false,viewAll:false,modifyAll:false,...rights};
+      }
+      accessControl = {...accessControl,profiles:[...accessControl.profiles,{
+        ...structuredClone(standard),
+        id:permissionTemplate.id,label:permissionTemplate.label,
+        apiName:permissionTemplate.apiName,
+        isStandard:false,
+        systemPermissions:[...(permissionTemplate.systemPermissions ?? [])],
+        objectPermissions:perms,
+        fieldPermissions: Object.fromEntries(objects.flatMap(object=>
+          object.fields.map(field=>[object.apiName+'.'+field.apiName,{
+            read:Boolean(perms[object.apiName]?.read),
+            edit:Boolean(perms[object.apiName]?.create || perms[object.apiName]?.edit)
+          }]))),
+        appPermissions:{[pkg.apps?.[0]?.apiName]:true},
+        tabPermissions:{}
+      }]};
+      changed = true;
+    }
+    const appId = pkg.apps?.[0]?.apiName;
+    const profileId = pkg.profile?.id;
+    if (appId && profileId) {
+      const index = pages.findIndex(page=>page.apiName === pkg.pages?.[0]?.apiName);
+      if (index !== -1) {
+        const page = pages[index];
+        const exists = (page.activationAssignments ?? []).some(a => a.appId === appId && a.profileId === profileId);
+        if (!exists) {
+          pages[index] = {...page,activationAssignments:[...(page.activationAssignments ?? []),{
+            id:'package-'+pkg.appKey+'-home',
+            scope:'App and Profile',appId,profileId,recordTypeId:null,formFactors:['Desktop','Phone']
+          }]};
+          changed = true;
+        }
+      }
+    }
+    if (changed) next = {...next,objects,flows,apps,pages,accessControl};
+  }
+  return next;
+}

@@ -32,7 +32,9 @@ for(const name of [
   'flow-formula-syntax.mjs',
   'flow-create-collection.mjs',
   'flow-collection-assignment.mjs',
-  'tenant-usage.mjs'
+  'tenant-usage.mjs',
+  'installable-app-packages.mjs',
+  'bundled-app-components.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }

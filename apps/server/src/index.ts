@@ -31,6 +31,8 @@ import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
+import { applyInstallableAppPackages } from './installable-app-packages.mjs';
+import { ensureBundledAppComponents } from './bundled-app-components.mjs';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -3650,6 +3652,7 @@ const connectorAppCatalog = z.object({
   packages: z.array(z.record(z.unknown())),
   flows: z.array(flowSchema)
 }).parse(JSON.parse(readFileSync(new URL('../data/connector-apps.json', import.meta.url), 'utf8')));
+const installableAppCatalog = JSON.parse(readFileSync(new URL('../data/installable-app-packages.json', import.meta.url), 'utf8'));
 function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId: string): RuntimeRecord[] {
   const existing = [...(records ?? [])];
   const now = new Date().toISOString();
@@ -9788,8 +9791,10 @@ function persistTenantRecords(tenantId: string, tenant: TenantData): void {
   for (const [key, sequence] of Object.entries(currentSequences)) {
     autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
   }
-  const updatedTenant = { ...tenant, autoNumberSequences };
-  const nextState = { ...state, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
+  const updatedTenant = applyInstallableAppPackages({ ...tenant, autoNumberSequences }, installableAppCatalog) as TenantData;
+  const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
+    updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
+  const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
   persistState(nextState);
   state = nextState;
 }
