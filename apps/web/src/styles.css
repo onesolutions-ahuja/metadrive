@@ -2297,3 +2297,101 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .external-page-preview .nested-page-component.component-rendered-preview { position: relative; }
 
 .page-nested-empty { padding: 12px; margin: 6px; border: 1px dashed #8daaa0; border-radius: 5px; background: #f7fbf9; color: #50645d; font-size: 11px; text-align: center; pointer-events: none; }
+
+
+/* Shared record navigation: one object selector, two deliberately independent searches. */
+.header-home-link {
+  display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px;
+  height: 34px; padding: 0 9px; border: 0; border-radius: 6px;
+  background: transparent; white-space: nowrap; color: var(--text);
+}
+.header-home-link:hover { background: #eeece8; }
+.header-record-picker { position: relative; flex: 0 0 clamp(140px, 13vw, 210px); min-width: 0; }
+.header-record-picker-control {
+  display: flex; align-items: center; min-width: 0; height: 34px; gap: 4px;
+  border: 1px solid #cbd3db; border-radius: 6px; padding: 0 8px; background: #fff;
+}
+.header-record-picker-control:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.header-record-picker-control input { flex: 1; width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; }
+.header-record-picker-control svg { flex: 0 0 auto; color: #68717a; pointer-events: none; }
+.header-record-picker-options {
+  position: absolute; top: calc(100% + 5px); left: 0; z-index: 120;
+  width: max(100%, 240px); max-width: min(420px, calc(100vw - 20px));
+  max-height: min(60vh, 430px); overflow-y: auto; padding: 5px;
+  border: 1px solid #d8dde5; border-radius: 7px; box-shadow: 0 10px 28px #0002; background: #fff;
+}
+.header-record-picker-options button {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 9px 10px; border: 0; border-radius: 5px; background: #fff;
+  color: var(--text); text-align: left; cursor: pointer;
+}
+.header-record-picker-options button:hover,
+.header-record-picker-options button.selected { background: #edf5f6; }
+.header-record-picker-options small { color: #6b7379; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.header-searches {
+  display: flex; align-items: center; gap: 9px; min-width: 0; flex: 1 1 360px;
+  justify-content: center; margin: 0 auto;
+}
+.salesforce-header .global-record-search {
+  position: relative; flex: 1 1 230px; width: auto; min-width: 95px;
+  max-width: 380px; margin: 0; padding-left: 6px;
+}
+.global-search-submit {
+  display: grid; place-items: center; flex: 0 0 auto;
+  padding: 0; border: 0; background: transparent; color: #65757a;
+}
+.global-record-search-results {
+  position: absolute; top: calc(100% + 7px); left: 0; width: min(440px, calc(100vw - 24px));
+  max-height: 60vh; overflow-y: auto; z-index: 120; border-radius: 8px;
+  border: 1px solid #d8dde5; background: #fff; box-shadow: 0 10px 30px #0002;
+  color: var(--text);
+}
+.global-search-results-heading {
+  display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px;
+  background: #f7f9fa; border-bottom: 1px solid #e5e9ed;
+}
+.global-search-results-heading span { color: #697680; font-size: 11px; }
+.global-record-search-results > button {
+  display: flex; flex-direction: column; gap: 4px; width: 100%;
+  padding: 10px 12px; border: 0; border-bottom: 1px solid #edf0f2;
+  text-align: left; background: white; color: var(--text);
+}
+.global-record-search-results > button:hover { background: #eef6f7; }
+.global-record-search-results small { font-size: 11px; color: #68757c; }
+.header-search-empty { margin: 0; padding: 13px; color: #65757c; }
+.header-list-search {
+  display: flex; flex: 1 1 185px; max-width: 260px; min-width: 90px;
+  gap: 7px; align-items: center; height: 34px; padding: 0 9px;
+  border: 1px solid #cbd3db; border-radius: 6px; color: #64737b; background: #fff;
+}
+.header-list-search:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.header-list-search input { flex: 1; min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; }
+.salesforce-header .header-tools { margin-left: auto; }
+@media (max-width: 1100px) {
+  .salesforce-header { gap: 7px; padding-inline: 9px; }
+  .header-record-picker { flex-basis: 125px; }
+  .header-searches { gap: 5px; }
+  .header-list-search { max-width: 190px; }
+  .navigation-load-time { display: none; }
+}
+@media (max-width: 700px) {
+  .header-home-link { width: 30px; min-width: 30px; padding: 0; font-size: 0; justify-content: center; }
+  .header-record-picker { flex-basis: 104px; }
+  .header-records-link { width: 30px; min-width: 30px; padding: 0; font-size: 0; }
+  .header-searches { flex-basis: 90px; }
+  .global-record-search { max-width: none; }
+  .header-list-search { flex-basis: 90px; }
+  .header-tools { gap: 1px; }
+  .header-tools .navigation-load-time { display: none; }
+}
+@media (max-width: 520px) {
+  .salesforce-header { height: auto; min-height: 48px; flex-wrap: wrap; column-gap: 5px; row-gap: 0; padding-bottom: 6px; }
+  .header-record-picker { flex-basis: 92px; }
+  .header-searches { order: 3; flex: 1 0 100%; width: 100%; margin-top: 5px; }
+  .header-list-search { display: flex; flex: 1 1 48%; max-width: none; }
+  .salesforce-header .global-record-search { flex: 1 1 48%; }
+  .header-record-picker-options { left: -45px; }
+  .global-record-search-results { left: 0; }
+  .app-strip { top: 87px; }
+  .setup-sidebar { top: 87px; height: calc(100dvh - 87px); max-height: calc(100dvh - 87px); }
+}

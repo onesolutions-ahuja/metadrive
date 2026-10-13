@@ -77,6 +77,7 @@ import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayout
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
+import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
 import NamedCredentials from './NamedCredentials';
 import TenantManagement from './TenantManagement';
@@ -197,6 +198,8 @@ let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
 function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => Promise<void> | void; onPasswordChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(profileMenuRef, open, () => setOpen(false));
   const [editing, setEditing] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -217,7 +220,7 @@ function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => 
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not change password'); }
     finally { setBusy(false); }
   };
-  return <div className="profile-menu-wrap">
+  return <div className="profile-menu-wrap" ref={profileMenuRef}>
     <button type="button" className="user-menu" aria-label="User profile" aria-expanded={open}
       onClick={() => setOpen((state) => !state)}>Profile <ChevronDown size={13} /></button>
     {open && <div className="profile-menu-panel">
@@ -247,6 +250,8 @@ function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => 
 function ConnectionHealthIndicator() {
   const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; database: string; latency: number | null; checked: string }>({ status: 'checking', database: 'checking', latency: null, checked: '' });
   const [expanded, setExpanded] = useState(false);
+  const healthRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(healthRef, expanded, () => setExpanded(false));
   useEffect(() => {
     let alive = true;
     const check = async () => {
@@ -273,7 +278,7 @@ function ConnectionHealthIndicator() {
     const interval = window.setInterval(() => void check(), 30000);
     return () => { alive = false; window.clearInterval(interval); };
   }, []);
-  return <div className="connection-health-wrap">
+  return <div className="connection-health-wrap" ref={healthRef}>
     <button type="button" className={`icon-button connection-health-${health.status}`} onClick={() => setExpanded((value) => !value)}
       aria-label={`API connection: ${health.status}`} aria-expanded={expanded} title={`API connection: ${health.status}`}>
       {health.status === 'offline' ? <WifiOff size={18} /> : <Wifi size={18} />}
@@ -1287,7 +1292,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     window.matchMedia('(max-width: 600px)').matches ? 'Phone' : 'Desktop');
   const [workspace, setWorkspace] = useState<WorkspaceId>(() => route.kind === 'setup' ? route.workspace : 'home');
   const [quickFind, setQuickFind] = useState('');
-  const [globalSearch, setGlobalSearch] = useState('');
+  const [recordSearch, setRecordSearch] = useState('');
   const [launcherOpen, setLauncherOpen] = useState(false);
   const [setupSidebarCollapsed, setSetupSidebarCollapsed] = useState(false);
   const [objectSearch, setObjectSearch] = useState('');
@@ -1314,6 +1319,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [notificationsUnreadCount, setNotificationsUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(notificationRef, notificationsOpen, () => setNotificationsOpen(false));
   const [approvalRequests, setApprovalRequests] = useState<ApprovalRequestMetadata[]>([]);
   const [approvalBusyId, setApprovalBusyId] = useState('');
   const [approvalProcesses, setApprovalProcesses] = useState<ApprovalProcessMetadata[]>([]);
@@ -1849,8 +1856,14 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const currentAppNavigation = currentApp
     ? reconcileNavigationOrder(currentApp.navigationItems ?? [], currentApp.navigationPageApiNames ?? [], currentApp.navigationOrder ?? [])
     : [];
-  const currentAppObjectTabs = currentAppNavigation.filter((entry) =>
-    entry.type === 'Object' && objects.some((object) => object.apiName === entry.apiName)).map((entry) => entry.apiName);
+  // Build the complete navigable object catalogue from tenant metadata, not app tabs.
+  // The field map reflects effective RBAC; record APIs check object permissions again.
+  const readableRecordObjects = useMemo(() => objects.filter((item) =>
+    item.fields.some((field) => currentFieldAccess[`${item.apiName}.${field.apiName}`]?.read)
+  ), [objects, currentFieldAccess]);
+  useEffect(() => { setRecordSearch(''); }, [route.kind, route.kind === 'record-list' || route.kind === 'record-detail' ? route.objectApiName : '']);
+  const appUtilityRef = useRef<HTMLDivElement>(null);
+  useDismissOnOutside(appUtilityRef, Boolean(activeUtility), () => setActiveUtility(null));
   const filteredSetupGroups = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
     const allowedGroups = setupNavigation.filter((group) => group.group !== 'Platform Administration' || canManagePlatformTenants);
@@ -1975,6 +1988,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       return;
     }
     if (item === 'Named Devices') {
+      if (!readableRecordObjects.some((object) => object.apiName === 'NamedDevice__c')) {
+        notify('Named Devices requires Read access in your Profile or Permission Set.');
+        return;
+      }
       navigateRoute({ kind: 'record-list', objectApiName: 'NamedDevice__c' });
       return;
     }
@@ -3366,29 +3383,33 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
-        <button type="button" disabled={!currentAppObjectTabs.length}
+        <button type="button" className="header-home-link" onClick={() =>
+          navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
+          <Monitor size={16} />Home
+        </button>
+        <button type="button" disabled={!readableRecordObjects.length}
           className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
           onClick={() => {
-            const targetObject = currentAppObjectTabs[0];
+            const targetObject = route.kind === 'record-list' || route.kind === 'record-detail'
+              ? route.objectApiName : readableRecordObjects[0]?.apiName;
             if (targetObject) navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
           }}><Database size={16} />Records</button>
-        {currentAppObjectTabs.length > 1 && <select className="header-record-object-select" aria-label="Switch records object"
-          value={(route.kind === 'record-list' || route.kind === 'record-detail') && currentAppObjectTabs.includes(route.objectApiName) ? route.objectApiName : ''}
-          onChange={(event) => {
-            if (event.target.value) navigateRoute({ kind: 'record-list', objectApiName: event.target.value, appId: currentApp?.apiName ?? 'Records' });
-          }}>
-          <option value="">Choose records…</option>
-          {currentAppObjectTabs.map((apiName) => <option key={apiName} value={apiName}>{objects.find((object) => object.apiName === apiName)?.pluralLabel ?? apiName}</option>)}
-        </select>}
-        <div className="global-search">
-          <Search size={15} />
-          <input
-            aria-label="Search this list..."
-            value={globalSearch}
-            onChange={(event) => setGlobalSearch(event.target.value)}
-            placeholder="Search this list..."
-          />
-          <kbd>⌘ K</kbd>
+        <RecordObjectPicker objects={readableRecordObjects}
+          selected={route.kind === 'record-list' || route.kind === 'record-detail' ? route.objectApiName : ''}
+          onSelect={(apiName) => navigateRoute({ kind: 'record-list', objectApiName: apiName, appId: currentApp?.apiName ?? 'Records' })} />
+        <div className="header-searches">
+          <GlobalRecordSearch objects={readableRecordObjects}
+            searchObject={(apiName, term) => apiRequest<{ records: RecordData[] }>(
+              `/records/${encodeURIComponent(apiName)}?${new URLSearchParams({ search: term, limit: '5', offset: '0' })}`)}
+            onSelect={(objectApiName, recordId) => navigateRoute({
+              kind: 'record-detail', objectApiName, recordId, appId: currentApp?.apiName ?? 'Records'
+            })} />
+          {route.kind === 'record-list' && <label className="header-list-search">
+            <Search size={15} aria-hidden="true" />
+            <input type="search" aria-label={`Search ${objects.find((item) => item.apiName === route.objectApiName)?.pluralLabel ?? 'current object'} records`}
+              placeholder={`Search ${objects.find((item) => item.apiName === route.objectApiName)?.pluralLabel ?? 'records'}…`}
+              value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} />
+          </label>}
         </div>
         <div className="header-tools">
           <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt}
@@ -3397,7 +3418,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           <button className="icon-button" aria-label="Help"><CircleHelp size={17} /></button>
           
           <ConnectionHealthIndicator />
-          <div className="notification-center">
+          <div className="notification-center" ref={notificationRef}>
             <button className="icon-button notification-button" aria-label={`Notifications${notificationsUnreadCount ? `, ${notificationsUnreadCount} unread` : ''}`} aria-expanded={notificationsOpen} aria-controls="notification-panel" onClick={toggleNotifications}>
               <Bell size={17} />{notificationsUnreadCount > 0 && <span className="notification-count">{notificationsUnreadCount > 99 ? '99+' : notificationsUnreadCount}</span>}
             </button>
@@ -3430,8 +3451,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         </div>
       </header>
 
-      {route.kind !== 'setup' && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
-        <div className="app-title">
+      {route.kind !== 'setup' && <div className="app-strip" ref={appUtilityRef} style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
+        {currentApp?.apiName !== 'Records' && <div className="app-title">
           <span className="app-icon"><Database size={18} /></span>
           {apps.length > 1
             ? <select className="app-title-switcher" aria-label="Switch app" value={currentApp?.apiName ?? ''}
@@ -3439,7 +3460,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
                 {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
               </select>
             : <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>}
-        </div>
+        </div>}
         <nav className="primary-tabs" aria-label="Workspace navigation">
           {currentAppNavigation.filter((entry) => entry.type === 'App Page').map((entry) => {
             const apiName = entry.apiName;
@@ -3448,10 +3469,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             return <button className={route.kind === 'app-page' && route.pageApiName === apiName ? 'primary-tab active' : 'primary-tab'}
               key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp?.apiName ?? '', pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
           })}
-          <button className={route.kind === 'app-home' ? 'primary-tab active' : 'primary-tab'}
-            onClick={() => navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
-            <Monitor className="rail-icon" size={17} />Home
-          </button>
+
         </nav>
         {currentApp?.utilityItems.map((utility) => <button className="app-utility-button" key={utility}
           aria-expanded={activeUtility === utility} onClick={() => setActiveUtility((current) => current === utility ? null : utility)}>{utility}</button>)}
@@ -3525,7 +3543,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
           {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
-            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={globalSearch} onNavigate={navigateRoute} />}
+            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={recordSearch} onNavigate={navigateRoute} />}
           {route.kind === 'route-alias' && <section className="setup-card" role="status">
             {routeAliasError ? <p role="alert">{routeAliasError}</p> : <p>Resolving route alias…</p>}
           </section>}
@@ -4765,10 +4783,8 @@ function RecordWorkspace({
   const [selectedFieldSetApiName, setSelectedFieldSetApiName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [objectPickerSearch, setObjectPickerSearch] = useState('');
+  const search = headerSearch;
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  useEffect(() => { if (route.kind === 'record-list') { setSearch(headerSearch); setListOffset(0); } }, [headerSearch, route.kind]);
   const [listOffset, setListOffset] = useState(0);
   const [listTotal, setListTotal] = useState(0);
   const [listSort, setListSort] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
@@ -5768,17 +5784,6 @@ function RecordWorkspace({
       <div className="record-object-icon"><Database size={18} /></div>
       <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
       <div className="records-heading-actions">
-        <div className="records-object-combobox">
-          <input className="form-control" aria-label="Filter objects" value={objectPickerSearch}
-            onChange={(event) => setObjectPickerSearch(event.target.value)} placeholder="Find object…" />
-          <select className="form-control records-object-select" aria-label="Choose object" value={object.apiName}
-            onChange={(event) => { setObjectPickerSearch(''); onNavigate({ kind: 'record-list', objectApiName: event.target.value, appId: route.appId }); }}>
-            {!objects.some((item) => item.apiName === object.apiName && item.pluralLabel.toLowerCase().includes(objectPickerSearch.trim().toLowerCase())) &&
-              <option value={object.apiName}>{object.pluralLabel}</option>}
-            {objects.filter((item) => item.pluralLabel.toLowerCase().includes(objectPickerSearch.trim().toLowerCase()) || item.apiName.toLowerCase().includes(objectPickerSearch.trim().toLowerCase()))
-              .map((item) => <option key={item.apiName} value={item.apiName}>{item.pluralLabel}</option>)}
-          </select>
-        </div>
         <button className="btn" onClick={() => setRefreshKey((current) => current + 1)}><RefreshCw size={14} />Refresh</button>
       </div>
     </div>
@@ -5786,7 +5791,6 @@ function RecordWorkspace({
       <div className="records-list-toolbar">
         <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
         <div className="records-list-actions">
-          <label className="records-search"><Search size={14} /><input aria-label={`Search ${object.pluralLabel}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this list…" /></label>
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
           {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
