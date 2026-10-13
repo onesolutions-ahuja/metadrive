@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { synchronizeTypedRecords, verifyTypedRecords } from '../src/normalized-typed-records.mjs';
-import { physicalObjectTable } from '../src/normalized-object-schema.mjs';
+import { physicalObjectTable, physicalTenantOwnerConstraint } from '../src/normalized-object-schema.mjs';
 
 const databaseUrl=process.env.METADRIVE_TEST_DATABASE_URL;
 test('typed metadata widening alters physical columns transactionally without losing records', {
@@ -42,6 +42,19 @@ test('typed metadata widening alters physical columns transactionally without lo
       upgraded.tenants.alpha.objects[0].fields[1].dataType='Currency(12,4)';
       upgraded.tenants.alpha.objects[0].fields[0].label='Product Code';
       upgraded.tenants.alpha.objects[0].label='Inventory Catalogue';
+      // Simulate a pre-upgrade table that lacks the new owner constraint.
+      const sourceObject=await client.query(
+        "SELECT object_id FROM md_v2_object_registry WHERE tenant_id='alpha' AND api_name='Inventory__c'");
+      const owner=physicalTenantOwnerConstraint(sourceObject.rows[0].object_id,'alpha');
+      const sourceTable=physicalObjectTable(sourceObject.rows[0].object_id);
+      await client.query('ALTER TABLE '+sourceTable+' DROP CONSTRAINT '+owner.name);
+      await client.query("INSERT INTO "+sourceTable+"(tenant_id,record_id) VALUES('other-tenant','rogue')");
+      await client.query('BEGIN');
+      try {
+        await assert.rejects(synchronizeTypedRecords(client,upgraded,original),/check constraint/);
+      } finally {await client.query('ROLLBACK');}
+      // No schema or record rewrite can happen while foreign records exist.
+      await client.query("DELETE FROM "+sourceTable+" WHERE tenant_id='other-tenant'");
       await client.query('BEGIN');
       try {
         await synchronizeTypedRecords(client,upgraded,original);
@@ -52,6 +65,13 @@ test('typed metadata widening alters physical columns transactionally without lo
       const table=physicalObjectTable(objects.rows[0].object_id);
       const objectLabel=await client.query('SELECT object_label FROM md_v2_object_registry WHERE object_id=$1',[objects.rows[0].object_id]);
       assert.equal(objectLabel.rows[0].object_label,'Inventory Catalogue');
+      const validatedGuard=await client.query(
+        'SELECT convalidated FROM pg_constraint WHERE conrelid=to_regclass($1) AND conname=$2',
+        [table,owner.name]);
+      assert.equal(validatedGuard.rows[0]?.convalidated,true);
+      await assert.rejects(
+        client.query('INSERT INTO '+table+' (tenant_id,record_id) VALUES($1,$2)',['other-tenant','bad']),
+        /check constraint/,'Physical SQL table must never accept another tenant ID');
       const physical=await client.query('SELECT * FROM '+table+' WHERE tenant_id=$1',['alpha']);
       assert.equal(physical.rows.length,1);
       const columns=await client.query("SELECT data_type,character_maximum_length,numeric_precision,numeric_scale FROM information_schema.columns WHERE table_name=$1 AND column_name IN (SELECT physical_column FROM md_v2_field_registry WHERE object_id=$2)",[table,objects.rows[0].object_id]);
