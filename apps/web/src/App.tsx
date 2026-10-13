@@ -6619,6 +6619,7 @@ function TenantUserLockSettings() {
 function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => void }) {
   const [sessions, setSessions] = useState<Array<{ familyId: string; expiresAt: number; mfaVerified: boolean }>>([]);
   const [password, setPassword] = useState('');
+  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -6634,7 +6635,7 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
       await apiRequest('/auth/sessions/revoke-all', {
         method: 'POST', body: JSON.stringify({ currentPassword: password })
       });
-      setPassword('');
+      setPassword(''); setConfirmingRevoke(false);
       onReauthenticate();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to revoke sessions');
@@ -6649,12 +6650,21 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
       <li key={session.familyId}>Expires {new Date(session.expiresAt * 1000).toLocaleString()}
         {session.mfaVerified ? ' · MFA verified' : ''}</li>
     )}</ul>}
-    <label className="form-label" htmlFor="sessions-revoke-password">Current password</label>
-    <input className="form-control" id="sessions-revoke-password" type="password"
-      autoComplete="current-password" value={password}
-      onChange={(event) => setPassword(event.target.value)} />
-    <button type="button" className="btn" disabled={busy || !password}
-      onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Sign out on all devices'}</button>
+    {!confirmingRevoke && <button type="button" className="btn"
+      onClick={() => setConfirmingRevoke(true)}>Sign out on all devices</button>}
+    {confirmingRevoke && <div className="settings-edit-row">
+      <label className="form-label" htmlFor="sessions-revoke-password">Confirm current password
+        <input className="form-control" id="sessions-revoke-password" type="password"
+          autoComplete="current-password" value={password}
+          onChange={(event) => setPassword(event.target.value)} />
+      </label>
+      <div className="settings-read-first-toolbar">
+        <button type="button" className="btn" disabled={busy}
+          onClick={() => { setPassword(''); setConfirmingRevoke(false); }}>Cancel</button>
+        <button type="button" className="btn btn-brand" disabled={busy || !password}
+          onClick={() => void revokeAll()}>{busy ? 'Revoking…' : 'Confirm sign out on all devices'}</button>
+      </div>
+    </div>}
   </section>;
 }
 
@@ -6684,6 +6694,7 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
   const [mode, setMode] = useState<TenantMfaMode>('Off');
   const [draftMode, setDraftMode] = useState<TenantMfaMode>('Off');
   const [editingPolicy, setEditingPolicy] = useState(false);
+  const [authenticatorAction, setAuthenticatorAction] = useState<'enroll' | 'disable' | null>(null);
   const [canConfigure, setCanConfigure] = useState(false);
   const [enrolled, setEnrolled] = useState(false);
   const [password, setPassword] = useState('');
@@ -6777,11 +6788,12 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
     <h3>My authenticator</h3>
     <p>{enrolled ? 'Your account has an authenticator enrolled.' : 'Your account has no authenticator enrolled.'}</p>
     {mode === 'Off' && <p>Ask a tenant security administrator to enable Optional MFA before enrolling.</p>}
-    {mode !== 'Off' && !enrolled && <>
+    {mode !== 'Off' && !enrolled && !authenticatorAction && <button className="btn" type="button" onClick={() => setAuthenticatorAction('enroll')}>Set up authenticator</button>}
+    {mode !== 'Off' && !enrolled && authenticatorAction === 'enroll' && <div className="settings-edit-row">
       <label className="form-label" htmlFor="mfa-current-password">Current password</label>
       <input className="form-control" id="mfa-current-password" type="password" autoComplete="current-password"
         value={password} onChange={(event) => setPassword(event.target.value)} />
-      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Set up authenticator</button>}
+      {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Continue setup</button>}
       {pending && <>
         <p>Add this key to your authenticator app, then enter its six-digit code.</p>
         <p><strong>Setup key:</strong> <code style={{ overflowWrap: 'anywhere' }}>{pending.setup_secret}</code></p>
@@ -6791,8 +6803,13 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
           value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
         <button className="btn btn-brand" disabled={busy || !/^[0-9]{6}$/.test(code)} onClick={() => void confirmEnrollment()}>Confirm enrollment</button>
       </>}
-    </>}
-    {enrolled && mode !== 'Required' && <>
+      <button type="button" className="btn" disabled={busy} onClick={() => {
+        setAuthenticatorAction(null); setPending(null); setPassword(''); setCode('');
+      }}>Cancel</button>
+    </div>}
+    {enrolled && mode !== 'Required' && !authenticatorAction && <button className="btn" type="button"
+      onClick={() => setAuthenticatorAction('disable')}>Disable authenticator</button>}
+    {enrolled && mode !== 'Required' && authenticatorAction === 'disable' && <div className="settings-edit-row">
       <p>To disable your authenticator, confirm your password and a fresh code.</p>
       <label className="form-label" htmlFor="mfa-disable-password">Current password</label>
       <input className="form-control" id="mfa-disable-password" type="password" autoComplete="current-password"
@@ -6802,8 +6819,11 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
         pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
         value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
       <button className="btn" disabled={busy || !password || !/^[0-9]{6}$/.test(code)}
-        onClick={() => void disableEnrollment()}>Disable my MFA</button>
-    </>}
+        onClick={() => void disableEnrollment()}>Confirm disable MFA</button>
+      <button type="button" className="btn" disabled={busy} onClick={() => {
+        setAuthenticatorAction(null); setPassword(''); setCode('');
+      }}>Cancel</button>
+    </div>}
   </section>;
 }
 
