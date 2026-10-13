@@ -1,5 +1,5 @@
 // MD-09 — generic metadata route destinations only. Never accept raw URLs or scripts.
-export const aliasPattern = /^[a-z][a-z0-9-]{1,62}$/;
+export const aliasPattern = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$/;
 const identifierPattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 export const routeAliasKinds = ['App Home', 'App Page', 'Record List'];
 export const validAliasSlug = (value) => typeof value === 'string' && aliasPattern.test(value);
