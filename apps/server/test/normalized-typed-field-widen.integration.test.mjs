@@ -69,6 +69,16 @@ test('typed metadata widening alters physical columns transactionally without lo
         'SELECT convalidated FROM pg_constraint WHERE conrelid=to_regclass($1) AND conname=$2',
         [table,owner.name]);
       assert.equal(validatedGuard.rows[0]?.convalidated,true);
+      // Merely recreating the guard name with CHECK(TRUE) must not pass
+      // startup attestation or later typed-schema writes.
+      await client.query('BEGIN');
+      try {
+        await client.query('ALTER TABLE '+table+' DROP CONSTRAINT '+owner.name);
+        await client.query('ALTER TABLE '+table+' ADD CONSTRAINT '+owner.name+' CHECK (TRUE)');
+        await assert.rejects(verifyTypedRecords(client,upgraded),/ownership constraint/);
+        await assert.rejects(synchronizeTypedRecords(client,upgraded),/ownership constraint/);
+      } finally { await client.query('ROLLBACK'); }
+      await verifyTypedRecords(client,upgraded);
       await assert.rejects(
         client.query('INSERT INTO '+table+' (tenant_id,record_id) VALUES($1,$2)',['other-tenant','bad']),
         /check constraint/,'Physical SQL table must never accept another tenant ID');
