@@ -2503,3 +2503,18 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .permission-matrix td:not(:first-child) { padding-top: 10px; padding-bottom: 10px; }
   .app-manager-checks label { min-height: 44px; }
 }
+
+
+/* Audit follow-up: preserve builder-specific titles while normalising Setup hierarchy. */
+.object-titlebar h1 { font-size: 22px; line-height: 1.25; }
+.report-titlebar h1 { font-size: 22px; line-height: 1.25; }
+.exchange-tabs button { min-height: 44px; font-size: 13px; color: #67716b; }
+.exchange-category-row button { min-height: 36px; font-size: 12px; }
+.exchange-search { min-height: 44px; height: auto; }
+.exchange-search input { min-height: 42px; font-size: 14px; }
+.exchange-search input::placeholder { color: #626d66; }
+.app-manager-navigation-order .btn,
+.app-manager-order-controls .btn { min-width: 36px; min-height: 36px; }
+@media (pointer: coarse) {
+  .app-manager-order-controls .btn, .exchange-category-row button { min-height: 44px; }
+}
