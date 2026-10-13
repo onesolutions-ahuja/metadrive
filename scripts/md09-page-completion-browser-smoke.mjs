@@ -103,19 +103,21 @@ try{
   await browserPage.locator('button.auth-submit').click();
   await browserPage.locator('.auth-screen').waitFor({state:'hidden'});
   await browserPage.goto(site+'/une/setup/page-builder/'+pageApi);
-  await browserPage.getByRole('button',{name:'Desktop preview'}).waitFor();
+  await browserPage.getByRole('button',{name:'Back to page list'}).click();
+  await browserPage.getByRole('button',{name:'Open page dependencies'}).waitFor();
   await browserPage.getByRole('button',{name:'Open page dependencies'}).click();
   const deps=browserPage.getByRole('dialog',{name:'Page dependencies'});
   await deps.getByRole('cell',{name:dashboardApi}).waitFor();
   await deps.getByRole('cell',{name:'Ready'}).waitFor();
   await deps.getByRole('button',{name:'Close'}).click();
-  await browserPage.getByRole('button',{name:'Layers'}).click();
+  await browserPage.getByRole('row').filter({hasText:pageApi}).getByRole('button',{name:/Edit /}).click();
+  await browserPage.getByRole('button',{name:'Layers',exact:true}).click();
   await browserPage.getByRole('navigation',{name:'Page component layers'})
     .getByRole('button',{name:'Select layer Dashboard'}).click();
   await browserPage.getByRole('tab', { name: 'Data & Actions' }).first().click();
   await browserPage.locator('#page-component-dashboard').waitFor();
   assert.equal(await browserPage.locator('#page-component-dashboard').inputValue(),dashboardApi);
-  await browserPage.getByRole('button',{name:'Save',exact:true}).click();
+  await browserPage.getByRole('button',{name:'Save page'}).click();
   assert.equal((await request('/metadata/pages',token)).pages
     .find(item=>item.apiName===pageApi)?.components[0]?.properties.dashboardApiName,dashboardApi);
   for(const [width,height] of [[1440,900],[820,1180],[390,844]]){
