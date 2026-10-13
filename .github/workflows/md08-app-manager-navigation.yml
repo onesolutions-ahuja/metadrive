@@ -28,6 +28,7 @@ jobs:
       - name: Compile frontend and verify production bundle
         env:
           GITHUB_PAGES: 'true'
+          GITHUB_PAGES_BASE_PATH: '/'
         run: npm run build --workspace apps/web
       - name: Verify GitHub Pages navigation and branding
         run: node scripts/verify-pages-release.mjs

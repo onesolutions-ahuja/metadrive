@@ -73,6 +73,7 @@ try {
     'desktop must retain base padding');
 
   await card.click({ position: { x: 30, y: 12 } });
+  await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const parentPicker = page.getByLabel('Parent container');
   assert.equal(await parentPicker.inputValue(), 'md07-root', 'parent relationship must be editable');
   await parentPicker.selectOption('');
