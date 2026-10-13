@@ -1639,6 +1639,20 @@
               "dataType": "Text(3)",
               "required": false,
               "unique": false
+            },
+            {
+              "apiName": "Tender_Method__c",
+              "label": "Recorded Tender Method",
+              "dataType": "Text",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Requested_Tender__c",
+              "label": "Cashier Selected Tender",
+              "dataType": "Text",
+              "required": false,
+              "unique": false
             }
           ]
         },
@@ -2005,6 +2019,14 @@
                     "inputs": {
                       "SessionId": "$session"
                     }
+                  },
+                  "checkout": {
+                    "flowApiName": "POS_CASH_SETTLE",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "PaymentMethod": "$event.paymentMethod"
+                    },
+                    "resetSessionOnSuccess": true
                   }
                 },
                 "brandName": "Your Restaurant",
@@ -2043,7 +2065,8 @@
                 "catalogFirst": true,
                 "basketWidthPercent": 35,
                 "catalogColumns": 4,
-                "title": "Metadrive POS"
+                "title": "Metadrive POS",
+                "cashFallbackNotice": "Temporary mode: Card selection records a cash payment. No card is charged."
               }
             }
           ]
@@ -2688,6 +2711,336 @@
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
+              "availableForOutput": false
+            }
+          ],
+          "versions": []
+        },
+        {
+          "apiName": "POS_CASH_SETTLE",
+          "label": "POS - Record cash settlement (temporary card mapping)",
+          "description": "Temporary cash-only POS checkout. Both requested cash and card are recorded as CASH. This flow does not charge a payment provider. Replace with verified payment Flow later.",
+          "flowType": "Autolaunched Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": null,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Begin checkout",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Get Records",
+              "label": "Load session lines",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "recordLimit": "all",
+                "outputVariable": "CheckoutLines"
+              }
+            },
+            {
+              "id": 3,
+              "type": "Decision",
+              "label": "Only settle nonempty basket",
+              "config": {
+                "outcomes": [
+                  {
+                    "name": "HasItems",
+                    "label": "HasItems",
+                    "conditions": [
+                      {
+                        "field": "{!CheckoutLines}",
+                        "operator": "Is Not Null"
+                      }
+                    ]
+                  },
+                  {
+                    "name": "Default",
+                    "label": "Default Outcome",
+                    "conditions": [],
+                    "isDefault": true
+                  }
+                ]
+              }
+            },
+            {
+              "id": 4,
+              "type": "Create Records",
+              "label": "Record sale as cash",
+              "config": {
+                "object": "Sale__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Session__c",
+                    "value": "{!SessionId}"
+                  },
+                  {
+                    "field": "Order_Type__c",
+                    "value": "POS"
+                  },
+                  {
+                    "field": "Payment_Status__c",
+                    "value": "Cash Recorded"
+                  },
+                  {
+                    "field": "Tender_Method__c",
+                    "value": "Cash"
+                  },
+                  {
+                    "field": "Requested_Tender__c",
+                    "value": "{!PaymentMethod}"
+                  },
+                  {
+                    "field": "Currency__c",
+                    "value": "GBP"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 5,
+              "type": "Get Records",
+              "label": "Read created sale",
+              "config": {
+                "object": "Sale__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "outputVariable": "CompletedSale"
+              }
+            },
+            {
+              "id": 6,
+              "type": "Loop",
+              "label": "Create sale lines",
+              "config": {
+                "collection": "CheckoutLines",
+                "loopVariable": "CheckoutLine",
+                "direction": "First to last"
+              }
+            },
+            {
+              "id": 7,
+              "type": "Create Records",
+              "label": "Persist sale line",
+              "config": {
+                "object": "SaleItem__c",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "{!CheckoutLine.Name}"
+                  },
+                  {
+                    "field": "Sale__c",
+                    "value": "{!CompletedSale.Id}"
+                  },
+                  {
+                    "field": "Product__c",
+                    "value": "{!CheckoutLine.Product__c}"
+                  },
+                  {
+                    "field": "Quantity__c",
+                    "value": "{!CheckoutLine.Quantity__c}"
+                  },
+                  {
+                    "field": "Unit_Price__c",
+                    "value": "{!CheckoutLine.Unit_Price__c}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 8,
+              "type": "Update Records",
+              "label": "Mark session completed",
+              "config": {
+                "object": "Cart__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ],
+                "fieldValues": [
+                  {
+                    "field": "Status__c",
+                    "value": "Completed"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 9,
+              "type": "Delete Records",
+              "label": "Clear settled cart lines",
+              "config": {
+                "object": "CartLine__c",
+                "conditions": [
+                  {
+                    "field": "Session__c",
+                    "operator": "Equals",
+                    "value": "{!SessionId}"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 10,
+              "type": "End",
+              "label": "Sale recorded",
+              "config": {}
+            },
+            {
+              "id": 11,
+              "type": "End",
+              "label": "Empty basket, no sale",
+              "config": {}
+            }
+          ],
+          "connectors": [
+            {
+              "id": "pos-1-2-next",
+              "from": 1,
+              "to": 2,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-2-3-next",
+              "from": 2,
+              "to": 3,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-3-4-HasItems",
+              "from": 3,
+              "to": 4,
+              "label": "HasItems",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-3-11-Default Outcome",
+              "from": 3,
+              "to": 11,
+              "label": "Default Outcome",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-4-5-next",
+              "from": 4,
+              "to": 5,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-5-6-next",
+              "from": 5,
+              "to": 6,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-6-7-For Each",
+              "from": 6,
+              "to": 7,
+              "label": "For Each",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-7-6-next",
+              "from": 7,
+              "to": 6,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-6-8-After Last",
+              "from": 6,
+              "to": 8,
+              "label": "After Last",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-8-9-next",
+              "from": 8,
+              "to": 9,
+              "label": "",
+              "kind": "normal"
+            },
+            {
+              "id": "pos-9-10-next",
+              "from": 9,
+              "to": 10,
+              "label": "",
+              "kind": "normal"
+            }
+          ],
+          "resources": [
+            {
+              "name": "SessionId",
+              "label": "SessionId",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "PaymentMethod",
+              "label": "PaymentMethod",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
+            },
+            {
+              "name": "CheckoutLines",
+              "label": "CheckoutLines",
+              "type": "Record Collection",
+              "dataType": "CartLine__c",
+              "isCollection": true,
+              "availableForInput": false,
+              "availableForOutput": false
+            },
+            {
+              "name": "CheckoutLine",
+              "label": "CheckoutLine",
+              "type": "Record",
+              "dataType": "CartLine__c",
+              "isCollection": false,
+              "availableForInput": false,
+              "availableForOutput": false
+            },
+            {
+              "name": "CompletedSale",
+              "label": "CompletedSale",
+              "type": "Record",
+              "dataType": "Sale__c",
+              "isCollection": false,
+              "availableForInput": false,
               "availableForOutput": false
             }
           ],
