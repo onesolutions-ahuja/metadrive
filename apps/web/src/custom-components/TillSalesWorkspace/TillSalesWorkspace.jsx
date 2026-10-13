@@ -135,7 +135,8 @@ export default function TillSalesWorkspace(props) {
         </div>
         <footer className="md-till-bottom"><div className="md-till-total"><span>Estimated subtotal</span><strong>{money(estimated)}</strong></div><small>Final price, tax and payment are validated by Checkout Flow.</small>
           <div className="md-till-utilities">{['hold','resume','discount'].map((name) => <button key={name} disabled={!enabled(name)} onClick={() => emit(name,{})}>{name.charAt(0).toUpperCase()+name.slice(1)}</button>)}</div>
-          <div className="md-till-pay"><button disabled={!enabled('checkout') || !lines.length} onClick={() => checkout('cash')}>Cash</button><button className="md-till-pay-primary" disabled={!enabled('checkout') || !lines.length} onClick={() => checkout('card')}>Card / Pay <strong>{money(estimated)}</strong></button></div>
+          <div className="md-till-pay"><button disabled={!enabled('checkout') || !lines.length} onClick={() => checkout('cash')}>Cash</button><button className="md-till-pay-primary" disabled={!enabled('checkout') || !lines.length} onClick={() => checkout('card')}>{p.cashFallbackNotice ? 'Card → Cash' : 'Card / Pay'} <strong>{money(estimated)}</strong></button></div>
+          {p.cashFallbackNotice && <small className="md-till-warning">{p.cashFallbackNotice}</small>}
           {!configured('checkout') && <small className="md-till-warning">Checkout disabled until a verified payment Flow is assigned.</small>}
         </footer>
       </section>
