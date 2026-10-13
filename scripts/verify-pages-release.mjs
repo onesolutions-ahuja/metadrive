@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 
@@ -23,9 +23,21 @@ const cssMatch = html.match(/href="(\/assets\/[^"]+\.css)"/);
 assert(jsMatch && cssMatch, 'Built Pages HTML must load versioned scripts and styles from /assets on the custom domain');
 const js = (await read(jsMatch[1].slice(base.length))).toString('utf8');
 const css = (await read(cssMatch[1].slice(base.length))).toString('utf8');
-assert(js.includes('header-records-link'), 'Built app is missing the global Records navigation');
-assert(js.includes('auth-brand-logo') && js.includes('brand-logo'), 'Built app is missing UNE Solutions branding');
-assert(css.includes('.setup-sidebar') && css.includes('overflow-y:auto') && css.includes('position:sticky'),
+const assetNames = await readdir(resolve(dist, 'assets'));
+const jsAssets = await Promise.all(assetNames.filter(name => name.endsWith('.js')).map(async name => ({
+  name, content: (await read('assets/' + name)).toString('utf8')
+})));
+const cssAssets = await Promise.all(assetNames.filter(name => name.endsWith('.css')).map(async name => ({
+  name, content: (await read('assets/' + name)).toString('utf8')
+})));
+const appJs = jsAssets.find(asset => asset.content.includes('header-records-link'));
+const appCss = cssAssets.find(asset => asset.content.includes('.setup-sidebar') && asset.content.includes('position:sticky'));
+assert(appJs, 'Built app chunk is missing the global Records navigation');
+assert(js.includes('Software that makes') && js.includes('Client login'), 'Built Pages is missing the public UNE Solutions marketing homepage');
+assert(html.includes('Une Solutions | Smart Software for Growing Businesses'), 'Built Pages has the wrong public title');
+assert(appJs.content.includes('auth-brand-logo') && appJs.content.includes('brand-logo'), 'Built app is missing UNE Solutions branding');
+assert(css.includes('.une-marketing'), 'Built CSS is missing public marketing design');
+assert(appCss && appCss.content.includes('overflow-y:auto'),
   'Built CSS is missing sticky header or scrolling Setup navigation');
 const logo = await read('une-solutions-logo.webp');
 assert(logo.length > 1000 && logo.toString('ascii', 0, 4) === 'RIFF', 'Transparent logo asset missing or invalid');
@@ -57,10 +69,14 @@ if (live) {
       const publishedLogo = Buffer.from(await (await get(base + 'une-solutions-logo.webp')).arrayBuffer());
       assert(sha256(publishedLogo) === sha256(logo), 'Live Pages is serving an old UNE Solutions logo');
       const publishedJs = await (await get(jsMatch[1])).text();
-      assert(publishedJs.includes('header-records-link'), 'Live Records navigation is missing');
+      assert(publishedJs.includes('Software that makes'), 'Live marketing JavaScript missing');
+      const publishedApp = await (await get('/assets/' + appJs.name)).text();
+      assert(publishedApp.includes('header-records-link'), 'Live workspace chunk is missing');
+      const publishedWorkspaceCss = await (await get('/assets/' + appCss.name)).text();
+      assert(publishedWorkspaceCss.includes('.setup-sidebar'), 'Live workspace styles are missing');
+      assert(publishedJs.includes('Software that makes') && publishedJs.includes('Client login'), 'Live UNE marketing site is missing');
       const publishedCss = await (await get(cssMatch[1])).text();
-      assert(publishedCss.includes('.setup-sidebar') && publishedCss.includes('position:sticky'),
-        'Live sticky header/sidebar styling missing');
+      assert(publishedCss.includes('.une-marketing'), 'Live marketing styles missing');
       console.log('Live GitHub Pages matches the exact deployed UI and branding build: ' + sha);
       process.exit(0);
     } catch (error) {
