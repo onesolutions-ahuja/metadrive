@@ -3805,7 +3805,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -6680,9 +6680,10 @@ function TenantSecurityAudit() {
   </section>;
 }
 
-function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void }) {
+function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: () => void; canManage: boolean }) {
   const [mode, setMode] = useState<TenantMfaMode>('Off');
   const [draftMode, setDraftMode] = useState<TenantMfaMode>('Off');
+  const [editingPolicy, setEditingPolicy] = useState(false);
   const [canConfigure, setCanConfigure] = useState(false);
   const [enrolled, setEnrolled] = useState(false);
   const [password, setPassword] = useState('');
@@ -6702,6 +6703,7 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
     return () => { active = false; };
   }, []);
   const savePolicy = async () => {
+    if (!canManage || !canConfigure || !editingPolicy || busy) return;
     setBusy(true); setError(''); setNotice('');
     try {
       await apiRequest('/auth/mfa/policy', { method: 'PUT', body: JSON.stringify({ mode: draftMode }) });
@@ -6749,17 +6751,28 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
     {error && <p className="auth-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {canConfigure && <>
-      <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy</label>
-      <select className="form-control" id="tenant-mfa-mode" value={draftMode}
-        onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
-        <option value="Off">Off — no MFA challenge</option>
-        <option value="Optional">Optional — individual users can enroll</option>
-        <option value="Required">Required — every user must enroll and verify</option>
-      </select>
-      <p>Changing the policy applies to this tenant only. Affected users must sign in again with the required verification.</p>
-      <button className="btn btn-brand" disabled={busy || draftMode === mode} onClick={() => void savePolicy()}>
-        {busy ? 'Saving…' : 'Save tenant MFA policy'}
-      </button>
+      <div className="settings-read-first-section">
+        {editingPolicy ? <div className="settings-edit-row">
+          <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy
+            <select className="form-control" id="tenant-mfa-mode" value={draftMode}
+              onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
+              <option value="Off">Off — no MFA challenge</option>
+              <option value="Optional">Optional — individual users can enroll</option>
+              <option value="Required">Required — every user must enroll and verify</option>
+            </select>
+          </label>
+          <p className="settings-view-row-help">Changing the policy may require users to sign in again.</p>
+        </div> : <SettingsViewRow label="Tenant MFA policy" value={mode}
+          canEdit={canManage} onEdit={() => { setDraftMode(mode); setEditingPolicy(true); }} />}
+      </div>
+      {editingPolicy && canManage && <div className="settings-read-first-toolbar">
+        <button className="btn" type="button" disabled={busy}
+          onClick={() => { setDraftMode(mode); setEditingPolicy(false); }}>Cancel</button>
+        <button className="btn btn-brand" type="button" disabled={busy || draftMode === mode}
+          onClick={() => void savePolicy()}>
+          <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>}
     </>}
     <h3>My authenticator</h3>
     <p>{enrolled ? 'Your account has an authenticator enrolled.' : 'Your account has no authenticator enrolled.'}</p>
