@@ -34,7 +34,7 @@ function equal(sqlType,a,b){
   return typeof a==='string'&&a===b;
 }
 async function registry(client) {
-  const objects=await client.query('SELECT object_id,tenant_id,api_name,physical_table FROM md_v2_object_registry WHERE active=true');
+  const objects=await client.query('SELECT object_id,tenant_id,api_name,object_label,physical_table FROM md_v2_object_registry WHERE active=true');
   const fields=await client.query('SELECT field_id,object_id,api_name,field_label,physical_column,source_data_type FROM md_v2_field_registry WHERE active=true');
   const byObject=new Map();
   for(const row of objects.rows){
@@ -86,7 +86,7 @@ async function prepare(client,state){
   for(const item of expected.values()){
     let current=mapping.get(key(item.tenantId,item.object.apiName));
     if(!current){
-      const dormant=await client.query('SELECT object_id,tenant_id,api_name,physical_table FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=false',[item.tenantId,item.object.apiName]);
+      const dormant=await client.query('SELECT object_id,tenant_id,api_name,object_label,physical_table FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=false',[item.tenantId,item.object.apiName]);
       if(dormant.rowCount){
         const saved=dormant.rows[0];
         if(saved.physical_table!==tableName(saved.object_id)) throw Error('Invalid retired object table identity');
@@ -119,8 +119,15 @@ async function prepare(client,state){
         [objectId,item.tenantId,item.object.apiName,item.object.label??item.object.apiName,plan.table]);
       await client.query(plan.createTable);
       for(const ddl of plan.addColumns) await client.query(ddl);
-      current={object_id:objectId,tenant_id:item.tenantId,api_name:item.object.apiName,physical_table:plan.table,fields:new Map()};
+      current={object_id:objectId,tenant_id:item.tenantId,api_name:item.object.apiName,
+        object_label:item.object.label??item.object.apiName,physical_table:plan.table,fields:new Map()};
       mapping.set(key(item.tenantId,item.object.apiName),current);
+    }
+    const objectLabel=item.object.label??item.object.apiName;
+    if(current.object_label!==objectLabel) {
+      await client.query('UPDATE md_v2_object_registry SET object_label=$2 WHERE object_id=$1',
+        [current.object_id,objectLabel]);
+      current.object_label=objectLabel;
     }
     for(const f of item.fields){
       const sqlType=postgresFieldType(f.dataType);
