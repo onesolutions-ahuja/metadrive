@@ -1,4 +1,5 @@
 import { validateFlowScreenUpload } from './flowScreenUploadValidation.mjs';
+import { validFlowScreenSelection } from './flowScreenDataTableSelection.mjs';
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 
 type ScreenConfig = Record<string, unknown>;
@@ -115,7 +116,7 @@ export default function FlowScreenAdvancedField({
       ? values[String(field.collection)] as ScreenRecord[]
       : [];
     const columns = Array.isArray(field.columns) ? field.columns.filter((item): item is string => typeof item === 'string') : [];
-    const selected = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : typeof value === 'string' && value ? [value] : [];
+    const selected = validFlowScreenSelection(value, collection, field.multiselect === true);
     const multi = field.multiselect === true;
     const toggle = (id: string) => {
       if (multi) setValue(selected.includes(id) ? selected.filter((item) => item !== id) : [...selected, id]);
