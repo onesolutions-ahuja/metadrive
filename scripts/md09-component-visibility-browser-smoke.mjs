@@ -94,7 +94,7 @@ try{
 
   // Exercise the actual Page Builder inspector rather than just writing metadata via API.
   await page.goto(site+'/une/setup/page-builder/'+appPage);
-  await page.getByRole('button',{name:'Desktop preview'}).waitFor();
+  await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.locator('[data-component-id="desktop-proof"]').click();
   await page.getByRole('button',{name:'Conditions',exact:true}).click();
   const editor=page.getByLabel('Component visibility rules');
@@ -106,13 +106,13 @@ try{
   const savedPageResponse=page.waitForResponse(response=>
     response.url().includes('/api/metadata/pages/'+appPage)
     && response.request().method()==='PUT' && response.status()===200);
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.getByRole('button',{name:'Save page'}).click();
   await savedPageResponse;
 
   let saved=(await request('/metadata/pages',token)).pages.find(item=>item.apiName===appPage);
   assert.equal(saved.components[0].properties.visibilityRules.conditions[0].value,'Desktop');
   await page.reload();
-  await page.getByRole('button',{name:'Desktop preview'}).waitFor();
+  await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.locator('[data-component-id="desktop-proof"]').click();
   await page.getByRole('button',{name:'Conditions',exact:true}).click();
   assert.equal(await page.getByLabel('Visibility value 1').inputValue(),'Desktop');
