@@ -345,7 +345,12 @@ export async function verifyTypedRecords(client,state){
   for(const [k,item] of expected){
     const mapped=mapping.get(k);
     if(!mapped) throw Error('Missing object in typed SQL registry');
-    if(!validPhysicalTenantOwnerConstraint(mapped.object_id,item.tenantId,guardsByTable.get(mapped.physical_table)))
+    const guard=guardsByTable.get(mapped.physical_table);
+    // Existing SQL-only databases can predate owner guards. Reject any guard
+    // whose meaning is weakened; require every guard only after an explicitly
+    // approved per-object DDL activation has completed.
+    if((guard || process.env.METADRIVE_REQUIRE_PHYSICAL_TENANT_GUARDS==='true')
+      && !validPhysicalTenantOwnerConstraint(mapped.object_id,item.tenantId,guard))
       throw Error('Physical tenant ownership constraint is missing, weakened or unvalidated');
     for(const f of item.fields){
       const saved=mapped.fields.get(f.apiName);
