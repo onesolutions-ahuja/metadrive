@@ -9096,7 +9096,7 @@ function PageBuilder({
   const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
   const [canvasSnap, setCanvasSnap] = useState(true);
   const [showLayers, setShowLayers] = useState(false);
-  const [inspectorTab, setInspectorTab] = useState<'Design' | 'Data & Actions'>('Design');
+  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions'>('Overview');
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -9287,7 +9287,7 @@ function PageBuilder({
       height: component.position.height
     };
     setSelectedId(component.id);
-    setInspectorTab('Design');
+    setInspectorTab('Overview');
     setCanvasResizePreview({ id: component.id, width: component.position.width, height: component.position.height });
   };
   const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -10328,7 +10328,7 @@ function PageBuilder({
           <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
           {selected && !pageSettingsOpen ? <>
             <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
-              {(['Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
+              {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
                 aria-selected={inspectorTab === tab} className={inspectorTab === tab ? 'active' : ''}
                 onClick={() => setInspectorTab(tab)}>{tab}</button>)}
             </div>
@@ -10340,11 +10340,11 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
-            {inspectorTab === 'Design' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
+            {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
-            {inspectorTab === 'Design' && <PageComponentStyleEditor properties={selected.properties}
+            {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
               onChange={(properties) => updateComponent(selected.id, { properties })} />}
-            {inspectorTab === 'Design' && selected.type === 'Custom:TillSalesWorkspace' && <section className="modern-till-layout-controls">
+            {inspectorTab !== 'Data & Actions' && selected.type === 'Custom:TillSalesWorkspace' && <section className="modern-till-layout-controls">
               <div className="properties-section-title">Till layout</div>
               <label className="form-label">Basket width: {Number(selected.properties.basketWidthPercent ?? 45)}%
                 <input type="range" min="25" max="70" step="1" aria-label="Till basket width"
@@ -10358,7 +10358,7 @@ function PageBuilder({
                   ...selected.properties, catalogFirst: event.target.checked
                 } })} />Show products before basket</label>
             </section>}
-            {inspectorTab === 'Data & Actions' && selectedCustomDefinition && <>
+            {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
               {!['Custom:KioskContainer','Custom:KioskRow','Custom:KioskColumn','Custom:KioskCard','Custom:KioskGrid'].includes(selected.type)
@@ -10406,25 +10406,25 @@ function PageBuilder({
                 onChange={(properties) => updateComponent(selected.id, { properties })}
               />
             </>}
-            {inspectorTab === 'Data & Actions' && selected.type === 'Related List' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Related List' && <>
               <div className="properties-section-title">Related Lists</div>
               {componentRelatedListOptions.map((option) => <label className="checkbox-row property-check" key={option.apiName}><input type="checkbox" checked={selectedRelatedLists.includes(option.apiName)} onChange={(event) => {
                 updateComponent(selected.id, { properties: { ...selected.properties, relatedLists: event.target.checked ? [...selectedRelatedLists, option.apiName] : selectedRelatedLists.filter((item) => item !== option.apiName) } });
               }} />{option.label}</label>)}
               {!componentRelatedListOptions.length && <div className="palette-note">No related objects have a relationship to this record object.</div>}
             </>}
-            {inspectorTab === 'Data & Actions' && selected.type === 'Tabs' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Tabs' && <>
               <div className="properties-section-title">Tabs</div><label className="form-label" htmlFor="page-component-tabs">Tab labels</label>
               <textarea id="page-component-tabs" className="form-control" rows={3} value={stringList(selected.properties.tabs, ['Related', 'Details', 'News']).join('\n')} onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, tabs: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) } })} />
             </>}
-            {inspectorTab === 'Data & Actions' && selected.type === 'Accordion' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Accordion' && <>
               <div className="properties-section-title">Accordion Content</div>
               <label className="form-label" htmlFor="page-component-accordion-content">Content</label>
               <textarea id="page-component-accordion-content" className="form-control" rows={4}
                 value={typeof selected.properties.content === 'string' ? selected.properties.content : ''}
                 onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, content: event.target.value } })} />
             </>}
-            {inspectorTab === 'Data & Actions' && selected.type === 'Dashboard' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Dashboard' && <>
               <div className="properties-section-title">Dashboard</div>
               <label className="form-label" htmlFor="page-component-dashboard">Published dashboard</label>
               <select id="page-component-dashboard" className="form-control"
@@ -10436,7 +10436,7 @@ function PageBuilder({
               </select>
               <p className="properties-help">The live dashboard checks tenant, folder, viewer and record permissions at runtime.</p>
             </>}
-            {inspectorTab === 'Data & Actions' && selected.type === 'Report Chart' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Report Chart' && <>
               <div className="properties-section-title">Report</div>
               <label className="form-label" htmlFor="page-component-report">Source report</label>
               <select id="page-component-report" className="form-control" value={typeof selected.properties.reportApiName === 'string' ? selected.properties.reportApiName : ''}
@@ -10499,7 +10499,7 @@ function PageBuilder({
                 </select>
               </label>
             </>}
-            {inspectorTab === 'Design' && page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
+            {inspectorTab !== 'Data & Actions' && page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
               <div className="properties-section-title">Position and Size (pixels)</div>
               {([
                 ['x', 'Left'], ['y', 'Top'], ['width', 'Width'], ['height', 'Height']
