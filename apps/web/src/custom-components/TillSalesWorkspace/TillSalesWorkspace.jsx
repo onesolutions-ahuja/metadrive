@@ -16,6 +16,10 @@ export default function TillSalesWorkspace(props) {
   const [completed,setCompleted] = React.useState(false);
   const scanner = React.useRef(null);
   const currency = typeof p.currency === 'string' ? p.currency : '£';
+  // Client-specific layout settings are persisted on the page, never the shared component.
+  const basketWidth = Math.max(25, Math.min(70, Number(p.basketWidthPercent ?? 45) || 45));
+  const catalogFirst = p.catalogFirst === true;
+  const splitStyle = { '--md-till-basket-width': basketWidth + '%' };
   const money = (x) => currency + Number(x || 0).toFixed(2);
   const configured = (event) => Boolean(p.actionFlows && p.actionFlows[event] && p.actionFlows[event].flowApiName);
   const enabled = (event) => !busy && !p.disabled && !p.preview && configured(event);
@@ -53,7 +57,7 @@ export default function TillSalesWorkspace(props) {
     {(error || p.actionError) && <div role="alert" className="md-till-error">{error || p.actionError}</div>}
     {completed && <div role="status" className="md-till-success">Sale completed by the selected Flow.</div>}
     {p.loading && <div role="status" className="md-till-info">Loading object records…</div>}
-    <div className="md-till-body">
+    <div className={`md-till-body${catalogFirst ? " md-till-catalog-first" : ""}`} style={splitStyle}>
       <section className="md-till-cart" aria-label="Sale basket">
         <div className="md-till-row"><div><small className="md-till-kicker">CURRENT SALE</small><h2>Basket <em>{count}</em></h2></div><button className="md-till-link" disabled={!enabled('reset') || !lines.length} onClick={() => emit('reset',{})}>Clear</button></div>
         <button className="md-till-customer" onClick={() => setCustomerOpen(!customerOpen)} aria-expanded={customerOpen}>♙ <span><strong>{selected?.name || p.walkInLabel || 'Walk-in customer'}</strong><small>{selected ? [selected.phone,selected.email].filter(Boolean).join(' · ') : 'Search and assign customer'}</small></span>⌄</button>
