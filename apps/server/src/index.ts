@@ -7348,9 +7348,12 @@ app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res
     if (!interview) return res.status(409).json({ error: 'The orchestration stage is no longer pending' });
     const saved = tenant.flows.find((item) => item.apiName === interview.flowApiName);
     const active = activeFlowDefinition(saved);
-    const flow = interview.allowDraft && saved?.status === 'Draft' && saved.versionNumber === interview.versionNumber
-      ? saved
-      : active?.versionNumber === interview.versionNumber ? active : undefined;
+    const archived = saved?.versions.find((version) => version.versionNumber === interview.versionNumber);
+    const flow = saved?.versionNumber === interview.versionNumber
+      && (saved.status === 'Active' || interview.allowDraft) ? saved
+      : active?.versionNumber === interview.versionNumber ? active
+      : archived ? { ...saved!, ...archived, versionNumber: archived.versionNumber,
+          status: 'Active' as const, activeVersion: archived.versionNumber } : undefined;
     const stage = flow?.elements.find((item) => item.id === interview.screenElementId && item.type === 'Orchestration Stage');
     const outcome = parsed.data.decision;
     const connectors = flow?.connectors.filter((item) =>
@@ -16855,7 +16858,7 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
   const tenantId = state.users.find(user => user.id === userId)?.tenantId;
   const idleMinutes = (tenantId ? tenantData(tenantId)?.automationSettings.conversationIdleMinutes : undefined)
     ?? defaultAutomationSettings.conversationIdleMinutes;
-  const conversationExpiry = result.kind !== 'async' && typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
+  const conversationExpiry = ['screen', 'wait'].includes(result.kind) && typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
     ? new Date(Date.parse(createdAt) + idleMinutes * 60_000).toISOString()
     : null;
   const expiresAt = conversationExpiry ?? (result.kind === 'screen'
