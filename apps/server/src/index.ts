@@ -4663,13 +4663,13 @@ if (durableLogouts.length) {
     if (entry.accessExpiresAt > now)
       accessRevocations[entry.jti] = Math.max(accessRevocations[entry.jti] ?? 0, entry.accessExpiresAt);
     if (entry.refreshHash && entry.refreshExpiresAt !== null && entry.refreshExpiresAt > now)
-      refreshRevocations.set(entry.refreshHash, Math.max(refreshRevocations.get(entry.refreshHash) ?? 0, entry.revokedAt));
+      refreshRevocations.set(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`, Math.max(refreshRevocations.get(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`) ?? 0, entry.revokedAt));
   }
   state = {
     ...state,
     revokedAccessTokens: accessRevocations,
     refreshSessions: state.refreshSessions.map((session) => {
-      const revokedAt = refreshRevocations.get(session.tokenHash);
+      const revokedAt = refreshRevocations.get(`${session.tenantId}:${session.userId}:${session.tokenHash}`);
       return revokedAt === undefined ? session
         : { ...session, revokedAt: Math.max(session.revokedAt ?? 0, revokedAt) };
     })
