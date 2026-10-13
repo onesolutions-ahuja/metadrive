@@ -3805,7 +3805,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -6486,12 +6486,14 @@ type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 
 
 
-function TenantEmailRecoverySettings() {
+function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
   const [smtpCredentialId, setSmtpCredentialId] = useState('');
   const [fromEmail, setFromEmail] = useState('');
   const [ready, setReady] = useState(false);
   const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
   const [permitted, setPermitted] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const original = useRef<{ smtpCredentialId: string; fromEmail: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   useEffect(() => {
@@ -6508,34 +6510,70 @@ function TenantEmailRecoverySettings() {
     return () => { active = false; };
   }, []);
   if (!permitted) return null;
+  const beginEdit = () => {
+    if (!canManage || busy) return;
+    original.current = { smtpCredentialId, fromEmail };
+    setEditing(true);
+    setMessage('');
+  };
+  const cancelEdit = () => {
+    if (busy) return;
+    if (original.current) {
+      setSmtpCredentialId(original.current.smtpCredentialId);
+      setFromEmail(original.current.fromEmail);
+    }
+    original.current = null;
+    setEditing(false);
+    setMessage('');
+  };
   const save = async () => {
+    if (!canManage || !editing || busy) return;
     setBusy(true); setMessage('');
     try {
       await apiRequest('/auth/password-recovery/settings', {
         method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '' })
       });
+      original.current = null;
+      setEditing(false);
       setMessage('Password recovery configuration saved.');
     } catch (reason) { setMessage(reason instanceof Error ? reason.message : 'Unable to save recovery settings'); }
     finally { setBusy(false); }
   };
   return <section className="surface permission-section">
     <h2>Tenant password recovery</h2>
-    <p>Email reset links are delivered through your tenant's SMTP Named Credential. They do not bypass MFA or allow platform staff to access tenant accounts.</p>
-    {!ready && <p role="alert">The server must have a trusted METADRIVE_PASSWORD_RESET_BASE_URL matching an allowed HTTPS web origin before recovery can be enabled.</p>}
-    {message && <p role="status">{message}</p>}
-    <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential</label>
-    <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
-      onChange={(event) => setSmtpCredentialId(event.target.value)}>
-      <option value="">Disabled</option>
-      {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-    </select>
-    <label className="form-label" htmlFor="recovery-sender">Sender email</label>
-    <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
-      onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
-    <button className="btn btn-brand" onClick={() => void save()}
-      disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
-      {busy ? 'Saving…' : 'Save recovery configuration'}
-    </button>
+    <p>Email reset links use the tenant's SMTP Named Credential. They never bypass MFA.</p>
+    {!ready && <p role="alert" className="permission-help">
+      Configure a trusted HTTPS password-reset origin on the server before enabling recovery.
+    </p>}
+    <div className="settings-read-first-section">
+      {editing ? <div className="settings-edit-row">
+        <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential
+          <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
+            onChange={(event) => setSmtpCredentialId(event.target.value)}>
+            <option value="">Disabled</option>
+            {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        <label className="form-label" htmlFor="recovery-sender">Sender email
+          <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
+            onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
+        </label>
+      </div> : <>
+        <SettingsViewRow label="SMTP Named Credential"
+          value={credentials.find((item) => item.id === smtpCredentialId)?.label ?? (smtpCredentialId ? 'Configured' : 'Disabled')}
+          canEdit={canManage} onEdit={beginEdit} />
+        <SettingsViewRow label="Sender email" value={smtpCredentialId ? fromEmail : 'Not configured'}
+          canEdit={canManage} onEdit={beginEdit} />
+      </>}
+    </div>
+    {editing && canManage && <div className="settings-read-first-toolbar">
+      <button type="button" className="btn" disabled={busy} onClick={cancelEdit}>Cancel</button>
+      <button type="button" className="btn btn-brand" onClick={() => void save()}
+        disabled={busy || (Boolean(smtpCredentialId) && (!ready || !fromEmail))}>
+        <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
+      </button>
+    </div>}
+    {message && <p role="status" className="settings-view-row-help">{message}</p>}
   </section>;
 }
 
