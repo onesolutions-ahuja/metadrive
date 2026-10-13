@@ -83,7 +83,7 @@ async function prepare(client,state){
     "SELECT cls.relname AS table_name,c.conname,c.contype,c.convalidated "+
     "FROM pg_constraint c JOIN pg_class cls ON cls.oid=c.conrelid "+
     "JOIN pg_namespace ns ON ns.oid=cls.relnamespace "+
-    "WHERE ns.nspname=current_schema() AND c.conname LIKE 'md_obj_%_tenant_owner_ck'");
+    "WHERE ns.nspname=current_schema() AND c.conname=cls.relname || '_tenant_owner_ck'");
   const guardByTable=new Map(guardRows.rows.map(row=>[row.table_name,row]));
   // Retire removed objects without dropping their physical tables or values.
   for(const [identifier,saved] of [...mapping]) {
