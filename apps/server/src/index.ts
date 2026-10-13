@@ -48,6 +48,7 @@ import {
   type Principal
 } from './auth.js';
 import { normalizeRecoveryPolicy, renderRecoveryTemplate, deliverWithFallback } from './recovery-policy.js';
+import { RECOVERY_FLOW_API, defaultRecoveryFlowDefinition, recoveryFlowActions, type RecoveryStage } from './recovery-flow.js';
 // Tenant name is resolved from the tenant registry, never from unauthenticated request input.
 function tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {
   return state.tenantRegistry[tenantId]?.name ?? tenantId;
@@ -4207,7 +4208,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
   });
   return {
     mfaPolicy: { mode: 'Off' }, passwordRecovery: { smtpCredentialId: '', fromEmail: '' }, securityAudit: [],
-    objects, flows: [flow, whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
+    objects, flows: [flow, flowSchema.parse(defaultRecoveryFlowDefinition()), whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
     currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
@@ -4635,6 +4636,7 @@ function loadState(sqlState?: unknown): PlatformState {
       },
       objects,
       flows: [...tenant.flows,
+        ...(tenant.flows.some((f) => f.apiName === RECOVERY_FLOW_API) ? [] : [flowSchema.parse(defaultRecoveryFlowDefinition())]),
         ...connectorAppCatalog.flows.filter((definition) => !tenant.flows.some((existingFlow) => existingFlow.apiName === definition.apiName)),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
@@ -5938,6 +5940,13 @@ app.put('/api/auth/password-recovery/settings', accessAuthentication,
     ));
     return res.json(parsed.data);
   });
+function protectedRecoveryStage(tenant: TenantData, stage: RecoveryStage) {
+  const flow = tenant.flows.find((item) => item.apiName === RECOVERY_FLOW_API);
+  // The protected default is available to older tenants even before migration.
+  const published = flow ? activeFlowDefinition(flow) : undefined;
+  if (flow && !published) throw new Error('Protected recovery flow must remain published.');
+  return recoveryFlowActions(published ?? defaultRecoveryFlowDefinition(), stage);
+}
 app.post('/api/auth/password-reset/request', async (req: Request, res: Response) => {
   const response = { message: 'If this account supports recovery, a verification message will be sent.' };
   if (jwtService.config.mode !== 'local') return res.status(202).json(response);
@@ -5953,6 +5962,13 @@ app.post('/api/auth/password-reset/request', async (req: Request, res: Response)
   if (!user || user.disabled || !tenant || !url) return res.status(202).json(response);
   const { smtpCredentialId, fromEmail } = tenant.passwordRecovery;
   const policy = normalizeRecoveryPolicy(tenant.passwordRecovery.policy);
+  let flowActions: ReturnType<typeof protectedRecoveryStage>;
+  try { flowActions = protectedRecoveryStage(tenant, 'request'); }
+  catch { console.warn('Protected recovery Flow is invalid'); return res.status(202).json(response); }
+  const generateConfig = flowActions[0].config;
+  const sendConfig = flowActions[1].config;
+  if (generateConfig.method === 'OTP' || generateConfig.method === 'LINK') policy.method = generateConfig.method;
+  if (sendConfig.channel !== 'email') return res.status(202).json(response);
   // A reset channel is available only when its contact is independently verified.
   // Email is supported now; SMS and WhatsApp must not use unverified numbers.
   if (policy.defaultChannel !== 'email') return res.status(202).json(response);
@@ -5969,6 +5985,11 @@ app.post('/api/auth/password-reset/request', async (req: Request, res: Response)
     resetUrl.searchParams.set('resetToken', token);
   }
   const template = policy.templates.email;
+  // The tenant's published recovery Flow can override the inherited email template.
+  if (sendConfig.templateSource === 'FLOW') {
+    if (typeof sendConfig.subject === 'string' && sendConfig.subject.length <= 240) template.subject = sendConfig.subject;
+    if (typeof sendConfig.body === 'string' && sendConfig.body.length <= 4000) template.body = sendConfig.body;
+  }
   const variables = {
     'Tenant.Id': user.tenantId, 'Tenant.Name': tenantInfoForRecovery(tenant, user.tenantId),
     'User.Email': email, 'Verification.Value': policy.method === 'OTP' ? token : resetUrl.toString(),
@@ -6032,7 +6053,9 @@ app.post('/api/auth/password-reset/confirm', async (req: Request, res: Response)
     && (otpDigest
       ? timingSafeEqual(Buffer.from(digest,'hex'), otpDigest)
       : parsed.data.token.length===64 && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token)))));
-  if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset link' });
+  if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset code or link' });
+  // The tenant's published Flow cannot bypass verification or omit password/session revocation.
+  protectedRecoveryStage(tenantData(user.tenantId)!, 'confirm');
   const hashed = await hashPassword(parsed.data.newPassword);
   const nextState: PlatformState = {
     ...state,
