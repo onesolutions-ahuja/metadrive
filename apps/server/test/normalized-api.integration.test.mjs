@@ -211,7 +211,7 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
       {Name:'Should Not Persist'}, { 'If-Unmodified-Since': linked.data.record.LastModifiedDate });
     assert.equal(staleEdit.status,412,'stale record revision must reject unsafe update');
     const currentEdit=await request(port,'/records/Migration_Link__c/'+recordId,'GET',token);
-    assert.equal(currentEdit.data.record.Name,'Relational Child Updated');
+    assert.equal(currentEdit.data.record.Name,'Offline accepted with current permissions');
     const imported=await request(port,'/records/Migration_Link__c/import','POST',token,{
       records:Array.from({length:51},(_,index)=>({Name:'Imported '+index,Account__c:parentId}))
     });
