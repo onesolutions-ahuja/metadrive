@@ -138,19 +138,17 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     const requested = await api('/auth/password-reset/request', '', 'POST', { email });
     assert.equal(requested.status, 202, JSON.stringify(requested.data));
     assert.equal(messages.length, 1, 'Password reset must be delivered to registered mailbox');
-    // Nodemailer may emit quoted-printable MIME: '=' becomes '=3D' and long lines soft-wrap.
+    // Nodemailer may use quoted-printable MIME; normalize soft wraps.
     const decodedMail = messages[0].replace(/=\n/g, '').replace(/=3D/gi, '=');
-    // A reset email must direct the claimant only to an explicitly trusted front-end origin.
-    // The email must never provide an attacker-selected target or point at the API host.
-    const resetLinks = decodedMail.match(/https?:\/\/[^\s<>\"']+resetToken=[A-Za-z0-9_-]{64}/g) ?? [];
-    assert.equal(resetLinks.length, 1, 'Exactly one trusted password-reset URL should be delivered');
-    const resetLink = new URL(resetLinks[0].replace(/&amp;/g, '&'));
-    assert.equal(resetLink.origin, 'http://localhost:5173');
-    assert.equal(resetLink.protocol, 'http:', 'Only local test mode may use plain HTTP');
-    assert.equal(resetLink.searchParams.has('resetToken'), true);
-    const match = decodedMail.match(/resetToken=([A-Za-z0-9_-]{64})/);
-    assert.ok(match, 'Delivered message must contain a single-use reset token');
+    assert.doesNotMatch(decodedMail, /resetToken=|https?:\/\/[^\s]*reset/i,
+      'Recovery emails must contain an OTP, never a password-reset URL');
+    const match = decodedMail.match(/password reset code is:\s*([0-9]{6})/i);
+    assert.ok(match, 'Recovery email must contain a six-digit code');
     const resetToken = match[1];
+    const incorrectCode = resetToken === '000000' ? '000001' : '000000';
+    assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
+      email, token: incorrectCode, newPassword
+    })).status, 400, 'Incorrect codes must be rejected');
     assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
       email: 'other@recovery-mail.test', token: resetToken, newPassword
     })).status, 400, 'Token cannot reset an account from another tenant');

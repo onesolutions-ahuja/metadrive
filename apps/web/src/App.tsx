@@ -1108,12 +1108,13 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
   const recoveryQuery = new URLSearchParams(window.location.search);
   const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
-  const [resetToken, setResetToken] = useState(recoveryQuery.get('resetToken') ?? '');
+  const [resetToken, setResetToken] = useState('');
+  const [resetRequested, setResetRequested] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [repeatPassword, setRepeatPassword] = useState('');
   const [resetFinished, setResetFinished] = useState(false);
   useEffect(() => {
-    if (!resetToken) return;
+    if (!recoveryQuery.has('resetToken')) return;
     const clean = new URL(window.location.href);
     clean.searchParams.delete('resetEmail');
     clean.searchParams.delete('resetToken');
@@ -1122,7 +1123,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
 
   const [mfaChallenge, setMfaChallenge] = useState<{ challenge_token: string; enrollment_required: boolean; setup_secret?: string } | null>(null);
   const [mfaCode, setMfaCode] = useState('');
-  const [showPasswordReset, setShowPasswordReset] = useState(Boolean(resetToken));
+  const [showPasswordReset, setShowPasswordReset] = useState(recoveryQuery.has('resetToken'));
   const [message, setMessage] = useState(error ?? '');
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -1193,6 +1194,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
         method: 'POST', body: JSON.stringify({ email })
       });
       setMessage(response.message);
+      setResetRequested(true);
     } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to request reset'); }
     finally { setSubmitting(false); }
   };
@@ -1203,7 +1205,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
       await apiRequest('/auth/password-reset/confirm', {
         method: 'POST', body: JSON.stringify({ email, token: resetToken, newPassword })
       });
-      setResetFinished(true); setResetToken(''); setNewPassword(''); setRepeatPassword('');
+      setResetFinished(true); setResetToken(''); setResetRequested(false); setNewPassword(''); setRepeatPassword('');
       setMessage('Password changed. Sign in with your new password. Your MFA requirements remain unchanged.');
     } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to reset password'); }
     finally { setSubmitting(false); }
@@ -1212,13 +1214,16 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
     <section className="auth-card" aria-labelledby="password-reset-heading">
       <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
       <div className="eyebrow">ACCOUNT RECOVERY</div>
-      <h1 id="password-reset-heading">{resetToken ? 'Choose a new password' : 'Reset your password'}</h1>
+      <h1 id="password-reset-heading">{resetRequested ? 'Enter your reset code' : 'Reset your password'}</h1>
       {message && <div className="auth-notice" role="status">{message}</div>}
       {!resetFinished && <>
         <label className="form-label" htmlFor="reset-email">Account email</label>
         <input className="form-control" id="reset-email" type="email" value={email}
           onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-        {resetToken ? <>
+        {resetRequested ? <>
+          <label className="form-label" htmlFor="reset-code">Email verification code (6 digits)</label>
+          <input className="form-control" id="reset-code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
+            autoComplete="one-time-code" value={resetToken} onChange={(event) => setResetToken(event.target.value.replace(/[^0-9]/g, '').slice(0, 6))} />
           <label className="form-label" htmlFor="reset-password">New password (minimum 12 characters)</label>
           <input className="form-control" id="reset-password" type="password" minLength={12}
             autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
@@ -1226,16 +1231,17 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
           <input className="form-control" id="reset-confirm" type="password" minLength={12}
             autoComplete="new-password" value={repeatPassword} onChange={(event) => setRepeatPassword(event.target.value)} />
           <button className="btn btn-brand auth-submit" type="button"
-            disabled={submitting || !email || newPassword.length < 12 || !repeatPassword}
+            disabled={submitting || !email || resetToken.length !== 6 || newPassword.length < 12 || !repeatPassword}
             onClick={() => void confirmReset()}>{submitting ? 'Saving…' : 'Reset password'}</button>
+          <button className="text-action auth-back" type="button" disabled={submitting} onClick={() => void requestReset()}>Send a new code</button>
         </> : <>
-          <p>We'll send a single-use link if email recovery is configured for your tenant. The link expires in 15 minutes.</p>
+          <p>We'll email a single-use six-digit code if recovery is configured for your account. It expires in 15 minutes.</p>
           <button className="btn btn-brand auth-submit" type="button" disabled={submitting || !email}
-            onClick={() => void requestReset()}>{submitting ? 'Sending…' : 'Send reset link'}</button>
+            onClick={() => void requestReset()}>{submitting ? 'Sending…' : 'Send reset code'}</button>
         </>}
       </>}
       <button className="text-action auth-back" type="button" onClick={() => {
-        setMessage(''); setShowPasswordReset(false); setResetToken(''); setResetFinished(false);
+        setMessage(''); setShowPasswordReset(false); setResetToken(''); setResetRequested(false); setResetFinished(false);
       }}>Back to sign in</button>
     </section>
   </main>;

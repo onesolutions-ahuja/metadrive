@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { randomInt, scryptSync, createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
@@ -5870,7 +5870,7 @@ const passwordRecoverySettingsSchema = z.object({
 const passwordResetRequestSchema = z.object({ email: z.string().trim().email().max(254) }).strict();
 const passwordResetConfirmSchema = z.object({
   email: z.string().trim().email().max(254),
-  token: z.string().regex(/^[A-Za-z0-9_-]{64}$/),
+  token: z.string().regex(/^[0-9]{6}$/),
   newPassword: z.string().min(12).max(256)
 }).strict();
 const passwordResetRate = new Map<string, { count: number; until: number }>();
@@ -5928,7 +5928,7 @@ app.put('/api/auth/password-recovery/settings', accessAuthentication,
     return res.json(parsed.data);
   });
 app.post('/api/auth/password-reset/request', async (req: Request, res: Response) => {
-  const response = { message: 'If this account supports email recovery, a link will be sent.' };
+  const response = { message: 'If this account supports email recovery, a one-time code will be sent.' };
   if (jwtService.config.mode !== 'local') return res.status(202).json(response);
   const parsed = passwordResetRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid email' });
@@ -5945,21 +5945,20 @@ app.post('/api/auth/password-reset/request', async (req: Request, res: Response)
   const credential = tenant.namedCredentials.find((item) =>
     item.id === smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false);
   if (!credential) return res.status(202).json(response);
-  const token = randomBytes(48).toString('base64url');
-  const resetUrl = new URL(url.toString());
-  resetUrl.searchParams.set('resetEmail', email);
-  resetUrl.searchParams.set('resetToken', token);
+  // Random six-digit OTP: persist only a salted, memory-hard verifier.
+  const token = String(randomInt(0, 1_000_000)).padStart(6, '0');
+  const tokenSalt = randomBytes(16).toString('hex');
+  const tokenVerifier = tokenSalt + ':' + scryptSync(token, tokenSalt, 32).toString('hex');
   try {
     await sendTenantEmail(user.tenantId, tenant, smtpCredentialId, fromEmail, [email],
-      'MetaDrive password reset',
-      'A password reset was requested. This link expires in 15 minutes.\n\n' + resetUrl.toString()
-      + '\n\nIgnore this message if you did not request it. MFA requirements remain unchanged.');
+      'MetaDrive password reset code',
+      'Your MetaDrive password reset code is: ' + token + '\n\nThis code expires in 15 minutes. Enter it in the password reset screen.\n\nIgnore this message if you did not request it. MFA requirements remain unchanged.');
     const current = state.users.find((item) => item.id === user.id && item.tenantId === user.tenantId);
     if (!current || current.disabled || !tenantData(user.tenantId)) return res.status(202).json(response);
     const nextState: PlatformState = {
       ...state,
       users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-        ? { ...item, passwordReset: { tokenHash: hashToken(token), expiresAt: Date.now() + 15 * 60_000 } }
+        ? { ...item, passwordReset: { tokenHash: tokenVerifier, expiresAt: Date.now() + 15 * 60_000 } }
         : item),
       tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
         state.tenants[user.tenantId], user.id, 'auth.password-reset.requested') }
@@ -5977,14 +5976,17 @@ app.post('/api/auth/password-reset/confirm', async (req: Request, res: Response)
   const parsed = passwordResetConfirmSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid password-reset request' });
   const email = parsed.data.email.toLowerCase();
-  if (!resetAllowed('redeem:' + (req.ip ?? 'unknown') + ':' + hashToken(email), 8))
+  if (!resetAllowed('redeem:' + (req.ip ?? 'unknown') + ':' + hashToken(email), 8)
+    || !resetAllowed('redeem-email:' + hashToken(email), 8))
     return res.status(429).json({ error: 'Too many reset attempts' });
   const user = state.users.find((item) => item.email.toLowerCase() === email);
   const request = user?.passwordReset;
+  const verifier = request?.tokenHash.split(':') ?? [];
   const valid = Boolean(user && !user.disabled && tenantData(user.tenantId)
     && request && request.expiresAt > Date.now()
-    && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token))));
-  if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset link' });
+    && verifier.length === 2 && /^[a-f0-9]{32}$/.test(verifier[0]) && /^[a-f0-9]{64}$/.test(verifier[1])
+    && timingSafeEqual(Buffer.from(verifier[1], 'hex'), scryptSync(parsed.data.token, verifier[0], 32)));
+  if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset code' });
   const hashed = await hashPassword(parsed.data.newPassword);
   const nextState: PlatformState = {
     ...state,
