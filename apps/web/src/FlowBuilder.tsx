@@ -678,9 +678,17 @@ export default function FlowBuilder({
     if (selected.type === 'Assignment') {
       const triggerObject = objects.find((object) => object.apiName === flow.triggerObject);
       const beforeSave = flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save';
+      const selectedVariableResource = flow.resources.find((resource) => resource.name === selected.config.variable);
+      const collectionOperators = ['Assign', 'Add', 'Add At Beginning', 'Add At End', 'Remove', 'Remove All'];
+      const scalarOperators = ['Assign', 'Add', 'Subtract', 'Multiply', 'Divide', 'Add At Beginning', 'Add At End', 'Remove All'];
+      const assignmentOperators = selectedVariableResource?.isCollection ? collectionOperators : scalarOperators;
       return <>
-      <label className="form-label">Variable<select className="form-control" value={displayValue(selected.config.variable)} onChange={(event) => setConfig('variable', event.target.value)}><option value="">Select variable</option>{flow.resources.length > 0 && <optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</optgroup>}{beforeSave && triggerObject && <optgroup label="$Record Fields">{triggerObject.fields.filter((field) => !field.formula && !['AutoNumber', 'Auto Number'].includes(field.dataType)).map((field) => <option key={field.apiName} value={`$Record.${field.apiName}`}>{field.label}</option>)}</optgroup>}</select></label>
-      <label className="form-label">Operator<select className="form-control" value={displayValue(selected.config.operator) || 'Assign'} onChange={(event) => setConfig('operator', event.target.value)}>{['Assign', 'Add', 'Subtract', 'Multiply', 'Divide', 'Add At Beginning', 'Add At End', 'Remove All'].map((operator) => <option key={operator}>{operator}</option>)}</select></label>
+      <label className="form-label">Variable<select className="form-control" value={displayValue(selected.config.variable)} onChange={(event) => onFlowChange({
+        ...flow, elements: flow.elements.map((element) => element.id === selected.id
+          ? { ...element, config: { ...element.config, variable: event.target.value, operator: 'Assign' } }
+          : element)
+      })}><option value="">Select variable</option>{flow.resources.length > 0 && <optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label}</option>)}</optgroup>}{beforeSave && triggerObject && <optgroup label="$Record Fields">{triggerObject.fields.filter((field) => !field.formula && !['AutoNumber', 'Auto Number'].includes(field.dataType)).map((field) => <option key={field.apiName} value={`$Record.${field.apiName}`}>{field.label}</option>)}</optgroup>}</select></label>
+      <label className="form-label">Operator<select className="form-control" value={displayValue(selected.config.operator) || 'Assign'} onChange={(event) => setConfig('operator', event.target.value)}>{assignmentOperators.map((operator) => <option key={operator}>{operator}</option>)}</select></label>
       <label className="form-label">Value<textarea className="form-control" rows={5} style={{ resize: 'vertical', minHeight: 100, whiteSpace: 'pre-wrap' }} value={displayValue(selected.config.value)} onChange={(event) => setConfig('value', event.target.value)} /></label>
     </>;
     }

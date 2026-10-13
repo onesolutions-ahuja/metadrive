@@ -2761,6 +2761,51 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     assert.equal(invalidCollectionDefinition.data.valid, false);
     assert.ok(invalidCollectionDefinition.data.errors.some((message: string) => message.includes('Record Collection')));
 
+    const assignmentCreateFlow = {
+      ...createCollectionDefinition,
+      apiName: 'Flow_Assignment_Collection_Smoke',
+      label: 'Flow Assignment Collection Smoke',
+      elements: [
+        { id: 1, type: 'Start', label: 'Start', config: {} },
+        { id: 2, type: 'Assignment', label: 'Append Another Record', config: {
+          variable: 'NewAccounts', operator: 'Add', value: '{!ExtraAccount}'
+        } },
+        { id: 3, type: 'Create Records', label: 'Create Appended Collection', config: {
+          object: 'Account', recordSource: 'collection',
+          sourceCollection: 'NewAccounts', outputCollection: 'CreatedAccounts'
+        } }
+      ],
+      connectors: [
+        { id: 'start-assign', from: 1, to: 2, label: '', kind: 'normal' as const },
+        { id: 'assign-create', from: 2, to: 3, label: '', kind: 'normal' as const }
+      ],
+      resources: [
+        ...createCollectionDefinition.resources,
+        { name: 'ExtraAccount', label: 'Extra Account', type: 'Record' as const,
+          dataType: 'Account', isCollection: false, availableForInput: true, availableForOutput: false }
+      ]
+    };
+    const savedAssignmentCreate = await send('/metadata/flows/Flow_Assignment_Collection_Smoke',
+      token, 'PUT', assignmentCreateFlow);
+    assert.equal(savedAssignmentCreate.status, 200, JSON.stringify(savedAssignmentCreate.data));
+    const executedAssignmentCreate = await send('/flows/Flow_Assignment_Collection_Smoke/execute',
+      token, 'POST', { NewAccounts: [{ Name: 'MD10 Assignment First' }],
+        ExtraAccount: { Name: 'MD10 Assignment Added' } });
+    assert.equal(executedAssignmentCreate.status, 200, JSON.stringify(executedAssignmentCreate.data));
+    assert.deepEqual(
+      executedAssignmentCreate.data.outputs.CreatedAccounts.map((record: any) => record.Name),
+      ['MD10 Assignment First', 'MD10 Assignment Added']
+    );
+    const scalarRemoveFlow = await send('/metadata/flows/Flow_Assignment_Collection_Smoke/validate',
+      token, 'POST', {
+        ...assignmentCreateFlow,
+        elements: assignmentCreateFlow.elements.map((element) => element.type === 'Assignment'
+          ? { ...element, config: { ...element.config, variable: 'ExtraAccount', operator: 'Remove' } }
+          : element)
+      });
+    assert.equal(scalarRemoveFlow.data.valid, false);
+    assert.ok(scalarRemoveFlow.data.errors.some((error: string) => error.includes('non-collection')));
+
   } finally {
     if (child) await stopApi(child);
     await rm(directory, { recursive: true, force: true });

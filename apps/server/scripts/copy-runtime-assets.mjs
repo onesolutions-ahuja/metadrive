@@ -31,6 +31,7 @@ for(const name of [
   'route-aliases.mjs',
   'flow-formula-syntax.mjs',
   'flow-create-collection.mjs',
+  'flow-collection-assignment.mjs',
   'tenant-usage.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
