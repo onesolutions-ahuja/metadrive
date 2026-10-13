@@ -47,18 +47,18 @@ export class IntegrationOutbox {
     if (!tenantId || !workerId || !id || !bounded(statusCode,200,399)) throw new Error('INVALID_OUTBOX_COMPLETION');
     const result=await this.db.query(`UPDATE md_integration_outbox SET status='succeeded',lease_owner=NULL,lease_until=NULL,
       encrypted_request='',response_status=$4,updated_at=now() WHERE id=$1 AND tenant_id=$2
-      AND lease_owner=$3 AND status='leased' RETURNING id`,[id,tenantId,workerId,statusCode]);
+      AND lease_owner=$3 AND status='leased' AND lease_until>now() RETURNING id`,[id,tenantId,workerId,statusCode]);
     if (!result.rows.length) throw new Error('OUTBOX_LEASE_LOST');
   }
-  async fail(tenantId:string,workerId:string,id:string,errorCode:string,delayMs:number):Promise<void> {
+  async fail(tenantId:string,workerId:string,id:string,errorCode:string,delayMs:number,permanent=false):Promise<void> {
     if (!tenantId || !workerId || !id || !/^[A-Z][A-Z0-9_]{1,63}$/.test(errorCode) ||
       !bounded(delayMs,0,3600000)) throw new Error('INVALID_OUTBOX_FAILURE');
     const result=await this.db.query(`UPDATE md_integration_outbox SET
-      status=CASE WHEN attempts>=max_attempts THEN 'dead' ELSE 'pending' END,
-      encrypted_request=CASE WHEN attempts>=max_attempts THEN '' ELSE encrypted_request END,
+      status=CASE WHEN attempts>=max_attempts OR $6::boolean THEN 'dead' ELSE 'pending' END,
+      encrypted_request=CASE WHEN attempts>=max_attempts OR $6::boolean THEN '' ELSE encrypted_request END,
       lease_owner=NULL,lease_until=NULL,next_attempt_at=now()+($5::integer*interval '1 millisecond'),
       error_code=$4,updated_at=now() WHERE id=$1 AND tenant_id=$2 AND lease_owner=$3
-      AND status='leased' RETURNING id`,[id,tenantId,workerId,errorCode,delayMs]);
+      AND status='leased' RETURNING id`,[id,tenantId,workerId,errorCode,delayMs,permanent]);
     if (!result.rows.length) throw new Error('OUTBOX_LEASE_LOST');
   }
 }
