@@ -34,7 +34,8 @@ for(const name of [
   'flow-collection-assignment.mjs',
   'tenant-usage.mjs',
   'installable-app-packages.mjs',
-  'bundled-app-components.mjs'
+  'bundled-app-components.mjs',
+  'kiosk-device-provision.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
