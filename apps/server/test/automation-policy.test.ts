@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   conversationKeyForIncoming, defaultAutomationSettings,
-  expiredConversationInterview, retryDelayMs, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession
+  expiredConversationInterview, retryDelayMs, retryBudgetExhausted, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession
 } from '../src/automation-policy.js';
 
 test('failed execution retries are disabled by default', () => {
   assert.equal(defaultAutomationSettings.autoRetryFailedFlows, false);
   assert.equal(defaultAutomationSettings.conversationIdleMinutes, 15);
+  assert.equal(defaultAutomationSettings.maxRetryAttempts, 10);
   assert.equal(retryDelayMs(1), 60_000);
   assert.equal(retryDelayMs(8), 3_600_000);
 });
@@ -58,4 +59,16 @@ test('an incoming Legal message does not renew an independent Beauty interview',
   assert.equal(sameConversationSession({ ...lawyer, Conversation_Context__c: 'Beauty' }, lawyer), false);
   assert.equal(sameConversationSession(null, lawyer), false);
   assert.equal(sameConversationSession({ Conversation_Key__c: 'key' }, { Conversation_Key__c: 'key' }), true);
+});
+
+test('retry budgets stop on the final allowed attempt and reject invalid metadata',()=>{
+  assert.equal(retryBudgetExhausted(1,10),false);
+  assert.equal(retryBudgetExhausted(9,10),false);
+  assert.equal(retryBudgetExhausted(10,10),true);
+  assert.equal(retryBudgetExhausted(11,10),true);
+  assert.equal(retryBudgetExhausted(1,1),true);
+  assert.throws(()=>retryBudgetExhausted(0,10),/Invalid automation retry budget/);
+  assert.throws(()=>retryBudgetExhausted(5,0),/Invalid automation retry budget/);
+  assert.throws(()=>retryBudgetExhausted(5,21),/Invalid automation retry budget/);
+  assert.throws(()=>retryBudgetExhausted(3.5,10),/Invalid automation retry budget/);
 });
