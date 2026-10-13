@@ -91,7 +91,7 @@ test('MD10 orchestration: metadata validation, approval stages, durable resume a
     const definition = {
       apiName: 'MD10_Orchestration_Proof',
       label: 'MD10 Orchestration Proof',
-      flowType: 'Autolaunched Flow', status: 'Active', versionNumber: 1, activeVersion: null,
+      flowType: 'Flow Orchestration', status: 'Active', versionNumber: 1, activeVersion: null,
       triggerObject: null, startConfig: {},
       elements: [
         { id: 1, type: 'Start', label: 'Start', config: {} },
