@@ -1174,6 +1174,42 @@ test('Collection Filter and Collection Sort execute and validate record collecti
         `formula validation case ${index + 1} must reject ${invalidCase.expression}: ${JSON.stringify(invalidFormula.data.errors)}`);
     }
 
+    // Native {!resource} syntax must round-trip through activation and execution.
+    // Previously activation substituted null for every input, rejecting VALUE/DATEVALUE.
+    const referencedFormulaFlow = await send('/metadata/flows/Formula_References_Smoke', token, 'PUT', {
+      apiName: 'Formula_References_Smoke', label: 'Formula References Smoke', flowType: 'Autolaunched Flow',
+      status: 'Active', versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},
+      elements: [{ id: 1, type: 'Start', label: 'Start', config: {} }],
+      connectors: [],
+      resources: [
+        { name: 'AmountText', label: 'Amount Text', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false },
+        { name: 'DateText', label: 'Date Text', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false },
+        { name: 'ConvertedNumber', label: 'Converted Number', type: 'Formula', dataType: 'Number', isCollection: false, availableForInput: false, availableForOutput: true, value: 'VALUE({!AmountText})' },
+        { name: 'ConvertedDate', label: 'Converted Date', type: 'Formula', dataType: 'Date', isCollection: false, availableForInput: false, availableForOutput: true, value: 'DATEVALUE({!DateText})' },
+        { name: 'Condition', label: 'Condition', type: 'Formula', dataType: 'Text', isCollection: false, availableForInput: false, availableForOutput: true, value: "IF({!AmountText} = '19.25', 'matched', 'other')" },
+        { name: 'CurrentUser', label: 'Current User', type: 'Formula', dataType: 'Text', isCollection: false, availableForInput: false, availableForOutput: true, value: '{!$User.Email}' }
+      ],
+      versions: []
+    });
+    assert.equal(referencedFormulaFlow.status, 200, JSON.stringify(referencedFormulaFlow.data));
+    const referenceRun = await send('/flows/Formula_References_Smoke/execute', token, 'POST', {
+      AmountText: '19.25', DateText: '2026-10-13'
+    });
+    assert.equal(referenceRun.status, 200, JSON.stringify(referenceRun.data));
+    assert.equal(referenceRun.data.outputs.ConvertedNumber, 19.25);
+    assert.equal(referenceRun.data.outputs.ConvertedDate, '2026-10-13');
+    assert.equal(referenceRun.data.outputs.Condition, 'matched');
+    assert.equal(referenceRun.data.outputs.CurrentUser, login.data.user.email);
+    const badNestedReference = await send('/metadata/flows/Formula_References_Smoke/validate', token, 'POST', {
+      ...referencedFormulaFlow.data.flow,
+      resources: referencedFormulaFlow.data.flow.resources.map((resource: Record<string, unknown>) =>
+        resource.name === 'ConvertedNumber'
+          ? { ...resource, value: 'IF({!AmountText}, 1, NOT_A_FUNCTION(2))' }
+          : resource)
+    });
+    assert.ok(badNestedReference.data.errors.some((error: string) => error.includes('Unsupported formula function')),
+      'even a lazy branch must be syntax-checked at activation');
+
     const decisionFlow = await send('/metadata/flows/Decision_Resource_Smoke', token, 'PUT', {
       apiName: 'Decision_Resource_Smoke', label: 'Decision Resource Smoke', flowType: 'Autolaunched Flow',
       status: 'Active', versionNumber: 1, activeVersion: null, triggerObject: null, startConfig: {},
