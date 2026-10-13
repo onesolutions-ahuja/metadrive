@@ -6066,6 +6066,7 @@ function RecordWorkspace({
     const renderRuntimeRegion = (region: 'header' | 'main' | 'sidebar') =>
       childrenOf(assignedPage?.components ?? [], null).filter((component) => (component.region ?? 'main') === region).map(renderRuntimeComponent);
     return <div className="records-page">
+      {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
         <div className="record-breadcrumb">{object.label} <ChevronRight size={13} /> {recordName}</div>
@@ -6206,6 +6207,7 @@ function RecordWorkspace({
       return !layout || layout.actions.includes('Delete');
     })());
   return <div className="records-page">
+    {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
     <div className="records-page-heading">
       <div className="record-object-icon"><Database size={18} /></div>
       <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
