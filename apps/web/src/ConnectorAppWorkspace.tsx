@@ -54,7 +54,7 @@ function configFields(metadata?: string): { values: Record<string, string>; labe
 export default function ConnectorAppWorkspace({
   app, credentials, flows, canManageCredentials, canView, canManageSecrets, canTest,
   canInstall, canLicenceAdmin, onGrantLicence, canManageFlows, encryptionReady, onBack,
-  onSave, onDelete, onRotate, onTest, onOAuthAuthorize, loadHistory, onOpenRecord, onOpenFlow, onLifecycle
+  onSave, onDelete, onRotate, onTest, onOAuthAuthorize, loadHistory, onOpenRecord, onOpenFlow, onLifecycle, onCreateKioskDevice
 }: {
   app: ConnectorApp;
   credentials: NamedCredentialMetadata[];
@@ -66,6 +66,7 @@ export default function ConnectorAppWorkspace({
   canInstall: boolean;
   canLicenceAdmin: boolean;
   onGrantLicence: (appKey: string) => Promise<void>;
+  onCreateKioskDevice: (index: number) => Promise<{deviceId:string;username:string;password:string}>;
   canManageFlows: boolean;
   encryptionReady: boolean | null;
   onBack: () => void;
@@ -86,6 +87,8 @@ export default function ConnectorAppWorkspace({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
+  const [kioskIndex,setKioskIndex] = useState(1);
+  const [kioskCredentials,setKioskCredentials] = useState<{username:string;password:string}|null>(null);
   const licensed = appLicensed(app);
   const matched = credentials.filter((item) => item.name === app.CredentialName__c);
   const credential = matched[0];
@@ -147,6 +150,31 @@ export default function ConnectorAppWorkspace({
             onClick={() => setSection(tab)}>{tab === 'settings' ? 'Settings' : tab === 'history' ? 'Records' : tab === 'flows' ? 'Flows' : 'Licence'}</button>)}
       </div>
     </section>
+    {app.AppKey__c === 'kiosk' && <section className="surface" style={{padding:18,marginBottom:16}}>
+      <h3>Kiosk devices</h3>
+      <p>Kiosk accounts use virtual usernames: no real email address or mailbox is needed. Credentials are shown once to an administrator.</p>
+      <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+        <label>Kiosk number <input className="form-control" aria-label="Kiosk number" type="number" min="1" max="999"
+          value={kioskIndex} onChange={event=>setKioskIndex(Number(event.target.value))} style={{width:100}} /></label>
+        <button className="btn btn-brand" disabled={!licensed || acting || !canInstall} onClick={()=>void (async()=>{
+          setActing(true);setError('');setKioskCredentials(null);
+          try {const created=await onCreateKioskDevice(kioskIndex);setKioskCredentials({username:created.username,password:created.password});}
+          catch(e){setError(e instanceof Error?e.message:'Kiosk provisioning failed');}
+          finally {setActing(false);}
+        })()}>Create Kiosk Login</button>
+        <button className="btn" disabled={!licensed} onClick={()=>{
+          const url=new URL('/une/apps/KioskApp/home?appId=KioskApp',window.location.origin);
+          window.open(url.href,'metadrive-kiosk-preview','popup,width=1100,height=850,resizable=yes,scrollbars=yes');
+        }}>Launch Kiosk in popup</button>
+      </div>
+      {kioskCredentials && <div className="info-callout" role="status" style={{marginTop:12}}>
+        <strong>Save these device credentials now. They will not be emailed or displayed again.</strong>
+        <p>Username: <code>{kioskCredentials.username}</code></p>
+        <p>Password: <code>{kioskCredentials.password}</code></p>
+        <button className="btn" onClick={()=>setKioskCredentials(null)}>I saved the credentials</button>
+      </div>}
+      <p style={{marginTop:10}}>The popup uses your current administrator session for preview. A dedicated kiosk device signs in using its own virtual username and generated password.</p>
+    </section>}
     {error && <div className="records-message" role="alert">{error}</div>}
     {section === 'settings' && <>
       {!licensed && <div className="info-callout"><ShieldCheck size={15}/> Start your free trial or activate a licence to configure or test this connection.</div>}
