@@ -9883,6 +9883,11 @@ function PageBuilder({
           page.layoutMode === 'free-canvas' ? canvasPositionFromEvent(event) : undefined, parentId);
         return;
       }
+      const dragged = page.components.find(item => item.id === draggedId);
+      if (dragged?.properties.canvasLocked === true) {
+        onNotify('Unlock this component before moving it.');
+        return;
+      }
       if (!canNest(page.components, draggedId, parentId)) {
         onNotify('Cannot nest a component inside itself or one of its descendants.');
         return;
@@ -10079,7 +10084,7 @@ function PageBuilder({
         && <div className="metadata-nested-host">{nestedChildren}</div>}
       {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
         && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode && component.properties.canvasLocked !== true
         && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
           title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
           onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
@@ -10347,6 +10352,16 @@ function PageBuilder({
                 onClick={() => { setSelectedId(item.id); setPageSettingsOpen(false); }} aria-current={selectedId === item.id ? 'true' : undefined}>
                 <span>{item.label}</span><small>{item.type.replace(/^Custom:/, '')}</small>
               </button>
+              <button type="button" title="Move layer down" aria-label={'Move ' + item.label + ' down'}
+                onClick={() => reorderLayer(item.id, 1)}><ArrowDown size={13} /></button>
+              <button type="button" title="Move layer up" aria-label={'Move ' + item.label + ' up'}
+                onClick={() => reorderLayer(item.id, -1)}><ArrowUp size={13} /></button>
+              <button type="button" title={item.properties.canvasLocked === true ? 'Unlock placement' : 'Lock placement'}
+                aria-pressed={item.properties.canvasLocked === true}
+                aria-label={(item.properties.canvasLocked === true ? 'Unlock ' : 'Lock ') + item.label}
+                onClick={() => updateComponent(item.id, { properties: {
+                  ...item.properties, canvasLocked: item.properties.canvasLocked !== true
+                } })}>{item.properties.canvasLocked === true ? <Lock size={13} /> : <Unlock size={13} />}</button>
               <button type="button" title={item.visible ? 'Hide component' : 'Show component'} aria-label={(item.visible ? 'Hide ' : 'Show ') + item.label}
                 onClick={() => updateComponent(item.id, { visible: !item.visible })}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
             </div>)}
@@ -10569,6 +10584,9 @@ function PageBuilder({
               </label>
             </>}
             {inspectorTab !== 'Data & Actions' && page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
+              <label className="checkbox-row"><input type="checkbox" checked={selected.properties.canvasLocked === true}
+                onChange={event => updateComponent(selected.id, { properties: { ...selected.properties, canvasLocked: event.target.checked } })} />
+                Lock component position and size</label>
               <div className="properties-section-title">Position and Size (pixels)</div>
               {([
                 ['x', 'Left'], ['y', 'Top'], ['width', 'Width'], ['height', 'Height']
