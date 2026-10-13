@@ -334,8 +334,16 @@ async function run() {
         currentIssues = s.issues;
         try {
           const started = performance.now();
-          const response = await page.goto(urlFor(relative), { waitUntil: 'domcontentloaded', timeout: 45000 });
-          s.httpStatus = response?.status() ?? null;
+          // Navigate through the SPA router rather than requesting deep links from the static host.
+          // Static hosting can return HTTP 404 for a valid client-side route.
+          const destination = urlFor(relative);
+          await page.evaluate(target => {
+            history.pushState({}, '', target);
+            window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+          }, destination);
+          s.httpStatus = null;
+          await page.waitForURL(destination, { timeout: 10000 });
+          await page.waitForTimeout(350);
           const domMs = performance.now() - started;
           await page.locator('body').waitFor({ state: 'visible', timeout: 15000 });
           if (authenticated) {
@@ -357,6 +365,16 @@ async function run() {
           s.timing = { domMs: Math.round(domMs), readyMs: Math.round(readyMs), ...timings };
           if (readyMs > limits.pageMs) findIssue(s.issues, 'SLOW_PAGE', 'medium', name + ': ' + Math.round(readyMs) + 'ms > ' + limits.pageMs + 'ms goal');
           if (s.httpStatus >= 400) findIssue(s.issues, 'PAGE_HTTP', 'high', 'HTTP ' + s.httpStatus);
+          const appState = await page.evaluate(() => ({
+            path: location.pathname,
+            loginVisible: Boolean(document.querySelector('#login-email, input[type="password"]')),
+            notFound: /(^|\\n)(404|page not found|route not found)(\\n|$)/i.test(document.body?.innerText || '')
+          }));
+          s.checks.appState = appState;
+          if (appState.loginVisible || appState.notFound) {
+            findIssue(s.issues, 'ROUTE_NOT_RENDERED', 'high', name + ': ' + appState.path);
+            throw new Error('Client route did not render an authenticated page');
+          }
           s.layout = await collectLayout(page);
           // Regression checks for the defects recorded in PRs #119, #121 and #123.
           // Read-only geometry checks; never click business actions or reveal field values.
