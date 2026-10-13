@@ -16,6 +16,10 @@ export default function TillSalesWorkspace(props) {
   const [completed,setCompleted] = React.useState(false);
   const scanner = React.useRef(null);
   const currency = typeof p.currency === 'string' ? p.currency : '£';
+  // Each tenant/page placement supplies its own layout metadata.
+  const basketSide = p.basketSide === 'right' ? 'right' : 'left';
+  const basketWidth = Math.min(65, Math.max(30, Number(p.basketWidthPercent) || 45));
+  const catalogColumns = Math.min(5, Math.max(1, Math.round(Number(p.catalogColumns) || 3)));
   const money = (x) => currency + Number(x || 0).toFixed(2);
   const configured = (event) => Boolean(p.actionFlows && p.actionFlows[event] && p.actionFlows[event].flowApiName);
   const enabled = (event) => !busy && !p.disabled && !p.preview && configured(event);
@@ -48,12 +52,16 @@ export default function TillSalesWorkspace(props) {
     const result = await emit('checkout',{paymentMethod:method,customerId:selected?.id || null});
     if (result?.completed === true) {setCompleted(true);setCustomerId('');setBarcode('');setQuery('');scanner.current?.focus();}
   };
-  return <section className="md-till" style={{'--md-till-accent':p.accentColor || '#126be5'}} aria-label={p.label || 'Cashier till'}>
+  return <section className="md-till" style={{
+    '--md-till-accent':p.accentColor || '#126be5',
+    '--md-till-basket-width':basketWidth + '%',
+    '--md-till-product-columns':catalogColumns
+  }} aria-label={p.label || 'Cashier till'}>
     <header className="md-till-top"><div className="md-till-brand"><span aria-hidden="true">▦</span><div><strong>{p.title || 'Sales Till'}</strong><small>{[p.storeLabel,p.terminalLabel,p.cashierLabel].filter(Boolean).join(' · ')}</small></div></div><small>{p.statusLabel || 'Ready'}</small></header>
     {(error || p.actionError) && <div role="alert" className="md-till-error">{error || p.actionError}</div>}
     {completed && <div role="status" className="md-till-success">Sale completed by the selected Flow.</div>}
     {p.loading && <div role="status" className="md-till-info">Loading object records…</div>}
-    <div className="md-till-body">
+    <div className={'md-till-body' + (basketSide === 'right' ? ' basket-right' : '')}>
       <section className="md-till-cart" aria-label="Sale basket">
         <div className="md-till-row"><div><small className="md-till-kicker">CURRENT SALE</small><h2>Basket <em>{count}</em></h2></div><button className="md-till-link" disabled={!enabled('reset') || !lines.length} onClick={() => emit('reset',{})}>Clear</button></div>
         <button className="md-till-customer" onClick={() => setCustomerOpen(!customerOpen)} aria-expanded={customerOpen}>♙ <span><strong>{selected?.name || p.walkInLabel || 'Walk-in customer'}</strong><small>{selected ? [selected.phone,selected.email].filter(Boolean).join(' · ') : 'Search and assign customer'}</small></span>⌄</button>
