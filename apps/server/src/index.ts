@@ -14328,8 +14328,13 @@ app.post('/api/kiosk/devices', accessAuthentication, requirePermission('security
   const deviceId = randomUUID();
   const passphrase = randomBytes(24).toString('base64url');
   try {
-    const updated = prepareKioskDevice(tenant,username,deviceId,new Date().toISOString());
     const credentials = await hashPassword(passphrase);
+    // Recheck after the awaited password hash: concurrent administrator
+    // requests must never provision the same virtual identity twice.
+    if (state.users.some(user => user.email.toLowerCase() === username))
+      return res.status(409).json({error:'This kiosk login already exists'});
+    const currentTenant = tenantData(principal.tenantId)!;
+    const updated = prepareKioskDevice(currentTenant,username,deviceId,new Date().toISOString());
     const device: LocalUser = {
       id:deviceId,tenantId:principal.tenantId,name:'Kiosk '+parsed.data.index,
       email:username,passwordSalt:credentials.salt,passwordHash:credentials.hash,
@@ -14341,6 +14346,7 @@ app.post('/api/kiosk/devices', accessAuthentication, requirePermission('security
       users:[...state.users,device]};
     persistState(nextState);
     state = nextState;
+    res.setHeader('Cache-Control','no-store');
     return res.status(201).json({
       deviceId,username,password:passphrase,
       appApiName:'KioskApp',
@@ -14348,6 +14354,39 @@ app.post('/api/kiosk/devices', accessAuthentication, requirePermission('security
     });
   } catch(error) {
     return res.status(409).json({error:error instanceof Error?error.message:'Unable to register kiosk'});
+  }
+});
+// Email-free recovery. Reset invalidates the prior device access-token
+// generation and refresh sessions; the new secret is returned once.
+app.post('/api/kiosk/devices/reset', accessAuthentication, requirePermission('security:manage'), async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(501).json({error:'Device reset is unavailable in external OIDC mode'});
+  const parsed = z.object({index:z.number().int().min(1).max(999)}).strict().safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({error:'Enter a kiosk number from 1 to 999'});
+  const principal = getPrincipal(res);
+  const username = kioskDeviceIdentity(principal.tenantId,parsed.data.index);
+  const device = state.users.find(user => user.email.toLowerCase() === username && user.tenantId === principal.tenantId);
+  if (!device) return res.status(404).json({error:'Kiosk login was not found'});
+  const passphrase = randomBytes(24).toString('base64url');
+  const credentials = await hashPassword(passphrase);
+  const activeDevice = state.users.find(user => user.id === device.id && user.tenantId === principal.tenantId);
+  if (!activeDevice) return res.status(409).json({error:'Kiosk was modified during reset'});
+  const replacement: LocalUser = {
+    ...activeDevice,
+    passwordSalt:credentials.salt,passwordHash:credentials.hash,
+    passwordReset:undefined,lockedUntil:undefined,
+    authVersion:(activeDevice.authVersion ?? 0)+1
+  };
+  const nextState = {...state,
+    users:state.users.map(user => user.id === device.id ? replacement : user),
+    refreshSessions:state.refreshSessions.filter(session => session.userId !== device.id)
+  };
+  try {
+    persistState(nextState);
+    state = nextState;
+    res.setHeader('Cache-Control','no-store');
+    return res.json({deviceId:device.id,username,password:passphrase});
+  } catch (error) {
+    return res.status(503).json({error:'Unable to persist Kiosk password reset'});
   }
 });
 app.get('/api/metadata/permissions', requirePermission('security:read'), (_req: Request, res: Response) => {
