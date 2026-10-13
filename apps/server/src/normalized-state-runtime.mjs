@@ -3,7 +3,7 @@
 // until Flow, credential, row-based record and rollback parity are verified.
 import {projectNormalizedTree,restoreNormalizedTree,verifyNormalizedTree} from './normalized-state-tree.mjs';
 import {stateDigest} from './relational-projection.mjs';
-import {planNormalizedDelta,verifyDeltaReadback,verifyProjectedDelta} from './normalized-state-delta.mjs';
+import {planNormalizedDelta,verifyDeltaReadback,verifyProjectedDelta,primeNormalizedDeltaIndex} from './normalized-state-delta.mjs';
 
 function asRevision(value) {
   const n=Number(value);
@@ -63,6 +63,7 @@ export async function readNormalizedState(pool,verifyPhysicalRecords=null) {
     if(verifyPhysicalRecords) await verifyPhysicalRecords(client,state);
     await client.query('COMMIT');
     begun=false;
+    primeNormalizedDeltaIndex(nodes);
     return {state,version,digest,sourceDigest:source_sha256.trim(),storageRevision,nodes};
   } catch(error) {
     if(begun) await client.query('ROLLBACK');
