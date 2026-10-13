@@ -7,3 +7,11 @@
 .md-till-body.md-till-catalog-first{grid-template-columns:minmax(0,1fr) minmax(0,var(--md-till-basket-width,45%))}
 .md-till-catalog-first .md-till-catalog{grid-column:1;grid-row:1}
 .md-till-catalog-first .md-till-cart{grid-column:2;grid-row:1;border-right:0;border-left:1px solid var(--md-till-border)}
+
+/* Designer-only section divider; one metadata update after pointer release. */
+.md-till-body{position:relative}
+.md-till-split-handle{position:absolute;z-index:4;left:var(--md-till-split-position,45%);top:0;bottom:0;width:16px;min-height:100%;transform:translateX(-50%);padding:0;border:0;background:transparent;cursor:col-resize;touch-action:none}
+.md-till-split-handle::before{content:"";position:absolute;top:0;bottom:0;left:7px;width:2px;background:transparent;transition:background .12s ease}
+.md-till-split-handle:hover::before,.md-till-split-handle:focus-visible::before{background:var(--md-till-accent)}
+.md-till-split-handle:focus-visible{outline:2px solid var(--md-till-accent);outline-offset:-2px}
+@media(max-width:630px){.md-till-split-handle{display:none}}
