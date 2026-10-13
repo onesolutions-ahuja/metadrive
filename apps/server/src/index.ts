@@ -7,7 +7,10 @@ import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, retryBudgetExhausted, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
-import { mayRetry, retryAfterMs } from './connector-reliability.js';
+import { mayRetry, retryAfterMs, CalloutFault } from './connector-reliability.js';
+import { sealIntegrationEnvelope, openIntegrationEnvelope } from './connector-envelope.js';
+import { IntegrationOutbox } from './connector-outbox.js';
+import { dispatchIntegrationDeliveries } from './connector-delivery-worker.js';
 import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorization, validatedOAuthUrl, type OAuthVault, type OAuthToken } from './connector-oauth.js';
 import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
@@ -14728,7 +14731,7 @@ async function performHttpCallout(
   } else if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code') {
     if (!namedCredential) throw new Error('OAuth authentication requires a tenant Named Credential.');
     // Debug must never contact external OAuth token endpoints.
-    if (!context.debug) headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(tenantId,namedCredential)}`;
+    if (!context.debug && config.deliveryMode !== 'DURABLE_ASYNC') headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(tenantId,namedCredential)}`;
   }
   // Resolve JSON fields individually instead of substituting inside serialized JSON:
   // recipient names, quotes and line breaks must remain valid JSON after mapping.
@@ -14771,6 +14774,45 @@ async function performHttpCallout(
     maxAttempts = requestedAttempts;
   }
   if (context.debug) return { body: { debugExecution: true, requestBody: communicationPayload(body) }, status: 200 };
+  if (config.deliveryMode === 'DURABLE_ASYNC') {
+    // Never queue work inside a Flow rollback scope: a later fault could commit an external
+    // side-effect after the transaction's local records have been rolled back.
+    if (context.rollbackSnapshot) throw new Error('Durable integration delivery cannot run inside a rollback scope.');
+    if (persistenceMode === 'jsonb') throw new Error('Durable integration delivery requires SQL-only persistence.');
+    if (!idempotencyKey) throw new Error('Durable integration delivery requires a stable idempotency key.');
+    if (method === 'GET' && body) throw new Error('GET HTTP Callouts cannot include a request body.');
+    const pool = getRouteAliasPool();
+    if (!pool) throw new Error('Durable integration delivery requires PostgreSQL.');
+    const chosenCredentialId = connection?.id ?? namedCredential?.id;
+    if (!chosenCredentialId) throw new Error('Durable integration credential is unavailable.');
+    const preparedConfig = {
+      ...config, namedCredentialId: namedCredential?.id ?? '',
+      integrationConnectionId: connection?.id ?? '',
+      namedCredentialResource: '', integrationConnectionResource: '',
+      deliveryMode: 'SYNC', maxAttempts: 1, idempotencyKey
+    };
+    // Encrypt the entire execution snapshot; never queue authorization headers or bearer tokens.
+    const snapshot = {
+      config: preparedConfig,
+      label: elementLabel,
+      context: {
+        currentUserId: context.currentUserId, currentUser: context.currentUser,
+        flowVariables: context.flowVariables, variables: context.variables,
+        record: context.record, prior: context.prior, recordEvent: context.recordEvent,
+        triggerObjectName: context.triggerObjectName, resourceDefinitions: context.resourceDefinitions,
+        timeZone: context.timeZone, locale: context.locale, corporateCurrency: context.corporateCurrency,
+        currencyRates: context.currencyRates, userCurrencyIsoCode: context.userCurrencyIsoCode,
+        currencyIsoCode: context.currencyIsoCode
+      }
+    };
+    const encryptedRequest = sealIntegrationEnvelope(tenantId, idempotencyKey, snapshot, ring);
+    const queuedId = await new IntegrationOutbox(pool).enqueue({
+      tenantId, credentialId: chosenCredentialId, operationKey: idempotencyKey,
+      method, path: target.pathname, encryptedRequest,
+      maxAttempts: Math.max(1, Math.min(5, maxAttempts))
+    });
+    return { body: { queued: true, deliveryId: queuedId }, status: 202 };
+  }
   let lastRetryAfter: string | undefined;
   let attempt = 0;
   let response: { body: unknown; status: number };
@@ -19807,6 +19849,52 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
 }
 
 let scheduledDispatchRunning = false;
+async function dispatchDueIntegrationJobs(): Promise<void> {
+  if (persistenceMode === 'jsonb') return;
+  const pool = getRouteAliasPool();
+  if (!pool) return;
+  const outbox = new IntegrationOutbox(pool);
+  const workerId = 'metadrive-outbox-' + process.pid;
+  for (const tenantId of Object.keys(state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
+    await dispatchIntegrationDeliveries({
+      outbox, tenantId, workerId, limit: 1,
+      dispatch: async delivery => {
+        const value = openIntegrationEnvelope(tenantId, delivery.operationKey,
+          delivery.encryptedRequest, credentialKeyRing());
+        const decoded = z.object({
+          label: z.string().min(1).max(255),
+          config: z.record(z.unknown()),
+          context: z.object({
+            currentUserId: z.string().min(1),
+            variables: z.record(z.unknown())
+          }).passthrough()
+        }).parse(value);
+        const credentialRef = decoded.config.integrationConnectionId || decoded.config.namedCredentialId;
+        if (credentialRef !== delivery.credentialId ||
+            decoded.config.idempotencyKey !== delivery.operationKey ||
+            decoded.config.deliveryMode !== 'SYNC') {
+          throw new CalloutFault('OUTBOX_IDENTITY_MISMATCH', undefined, 1, false);
+        }
+        const currentTenant = tenantData(tenantId);
+        const user = state.users.find(item => item.id === decoded.context.currentUserId &&
+          item.tenantId === tenantId && !item.disabled);
+        if (!currentTenant || !user ||
+            !effectivePermissions(user,currentTenant).includes('callouts:execute')) {
+          throw new CalloutFault('OUTBOX_PERMISSION_DENIED', undefined, 1, false);
+        }
+        const restored = { ...decoded.context,
+          formulaStack: new Set<string>(), currentUserId:user.id, debug:false,
+          rollbackSnapshot:undefined } as FlowRuntimeContext;
+        const response = await performHttpCallout(tenantId, currentTenant,
+          { ...decoded.config, maxAttempts: 1, deliveryMode:'SYNC' },
+          restored, decoded.label);
+        return { status: response.status };
+      }
+    });
+  }
+}
+
 async function dispatchScheduledFlows(): Promise<void> {
   if (maintenanceMode) return;
   if (scheduledDispatchRunning) return;
@@ -19834,6 +19922,7 @@ async function dispatchScheduledFlows(): Promise<void> {
       }
       await deliverPendingPlatformEvents();
       await executeDueScheduledFlows();
+      await dispatchDueIntegrationJobs();
       const now = Date.now();
       const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
         tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
