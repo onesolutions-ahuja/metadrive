@@ -10474,6 +10474,11 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
   if (!hasObjectPermission(principal, tenant, objectName, 'create')) return res.status(403).json({ error: `Missing create permission for object "${objectName}"` });
   const parsed = z.record(z.unknown()).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
+  if (req.get('X-MetaDrive-Offline-Sync') === '1') {
+    const knownFields = new Set(object.fields.map(field => field.apiName));
+    if (Object.keys(parsed.data).some(key => key !== 'RecordTypeId' && !knownFields.has(key)))
+      return res.status(412).json({error:'Record schema changed while offline. Review your draft before retrying.'});
+  }
   const requestedCloneId = req.query.cloneFromId;
   if (requestedCloneId !== undefined && (typeof requestedCloneId !== 'string' || !requestedCloneId.trim())) {
     return res.status(400).json({ error: 'cloneFromId must be a non-empty record ID' });
@@ -10665,6 +10670,13 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   if (!hasObjectPermission(principal, tenant, objectName, 'edit')) return res.status(403).json({ error: `Missing edit permission for object "${objectName}"` });
   const parsed = z.record(z.unknown()).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
+  if (req.get('X-MetaDrive-Offline-Sync') === '1') {
+    if (!req.get('If-Unmodified-Since'))
+      return res.status(412).json({error:'Offline edits require the original record revision to prevent overwriting changes.'});
+    const knownFields = new Set(object.fields.map(field => field.apiName));
+    if (Object.keys(parsed.data).some(key => key !== 'RecordTypeId' && !knownFields.has(key)))
+      return res.status(412).json({error:'Record schema changed while offline. Review your draft before retrying.'});
+  }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
