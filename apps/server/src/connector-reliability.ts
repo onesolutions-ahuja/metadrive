@@ -1,5 +1,5 @@
 /** Generic outbound resilience primitive. No provider-specific behaviour or secrets. */
-export type CalloutResponse = { status: number; headers?: Record<string, string | undefined> };
+export type CalloutResponse = { status: number; headers?: unknown };
 export type CalloutPolicy = { maxAttempts?: number; baseDelayMs?: number; maxDelayMs?: number };
 export type CalloutAudit = { tenantId: string; credentialId: string; status?: number; attempts: number; outcome: 'success' | 'failed'; errorCode?: string };
 export type CalloutOptions<T extends CalloutResponse> = {
@@ -27,8 +27,12 @@ const bound = (value: number | undefined, fallback: number, min: number, max: nu
   Number.isFinite(value) ? Math.min(max, Math.max(min, Math.floor(value!))) : fallback;
 const defaultSleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-export function retryAfterMs(headers: Record<string, string | undefined> | undefined, now = Date.now()): number | null {
-  const value = Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === 'retry-after')?.[1]?.trim();
+export function retryAfterMs(headers: unknown, now = Date.now()): number | null {
+  const value = headers instanceof Headers ? headers.get('retry-after')?.trim()
+    : headers && typeof headers === 'object' && !Array.isArray(headers)
+      ? Object.entries(headers).find(([key]) => key.toLowerCase() === 'retry-after')?.[1]
+      : undefined;
+  if (typeof value !== 'string') return null;
   if (!value) return null;
   if (/^\d+$/.test(value)) return Math.min(Number(value) * 1000, 60_000);
   const date = Date.parse(value);
