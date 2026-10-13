@@ -50,6 +50,26 @@ export function componentVisualStyle(visual: unknown, type: string, viewport: 'D
       minHeight: 64, minWidth: 0 } : {})
   };
 }
+/**
+ * Unified component appearance resolver.
+ * `visualStyle` is the original Page Builder metadata; `layoutStyle` and
+ * `layoutResponsive` are its newer, per-device overrides. Preserve both so
+ * pages created before this change continue to render unchanged.
+ *
+ * Generic custom components start unstyled unless their author actually
+ * configures appearance. Layout primitives retain their existing defaults.
+ */
+export function resolvePageComponentStyle(
+  properties: Record<string, unknown>,
+  type: string,
+  device: LayoutDevice = 'Desktop'
+): CSSProperties {
+  const legacy = properties.visualStyle !== undefined || isLayoutType(type)
+    ? componentVisualStyle(properties.visualStyle, type, device)
+    : {};
+  return { ...legacy, ...resolveLayoutStyle(properties, device) };
+}
+
 export function canNestComponent(components: PageComponentMetadata[], childId: string, parentId: string): boolean {
   if (childId === parentId) return false;
   const parent = components.find((item) => item.id === parentId);
