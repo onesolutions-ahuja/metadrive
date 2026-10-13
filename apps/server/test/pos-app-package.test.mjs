@@ -27,7 +27,9 @@ test('POS package installs once and preserves the tenant core Product object', (
   assert.equal(page.components[0].properties.objectApiName,'Product');
   assert.equal(page.components[0].properties.basketSide,'right');
   assert.equal(page.components[0].properties.basketWidthPercent,35);
-  assert.equal(page.components[0].properties.actionFlows.checkout,undefined);
+  assert.equal(page.components[0].properties.actionFlows.checkout.flowApiName,'POS_CASH_SETTLE');
+  assert.equal(first.flows.find(f=>f.apiName==='POS_CASH_SETTLE').status,'Active');
+  assert.equal(first.flows.find(f=>f.apiName==='POS_CASH_SETTLE').elements.find(e=>e.label==='Record sale as cash').config.fieldValues.find(v=>v.field==='Tender_Method__c').value,'Cash');
   assert(first.flows.some(f=>f.apiName==='KIOSK_CART_ADD'));
   assert(first.accessControl.profiles.some(p=>p.id==='pos-user'));
 });
