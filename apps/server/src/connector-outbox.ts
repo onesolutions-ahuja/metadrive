@@ -49,7 +49,7 @@ export class IntegrationOutbox {
       encryptedRequest:String(row.encrypted_request),attempts:Number(row.attempts),maxAttempts:Number(row.max_attempts) }));
   }
   async complete(tenantId:string,workerId:string,id:string,statusCode:number): Promise<void> {
-    if (!tenantId || !workerId || !id || !bounded(statusCode,200,399)) throw new Error('INVALID_OUTBOX_COMPLETION');
+    if (!tenantId || !workerId || !id || !bounded(statusCode,200,299)) throw new Error('INVALID_OUTBOX_COMPLETION');
     const result=await this.db.query(`UPDATE md_integration_outbox SET status='succeeded',lease_owner=NULL,lease_until=NULL,
       encrypted_request='',response_status=$4,updated_at=now() WHERE id=$1 AND tenant_id=$2
       AND lease_owner=$3 AND status='leased' AND lease_until>now() RETURNING id`,[id,tenantId,workerId,statusCode]);
