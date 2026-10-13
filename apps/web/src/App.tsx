@@ -9899,7 +9899,7 @@ function PageBuilder({
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
       onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
-      draggable={!previewMode && !libraryPreview && !isCanvasLocked(component) && page.layoutMode !== 'free-canvas'}
+      draggable={!previewMode && !libraryPreview && !isCanvasLocked(component)}
       data-component-id={libraryPreview ? undefined : component.id}
       onDragStart={!libraryPreview ? (event) => { event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
