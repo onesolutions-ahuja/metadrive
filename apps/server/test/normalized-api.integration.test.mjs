@@ -257,6 +257,33 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
       const baseline=await sqlPool.query('SELECT payload FROM metadrive_platform_state WHERE id=1');
       assert.deepEqual(baseline.rows[0].payload,initial,'Legacy rollback snapshot stays untouched');
     } finally {await sqlPool.end();}
+    // A logout response must be durably revoked even if the API process dies
+    // before any further full metadata snapshot. Replaying a token or refresh
+    // cookie across restart must never reauthorize this user.
+    const logoutCookie = restarted.cookie?.split(';')[0];
+    assert.ok(logoutCookie,'Successful authentication returns a refresh cookie');
+    const logout = await request(port,'/auth/logout','POST',freshToken,undefined,{cookie:logoutCookie});
+    assert.equal(logout.status,204,JSON.stringify(logout.data));
+    assert.equal((await request(port,'/auth/me','GET',freshToken)).status,401,
+      'Signed-out access JWT must fail immediately');
+    if(mode==='typed') {
+      assert.match(logout.serverTiming??'',/commit-wait;dur=/,
+        'Durable SQL sign-out must expose its commit timing');
+      const logoutPool=new pg.Pool({connectionString:databaseUrl(targetName),ssl:false});
+      try {
+        const rows=await logoutPool.query('SELECT COUNT(*)::int AS n FROM md_auth_logout_revocations');
+        assert.ok(rows.rows[0].n>0,'Atomic logout tombstone must be in PostgreSQL before HTTP 204');
+        const jsonCols=await logoutPool.query(
+          "SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name='md_auth_logout_revocations' AND data_type IN ('json','jsonb')");
+        assert.equal(jsonCols.rows[0].n,0,'Logout storage must have no JSON/JSONB columns');
+      } finally {await logoutPool.end();}
+    }
+    await stopApi(child);child=null;
+    child=await startApi(port,join(dir,'after-logout-restart.json'),relationalEnv);
+    assert.equal((await request(port,'/auth/me','GET',freshToken)).status,401,
+      'Restart must not resurrect a signed-out access JWT');
+    assert.equal((await request(port,'/auth/refresh','POST',null,undefined,{cookie:logoutCookie})).status,401,
+      'Restart must not resurrect a revoked refresh cookie');
   } finally {
     if(child) await stopApi(child);
     for(const db of [sourceName,targetName]) await admin.query('DROP DATABASE IF EXISTS '+db+'');
