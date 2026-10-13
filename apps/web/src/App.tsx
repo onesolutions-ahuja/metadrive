@@ -10691,11 +10691,10 @@ function PageBuilder({
             </div>}
             <div className="properties-section-title">Position</div>
             <div className="property-position-actions"><button className="btn" disabled={page.components[0]?.id === selected.id} onClick={() => moveSelected(-1)}><ArrowDown className="move-up-icon" size={13} />Move up</button><button className="btn" disabled={page.components[page.components.length - 1]?.id === selected.id} onClick={() => moveSelected(1)}><ArrowDown size={13} />Move down</button></div>
-            </>}
-            {showCanvasConditions && <>
             {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
             {page.layoutMode === 'free-canvas' && selected.type === 'Container' && <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
             <button type="button" className="btn btn-small" aria-expanded={showCanvasConditions} onClick={() => setShowCanvasConditions(value => !value)}>Conditions</button>
+            {showCanvasConditions && <>
             <div className="properties-section-title">Visibility</div>
             <label className="checkbox-row"><input type="checkbox" checked={selected.visible}
               onChange={(event) => updateComponent(selected.id, { visible: event.target.checked })} />
@@ -10710,7 +10709,6 @@ function PageBuilder({
                 updateComponent(selected.id, { properties });
               }} />
             </>}
-            </fieldset>
             <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); }}>Done</button>
           </> : <>
             <p className="properties-help">Configure the page definition and supported form factors.</p>
