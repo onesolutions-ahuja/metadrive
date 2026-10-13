@@ -69,11 +69,23 @@ export function applyInstallableAppPackages(tenant, catalog) {
       if (index !== -1) {
         const page = pages[index];
         const exists = (page.activationAssignments ?? []).some(a => a.appId === appId && a.profileId === profileId);
+        const assignments = [...(page.activationAssignments ?? [])];
         if (!exists) {
-          pages[index] = {...page,activationAssignments:[...(page.activationAssignments ?? []),{
+          assignments.push({
             id:'package-'+pkg.appKey+'-home',
             scope:'App and Profile',appId,profileId,recordTypeId:null,formFactors:['Desktop','Phone']
-          }]};
+          });
+        }
+        // App default also allows an authorised tenant admin to preview the
+        // kiosk in a separate popup without changing their own login.
+        if (!(assignments.some(a=>a.appId===appId && a.scope==='App Default'))) {
+          assignments.push({
+            id:'package-'+pkg.appKey+'-app-default',scope:'App Default',
+            appId,profileId:null,recordTypeId:null,formFactors:['Desktop','Phone']
+          });
+        }
+        if (assignments.length !== (page.activationAssignments ?? []).length) {
+          pages[index] = {...page,activationAssignments:assignments};
           changed = true;
         }
       }
