@@ -10234,6 +10234,18 @@ function PageBuilder({
         <aside id="lightning-page-properties" className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}>
           <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
           {selected && !pageSettingsOpen ? <>
+            <div className="canvas-inspector-identity"><strong>{selected.label}</strong>
+              <button type="button" className="icon-button subtle" aria-label={isCanvasLocked(selected) ? 'Unlock selected component' : 'Lock selected component'}
+                onClick={() => toggleCanvasLock(selected)}>{isCanvasLocked(selected) ? <Lock size={15} /> : <Unlock size={15}/>}</button>
+            </div>
+            <div className="canvas-inspector-tabs" role="group" aria-label="Component property sections">
+              {(['Design', 'Data & Actions', 'Conditions'] as const).map(tab =>
+                <button key={tab} type="button" className={inspectorTab === tab ? 'active' : ''} aria-pressed={inspectorTab === tab}
+                  onClick={() => setInspectorTab(tab)}>{tab}</button>)}
+            </div>
+            {isCanvasLocked(selected) && <p className="properties-help" role="status">This layer is locked. Unlock it to edit.</p>}
+            <fieldset className="canvas-inspector-fields" disabled={isCanvasLocked(selected)}>
+            {inspectorTab === 'Design' && <>
             <div className="properties-section-title">Component</div>
             <label className="form-label" htmlFor="page-component-type">Component type</label><div className="form-display" id="page-component-type">{selected.type}</div>
             <div className="selected-component-preview">
@@ -10243,9 +10255,14 @@ function PageBuilder({
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
             <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />
-            {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
+            {rawLayoutParentId(selected) && <button type="button" className="btn btn-small"
+              onClick={() => applyPage({ ...page, components: reparentComponent(page.components, selected.id, null) })}>Move out of container</button>}
+            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected)
+              && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
             <PageComponentStyleEditor properties={selected.properties}
               onChange={(properties) => updateComponent(selected.id, { properties })} />
+            </>}
+            {inspectorTab === 'Data & Actions' && <>
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
@@ -10387,6 +10404,8 @@ function PageBuilder({
                 </select>
               </label>
             </>}
+            </>}
+            {inspectorTab === 'Design' && <>
             {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
               <div className="properties-section-title">Position and Size (pixels)</div>
               {([
@@ -10413,6 +10432,8 @@ function PageBuilder({
             </div>}
             <div className="properties-section-title">Position</div>
             <div className="property-position-actions"><button className="btn" disabled={page.components[0]?.id === selected.id} onClick={() => moveSelected(-1)}><ArrowDown className="move-up-icon" size={13} />Move up</button><button className="btn" disabled={page.components[page.components.length - 1]?.id === selected.id} onClick={() => moveSelected(1)}><ArrowDown size={13} />Move down</button></div>
+            </>}
+            {inspectorTab === 'Conditions' && <>
             <div className="properties-section-title">Visibility</div>
             <label className="checkbox-row"><input type="checkbox" checked={selected.visible}
               onChange={(event) => updateComponent(selected.id, { visible: event.target.checked })} />
@@ -10426,6 +10447,8 @@ function PageBuilder({
                 else delete properties.visibilityRules;
                 updateComponent(selected.id, { properties });
               }} />
+            </>}
+            </fieldset>
             <button className="btn btn-full" onClick={() => { setSelectedId(''); setPageSettingsOpen(true); }}>Done</button>
           </> : <>
             <p className="properties-help">Configure the page definition and supported form factors.</p>
