@@ -75,7 +75,7 @@ import { isComponentVisible } from './componentVisibility';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
-import { isCanvasLocked, snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, type CanvasPosition } from './canvasInteractions';
+import { isCanvasLocked, snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, ungroupCanvasComponent, type CanvasPosition } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
@@ -9153,8 +9153,17 @@ function PageBuilder({
   };
   const wrapSelectedInContainer = () => {
     if (!selected || !selected.position || isCanvasLocked(selected) || rawLayoutParentId(selected)) return;
-    applyPage({ ...page, components: wrapCanvasComponent(page.components, selected.id, 'group-' + crypto.randomUUID()) });
+    const groupId = 'group-' + crypto.randomUUID();
+    applyPage({ ...page, components: wrapCanvasComponent(page.components, selected.id, groupId) });
+    setSelectedId(groupId);
     setPaletteTab('Layers');
+  };
+  const ungroupSelected = () => {
+    if (!selected || selected.type !== 'Container' || isCanvasLocked(selected)) return;
+    const children = childrenOf(page.components, selected.id);
+    if (!children.length || children.some(isCanvasLocked)) return;
+    applyPage({ ...page, components: ungroupCanvasComponent(page.components, selected.id) });
+    setSelectedId(children[0].id);
   };
   const startComponentPanelResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -10280,6 +10289,8 @@ function PageBuilder({
               onClick={() => applyPage({ ...page, components: reparentComponent(page.components, selected.id, null) })}>Move out of container</button>}
             {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected)
               && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
+            {page.layoutMode === 'free-canvas' && selected.type === 'Container' &&
+              <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
             <PageComponentStyleEditor properties={selected.properties}
               onChange={(properties) => updateComponent(selected.id, { properties })} />
             </>}
