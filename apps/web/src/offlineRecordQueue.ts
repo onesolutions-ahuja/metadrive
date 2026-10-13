@@ -142,20 +142,35 @@ export async function synchronizeOfflineRecords(
   owner: OfflineQueueOwner,
   submit: (write: OfflineRecordWrite) => Promise<{ outcome: SyncOutcome; reason?: string }>
 ): Promise<{ saved: number; rejected: number; review: number }> {
-  let saved = 0, rejected = 0, review = 0;
-  for (const write of await listOfflineRecords(owner)) {
-    if (write.status !== 'pending') continue;
-    if (!navigator.onLine) break;
-    const result = await submit(write);
-    if (result.outcome === 'unavailable') break;
-    if (result.outcome === 'saved') {
-      await removeOfflineRecord(owner, write.id);
-      saved++;
-    } else {
-      await markOfflineRecord(owner, write.id, result.outcome, result.reason);
-      if (result.outcome === 'rejected') rejected++;
-      else review++;
+  // A browser crash or lost HTTP response must never trigger an automatic
+  // duplicate create on the next page load. Mark indeterminate BEFORE sending.
+  // The cross-tab Web Lock prevents two tabs replaying the same operation.
+  if (!navigator.locks)
+    throw Error('This browser cannot safely synchronise offline changes. Local drafts are preserved.');
+  const result = await navigator.locks.request(
+    'metadrive:offline-record-sync:' + ownerKey(owner),
+    { mode: 'exclusive', ifAvailable: true },
+    async lock => {
+      if (!lock) return null;
+      let saved = 0, rejected = 0, review = 0;
+      for (const write of await listOfflineRecords(owner)) {
+        if (write.status !== 'pending') continue;
+        if (!navigator.onLine) break;
+        await markOfflineRecord(owner,write.id,'needs-review',
+          'A sync request may have reached the server. Confirm its result before retrying.');
+        const outcome = await submit(write);
+        if (outcome.outcome === 'unavailable') break;
+        if (outcome.outcome === 'saved') {
+          await removeOfflineRecord(owner, write.id);
+          saved++;
+        } else {
+          await markOfflineRecord(owner, write.id, outcome.outcome, outcome.reason);
+          if (outcome.outcome === 'rejected') rejected++;
+          else review++;
+        }
+      }
+      return {saved,rejected,review};
     }
-  }
-  return { saved, rejected, review };
+  );
+  return result ?? {saved:0,rejected:0,review:0};
 }
