@@ -9845,23 +9845,22 @@ function PageBuilder({
       applyPage({ ...page, layoutMode });
     }
   };
-  const canvasPositionFromEvent = (event: React.DragEvent<HTMLElement>) => {
+  const canvasPositionFromEvent = (event: React.DragEvent<HTMLElement>, width = 320, height = 180) => {
     const canvas = event.currentTarget.closest('.page-stage')?.querySelector<HTMLElement>('.free-canvas-stage');
     if (!canvas) return undefined;
     const bounds = canvas.getBoundingClientRect();
     const scaleX = page.canvasWidth / bounds.width;
     const scaleY = page.canvasHeight / bounds.height;
-    const snap = (n: number) => canvasSnap ? Math.round(n / 8) * 8 : Math.round(n);
-    return {
-      x: Math.max(0, Math.min(snap((event.clientX - bounds.left) * scaleX), page.canvasWidth - 320)),
-      y: Math.max(0, Math.min(snap((event.clientY - bounds.top) * scaleY), page.canvasHeight - 180)),
-      width: 320,
-      height: 180
-    };
+    const bound = canvasBoundPosition({
+      x: (event.clientX - bounds.left) * scaleX,
+      y: (event.clientY - bounds.top) * scaleY,
+      width, height
+    }, { width: page.canvasWidth, height: page.canvasHeight }, canvasSnap);
+    return { ...bound, width, height };
   };
   const moveCanvasComponent = (event: React.DragEvent<HTMLElement>, component: PageComponentMetadata) => {
     if (page.layoutMode !== 'free-canvas' || previewMode) return;
-    const nextPosition = canvasPositionFromEvent(event);
+    const nextPosition = canvasPositionFromEvent(event, component.position?.width ?? 320, component.position?.height ?? 180);
     if (!nextPosition || !component.position) return;
     updateComponent(component.id, {
       position: {
@@ -9896,13 +9895,14 @@ function PageBuilder({
         const draggedComponent = page.components.find((component) => component.id === draggedId);
         if (!draggedComponent) return;
         const reparented = reparentComponent(page.components, draggedId, parentId);
-        const position = !parentId ? canvasPositionFromEvent(event) : undefined;
+        const position = !parentId ? canvasPositionFromEvent(event,
+          draggedComponent.position?.width ?? 320, draggedComponent.position?.height ?? 180) : undefined;
         applyPage({ ...page, components: reparented.map((item) =>
           item.id === draggedId && position && item.position
             ? { ...item, position: {
                 ...item.position,
-                x: Math.min(position.x, page.canvasWidth - item.position.width),
-                y: Math.min(position.y, page.canvasHeight - item.position.height)
+                x: position.x,
+                y: position.y
               } } : item) });
         setSelectedId(draggedId);
         return;
