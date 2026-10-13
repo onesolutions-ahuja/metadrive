@@ -1821,9 +1821,9 @@ export default function DashboardBuilder({
         <div className="eyebrow">Analytics / Dashboards</div>
         {viewerMode
           ? <h1 className="dashboard-viewer-title">{current?.label ?? 'Dashboard unavailable'}</h1>
-          : <input aria-label="Dashboard name" className="dashboard-name-input" disabled={!current || previewMode}
+          : <><h1 className="audit-visually-hidden">Dashboard Builder</h1><input aria-label="Dashboard name" className="dashboard-name-input" disabled={!current || previewMode}
             value={current?.label ?? ''} placeholder="Choose or create a dashboard"
-            onChange={(event) => changeDraft((dashboard) => ({ ...dashboard, label: event.target.value }))} />}
+            onChange={(event) => changeDraft((dashboard) => ({ ...dashboard, label: event.target.value }))} /></>}
         {current && (!viewerMode || current.status === 'Deployed') && <span className={`dashboard-status ${current.status.toLocaleLowerCase()}`}>{current.status}</span>}
         {previewMode && crossFilters.map((filter) => <button key={filter.id} className="text-action dashboard-cross-filter"
           title={`${objectFor(filter.objectApiName)?.label ?? filter.objectApiName}: ${filter.fieldApiName}`}
