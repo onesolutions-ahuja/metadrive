@@ -15,11 +15,11 @@ test('worker claims tenant scope with skip locked; completion and failure requir
   }]:[{id:'job-1'}]};}};
   const outbox=new IntegrationOutbox(db);
   const batch=await outbox.claim('TENANT_A','worker-1',10);
-  assert.equal(batch[0].tenantId,'TENANT_A');assert.match(calls[0],/FOR UPDATE SKIP LOCKED/);
+  assert.equal(batch[0].tenantId,'TENANT_A');assert.match(calls[0],/LEASE_EXHAUSTED/);assert.match(calls[1],/FOR UPDATE SKIP LOCKED/);
   await outbox.fail('TENANT_A','worker-1','job-1','HTTP_RATE_LIMIT',1500);
   await outbox.complete('TENANT_A','worker-1','job-1',200);
-  assert.match(calls[1],/WHEN attempts>=max_attempts THEN 'dead'/);
-  assert.match(calls[2],/encrypted_request=''/);
+  assert.match(calls[2],/WHEN attempts>=max_attempts THEN 'dead'/);
+  assert.match(calls[3],/encrypted_request=''/);
 });
 test('outbox rejects plaintext, unsafe path and cross-tenant missing lease',async()=>{
   const empty:SqlClient={query:async()=>({rows:[]})};const outbox=new IntegrationOutbox(empty);
