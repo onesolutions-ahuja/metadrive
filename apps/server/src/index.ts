@@ -2220,6 +2220,7 @@ const permissionSetSchema = z.object({
   recordTypePermissions: z.record(z.boolean()).default({}),
   appPermissions: navigationGrantSchema,
   tabPermissions: navigationGrantSchema,
+  navigationDefaultAccess: z.enum(['Allow','Deny']).default('Allow'),
   fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean() }).superRefine((permission, context) => {
     if (permission.edit && !permission.read) context.addIssue({ code: z.ZodIssueCode.custom, path: ['read'], message: 'Field edit access requires read access' });
   }))
@@ -9212,7 +9213,8 @@ function canNavigate(principal: Principal, tenant: TenantData, type: 'app' | 'ta
   if (!grants) return false;
   const field = type === 'app' ? 'appPermissions' : 'tabPermissions';
   const mutedField = type === 'app' ? 'mutedAppPermissions' : 'mutedTabPermissions';
-  if (grants.profile?.[field]?.[key] !== false) return true;
+  const setting = grants.profile?.[field]?.[key];
+  if (setting === true || (setting !== false && grants.profile?.navigationDefaultAccess !== 'Deny')) return true;
   if (grants.directSets.some((set) => set[field]?.[key] === true)) return true;
   return grants.groups.some(({ group, sets }) =>
     group[mutedField]?.[key] !== true && sets.some((set) => set[field]?.[key] === true));
