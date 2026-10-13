@@ -58,7 +58,8 @@ export function applyInstallableAppPackages(tenant, catalog) {
             edit:Boolean(perms[object.apiName]?.create || perms[object.apiName]?.edit)
           }]))),
         appPermissions:{[pkg.apps?.[0]?.apiName]:true},
-        tabPermissions:{}
+        tabPermissions:permissionTemplate.tabPermissions ?? {},
+        navigationDefaultAccess:permissionTemplate.navigationDefaultAccess ?? 'Allow'
       }]};
       changed = true;
     }
