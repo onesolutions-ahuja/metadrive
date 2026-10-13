@@ -11705,9 +11705,9 @@ function syncBundledLibraryComponents(): Promise<void> {
       if (legacyCandidate || existingBundled) {
         trustedUpgrades.set(entry.apiName.toLowerCase(), {
           ...(existingBundled ?? {}),
-          ...legacyCandidate, ...registered,
-          version: Math.max(version, legacyCandidate.version ?? 1),
-          publishedVersion: Math.max(version, legacyCandidate.publishedVersion ?? 1)
+          ...(legacyCandidate ?? {}), ...registered,
+          version: Math.max(version, legacyCandidate?.version ?? existingBundled?.version ?? 1),
+          publishedVersion: Math.max(version, legacyCandidate?.publishedVersion ?? existingBundled?.publishedVersion ?? 1)
         });
       } else imported.push(registered);
     }
