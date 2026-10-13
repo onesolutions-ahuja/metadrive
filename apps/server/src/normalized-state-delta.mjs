@@ -69,6 +69,7 @@ function indexRevision(rows) {
   indexedRevisions.set(rows, indexed);
   return indexed;
 }
+export function primeNormalizedDeltaIndex(rows) { indexRevision(rows); }
 export function planNormalizedDelta(previousRows, projectedRows) {
   if (!previousRows.length || !projectedRows.length)
     throw Error('Normalized delta requires nonempty trees');
