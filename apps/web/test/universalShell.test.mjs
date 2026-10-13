@@ -24,3 +24,17 @@ test('worker excludes API, third-party content and writes from caches', () => {
   assert.match(worker, /CACHE_APP_ASSETS/);
   assert.doesNotMatch(worker, /authorization|bearer|refresh[_-]?token/i);
 });
+
+test('presentation cache is identity-scoped and excludes credentials from stored snapshots', () => {
+  const cache = read('../src/offlineMetadataCache.ts');
+  const loader = read('../src/App.tsx');
+  assert.match(cache, /identity\.tenantId/);
+  assert.match(cache, /identity\.userId/);
+  assert.match(cache, /AES-GCM/);
+  assert.match(cache, /readOfflineMetadata/);
+  assert.match(cache, /clearOfflineMetadata/);
+  assert.match(loader, /saveOfflineMetadata\(/);
+  assert.match(loader, /!failures\.length/);
+  assert.match(loader, /sessionPayload\.user\.tenantId/);
+  assert.doesNotMatch(cache, /secret|refresh_token|access_token/i);
+});
