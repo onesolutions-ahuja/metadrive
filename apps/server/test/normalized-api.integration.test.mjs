@@ -275,6 +275,35 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
       const baseline=await sqlPool.query('SELECT payload FROM metadrive_platform_state WHERE id=1');
       assert.deepEqual(baseline.rows[0].payload,initial,'Legacy rollback snapshot stays untouched');
     } finally {await sqlPool.end();}
+    const offlineNoRevision=await request(port,
+      '/records/Migration_Link__c/'+recordId,'PUT',freshToken,
+      {Name:'Offline Overwrite Without Revision'},
+      {'X-MetaDrive-Offline-Sync':'1'});
+    assert.equal(offlineNoRevision.status,412,
+      'Offline edits must include the original revision to prevent overwriting newer changes');
+    const offlineStaleSchema=await request(port,'/records/Migration_Link__c','POST',freshToken,
+      {Name:'Stale Offline Field Draft',Retired_Offline_Field__c:'must not silently drop'},
+      {'X-MetaDrive-Offline-Sync':'1'});
+    assert.equal(offlineStaleSchema.status,412,
+      'Offline drafts with removed fields must remain rejected rather than silently discard values');
+    // An offline draft captured with an earlier grant must NOT create a record
+    // when the admin removes object permission before its replay.
+    const aclBefore=await request(port,'/metadata/permissions','GET',freshToken);
+    assert.equal(aclBefore.status,200,JSON.stringify(aclBefore.data));
+    const revokeObjectCreate=structuredClone(aclBefore.data);
+    for(const grant of [...revokeObjectCreate.profiles,...revokeObjectCreate.permissionSets]) {
+      const current=grant.objectPermissions?.Migration_Link__c;
+      if(current) grant.objectPermissions.Migration_Link__c={...current,create:false};
+    }
+    const savedAcl=await request(port,'/metadata/permissions','PUT',freshToken,revokeObjectCreate);
+    assert.equal(savedAcl.status,200,JSON.stringify(savedAcl.data));
+    const blocked=await request(port,'/records/Migration_Link__c','POST',freshToken,
+      {Name:'Offline Revoked Draft',Account__c:parentId},
+      {'X-MetaDrive-Offline-Sync':'1'});
+    assert.equal(blocked.status,403,'Old JWT/offline draft cannot bypass current object create permission');
+    const persisted=await request(port,'/records/Migration_Link__c?search=Offline%20Revoked%20Draft','GET',freshToken);
+    assert.equal(persisted.status,200,JSON.stringify(persisted.data));
+    assert.equal(persisted.data.total,0,'Revoked offline write must not reach SQL');
     // A logout response must be durably revoked even if the API process dies
     // before any further full metadata snapshot. Replaying a token or refresh
     // cookie across restart must never reauthorize this user.

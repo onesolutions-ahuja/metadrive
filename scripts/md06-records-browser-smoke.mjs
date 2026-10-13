@@ -120,6 +120,53 @@ try {
   await list.getByRole('button',{name:'Export CSV'}).click();
   const download=await downloadTask;
   if(!download.suggestedFilename().endsWith('.csv'))throw Error('Record CSV export failed');
+  // End-to-end offline RBAC revocation: a record is drafted with permission,
+  // an admin removes Create while disconnected, and sync MUST retain a 403.
+  const apiUrl='http://127.0.0.1:3001/api';
+  const adminLogin=await fetch(apiUrl+'/auth/login',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify(login)
+  });
+  if(!adminLogin.ok) throw Error('Unable to establish synthetic admin control session');
+  const adminJwt=(await adminLogin.json()).access_token;
+  const adminApi=async(path,method='GET',body)=>{
+    const response=await fetch(apiUrl+path,{
+      method,
+      headers:{authorization:'Bearer '+adminJwt,...(body?{'content-type':'application/json'}:{})},
+      ...(body?{body:JSON.stringify(body)}:{})
+    });
+    return {status:response.status,data:await response.json()};
+  };
+  const offlineName='MD06 Offline Permission Revoked Draft';
+  await page.context().setOffline(true);
+  await newButton.click();
+  await dialog.waitFor({state:'visible'});
+  await dialog.locator('input[name="Name"]').fill(offlineName);
+  await dialog.getByRole('button',{name:'Save',exact:true}).click();
+  await dialog.waitFor({state:'hidden'});
+  const offlinePanel=page.getByRole('region',{name:'Offline record changes'});
+  await offlinePanel.getByText('Pending sync').waitFor({state:'visible'});
+  const originalAcl=await adminApi('/metadata/permissions');
+  if(originalAcl.status!==200)throw Error('Cannot inspect synthetic RBAC state');
+  const lockedAcl=structuredClone(originalAcl.data);
+  for(const grant of [...lockedAcl.profiles,...lockedAcl.permissionSets]){
+    const current=grant.objectPermissions?.Account;
+    if(current)grant.objectPermissions.Account={...current,create:false};
+  }
+  const revoke=await adminApi('/metadata/permissions','PUT',lockedAcl);
+  if(revoke.status!==200)throw Error('Cannot remove synthetic Account Create grant: '+JSON.stringify(revoke.data));
+  await page.context().setOffline(false);
+  await offlinePanel.getByText('Sync rejected').waitFor({state:'visible',timeout:15000});
+  const deniedRecord=await adminApi('/records/Account?search='+encodeURIComponent(offlineName));
+  if(deniedRecord.status!==200 || deniedRecord.data.records.some(item=>item.Name===offlineName))
+    throw Error('A permission-revoked offline Account was incorrectly committed');
+  const restored=await adminApi('/metadata/permissions','PUT',originalAcl.data);
+  if(restored.status!==200)throw Error('Cannot restore synthetic RBAC fixture');
+  await offlinePanel.getByRole('button',{name:'Retry after review'}).click();
+  await offlinePanel.waitFor({state:'hidden',timeout:15000});
+  const syncedRecord=await adminApi('/records/Account?search='+encodeURIComponent(offlineName));
+  if(syncedRecord.status!==200 || !syncedRecord.data.records.some(item=>item.Name===offlineName))
+    throw Error('Explicit retry did not synchronise a restored-permission offline draft');
   if(pageErrors.length)throw Error('Uncaught browser errors: '+pageErrors.join('; '));
   console.log(JSON.stringify({module:'Records & Data Management',browser:'chromium',login:true,
     recordList:true,sorting:true,search:true,create:true,export:true,pageErrors:0,offlineOnly:true}));
