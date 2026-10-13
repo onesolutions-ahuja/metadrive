@@ -1130,7 +1130,7 @@ export default function FlowBuilder({
         <button className="icon-button subtle" title="Redo" aria-label="Redo" onClick={onRedo} disabled={!canRedo}><Redo2 size={15} /></button>
         <button className="btn" onClick={onValidate}><Check size={14} />Check</button>
         <button className="btn" onClick={onSave}><Save size={14} />Save</button>
-        {(flow.flowType === 'Autolaunched Flow' || flow.flowType === 'Screen Flow') && <button className="btn" onClick={onDebug} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : 'Debug the most recently saved version with sample inputs.'}>Debug</button>}
+        {(flow.flowType === 'Autolaunched Flow' || flow.flowType === 'Screen Flow' || flow.flowType === 'Record-Triggered Flow') && <button className="btn" onClick={onDebug} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : 'Debug the most recently saved version with sample inputs.'}>Debug</button>}
         {(flow.flowType === 'Autolaunched Flow' || flow.flowType === 'Screen Flow') && <button className="btn" onClick={onRun} disabled={!canRunFlows} title={!canRunFlows ? 'The Run Flows permission is required.' : isDirty ? 'Runs the most recently saved version; unsaved changes are excluded.' : undefined}>Run</button>}
         <button className="btn btn-brand" onClick={onActivate}><Check size={14} />Activate</button>
         <button className="icon-button subtle" title="Flow Builder help" onClick={() => onNotify('Configure the Start node, build element paths, check, then save or activate.')}><CircleHelp size={16} /></button>
