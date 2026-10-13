@@ -112,7 +112,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     const commit = latestStateCommit;
     const gateStartedAt = performance.now();
     void commit.then(() => {
-      if (req.path === '/api/auth/login' || req.path === '/api/auth/mfa/verify' || req.path === '/api/auth/refresh') {
+      if (req.path === '/api/auth/login' || req.path === '/api/auth/mfa/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/logout') {
         const waitMs = performance.now() - gateStartedAt;
         const totalMs = performance.now() - requestStartedAt;
         const preceding = String(res.getHeader('Server-Timing') ?? '');
