@@ -1,5 +1,5 @@
 name: UI Audit - Full Playwright Review
-# One-time rerun after SPA navigation correction (2026-10-13).
+# Fresh read-only post-remediation audit requested 2026-10-13 after PRs #279 and #282.
 
 on:
   push:
