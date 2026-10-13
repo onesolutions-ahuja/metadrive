@@ -1,4 +1,5 @@
 import cors from 'cors';
+import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation, readDurableAuthLogins, persistDurableAuthLogin, type DurableAuthLogin } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
@@ -15620,7 +15621,7 @@ function evaluateFormula(
   const locale = formulaContext.locale ?? 'en-US';
   if (expression.length > 10_000) throw new Error('Formula exceeds the 10,000-character limit.');
   const tokens: string[] = [];
-  const tokenPattern = /\s*(<=|>=|<>|!=|==|&&|\|\||[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
+  const tokenPattern = /\s*(<=|>=|<>|!=|==|&&|\|\||\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}|[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
   let offset = 0;
   while (offset < expression.length) {
     tokenPattern.lastIndex = offset;
@@ -15821,29 +15822,31 @@ function evaluateFormula(
       consume();
       return token.slice(1, -1).replace(/\\(['"\\])/g, '$1');
     }
-    if (/^[A-Za-z_$][A-Za-z0-9_.$]*$/.test(token)) {
+    const mergeReference = /^\{!?([A-Za-z_$][A-Za-z0-9_.$]*)\}$/.exec(token);
+    const identifier = mergeReference?.[1] ?? token;
+    if (/^[A-Za-z_$][A-Za-z0-9_.$]*$/.test(identifier)) {
       consume();
-      const name = token.toUpperCase();
+      const name = identifier.toUpperCase();
       if (name === 'TRUE' && peek() !== '(') return true;
       if (name === 'FALSE' && peek() !== '(') return false;
       if (name === 'NULL') return null;
-      if (token.startsWith('$User.')) {
+      if (identifier.startsWith('$User.')) {
         let value: unknown = formulaContext.currentUser;
-        for (const segment of token.slice('$User.'.length).split('.')) {
+        for (const segment of identifier.slice('$User.'.length).split('.')) {
           if (!value || typeof value !== 'object') return undefined;
           value = (value as Record<string, unknown>)[segment];
         }
         return value;
       }
-      if (token.startsWith('$Flow.')) {
+      if (identifier.startsWith('$Flow.')) {
         let value: unknown = formulaContext.flowVariables;
-        for (const segment of token.slice('$Flow.'.length).split('.')) {
+        for (const segment of identifier.slice('$Flow.'.length).split('.')) {
           if (!value || typeof value !== 'object') return undefined;
           value = (value as Record<string, unknown>)[segment];
         }
         return value;
       }
-      if (peek() !== '(') return resolveField(token.replace(/^\$Record\./, ''));
+      if (peek() !== '(' || mergeReference) return resolveField(identifier.replace(/^\$Record\./, ''));
       consume('(');
       if (name === 'IF' || name === 'CASE' || name === 'AND' || name === 'OR' || name === 'ISNEW' || name === 'ISCLONE'
         || name === 'ISCHANGED' || name === 'PRIORVALUE') {
@@ -18616,7 +18619,11 @@ function validateFlow(
       continue;
     }
     try {
-      evaluateFormula(resource.value, () => null, {
+      const syntax = validateFlowFormulaSyntax(resource.value);
+      // A formula that references a live record, variable or global cannot be
+      // executed against fake null inputs during activation. For a constant
+      // expression preserve eager value/type checks from the runtime evaluator.
+      if (!syntax.hasReferences) evaluateFormula(resource.value, () => null, {
         isNew: false, hasPrior: true, resolvePriorField: () => null,
         timeZone: formulaContext.timeZone,
         locale: formulaContext.locale,
@@ -20189,6 +20196,9 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
   const pool = getRouteAliasPool();
   if (!pool) return;
   const outbox = new IntegrationOutbox(pool);
+  // Keep the core scheduler running if an additive Module 11 migration has not yet been applied.
+  // Enqueueing remains fail-closed until the outbox schema is installed.
+  if (!await outbox.ready()) return;
   const workerId = 'metadrive-outbox-' + process.pid;
   for (const tenantId of Object.keys(state.tenants)) {
     if (!tenantIsActive(tenantId)) continue;

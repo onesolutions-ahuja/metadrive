@@ -14,8 +14,10 @@ test('Module 11 SQL outbox survives lease expiry without cross-tenant claims or 
   try {
     await client.query('CREATE SCHEMA "' + schema + '"');
     await client.query('SET search_path TO "' + schema + '"');
-    await client.query(readFileSync(new URL('../sql/module11-integration-outbox.sql', import.meta.url),'utf8'));
     const outbox = new IntegrationOutbox(client);
+    assert.equal(await outbox.ready(), false, 'scheduler must skip absent Module 11 schema');
+    await client.query(readFileSync(new URL('../sql/module11-integration-outbox.sql', import.meta.url),'utf8'));
+    assert.equal(await outbox.ready(), true, 'scheduler must activate once table is installed');
     const item = {tenantId:'A',credentialId:'provider',operationKey:'order-1',method:'POST',path:'/v1/order',encryptedRequest:'enc:encrypted-content',maxAttempts:2};
     const aId=await outbox.enqueue(item);
     assert.equal(await outbox.enqueue({...item,encryptedRequest:'enc:changed'}),aId);

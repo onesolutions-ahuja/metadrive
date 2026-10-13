@@ -14,7 +14,13 @@ const numeric: Array<[LayoutSettingKey, string, number, number]> = [
   ['borderWidth', 'Border width', 0, 24],
   ['borderRadius', 'Corner radius', 0, 160],
   ['gap', 'Spacing / gap', 0, 160],
-  ['opacity', 'Opacity (%)', 0, 100]
+  ['opacity', 'Opacity (%)', 0, 100],
+  ['fontSize', 'Font size', 8, 96]
+];
+const typography: Array<[LayoutSettingKey, string, string[]]> = [
+  ['fontWeight', 'Font weight', ['400', '500', '600', '700', '800']],
+  ['textAlign', 'Text alignment', ['left', 'center', 'right', 'start', 'end']],
+  ['boxShadow', 'Shadow', ['none', 'sm', 'md', 'lg']]
 ];
 const alignments: Array<[LayoutSettingKey, string, string[]]> = [
   ['alignItems', 'Cross-axis alignment', ['stretch', 'flex-start', 'center', 'flex-end']],
@@ -88,6 +94,14 @@ export default function PageComponentStyleEditor({
         onChange={(event) => change(key, event.target.value || null)}>
         <option value="">{inheritedCaption}</option>
         {options.map((item) => <option key={item} value={item}>{item.replace('-', ' ')}</option>)}
+      </select>
+    </label>)}
+    {typography.map(([key, label, options]) => <label className="form-label" key={key}>{label}
+      <select className="form-control" aria-label={label} disabled={disabled}
+        value={String(current[key] ?? '')}
+        onChange={(event) => change(key, event.target.value || null)}>
+        <option value="">{inheritedCaption}</option>
+        {options.map(option => <option key={option} value={option}>{option}</option>)}
       </select>
     </label>)}
     <label className="form-label">Visibility on {mode === 'Base' ? 'all devices' : mode}
