@@ -8389,6 +8389,77 @@ app.get('/api/named-credentials', requireAnyPermission('metadata:read', 'namedCr
       enabled: false, keyId: '', updatedAt: credential.updatedAt };
   }) });
 });
+function configuredOAuthCallback():string {
+  const raw=process.env.METADRIVE_OAUTH_CALLBACK_URL;
+  if(!raw)throw new Error('OAuth callback URL is not configured.');
+  const parsed=validatedOAuthUrl(raw);
+  if(parsed.pathname!=='/api/oauth/callback' || parsed.search || parsed.hash)
+    throw new Error('OAuth callback URL must identify the dedicated /api/oauth/callback endpoint.');
+  return parsed.toString();
+}
+// Setup permission controls connection authorization. This endpoint never exposes tokens.
+app.post('/api/named-credentials/:id/oauth/start',
+  requireAnyPermission('namedCredentials:manage','connectorApps:edit'),async(req:Request,res:Response)=>{
+  const principal=getPrincipal(res);
+  const tenant=tenantData(principal.tenantId);
+  const credential=tenant?.namedCredentials.find(item=>item.id===routeParam(req,'id'));
+  if(!tenant || !credential)return res.status(404).json({error:'Named Credential not found.'});
+  const managed=managedConnector(tenant,credential.name);
+  if(managed) {
+    if(!connectorRight(principal,'edit') || !connectorRight(principal,'secrets'))
+      return res.status(403).json({error:'Missing connector configuration or secret permission.'});
+  } else if(!principal.permissions.includes('namedCredentials:manage'))
+    return res.status(403).json({error:'Named Credential management permission required.'});
+  if(credential.authType!=='OAuth Authorization Code'||credential.protocol!=='HTTPS')
+    return res.status(400).json({error:'Credential is not configured for OAuth Authorization Code.'});
+  const entitlement=connectorEntitlement(tenant.records.Connector_App__c??[],credential);
+  if(!entitlement.allowed)return res.status(403).json({error:entitlement.message});
+  if(credential.enabled===false)return res.status(409).json({error:'Enable the connection before authorization.'});
+  const conf=credential.configuration??{};
+  if(!conf.AuthorizationEndpoint || !conf.OAuthEndpoint || !conf.ClientId)
+    return res.status(400).json({error:'OAuth endpoints and ClientId are required.'});
+  try {
+    const callback=configuredOAuthCallback();
+    const url=await beginOAuthAuthorization({
+      authorizationUrl:conf.AuthorizationEndpoint,tokenUrl:conf.OAuthEndpoint,
+      clientId:conf.ClientId,scope:conf.Scope,redirectUri:callback
+    },{tenantId:principal.tenantId,credentialId:credential.id},oauthChallengeStore());
+    return res.json({authorizationUrl:url});
+  } catch {
+    return res.status(503).json({error:'OAuth authorization could not start. Verify the configured callback, encryption and PostgreSQL challenge table.'});
+  }
+});
+// The external provider redirects here; an unguessable, SQL-backed one-time state authorizes the callback.
+app.get('/api/oauth/callback',async(req:Request,res:Response)=>{
+  const stateValue=typeof req.query.state==='string'?req.query.state:'';
+  const code=typeof req.query.code==='string'?req.query.code:'';
+  if(!/^[A-Za-z0-9_-]{20,1024}$/.test(stateValue) || !code || code.length>8192)
+    return res.status(400).type('text/plain').send('OAuth authorization was not completed.');
+  try {
+    const stateDigest=createHash('sha256').update(stateValue).digest('hex');
+    const challenges=oauthChallengeStore();
+    const scope=await challenges.findScope(stateDigest);
+    const tenant=scope?tenantData(scope.tenantId):null;
+    const credential=tenant?.namedCredentials.find(item=>item.id===scope?.credentialId);
+    if(!scope || !credential || credential.authType!=='OAuth Authorization Code'||credential.protocol!=='HTTPS'
+      || credential.enabled===false)throw new Error('OAuth session unavailable.');
+    const entitlement=connectorEntitlement(tenant?.records.Connector_App__c??[],credential);
+    if(!entitlement.allowed)throw new Error('Connector is not licensed.');
+    const conf=credential.configuration??{};
+    const clientSecret=openCredentialPayload(scope.tenantId,credential).secret;
+    if(!clientSecret || !conf.ClientId || !conf.OAuthEndpoint)throw new Error('OAuth settings unavailable.');
+    await completeOAuthAuthorization({
+      clientId:conf.ClientId,clientSecret,tokenUrl:conf.OAuthEndpoint,scope:conf.Scope
+    },scope,{state:stateValue,code},challenges,oauthCredentialVault(scope.tenantId,scope.credentialId),
+      safeOAuthTokenRequest);
+    res.setHeader('Cache-Control','no-store');
+    return res.status(200).type('text/plain').send('Connection authorized. You may close this window.');
+  } catch {
+    res.setHeader('Cache-Control','no-store');
+    return res.status(400).type('text/plain').send('OAuth authorization failed or expired. Start authorization again from Named Credentials.');
+  }
+});
+
 app.post('/api/named-credentials', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
