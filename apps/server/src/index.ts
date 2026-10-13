@@ -50,7 +50,7 @@ import {
 import { normalizeRecoveryPolicy, renderRecoveryTemplate, deliverWithFallback } from './recovery-policy.js';
 // Tenant name is resolved from the tenant registry, never from unauthenticated request input.
 function tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {
-  return (tenant as unknown as { name?: string }).name || tenantId;
+  return state.tenantRegistry[tenantId]?.name ?? tenantId;
 }
 import {
   canAccessDashboard,
