@@ -95,9 +95,11 @@ export function applyInstallableAppPackages(tenant, catalog) {
             !component.properties?.categoryObjectApiName;
           const legacyAccent = component.properties?.accentColor === '#ffca26'
             && template.properties?.accentColor !== '#ffca26';
-          if (!missingCategories && !legacyAccent) return component;
+          const missingWelcome = template.properties?.welcomeImage && !component.properties?.welcomeImage;
+          if (!missingCategories && !legacyAccent && !missingWelcome) return component;
           return { ...component, properties: {
             ...component.properties,
+            ...(missingWelcome ? { welcomeImage: template.properties.welcomeImage, labels: template.properties.labels } : {}),
             ...(missingCategories ? {
               categoryObjectApiName: template.properties.categoryObjectApiName,
               categoryNameField: template.properties.categoryNameField
@@ -115,7 +117,16 @@ export function applyInstallableAppPackages(tenant, catalog) {
         }
       }
     }
-    if (changed) next = {...next,objects,flows,apps,pages,accessControl};
+    // Sample menu lives in ordinary tenant records, never inside the React UI.
+    // Only seed an empty object collection; never replace customer records.
+    let records = next.records;
+    for (const [objectName, examples] of Object.entries(pkg.demoRecords ?? {})) {
+      if (!objects.some(item => item.apiName === objectName)) continue;
+      if ((records[objectName] ?? []).length > 0) continue;
+      records = { ...records, [objectName]: structuredClone(examples) };
+      changed = true;
+    }
+    if (changed) next = {...next,objects,flows,apps,pages,records,accessControl};
   }
   return next;
 }
