@@ -21,6 +21,6 @@
     "test:component-metadata": "tsx --test scripts/md10-universal-component-metadata.test.mjs",
     "test:flow-canvas": "node --test scripts/md10-freeform-canvas.test.mjs",
     "test:flow-connectors": "node --test scripts/md10-flow-connector-insertion.test.mjs",
-    "test:modern-canvas": "node --test scripts/md10-modern-canvas-contract.test.mjs"
+    "test:modern-canvas": "tsx --test scripts/md10-modern-canvas-contract.test.mjs"
   }
 }
