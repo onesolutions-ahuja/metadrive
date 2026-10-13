@@ -2681,6 +2681,16 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       .map((resource) => [resource.name, resource.value === undefined
         ? ''
         : typeof resource.value === 'string' ? resource.value : JSON.stringify(resource.value)]));
+    if (savedFlow.flowType === 'Record-Triggered Flow') {
+      inputs.$Record = JSON.stringify({
+        Name: 'Example record',
+        Id: 'TEST-RECORD'
+      }, null, 2);
+      inputs.$Prior = JSON.stringify({ Name: 'Previous record', Id: 'TEST-RECORD' }, null, 2);
+      inputs.$Event = savedFlow.startConfig.trigger === 'deleted' ? 'deleted'
+        : savedFlow.startConfig.trigger === 'updated' ? 'updated' : 'created';
+      inputs.$IsClone = 'false';
+    }
     setFlowDebug({ flow: savedFlow, mode: 'debug', inputs, error: '', running: false });
   };
 
@@ -2735,9 +2745,32 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     try {
       const inputs = parseFlowInputs(flowDebug.flow, flowDebug.inputs);
       setFlowDebug((current) => current ? { ...current, error: '', running: true, result: undefined } : current);
+      const recordTriggered = flowDebug.mode === 'debug' && flowDebug.flow.flowType === 'Record-Triggered Flow';
+      let payload: Record<string, unknown> = inputs;
+      if (recordTriggered) {
+        let record: unknown;
+        let prior: unknown;
+        try {
+          record = JSON.parse(flowDebug.inputs.$Record ?? '{}') as unknown;
+          prior = flowDebug.inputs.$Event === 'created' || !flowDebug.inputs.$Prior?.trim()
+            ? undefined : JSON.parse(flowDebug.inputs.$Prior) as unknown;
+        } catch {
+          throw new Error('Enter valid JSON for the current and prior record.');
+        }
+        if (!record || typeof record !== 'object' || Array.isArray(record)) {
+          throw new Error('Current record must be a JSON object.');
+        }
+        if (prior !== undefined && (!prior || typeof prior !== 'object' || Array.isArray(prior))) {
+          throw new Error('Prior record must be a JSON object.');
+        }
+        const event = flowDebug.inputs.$Event || 'created';
+        if (event !== 'created' && prior === undefined) throw new Error('Update/delete tests need prior record values.');
+        payload = { record, ...(prior === undefined ? {} : { prior }),
+          event, isClone: flowDebug.inputs.$IsClone === 'true' };
+      }
       const result = await apiRequest<Record<string, unknown>>(
-        `/flows/${encodeURIComponent(flowDebug.flow.apiName)}/${flowDebug.mode === 'debug' ? 'debug' : 'execute'}`,
-        { method: 'POST', body: JSON.stringify(inputs) }
+        `/flows/${encodeURIComponent(flowDebug.flow.apiName)}/${recordTriggered ? 'debug-record' : flowDebug.mode === 'debug' ? 'debug' : 'execute'}`,
+        { method: 'POST', body: JSON.stringify(payload) }
       );
       if (flowDebug.mode === 'run') {
         const interviewId = typeof result.interviewId === 'string' ? result.interviewId : '';
@@ -2754,6 +2787,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           notify(`Flow completed${result.outputs && typeof result.outputs === 'object' && Object.keys(result.outputs).length
             ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
         }
+        if (interviewId && !screen) notify('Flow interview started and is waiting for an asynchronous stage or approval. View it under Pending Work.');
         setFlowDebug(null);
         return;
       }
@@ -2770,6 +2804,54 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         running: false
       } : current);
     }
+  };
+
+  const runSavedFlowTests = async (definition: FlowDefinitionMetadata): Promise<Array<{
+    id: string; label: string; passed: boolean; actualStatus: string; details: string
+  }>> => {
+    const saved = flowSnapshots.current.get(definition.apiName);
+    if (!saved || saved !== JSON.stringify(definition)) {
+      throw new Error('Save the Flow and its test cases before running them.');
+    }
+    const results: Array<{ id: string; label: string; passed: boolean; actualStatus: string; details: string }> = [];
+    for (const test of definition.tests ?? []) {
+      try {
+        const isRecord = definition.flowType === 'Record-Triggered Flow';
+        if (!isRecord && !['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(definition.flowType)) {
+          throw new Error('This Flow type cannot be tested through a manual run.');
+        }
+        const payload = isRecord ? {
+          event: test.event ?? 'created',
+          record: test.record ?? {},
+          ...(test.prior ? { prior: test.prior } : {}),
+          isClone: test.isClone === true
+        } : test.input ?? {};
+        const endpoint = isRecord ? 'debug-record' : 'debug';
+        const response = await apiRequest<Record<string, unknown>>(
+          `/flows/${encodeURIComponent(definition.apiName)}/${endpoint}`,
+          { method: 'POST', body: JSON.stringify(payload) }
+        );
+        const actualStatus = typeof response.status === 'string' ? response.status : 'completed';
+        const wrongOutputs: string[] = [];
+        const outputs = response.outputs && typeof response.outputs === 'object' && !Array.isArray(response.outputs)
+          ? response.outputs as Record<string, unknown> : {};
+        for (const [name, expected] of Object.entries(test.expectedOutputs ?? {})) {
+          if (JSON.stringify(outputs[name]) !== JSON.stringify(expected)) wrongOutputs.push(name);
+        }
+        const passed = actualStatus === test.expectedStatus && wrongOutputs.length === 0;
+        results.push({
+          id: test.id, label: test.label, passed, actualStatus,
+          details: passed ? 'Expected result matched'
+            : `Expected ${test.expectedStatus}${wrongOutputs.length ? `; different outputs: ${wrongOutputs.join(', ')}` : ''}`
+        });
+      } catch (error) {
+        results.push({
+          id: test.id, label: test.label, passed: false, actualStatus: 'error',
+          details: error instanceof Error ? error.message : 'Test could not execute'
+        });
+      }
+    }
+    return results;
   };
 
   const runFlow = async (apiName = flow.apiName, inputs: Record<string, unknown> = {}) => {
@@ -2801,6 +2883,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
         setFlowRun({ interviewId: result.interviewId, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) }, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
+        return;
+      }
+      if (result.interviewId) {
+        notify('Flow interview started. Approval stages and waiting work are visible in Pending Work.');
         return;
       }
       notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
@@ -3863,6 +3949,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onActivate={() => void saveFlow({ ...flow, status: 'Active' })}
               onRun={() => void runFlow()}
               onDebug={openFlowDebug}
+              onRunTests={runSavedFlowTests}
               onSaveNamedCredential={saveNamedCredential}
               onDeleteNamedCredential={deleteNamedCredential}
               onRotateNamedCredential={rotateNamedCredential}
@@ -4239,7 +4326,22 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             </div>
             <form onSubmit={(event) => { event.preventDefault(); void runFlowDebug(); }}>
               <div className="modal-body">
-                {flowDebug.flow.resources.filter((resource) => resource.availableForInput).map((resource) => {
+                {flowDebug.mode === 'debug' && flowDebug.flow.flowType === 'Record-Triggered Flow' && <>
+                  <div className="info-callout">Simulate a record-triggered Flow. This test uses a disposable data snapshot; it never saves record changes or delivers messages. Use actual field API names in the JSON, and provide prior values when testing an update or deletion.</div>
+                  <label className="form-label">Trigger Event
+                    <select className="form-control" value={flowDebug.inputs.$Event ?? 'created'} onChange={(event) => setFlowDebug((current) => current ? { ...current, inputs: { ...current.inputs, $Event: event.target.value } } : current)}>
+                      <option value="created">Created</option><option value="updated">Updated</option><option value="deleted">Deleted</option>
+                    </select>
+                  </label>
+                  <label className="form-label">Current Record ({flowDebug.flow.triggerObject ?? 'object'}) — JSON
+                    <textarea className="form-control" rows={7} value={flowDebug.inputs.$Record ?? '{}'} onChange={(event) => setFlowDebug((current) => current ? { ...current, inputs: { ...current.inputs, $Record: event.target.value } } : current)} />
+                  </label>
+                  {flowDebug.inputs.$Event !== 'created' && <label className="form-label">Prior Record — JSON
+                    <textarea className="form-control" rows={6} value={flowDebug.inputs.$Prior ?? '{}'} onChange={(event) => setFlowDebug((current) => current ? { ...current, inputs: { ...current.inputs, $Prior: event.target.value } } : current)} />
+                  </label>}
+                  <label className="checkbox-row"><input type="checkbox" checked={flowDebug.inputs.$IsClone === 'true'} onChange={(event) => setFlowDebug((current) => current ? { ...current, inputs: { ...current.inputs, $IsClone: event.target.checked ? 'true' : 'false' } } : current)} />Simulate cloned record</label>
+                </>}
+                {flowDebug.flow.resources.filter((resource) => resource.availableForInput && flowDebug.flow.flowType !== 'Record-Triggered Flow').map((resource) => {
                   const normalizedType = resource.dataType.toLocaleLowerCase();
                   const isJsonInput = ['Record', 'Record Collection'].includes(resource.type) || normalizedType === 'json';
                   const updateValue = (value: string) => setFlowDebug((current) => current ? {
@@ -4282,9 +4384,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
                     <h3>Debug results</h3>
                     <p>{flowDebug.error
                       ? 'Execution failed; the trace shows the path reached before the error.'
-                      : flowDebug.result.status === 'waiting'
-                        ? `Paused at ${flowDebug.result.kind === 'screen' ? 'a Screen' : 'a Wait element'}.`
-                        : 'Execution completed.'}</p>
+                      : flowDebug.result.status === 'skipped'
+                        ? `Trigger skipped: ${String(flowDebug.result.reason ?? 'entry conditions did not match')}`
+                        : flowDebug.result.status === 'waiting'
+                          ? `Paused at ${flowDebug.result.kind === 'screen' ? 'a Screen' : 'an asynchronous stage'}.`
+                          : 'Execution completed.'}</p>
                     {typeof flowDebug.result.screen === 'object' && flowDebug.result.screen !== null && (
                       <section>
                         <h4>Current screen</h4>

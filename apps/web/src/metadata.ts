@@ -284,12 +284,13 @@ export type FlowVersionMetadata = {
   savedAt: string;
   label?: string;
   description?: string;
-  flowType?: 'Record-Triggered Flow' | 'Screen Flow' | 'Autolaunched Flow' | 'Schedule-Triggered Flow' | 'Platform Event-Triggered Flow';
+  flowType?: 'Record-Triggered Flow' | 'Screen Flow' | 'Autolaunched Flow' | 'Flow Orchestration' | 'Schedule-Triggered Flow' | 'Platform Event-Triggered Flow';
   triggerObject?: string | null;
   startConfig?: Record<string, unknown>;
   elements: FlowElementMetadata[];
   connectors: FlowConnectorMetadata[];
   resources: FlowResourceMetadata[];
+  tests?: FlowTestCaseMetadata[];
 };
 
 export type FlowValidationMetadata = {
@@ -325,6 +326,18 @@ export type FlowInterviewMetadata = {
   attempts: number;
 };
 
+export type FlowTestCaseMetadata = {
+  id: string;
+  label: string;
+  input: Record<string, unknown>;
+  event?: 'created' | 'updated' | 'deleted';
+  record?: Record<string, unknown>;
+  prior?: Record<string, unknown> | null;
+  isClone?: boolean;
+  expectedStatus: 'completed' | 'waiting' | 'skipped';
+  expectedOutputs?: Record<string, unknown>;
+};
+
 export type FlowDefinitionMetadata = {
   apiName: string;
   label: string;
@@ -333,7 +346,7 @@ export type FlowDefinitionMetadata = {
   createdBy?: string;
   lastModifiedAt?: string;
   lastModifiedBy?: string;
-  flowType: 'Record-Triggered Flow' | 'Screen Flow' | 'Autolaunched Flow' | 'Schedule-Triggered Flow' | 'Platform Event-Triggered Flow';
+  flowType: 'Record-Triggered Flow' | 'Screen Flow' | 'Autolaunched Flow' | 'Flow Orchestration' | 'Schedule-Triggered Flow' | 'Platform Event-Triggered Flow';
   status: 'Draft' | 'Active';
   versionNumber: number;
   activeVersion: number | null;
@@ -343,6 +356,7 @@ export type FlowDefinitionMetadata = {
   connectors: FlowConnectorMetadata[];
   resources: FlowResourceMetadata[];
   versions: FlowVersionMetadata[];
+  tests?: FlowTestCaseMetadata[];
 };
 
 export type PlatformEventMetadata = {

@@ -204,3 +204,74 @@ export async function closeStateStore(): Promise<void> {
 
 // Optional tenant-scoped route-alias SQL registry; never silently fall back to JSONB.
 export function getRouteAliasPool() { return pool; }
+/**
+ * Durable logout tombstones are isolated from the large metadata state graph.
+ * This table contains only signed-token IDs, hashed refresh-token identifiers
+ * and expiry metadata. No bearer tokens, credentials or JSON columns.
+ * Verified startup merges the tombstones after reading the canonical SQL tree.
+ */
+export type AuthLogoutRevocation = {
+  jti: string;
+  tenantId: string;
+  userId: string;
+  refreshHash: string | null;
+  accessExpiresAt: number;
+  refreshExpiresAt: number | null;
+  revokedAt: number;
+};
+const authLogoutTableSql = `CREATE TABLE IF NOT EXISTS md_auth_logout_revocations (
+  jti TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  refresh_token_hash TEXT,
+  access_expires_at DOUBLE PRECISION NOT NULL,
+  refresh_expires_at DOUBLE PRECISION,
+  revoked_at DOUBLE PRECISION NOT NULL
+)`;
+let authLogoutSchemaReady: Promise<void> | null = null;
+async function ensureAuthLogoutTable(): Promise<void> {
+  if (!pool || persistenceMode !== 'typed') return;
+  if (!authLogoutSchemaReady) {
+    authLogoutSchemaReady = pool.query(authLogoutTableSql).then(() => undefined)
+      .catch((error: unknown) => {
+        authLogoutSchemaReady = null;
+        throw error;
+      });
+  }
+  await authLogoutSchemaReady;
+}
+export async function readAuthLogoutRevocations(): Promise<AuthLogoutRevocation[]> {
+  if (persistenceMode !== 'typed') return [];
+  if (!pool) throw Error('Typed SQL logout revocation store requires PostgreSQL');
+  await ensureAuthLogoutTable();
+  const now = Date.now() / 1000;
+  const result = await pool.query(
+    `SELECT jti,tenant_id,user_id,refresh_token_hash,access_expires_at,refresh_expires_at,revoked_at
+       FROM md_auth_logout_revocations
+       WHERE access_expires_at>$1 OR refresh_expires_at>$1`, [now]);
+  return (result.rows as unknown as Array<Record<string, unknown>>).map((row) => ({
+    jti: String(row.jti),
+    tenantId: String(row.tenant_id),
+    userId: String(row.user_id),
+    refreshHash: row.refresh_token_hash === null ? null : String(row.refresh_token_hash),
+    accessExpiresAt: Number(row.access_expires_at),
+    refreshExpiresAt: row.refresh_expires_at === null ? null : Number(row.refresh_expires_at),
+    revokedAt: Number(row.revoked_at)
+  }));
+}
+export async function persistAuthLogoutRevocation(revocation: AuthLogoutRevocation): Promise<void> {
+  if (persistenceMode !== 'typed' || !pool) throw Error('Typed SQL logout revocation store unavailable');
+  if (!revocation.jti || !revocation.tenantId || !revocation.userId ||
+      !Number.isFinite(revocation.accessExpiresAt) || !Number.isFinite(revocation.revokedAt))
+    throw Error('Invalid durable logout revocation');
+  await ensureAuthLogoutTable();
+  // An individual INSERT is an atomic, durable PostgreSQL transaction. Do not
+  // return a 204 before it commits; its failure must leave logout unacknowledged.
+  await pool.query(
+    `INSERT INTO md_auth_logout_revocations
+      (jti,tenant_id,user_id,refresh_token_hash,access_expires_at,refresh_expires_at,revoked_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (jti) DO NOTHING`,
+    [revocation.jti,revocation.tenantId,revocation.userId,revocation.refreshHash,
+     revocation.accessExpiresAt,revocation.refreshExpiresAt,revocation.revokedAt]);
+}

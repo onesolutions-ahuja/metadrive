@@ -1,5 +1,5 @@
 import cors from 'cors';
-import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation } from './postgres-state.js';
 import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
 import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
@@ -108,7 +108,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Legacy JSONB response semantics remain unchanged.
 let latestStateCommit: Promise<unknown> = Promise.resolve();
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (persistenceMode === 'jsonb' || !req.path.startsWith('/api')) return next();
+  if (persistenceMode === 'jsonb' || !req.path.startsWith('/api') || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const end = res.end;
   const requestStartedAt = performance.now();
   let ending = false;
@@ -1202,18 +1202,32 @@ const flowResourceSchema = z.object({
   availableForOutput: z.boolean(),
   value: z.unknown().optional()
 });
+// Declarative, version-safe Flow Test cases. Tests never run during normal
+// record processing; authoring and explicit debug/run-tests actions are isolated.
+const flowTestCaseSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string().trim().min(1).max(120),
+  input: z.record(z.unknown()).default({}),
+  event: z.enum(['created', 'updated', 'deleted']).optional(),
+  record: z.record(z.unknown()).optional(),
+  prior: z.record(z.unknown()).nullable().optional(),
+  isClone: z.boolean().default(false),
+  expectedStatus: z.enum(['completed', 'waiting', 'skipped']).default('completed'),
+  expectedOutputs: z.record(z.unknown()).default({})
+}).strict();
 const flowVersionSchema = z.object({
   versionNumber: z.number().int().positive(),
   status: z.enum(['Draft', 'Active', 'Obsolete']),
   savedAt: z.string().datetime(),
   label: z.string().optional(),
   description: z.string().optional(),
-  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']).optional(),
+  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Flow Orchestration', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']).optional(),
   triggerObject: z.string().nullable().optional(),
   startConfig: z.record(z.unknown()).optional(),
   elements: z.array(flowElementSchema),
   connectors: z.array(flowConnectorSchema),
-  resources: z.array(flowResourceSchema)
+  resources: z.array(flowResourceSchema),
+  tests: z.array(flowTestCaseSchema).max(100).optional()
 });
 const flowSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
@@ -1223,7 +1237,7 @@ const flowSchema = z.object({
   createdBy: z.string().optional(),
   lastModifiedAt: z.string().optional(),
   lastModifiedBy: z.string().optional(),
-  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']),
+  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Flow Orchestration', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']),
   status: z.enum(['Draft', 'Active']),
   versionNumber: z.number().int().positive(),
   activeVersion: z.number().int().positive().nullable(),
@@ -1232,8 +1246,23 @@ const flowSchema = z.object({
   elements: z.array(flowElementSchema).min(1),
   connectors: z.array(flowConnectorSchema),
   resources: z.array(flowResourceSchema),
-  versions: z.array(flowVersionSchema)
+  versions: z.array(flowVersionSchema),
+  tests: z.array(flowTestCaseSchema).max(100).optional()
 }).superRefine((flow, context) => {
+  if (flow.tests && new Set(flow.tests.map((item) => item.id)).size !== flow.tests.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['tests'], message: 'Flow Test IDs must be unique' });
+  }
+  if (flow.tests) {
+    flow.tests.forEach((item, index) => {
+      if (flow.flowType === 'Record-Triggered Flow') {
+        if (!item.event || !item.record) {
+          context.addIssue({ code: z.ZodIssueCode.custom, path: ['tests', index], message: 'Record-triggered tests require an event and record sample' });
+        }
+      } else if (item.event || item.record || item.prior) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['tests', index], message: 'Only record-triggered Flow tests can contain record/trigger fixtures' });
+      }
+    });
+  }
   const ids = new Set<number>();
   for (const [index, element] of flow.elements.entries()) {
     if (ids.has(element.id)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['elements', index, 'id'], message: 'Element IDs must be unique' });
@@ -2530,7 +2559,8 @@ function flowVersionSnapshot(flow: FlowMetadata, savedAt: string): FlowMetadata[
     startConfig: flow.startConfig,
     elements: flow.elements,
     connectors: flow.connectors,
-    resources: flow.resources
+    resources: flow.resources,
+    tests: flow.tests
   };
 }
 
@@ -4692,6 +4722,30 @@ if (existingPostgresState !== null && persistenceMode !== 'typed') {
 }
 const stateHydrationStartedAt = performance.now();
 let state = loadState(persistenceMode === 'typed' ? existingPostgresState : undefined);
+// Security tombstones commit separately from the large SQL metadata graph.
+// Merge them before accepting requests, so logout remains revoked after crash
+// recovery even if no subsequent metadata snapshot was written.
+const durableLogouts = maintenanceMode ? [] : await readAuthLogoutRevocations();
+if (durableLogouts.length) {
+  const accessRevocations = { ...state.revokedAccessTokens };
+  const refreshRevocations = new Map<string, number>();
+  const now = Date.now() / 1000;
+  for (const entry of durableLogouts) {
+    if (entry.accessExpiresAt > now)
+      accessRevocations[entry.jti] = Math.max(accessRevocations[entry.jti] ?? 0, entry.accessExpiresAt);
+    if (entry.refreshHash && entry.refreshExpiresAt !== null && entry.refreshExpiresAt > now)
+      refreshRevocations.set(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`, Math.max(refreshRevocations.get(`${entry.tenantId}:${entry.userId}:${entry.refreshHash}`) ?? 0, entry.revokedAt));
+  }
+  state = {
+    ...state,
+    revokedAccessTokens: accessRevocations,
+    refreshSessions: state.refreshSessions.map((session) => {
+      const revokedAt = refreshRevocations.get(`${session.tenantId}:${session.userId}:${session.tokenHash}`);
+      return revokedAt === undefined ? session
+        : { ...session, revokedAt: Math.max(session.revokedAt ?? 0, revokedAt) };
+    })
+  };
+}
 assertTenantIdentityIsolation(state);
 console.info(`Startup state hydration: ${(performance.now() - stateHydrationStartedAt).toFixed(0)}ms`);
 // Remove legacy internal UI requests from Communication Records before the
@@ -6220,17 +6274,34 @@ app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response)
   const principal = getPrincipal(res);
   const token = bearerToken(req)!;
   void jwtService.verify(token).then((claims) => {
+    const revokedAt = Date.now() / 1000;
     const revokedAccessTokens = { ...state.revokedAccessTokens };
     if (claims.jti && claims.exp) revokedAccessTokens[claims.jti] = claims.exp;
     const refreshToken = cookieValue(req, refreshCookieName);
     const refreshHash = refreshToken ? hashToken(refreshToken) : '';
+    const matchingRefresh = state.refreshSessions.find((session) =>
+      session.tokenHash === refreshHash && session.userId === principal.userId && session.tenantId === principal.tenantId);
     const refreshSessions = state.refreshSessions.map((session) =>
-      session.tokenHash === refreshHash && session.userId === principal.userId && session.tenantId === principal.tenantId
-        ? { ...session, revokedAt: Date.now() / 1000 }
-        : session
+      session === matchingRefresh ? { ...session, revokedAt } : session
     );
     const nextState = { ...state, revokedAccessTokens, refreshSessions };
-    persistState(nextState);
+    if (persistenceMode === 'typed') {
+      // One SQL INSERT, acknowledged only after commit. The restart overlay
+      // prevents a stale platform snapshot from resurrecting the session.
+      const previousCommit = latestStateCommit;
+      const durableRevocation = persistAuthLogoutRevocation({
+        jti: String(claims.jti), tenantId: principal.tenantId, userId: principal.userId,
+        refreshHash: matchingRefresh?.tokenHash ?? null,
+        accessExpiresAt: Number(claims.exp),
+        refreshExpiresAt: matchingRefresh?.expiresAt ?? null, revokedAt
+      });
+      latestStateCommit = Promise.all([previousCommit, durableRevocation]);
+      void latestStateCommit.catch((error: unknown) => {
+        console.error('CRITICAL: Durable logout revocation failed', error);
+      });
+    } else {
+      persistState(nextState);
+    }
     state = nextState;
     clearRefreshCookie(res);
     return res.status(204).end();
@@ -10644,7 +10715,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   const apiName = routeParam(req, 'apiName');
   const flow = tenant.flows.find((item) => item.apiName === apiName);
   if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
-  if (flow.flowType !== 'Autolaunched Flow' && flow.flowType !== 'Screen Flow') return res.status(400).json({ error: 'Only autolaunched and screen flows can be invoked through this endpoint' });
+  if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
   const inputError = validateFlowInputValues(flow, input.data);
@@ -10679,8 +10750,8 @@ app.post('/api/flows/:apiName/debug', accessAuthentication, requirePermission('f
   const apiName = routeParam(req, 'apiName');
   const flow = tenant.flows.find((item) => item.apiName === apiName);
   if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
-  if (flow.flowType !== 'Autolaunched Flow' && flow.flowType !== 'Screen Flow') {
-    return res.status(400).json({ error: 'Only autolaunched and screen flows can be debugged from Flow Builder' });
+  if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) {
+    return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be debugged from Flow Builder' });
   }
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow debug inputs must be an object' });
@@ -10708,6 +10779,124 @@ app.post('/api/flows/:apiName/debug', accessAuthentication, requirePermission('f
     });
   }
 });
+const recordFlowDebugRequestSchema = z.object({
+  event: z.enum(['created', 'updated', 'deleted']),
+  record: z.record(z.unknown()),
+  prior: z.record(z.unknown()).nullable().optional(),
+  isClone: z.boolean().default(false)
+}).strict();
+
+// Salesforce-style record-trigger testing: run the saved Flow definition
+// against a disposable tenant snapshot, with no committed record changes,
+// scheduled jobs, notifications or external communications.
+app.post('/api/flows/:apiName/debug-record', accessAuthentication, requirePermission('flows:run'), async (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
+  const flow = tenant.flows.find((item) => item.apiName === routeParam(req, 'apiName'));
+  if (!flow) return res.status(404).json({ error: 'Flow was not found' });
+  if (flow.flowType !== 'Record-Triggered Flow') {
+    return res.status(400).json({ error: 'Record-triggered debug only supports Record-Triggered Flows' });
+  }
+  const parsed = recordFlowDebugRequestSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid record-trigger test inputs', details: parsed.error.flatten() });
+  const { event, isClone } = parsed.data;
+  // Test fixtures may omit platform-maintained audit fields. Supply them only
+  // in the isolated fixture; never modify live records or silently accept an
+  // invalid value explicitly provided by the caller.
+  const now = new Date().toISOString();
+  const recordId = typeof parsed.data.record.Id === 'string' && parsed.data.record.Id
+    ? parsed.data.record.Id : `DEBUG-${randomUUID()}`;
+  const fixture = (values: Record<string, unknown>, id: string) => runtimeRecordSchema.safeParse({
+    Id: id, CreatedDate: now, LastModifiedDate: now, ...values
+  });
+  const recordResult = fixture(parsed.data.record, recordId);
+  const priorResult = parsed.data.prior ? fixture(parsed.data.prior, recordId) : undefined;
+  if (!recordResult.success || (priorResult && !priorResult.success)) {
+    return res.status(400).json({ error: 'Invalid record sample: Id must be text and audit timestamps must be valid ISO dates' });
+  }
+  const record = recordResult.data;
+  const prior = priorResult?.data;
+  if (prior && prior.Id !== record.Id) {
+    return res.status(400).json({ error: 'Current and prior samples must identify the same record' });
+  }
+  const objectName = flow.triggerObject ?? '';
+  const object = tenant.objects.find((item) => item.apiName === objectName);
+  if (!object || !hasObjectPermission(principal, tenant, objectName, 'read')) {
+    return res.status(403).json({ error: 'Read access to the Flow trigger object is required' });
+  }
+  const auditFields = new Set(['CreatedDate', 'LastModifiedDate', 'CreatedById', 'LastModifiedById', 'SystemModstamp']);
+  const availableFields = new Set(['Id', ...auditFields, ...object.fields.map((field) => field.apiName)]);
+  for (const sample of [record, prior]) {
+    if (!sample) continue;
+    const unknown = Object.keys(sample).find((name) => !availableFields.has(name));
+    if (unknown) return res.status(400).json({ error: `Unknown record field "${unknown}"` });
+    const protectedField = Object.keys(sample).find((name) => name !== 'Id' && !auditFields.has(name)
+      && !hasFieldPermission(principal, tenant, objectName, name, 'read'));
+    if (protectedField) return res.status(403).json({ error: `No read permission for field "${protectedField}"` });
+    if (typeof sample.Id === 'string') {
+      const persisted = tenant.records[objectName]?.find((item) => item.Id === sample.Id);
+      if (persisted && !hasRecordAccess(principal, tenant, objectName, persisted, 'Read')) {
+        return res.status(403).json({ error: 'Read access to the selected record is required' });
+      }
+    }
+  }
+  if ((event === 'updated' || event === 'deleted') && !prior) {
+    return res.status(400).json({ error: 'Updated and deleted record tests require prior record values' });
+  }
+  if (event === 'created' && prior) {
+    return res.status(400).json({ error: 'Created record tests cannot contain prior values' });
+  }
+  if (event === 'deleted' && flow.startConfig.runWhen === 'before-save') {
+    return res.status(400).json({ error: 'Deleted record tests cannot run before save' });
+  }
+  const validation = validateFlow(
+    flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
+    tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId),
+    tenant.flows, tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
+  );
+  if (!validation.valid) return res.status(422).json({ error: 'Flow debug validation failed', details: validation.errors });
+  const debugTrace: FlowDebugTraceEntry[] = [];
+  try {
+    const trigger = String(flow.startConfig.trigger ?? 'created-or-updated');
+    const matchesEvent = trigger === event || (trigger === 'created-or-updated' && event !== 'deleted');
+    const source = event === 'deleted' ? prior ?? record : record;
+    const context: FlowRuntimeContext = {
+      record: source, prior, recordEvent: event, isClone,
+      triggerObjectName: objectName, resourceDefinitions: flow.resources,
+      formulaStack: new Set(), variables: {}, currentUserId: principal.userId,
+      debug: true, debugTrace,
+      ...formulaContextForUser(tenant, principal.userId),
+      flowVariables: flowVariablesForUser(tenant, principal.userId)
+    };
+    const conditions = asConfigRows(flow.startConfig.entryConditions);
+    const matchesCriteria = matchesEvent && flowConditionsMatch(conditions, source, context, flow.startConfig.conditionLogic);
+    const matchedPrior = event === 'updated' && flow.startConfig.updatedRecordBehavior === 'transition'
+      && prior && flowConditionsMatch(conditions, prior, { ...context, record: prior, prior: undefined }, flow.startConfig.conditionLogic);
+    if (!matchesCriteria || matchedPrior) {
+      return res.json({
+        status: 'skipped', matchedEvent: matchesEvent,
+        reason: !matchesEvent ? 'Trigger event does not match'
+          : matchedPrior ? 'Record matched entry conditions before this update'
+            : 'Record did not match entry conditions',
+        debugTrace, sideEffectsSimulated: true
+      });
+    }
+    const working = structuredClone(tenant);
+    const result = await executeFlow(
+      flow, working, principal.tenantId, principal.userId, {}, structuredClone(source),
+      prior ? structuredClone(prior) : undefined, 0, undefined, 0, event, isClone,
+      undefined, true, true, debugTrace
+    );
+    return res.json({ ...result, matchedEvent: true, debugTrace, sideEffectsSimulated: true });
+  } catch (error) {
+    return res.status(422).json({
+      error: error instanceof Error ? error.message : 'Record-triggered debug failed',
+      debugTrace, sideEffectsSimulated: true
+    });
+  }
+});
+
 app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, requirePermission('flows:run'), async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const interviewId = routeParam(req, 'interviewId');
@@ -18125,6 +18314,9 @@ function validateFlow(
   if (starts.length !== 1) errors.push('A flow must have exactly one Start element.');
   else if (flow.elements[0]?.id !== starts[0].id) errors.push('Move the Start element to the beginning of the flow.');
   const requiresObject = ['Record-Triggered Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow'].includes(flow.flowType);
+  if (flow.flowType === 'Flow Orchestration' && !flow.elements.some((element) => element.type === 'Orchestration Stage')) {
+    errors.push('Flow Orchestration must contain at least one Orchestration Stage.');
+  }
   if (requiresObject && !flow.triggerObject) errors.push('Select an object for the flow trigger.');
   if (!requiresObject && flow.triggerObject) errors.push('Only triggered flows can select a trigger object.');
   const eventTriggered = flow.flowType === 'Platform Event-Triggered Flow';
