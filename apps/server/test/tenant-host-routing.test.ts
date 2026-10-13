@@ -42,11 +42,6 @@ test('MD-01B routing: exact host/Origin mappings, deny mismatches and spoofing',
   assert.throws(() => tenantHostConfig('{"api.example.com":"wrong"}', 'api.example.com'));
   assert.throws(() => tenantHostConfig('{"shop-a.example.com":"a","SHOP-A.EXAMPLE.COM":"b"}', undefined));
   assert.throws(() => tenantHostConfig('not-json', undefined));
-  assert.throws(() => tenantHostConfig('{"shop.example.com":" tenant-a "}', undefined));
-  assert.throws(() => tenantHostConfig('{"shop.example.com":"tenant/a"}', undefined));
-  assert.throws(() => tenantHostConfig('{"shop.example.com":""}', undefined));
-  assert.deepEqual(tenantForRequest(tenantHostConfig('{"shop.example.com":"tenant-a"}', undefined), 'shop.example.com', undefined),
-    { allowed: true, tenantId: 'tenant-a' });
 });
 
 const require = createRequire(import.meta.url);

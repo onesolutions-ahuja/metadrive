@@ -5,6 +5,7 @@ on:
     paths:
       - 'apps/server/scripts/bootstrap-kiosk.mjs'
       - 'apps/server/scripts/verify-kiosk-contract.mjs'
+      - 'apps/server/scripts/verify-kiosk-restored-adaptive.mjs'
       - 'apps/web/src/custom-components/KioskOrderingExperience/**'
       - 'apps/web/src/page-presets/kiosk*.json'
       - '.github/workflows/kiosk-isolated-validation.yml'
@@ -39,13 +40,17 @@ jobs:
       - name: Read-only Aiven backup
         env:
           DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          KIOSK_VALIDATION_DATABASE: metadrive_sql_20261012
         run: |
           test -n "${DATABASE_URL:-}" || { echo "::error::Missing Aiven secret"; exit 1; }
           node --input-type=module <<'NODE'
           import {writeFileSync} from 'node:fs';
           const u=new URL(process.env.DATABASE_URL);
           if(!u.hostname.endsWith('.aivencloud.com')) throw Error('Unexpected source host');
-          const kv={PGHOST:u.hostname,PGPORT:u.port||'5432',PGUSER:decodeURIComponent(u.username),PGPASSWORD:decodeURIComponent(u.password),PGDATABASE:decodeURIComponent(u.pathname.slice(1)),PGSSLMODE:'require'};
+          if(process.env.KIOSK_VALIDATION_DATABASE!=='metadrive_sql_20261012') throw Error('Unverified backup database target');
+          // The connector's default database is an obsolete, payload-less snapshot.
+          // Dump the verified normalized SQL database on the same Aiven cluster.
+          const kv={PGHOST:u.hostname,PGPORT:u.port||'5432',PGUSER:decodeURIComponent(u.username),PGPASSWORD:decodeURIComponent(u.password),PGDATABASE:process.env.KIOSK_VALIDATION_DATABASE,PGSSLMODE:'require'};
           writeFileSync(process.env.RUNNER_TEMP+'/source.env',Object.entries(kv).map(([k,v])=>k+'='+v).join('\n')+'\n',{mode:0o600});
           NODE
           docker run --rm --network host --env-file "${RUNNER_TEMP}/source.env" -v "${RUNNER_TEMP}:/private" --entrypoint pg_dump postgres:18 --format=custom --no-owner --no-acl --file=/private/kiosk.dump
@@ -54,48 +59,18 @@ jobs:
         run: |
           PGPASSWORD=postgres createdb -h 127.0.0.1 -U postgres kiosk_validation
           docker run --rm --network host -e PGPASSWORD=postgres -v "${RUNNER_TEMP}:/private" --entrypoint pg_restore postgres:18 -h 127.0.0.1 -U postgres -d kiosk_validation --no-owner --no-acl --exit-on-error /private/kiosk.dump
-      - name: Isolate legacy snapshot drift in disposable test database only
-        run: |
-          # The source rollback baseline has drifted. Never change the production legacy table.
-          # Preserve its contents under a staging-only name, then test the relational installer.
-          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d kiosk_validation \
-            -v ON_ERROR_STOP=1 -c "ALTER TABLE metadrive_platform_state RENAME TO staging_legacy_snapshot_unverified"
-      - name: Verify restored relational projection and reconcile test-only checksum
+      - name: Create disposable relational fixture from verified typed SQL restoration
         env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/kiosk_validation
-          PGSSLMODE: disable
+          KIOSK_RESTORED_SOURCE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/kiosk_validation
+          KIOSK_FIXTURE_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/kiosk_relational_validation
         run: |
-          # This ONLY fixes a disposable snapshot marker for an installer test;
-          # the real production integrity mismatch remains unresolved and blocks deployment.
-          node --input-type=module <<'NODE'
-          import pg from 'pg';
-          import assert from 'node:assert/strict';
-          import {readRelationalRows} from './apps/server/src/relational-tables.mjs';
-          import {restoreState,verifyProjection,stateDigest} from './apps/server/src/relational-projection.mjs';
-          const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false});
-          const client=await pool.connect();
-          try {
-            await client.query('BEGIN');
-            const rows=await readRelationalRows(client);
-            const state=restoreState(rows);
-            verifyProjection(state,rows);
-            const digest=stateDigest(state);
-            assert.match(digest,/^[a-f0-9]{64}$/);
-            const original=await client.query('SELECT state_sha256 FROM metadrive_rel_runtime WHERE id=1');
-            assert.equal(original.rowCount,1);
-            if(original.rows[0].state_sha256!==digest) {
-              await client.query('UPDATE metadrive_rel_runtime SET state_sha256=$1 WHERE id=1',[digest]);
-              console.log('Recomputed checksum on disposable restored database only (production integrity remains blocked).');
-            }
-            await client.query('COMMIT');
-          } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-          } finally {client.release();await pool.end();}
-          NODE
+          # Production Aiven source is never modified; source dump is read-only.
+          # The restored database is verified as typed SQL, including physical records.
+          PGPASSWORD=postgres createdb -h 127.0.0.1 -U postgres kiosk_relational_validation
+          node apps/server/scripts/verify-kiosk-restored-adaptive.mjs
       - name: Verify two idempotent installs on restored copy
         env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/kiosk_validation
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/kiosk_relational_validation
           PGSSLMODE: disable
           METADRIVE_PERSISTENCE_MODE: relational
           METADRIVE_KIOSK_BOOTSTRAP: 'true'

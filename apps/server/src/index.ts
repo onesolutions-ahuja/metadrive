@@ -1489,7 +1489,7 @@ const pageSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'type'], message: 'Dynamic Forms components are only available on template-based Record Pages' });
     }
     if (page.pageType !== 'Record Page'
-      && !['Accordion', 'Tabs', 'Report Chart'].includes(component.type)
+      && !['Accordion', 'Tabs', 'Report Chart', 'Dashboard'].includes(component.type)
       && !component.type.startsWith('Custom:')) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'type'], message: 'This component is only available on Record Pages' });
     }
@@ -11875,6 +11875,11 @@ app.delete('/api/metadata/dashboards/:apiName', requirePermission('metadata:read
   )) {
     return res.status(403).json({ error: 'Dashboard editor access is required to delete it' });
   }
+  const referencingPages = tenant.pages.filter(page => page.components.some(component =>
+    component.type === 'Dashboard' && component.properties.dashboardApiName === apiName));
+  if (referencingPages.length) return res.status(409).json({ error:
+    'Dashboard is embedded in Lightning page(s): ' + referencingPages.map(page => page.apiName).join(', ')
+  });
   const updatedTenant = {
     ...tenant,
     dashboards: tenant.dashboards.filter((dashboard) => dashboard.apiName !== apiName),
@@ -13586,6 +13591,18 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
   if (tenant.pages.some((page) => page.apiName.toLocaleLowerCase() === parsed.data.apiName.toLocaleLowerCase()
     && page.apiName !== previousApiName)) {
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
+  }
+  if (parsed.data.status === 'Active') {
+    const invalidDashboard = parsed.data.components.find(component => component.type === 'Dashboard'
+      && (typeof component.properties.dashboardApiName !== 'string'
+        || !tenant.dashboards.some(dashboard => dashboard.apiName === component.properties.dashboardApiName
+          && dashboard.status === 'Deployed' && canAccessDashboard(
+            dashboardForUser(tenant, dashboard, principal.userId), principal.userId,
+            tenant.accessControl.users.find(user => user.id === principal.userId)?.permissionSetGroupIds ?? [],
+            principal.permissions.includes('dashboards:manage')))));
+    if (invalidDashboard) return res.status(422).json({
+      error: 'An active Lightning page can embed only a published dashboard accessible to the editor'
+    });
   }
   const invalidLibraryComponent = parsed.data.components.find((component) => component.type.startsWith('Custom:') && !state.libraryComponents.some((libraryComponent) =>
     libraryComponent.apiName === component.type.slice('Custom:'.length) && libraryComponent.surfaces.includes('page')

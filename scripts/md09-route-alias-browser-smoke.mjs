@@ -107,7 +107,12 @@ try{
   await tab.setViewportSize({width:1440,height:900});
   await tab.goto(site+'/une/setup/page-builder/'+page);
   await tab.getByRole('button',{name:'Open page routes'}).click();
-  await tab.getByRole('row').filter({hasText:'my-checkout'}).getByRole('button',{name:'Disable'}).click();
+  const aliasRow=tab.getByRole('table',{name:'Route aliases'})
+    .getByRole('row').filter({hasText:'my-checkout'});
+  await aliasRow.getByRole('button',{name:'Disable'}).click();
+  // React starts the async DELETE on click; wait until the saved SQL revision
+  // has been fetched and displayed before asserting the server's 404.
+  await aliasRow.getByText('Disabled · v2',{exact:false}).waitFor();
   await req('/routes/resolve/'+app+'/my-checkout',token,'GET',undefined,404);
   const statuses=await pool.query('SELECT status FROM md_route_alias_revisions WHERE tenant_id=$1 AND slug=$2 ORDER BY version',
     ['md09-alias-test','my-checkout']);

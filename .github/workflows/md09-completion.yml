@@ -1,0 +1,45 @@
+name: MD-09 Completion - Dashboard, Layers, Kiosk, RBAC
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/EmbeddedDashboard.tsx'
+      - 'apps/web/src/pageDependencies.ts'
+      - 'apps/web/src/componentCatalog.ts'
+      - 'apps/web/src/styles.css'
+      - 'apps/web/src/custom-components/KioskOrderingExperience/KioskOrderingExperience.jsx'
+      - 'apps/web/src/page-presets/kiosk*.json'
+      - 'apps/server/scripts/bootstrap-kiosk.mjs'
+      - 'apps/server/src/index.ts'
+      - 'scripts/md09-page-completion*'
+      - '.github/workflows/md09-completion.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  completion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Kiosk metadata contract
+        run: node apps/server/scripts/verify-kiosk-contract.mjs
+      - name: Native dashboard aggregate, metadata bindings, safe checkout
+        run: npx tsx --test scripts/md09-page-completion.test.mjs
+      - name: Full build and foundation regression
+        run: npm run build
+      - name: Install isolated Chromium
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Page Builder and deployed dashboard browser regression
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: node scripts/md09-page-completion-browser-smoke.mjs
