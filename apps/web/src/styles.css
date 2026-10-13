@@ -741,6 +741,10 @@ h1, h2, h3, p { margin-top: 0; }
 .flow-graph-edge.fault text { fill: #c23934; }
 .flow-graph-edge text { fill: #444; stroke: #f8f8f8; stroke-width: 5px; paint-order: stroke; text-anchor: middle; font-size: 10px; }
 .flow-step.flow-graph-node { position: absolute; min-height: 74px; }
+.flow-node-inline-actions { position: absolute; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+.flow-node-inline-actions .icon-button { min-width: 26px; min-height: 26px; background: #fff; border: 1px solid #c5cbd3; border-radius: 50%; box-shadow: 0 1px 3px #0001; }
+.flow-node-inline-actions .icon-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .flow-outcome-default { padding: 0 7px; color: #706e6b; font-size: 9px; }
 .flow-path { width: 100%; min-width: 560px; display: flex; flex-direction: column; align-items: center; padding: 48px 20px 100px; }
 .flow-step-wrap { width: min(380px, calc(100% - 20px)); display: flex; flex-direction: column; align-items: center; }

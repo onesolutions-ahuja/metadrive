@@ -4,7 +4,7 @@ import FlowTestsPanel from './FlowTestsPanel';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { parseComponentProperties } from './componentProperties';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -1415,7 +1415,7 @@ export default function FlowBuilder({
           </svg>
           {flow.elements.map((element) => {
             const position = graphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding };
-            return <button key={element.id} className={`flow-step flow-graph-node ${element.type === 'Start' ? 'start-step' : ''} ${selectedId === element.id ? 'selected' : ''}`}
+            return <Fragment key={element.id}><button className={`flow-step flow-graph-node ${element.type === 'Start' ? 'start-step' : ''} ${selectedId === element.id ? 'selected' : ''}`}
               style={{ left: position.x, top: position.y, width: graphNodeWidth,
                 cursor: freeformLayout ? 'grab' : undefined, touchAction: freeformLayout ? 'none' : undefined }}
               title={freeformLayout ? 'Drag to reposition. Use arrow keys to adjust; Shift + arrow moves 20px.' : undefined}
@@ -1458,7 +1458,21 @@ export default function FlowBuilder({
                 setCanvasPosition(element.id, moveFlowPosition(position, dx, dy));
               }}>
               <span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === element.type)?.icon ?? '◉'}</span><span className="flow-step-content"><small>{element.type === 'Start' ? flow.flowType.toUpperCase() : element.type.toUpperCase()}</small><strong>{element.label}</strong>{element.type === 'Start' && <em>{flow.flowType === 'Platform Event-Triggered Flow' ? `Event: ${selectedPlatformEvent?.label ?? flow.triggerObject ?? 'Select event'}` : flow.triggerObject ? `Object: ${flow.triggerObject}` : 'No record object'} · {displayValue(flow.startConfig.trigger) || displayValue(flow.startConfig.frequency) || 'Manual'}</em>}</span><MoreHorizontal size={16} className="step-menu" />
-            </button>;
+            </button>
+              {selectedId === element.id && <div className="flow-node-inline-actions"
+                style={{ left: position.x + graphNodeWidth + 8, top: position.y + 8 }}>
+                <button type="button" className="icon-button" aria-label={`Add element after ${element.label}`}
+                  title="Choose an element from the toolbox to insert on this path"
+                  onClick={() => { setInsertionConnectorId(''); onToolTab('Elements'); }}>
+                  <Plus size={16} />
+                </button>
+                <button type="button" className="icon-button" aria-label={`Remove ${element.label}`}
+                  title={flow.connectors.some((connector) => connector.from === element.id)
+                    ? 'Disconnect child paths before removing this element' : 'Remove this element'}
+                  disabled={element.type === 'Start' || flow.connectors.some((connector) => connector.from === element.id)}
+                  onClick={() => onRemove(element.id)}><span aria-hidden="true">−</span></button>
+              </div>}
+            </Fragment>;
           })}
         </div></div>
         <div className="flow-zoom"><button onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))} aria-label="Zoom in"><Plus size={15} /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))} aria-label="Zoom out"><span>−</span></button><button onClick={fitGraphToCanvas} aria-label="Fit to view"><MoveRight size={14} /></button></div>
