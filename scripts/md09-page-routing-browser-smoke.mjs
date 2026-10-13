@@ -140,7 +140,7 @@ try {
 
   // Verify Page Builder offers typed destinations and the computed safe route.
   await page.goto(site + '/une/setup/page-builder/' + sourceId);
-  await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
+  await page.getByRole('button', { name: 'Back to page list' }).waitFor();
   await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const inspector = page.locator('.metadata-navigation-target').first();
   await inspector.waitFor();
@@ -150,6 +150,7 @@ try {
   const destination = '/une/apps/' + appId + '/pages/' + targetId;
   assert.equal(await inspector.locator('a[href]').first().getAttribute('href'), destination);
   // Routes are generated from active App/Page/Object metadata.
+  await page.getByRole('button', { name: 'Back to page list' }).click();
   await page.getByRole('button', { name: 'Open page routes' }).click();
   const directory = page.getByRole('dialog', { name: 'Page routes' });
   await directory.waitFor();
@@ -163,11 +164,12 @@ try {
   await directory.getByLabel('Search routes').fill(targetId);
   assert.equal(await directory.getByRole('table', { name: 'Page route directory' }).locator('tbody tr').count(), 1);
   await directory.getByRole('button', { name: 'Close page routes' }).click();
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('row').filter({hasText:sourceId}).getByRole('button',{name:/Edit /}).click();
+  await page.getByRole('button', { name: 'Save page' }).click();
   const saved = (await request('/metadata/pages', token)).pages.find((item) => item.apiName === sourceId);
   assert.equal(saved.components[0].properties.actionFlows.browse.navigationPageApiName, targetId);
   await page.reload();
-  await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
+  await page.getByRole('button', { name: 'Back to page list' }).waitFor();
   await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const reopened = page.locator('.metadata-navigation-target').first();
   await reopened.waitFor();
