@@ -90,6 +90,8 @@ import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
 import tillPagePreset from './page-presets/till.editable.json';
 import { standardPageComponents } from './componentCatalog';
+import EmbeddedDashboard from './EmbeddedDashboard';
+import { inspectPageDependencies } from './pageDependencies';
 import {
   canvasDimensionsForOrientation,
   canvasOrientation,
@@ -3678,6 +3680,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           )}
           {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages}
             preparedAppId={pageCreationAppContext[page.apiName] ?? ''}
+            dashboards={dashboards}
             onPrepareApp={(pageApiName, appId) => setPageCreationAppContext(current => ({
               ...current, [pageApiName]: appId
             }))}
@@ -4385,7 +4388,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, apps, pages, currentAppId, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -4393,6 +4396,7 @@ function MetadataBoundPageComponent({
   apps: LightningAppMetadata[];
   pages: LightningPageMetadata[];
   currentAppId: string;
+  pageSessionKey: string;
   reports: ReportMetadata[];
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
@@ -4405,7 +4409,7 @@ function MetadataBoundPageComponent({
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
   const customerObjectApiName = String(properties.customerObjectApiName ?? '');
   const [sessionId, setSessionId] = useState(() => {
-    const key = 'metadrive-page-session:' + component.id;
+    const key = 'metadrive-page-session:' + pageSessionKey;
     try {
       let value = window.sessionStorage.getItem(key);
       if (!value) {
@@ -4559,7 +4563,7 @@ function MetadataBoundPageComponent({
         });
       if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
       if (binding.resetSessionOnSuccess === true) {
-        const key = 'metadrive-page-session:' + component.id;
+        const key = 'metadrive-page-session:' + pageSessionKey;
         const newSession = crypto.randomUUID();
         try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
         setSessionId(newSession);
@@ -4686,7 +4690,7 @@ function LightningAppRuntime({
       const content = !isLayoutContainer(component) && typeof component.properties.objectApiName === 'string'
         && component.properties.objectApiName
         ? <MetadataBoundPageComponent definition={definition} component={component}
-            objects={objects} apps={apps} pages={pages} currentAppId={appId} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+            objects={objects} apps={apps} pages={pages} currentAppId={appId} pageSessionKey={appId + ':' + page.apiName} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <RegisteredComponent definition={definition} props={{
             ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
@@ -4699,6 +4703,10 @@ function LightningAppRuntime({
       return page.layoutMode === 'free-canvas' ? rendered
         : <div key={component.id} style={resolveLayoutStyle(component.properties, layoutDevice)}>{rendered}</div>;
     }
+    if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
+      <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
+        request={apiRequest} libraryComponents={libraryComponents} />
+    </section>;
     if (component.type === 'Report Chart') {
       const reportApiName = typeof component.properties.reportApiName === 'string' ? component.properties.reportApiName : '';
       return <section className="record-fields-card surface" key={component.id}>
@@ -4858,11 +4866,21 @@ function RecordWorkspace({
   const [saving, setSaving] = useState(false);
   const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
   const [massDeleting, setMassDeleting] = useState(false);
+  const [bulkUpdateOpen, setBulkUpdateOpen] = useState(false);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkFieldApiName, setBulkFieldApiName] = useState('');
+  const [bulkFieldValue, setBulkFieldValue] = useState('');
+  const [bulkFieldBoolean, setBulkFieldBoolean] = useState(false);
+  const [bulkUpdateError, setBulkUpdateError] = useState('');
   const [ownerDialogRecord, setOwnerDialogRecord] = useState<RecordData | null>(null);
   const [ownerRecords, setOwnerRecords] = useState<RecordData[]>([]);
   const [ownerValue, setOwnerValue] = useState('');
   const [ownerError, setOwnerError] = useState('');
   const [ownerSaving, setOwnerSaving] = useState(false);
+  const [bulkOwnerDialogOpen, setBulkOwnerDialogOpen] = useState(false);
+  const [bulkOwnerValue, setBulkOwnerValue] = useState('');
+  const [bulkOwnerError, setBulkOwnerError] = useState('');
+  const [bulkOwnerSaving, setBulkOwnerSaving] = useState(false);
   const [importRows, setImportRows] = useState<Array<Record<string, unknown>>>([]);
   const [importFileName, setImportFileName] = useState('');
   const [importError, setImportError] = useState('');
@@ -4888,6 +4906,9 @@ function RecordWorkspace({
     setSelectedRecordIds([]);
   }, [route.objectApiName, debouncedSearch]);
   useEffect(() => { setListSort(null); }, [route.objectApiName]);
+  // Selection belongs to the visible authorised page, never an earlier
+  // offset or sort order after a list navigation.
+  useEffect(() => { setSelectedRecordIds([]); }, [listOffset, listSort?.field, listSort?.direction]);
 
   useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
@@ -5081,7 +5102,7 @@ function RecordWorkspace({
   }, [formOpen, object?.apiName]);
 
   useEffect(() => {
-    if (!ownerDialogRecord) return;
+    if (!ownerDialogRecord && !bulkOwnerDialogOpen) return;
     let active = true;
     const loadOwners = async () => {
       setOwnerError('');
@@ -5094,7 +5115,7 @@ function RecordWorkspace({
     };
     void loadOwners();
     return () => { active = false; };
-  }, [ownerDialogRecord?.Id]);
+  }, [ownerDialogRecord?.Id, bulkOwnerDialogOpen]);
 
   const navigateLink = (event: React.MouseEvent<HTMLAnchorElement>, nextRoute: AppRoute) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -5133,6 +5154,15 @@ function RecordWorkspace({
   const canEdit = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Edit' && action.enabled) !== false;
   const canDelete = (object?.apiName !== 'User' || canManageUserIdentities) && object?.actions?.some((action) => action.label === 'Delete' && action.enabled) !== false;
   const canMassDelete = canDelete && object?.listViewButtons?.includes('Mass Delete') === true;
+  const bulkEditableFields = (object?.fields ?? []).filter((field) =>
+    fieldAccess[`${object?.apiName}.${field.apiName}`]?.edit === true
+    && !field.relationship && !field.formula
+    && !['Id', 'RecordTypeId', 'OwnerId', 'CreatedById', 'LastModifiedById', 'CreatedDate',
+      'LastModifiedDate', 'SystemModstamp', 'IsDeleted'].includes(field.apiName)
+    && /^(?:Text(?:\(|$)|Text Area|Long Text Area|Email|Phone|URL|Picklist|Number(?:\(|$)|Currency(?:\(|$)|Percent(?:\(|$)|Checkbox|Boolean|Date(?:\/Time)?$|DateTime$)/i.test(field.dataType)
+  );
+  const canBulkUpdate = canEdit && object?.listViewButtons?.includes('Bulk Update') === true && bulkEditableFields.length > 0;
+  const bulkSelectedField = bulkEditableFields.find((field) => field.apiName === bulkFieldApiName);
   const ownerField = object?.fields.find((field) => field.apiName === 'OwnerId' && field.relationship?.targetObject === 'User');
   const canChangeOwner = Boolean(ownerField && canEdit && fieldAccess[`${object?.apiName}.OwnerId`]?.edit && object?.listViewButtons?.includes('Change Owner'));
   const canImport = object?.apiName !== 'User' && object?.listViewButtons?.includes('Import') === true
@@ -5254,6 +5284,93 @@ function RecordWorkspace({
     } finally {
       setMassDeleting(false);
     }
+  };
+  const updateSelectedRecords = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!object || !canBulkUpdate || !bulkSelectedField) return;
+    const items = selectedRecordIds.flatMap((id) => {
+      const item = records.find((candidate) => candidate.Id === id);
+      if (!item) return [];
+      const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+      return !layout || layout.actions.includes('Edit') ? [item] : [];
+    });
+    if (!items.length) return;
+    let value: string | number | boolean = bulkFieldValue;
+    const kind = bulkSelectedField.dataType;
+    if (/^(?:Number|Currency|Percent)(?:\(|$)/i.test(kind)) {
+      if (!bulkFieldValue.trim() || !Number.isFinite(Number(bulkFieldValue))) {
+        setBulkUpdateError('Enter a valid numeric value.');
+        return;
+      }
+      value = Number(bulkFieldValue);
+    } else if (/^(?:Checkbox|Boolean)$/i.test(kind)) value = bulkFieldBoolean;
+    else if (/^(?:Date\/Time|DateTime)$/i.test(kind)) {
+      const timestamp = new Date(bulkFieldValue);
+      if (!Number.isFinite(timestamp.getTime())) {
+        setBulkUpdateError('Enter a valid date and time.');
+        return;
+      }
+      value = timestamp.toISOString();
+    }
+    setBulkUpdating(true);
+    setBulkUpdateError('');
+    const failed: string[] = [];
+    const failures: string[] = [];
+    // Preserve the platform's durable SQL revision ordering. A bounded,
+    // sequential update avoids concurrent writes against one tenant snapshot.
+    for (const item of items) {
+      try {
+        await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(item.Id)}`, {
+          method: 'PUT',
+          ...(typeof item.LastModifiedDate === 'string' ? {
+            headers: { 'If-Unmodified-Since': item.LastModifiedDate }
+          } : {}),
+          body: JSON.stringify({ [bulkSelectedField.apiName]: value })
+        });
+      } catch (error) {
+        failed.push(item.Id);
+        failures.push(error instanceof Error ? error.message : 'Record update rejected');
+      }
+    }
+    setBulkUpdating(false);
+    setSelectedRecordIds(failed);
+    setRefreshKey((current) => current + 1);
+    const updated = items.length - failed.length;
+    setListNotice(`${updated} of ${items.length} selected record${items.length === 1 ? '' : 's'} updated.`);
+    if (failed.length) setBulkUpdateError(`${failed.length} update(s) rejected: ${failures.join('; ')}`);
+    else { setBulkUpdateOpen(false); setBulkFieldValue(''); setBulkFieldApiName(''); }
+  };
+  const saveBulkRecordOwner = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!object || !canChangeOwner || !bulkOwnerValue) return;
+    const items = selectedRecordIds.flatMap((id) => {
+      const item = records.find((candidate) => candidate.Id === id);
+      if (!item) return [];
+      const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+      return !layout || layout.actions.includes('Edit') ? [item] : [];
+    });
+    setBulkOwnerSaving(true); setBulkOwnerError('');
+    const failed: string[] = [], messages: string[] = [];
+    for (const item of items) {
+      try {
+        await apiRequest(`/records/${encodeURIComponent(object.apiName)}/${encodeURIComponent(item.Id)}/owner`, {
+          method: 'PUT',
+          ...(typeof item.LastModifiedDate === 'string' ? {
+            headers: { 'If-Unmodified-Since': item.LastModifiedDate }
+          } : {}),
+          body: JSON.stringify({ ownerId: bulkOwnerValue })
+        });
+      } catch (reason) {
+        failed.push(item.Id);
+        messages.push(reason instanceof Error ? reason.message : 'Owner change was rejected');
+      }
+    }
+    setBulkOwnerSaving(false);
+    setSelectedRecordIds(failed);
+    setRefreshKey((current) => current + 1);
+    setListNotice(`${items.length - failed.length} of ${items.length} record owner(s) changed.`);
+    if (failed.length) setBulkOwnerError(messages.join('; '));
+    else { setBulkOwnerDialogOpen(false); setBulkOwnerValue(''); }
   };
   const saveRecordOwner = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -5684,6 +5801,10 @@ function RecordWorkspace({
             </form>
           </li>)}</ol>}
       </section>;
+      if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
+        <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
+          request={apiRequest} libraryComponents={libraryComponents}/>
+      </section>;
       if (component.type === 'Report Chart') return <section className="record-fields-card surface" key={component.id}>
         <div className="record-fields-heading"><h2>{component.label}</h2></div>
         <RuntimeReportChart report={reports.find((report) => report.apiName === component.properties.reportApiName)} objects={objects} />
@@ -5802,11 +5923,28 @@ function RecordWorkspace({
     ? configuredListFields ?? []
     : [...readableFields].sort((left, right) => Number(right.apiName === 'Name') - Number(left.apiName === 'Name'))
       .filter((field) => records.length === 0 || records.some((item) => field.apiName in item));
-  const selectableRecordIds = (canMassDelete || canAddToCampaign) ? visibleRecords.flatMap((item) => {
+  const selectableRecordIds = (canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) ? visibleRecords.flatMap((item) => {
     const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
     const recordLayout = pageLayoutForRecord(object, recordTypeId, profileId);
-    return canAddToCampaign || canMassDelete && (!recordLayout || recordLayout.actions.includes('Delete')) ? [item.Id] : [];
+    return canAddToCampaign
+      || canMassDelete && (!recordLayout || recordLayout.actions.includes('Delete'))
+      || (canBulkUpdate || canChangeOwner) && (!recordLayout || recordLayout.actions.includes('Edit'))
+      ? [item.Id] : [];
   }) : [];
+  const selectedOwnerChangeIds = selectedRecordIds.filter((id) => {
+    if (!canChangeOwner) return false;
+    const item = records.find((candidate) => candidate.Id === id);
+    if (!item) return false;
+    const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+    return !layout || layout.actions.includes('Edit');
+  });
+  const selectedEditableRecordIds = selectedRecordIds.filter((id) => {
+    if (!canBulkUpdate) return false;
+    const item = records.find((candidate) => candidate.Id === id);
+    if (!item) return false;
+    const layout = pageLayoutForRecord(object, String(item.RecordTypeId ?? defaultRecordTypeId), profileId);
+    return !layout || layout.actions.includes('Edit');
+  });
   const selectedDeletableRecordIds = selectedRecordIds.filter((id) => selectableRecordIds.includes(id)
     && canMassDelete
     && (() => {
@@ -5832,6 +5970,14 @@ function RecordWorkspace({
           {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
           {canAddToCampaign && selectedRecordIds.length > 0 && <button className="btn" onClick={() => void openAddToCampaign()}>Add to Campaign ({selectedRecordIds.length})</button>}
           {object.listViewButtons?.includes('Printable View') && <button className="btn" onClick={() => window.print()}>Printable View</button>}
+          {canChangeOwner && selectedOwnerChangeIds.length > 0 && <button type="button" className="btn"
+            onClick={() => { setBulkOwnerError(''); setBulkOwnerValue(''); setBulkOwnerDialogOpen(true); }}>
+            Change Owner ({selectedOwnerChangeIds.length})
+          </button>}
+          {canBulkUpdate && selectedEditableRecordIds.length > 0 && <button type="button" className="btn"
+            onClick={() => { setBulkFieldApiName(bulkEditableFields[0]?.apiName ?? ''); setBulkFieldValue(''); setBulkFieldBoolean(false); setBulkUpdateError(''); setBulkUpdateOpen(true); }}>
+            Bulk Update ({selectedEditableRecordIds.length})
+          </button>}
           {canMassDelete && selectedDeletableRecordIds.length > 0 && <button className="btn btn-danger" onClick={() => void deleteSelectedRecords()} disabled={massDeleting}>{massDeleting ? 'Deleting…' : `Delete (${selectedDeletableRecordIds.length})`}</button>}
           <input ref={importInputRef} type="file" accept=".csv,text/csv" hidden aria-label={`Choose ${object.label} CSV file`}
             onChange={(event) => {
@@ -5847,7 +5993,7 @@ function RecordWorkspace({
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
       {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
-        <thead><tr>{(canMassDelete || canAddToCampaign) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <thead><tr>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
           <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
             onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
             {field.label} {listSort?.field === field.apiName ? (listSort.direction === 'asc' ? '▲' : '▼') : '↕'}
@@ -5857,8 +6003,8 @@ function RecordWorkspace({
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
           const rowAllowsEdit = !rowLayout || rowLayout.actions.includes('Edit');
           const rowAllowsDelete = !rowLayout || rowLayout.actions.includes('Delete');
-          const selectable = canAddToCampaign || canMassDelete && rowAllowsDelete;
-          return <tr key={item.Id}>{(canMassDelete || canAddToCampaign) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName}>
+          const selectable = canAddToCampaign || canMassDelete && rowAllowsDelete || (canBulkUpdate || canChangeOwner) && rowAllowsEdit;
+          return <tr key={item.Id}>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName}>
             {index === 0
               ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })}>{formatFieldValue(field, item[field.apiName] ?? item.Id)}</a>
               : formatFieldValue(field, item[field.apiName])}
@@ -5879,6 +6025,72 @@ function RecordWorkspace({
         </div>
       </nav>}
     </section>
+    {bulkOwnerDialogOpen && <div className="record-form-backdrop" role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !bulkOwnerSaving) setBulkOwnerDialogOpen(false); }}>
+      <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="bulk-owner-title">
+        <header><div><div className="eyebrow">{object.label}</div><h2 id="bulk-owner-title">Change Owners</h2></div>
+          <button className="icon-button" aria-label="Close" disabled={bulkOwnerSaving} onClick={() => setBulkOwnerDialogOpen(false)}><X size={16} /></button>
+        </header>
+        <form onSubmit={(event) => void saveBulkRecordOwner(event)}>
+          <p className="modal-copy">Assign {selectedOwnerChangeIds.length} selected record(s) to a tenant user. Each change checks object permissions and record concurrency.</p>
+          <label className="form-label" htmlFor="bulk-owner-select">New owner
+            <select id="bulk-owner-select" className="form-control" value={bulkOwnerValue}
+              onChange={(event) => setBulkOwnerValue(event.target.value)} disabled={bulkOwnerSaving} required>
+              <option value="">Select user…</option>
+              {ownerRecords.map((owner) => <option key={owner.Id} value={owner.Id}>{String(owner.Name ?? owner.Email ?? owner.Id)}</option>)}
+            </select>
+          </label>
+          {bulkOwnerError && <div className="records-message" role="alert">{bulkOwnerError}</div>}
+          <footer><button className="btn" type="button" disabled={bulkOwnerSaving} onClick={() => setBulkOwnerDialogOpen(false)}>Cancel</button>
+            <button className="btn btn-brand" type="submit" disabled={bulkOwnerSaving || !bulkOwnerValue || !selectedOwnerChangeIds.length}>
+              {bulkOwnerSaving ? 'Updating…' : 'Assign Selected'}
+            </button></footer>
+        </form>
+      </section>
+    </div>}
+    {bulkUpdateOpen && <div className="record-form-backdrop" role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget && !bulkUpdating) setBulkUpdateOpen(false); }}>
+      <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="bulk-update-title">
+        <header><div><div className="eyebrow">{object.label}</div><h2 id="bulk-update-title">Bulk Update</h2></div>
+          <button className="icon-button" aria-label="Close" disabled={bulkUpdating} onClick={() => setBulkUpdateOpen(false)}><X size={16} /></button>
+        </header>
+        <form onSubmit={(event) => void updateSelectedRecords(event)}>
+          <p className="modal-copy">Update one metadata field on {selectedEditableRecordIds.length} selected record(s) from this page. Each record is validated independently and existing values on other fields are preserved.</p>
+          <label className="form-label" htmlFor="bulk-field">Field
+            <select id="bulk-field" className="form-control" value={bulkFieldApiName} disabled={bulkUpdating} required
+              onChange={(event) => { setBulkFieldApiName(event.target.value); setBulkFieldValue(''); setBulkFieldBoolean(false); }}>
+              {bulkEditableFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+            </select>
+          </label>
+          {bulkSelectedField && <label className="form-label" htmlFor="bulk-value">New value
+            {/^(?:Checkbox|Boolean)$/i.test(bulkSelectedField.dataType)
+              ? <select id="bulk-value" className="form-control" value={String(bulkFieldBoolean)} disabled={bulkUpdating}
+                  onChange={(event) => setBulkFieldBoolean(event.target.value === 'true')}>
+                  <option value="false">False</option><option value="true">True</option>
+                </select>
+              : bulkSelectedField.picklistValues?.length && /Picklist/i.test(bulkSelectedField.dataType)
+              ? <select id="bulk-value" className="form-control" value={bulkFieldValue} disabled={bulkUpdating}
+                  onChange={(event) => setBulkFieldValue(event.target.value)} required>
+                  <option value="">Select value…</option>
+                  {bulkSelectedField.picklistValues.map((value) => <option key={value} value={value}>{value}</option>)}
+                </select>
+              : <input id="bulk-value" className="form-control" disabled={bulkUpdating} value={bulkFieldValue}
+                  type={/^(?:Number|Currency|Percent)(?:\(|$)/i.test(bulkSelectedField.dataType) ? 'number'
+                    : /^(?:Date\/Time|DateTime)$/i.test(bulkSelectedField.dataType) ? 'datetime-local'
+                    : /^Date$/i.test(bulkSelectedField.dataType) ? 'date' : 'text'}
+                  step={/^(?:Number|Currency|Percent)(?:\(|$)/i.test(bulkSelectedField.dataType) ? 'any' : undefined}
+                  onChange={(event) => setBulkFieldValue(event.target.value)} required />}
+          </label>}
+          {bulkUpdateError && <div className="records-message" role="alert">{bulkUpdateError}</div>}
+          <footer><button type="button" className="btn" disabled={bulkUpdating} onClick={() => setBulkUpdateOpen(false)}>Cancel</button>
+            <button type="submit" className="btn btn-brand" disabled={bulkUpdating || !selectedEditableRecordIds.length || !bulkSelectedField ||
+              (!/^(?:Checkbox|Boolean)$/i.test(bulkSelectedField.dataType) && !bulkFieldValue)}>
+              {bulkUpdating ? 'Updating…' : 'Update Selected'}
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>}
     {importFileName && <div className="record-form-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !importSaving) { setImportFileName(''); setImportRows([]); setImportError(''); } }}>
       <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="import-records-title">
         <header><div><div className="eyebrow">{object.label}</div><h2 id="import-records-title">Import Records</h2></div><button className="icon-button" aria-label="Close" disabled={importSaving} onClick={() => { setImportFileName(''); setImportRows([]); setImportError(''); }}><X size={16} /></button></header>
@@ -8023,7 +8235,7 @@ function ObjectManager({
     const supportsOwnership = draft.fields.some((field) =>
       field.apiName === 'OwnerId' && field.relationship?.targetObject === 'User');
     const standard = [
-      ...(draft.apiName === 'User' ? [] : ['New', 'Import', 'Mass Delete']),
+      ...(draft.apiName === 'User' ? [] : ['New', 'Import', 'Bulk Update', 'Mass Delete']),
       ...(supportsOwnership ? ['Change Owner'] : []),
       'Printable View',
       ...(draft.apiName === 'Contact' && objects.some((item) => item.apiName === 'Campaign') ? ['Add to Campaign'] : [])
@@ -8497,7 +8709,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
 }
 
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
+  page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
   preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes
 }: {
   page: LightningPageMetadata;
@@ -8506,6 +8718,7 @@ function PageBuilder({
   apps: LightningAppMetadata[];
   profiles: ProfileMetadata[];
   reports: ReportMetadata[];
+  dashboards: DashboardMetadata[];
   libraryComponents: LibraryComponentMetadata[];
   flows: FlowDefinitionMetadata[];
   onChange: (page: LightningPageMetadata) => void;
@@ -8551,7 +8764,7 @@ function PageBuilder({
   const pageTypeComponents = page.pageType === 'Record Page'
     ? standardPageComponents.map((component) => component.apiName)
     : standardPageComponents
-      .filter((component) => ['Accordion', 'Tabs', 'Report Chart'].includes(component.apiName))
+      .filter((component) => ['Accordion', 'Tabs', 'Report Chart', 'Dashboard'].includes(component.apiName))
       .map((component) => component.apiName);
   const relatedListOptions = [...new Map(objects.flatMap((childObject) => childObject.fields.flatMap((field) => {
     const relationship = field.relationship;
@@ -8569,7 +8782,7 @@ function PageBuilder({
   const savedPageApiName = useRef(page.apiName);
   const [device, setDevice] = useState<'Desktop' | 'Tablet' | 'Phone'>('Desktop');
   const orientation = canvasOrientation(page.canvasWidth, page.canvasHeight);
-  const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields'>('Components');
+  const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields' | 'Layers'>('Components');
   const [paletteSearch, setPaletteSearch] = useState('');
   const [paletteCategory, setPaletteCategory] = useState<(typeof pageBuilderPaletteCategories)[number]>('All Components');
   const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
@@ -8619,6 +8832,7 @@ function PageBuilder({
   const [canvasRefreshKey, setCanvasRefreshKey] = useState(0);
   const [createPageOpen, setCreatePageOpen] = useState(false);
   const [routeDirectoryOpen, setRouteDirectoryOpen] = useState(false);
+  const [dependenciesOpen, setDependenciesOpen] = useState(false);
   const [newPageLabel, setNewPageLabel] = useState('');
   const [newPageType, setNewPageType] = useState<LightningPageMetadata['pageType']>('Record Page');
   const [newPageTemplate, setNewPageTemplate] = useState<LightningPageTemplate>('header-main-sidebar');
@@ -8885,6 +9099,8 @@ function PageBuilder({
         ? { libraryComponentId: custom.apiName, ...(parentId ? { layoutParentId: parentId } : {}) }
         : type === 'Report Chart'
           ? { reportApiName: '' }
+          : type === 'Dashboard'
+            ? { dashboardApiName: '' }
           : type === 'Related List'
             ? { relatedLists: defaultRelatedLists }
             : type === 'Field Section'
@@ -9477,7 +9693,12 @@ function PageBuilder({
               ? libraryPreview
                 ? <div className="component-demo-highlights"><strong>Northwind Traders</strong><div><span>Account owner <b>Alex Morgan</b></span><span>Industry <b>Technology</b></span><span>Annual revenue <b>$2.4M</b></span></div></div>
                 : <div className="component-content-hint">Record actions and key fields appear in the highlights panel.</div>
-              : component.type === 'Report Chart'
+              : component.type === 'Dashboard'
+                ? <div className="report-chart-preview" role="img" aria-label="Dashboard preview">
+                    <strong>{dashboards.find((item) => item.apiName === component.properties.dashboardApiName)?.label ?? 'Choose a published dashboard'}</strong>
+                    <div className="report-chart-bars"><span/><span/><span/><span/></div>
+                  </div>
+                : component.type === 'Report Chart'
                 ? <div className="report-chart-preview">
                   <strong>{reports.find((report) => report.apiName === component.properties.reportApiName)?.label ?? 'Opportunities by stage'}</strong>
                   <div className="report-chart-bars"><span /><span /><span /><span /><span /></div>
@@ -9494,6 +9715,7 @@ function PageBuilder({
                     && component.properties.objectApiName
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
                         objects={objects} apps={apps} pages={pages} currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
+                        pageSessionKey={(builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName}
                         reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
                         onNavigate={() => {}} onLaunchFlow={(flowApiName, inputs) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
@@ -9610,6 +9832,7 @@ function PageBuilder({
           <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
           <button className="btn" type="button" onClick={() => setRouteDirectoryOpen(true)}
             aria-label="Open page routes">Routes</button>
+          <button className="btn" type="button" aria-label="Open page dependencies" onClick={() => setDependenciesOpen(true)}>Dependencies</button>
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
           {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('kiosk')}>Load Kiosk Layout</button>}
           {page.apiName === 'UNE_TILL' && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('till')}>Load Till Layout</button>}
@@ -9670,10 +9893,23 @@ function PageBuilder({
         <aside className="component-panel">
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
+            <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
             {page.pageType === 'Record Page' && <button className={paletteTab === 'Fields' ? 'active' : ''} onClick={() => setPaletteTab('Fields')}>Fields</button>}
           </div>
           <div className="component-search"><Search size={14} /><input value={paletteSearch} onChange={(event) => setPaletteSearch(event.target.value)} placeholder={`Search ${paletteTab.toLowerCase()}…`} aria-label={`Search ${paletteTab.toLowerCase()}`} /></div>
-          {paletteTab === 'Components' ? <>
+          {paletteTab === 'Layers' ? <nav className="page-layer-tree" aria-label="Page component layers">
+            {page.components.filter(component => !paletteSearch || (component.label + ' ' + component.type).toLowerCase().includes(paletteSearch.toLowerCase())).map(component => {
+              const parent = component.parentId ?? (typeof component.properties.layoutParentId === 'string' ? component.properties.layoutParentId : '');
+              return <div key={component.id} className="page-layer-row" style={{paddingLeft:parent ? 20 : 6}}>
+                <button type="button" className={selectedId === component.id ? 'active btn btn-small' : 'btn btn-small'}
+                  onClick={() => { setSelectedId(component.id); setPageSettingsOpen(false); }}
+                  aria-label={'Select layer ' + component.label}>{component.label}</button>
+                <button type="button" className="icon-button subtle" aria-label={'Toggle layer ' + component.label}
+                  onClick={() => updateComponent(component.id, {visible: !component.visible})}>{component.visible ? '◉' : '○'}</button>
+              </div>;
+            })}
+            {!page.components.length && <p className="properties-help">Add a component to see its layer.</p>}
+          </nav> : paletteTab === 'Components' ? <>
             {page.layoutMode === 'free-canvas' && <div className="palette-note">Free Canvas uses registered components from the shared library.</div>}
             <nav className="component-category-list" aria-label="Component categories">
               {pageBuilderPaletteCategories.map((category) => {
@@ -9875,6 +10111,18 @@ function PageBuilder({
               <textarea id="page-component-accordion-content" className="form-control" rows={4}
                 value={typeof selected.properties.content === 'string' ? selected.properties.content : ''}
                 onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, content: event.target.value } })} />
+            </>}
+            {selected.type === 'Dashboard' && <>
+              <div className="properties-section-title">Dashboard</div>
+              <label className="form-label" htmlFor="page-component-dashboard">Published dashboard</label>
+              <select id="page-component-dashboard" className="form-control"
+                value={typeof selected.properties.dashboardApiName === 'string' ? selected.properties.dashboardApiName : ''}
+                onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, dashboardApiName: event.target.value } })}>
+                <option value="">Select a published dashboard…</option>
+                {dashboards.filter(dashboard => dashboard.status === 'Deployed').map(dashboard =>
+                  <option key={dashboard.apiName} value={dashboard.apiName}>{dashboard.label}</option>)}
+              </select>
+              <p className="properties-help">The live dashboard checks tenant, folder, viewer and record permissions at runtime.</p>
             </>}
             {selected.type === 'Report Chart' && <>
               <div className="properties-section-title">Report</div>
@@ -10091,6 +10339,22 @@ function PageBuilder({
           </>}
         </aside>
       </div>
+      {dependenciesOpen && <div className="modal-backdrop" role="presentation"
+        onMouseDown={event => { if (event.target === event.currentTarget) setDependenciesOpen(false); }}>
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="page-dependencies-title"
+          style={{maxHeight:'85vh',overflowY:'auto'}}>
+          <div className="modal-header"><h2 id="page-dependencies-title">Page dependencies</h2>
+            <button className="btn btn-small" type="button" onClick={() => setDependenciesOpen(false)}>Close</button></div>
+          <p className="modal-copy">References use saved objects, apps, reports, dashboards, components and Flows.</p>
+          <table className="records-table" aria-label="Page dependencies"><thead><tr><th>Type</th><th>Reference</th><th>Status</th><th>Source</th></tr></thead><tbody>
+            {inspectPageDependencies(page, {apps,pages,objects,reports,dashboards,flows,libraryComponents}).map((entry,idx) =>
+              <tr key={entry.kind + ':' + entry.name + ':' + idx}><td>{entry.kind}</td><td>{entry.name}</td>
+                <td>{entry.status}</td><td>{entry.componentId
+                  ? <button className="btn btn-small" type="button" onClick={() => {setSelectedId(entry.componentId!);setDependenciesOpen(false);}}>{entry.description}</button>
+                  : entry.description}</td></tr>)}
+          </tbody></table>
+        </section>
+      </div>}
       {routeDirectoryOpen && <PageRouteDirectory apps={apps} pages={pages} objects={objects}
         initialAppId={builderAppApiName} basePath={import.meta.env.BASE_URL}
         request={request} canManage={canManageRoutes}

@@ -18,7 +18,8 @@ export const standardPageComponents: StandardPageComponent[] = [
   { apiName: 'Related List', label: 'Related List', description: 'Show records related to the current record.' },
   { apiName: 'Tabs', label: 'Tabs', description: 'Organize page content into selectable tabs.' },
   { apiName: 'Record Detail', label: 'Record Detail', description: 'Show the record fields configured for the page.' },
-  { apiName: 'Report Chart', label: 'Report Chart', description: 'Display a chart based on report data.' }
+  { apiName: 'Report Chart', label: 'Report Chart', description: 'Display a chart based on report data.' },
+  { apiName: 'Dashboard', label: 'Dashboard', description: 'Embed an accessible, published dashboard with its saved widgets.' }
 ];
 
 export const standardDashboardComponents: StandardDashboardComponent[] = [

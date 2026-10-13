@@ -1272,7 +1272,10 @@ const flowInterviewSchema = z.object({
   flowApiName: z.string(),
   versionNumber: z.number().int().positive(),
   userId: z.string(),
-  kind: z.enum(['screen', 'wait', 'scheduled', 'async']),
+  kind: z.enum(['screen', 'wait', 'scheduled', 'async', 'orchestration']),
+  // Persist record-trigger formula context across process restarts and version changes.
+  recordEvent: z.enum(['created', 'updated', 'deleted']).nullable().default(null),
+  isClone: z.boolean().default(false),
   screenElementId: z.number().int().positive().nullable(),
   waitUntil: z.string().datetime().nullable(),
   nextElementId: z.number().int().positive().nullable(),
@@ -1506,7 +1509,7 @@ const pageSchema = z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'type'], message: 'Dynamic Forms components are only available on template-based Record Pages' });
     }
     if (page.pageType !== 'Record Page'
-      && !['Accordion', 'Tabs', 'Report Chart'].includes(component.type)
+      && !['Accordion', 'Tabs', 'Report Chart', 'Dashboard'].includes(component.type)
       && !component.type.startsWith('Custom:')) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'type'], message: 'This component is only available on Record Pages' });
     }
@@ -2704,6 +2707,8 @@ const approvalRequestSchema = z.object({
   recordId: z.string().min(1),
   flowApiName: z.string().min(1),
   processApiName: z.string().nullable().default(null),
+  orchestrationInterviewId: z.string().uuid().nullable().default(null),
+  approvalMode: z.enum(['ANY', 'ALL']).default('ANY'),
   submittedBy: z.string().min(1),
   submittedByName: z.string().min(1),
   approverId: z.string().min(1),
@@ -7155,13 +7160,45 @@ app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res
     decidedAt: now,
     decidedBy: principal.userId
   };
+  const peers = tenant.approvalRequests.filter((item) => item.groupId === request.groupId);
+  const allApproved = peers.every((item) => item.id === request.id || item.status === 'Approved');
+  const finalized = parsed.data.decision === 'Rejected' || request.approvalMode !== 'ALL' || allApproved;
   const requests = tenant.approvalRequests.map((item) => item.groupId !== request.groupId || item.status !== 'Pending'
     ? item
     : item.id === request.id
       ? decided
-      : { ...item, status: 'Canceled' as const, decisionComments: 'Resolved by another approver.', decidedAt: now, decidedBy: principal.userId });
+      : finalized
+        ? { ...item, status: 'Canceled' as const, decisionComments: 'Resolved by another approver.', decidedAt: now, decidedBy: principal.userId }
+        : item);
+  let interviews = tenant.interviews;
+  // A human decision only releases its own tenant-scoped, version-pinned
+  // orchestration stage. No other pending Flow interview is affected.
+  if (finalized && request.orchestrationInterviewId) {
+    const interview = tenant.interviews.find((item) =>
+      item.id === request.orchestrationInterviewId && item.kind === 'orchestration'
+      && item.flowApiName === request.flowApiName);
+    if (!interview) return res.status(409).json({ error: 'The orchestration stage is no longer pending' });
+    const saved = tenant.flows.find((item) => item.apiName === interview.flowApiName);
+    const active = activeFlowDefinition(saved);
+    const flow = interview.allowDraft && saved?.status === 'Draft' && saved.versionNumber === interview.versionNumber
+      ? saved
+      : active?.versionNumber === interview.versionNumber ? active : undefined;
+    const stage = flow?.elements.find((item) => item.id === interview.screenElementId && item.type === 'Orchestration Stage');
+    const outcome = parsed.data.decision;
+    const connectors = flow?.connectors.filter((item) =>
+      item.from === stage?.id && item.kind === 'normal' && item.label.toLowerCase() === outcome.toLowerCase()) ?? [];
+    if (!stage || connectors.length !== 1) {
+      return res.status(409).json({ error: 'The orchestration stage has no valid decision path' });
+    }
+    const statusVariable = typeof stage.config.statusVariable === 'string' ? stage.config.statusVariable : '';
+    interviews = tenant.interviews.map((item) => item.id !== interview.id ? item : {
+      ...item, kind: 'async' as const, waitUntil: now, retryAt: null, attempts: 0,
+      nextElementId: connectors[0].to,
+      variables: { ...item.variables, ...(statusVariable ? { [statusVariable]: outcome } : {}) }
+    });
+  }
   const submitter = state.users.find((user) => user.id === request.submittedBy && user.tenantId === principal.tenantId && !user.disabled);
-  const notifications = submitter ? [...tenant.notifications, customNotificationSchema.parse({
+  const notifications = finalized && submitter ? [...tenant.notifications, customNotificationSchema.parse({
     id: randomUUID(),
     recipientId: submitter.id,
     title: `Approval ${parsed.data.decision.toLowerCase()}`,
@@ -7171,7 +7208,7 @@ app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res
     createdAt: now,
     readAt: null
   })] : tenant.notifications;
-  persistTenantRecords(principal.tenantId, { ...tenant, approvalRequests: requests, notifications });
+  persistTenantRecords(principal.tenantId, { ...tenant, approvalRequests: requests, notifications, interviews });
   return res.json({ request: decided });
 });
 
@@ -7904,7 +7941,12 @@ app.delete('/api/metadata/flow-interviews/:interviewId', requireAnyPermission('m
   }
   persistTenantRecords(principal.tenantId, {
     ...tenant,
-    interviews: tenant.interviews.filter((interview) => interview.id !== interviewId)
+    interviews: tenant.interviews.filter((interview) => interview.id !== interviewId),
+    approvalRequests: tenant.approvalRequests.map((request) =>
+      request.orchestrationInterviewId === interviewId && request.status === 'Pending'
+        ? { ...request, status: 'Canceled' as const, decisionComments: 'Flow interview canceled.',
+          decidedAt: new Date().toISOString(), decidedBy: principal.userId }
+        : request)
   });
   return res.status(204).end();
 });
@@ -10902,7 +10944,7 @@ app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, require
     }
     const result = await executeFlow(flow, working, principal.tenantId, principal.userId, {}, interview.record ?? undefined, interview.prior ?? undefined, 0, {
       startAt: nextElementId, variables, interviewGuid: interview.id, interviewStartTime: interview.createdAt
-    }, 0, undefined, false, undefined, true);
+    }, 0, interview.recordEvent ?? undefined, interview.isClone, undefined, true);
     if (result.status === 'waiting') {
       const updatedInterview = createFlowInterview(flow, principal.userId, result);
       updatedInterview.history = [
@@ -11897,6 +11939,11 @@ app.delete('/api/metadata/dashboards/:apiName', requirePermission('metadata:read
   )) {
     return res.status(403).json({ error: 'Dashboard editor access is required to delete it' });
   }
+  const referencingPages = tenant.pages.filter(page => page.components.some(component =>
+    component.type === 'Dashboard' && component.properties.dashboardApiName === apiName));
+  if (referencingPages.length) return res.status(409).json({ error:
+    'Dashboard is embedded in Lightning page(s): ' + referencingPages.map(page => page.apiName).join(', ')
+  });
   const updatedTenant = {
     ...tenant,
     dashboards: tenant.dashboards.filter((dashboard) => dashboard.apiName !== apiName),
@@ -13609,6 +13656,18 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
     && page.apiName !== previousApiName)) {
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
   }
+  if (parsed.data.status === 'Active') {
+    const invalidDashboard = parsed.data.components.find(component => component.type === 'Dashboard'
+      && (typeof component.properties.dashboardApiName !== 'string'
+        || !tenant.dashboards.some(dashboard => dashboard.apiName === component.properties.dashboardApiName
+          && dashboard.status === 'Deployed' && canAccessDashboard(
+            dashboardForUser(tenant, dashboard, principal.userId), principal.userId,
+            tenant.accessControl.users.find(user => user.id === principal.userId)?.permissionSetGroupIds ?? [],
+            principal.permissions.includes('dashboards:manage')))));
+    if (invalidDashboard) return res.status(422).json({
+      error: 'An active Lightning page can embed only a published dashboard accessible to the editor'
+    });
+  }
   const invalidLibraryComponent = parsed.data.components.find((component) => component.type.startsWith('Custom:') && !state.libraryComponents.some((libraryComponent) =>
     libraryComponent.apiName === component.type.slice('Custom:'.length) && libraryComponent.surfaces.includes('page')
     && libraryComponentVisible(libraryComponent, principal.tenantId, Object.keys(state.tenants))));
@@ -14110,6 +14169,7 @@ app.get('/api/metadata/flow-elements', requirePermission('metadata:read'), (_req
     { type: 'Collection Filter', group: 'Logic' }, { type: 'Collection Sort', group: 'Logic' },
     { type: 'Transform', group: 'Data' }, { type: 'Roll Back Records', group: 'Data', allowedFlowTypes: ['Screen Flow', 'Autolaunched Flow'] },
     { type: 'Publish Platform Event', group: 'Data' }, { type: 'Get Records', group: 'Data' },
+    { type: 'Orchestration Stage', group: 'Interaction' },
     { type: 'Create Records', group: 'Data' }, { type: 'Update Records', group: 'Data' },
     { type: 'Delete Records', group: 'Data' }, { type: 'Action', group: 'Interaction' },
     { type: 'HTTP Callout', group: 'Interaction' }, { type: 'Subflow', group: 'Interaction' }
@@ -16336,8 +16396,9 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
 
 type FlowExecutionResult =
   | { status: 'completed'; outputs: Record<string, unknown>; variables: Record<string, unknown>; debugTrace: FlowDebugTraceEntry[] }
-  | { status: 'waiting'; kind: 'screen'; screen: FlowMetadata['elements'][number]; nextElementId: number | null; outcomes: Array<{ name: string; label: string }>; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; debugTrace: FlowDebugTraceEntry[] }
-  | { status: 'waiting'; kind: 'wait' | 'scheduled' | 'async'; waitUntil: string; nextElementId: number | null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; debugTrace: FlowDebugTraceEntry[] };
+  | { status: 'waiting'; kind: 'screen'; screen: FlowMetadata['elements'][number]; nextElementId: number | null; outcomes: Array<{ name: string; label: string }>; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] }
+  | { status: 'waiting'; kind: 'orchestration'; stage: FlowMetadata['elements'][number]; waitUntil: string; nextElementId: null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] }
+  | { status: 'waiting'; kind: 'wait' | 'scheduled' | 'async'; waitUntil: string; nextElementId: number | null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] };
 
 function scheduledPathTimestamp(
   field: ObjectMetadata['fields'][number] | undefined,
@@ -16388,7 +16449,7 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
     : null;
   const expiresAt = conversationExpiry ?? (result.kind === 'screen'
     ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
-    : (result.kind === 'scheduled' || result.kind === 'async')
+    : (result.kind === 'scheduled' || result.kind === 'async' || result.kind === 'orchestration')
       ? '9999-12-31T23:59:59.999Z'
       : new Date(Date.parse(result.waitUntil) + 7 * 24 * 60 * 60 * 1000).toISOString());
   return {
@@ -16398,7 +16459,9 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
     userId,
     allowDraft: flow.status === 'Draft',
     kind: result.kind,
-    screenElementId: result.kind === 'screen' ? result.screen.id : null,
+    recordEvent: result.recordEvent ?? null,
+    isClone: result.isClone ?? false,
+    screenElementId: result.kind === 'screen' ? result.screen.id : result.kind === 'orchestration' ? result.stage.id : null,
     waitUntil: result.kind === 'screen' ? null : result.waitUntil,
     nextElementId: result.nextElementId,
     variables: result.variables,
@@ -16603,7 +16666,7 @@ function performSubmitForApproval(
   config: Record<string, unknown>,
   context: FlowRuntimeContext,
   elementLabel: string
-): void {
+): string {
   const submitter = state.users.find((user) =>
     user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
   if (!submitter) throw new Error('The running user is no longer active.');
@@ -16659,6 +16722,8 @@ function performSubmitForApproval(
       recordId,
       flowApiName: flow.apiName,
       processApiName: typeof config.approvalProcessApiName === 'string' ? config.approvalProcessApiName : null,
+      orchestrationInterviewId: typeof config.orchestrationInterviewId === 'string' ? config.orchestrationInterviewId : null,
+      approvalMode: config.approvalMode === 'ALL' ? 'ALL' : 'ANY',
       submittedBy: submitter.id,
       submittedByName: submitter.name,
       approverId: approver.id,
@@ -16685,6 +16750,7 @@ function performSubmitForApproval(
   });
   tenant.approvalRequests.push(...requests);
   tenant.notifications.push(...notifications);
+  return groupId;
 }
 
 function flowNeedsRollbackSnapshot(
@@ -16792,6 +16858,8 @@ async function executeFlow(
               interviewStartTime: new Date().toISOString(),
               record: structuredClone(context.record),
               prior: context.prior ? structuredClone(context.prior) : undefined,
+              recordEvent: context.recordEvent,
+              isClone: context.isClone,
               debugTrace: context.debugTrace ?? []
             }));
           }
@@ -17204,6 +17272,28 @@ async function executeFlow(
         }
         break;
       }
+      case 'Orchestration Stage': {
+        // The approval work item and paused interview commit together with the
+        // parent Flow transaction. No external orchestration engine is required.
+        if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') {
+          throw new Error('Orchestration stages cannot execute before record save.');
+        }
+        const interviewGuid = randomUUID();
+        performSubmitForApproval(tenantId, tenant, flow, {
+          ...config,
+          approvalMode: config.approvalMode === 'ALL' ? 'ALL' : 'ANY',
+          orchestrationInterviewId: interviewGuid
+        }, context, element.label);
+        return {
+          status: 'waiting', kind: 'orchestration', stage: element,
+          waitUntil: '9999-12-31T23:59:59.999Z', nextElementId: null,
+          variables: structuredClone(context.variables),
+          interviewGuid, interviewStartTime: new Date().toISOString(),
+          record: context.record, prior: context.prior,
+          recordEvent: context.recordEvent, isClone: context.isClone,
+          debugTrace: context.debugTrace ?? []
+        };
+      }
       case 'Subflow': {
         const apiName = typeof config.flowApiName === 'string' ? config.flowApiName : '';
         const childFlow = activeFlowDefinition(tenant.flows.find((candidate) => candidate.apiName === apiName));
@@ -17250,7 +17340,9 @@ async function executeFlow(
             outcomes: configuredOutcomes.length ? configuredOutcomes : [{ name: 'Default', label: 'Next' }],
             variables: context.variables,
             ...flowInterviewIdentity(context),
-            record: context.record, prior: context.prior, debugTrace: context.debugTrace ?? []
+            record: context.record, prior: context.prior,
+            recordEvent: context.recordEvent, isClone: context.isClone,
+            debugTrace: context.debugTrace ?? []
           };
         }
       case 'Wait': {
@@ -17289,7 +17381,9 @@ async function executeFlow(
           status: 'waiting', kind: 'wait', waitUntil: waitUntil.toISOString(),
           nextElementId: nextConnectors[0]?.to ?? null, variables: context.variables,
           ...flowInterviewIdentity(context),
-          record: context.record, prior: context.prior, debugTrace: context.debugTrace ?? []
+          record: context.record, prior: context.prior,
+          recordEvent: context.recordEvent, isClone: context.isClone,
+          debugTrace: context.debugTrace ?? []
         };
       }
       case 'Action':
@@ -17444,7 +17538,7 @@ async function runRecordTriggeredFlows(
         flowInterviewIdentity(context), false, debugExecution, debugTrace, rollbackSnapshot
       );
       if (result.status === 'waiting') {
-        if (result.kind !== 'wait') throw new Error(`Record-triggered flow "${flow.label}" cannot pause for screen input.`);
+        if (result.kind !== 'wait' && result.kind !== 'orchestration') throw new Error(`Record-triggered flow "${flow.label}" cannot pause for screen input.`);
         tenant.interviews.push(createFlowInterview(flow, userId, result));
       }
     } catch (error) {
@@ -17635,7 +17729,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
           variables: interview.variables,
           interviewGuid: interview.id,
           interviewStartTime: interview.createdAt
-        }, 0, undefined, false, undefined, interview.allowDraft);
+        }, 0, interview.recordEvent ?? undefined, interview.isClone, undefined, interview.allowDraft);
         if (result.status === 'waiting') {
           const updated = createFlowInterview(flow, interview.userId, result);
           working.interviews = working.interviews.map((item) => item.id === interview.id ? updated : item);
@@ -18080,7 +18174,7 @@ function validateFlow(
   }
   if (flow.elements.length > 1 && flow.connectors.length === 0) warnings.push('Flow has multiple elements but no connectors.');
   for (const element of flow.elements) {
-    if (!['Start', 'End', 'Assignment', 'Decision', 'Loop', 'Collection Filter', 'Collection Sort', 'Transform', 'Get Records', 'Create Records', 'Update Records', 'Delete Records', 'Roll Back Records', 'Publish Platform Event', 'Subflow', 'Screen', 'Wait', 'Action', 'HTTP Callout'].includes(element.type)) {
+    if (!['Start', 'End', 'Assignment', 'Decision', 'Loop', 'Collection Filter', 'Collection Sort', 'Transform', 'Get Records', 'Create Records', 'Update Records', 'Delete Records', 'Roll Back Records', 'Publish Platform Event', 'Subflow', 'Screen', 'Wait', 'Action', 'HTTP Callout', 'Orchestration Stage'].includes(element.type)) {
       errors.push(`Flow element type "${element.type}" is not supported.`);
     }
     // Validate literal picklist writes against Object Manager metadata before activation.
@@ -18420,6 +18514,43 @@ function validateFlow(
         } else if (new Set(field.choices).size !== field.choices.length) {
           errors.push(`${String(field.type)} screen field "${String(field.label ?? '')}" on "${element.label}" has duplicate choices.`);
         }
+      }
+    }
+    if (element.type === 'Orchestration Stage') {
+      const objectApiName = String(element.config.objectApiName ?? '');
+      if (!objects.some((object) => object.apiName === objectApiName)) {
+        errors.push(`Orchestration Stage "${element.label}" requires an existing target object.`);
+      }
+      const processApiName = String(element.config.approvalProcessApiName ?? '');
+      const process = approvalProcesses.find((item) => item.apiName === processApiName);
+      if (processApiName && (!process || !process.active || process.objectApiName !== objectApiName)) {
+        errors.push(`Orchestration Stage "${element.label}" requires an active matching approval process.`);
+      }
+      if (typeof element.config.recordId !== 'string' || !element.config.recordId.trim()) {
+        errors.push(`Orchestration Stage "${element.label}" requires a target record ID or Flow reference.`);
+      }
+      if (!processApiName && (typeof element.config.approverIds !== 'string' || !element.config.approverIds.trim())) {
+        errors.push(`Orchestration Stage "${element.label}" requires approvers or an approval process.`);
+      }
+      if (element.config.approvalMode !== undefined && !['ANY', 'ALL'].includes(String(element.config.approvalMode))) {
+        errors.push(`Orchestration Stage "${element.label}" requires ANY or ALL approval mode.`);
+      }
+      const statusVariable = String(element.config.statusVariable ?? '');
+      if (statusVariable && !flow.resources.some((resource) => resource.name === statusVariable
+        && resource.type === 'Variable' && resource.dataType === 'Text' && !resource.isCollection)) {
+        errors.push(`Orchestration Stage "${element.label}" requires a Text variable for its result.`);
+      }
+      const routes = flow.connectors.filter((connector) => connector.from === element.id && connector.kind === 'normal');
+      for (const decision of ['Approved', 'Rejected']) {
+        if (routes.filter((connector) => connector.label.toLowerCase() === decision.toLowerCase()).length !== 1) {
+          errors.push(`Orchestration Stage "${element.label}" requires exactly one ${decision} connector.`);
+        }
+      }
+      if (routes.length !== 2 || flow.connectors.some((connector) => connector.from === element.id && connector.kind === 'scheduled')) {
+        errors.push(`Orchestration Stage "${element.label}" supports only Approved and Rejected normal paths.`);
+      }
+      if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') {
+        errors.push(`Orchestration Stage "${element.label}" is not available before save.`);
       }
     }
     if (element.type === 'Action') {

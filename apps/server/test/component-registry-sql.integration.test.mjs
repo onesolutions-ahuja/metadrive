@@ -22,6 +22,21 @@ test('MD07 component registry SQL is typed, relational, tenant-safe and reversib
     const platform=randomUUID(), privateComponent=randomUUID();
     await db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope) VALUES($1,'Shared_Card','PLATFORM')",[platform]);
     await db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope,owner_tenant_id) VALUES($1,'Private_Card','TENANT','tenant_a')",[privateComponent]);
+    const twin=randomUUID();
+    // Tenant-local names must coexist without an accidental global namespace.
+    await db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope,owner_tenant_id) VALUES($1,'Private_Card','TENANT','tenant_b')",[twin]);
+    await assert.rejects(
+      db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope,owner_tenant_id) VALUES($1,'Private_Card','TENANT','tenant_a')",[randomUUID()]),
+      /duplicate key/i);
+    await assert.rejects(
+      db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope) VALUES($1,'Shared_Card','PLATFORM')",[randomUUID()]),
+      /duplicate key/i);
+    await assert.rejects(
+      db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope,owner_tenant_id) VALUES($1,'Shared_Card','TENANT','tenant_a')",[randomUUID()]),
+      /Platform component name is reserved/);
+    await assert.rejects(
+      db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope) VALUES($1,'Private_Card','PLATFORM')",[randomUUID()]),
+      /Platform component name is reserved/);
     await assert.rejects(db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope) VALUES($1,'Bad_Private','TENANT')",[randomUUID()]),/check constraint/i);
     await db.query("INSERT INTO md_v4_component_versions(component_id,version,label,source_jsx,source_css,compiled_js,scoped_css,width_default,height_default,width_min,height_min,status,author_id) VALUES($1,1,'Card','src-v1','','compiled-v1','',320,180,120,60,'PUBLISHED','test-user')",[privateComponent]);
     await db.query("INSERT INTO md_v4_component_versions(component_id,version,label,source_jsx,source_css,compiled_js,scoped_css,width_default,height_default,width_min,height_min,status,author_id) VALUES($1,2,'Card','src-v2','','compiled-v2','',320,180,120,60,'DRAFT','test-user')",[privateComponent]);
@@ -29,6 +44,7 @@ test('MD07 component registry SQL is typed, relational, tenant-safe and reversib
     await db.query("INSERT INTO md_v4_component_dependencies(tenant_id,component_id,surface,owner_api_name,placement_id) VALUES('tenant_a',$1,'page','Demo_Page','placement_1')",[privateComponent]);
     await assert.rejects(db.query("INSERT INTO md_v4_component_dependencies(tenant_id,component_id,surface,owner_api_name,placement_id) VALUES('tenant_b',$1,'page','Foreign_Page','placement_2')",[privateComponent]),/Cross-tenant component reference rejected/);
     await db.query("INSERT INTO md_v4_component_dependencies(tenant_id,component_id,surface,owner_api_name,placement_id) VALUES('tenant_b',$1,'page','Public_Page','placement_3')",[platform]);
+    await db.query("INSERT INTO md_v4_component_dependencies(tenant_id,component_id,surface,owner_api_name,placement_id) VALUES('tenant_b',$1,'page','Tenant_B_Page','placement_4')",[twin]);
     await assert.rejects(db.query("DELETE FROM md_v4_components WHERE component_id=$1",[privateComponent]),/foreign key constraint/i);
     // A tenant-owned component must never be usable by another tenant,
     // including after a failed insert into the dependency registry.
