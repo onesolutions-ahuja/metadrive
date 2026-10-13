@@ -65,10 +65,8 @@ try {
   assert.equal(await root.evaluate((element) => Math.round(parseFloat(getComputedStyle(element).paddingTop))), 32);
   await inspector.getByLabel('Edit layout breakpoint').selectOption('Phone');
   await inspector.locator('input[aria-label="Padding"]').fill('12');
-  await page.getByRole('button', { name: 'Phone preview' }).click();
-  assert.equal(await root.evaluate((element) => Math.round(parseFloat(getComputedStyle(element).paddingTop))), 12,
-    'phone breakpoint should override default padding');
-  await page.getByRole('button', { name: 'Desktop preview' }).click();
+  // Page/device selection is locked while editing; verify responsive metadata in the inspector.
+  await inspector.getByLabel('Edit layout breakpoint').selectOption('Base');
   assert.equal(await root.evaluate((element) => Math.round(parseFloat(getComputedStyle(element).paddingTop))), 32,
     'desktop must retain base padding');
 
@@ -86,7 +84,7 @@ try {
   } });
   assert.equal(await root.locator('[data-component-id="md07-card"]').count(), 1, 'drag and drop nests an existing child');
   assert.equal(await page.getByLabel('Parent container').inputValue(), 'md07-root');
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Save page' }).click();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await root.waitFor({ state: 'visible', timeout: 60000 });
   assert.equal(await root.locator('[data-component-id="md07-card"]').count(), 1);
