@@ -14,6 +14,18 @@ self.addEventListener('activate', event => {
     self.clients.claim()
   ]));
 });
+self.addEventListener('message', event => {
+  if (event.data?.type !== 'CACHE_APP_ASSETS' || !Array.isArray(event.data.urls)) return;
+  const urls = event.data.urls.slice(0, 200).filter(value => {
+    if (typeof value !== 'string') return false;
+    try { return isPublicAsset(new URL(value, SCOPE.href)); } catch { return false; }
+  });
+  event.waitUntil(caches.open(CACHE).then(async cache => {
+    for (const url of urls) {
+      try { await cache.add(url); } catch { /* Next online visit can retry. */ }
+    }
+  }));
+});
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
