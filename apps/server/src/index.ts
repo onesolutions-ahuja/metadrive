@@ -7,6 +7,7 @@ import { tenantUsageSnapshot } from './tenant-usage.mjs';
 import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvancedSharingMetadata } from './advanced-sharing-policy.mjs';
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, retryBudgetExhausted, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
+import { mayRetry, retryAfterMs } from './connector-reliability.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -14496,7 +14497,20 @@ async function performHttpCallout(
   }
   if (Buffer.byteLength(body, 'utf8') > 256 * 1024) throw new Error(`HTTP Callout "${elementLabel}" request body exceeded the 256 KB limit.`);
   if (body && !Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
+  // A metadata-supplied stable key enables safe provider-side deduplication on mutating calls.
+  const idempotencyKey = typeof config.idempotencyKey === 'string'
+    ? resolveFlowTemplate(config.idempotencyKey, context).trim() : '';
+  if (idempotencyKey && (!/^[\x21-\x7e]{1,200}$/.test(idempotencyKey) || idempotencyKey.includes(':')))
+    throw new Error(`HTTP Callout "${elementLabel}" has an invalid idempotency key.`);
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  if (!connection && config.maxAttempts !== undefined) {
+    const requestedAttempts = Number(config.maxAttempts);
+    if (!Number.isInteger(requestedAttempts) || requestedAttempts < 1 || requestedAttempts > 5)
+      throw new Error(`HTTP Callout "${elementLabel}" retry attempts must be between 1 and 5.`);
+    maxAttempts = requestedAttempts;
+  }
   if (context.debug) return { body: { debugExecution: true, requestBody: communicationPayload(body) }, status: 200 };
+  let lastRetryAfter: string | undefined;
   let attempt = 0;
   let response: { body: unknown; status: number };
   do {
@@ -14534,6 +14548,8 @@ async function performHttpCallout(
       });
       incoming.on('end', () => {
         clearTimeout(timer);
+        const retryHeader = incoming.headers['retry-after'];
+        lastRetryAfter = Array.isArray(retryHeader) ? retryHeader[0] : retryHeader;
         const text = Buffer.concat(chunks).toString('utf8');
         let parsed: unknown = text;
         if (text) {
@@ -14582,12 +14598,14 @@ async function performHttpCallout(
       error: response.status >= 400 ? communicationError(response.body) : '',
       durationMs: Date.now() - attemptStartedAt
     });
-    if (attempt < maxAttempts && ['GET', 'PUT', 'DELETE'].includes(method)
-      && [429, 500, 502, 503, 504].includes(response.status)) {
-      await new Promise((resolve) => setTimeout(resolve, Math.min(250 * (2 ** (attempt - 1)), 2000)));
+    if (attempt < maxAttempts && mayRetry(method, idempotencyKey)
+      && [408, 425, 429, 500, 502, 503, 504].includes(response.status)) {
+      const backoffMs = Math.min(250 * (2 ** (attempt - 1)), 2000);
+      const delayMs = retryAfterMs(lastRetryAfter ? { 'Retry-After': lastRetryAfter } : undefined) ?? backoffMs;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
-  } while (attempt < maxAttempts && ['GET', 'PUT', 'DELETE'].includes(method)
-    && [429, 500, 502, 503, 504].includes(response.status));
+  } while (attempt < maxAttempts && mayRetry(method, idempotencyKey)
+    && [408, 425, 429, 500, 502, 503, 504].includes(response.status));
   if (connection && response.status >= 400) {
     throw new Error(`HTTP Callout "${elementLabel}" received HTTP status ${response.status} from provider "${definition?.name}".`);
   }
