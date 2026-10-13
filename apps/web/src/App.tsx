@@ -1559,7 +1559,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         if (fastEntryRoute) {
           // Trusted tenant-scoped RBAC bootstrap is returned with successful
           // refresh/login: render immediately without 4 more HTTP round trips.
-          const [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
+          let [firstObjects, firstPages, firstApps, firstSession] = entryTiming?.landing
             ? [
                 { objects: entryTiming.landing.objects },
                 { pages: entryTiming.landing.pages },
