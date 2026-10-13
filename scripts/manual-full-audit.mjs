@@ -71,7 +71,7 @@ const findIssue = (list, code, level, details) => {
   if (list.some(i => i.code === code && i.details === details)) return;
   list.push({ code, severity: level, details: String(details).slice(0, 360) });
 };
-function urlFor(relative) { return new URL(relative, base).href; }
+function urlFor(relative) { const path = base.pathname.endsWith('/une/') && relative.startsWith('une/') ? relative.slice(4) : relative; return new URL(path, base).href; }
 function safeName(value) { return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 70); }
 async function mkdir(p) { await fs.mkdir(p, { recursive: true }); }
 function isSameApp(url) {
