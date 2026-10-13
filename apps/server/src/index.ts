@@ -102,7 +102,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Legacy JSONB response semantics remain unchanged.
 let latestStateCommit: Promise<unknown> = Promise.resolve();
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (persistenceMode === 'jsonb' || !req.path.startsWith('/api')) return next();
+  if (persistenceMode === 'jsonb' || !req.path.startsWith('/api') || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   const end = res.end;
   const requestStartedAt = performance.now();
   let ending = false;
