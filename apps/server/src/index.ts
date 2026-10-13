@@ -26,7 +26,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
@@ -47,6 +47,11 @@ import {
   verifyPassword,
   type Principal
 } from './auth.js';
+import { normalizeRecoveryPolicy, renderRecoveryTemplate, deliverWithFallback } from './recovery-policy.js';
+// Tenant name is resolved from the tenant registry, never from unauthenticated request input.
+function tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {
+  return (tenant as unknown as { name?: string }).name || tenantId;
+}
 import {
   canAccessDashboard,
   canEditDashboard,
@@ -3008,7 +3013,7 @@ type SecurityAuditEvent = {
   id: string; at: string; actorUserId: string; action: string;
   targetUserId?: string; details?: Record<string, string>;
 };
-type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string; policy?: unknown }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
   return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
     ? object.settings.recordNameFormat
@@ -5865,12 +5870,18 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
 
 const passwordRecoverySettingsSchema = z.object({
   smtpCredentialId: z.union([z.literal(''), z.string().uuid()]),
-  fromEmail: z.union([z.literal(''), z.string().email()])
+  fromEmail: z.union([z.literal(''), z.string().email()]),
+  policy: z.object({
+    method: z.enum(['OTP','LINK']),
+    defaultChannel: z.enum(['email','sms','whatsapp']).default('email'),
+    allowedChannels: z.array(z.enum(['email','sms','whatsapp'])).default(['email']),
+    templates: z.record(z.object({subject:z.string().max(240),body:z.string().max(4000)})).optional()
+  }).optional()
 }).strict();
 const passwordResetRequestSchema = z.object({ email: z.string().trim().email().max(254) }).strict();
 const passwordResetConfirmSchema = z.object({
   email: z.string().trim().email().max(254),
-  token: z.string().regex(/^[A-Za-z0-9_-]{64}$/),
+  token: z.string().regex(/^(?:[A-Za-z0-9_-]{64}|[0-9]{6})$/),
   newPassword: z.string().min(12).max(256)
 }).strict();
 const passwordResetRate = new Map<string, { count: number; until: number }>();
@@ -5903,7 +5914,7 @@ function configuredRecoveryUrl(): URL | null {
 app.get('/api/auth/password-recovery/settings', accessAuthentication,
   requirePermission('security:manage'), (_req: Request, res: Response) => {
     const tenant = tenantData(getPrincipal(res).tenantId)!;
-    return res.json({ ...tenant.passwordRecovery, linkReady: Boolean(configuredRecoveryUrl()) });
+    return res.json({ ...tenant.passwordRecovery, policy: normalizeRecoveryPolicy(tenant.passwordRecovery.policy), linkReady: Boolean(configuredRecoveryUrl()) });
   });
 app.put('/api/auth/password-recovery/settings', accessAuthentication,
   requirePermission('security:manage'), (req: Request, res: Response) => {
@@ -5922,13 +5933,13 @@ app.put('/api/auth/password-recovery/settings', accessAuthentication,
       return res.status(400).json({ error: 'Sender email requires an SMTP credential' });
     }
     persistTenantRecords(principal.tenantId, withSecurityEvent(
-      { ...tenant, passwordRecovery: parsed.data }, principal.userId,
+      { ...tenant, passwordRecovery: { ...parsed.data, policy: normalizeRecoveryPolicy(parsed.data.policy) } }, principal.userId,
       'auth.password-recovery.settings.updated'
     ));
     return res.json(parsed.data);
   });
 app.post('/api/auth/password-reset/request', async (req: Request, res: Response) => {
-  const response = { message: 'If this account supports email recovery, a link will be sent.' };
+  const response = { message: 'If this account supports recovery, a verification message will be sent.' };
   if (jwtService.config.mode !== 'local') return res.status(202).json(response);
   const parsed = passwordResetRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid email' });
@@ -5941,25 +5952,56 @@ app.post('/api/auth/password-reset/request', async (req: Request, res: Response)
   const url = configuredRecoveryUrl();
   if (!user || user.disabled || !tenant || !url) return res.status(202).json(response);
   const { smtpCredentialId, fromEmail } = tenant.passwordRecovery;
-  if (!smtpCredentialId || !fromEmail) return res.status(202).json(response);
-  const credential = tenant.namedCredentials.find((item) =>
-    item.id === smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false);
-  if (!credential) return res.status(202).json(response);
-  const token = randomBytes(48).toString('base64url');
+  const policy = normalizeRecoveryPolicy(tenant.passwordRecovery.policy);
+  // A reset channel is available only when its contact is independently verified.
+  // Email is supported now; SMS and WhatsApp must not use unverified numbers.
+  if (policy.defaultChannel !== 'email') return res.status(202).json(response);
+  const token = policy.method === 'OTP'
+    ? String(randomInt(0, 1_000_000)).padStart(6, '0')
+    : randomBytes(48).toString('base64url');
+  const tokenSalt = randomBytes(16).toString('hex');
+  const verifier = policy.method === 'OTP'
+    ? tokenSalt + ':' + scryptSync(token, tokenSalt, 32).toString('hex')
+    : hashToken(token);
   const resetUrl = new URL(url.toString());
-  resetUrl.searchParams.set('resetEmail', email);
-  resetUrl.searchParams.set('resetToken', token);
+  if (policy.method === 'LINK') {
+    resetUrl.searchParams.set('resetEmail', email);
+    resetUrl.searchParams.set('resetToken', token);
+  }
+  const template = policy.templates.email;
+  const variables = {
+    'Tenant.Id': user.tenantId, 'Tenant.Name': tenantInfoForRecovery(tenant, user.tenantId),
+    'User.Email': email, 'Verification.Value': policy.method === 'OTP' ? token : resetUrl.toString(),
+    'Verification.Method': policy.method, 'Verification.ExpiryMinutes': '15'
+  };
+  const subject = renderRecoveryTemplate(template.subject, variables);
+  const body = renderRecoveryTemplate(template.body, variables);
+  const senders: Array<{ provider: 'tenant'|'platform'|'http'; send:()=>Promise<void> }> = [];
+  if (smtpCredentialId && fromEmail && tenant.namedCredentials.some((item) =>
+    item.id === smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false)) {
+    senders.push({ provider: 'tenant', send: () =>
+      sendTenantEmail(user.tenantId, tenant, smtpCredentialId, fromEmail, [email], subject, body) });
+  }
+  // The fallback credential is owned by a platform tenant, never copied into customer records.
+  const platformTenantId = process.env.METADRIVE_RECOVERY_PLATFORM_TENANT_ID;
+  const platformCredentialId = process.env.METADRIVE_RECOVERY_PLATFORM_SMTP_CREDENTIAL_ID;
+  const platformFrom = process.env.METADRIVE_RECOVERY_PLATFORM_FROM_EMAIL;
+  const platformTenant = platformTenantId ? tenantData(platformTenantId) : undefined;
+  if (platformTenantId && platformTenant && platformCredentialId && platformFrom
+    && platformTenant.namedCredentials.some((item) => item.id === platformCredentialId
+      && item.protocol === 'SMTP' && item.enabled !== false)) {
+    senders.push({ provider: 'platform', send: () =>
+      sendTenantEmail(platformTenantId, platformTenant, platformCredentialId, platformFrom, [email], subject, body) });
+  }
+  if (!senders.length) return res.status(202).json(response);
   try {
-    await sendTenantEmail(user.tenantId, tenant, smtpCredentialId, fromEmail, [email],
-      'MetaDrive password reset',
-      'A password reset was requested. This link expires in 15 minutes.\n\n' + resetUrl.toString()
-      + '\n\nIgnore this message if you did not request it. MFA requirements remain unchanged.');
+    await deliverWithFallback(senders, (provider) => console.warn('Password recovery delivery failed via '+provider));
     const current = state.users.find((item) => item.id === user.id && item.tenantId === user.tenantId);
     if (!current || current.disabled || !tenantData(user.tenantId)) return res.status(202).json(response);
     const nextState: PlatformState = {
       ...state,
       users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-        ? { ...item, passwordReset: { tokenHash: hashToken(token), expiresAt: Date.now() + 15 * 60_000 } }
+        ? { ...item, passwordReset: { tokenHash: verifier, expiresAt: Date.now() + 15 * 60_000 } }
         : item),
       tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
         state.tenants[user.tenantId], user.id, 'auth.password-reset.requested') }
@@ -5977,13 +6019,19 @@ app.post('/api/auth/password-reset/confirm', async (req: Request, res: Response)
   const parsed = passwordResetConfirmSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid password-reset request' });
   const email = parsed.data.email.toLowerCase();
-  if (!resetAllowed('redeem:' + (req.ip ?? 'unknown') + ':' + hashToken(email), 8))
+  if (!resetAllowed('redeem:' + (req.ip ?? 'unknown') + ':' + hashToken(email), 8)
+    || !resetAllowed('redeem-email:' + hashToken(email), 8))
     return res.status(429).json({ error: 'Too many reset attempts' });
   const user = state.users.find((item) => item.email.toLowerCase() === email);
   const request = user?.passwordReset;
+  const [salt, digest] = request?.tokenHash.split(':') ?? [];
+  const otpDigest = salt && digest && /^[a-f0-9]{32}$/.test(salt) && /^[a-f0-9]{64}$/.test(digest)
+    ? scryptSync(parsed.data.token, salt, 32) : null;
   const valid = Boolean(user && !user.disabled && tenantData(user.tenantId)
     && request && request.expiresAt > Date.now()
-    && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token))));
+    && (otpDigest
+      ? timingSafeEqual(Buffer.from(digest,'hex'), otpDigest)
+      : parsed.data.token.length===64 && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token)))));
   if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset link' });
   const hashed = await hashPassword(parsed.data.newPassword);
   const nextState: PlatformState = {

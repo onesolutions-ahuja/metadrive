@@ -134,7 +134,8 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     })).status, 400, 'Other tenant must not reference this SMTP credential');
 
     const settings = await api('/auth/password-recovery/settings', token, 'PUT', {
-      smtpCredentialId: credentialId, fromEmail: 'help@recovery-mail.test'
+      smtpCredentialId: credentialId, fromEmail: 'help@recovery-mail.test',
+      policy: { method:'LINK',defaultChannel:'email',allowedChannels:['email'] }
     });
     assert.equal(settings.status, 200, JSON.stringify(settings.data));
     assert.equal((await api('/auth/password-reset/request', '', 'POST', {

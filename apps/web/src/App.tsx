@@ -1110,6 +1110,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
   const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
   const [resetToken, setResetToken] = useState(recoveryQuery.get('resetToken') ?? '');
+  const [resetRequested, setResetRequested] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [repeatPassword, setRepeatPassword] = useState('');
   const [resetFinished, setResetFinished] = useState(false);
@@ -1194,6 +1195,7 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
         method: 'POST', body: JSON.stringify({ email })
       });
       setMessage(response.message);
+      setResetRequested(true);
     } catch (failure) { setMessage(failure instanceof Error ? failure.message : 'Unable to request reset'); }
     finally { setSubmitting(false); }
   };
@@ -1213,13 +1215,15 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
     <section className="auth-card" aria-labelledby="password-reset-heading">
       <img className="auth-brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" />
       <div className="eyebrow">ACCOUNT RECOVERY</div>
-      <h1 id="password-reset-heading">{resetToken ? 'Choose a new password' : 'Reset your password'}</h1>
+      <h1 id="password-reset-heading">{resetToken || resetRequested ? 'Verify and reset password' : 'Reset your password'}</h1>
       {message && <div className="auth-notice" role="status">{message}</div>}
       {!resetFinished && <>
         <label className="form-label" htmlFor="reset-email">Account email</label>
         <input className="form-control" id="reset-email" type="email" value={email}
           onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-        {resetToken ? <>
+        {resetToken || resetRequested ? <>
+          <label className="form-label" htmlFor="reset-code">Verification code (6 digits), or use your emailed reset link</label>
+          <input className="form-control" id="reset-code" type="text" inputMode="numeric" maxLength={64} autoComplete="one-time-code" value={resetToken} onChange={(event) => setResetToken(event.target.value.replace(/[^0-9A-Za-z_-]/g, ''))} />
           <label className="form-label" htmlFor="reset-password">New password (minimum 12 characters)</label>
           <input className="form-control" id="reset-password" type="password" minLength={12}
             autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
@@ -1230,13 +1234,13 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
             disabled={submitting || !email || newPassword.length < 12 || !repeatPassword}
             onClick={() => void confirmReset()}>{submitting ? 'Saving…' : 'Reset password'}</button>
         </> : <>
-          <p>We'll send a single-use link if email recovery is configured for your tenant. The link expires in 15 minutes.</p>
+          <p>We'll email a single-use verification code or a reset link according to your tenant recovery settings. It expires in 15 minutes.</p>
           <button className="btn btn-brand auth-submit" type="button" disabled={submitting || !email}
-            onClick={() => void requestReset()}>{submitting ? 'Sending…' : 'Send reset link'}</button>
+            onClick={() => void requestReset()}>{submitting ? 'Sending…' : 'Send verification'}</button>
         </>}
       </>}
       <button className="text-action auth-back" type="button" onClick={() => {
-        setMessage(''); setShowPasswordReset(false); setResetToken(''); setResetFinished(false);
+        setMessage(''); setShowPasswordReset(false); setResetToken(''); setResetRequested(false); setResetFinished(false);
       }}>Back to sign in</button>
     </section>
   </main>;
@@ -7002,6 +7006,9 @@ type TenantMfaMode = 'Off' | 'Optional' | 'Required';
 function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
   const [smtpCredentialId, setSmtpCredentialId] = useState('');
   const [fromEmail, setFromEmail] = useState('');
+  const [method, setMethod] = useState<'OTP' | 'LINK'>('OTP');
+  const [subject, setSubject] = useState('{!Tenant.Name} — password recovery');
+  const [body, setBody] = useState('Your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.');
   const [ready, setReady] = useState(false);
   const [credentials, setCredentials] = useState<Array<{ id: string; label: string; protocol: string; enabled: boolean }>>([]);
   const [permitted, setPermitted] = useState(false);
@@ -7011,11 +7018,14 @@ function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
   const [message, setMessage] = useState('');
   useEffect(() => {
     let active = true;
-    void apiRequest<{ smtpCredentialId: string; fromEmail: string; linkReady: boolean }>('/auth/password-recovery/settings')
+    void apiRequest<{ smtpCredentialId: string; fromEmail: string; linkReady: boolean; policy?: { method: 'OTP'|'LINK'; templates?: {email?:{subject:string;body:string}} } }>('/auth/password-recovery/settings')
       .then((value) => {
         if (!active) return;
         setPermitted(true); setSmtpCredentialId(value.smtpCredentialId);
         setFromEmail(value.fromEmail); setReady(value.linkReady);
+        setMethod(value.policy?.method ?? 'OTP');
+        setSubject(value.policy?.templates?.email?.subject ?? '{!Tenant.Name} — password recovery');
+        setBody(value.policy?.templates?.email?.body ?? 'Your verification code is {!Verification.Value}. Expires in {!Verification.ExpiryMinutes} minutes.');
       }).catch(() => { if (active) setPermitted(false); });
     void apiRequest<{ credentials: Array<{ id: string; label: string; protocol: string; enabled: boolean }> }>('/named-credentials')
       .then((response) => { if (active) setCredentials(response.credentials.filter((item) => item.protocol === 'SMTP' && item.enabled)); })
@@ -7044,7 +7054,8 @@ function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
     setBusy(true); setMessage('');
     try {
       await apiRequest('/auth/password-recovery/settings', {
-        method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '' })
+        method: 'PUT', body: JSON.stringify({ smtpCredentialId, fromEmail: smtpCredentialId ? fromEmail : '',
+          policy: { method, defaultChannel:'email', allowedChannels:['email'], templates: { email: { subject, body } } } })
       });
       original.current = null;
       setEditing(false);
@@ -7054,7 +7065,7 @@ function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
   };
   return <section className="surface permission-section">
     <h2>Tenant password recovery</h2>
-    <p>Email reset links use the tenant's SMTP Named Credential. They never bypass MFA.</p>
+    <p>Choose OTP or reset-link delivery, with editable templates and tenant-scoped SMTP. MFA is never bypassed.</p>
     {!ready && <p role="alert" className="permission-help">
       Configure a trusted HTTPS password-reset origin on the server before enabling recovery.
     </p>}
@@ -7067,6 +7078,17 @@ function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
             {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
           </select>
         </label>
+        <label className="form-label" htmlFor="recovery-method">Verification method
+          <select className="form-control" id="recovery-method" value={method} onChange={(event)=>setMethod(event.target.value as 'OTP'|'LINK')}>
+            <option value="OTP">6-digit email OTP</option><option value="LINK">Email reset link</option>
+          </select>
+        </label>
+        <label className="form-label" htmlFor="recovery-subject">Email subject template
+          <input className="form-control" id="recovery-subject" value={subject} onChange={(event)=>setSubject(event.target.value)} />
+        </label>
+        <label className="form-label" htmlFor="recovery-body">Email body template
+          <textarea className="form-control" id="recovery-body" rows={5} value={body} onChange={(event)=>setBody(event.target.value)} />
+        </label>
         <label className="form-label" htmlFor="recovery-sender">Sender email
           <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
             onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
@@ -7075,7 +7097,9 @@ function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
         <SettingsViewRow label="SMTP Named Credential"
           value={credentials.find((item) => item.id === smtpCredentialId)?.label ?? (smtpCredentialId ? 'Configured' : 'Disabled')}
           canEdit={canManage} onEdit={beginEdit} />
-        <SettingsViewRow label="Sender email" value={smtpCredentialId ? fromEmail : 'Not configured'}
+        <SettingsViewRow label="Verification method" value={method} canEdit={canManage} onEdit={beginEdit} />
+        <SettingsViewRow label="Email template" value={subject} canEdit={canManage} onEdit={beginEdit} />
+        <SettingsViewRow label="Sender email" value={smtpCredentialId ? fromEmail : 'Platform fallback (if configured)'}
           canEdit={canManage} onEdit={beginEdit} />
       </>}
     </div>
