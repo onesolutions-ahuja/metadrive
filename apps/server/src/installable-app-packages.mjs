@@ -134,7 +134,22 @@ export function applyInstallableAppPackages(tenant, catalog) {
     let records = next.records;
     for (const [objectName, examples] of Object.entries(pkg.demoRecords ?? {})) {
       if (!objects.some(item => item.apiName === objectName)) continue;
-      if ((records[objectName] ?? []).length > 0) continue;
+      const existing = records[objectName] ?? [];
+      if (existing.length > 0) {
+        // Repair metadata-only demo records from earlier installs, identified
+        // by exact stable IDs. Never alter customer-created product records.
+        const demoById = new Map(examples.map(row => [row.Id, row]));
+        const repaired = existing.map(row => {
+          const demo = demoById.get(row.Id);
+          if (!demo || (row.CreatedDate && row.LastModifiedDate)) return row;
+          changed = true;
+          return { ...row,
+            CreatedDate: row.CreatedDate ?? demo.CreatedDate,
+            LastModifiedDate: row.LastModifiedDate ?? demo.LastModifiedDate };
+        });
+        if (changed) records = { ...records, [objectName]: repaired };
+        continue;
+      }
       records = { ...records, [objectName]: structuredClone(examples) };
       changed = true;
     }
