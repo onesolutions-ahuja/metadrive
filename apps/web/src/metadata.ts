@@ -259,7 +259,7 @@ export type FlowConnectorMetadata = {
   from: number;
   to: number;
   label: string;
-  kind: 'normal' | 'fault' | 'scheduled';
+  kind: 'normal' | 'fault' | 'scheduled' | 'async';
   scheduledPath?: {
     timeSourceFieldApiName: string;
     offsetAmount: number;
@@ -302,7 +302,7 @@ export type FlowExecutionLogMetadata = {
   id: string;
   flowApiName: string;
   flowLabel: string;
-  trigger: 'Manual' | 'Scheduled' | 'Record-Triggered' | 'Scheduled Path' | 'Wait Interview';
+  trigger: 'Manual' | 'Scheduled' | 'Record-Triggered' | 'Scheduled Path' | 'Async Path' | 'Wait Interview';
   failedAt: string;
   error: string;
   userId: string | null;
@@ -313,7 +313,7 @@ export type FlowInterviewMetadata = {
   flowApiName: string;
   flowLabel: string;
   versionNumber: number;
-  kind: 'screen' | 'wait' | 'scheduled';
+  kind: 'screen' | 'wait' | 'scheduled' | 'async';
   userId: string;
   userName: string;
   screenLabel: string | null;
