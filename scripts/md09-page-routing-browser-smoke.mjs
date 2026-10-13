@@ -160,7 +160,7 @@ try {
   await recordRow.waitFor();
   assert.match(await recordRow.locator('code').innerText(), /\/une\/o\/Account\/list\?/);
   await directory.getByLabel('Search routes').fill(targetId);
-  assert.equal(await directory.locator('tbody tr').count(), 1);
+  assert.equal(await directory.getByRole('table', { name: 'Page route directory' }).locator('tbody tr').count(), 1);
   await directory.getByRole('button', { name: 'Close page routes' }).click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const saved = (await request('/metadata/pages', token)).pages.find((item) => item.apiName === sourceId);
