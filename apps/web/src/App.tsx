@@ -9522,6 +9522,29 @@ function PageBuilder({
     onChange(next);
     setSelectedId(next.components[0]?.id ?? '');
   };
+  useEffect(() => {
+    if (page.layoutMode !== 'free-canvas') return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (event.defaultPrevented || (target instanceof HTMLElement &&
+        (['INPUT','TEXTAREA','SELECT'].includes(target.tagName) || target.isContentEditable))) return;
+      const command = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (command && key === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) redo(); else undo();
+      } else if (command && key === 'c' && selected && !previewMode) {
+        event.preventDefault(); copySelected();
+      } else if (command && key === 'v' && componentClipboard && !previewMode) {
+        event.preventDefault(); pasteComponent();
+      } else if (!command && (event.key === 'Delete' || event.key === 'Backspace')
+        && selected && !previewMode && !isCanvasLocked(selected)) {
+        event.preventDefault(); removeSelected();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
   const savePage = async (status?: 'Active' | 'Draft') => {
     if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(page.apiName)) {
       onNotify('API Name must start with a letter and contain only letters, numbers, and underscores');
@@ -10198,6 +10221,9 @@ function PageBuilder({
           <div className="preview-toolbar">
             <span><strong>{page.label}</strong><small>{page.pageType} · {page.status}{page.layoutMode === 'free-canvas' ? ` · ${page.canvasWidth} × ${page.canvasHeight}px` : ''}</small></span>
             <div>
+              {page.layoutMode === 'free-canvas' && <button type="button" className={previewMode ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
+                aria-pressed={previewMode} aria-label={previewMode ? 'Return to design mode' : 'Preview page without editing'}
+                onClick={() => setPreviewMode(current => !current)}>{previewMode ? '✎ Design mode' : '▷ Preview'}</button>}
               {page.layoutMode === 'free-canvas' && <button type="button" className={snapEnabled ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
                 aria-pressed={snapEnabled} aria-label="Snap to 8 pixel grid" title="Toggle snap to grid"
                 onClick={() => setSnapEnabled(current => !current)}>⌗ Snap {snapEnabled ? 'on' : 'off'}</button>}
