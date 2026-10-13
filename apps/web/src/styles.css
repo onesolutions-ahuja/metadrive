@@ -2557,18 +2557,18 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 /* UI visual audit Phase 1: App Manager control geometry.
    Keep dense builders and data tables unchanged; clickable checkbox labels
    already provide a 44px hit area. */
-.setup-layout .permission-section label.form-label {
+.setup-layout .permission-section.app-manager label.form-label {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.setup-layout .permission-section label.form-label > .form-control,
-.setup-layout .permission-section label.form-label > .app-manager-color-control {
+.setup-layout .permission-section.app-manager label.form-label > .form-control,
+.setup-layout .permission-section.app-manager label.form-label > .app-manager-color-control {
   margin-top: 0;
 }
-.setup-layout .permission-section label.form-label > input.form-control:not([type="checkbox"]):not([type="radio"]),
-.setup-layout .permission-section label.form-label > select.form-control,
-.setup-layout .permission-section .app-manager-color-control > input {
+.setup-layout .permission-section.app-manager label.form-label > input.form-control:not([type="checkbox"]):not([type="radio"]),
+.setup-layout .permission-section.app-manager label.form-label > select.form-control,
+.setup-layout .permission-section.app-manager .app-manager-color-control > input {
   box-sizing: border-box;
   min-height: 40px;
 }
