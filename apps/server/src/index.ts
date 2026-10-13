@@ -1252,7 +1252,7 @@ const flowInterviewSchema = z.object({
   flowApiName: z.string(),
   versionNumber: z.number().int().positive(),
   userId: z.string(),
-  kind: z.enum(['screen', 'wait', 'scheduled', 'async']),
+  kind: z.enum(['screen', 'wait', 'scheduled', 'async', 'orchestration']),
   // Persist record-trigger formula context across process restarts and version changes.
   recordEvent: z.enum(['created', 'updated', 'deleted']).nullable().default(null),
   isClone: z.boolean().default(false),
@@ -2687,6 +2687,8 @@ const approvalRequestSchema = z.object({
   recordId: z.string().min(1),
   flowApiName: z.string().min(1),
   processApiName: z.string().nullable().default(null),
+  orchestrationInterviewId: z.string().uuid().nullable().default(null),
+  approvalMode: z.enum(['ANY', 'ALL']).default('ANY'),
   submittedBy: z.string().min(1),
   submittedByName: z.string().min(1),
   approverId: z.string().min(1),
@@ -14088,6 +14090,7 @@ app.get('/api/metadata/flow-elements', requirePermission('metadata:read'), (_req
     { type: 'Collection Filter', group: 'Logic' }, { type: 'Collection Sort', group: 'Logic' },
     { type: 'Transform', group: 'Data' }, { type: 'Roll Back Records', group: 'Data', allowedFlowTypes: ['Screen Flow', 'Autolaunched Flow'] },
     { type: 'Publish Platform Event', group: 'Data' }, { type: 'Get Records', group: 'Data' },
+    { type: 'Orchestration Stage', group: 'Interaction' },
     { type: 'Create Records', group: 'Data' }, { type: 'Update Records', group: 'Data' },
     { type: 'Delete Records', group: 'Data' }, { type: 'Action', group: 'Interaction' },
     { type: 'HTTP Callout', group: 'Interaction' }, { type: 'Subflow', group: 'Interaction' }
@@ -16220,6 +16223,7 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
 type FlowExecutionResult =
   | { status: 'completed'; outputs: Record<string, unknown>; variables: Record<string, unknown>; debugTrace: FlowDebugTraceEntry[] }
   | { status: 'waiting'; kind: 'screen'; screen: FlowMetadata['elements'][number]; nextElementId: number | null; outcomes: Array<{ name: string; label: string }>; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] }
+  | { status: 'waiting'; kind: 'orchestration'; stage: FlowMetadata['elements'][number]; waitUntil: string; nextElementId: null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] }
   | { status: 'waiting'; kind: 'wait' | 'scheduled' | 'async'; waitUntil: string; nextElementId: number | null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] };
 
 function scheduledPathTimestamp(
@@ -16271,7 +16275,7 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
     : null;
   const expiresAt = conversationExpiry ?? (result.kind === 'screen'
     ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
-    : (result.kind === 'scheduled' || result.kind === 'async')
+    : (result.kind === 'scheduled' || result.kind === 'async' || result.kind === 'orchestration')
       ? '9999-12-31T23:59:59.999Z'
       : new Date(Date.parse(result.waitUntil) + 7 * 24 * 60 * 60 * 1000).toISOString());
   return {
@@ -16283,7 +16287,7 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
     kind: result.kind,
     recordEvent: result.recordEvent ?? null,
     isClone: result.isClone ?? false,
-    screenElementId: result.kind === 'screen' ? result.screen.id : null,
+    screenElementId: result.kind === 'screen' ? result.screen.id : result.kind === 'orchestration' ? result.stage.id : null,
     waitUntil: result.kind === 'screen' ? null : result.waitUntil,
     nextElementId: result.nextElementId,
     variables: result.variables,
@@ -16488,7 +16492,7 @@ function performSubmitForApproval(
   config: Record<string, unknown>,
   context: FlowRuntimeContext,
   elementLabel: string
-): void {
+): string {
   const submitter = state.users.find((user) =>
     user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
   if (!submitter) throw new Error('The running user is no longer active.');
@@ -16544,6 +16548,8 @@ function performSubmitForApproval(
       recordId,
       flowApiName: flow.apiName,
       processApiName: typeof config.approvalProcessApiName === 'string' ? config.approvalProcessApiName : null,
+      orchestrationInterviewId: typeof config.orchestrationInterviewId === 'string' ? config.orchestrationInterviewId : null,
+      approvalMode: config.approvalMode === 'ALL' ? 'ALL' : 'ANY',
       submittedBy: submitter.id,
       submittedByName: submitter.name,
       approverId: approver.id,
@@ -16570,6 +16576,7 @@ function performSubmitForApproval(
   });
   tenant.approvalRequests.push(...requests);
   tenant.notifications.push(...notifications);
+  return groupId;
 }
 
 function flowNeedsRollbackSnapshot(
@@ -17091,6 +17098,28 @@ async function executeFlow(
         }
         break;
       }
+      case 'Orchestration Stage': {
+        // The approval work item and paused interview commit together with the
+        // parent Flow transaction. No external orchestration engine is required.
+        if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') {
+          throw new Error('Orchestration stages cannot execute before record save.');
+        }
+        const interviewGuid = randomUUID();
+        performSubmitForApproval(tenantId, tenant, flow, {
+          ...config,
+          approvalMode: config.approvalMode === 'ALL' ? 'ALL' : 'ANY',
+          orchestrationInterviewId: interviewGuid
+        }, context, element.label);
+        return {
+          status: 'waiting', kind: 'orchestration', stage: element,
+          waitUntil: '9999-12-31T23:59:59.999Z', nextElementId: null,
+          variables: structuredClone(context.variables),
+          interviewGuid, interviewStartTime: new Date().toISOString(),
+          record: context.record, prior: context.prior,
+          recordEvent: context.recordEvent, isClone: context.isClone,
+          debugTrace: context.debugTrace ?? []
+        };
+      }
       case 'Subflow': {
         const apiName = typeof config.flowApiName === 'string' ? config.flowApiName : '';
         const childFlow = activeFlowDefinition(tenant.flows.find((candidate) => candidate.apiName === apiName));
@@ -17335,7 +17364,7 @@ async function runRecordTriggeredFlows(
         flowInterviewIdentity(context), false, debugExecution, debugTrace, rollbackSnapshot
       );
       if (result.status === 'waiting') {
-        if (result.kind !== 'wait') throw new Error(`Record-triggered flow "${flow.label}" cannot pause for screen input.`);
+        if (result.kind !== 'wait' && result.kind !== 'orchestration') throw new Error(`Record-triggered flow "${flow.label}" cannot pause for screen input.`);
         tenant.interviews.push(createFlowInterview(flow, userId, result));
       }
     } catch (error) {
@@ -17971,7 +18000,7 @@ function validateFlow(
   }
   if (flow.elements.length > 1 && flow.connectors.length === 0) warnings.push('Flow has multiple elements but no connectors.');
   for (const element of flow.elements) {
-    if (!['Start', 'End', 'Assignment', 'Decision', 'Loop', 'Collection Filter', 'Collection Sort', 'Transform', 'Get Records', 'Create Records', 'Update Records', 'Delete Records', 'Roll Back Records', 'Publish Platform Event', 'Subflow', 'Screen', 'Wait', 'Action', 'HTTP Callout'].includes(element.type)) {
+    if (!['Start', 'End', 'Assignment', 'Decision', 'Loop', 'Collection Filter', 'Collection Sort', 'Transform', 'Get Records', 'Create Records', 'Update Records', 'Delete Records', 'Roll Back Records', 'Publish Platform Event', 'Subflow', 'Screen', 'Wait', 'Action', 'HTTP Callout', 'Orchestration Stage'].includes(element.type)) {
       errors.push(`Flow element type "${element.type}" is not supported.`);
     }
     // Validate literal picklist writes against Object Manager metadata before activation.
@@ -18311,6 +18340,43 @@ function validateFlow(
         } else if (new Set(field.choices).size !== field.choices.length) {
           errors.push(`${String(field.type)} screen field "${String(field.label ?? '')}" on "${element.label}" has duplicate choices.`);
         }
+      }
+    }
+    if (element.type === 'Orchestration Stage') {
+      const objectApiName = String(element.config.objectApiName ?? '');
+      if (!objects.some((object) => object.apiName === objectApiName)) {
+        errors.push(`Orchestration Stage "${element.label}" requires an existing target object.`);
+      }
+      const processApiName = String(element.config.approvalProcessApiName ?? '');
+      const process = approvalProcesses.find((item) => item.apiName === processApiName);
+      if (processApiName && (!process || !process.active || process.objectApiName !== objectApiName)) {
+        errors.push(`Orchestration Stage "${element.label}" requires an active matching approval process.`);
+      }
+      if (typeof element.config.recordId !== 'string' || !element.config.recordId.trim()) {
+        errors.push(`Orchestration Stage "${element.label}" requires a target record ID or Flow reference.`);
+      }
+      if (!processApiName && (typeof element.config.approverIds !== 'string' || !element.config.approverIds.trim())) {
+        errors.push(`Orchestration Stage "${element.label}" requires approvers or an approval process.`);
+      }
+      if (element.config.approvalMode !== undefined && !['ANY', 'ALL'].includes(String(element.config.approvalMode))) {
+        errors.push(`Orchestration Stage "${element.label}" requires ANY or ALL approval mode.`);
+      }
+      const statusVariable = String(element.config.statusVariable ?? '');
+      if (statusVariable && !flow.resources.some((resource) => resource.name === statusVariable
+        && resource.type === 'Variable' && resource.dataType === 'Text' && !resource.isCollection)) {
+        errors.push(`Orchestration Stage "${element.label}" requires a Text variable for its result.`);
+      }
+      const routes = flow.connectors.filter((connector) => connector.from === element.id && connector.kind === 'normal');
+      for (const decision of ['Approved', 'Rejected']) {
+        if (routes.filter((connector) => connector.label.toLowerCase() === decision.toLowerCase()).length !== 1) {
+          errors.push(`Orchestration Stage "${element.label}" requires exactly one ${decision} connector.`);
+        }
+      }
+      if (routes.length !== 2 || flow.connectors.some((connector) => connector.from === element.id && connector.kind === 'scheduled')) {
+        errors.push(`Orchestration Stage "${element.label}" supports only Approved and Rejected normal paths.`);
+      }
+      if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') {
+        errors.push(`Orchestration Stage "${element.label}" is not available before save.`);
       }
     }
     if (element.type === 'Action') {
