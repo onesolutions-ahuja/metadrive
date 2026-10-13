@@ -41,9 +41,11 @@ assert(appCss && appCss.content.includes('overflow-y:auto'),
   'Built CSS is missing sticky header or scrolling Setup navigation');
 const logo = await read('une-solutions-logo.webp');
 assert(logo.length > 1000 && logo.toString('ascii', 0, 4) === 'RIFF', 'Transparent logo asset missing or invalid');
-// The SPA owns /login. A static login/index.html shadows the fallback and redirects users to Render.
-const publishedPaths = await readdir(dist);
-assert(!publishedPaths.includes('login'), 'Static /login route must not override branded SPA login');
+// GitHub Pages serves existing /login/ files ahead of its 404 fallback.
+// The branded entry must route into our own SPA rather than navigating to Render.
+const loginHtml = (await read('login/index.html')).toString('utf8');
+assert(loginHtml.includes("window.location.replace('/?__spa='"), 'Branded login handoff missing');
+assert(!loginHtml.includes('metadrive.onrender.com'), 'Public login must not redirect to Render');
 const fallback = (await read('404.html')).toString('utf8');
 assert(fallback.includes("window.location.replace('/?__spa='"), 'Custom-domain client-side deep-link fallback missing');
 assert(html.includes('window.history.replaceState({}, \'\', restored)'), 'Custom-domain route restoration is missing');
@@ -65,8 +67,17 @@ if (live) {
         cache: 'no-store', signal: AbortSignal.timeout(15000)
       });
       const publishedFallback = await fallbackResponse.text();
-      assert((fallbackResponse.status === 404 || fallbackResponse.ok) && publishedFallback.includes("window.location.replace('/?__spa='"),
-        'Published custom-domain deep link does not serve the SPA fallback');
+      const fallbackWorks = (fallbackResponse.status === 404 || fallbackResponse.ok)
+        && publishedFallback.includes("window.location.replace('/?__spa='");
+      const directSpaWorks = fallbackResponse.ok && publishedFallback.includes('id="root"')
+        && publishedFallback.includes('Une Solutions | Smart Software for Growing Businesses');
+      if (!fallbackWorks && !directSpaWorks) console.warn('Deep-link response status=' + fallbackResponse.status
+        + ' content-type=' + fallbackResponse.headers.get('content-type')
+        + ' preview=' + publishedFallback.slice(0, 180).replace(/\\s+/g, ' '));
+      assert(fallbackWorks || directSpaWorks, 'Published custom-domain deep link does not serve the SPA');
+      const publishedLogin = await (await get('/login/')).text();
+      assert(publishedLogin.includes("window.location.replace('/?__spa='")
+        && !publishedLogin.includes('metadrive.onrender.com'), 'Live login redirects away from the branded domain');
       assert(publishedHtml.includes(jsMatch[1]) && publishedHtml.includes(cssMatch[1]),
         'Live Pages HTML does not point to this commit\'s compiled JS/CSS assets');
       const publishedLogo = Buffer.from(await (await get(base + 'une-solutions-logo.webp')).arrayBuffer());
