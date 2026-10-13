@@ -51,6 +51,8 @@ export default function KioskOrderingExperience(props) {
     if (response && response.completed === true) setScreen('done');
   };
   const actions = p.actionFlows && typeof p.actionFlows === 'object' ? p.actionFlows : {};
+  const paymentReady = Boolean(actions.checkout?.flowApiName && Array.isArray(p.flows)
+    && p.flows.some(flow => flow.apiName === actions.checkout.flowApiName && flow.status === 'Active'));
   return <div className="une-kiosk-demo" style={{ '--une-kiosk-accent': p.accentColor || '#ffca26', '--une-kiosk-ink': p.inkColor || '#202124' }}>
     <header className="une-kiosk-head">
       <div className="une-kiosk-brand"><span className="une-kiosk-brand-symbol" aria-hidden="true">✦</span><span><strong>{p.brandName || 'Your Restaurant'}</strong><small>{p.tagline || 'Freshly made, just for you'}</small></span></div>
@@ -105,8 +107,8 @@ export default function KioskOrderingExperience(props) {
         </> : <>
           <div className="une-payment-demo"><span>💳</span><h3>Card payment</h3><p>The payment method is selected in your checkout Flow. No payment is taken in this screen.</p></div>
           <div className="une-total-row"><span>Displayed subtotal</span><strong>{money(total)}</strong></div>
-          <button className="une-kiosk-primary une-checkout-button" disabled={!itemCount || busy || !actions.checkout} onClick={checkout}>{busy ? 'Processing…' : 'Start payment Flow →'}</button>
-          {!actions.checkout && <p role="status">Payment is unavailable until a checkout Flow and payment device are configured.</p>}
+          <button className="une-kiosk-primary une-checkout-button" disabled={!itemCount || busy || !paymentReady} onClick={checkout}>{busy ? 'Processing…' : 'Start payment Flow →'}</button>
+          {!paymentReady && <p role="status">Payment is unavailable until an active checkout Flow and payment device are configured.</p>}
         </>}
       </div>
     </div> : <div className="une-kiosk-done"><span>✓</span><h2>Order complete</h2><p>Your receipt and collection number will be provided by the configured checkout Flow.</p><button onClick={async () => { const result = await emit('reset', {}); if (result) { setScreen('menu'); setDetail(null); } }} className="une-kiosk-primary">Start a new order →</button></div>}

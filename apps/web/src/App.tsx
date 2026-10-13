@@ -90,6 +90,8 @@ import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
 import tillPagePreset from './page-presets/till.editable.json';
 import { standardPageComponents } from './componentCatalog';
+import EmbeddedDashboard from './EmbeddedDashboard';
+import { inspectPageDependencies } from './pageDependencies';
 import {
   canvasDimensionsForOrientation,
   canvasOrientation,
@@ -3678,6 +3680,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           )}
           {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? page.apiName} page={page} pages={pages}
             preparedAppId={pageCreationAppContext[page.apiName] ?? ''}
+            dashboards={dashboards}
             onPrepareApp={(pageApiName, appId) => setPageCreationAppContext(current => ({
               ...current, [pageApiName]: appId
             }))}
@@ -4385,7 +4388,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, apps, pages, currentAppId, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -4393,6 +4396,7 @@ function MetadataBoundPageComponent({
   apps: LightningAppMetadata[];
   pages: LightningPageMetadata[];
   currentAppId: string;
+  pageSessionKey: string;
   reports: ReportMetadata[];
   availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
   formFactor: 'Desktop' | 'Phone';
@@ -4405,7 +4409,7 @@ function MetadataBoundPageComponent({
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
   const customerObjectApiName = String(properties.customerObjectApiName ?? '');
   const [sessionId, setSessionId] = useState(() => {
-    const key = 'metadrive-page-session:' + component.id;
+    const key = 'metadrive-page-session:' + pageSessionKey;
     try {
       let value = window.sessionStorage.getItem(key);
       if (!value) {
@@ -4559,7 +4563,7 @@ function MetadataBoundPageComponent({
         });
       if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
       if (binding.resetSessionOnSuccess === true) {
-        const key = 'metadrive-page-session:' + component.id;
+        const key = 'metadrive-page-session:' + pageSessionKey;
         const newSession = crypto.randomUUID();
         try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
         setSessionId(newSession);
@@ -4686,7 +4690,7 @@ function LightningAppRuntime({
       const content = !isLayoutContainer(component) && typeof component.properties.objectApiName === 'string'
         && component.properties.objectApiName
         ? <MetadataBoundPageComponent definition={definition} component={component}
-            objects={objects} apps={apps} pages={pages} currentAppId={appId} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+            objects={objects} apps={apps} pages={pages} currentAppId={appId} pageSessionKey={appId + ':' + page.apiName} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <RegisteredComponent definition={definition} props={{
             ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
@@ -4699,6 +4703,10 @@ function LightningAppRuntime({
       return page.layoutMode === 'free-canvas' ? rendered
         : <div key={component.id} style={resolveLayoutStyle(component.properties, layoutDevice)}>{rendered}</div>;
     }
+    if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
+      <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
+        request={apiRequest} libraryComponents={libraryComponents} />
+    </section>;
     if (component.type === 'Report Chart') {
       const reportApiName = typeof component.properties.reportApiName === 'string' ? component.properties.reportApiName : '';
       return <section className="record-fields-card surface" key={component.id}>
@@ -5683,6 +5691,10 @@ function RecordWorkspace({
               <button className="btn" type="submit" disabled={!chatterCommentDrafts[post.id]?.trim()}>Comment</button>
             </form>
           </li>)}</ol>}
+      </section>;
+      if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
+        <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
+          request={apiRequest} libraryComponents={libraryComponents}/>
       </section>;
       if (component.type === 'Report Chart') return <section className="record-fields-card surface" key={component.id}>
         <div className="record-fields-heading"><h2>{component.label}</h2></div>
@@ -8497,7 +8509,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
 }
 
 function PageBuilder({
-  page, pages, objects, apps, profiles, reports, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
+  page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
   preparedAppId, onPrepareApp, onAppLinked, request, canManageRoutes
 }: {
   page: LightningPageMetadata;
@@ -8506,6 +8518,7 @@ function PageBuilder({
   apps: LightningAppMetadata[];
   profiles: ProfileMetadata[];
   reports: ReportMetadata[];
+  dashboards: DashboardMetadata[];
   libraryComponents: LibraryComponentMetadata[];
   flows: FlowDefinitionMetadata[];
   onChange: (page: LightningPageMetadata) => void;
@@ -8551,7 +8564,7 @@ function PageBuilder({
   const pageTypeComponents = page.pageType === 'Record Page'
     ? standardPageComponents.map((component) => component.apiName)
     : standardPageComponents
-      .filter((component) => ['Accordion', 'Tabs', 'Report Chart'].includes(component.apiName))
+      .filter((component) => ['Accordion', 'Tabs', 'Report Chart', 'Dashboard'].includes(component.apiName))
       .map((component) => component.apiName);
   const relatedListOptions = [...new Map(objects.flatMap((childObject) => childObject.fields.flatMap((field) => {
     const relationship = field.relationship;
@@ -8569,7 +8582,7 @@ function PageBuilder({
   const savedPageApiName = useRef(page.apiName);
   const [device, setDevice] = useState<'Desktop' | 'Tablet' | 'Phone'>('Desktop');
   const orientation = canvasOrientation(page.canvasWidth, page.canvasHeight);
-  const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields'>('Components');
+  const [paletteTab, setPaletteTab] = useState<'Components' | 'Fields' | 'Layers'>('Components');
   const [paletteSearch, setPaletteSearch] = useState('');
   const [paletteCategory, setPaletteCategory] = useState<(typeof pageBuilderPaletteCategories)[number]>('All Components');
   const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
@@ -8619,6 +8632,7 @@ function PageBuilder({
   const [canvasRefreshKey, setCanvasRefreshKey] = useState(0);
   const [createPageOpen, setCreatePageOpen] = useState(false);
   const [routeDirectoryOpen, setRouteDirectoryOpen] = useState(false);
+  const [dependenciesOpen, setDependenciesOpen] = useState(false);
   const [newPageLabel, setNewPageLabel] = useState('');
   const [newPageType, setNewPageType] = useState<LightningPageMetadata['pageType']>('Record Page');
   const [newPageTemplate, setNewPageTemplate] = useState<LightningPageTemplate>('header-main-sidebar');
@@ -8885,6 +8899,8 @@ function PageBuilder({
         ? { libraryComponentId: custom.apiName, ...(parentId ? { layoutParentId: parentId } : {}) }
         : type === 'Report Chart'
           ? { reportApiName: '' }
+          : type === 'Dashboard'
+            ? { dashboardApiName: '' }
           : type === 'Related List'
             ? { relatedLists: defaultRelatedLists }
             : type === 'Field Section'
@@ -9477,7 +9493,12 @@ function PageBuilder({
               ? libraryPreview
                 ? <div className="component-demo-highlights"><strong>Northwind Traders</strong><div><span>Account owner <b>Alex Morgan</b></span><span>Industry <b>Technology</b></span><span>Annual revenue <b>$2.4M</b></span></div></div>
                 : <div className="component-content-hint">Record actions and key fields appear in the highlights panel.</div>
-              : component.type === 'Report Chart'
+              : component.type === 'Dashboard'
+                ? <div className="report-chart-preview" role="img" aria-label="Dashboard preview">
+                    <strong>{dashboards.find((item) => item.apiName === component.properties.dashboardApiName)?.label ?? 'Choose a published dashboard'}</strong>
+                    <div className="report-chart-bars"><span/><span/><span/><span/></div>
+                  </div>
+                : component.type === 'Report Chart'
                 ? <div className="report-chart-preview">
                   <strong>{reports.find((report) => report.apiName === component.properties.reportApiName)?.label ?? 'Opportunities by stage'}</strong>
                   <div className="report-chart-bars"><span /><span /><span /><span /><span /></div>
@@ -9494,6 +9515,7 @@ function PageBuilder({
                     && component.properties.objectApiName
                     ? <MetadataBoundPageComponent definition={customDefinition} component={component}
                         objects={objects} apps={apps} pages={pages} currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
+                        pageSessionKey={(builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName}
                         reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
                         onNavigate={() => {}} onLaunchFlow={(flowApiName, inputs) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
@@ -9610,6 +9632,7 @@ function PageBuilder({
           <span className={page.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{page.status}</span>
           <button className="btn" type="button" onClick={() => setRouteDirectoryOpen(true)}
             aria-label="Open page routes">Routes</button>
+          <button className="btn" type="button" aria-label="Open page dependencies" onClick={() => setDependenciesOpen(true)}>Dependencies</button>
           <button className={appSettingsOpen ? 'btn active' : 'btn'} onClick={() => setAppSettingsOpen(true)}><Settings2 size={14} />App Settings</button>
           {['Kiosk', 'UNE_KIOSK'].includes(page.apiName) && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('kiosk')}>Load Kiosk Layout</button>}
           {page.apiName === 'UNE_TILL' && <button className="btn" disabled={saving} onClick={() => void applyRetailPreset('till')}>Load Till Layout</button>}
@@ -9670,10 +9693,23 @@ function PageBuilder({
         <aside className="component-panel">
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
+            <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
             {page.pageType === 'Record Page' && <button className={paletteTab === 'Fields' ? 'active' : ''} onClick={() => setPaletteTab('Fields')}>Fields</button>}
           </div>
           <div className="component-search"><Search size={14} /><input value={paletteSearch} onChange={(event) => setPaletteSearch(event.target.value)} placeholder={`Search ${paletteTab.toLowerCase()}…`} aria-label={`Search ${paletteTab.toLowerCase()}`} /></div>
-          {paletteTab === 'Components' ? <>
+          {paletteTab === 'Layers' ? <nav className="page-layer-tree" aria-label="Page component layers">
+            {page.components.filter(component => !paletteSearch || (component.label + ' ' + component.type).toLowerCase().includes(paletteSearch.toLowerCase())).map(component => {
+              const parent = component.parentId ?? (typeof component.properties.layoutParentId === 'string' ? component.properties.layoutParentId : '');
+              return <div key={component.id} className="page-layer-row" style={{paddingLeft:parent ? 20 : 6}}>
+                <button type="button" className={selectedId === component.id ? 'active btn btn-small' : 'btn btn-small'}
+                  onClick={() => { setSelectedId(component.id); setPageSettingsOpen(false); }}
+                  aria-label={'Select layer ' + component.label}>{component.label}</button>
+                <button type="button" className="icon-button subtle" aria-label={'Toggle layer ' + component.label}
+                  onClick={() => updateComponent(component.id, {visible: !component.visible})}>{component.visible ? '◉' : '○'}</button>
+              </div>;
+            })}
+            {!page.components.length && <p className="properties-help">Add a component to see its layer.</p>}
+          </nav> : paletteTab === 'Components' ? <>
             {page.layoutMode === 'free-canvas' && <div className="palette-note">Free Canvas uses registered components from the shared library.</div>}
             <nav className="component-category-list" aria-label="Component categories">
               {pageBuilderPaletteCategories.map((category) => {
@@ -9875,6 +9911,18 @@ function PageBuilder({
               <textarea id="page-component-accordion-content" className="form-control" rows={4}
                 value={typeof selected.properties.content === 'string' ? selected.properties.content : ''}
                 onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, content: event.target.value } })} />
+            </>}
+            {selected.type === 'Dashboard' && <>
+              <div className="properties-section-title">Dashboard</div>
+              <label className="form-label" htmlFor="page-component-dashboard">Published dashboard</label>
+              <select id="page-component-dashboard" className="form-control"
+                value={typeof selected.properties.dashboardApiName === 'string' ? selected.properties.dashboardApiName : ''}
+                onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, dashboardApiName: event.target.value } })}>
+                <option value="">Select a published dashboard…</option>
+                {dashboards.filter(dashboard => dashboard.status === 'Deployed').map(dashboard =>
+                  <option key={dashboard.apiName} value={dashboard.apiName}>{dashboard.label}</option>)}
+              </select>
+              <p className="properties-help">The live dashboard checks tenant, folder, viewer and record permissions at runtime.</p>
             </>}
             {selected.type === 'Report Chart' && <>
               <div className="properties-section-title">Report</div>
@@ -10091,6 +10139,22 @@ function PageBuilder({
           </>}
         </aside>
       </div>
+      {dependenciesOpen && <div className="modal-backdrop" role="presentation"
+        onMouseDown={event => { if (event.target === event.currentTarget) setDependenciesOpen(false); }}>
+        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="page-dependencies-title"
+          style={{maxHeight:'85vh',overflowY:'auto'}}>
+          <div className="modal-header"><h2 id="page-dependencies-title">Page dependencies</h2>
+            <button className="btn btn-small" type="button" onClick={() => setDependenciesOpen(false)}>Close</button></div>
+          <p className="modal-copy">References use saved objects, apps, reports, dashboards, components and Flows.</p>
+          <table className="records-table" aria-label="Page dependencies"><thead><tr><th>Type</th><th>Reference</th><th>Status</th><th>Source</th></tr></thead><tbody>
+            {inspectPageDependencies(page, {apps,pages,objects,reports,dashboards,flows,libraryComponents}).map((entry,idx) =>
+              <tr key={entry.kind + ':' + entry.name + ':' + idx}><td>{entry.kind}</td><td>{entry.name}</td>
+                <td>{entry.status}</td><td>{entry.componentId
+                  ? <button className="btn btn-small" type="button" onClick={() => {setSelectedId(entry.componentId!);setDependenciesOpen(false);}}>{entry.description}</button>
+                  : entry.description}</td></tr>)}
+          </tbody></table>
+        </section>
+      </div>}
       {routeDirectoryOpen && <PageRouteDirectory apps={apps} pages={pages} objects={objects}
         initialAppId={builderAppApiName} basePath={import.meta.env.BASE_URL}
         request={request} canManage={canManageRoutes}
