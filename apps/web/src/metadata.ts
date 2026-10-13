@@ -290,6 +290,7 @@ export type FlowVersionMetadata = {
   elements: FlowElementMetadata[];
   connectors: FlowConnectorMetadata[];
   resources: FlowResourceMetadata[];
+  tests?: FlowTestCaseMetadata[];
 };
 
 export type FlowValidationMetadata = {
@@ -325,6 +326,18 @@ export type FlowInterviewMetadata = {
   attempts: number;
 };
 
+export type FlowTestCaseMetadata = {
+  id: string;
+  label: string;
+  input: Record<string, unknown>;
+  event?: 'created' | 'updated' | 'deleted';
+  record?: Record<string, unknown>;
+  prior?: Record<string, unknown> | null;
+  isClone?: boolean;
+  expectedStatus: 'completed' | 'waiting' | 'skipped';
+  expectedOutputs?: Record<string, unknown>;
+};
+
 export type FlowDefinitionMetadata = {
   apiName: string;
   label: string;
@@ -343,6 +356,7 @@ export type FlowDefinitionMetadata = {
   connectors: FlowConnectorMetadata[];
   resources: FlowResourceMetadata[];
   versions: FlowVersionMetadata[];
+  tests?: FlowTestCaseMetadata[];
 };
 
 export type PlatformEventMetadata = {

@@ -2799,6 +2799,54 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   };
 
+  const runSavedFlowTests = async (definition: FlowDefinitionMetadata): Promise<Array<{
+    id: string; label: string; passed: boolean; actualStatus: string; details: string
+  }>> => {
+    const saved = flowSnapshots.current.get(definition.apiName);
+    if (!saved || saved !== JSON.stringify(definition)) {
+      throw new Error('Save the Flow and its test cases before running them.');
+    }
+    const results: Array<{ id: string; label: string; passed: boolean; actualStatus: string; details: string }> = [];
+    for (const test of definition.tests ?? []) {
+      try {
+        const isRecord = definition.flowType === 'Record-Triggered Flow';
+        if (!isRecord && !['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(definition.flowType)) {
+          throw new Error('This Flow type cannot be tested through a manual run.');
+        }
+        const payload = isRecord ? {
+          event: test.event ?? 'created',
+          record: test.record ?? {},
+          ...(test.prior ? { prior: test.prior } : {}),
+          isClone: test.isClone === true
+        } : test.input ?? {};
+        const endpoint = isRecord ? 'debug-record' : 'debug';
+        const response = await apiRequest<Record<string, unknown>>(
+          `/flows/${encodeURIComponent(definition.apiName)}/${endpoint}`,
+          { method: 'POST', body: JSON.stringify(payload) }
+        );
+        const actualStatus = typeof response.status === 'string' ? response.status : 'completed';
+        const wrongOutputs: string[] = [];
+        const outputs = response.outputs && typeof response.outputs === 'object' && !Array.isArray(response.outputs)
+          ? response.outputs as Record<string, unknown> : {};
+        for (const [name, expected] of Object.entries(test.expectedOutputs ?? {})) {
+          if (JSON.stringify(outputs[name]) !== JSON.stringify(expected)) wrongOutputs.push(name);
+        }
+        const passed = actualStatus === test.expectedStatus && wrongOutputs.length === 0;
+        results.push({
+          id: test.id, label: test.label, passed, actualStatus,
+          details: passed ? 'Expected result matched'
+            : `Expected ${test.expectedStatus}${wrongOutputs.length ? `; different outputs: ${wrongOutputs.join(', ')}` : ''}`
+        });
+      } catch (error) {
+        results.push({
+          id: test.id, label: test.label, passed: false, actualStatus: 'error',
+          details: error instanceof Error ? error.message : 'Test could not execute'
+        });
+      }
+    }
+    return results;
+  };
+
   const runFlow = async (apiName = flow.apiName, inputs: Record<string, unknown> = {}) => {
     const selectedFlow = flows.find((item) => item.apiName === apiName);
     if (!selectedFlow) {
@@ -3892,6 +3940,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onActivate={() => void saveFlow({ ...flow, status: 'Active' })}
               onRun={() => void runFlow()}
               onDebug={openFlowDebug}
+              onRunTests={runSavedFlowTests}
               onSaveNamedCredential={saveNamedCredential}
               onDeleteNamedCredential={deleteNamedCredential}
               onRotateNamedCredential={rotateNamedCredential}
