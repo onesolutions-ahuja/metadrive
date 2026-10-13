@@ -141,6 +141,24 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     assert.ok(login.data.landing?.user?.profileId,'Landing requires current RBAC profile');
     assert.ok(login.cookie,'Login must issue an HttpOnly refresh session');
     const sessionCookie=login.cookie.split(';')[0];
+    if(mode==='typed') {
+      // Login must commit only the hashed session and audit to dedicated SQL,
+      // and the cookie must survive a crash before any full-state mutation.
+      const authPool=new pg.Pool({connectionString:databaseUrl(targetName),ssl:false});
+      try {
+        const stored=await authPool.query(
+          'SELECT tenant_id,user_id,audit_id FROM md_auth_login_sessions');
+        assert.ok(stored.rows.some(row=>row.tenant_id===tenantId && row.audit_id),
+          'Login must durably persist its session and security event before HTTP 200');
+        const jsonColumns=await authPool.query(
+          "SELECT count(*)::int AS n FROM information_schema.columns WHERE table_name='md_auth_login_sessions' AND data_type IN ('json','jsonb')");
+        assert.equal(jsonColumns.rows[0].n,0,'Auth SQL path may not introduce JSON/JSONB columns');
+      } finally {await authPool.end();}
+      assert.match(login.serverTiming??'',/commit-wait;dur=/,
+        'Durable fast-path login must remain instrumented');
+      await stopApi(child);child=null;
+      child=await startApi(port,join(dir,'after-login-fastpath-restart.json'),relationalEnv);
+    }
     const refreshed=await request(port,'/auth/refresh?landing=1','POST',null,undefined,{cookie:sessionCookie});
     assert.equal(refreshed.status,200,JSON.stringify(refreshed.data));
     assert.ok(refreshed.data.landing?.objects?.some(o=>o.apiName==='Account'));
