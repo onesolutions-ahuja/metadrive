@@ -34,8 +34,8 @@ try{
    if(provider==='WhatsApp'){
     if(baseUrl.hostname!=='graph.facebook.com'){report.status='unrecognized_whatsapp_host';continue;}
     const phoneId=credential.configuration?.PhoneNumberId||credential.configuration?.phoneNumberId;
-    const basePath=baseUrl.pathname.replace(/^\\/+|\\/+$/g,'');
-    if(!phoneId&&!/\\/\\d{8,}$/.test('/'+basePath)){report.status='phone_number_id_missing';continue;}
+    const basePath=baseUrl.pathname.replace(/^\/+|\/+$/g,'');
+    if(!phoneId&&!/\/\d{8,}$/.test('/'+basePath)){report.status='phone_number_id_missing';continue;}
     const id=phoneId||basePath.split('/').at(-1);
     call.config.path=(basePath.endsWith('/'+id)?'':id+'/')+'messages';
    }else{
@@ -50,6 +50,6 @@ try{
    report.executeHttpStatus=execution.status;
    report.status=execution.status===200&&execution.data?.result?.status==='completed'?'flow_completed':'flow_response_http_'+execution.status;
    report.flowStatus=execution.data?.result?.status||execution.data?.status||'unknown';
-  }catch(error){report.status='exception';report.error=String(error.message||error).slice(0,100).replace(/Bearer\\s+\\S+/g,'[redacted]');}
+  }catch(error){report.status='exception';report.error=String(error.message||error).slice(0,100).replace(/Bearer\s+\S+/g,'[redacted]');}
  }
 }finally{await record();console.log(JSON.stringify(result));}
