@@ -124,3 +124,36 @@ $md07$;
 DROP TRIGGER IF EXISTS md_v4_dependency_tenant_guard ON md_v4_component_dependencies;
 CREATE TRIGGER md_v4_dependency_tenant_guard BEFORE INSERT OR UPDATE ON md_v4_component_dependencies
 FOR EACH ROW EXECUTE FUNCTION md_v4_enforce_dependency_tenant();
+
+-- Trusted PLATFORM developer names cannot be shadowed by TENANT components.
+-- Serialize same-name inserts/renames to close the concurrent-insert race
+-- between otherwise independent partial unique indexes.
+CREATE OR REPLACE FUNCTION md_v4_enforce_platform_name_reservation() RETURNS trigger
+LANGUAGE plpgsql AS $md07name$
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('md_v4_component_name'),hashtext(NEW.api_name));
+  IF EXISTS (
+    SELECT 1 FROM md_v4_components existing
+    WHERE existing.api_name = NEW.api_name
+      AND existing.registry_scope <> NEW.registry_scope
+      AND existing.component_id <> NEW.component_id
+  ) THEN
+    RAISE EXCEPTION 'Platform component name is reserved across tenant registries';
+  END IF;
+  RETURN NEW;
+END
+$md07name$;
+DROP TRIGGER IF EXISTS md_v4_platform_name_reservation ON md_v4_components;
+CREATE TRIGGER md_v4_platform_name_reservation BEFORE INSERT OR UPDATE OF api_name,registry_scope,owner_tenant_id
+ON md_v4_components FOR EACH ROW EXECUTE FUNCTION md_v4_enforce_platform_name_reservation();
+DO $md07migration$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM md_v4_components a JOIN md_v4_components b
+      ON a.api_name=b.api_name
+    WHERE a.registry_scope='PLATFORM' AND b.registry_scope='TENANT'
+  ) THEN
+    RAISE EXCEPTION 'Cannot activate tenant-local component names: existing platform name collision';
+  END IF;
+END
+$md07migration$;
