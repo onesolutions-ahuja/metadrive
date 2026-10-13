@@ -10618,19 +10618,37 @@ app.post('/api/flows/:apiName/debug-record', accessAuthentication, requirePermis
   const parsed = recordFlowDebugRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid record-trigger test inputs', details: parsed.error.flatten() });
   const { event, isClone } = parsed.data;
-  const prior = parsed.data.prior ? runtimeRecordSchema.parse(parsed.data.prior) : undefined;
-  const record = runtimeRecordSchema.parse(parsed.data.record);
+  // Test fixtures may omit platform-maintained audit fields. Supply them only
+  // in the isolated fixture; never modify live records or silently accept an
+  // invalid value explicitly provided by the caller.
+  const now = new Date().toISOString();
+  const recordId = typeof parsed.data.record.Id === 'string' && parsed.data.record.Id
+    ? parsed.data.record.Id : `DEBUG-${randomUUID()}`;
+  const fixture = (values: Record<string, unknown>, id: string) => runtimeRecordSchema.safeParse({
+    Id: id, CreatedDate: now, LastModifiedDate: now, ...values
+  });
+  const recordResult = fixture(parsed.data.record, recordId);
+  const priorResult = parsed.data.prior ? fixture(parsed.data.prior, recordId) : undefined;
+  if (!recordResult.success || (priorResult && !priorResult.success)) {
+    return res.status(400).json({ error: 'Invalid record sample: Id must be text and audit timestamps must be valid ISO dates' });
+  }
+  const record = recordResult.data;
+  const prior = priorResult?.data;
+  if (prior && prior.Id !== record.Id) {
+    return res.status(400).json({ error: 'Current and prior samples must identify the same record' });
+  }
   const objectName = flow.triggerObject ?? '';
   const object = tenant.objects.find((item) => item.apiName === objectName);
   if (!object || !hasObjectPermission(principal, tenant, objectName, 'read')) {
     return res.status(403).json({ error: 'Read access to the Flow trigger object is required' });
   }
-  const availableFields = new Set(['Id', ...object.fields.map((field) => field.apiName)]);
+  const auditFields = new Set(['CreatedDate', 'LastModifiedDate', 'CreatedById', 'LastModifiedById', 'SystemModstamp']);
+  const availableFields = new Set(['Id', ...auditFields, ...object.fields.map((field) => field.apiName)]);
   for (const sample of [record, prior]) {
     if (!sample) continue;
     const unknown = Object.keys(sample).find((name) => !availableFields.has(name));
     if (unknown) return res.status(400).json({ error: `Unknown record field "${unknown}"` });
-    const protectedField = Object.keys(sample).find((name) => name !== 'Id'
+    const protectedField = Object.keys(sample).find((name) => name !== 'Id' && !auditFields.has(name)
       && !hasFieldPermission(principal, tenant, objectName, name, 'read'));
     if (protectedField) return res.status(403).json({ error: `No read permission for field "${protectedField}"` });
     if (typeof sample.Id === 'string') {
