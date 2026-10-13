@@ -1324,6 +1324,10 @@
             "read": true,
             "create": true
           }
+        },
+        "navigationDefaultAccess": "Deny",
+        "tabPermissions": {
+          "Product": true
         }
       },
       "components": [
