@@ -275,6 +275,17 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
       const baseline=await sqlPool.query('SELECT payload FROM metadrive_platform_state WHERE id=1');
       assert.deepEqual(baseline.rows[0].payload,initial,'Legacy rollback snapshot stays untouched');
     } finally {await sqlPool.end();}
+    const offlineNoRevision=await request(port,
+      '/records/Migration_Link__c/'+recordId,'PUT',freshToken,
+      {Name:'Offline Overwrite Without Revision'},
+      {'X-MetaDrive-Offline-Sync':'1'});
+    assert.equal(offlineNoRevision.status,412,
+      'Offline edits must include the original revision to prevent overwriting newer changes');
+    const offlineStaleSchema=await request(port,'/records/Migration_Link__c','POST',freshToken,
+      {Name:'Stale Offline Field Draft',Retired_Offline_Field__c:'must not silently drop'},
+      {'X-MetaDrive-Offline-Sync':'1'});
+    assert.equal(offlineStaleSchema.status,412,
+      'Offline drafts with removed fields must remain rejected rather than silently discard values');
     // An offline draft captured with an earlier grant must NOT create a record
     // when the admin removes object permission before its replay.
     const aclBefore=await request(port,'/metadata/permissions','GET',freshToken);
