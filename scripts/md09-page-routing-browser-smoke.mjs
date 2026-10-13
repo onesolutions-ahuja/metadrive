@@ -75,7 +75,7 @@ try {
   page.setDefaultTimeout(25000);
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
-  await page.goto(site);
+  await page.goto(site+'/une/login');
   await page.locator('#login-email').fill(user.email);
   await page.locator('#login-password').fill(user.password);
   await page.locator('button.auth-submit').click();
