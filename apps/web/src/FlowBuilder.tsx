@@ -411,6 +411,13 @@ export default function FlowBuilder({
         return;
       }
       label = outcome.label;
+    } else if (selected.type === 'Orchestration Stage') {
+      label = ['Approved', 'Rejected'].find((outcome) =>
+        !outgoing.some((connector) => connector.label.toLowerCase() === outcome.toLowerCase())) ?? '';
+      if (!label) {
+        onNotify('Both orchestration outcomes already have connectors');
+        return;
+      }
     } else if (selected.type === 'Loop') {
       label = outgoing.some((connector) => connector.label.toLowerCase().includes('for each'))
         ? 'After Last'
@@ -901,6 +908,21 @@ export default function FlowBuilder({
         <button className="text-action" onClick={() => updateOutcomes([...outcomes.filter((item) => item.name !== 'Default'), { name: `Outcome_${outcomes.length + 1}`, label: `Outcome ${outcomes.length + 1}` }, ...outcomes.filter((item) => item.name === 'Default')])}><Plus size={13} />Add Outcome</button>
       </div>;
     }
+    if (selected.type === 'Orchestration Stage') return <>
+      <div className="info-callout">A durable human-approval stage. The Flow pauses until approvers respond, then continues along Approved or Rejected. Chain multiple stages to orchestrate a process.</div>
+      <label className="form-label">Approval Process<select className="form-control" value={displayValue(selected.config.approvalProcessApiName)} onChange={(event) => {
+        const process = approvalProcesses.find((item) => item.apiName === event.target.value);
+        setConfig('approvalProcessApiName', event.target.value);
+        if (process) setConfig('objectApiName', process.objectApiName);
+      }}><option value="">Use direct approvers</option>{approvalProcesses.filter((item) => item.active).map((item) => <option key={item.apiName} value={item.apiName}>{item.label} · {item.objectApiName}</option>)}</select></label>
+      <label className="form-label">Target Object<select className="form-control" value={displayValue(selected.config.objectApiName)} onChange={(event) => setConfig('objectApiName', event.target.value)}><option value="">Select object</option>{objects.filter((item) => item.apiName !== 'User').map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label>
+      <label className="form-label">Record ID / Flow Reference<input className="form-control" value={displayValue(selected.config.recordId)} onChange={(event) => setConfig('recordId', event.target.value)} placeholder="{!$Record.Id}" /></label>
+      {!displayValue(selected.config.approvalProcessApiName) && <label className="form-label">Approver Users<select className="form-control" multiple size={Math.min(6, Math.max(3, users.length))} value={displayValue(selected.config.approverIds).split(/[;,\r\n]+/).map((id) => id.trim()).filter(Boolean)} onChange={(event) => setConfig('approverIds', Array.from(event.currentTarget.selectedOptions, (option) => option.value).join(', '))}>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.username}</option>)}</select></label>}
+      <label className="form-label">Approval Rule<select className="form-control" value={displayValue(selected.config.approvalMode) || 'ANY'} onChange={(event) => setConfig('approvalMode', event.target.value)}><option value="ANY">Any one approver</option><option value="ALL">All approvers must approve</option></select></label>
+      <label className="form-label">Status Output Variable<select className="form-control" value={displayValue(selected.config.statusVariable)} onChange={(event) => setConfig('statusVariable', event.target.value)}><option value="">No output variable</option>{flow.resources.filter((resource) => resource.type === 'Variable' && resource.dataType === 'Text' && !resource.isCollection).map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>
+      <label className="form-label">Request Comments<textarea className="form-control" rows={3} maxLength={2000} value={displayValue(selected.config.comments)} onChange={(event) => setConfig('comments', event.target.value)} /></label>
+      <div className="settings-panel-copy">Create exactly two normal connectors labeled Approved and Rejected. Work items appear in the approvers' existing inbox, and Pending Work shows paused stages. Canceling the interview also cancels unfinished approval requests.</div>
+    </>;
     if (selected.type === 'Action') return <>
       <label className="form-label">Action Type<select className="form-control" value={displayValue(selected.config.actionType)} onChange={(event) => setConfig('actionType', event.target.value)}><option value="">Select action</option><option>Send Email</option><option>Email Alert</option><option>Post to Chatter</option><option>Custom Notification</option><option>Outbound Message</option><option>Submit for Approval</option></select></label>
       {displayValue(selected.config.actionType) === 'Post to Chatter' ? <>
