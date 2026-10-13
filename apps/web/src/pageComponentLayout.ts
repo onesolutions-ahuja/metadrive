@@ -59,6 +59,13 @@ export function componentVisualStyle(visual: unknown, type: string, viewport: 'D
  * Generic custom components start unstyled unless their author actually
  * configures appearance. Layout primitives retain their existing defaults.
  */
+/** Do not add new wrapper DOM for existing unstyled standard pages. */
+export function hasPageComponentAppearance(properties: Record<string, unknown>): boolean {
+  return properties.visualStyle !== undefined
+    || properties.layoutStyle !== undefined
+    || properties.layoutResponsive !== undefined;
+}
+
 export function resolvePageComponentStyle(
   properties: Record<string, unknown>,
   type: string,
