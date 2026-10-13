@@ -6,7 +6,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS md_route_aliases (
   tenant_id TEXT NOT NULL,
   app_api_name TEXT NOT NULL CHECK (app_api_name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
-  slug TEXT NOT NULL CHECK (slug ~ '^[a-z][a-z0-9-]{1,62}$'),
+  slug TEXT NOT NULL CHECK (slug ~ '^[a-z][a-z0-9-]{0,61}[a-z0-9]$'),
   target_kind TEXT NOT NULL CHECK (target_kind IN ('App Home','App Page','Record List')),
   target_api_name TEXT NOT NULL CHECK (target_api_name ~ '^[A-Za-z][A-Za-z0-9_]*$'),
   status TEXT NOT NULL CHECK (status IN ('Active','Disabled')),
