@@ -17,3 +17,23 @@ test('rejects oversized individual or combined files before reading bytes', () =
   assert.throws(() => validateFlowScreenUpload([file('a.pdf','application/pdf',310*1024)], [], options), /Each file/);
   assert.throws(() => validateFlowScreenUpload([file('a.pdf','application/pdf',280*1024)], [file('b.pdf','application/pdf',270*1024)], options), /512 KB total/);
 });
+
+test('malformed metadata and forged file sizes fail closed', () => {
+  const good = { maxFiles: 2, maxFileSize: 512 * 1024, allowedTypes: [] };
+  for (const bad of [
+    { ...good, maxFiles: 0 }, { ...good, maxFiles: 11 },
+    { ...good, maxFiles: Number.NaN }, { ...good, maxFileSize: -1 },
+    { ...good, maxFileSize: Infinity }, { ...good, allowedTypes: [false] }
+  ]) {
+    assert.throws(() => validateFlowScreenUpload([], [], bad), /invalid metadata limits/);
+  }
+  for (const size of [-1, NaN, Infinity, 1.5]) {
+    assert.throws(() => validateFlowScreenUpload([file('a.pdf','application/pdf',size)], [], good), /invalid file size/);
+  }
+});
+
+test('persisted uploads cannot bypass allowed type or per-file size rules', () => {
+  assert.throws(() => validateFlowScreenUpload([], [file('script.exe', 'application/x-msdownload', 20)], options), /type is not allowed/);
+  assert.throws(() => validateFlowScreenUpload([], [file('large.pdf', 'application/pdf', 400 * 1024)], options), /Each file/);
+  assert.doesNotThrow(() => validateFlowScreenUpload([], [file('valid.pdf', 'application/pdf', 20)], options));
+});
