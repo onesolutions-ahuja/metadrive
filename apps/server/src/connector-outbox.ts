@@ -28,6 +28,10 @@ export class IntegrationOutbox {
   async claim(tenantId: string, workerId: string, limit = 20, leaseMs = 60_000): Promise<ClaimedDelivery[]> {
     if (!tenantId || !workerId || !bounded(limit,1,50) || !bounded(leaseMs,1000,300000))
       throw new Error('INVALID_OUTBOX_CLAIM');
+    // A worker crashing on its final permitted attempt must not strand a lease forever.
+    await this.db.query(`UPDATE md_integration_outbox SET status='dead',lease_owner=NULL,
+      lease_until=NULL,encrypted_request='',error_code='LEASE_EXHAUSTED',updated_at=now()
+      WHERE tenant_id=$1 AND status='leased' AND lease_until<now() AND attempts>=max_attempts`,[tenantId]);
     const result = await this.db.query(`WITH picked AS (
       SELECT id FROM md_integration_outbox WHERE tenant_id=$1 AND next_attempt_at<=now()
         AND (status='pending' OR (status='leased' AND lease_until<now()))
