@@ -20137,6 +20137,9 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
   const pool = getRouteAliasPool();
   if (!pool) return;
   const outbox = new IntegrationOutbox(pool);
+  // Keep the core scheduler running if an additive Module 11 migration has not yet been applied.
+  // Enqueueing remains fail-closed until the outbox schema is installed.
+  if (!await outbox.ready()) return;
   const workerId = 'metadrive-outbox-' + process.pid;
   for (const tenantId of Object.keys(state.tenants)) {
     if (!tenantIsActive(tenantId)) continue;

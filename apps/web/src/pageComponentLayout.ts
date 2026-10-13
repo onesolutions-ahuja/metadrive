@@ -50,6 +50,33 @@ export function componentVisualStyle(visual: unknown, type: string, viewport: 'D
       minHeight: 64, minWidth: 0 } : {})
   };
 }
+/**
+ * Unified component appearance resolver.
+ * `visualStyle` is the original Page Builder metadata; `layoutStyle` and
+ * `layoutResponsive` are its newer, per-device overrides. Preserve both so
+ * pages created before this change continue to render unchanged.
+ *
+ * Generic custom components start unstyled unless their author actually
+ * configures appearance. Layout primitives retain their existing defaults.
+ */
+/** Do not add new wrapper DOM for existing unstyled standard pages. */
+export function hasPageComponentAppearance(properties: Record<string, unknown>): boolean {
+  return properties.visualStyle !== undefined
+    || properties.layoutStyle !== undefined
+    || properties.layoutResponsive !== undefined;
+}
+
+export function resolvePageComponentStyle(
+  properties: Record<string, unknown>,
+  type: string,
+  device: LayoutDevice = 'Desktop'
+): CSSProperties {
+  const legacy = properties.visualStyle !== undefined || isLayoutType(type)
+    ? componentVisualStyle(properties.visualStyle, type, device)
+    : {};
+  return { ...legacy, ...resolveLayoutStyle(properties, device) };
+}
+
 export function canNestComponent(components: PageComponentMetadata[], childId: string, parentId: string): boolean {
   if (childId === parentId) return false;
   const parent = components.find((item) => item.id === parentId);
@@ -80,7 +107,8 @@ export function isDescendantOf(components: PageComponentMetadata[], childId: str
 
 export type LayoutDevice = 'Desktop' | 'Tablet' | 'Phone';
 export type LayoutSettingKey = 'padding' | 'margin' | 'backgroundColor' | 'borderColor'
-  | 'borderWidth' | 'borderRadius' | 'alignItems' | 'justifyContent' | 'gap' | 'opacity' | 'hidden';
+  | 'borderWidth' | 'borderRadius' | 'alignItems' | 'justifyContent' | 'gap' | 'opacity' | 'hidden'
+  | 'fontSize' | 'fontWeight' | 'textAlign' | 'boxShadow';
 export type LayoutSettings = Partial<Record<LayoutSettingKey, string | number | boolean>>;
 export const layoutContainerTypes = new Set(['Container', 'Row', 'Column', 'Card', 'Grid']);
 
@@ -153,15 +181,27 @@ export function reparentComponent(
 
 const settingsKeys: LayoutSettingKey[] = [
   'padding', 'margin', 'backgroundColor', 'borderColor', 'borderWidth',
-  'borderRadius', 'alignItems', 'justifyContent', 'gap', 'opacity', 'hidden'
+  'borderRadius', 'alignItems', 'justifyContent', 'gap', 'opacity', 'hidden',
+  'fontSize', 'fontWeight', 'textAlign', 'boxShadow'
 ];
 const numberLimits: Partial<Record<LayoutSettingKey, [number, number]>> = {
   padding: [0, 160], margin: [0, 160], borderWidth: [0, 24],
-  borderRadius: [0, 160], gap: [0, 160], opacity: [0, 100]
+  borderRadius: [0, 160], gap: [0, 160], opacity: [0, 100], fontSize: [8, 96]
 };
 const alignmentOptions: Record<string, string[]> = {
   alignItems: ['stretch', 'flex-start', 'center', 'flex-end'],
   justifyContent: ['flex-start', 'center', 'flex-end', 'space-between', 'space-around']
+};
+const typographyOptions: Partial<Record<LayoutSettingKey, string[]>> = {
+  fontWeight: ['400', '500', '600', '700', '800'],
+  textAlign: ['left', 'center', 'right', 'start', 'end'],
+  boxShadow: ['none', 'sm', 'md', 'lg']
+};
+const safeShadows: Record<string, string> = {
+  none: 'none',
+  sm: '0 1px 3px rgba(15, 23, 42, .12)',
+  md: '0 4px 12px rgba(15, 23, 42, .14)',
+  lg: '0 10px 24px rgba(15, 23, 42, .17)'
 };
 const cssColorPattern = /^(transparent|#[0-9a-f]{3}(?:[0-9a-f]{3})?|rgba?\([0-9.,\s%]+\))$/i;
 
@@ -171,6 +211,8 @@ export function validateLayoutSetting(key: LayoutSettingKey, value: unknown): st
     ? '' : 'Choose a valid hex or RGB colour';
   if (key in alignmentOptions) return typeof value === 'string' && alignmentOptions[key].includes(value)
     ? '' : 'Choose a supported alignment';
+  if (typographyOptions[key]) return typeof value === 'string' && typographyOptions[key]?.includes(value)
+    ? '' : 'Choose a supported appearance value';
   const limits = numberLimits[key];
   return limits && typeof value === 'number' && Number.isFinite(value) && value >= limits[0] && value <= limits[1]
     ? '' : 'Enter a number within the allowed range';
@@ -245,6 +287,10 @@ export function resolveLayoutStyle(
     ...(s.justifyContent ? { justifyContent: String(s.justifyContent) } : {}),
     ...(s.gap !== undefined ? { gap: Number(s.gap) } : {}),
     ...(s.opacity !== undefined ? { opacity: Number(s.opacity) / 100 } : {}),
+    ...(s.fontSize !== undefined ? { fontSize: Number(s.fontSize) } : {}),
+    ...(s.fontWeight ? { fontWeight: Number(s.fontWeight) } : {}),
+    ...(s.textAlign ? { textAlign: String(s.textAlign) } : {}),
+    ...(s.boxShadow ? { boxShadow: safeShadows[String(s.boxShadow)] } : {}),
     ...(s.hidden ? { display: 'none' } : {})
   };
 }
