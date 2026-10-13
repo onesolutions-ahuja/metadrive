@@ -73,7 +73,8 @@ import { isComponentVisible } from './componentVisibility';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
-import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayoutParentId, reparentComponent, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
+import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
+import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
@@ -4563,28 +4564,11 @@ function MetadataBoundPageComponent({
     }).finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
   }, [objectApiName, cartObjectApiName, customerObjectApiName, sessionId, revision]);
-  const matchFilters = (record: Record<string, unknown>, filterDefinitions: unknown = properties.filters) => {
-    const filters = Array.isArray(filterDefinitions) ? filterDefinitions : [];
-    return filters.every((item) => {
-      if (!item || typeof item !== 'object' || Array.isArray(item)) return true;
-      const filter = item as Record<string, unknown>;
-      const field = String(filter.field ?? '');
-      if (!field) return true;
-      const actual = record[field];
-      const expected = String(filter.value ?? '');
-      const value = String(actual ?? '');
-      switch (String(filter.operator ?? 'Equals')) {
-        case 'Not Equals': return value !== expected;
-        case 'Contains': return value.toLowerCase().includes(expected.toLowerCase());
-        case 'Greater Than': return Number(actual) > Number(expected);
-        case 'Less Than': return Number(actual) < Number(expected);
-        default: return value === expected;
-      }
-    });
-  };
-  // Array.filter supplies the numeric index as its second callback argument.
-  // Keep filter definitions bound to component metadata instead of receiving that index.
-  const visibleRecords = records.filter((record) => matchFilters(record));
+  // The existing Page Builder filter schema is validated centrally; invalid
+  // or inaccessible fields must not silently widen a component's result set.
+  const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
+  const customerFields = objects.find((item) => item.apiName === customerObjectApiName)?.fields ?? [];
+  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
   const mappedProducts = visibleRecords.map((record) => ({
     id: String(record.Id ?? ''),
     name: String(record[String(properties.nameField ?? 'Name')] ?? ''),
@@ -4595,7 +4579,7 @@ function MetadataBoundPageComponent({
     barcode: properties.barcodeField ? String(record[String(properties.barcodeField)] ?? '') : '',
     sku: properties.skuField ? String(record[String(properties.skuField)] ?? '') : ''
   }));
-  const mappedCustomers = customerRecords.filter((record) => matchFilters(record, properties.customerFilters)).map((record) => ({
+  const mappedCustomers = filterPageComponentRecords(customerRecords, properties.customerFilters, customerFields).map((record) => ({
     id: String(record.Id ?? ''),
     name: properties.customerNameField ? String(record[String(properties.customerNameField)] ?? '') : '',
     phone: properties.customerPhoneField ? String(record[String(properties.customerPhoneField)] ?? '') : '',
@@ -4703,7 +4687,8 @@ function MetadataBoundPageComponent({
   return <div>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
-      ...properties, label: component.label, properties, objects, reports, flows: availableFlows,
+      ...properties, ...componentLayoutProps(properties, formFactor),
+      label: component.label, properties, objects, reports, flows: availableFlows,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
       loading: dataLoading, cartLines, sessionId,
       customers: mappedCustomers,
@@ -4788,8 +4773,7 @@ function LightningAppRuntime({
     isComponentVisible(component, appVisibilityContext, false);
   const renderComponent = (component: PageComponentMetadata): React.ReactNode => {
     if (!isAppComponentVisible(component)) return null;
-    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{childrenOf(page.components, component.id).map((child) => renderComponent(child))}</div>;
-    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, formFactor)}>{directChildren(page.components, component.id).map((child) => <div key={child.id} style={!isLayoutType(child.type) ? componentVisualStyle(child.properties.visualStyle, child.type, formFactor) : undefined}>{renderComponent(child)}</div>)}</div>;
+    if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{childrenOf(page.components, component.id).map((child) => renderComponent(child))}</div>;
     if (component.type.startsWith('Custom:')) {
       const definition = libraryComponents.find((item) =>
         item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
@@ -4800,8 +4784,7 @@ function LightningAppRuntime({
       if (!definition) return <div className="records-message" role="status" key={component.id}>
         Component is no longer registered: {component.label}
       </div>;
-      const content = !isLayoutContainer(component) && typeof component.properties.objectApiName === 'string'
-        && component.properties.objectApiName
+      const content = !isLayoutContainer(component) && needsMetadataComponentRuntime(component.properties)
         ? <MetadataBoundPageComponent definition={definition} component={component}
             objects={objects} apps={apps} pages={pages} currentAppId={appId} pageSessionKey={appId + ':' + page.apiName} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
@@ -4814,7 +4797,7 @@ function LightningAppRuntime({
         ? <div className="metadata-nested-host" data-nested-host={component.id}>{content}{nestedChildren}</div>
         : content;
       return page.layoutMode === 'free-canvas' ? rendered
-        : <div key={component.id} style={resolveLayoutStyle(component.properties, layoutDevice)}>{rendered}</div>;
+        : <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{rendered}</div>;
     }
     if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
       <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
@@ -4863,7 +4846,7 @@ function LightningAppRuntime({
               width: component.position?.width ?? 320,
               height: component.position?.height ?? 180
             }),
-        ...resolveLayoutStyle(component.properties, layoutDevice)
+        ...resolvePageComponentStyle(component.properties, component.type, layoutDevice)
       } as React.CSSProperties}>
       {renderComponent(component)}
     </div>;
@@ -4875,7 +4858,13 @@ function LightningAppRuntime({
     {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
-    childrenOf(page.components, null).filter((component) => isAppComponentVisible(component) && (component.region ?? 'main') === region).map(renderComponent);
+    childrenOf(page.components, null).filter((component) => isAppComponentVisible(component) && (component.region ?? 'main') === region).map(component => {
+      const content = renderComponent(component);
+      return content && !component.type.startsWith('Custom:') && !isLayoutType(component.type)
+        && hasPageComponentAppearance(component.properties)
+        ? <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{content}</div>
+        : content;
+    });
   return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
     <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18} /></div>
@@ -5766,7 +5755,7 @@ function RecordWorkspace({
           : undefined;
         return definition
           ? <div key={component.id} data-layout-component-id={component.id}
-              style={resolveLayoutStyle(component.properties, layoutDevice)}>
+              style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>
               <RegisteredComponent definition={definition} props={{
                 ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
                 label: component.label, properties: component.properties,
@@ -5925,7 +5914,12 @@ function RecordWorkspace({
       return <div className="records-message" role="status" key={component.id}>{component.label} is not supported in record runtime.</div>;
     };
     const renderRuntimeRegion = (region: 'header' | 'main' | 'sidebar') =>
-      childrenOf(assignedPage?.components ?? [], null).filter((component) => (component.region ?? 'main') === region).map(renderRuntimeComponent);
+      childrenOf(assignedPage?.components ?? [], null).filter((component) => (component.region ?? 'main') === region).map(component => {
+        const content = renderRuntimeComponent(component);
+        return content && !component.type.startsWith('Custom:') && hasPageComponentAppearance(component.properties)
+          ? <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{content}</div>
+          : content;
+      });
     return <div className="records-page">
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
@@ -9730,7 +9724,7 @@ function PageBuilder({
       ? childrenOf(page.components, component.id).map((child) =>
           renderPageComponent(child, page.components.findIndex((item) => item.id === child.id), libraryPreview, interactivePreview))
       : undefined;
-    const visualStyle = { ...(isLayoutType(component.type) ? componentVisualStyle(component.properties.visualStyle, component.type, device) : {}), ...resolveLayoutStyle(component.properties, device) };
+    const visualStyle = resolvePageComponentStyle(component.properties, component.type, device);
     const previewProperties = createComponentPreviewProps(
       customDefinition?.apiName ?? component.type,
       component.label,
@@ -10157,6 +10151,8 @@ function PageBuilder({
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
             <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
+            <PageComponentStyleEditor properties={selected.properties}
+              onChange={(properties) => updateComponent(selected.id, { properties })} />
             {selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
@@ -10194,8 +10190,6 @@ function PageBuilder({
                   onClick={() => setSelectedId(child.id)}>{child.label}</button>)}
                 {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
               </>}
-              <PageComponentStyleEditor properties={selected.properties}
-                onChange={(properties) => updateComponent(selected.id, { properties })} />
               <MetadataComponentProperties
                 kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
                 properties={selected.properties}
