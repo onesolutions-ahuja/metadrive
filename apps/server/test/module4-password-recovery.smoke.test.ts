@@ -176,6 +176,36 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     const newLogin = await api('/auth/login', '', 'POST', { email, password: newPassword });
     assert.equal(newLogin.status, 200, JSON.stringify(newLogin.data));
 
+    // Switch the same tenant to six-digit OTP without changing its SMTP credential.
+    const otpSettings = await api('/auth/password-recovery/settings', String(newLogin.data.access_token), 'PUT', {
+      smtpCredentialId: credentialId, fromEmail: 'help@recovery-mail.test',
+      policy: { method:'OTP', defaultChannel:'email', allowedChannels:['email'],
+        templates: {email:{subject:'{!Tenant.Name} code',body:'Code: {!Verification.Value} (expires {!Verification.ExpiryMinutes} minutes)'}} }
+    });
+    assert.equal(otpSettings.status, 200, JSON.stringify(otpSettings.data));
+    const otpRequest = await api('/auth/password-reset/request', '', 'POST', { email });
+    assert.equal(otpRequest.status, 202);
+    assert.equal(messages.length, 2, 'OTP mail must be sent to configured tenant recipient');
+    const otpMail = messages[1].replace(/=\n/g, '').replace(/=3D/gi, '=');
+    const otpMatch = otpMail.match(/Code:\s*([0-9]{6})/);
+    assert.ok(otpMatch, 'Email body must contain metadata-templated 6-digit code');
+    assert.equal(otpMail.includes('resetToken='), false, 'OTP must not disclose a reset URL');
+    const wrongOtp = otpMatch[1] === '000000' ? '000001' : '000000';
+    assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
+      email, token: wrongOtp, newPassword: 'Recovered-Again-2026!'
+    })).status, 400, 'Wrong one-time codes must not change passwords');
+    const otpCompleted = await api('/auth/password-reset/confirm', '', 'POST', {
+      email, token: otpMatch[1], newPassword: 'Recovered-Again-2026!'
+    });
+    assert.equal(otpCompleted.status, 200, JSON.stringify(otpCompleted.data));
+    assert.equal((await api('/auth/me', String(newLogin.data.access_token))).status, 401,
+      'OTP password reset must revoke old sessions');
+    assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
+      email, token: otpMatch[1], newPassword: 'Replay-Rejected-2026!'
+    })).status, 400, 'OTP must be single-use');
+    const otpLogin = await api('/auth/login', '', 'POST', { email, password: 'Recovered-Again-2026!' });
+    assert.equal(otpLogin.status, 200, JSON.stringify(otpLogin.data));
+
     const locked = await api('/auth/users/' + newLogin.data.user.id + '/lock',
       String(newLogin.data.access_token), 'POST', { durationMinutes: 60 });
     assert.equal(locked.status, 409, 'Security admins must not lock themselves out');
