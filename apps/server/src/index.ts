@@ -1172,7 +1172,7 @@ const flowVersionSchema = z.object({
   savedAt: z.string().datetime(),
   label: z.string().optional(),
   description: z.string().optional(),
-  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']).optional(),
+  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Flow Orchestration', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']).optional(),
   triggerObject: z.string().nullable().optional(),
   startConfig: z.record(z.unknown()).optional(),
   elements: z.array(flowElementSchema),
@@ -1187,7 +1187,7 @@ const flowSchema = z.object({
   createdBy: z.string().optional(),
   lastModifiedAt: z.string().optional(),
   lastModifiedBy: z.string().optional(),
-  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']),
+  flowType: z.enum(['Screen Flow', 'Record-Triggered Flow', 'Autolaunched Flow', 'Flow Orchestration', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow']),
   status: z.enum(['Draft', 'Active']),
   versionNumber: z.number().int().positive(),
   activeVersion: z.number().int().positive().nullable(),
@@ -10532,7 +10532,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   const apiName = routeParam(req, 'apiName');
   const flow = tenant.flows.find((item) => item.apiName === apiName);
   if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
-  if (flow.flowType !== 'Autolaunched Flow' && flow.flowType !== 'Screen Flow') return res.status(400).json({ error: 'Only autolaunched and screen flows can be invoked through this endpoint' });
+  if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
   const inputError = validateFlowInputValues(flow, input.data);
@@ -10567,8 +10567,8 @@ app.post('/api/flows/:apiName/debug', accessAuthentication, requirePermission('f
   const apiName = routeParam(req, 'apiName');
   const flow = tenant.flows.find((item) => item.apiName === apiName);
   if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
-  if (flow.flowType !== 'Autolaunched Flow' && flow.flowType !== 'Screen Flow') {
-    return res.status(400).json({ error: 'Only autolaunched and screen flows can be debugged from Flow Builder' });
+  if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) {
+    return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be debugged from Flow Builder' });
   }
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow debug inputs must be an object' });
@@ -17864,6 +17864,9 @@ function validateFlow(
   if (starts.length !== 1) errors.push('A flow must have exactly one Start element.');
   else if (flow.elements[0]?.id !== starts[0].id) errors.push('Move the Start element to the beginning of the flow.');
   const requiresObject = ['Record-Triggered Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow'].includes(flow.flowType);
+  if (flow.flowType === 'Flow Orchestration' && !flow.elements.some((element) => element.type === 'Orchestration Stage')) {
+    errors.push('Flow Orchestration must contain at least one Orchestration Stage.');
+  }
   if (requiresObject && !flow.triggerObject) errors.push('Select an object for the flow trigger.');
   if (!requiresObject && flow.triggerObject) errors.push('Only triggered flows can select a trigger object.');
   const eventTriggered = flow.flowType === 'Platform Event-Triggered Flow';
