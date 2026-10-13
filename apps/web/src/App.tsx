@@ -74,7 +74,7 @@ import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
-import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayoutParentId, reparentComponent, resolveLayoutStyle, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
+import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
