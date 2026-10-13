@@ -13,6 +13,7 @@ type FlowInterviewsProps = {
 function interviewState(interview: FlowInterviewMetadata): string {
   if (interview.kind === 'screen') return `Paused on ${interview.screenLabel ?? 'Screen'}`;
   if (interview.kind === 'scheduled') return 'Scheduled path';
+  if (interview.kind === 'async') return interview.retryAt ? 'Async path retry' : 'Queued async path';
   return interview.retryAt ? 'Waiting to retry' : 'Waiting';
 }
 
@@ -25,7 +26,7 @@ export default function FlowInterviews({
         <div>
           <div className="eyebrow">SETUP / AUTOMATION</div>
           <h1>Paused and Waiting Interviews</h1>
-          <p>Inspect active Screen Flow interviews, waits, and scheduled paths. Cancel an interview to prevent it from resuming.</p>
+          <p>Inspect active Screen Flow interviews, waits, scheduled paths, and asynchronous paths. Cancel an interview to prevent it from resuming.</p>
         </div>
         <button className="btn" type="button" onClick={onRefresh} disabled={loading}>
           <RefreshCw size={14} />Refresh
@@ -50,8 +51,8 @@ export default function FlowInterviews({
                   <td>{interview.userName}</td>
                   <td>{interview.recordId ?? '—'}</td>
                   <td>{new Date(interview.createdAt).toLocaleString()}</td>
-                  <td>{interview.waitUntil ? new Date(interview.waitUntil).toLocaleString()
-                    : interview.retryAt ? `Retry ${new Date(interview.retryAt).toLocaleString()}`
+                  <td>{interview.retryAt ? `Retry ${new Date(interview.retryAt).toLocaleString()}`
+                    : interview.waitUntil ? new Date(interview.waitUntil).toLocaleString()
                       : new Date(interview.expiresAt).toLocaleString()}</td>
                   <td>{interview.attempts}</td>
                   <td><button className="btn btn-danger" type="button" disabled={!canManage} onClick={() => onCancel(interview)}>

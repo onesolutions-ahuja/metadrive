@@ -1149,7 +1149,7 @@ const flowConnectorSchema = z.object({
   from: z.number().int().positive(),
   to: z.number().int().positive(),
   label: z.string().default(''),
-  kind: z.enum(['normal', 'fault', 'scheduled']).default('normal'),
+  kind: z.enum(['normal', 'fault', 'scheduled', 'async']).default('normal'),
   scheduledPath: z.object({
     timeSourceFieldApiName: z.string().min(1),
     offsetAmount: z.number().int(),
@@ -1252,7 +1252,7 @@ const flowInterviewSchema = z.object({
   flowApiName: z.string(),
   versionNumber: z.number().int().positive(),
   userId: z.string(),
-  kind: z.enum(['screen', 'wait', 'scheduled']),
+  kind: z.enum(['screen', 'wait', 'scheduled', 'async']),
   screenElementId: z.number().int().positive().nullable(),
   waitUntil: z.string().datetime().nullable(),
   nextElementId: z.number().int().positive().nullable(),
@@ -1286,7 +1286,7 @@ const flowExecutionLogSchema = z.object({
   id: z.string().uuid(),
   flowApiName: z.string(),
   flowLabel: z.string(),
-  trigger: z.enum(['Manual', 'Scheduled', 'Record-Triggered', 'Platform Event', 'Scheduled Path', 'Wait Interview']),
+  trigger: z.enum(['Manual', 'Scheduled', 'Record-Triggered', 'Platform Event', 'Scheduled Path', 'Async Path', 'Wait Interview']),
   failedAt: z.string().datetime(),
   error: z.string(),
   userId: z.string().nullable()
@@ -8667,7 +8667,7 @@ app.put('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', '
   const existing = tenant.flows.find((flow) => flow.apiName === req.params.apiName);
   const requested = parsed.data;
   if (requested.status === 'Active' && existing
-    && tenant.interviews.some((interview) => interview.flowApiName === existing.apiName)) {
+    && tenant.interviews.some((interview) => interview.flowApiName === existing.apiName && interview.kind !== 'async')) {
     return res.status(409).json({ error: 'Flow cannot be activated while interviews are pending.' });
   }
   const now = new Date().toISOString();
@@ -14081,7 +14081,10 @@ app.get('/api/metadata/flow-elements', requirePermission('metadata:read'), (_req
   res.json({ elements: [
     { type: 'Screen', group: 'Interaction', allowedFlowTypes: ['Screen Flow'] },
     { type: 'Decision', group: 'Logic' }, { type: 'Assignment', group: 'Logic' },
-    { type: 'Loop', group: 'Logic' }, { type: 'Wait', group: 'Logic' }, { type: 'Get Records', group: 'Data' },
+    { type: 'Loop', group: 'Logic' }, { type: 'Wait', group: 'Logic' },
+    { type: 'Collection Filter', group: 'Logic' }, { type: 'Collection Sort', group: 'Logic' },
+    { type: 'Transform', group: 'Data' }, { type: 'Roll Back Records', group: 'Data', allowedFlowTypes: ['Screen Flow', 'Autolaunched Flow'] },
+    { type: 'Publish Platform Event', group: 'Data' }, { type: 'Get Records', group: 'Data' },
     { type: 'Create Records', group: 'Data' }, { type: 'Update Records', group: 'Data' },
     { type: 'Delete Records', group: 'Data' }, { type: 'Action', group: 'Interaction' },
     { type: 'HTTP Callout', group: 'Interaction' }, { type: 'Subflow', group: 'Interaction' }
@@ -16214,7 +16217,7 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
 type FlowExecutionResult =
   | { status: 'completed'; outputs: Record<string, unknown>; variables: Record<string, unknown>; debugTrace: FlowDebugTraceEntry[] }
   | { status: 'waiting'; kind: 'screen'; screen: FlowMetadata['elements'][number]; nextElementId: number | null; outcomes: Array<{ name: string; label: string }>; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; debugTrace: FlowDebugTraceEntry[] }
-  | { status: 'waiting'; kind: 'wait' | 'scheduled'; waitUntil: string; nextElementId: number | null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; debugTrace: FlowDebugTraceEntry[] };
+  | { status: 'waiting'; kind: 'wait' | 'scheduled' | 'async'; waitUntil: string; nextElementId: number | null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; debugTrace: FlowDebugTraceEntry[] };
 
 function scheduledPathTimestamp(
   field: ObjectMetadata['fields'][number] | undefined,
@@ -16260,12 +16263,12 @@ function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract
   const tenantId = state.users.find(user => user.id === userId)?.tenantId;
   const idleMinutes = (tenantId ? tenantData(tenantId)?.automationSettings.conversationIdleMinutes : undefined)
     ?? defaultAutomationSettings.conversationIdleMinutes;
-  const conversationExpiry = typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
+  const conversationExpiry = result.kind !== 'async' && typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
     ? new Date(Date.parse(createdAt) + idleMinutes * 60_000).toISOString()
     : null;
   const expiresAt = conversationExpiry ?? (result.kind === 'screen'
     ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
-    : result.kind === 'scheduled'
+    : (result.kind === 'scheduled' || result.kind === 'async')
       ? '9999-12-31T23:59:59.999Z'
       : new Date(Date.parse(result.waitUntil) + 7 * 24 * 60 * 60 * 1000).toISOString());
   return {
@@ -16643,25 +16646,32 @@ async function executeFlow(
       switch (element.type) {
       case 'Start':
         if (flow.flowType === 'Record-Triggered Flow' && context.record) {
-          for (const connector of flow.connectors.filter((item) => item.from === element.id && item.kind === 'scheduled')) {
-            const schedule = connector.scheduledPath;
-            if (!schedule) throw new Error(`Scheduled path "${connector.id}" is missing its configuration.`);
-            const field = tenant.objects.find((object) => object.apiName === flow.triggerObject)
-              ?.fields.find((item) => item.apiName === schedule.timeSourceFieldApiName);
-            const waitUntil = scheduledPathTimestamp(
-              field, context.record[schedule.timeSourceFieldApiName], context.timeZone ?? 'UTC',
-              schedule.offsetAmount, schedule.offsetUnit
-            );
-            if (!waitUntil) continue;
+          for (const connector of flow.connectors.filter((item) => item.from === element.id && ['scheduled', 'async'].includes(item.kind))) {
+            let waitUntil = new Date();
+            if (connector.kind === 'scheduled') {
+              const schedule = connector.scheduledPath;
+              if (!schedule) throw new Error(`Scheduled path "${connector.id}" is missing its configuration.`);
+              const field = tenant.objects.find((object) => object.apiName === flow.triggerObject)
+                ?.fields.find((item) => item.apiName === schedule.timeSourceFieldApiName);
+              const scheduledAt = scheduledPathTimestamp(
+                field, context.record[schedule.timeSourceFieldApiName], context.timeZone ?? 'UTC',
+                schedule.offsetAmount, schedule.offsetUnit
+              );
+              if (!scheduledAt) continue;
+              waitUntil = scheduledAt;
+            }
+            // Each queued branch is a separate durable execution. Reusing the triggering
+            // interview identity causes duplicate IDs when a Start has multiple paths.
             tenant.interviews.push(createFlowInterview(flow, currentUserId, {
               status: 'waiting',
-              kind: 'scheduled',
+              kind: connector.kind === 'async' ? 'async' : 'scheduled',
               waitUntil: waitUntil.toISOString(),
               nextElementId: connector.to,
-              variables: { ...context.variables },
-              ...flowInterviewIdentity(context),
-              record: context.record,
-              prior: context.prior,
+              variables: structuredClone(context.variables),
+              interviewGuid: randomUUID(),
+              interviewStartTime: new Date().toISOString(),
+              record: structuredClone(context.record),
+              prior: context.prior ? structuredClone(context.prior) : undefined,
               debugTrace: context.debugTrace ?? []
             }));
           }
@@ -17449,10 +17459,10 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
   for (const [tenantId, tenant] of Object.entries(state.tenants)) {
     if (!tenantIsActive(tenantId)) continue;
     for (const interview of [...tenant.interviews]) {
-      if (!['wait', 'scheduled'].includes(interview.kind) || !interview.waitUntil) continue;
+      if (!['wait', 'scheduled', 'async'].includes(interview.kind) || !interview.waitUntil) continue;
       const settings = tenant.automationSettings ?? defaultAutomationSettings;
       const conversationKey = interview.record?.Conversation_Key__c;
-      const conversational = typeof conversationKey === 'string' && Boolean(conversationKey);
+      const conversational = interview.kind !== 'async' && typeof conversationKey === 'string' && Boolean(conversationKey);
       const owningFlow = conversational ? tenant.flows.find(flow => flow.apiName === interview.flowApiName) : undefined;
       const sessionRecords = owningFlow?.triggerObject ? (tenant.records[owningFlow.triggerObject] ?? []) : [];
       const lastActivityAt = sessionRecords.reduce((latest, item) => {
@@ -17476,11 +17486,19 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
       const currentTenant = tenantData(tenantId);
       if (!currentTenant) continue;
       const savedFlow = currentTenant.flows.find((item) => item.apiName === interview.flowApiName);
+      const activeInterviewFlow = activeFlowDefinition(savedFlow);
+      const archivedAsyncVersion = interview.kind === 'async' && savedFlow?.activeVersion !== null
+        ? savedFlow?.versions.find((version) => version.versionNumber === interview.versionNumber)
+        : undefined;
       const flow = interview.allowDraft && savedFlow?.status === 'Draft'
         && savedFlow.versionNumber === interview.versionNumber
         ? savedFlow
-        : activeFlowDefinition(savedFlow)?.versionNumber === interview.versionNumber
-          ? activeFlowDefinition(savedFlow) : undefined;
+        : activeInterviewFlow?.versionNumber === interview.versionNumber
+          ? activeInterviewFlow
+          : savedFlow && archivedAsyncVersion
+            ? { ...savedFlow, ...archivedAsyncVersion, status: 'Active' as const,
+              activeVersion: archivedAsyncVersion.versionNumber, versionNumber: archivedAsyncVersion.versionNumber }
+            : undefined;
       const working = structuredClone(currentTenant);
       try {
         if (interview.kind === 'wait' && !conversational && Date.parse(interview.expiresAt) <= now.getTime()) {
@@ -17519,7 +17537,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
         }
         failedTenant.flowLogs.push(createFlowFailureLog(
           flow ?? { apiName: interview.flowApiName, label: interview.flowApiName },
-          interview.kind === 'scheduled' ? 'Scheduled Path' : 'Wait Interview',
+          interview.kind === 'scheduled' ? 'Scheduled Path' : interview.kind === 'async' ? 'Async Path' : 'Wait Interview',
           error,
           interview.userId
         ));
@@ -17841,7 +17859,19 @@ function validateFlow(
     }
   };
   for (const connector of flow.connectors) {
-    if (connector.kind === 'scheduled') {
+    if (connector.kind === 'async') {
+      const source = flow.elements.find((element) => element.id === connector.from);
+      if (flow.flowType !== 'Record-Triggered Flow' || source?.type !== 'Start') {
+        errors.push(`Async path "${connector.id}" must start at a record-triggered flow's Start element.`);
+      }
+      if (flow.startConfig.runWhen === 'before-save') {
+        errors.push(`Async path "${connector.id}" requires an after-save flow.`);
+      }
+      if (flow.startConfig.trigger === 'deleted') {
+        errors.push(`Async path "${connector.id}" cannot be used with a delete trigger.`);
+      }
+      if (connector.scheduledPath) errors.push(`Async path "${connector.id}" cannot define scheduled-path settings.`);
+    } else if (connector.kind === 'scheduled') {
       const source = flow.elements.find((element) => element.id === connector.from);
       if (flow.flowType !== 'Record-Triggered Flow' || source?.type !== 'Start') {
         errors.push(`Scheduled path "${connector.id}" must start at a record-triggered flow's Start element.`);
@@ -17867,6 +17897,9 @@ function validateFlow(
     if (connector.kind === 'fault' && flow.elements.find((element) => element.id === connector.from)?.type === 'Start') {
       errors.push(`Fault connector "${connector.id}" cannot originate from Start.`);
     }
+  }
+  if (flow.connectors.filter((connector) => connector.kind === 'async').length > 1) {
+    errors.push('A record-triggered flow may have only one asynchronous path.');
   }
   const faultConnectorSources = new Set(flow.connectors.filter((connector) => connector.kind === 'fault').map((connector) => connector.from));
   for (const sourceId of faultConnectorSources) {
