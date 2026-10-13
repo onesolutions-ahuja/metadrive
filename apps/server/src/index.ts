@@ -8,7 +8,8 @@ import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvance
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, retryBudgetExhausted, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { mayRetry, retryAfterMs } from './connector-reliability.js';
-import { getOAuthAccessToken, validatedOAuthUrl, type OAuthVault, type OAuthToken, type OAuthTokenRequest } from './connector-oauth.js';
+import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorization, validatedOAuthUrl, type OAuthVault, type OAuthToken } from './connector-oauth.js';
+import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -19,7 +20,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
@@ -1056,7 +1057,7 @@ const namedCredentialSchema = z.object({
   label: z.string().min(1),
   protocol: z.enum(['HTTPS', 'SMTP']).default('HTTPS'),
   baseUrl: z.string().url(),
-  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials']),
+  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code']),
   headerName: z.string().optional(),
   configuration: z.record(z.string()).optional(),
   keyId: z.string().min(1),
@@ -1086,8 +1087,14 @@ const namedCredentialSchema = z.object({
   if (credential.headerName && ['authorization', 'proxy-authorization', 'host', 'cookie', 'content-length', 'transfer-encoding', 'connection'].includes(credential.headerName.toLowerCase())) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['headerName'], message: 'This header cannot be used to transmit an API Key' });
   }
-  if (credential.authType === 'OAuth Client Credentials') {
+  if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code') {
     const oauth = credential.configuration ?? {};
+    if (credential.authType === 'OAuth Authorization Code') {
+      if (!oauth.AuthorizationEndpoint?.trim())
+        context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth AuthorizationEndpoint is required' });
+      else try { validatedOAuthUrl(oauth.AuthorizationEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth authorization URL must be public HTTPS' }); }
+    }
     if (!oauth.ClientId?.trim() || !oauth.OAuthEndpoint?.trim()) {
       context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration'],message:'OAuth ClientId and OAuthEndpoint are required' });
     } else {
@@ -1101,7 +1108,7 @@ const namedCredentialRequestSchema = z.object({
   label: z.string().trim().min(1).max(80),
   protocol: z.enum(['HTTPS', 'SMTP']).default('HTTPS'),
   baseUrl: z.string().url(),
-  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials']),
+  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code']),
   headerName: z.string().trim().optional(),
   configuration: z.record(z.string()).optional(),
   username: z.string().max(512).optional(),
@@ -1132,8 +1139,14 @@ const namedCredentialRequestSchema = z.object({
   if (credential.authType === 'Basic' && credential.secret && !credential.username?.trim()) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['username'], message: 'Basic authentication requires a username' });
   }
-  if (credential.authType === 'OAuth Client Credentials') {
+  if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code') {
     const oauth = credential.configuration ?? {};
+    if (credential.authType === 'OAuth Authorization Code') {
+      if (!oauth.AuthorizationEndpoint?.trim())
+        context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth AuthorizationEndpoint is required' });
+      else try { validatedOAuthUrl(oauth.AuthorizationEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','AuthorizationEndpoint'],message:'OAuth authorization URL must be public HTTPS' }); }
+    }
     if (!oauth.ClientId?.trim() || !oauth.OAuthEndpoint?.trim()) {
       context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration'],message:'OAuth ClientId and OAuthEndpoint are required' });
     } else {
@@ -8464,7 +8477,7 @@ app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:man
           ...(parsed.data.authType === 'Basic' && parsed.data.username?.trim() ? { username: parsed.data.username.trim() } : {}),
           ...(parsed.data.authType !== 'None' && parsed.data.secret ? { secret: parsed.data.secret } : {})
         };
-    if (sameAuthType && parsed.data.authType === 'OAuth Client Credentials'
+    if (sameAuthType && ['OAuth Client Credentials','OAuth Authorization Code'].includes(parsed.data.authType)
       && JSON.stringify(existing.configuration ?? {}) !== JSON.stringify(parsed.data.configuration ?? {}))
       delete payload.oauthToken;
     if (parsed.data.authType === 'Basic' && !payload.username) {
@@ -8599,7 +8612,7 @@ app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentia
     if (credential.authType !== 'None' && !payload.secret) return res.status(400).json({ error: 'Authentication secret is not configured' });
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (credential.authType === 'Bearer') headers.Authorization = `Bearer ${payload.secret}`;
-    if (credential.authType === 'OAuth Client Credentials')
+    if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code')
       headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(principal.tenantId,credential)}`;
     if (credential.authType === 'Basic') headers.Authorization = `Basic ${Buffer.from(`${payload.username ?? ''}:${payload.secret}`).toString('base64')}`;
     if (credential.authType === 'API Key') headers[credential.headerName!] = payload.secret!;
@@ -14461,25 +14474,21 @@ async function safeOAuthTokenRequest(endpoint: URL, params: URLSearchParams): Pr
   });
 }
 
-async function oauthAccessTokenForCredential(tenantId:string,credential:StoredNamedCredential):Promise<string> {
-  if (credential.authType!=='OAuth Client Credentials' || credential.protocol!=='HTTPS')
-    throw new Error('OAuth client credential is not configured for HTTPS.');
-  const configuration=credential.configuration??{};
-  if (!configuration.ClientId || !configuration.OAuthEndpoint) throw new Error('OAuth ClientId/OAuthEndpoint missing.');
-  const scope={tenantId,credentialId:credential.id};
-  const vault:OAuthVault={
-    load:async item=>{
-      if(item.tenantId!==scope.tenantId || item.credentialId!==scope.credentialId) throw new Error('OAuth tenant scope mismatch.');
-      const current=tenantData(tenantId)?.namedCredentials.find(row=>row.id===credential.id);
-      if(!current || current.authType!=='OAuth Client Credentials' || current.enabled===false) throw new Error('OAuth credential unavailable.');
-      return openCredentialPayload(tenantId,current).oauthToken??null;
+function oauthCredentialVault(tenantId:string, credentialId:string):OAuthVault {
+  return {
+    load:async scope=>{
+      if(scope.tenantId!==tenantId || scope.credentialId!==credentialId) throw new Error('OAuth tenant scope mismatch.');
+      const credential=tenantData(tenantId)?.namedCredentials.find(row=>row.id===credentialId);
+      if(!credential || !['OAuth Client Credentials','OAuth Authorization Code'].includes(credential.authType)
+        || credential.enabled===false) throw new Error('OAuth credential unavailable.');
+      return openCredentialPayload(tenantId,credential).oauthToken??null;
     },
-    save:async (item,token)=>{
-      if(item.tenantId!==scope.tenantId || item.credentialId!==scope.credentialId) throw new Error('OAuth tenant scope mismatch.');
+    save:async (scope,token)=>{
+      if(scope.tenantId!==tenantId || scope.credentialId!==credentialId) throw new Error('OAuth tenant scope mismatch.');
       const currentTenant=tenantData(tenantId);
-      const current=currentTenant?.namedCredentials.find(row=>row.id===credential.id);
-      if(!currentTenant || !current || current.authType!=='OAuth Client Credentials' || current.enabled===false)
-        throw new Error('OAuth credential changed during refresh.');
+      const current=currentTenant?.namedCredentials.find(row=>row.id===credentialId);
+      if(!currentTenant || !current || !['OAuth Client Credentials','OAuth Authorization Code'].includes(current.authType)
+        || current.enabled===false) throw new Error('OAuth credential changed during refresh.');
       const payload=openCredentialPayload(tenantId,current);
       const updated=namedCredentialSchema.parse({...current,
         ...sealCredentialPayload(tenantId,current.id,{...payload,oauthToken:token}),
@@ -14487,12 +14496,30 @@ async function oauthAccessTokenForCredential(tenantId:string,credential:StoredNa
       persistTenantRecords(tenantId,{...currentTenant,namedCredentials:currentTenant.namedCredentials.map(row=>row.id===current.id?updated:row)});
     }
   };
+}
+function oauthChallengeStore():SqlOAuthChallengeStore {
+  const sql=getRouteAliasPool();
+  if(!sql) throw new Error('OAuth authorization requires the configured PostgreSQL database.');
+  const cipher:ChallengeCipher={
+    seal:(tenantId,digest,verifier)=>sealCredentialPayload(tenantId,'oauth-pkce:'+digest,{secret:verifier}),
+    open:(tenantId,digest,sealed)=>{
+      const synthetic={id:'oauth-pkce:'+digest,name:'OAuth challenge',...sealed} as StoredNamedCredential;
+      return openCredentialPayload(tenantId,synthetic).secret??'';
+    }
+  };
+  return new SqlOAuthChallengeStore(sql,cipher);
+}
+async function oauthAccessTokenForCredential(tenantId:string,credential:StoredNamedCredential):Promise<string> {
+  if (!['OAuth Client Credentials','OAuth Authorization Code'].includes(credential.authType) || credential.protocol!=='HTTPS')
+    throw new Error('OAuth credential is not configured for HTTPS.');
+  const configuration=credential.configuration??{};
+  if (!configuration.ClientId || !configuration.OAuthEndpoint) throw new Error('OAuth ClientId/OAuthEndpoint missing.');
   const clientSecret=openCredentialPayload(tenantId,credential).secret;
   if(!clientSecret)throw new Error('OAuth client secret is not configured.');
-  return getOAuthAccessToken(scope,{
+  return getOAuthAccessToken({tenantId,credentialId:credential.id},{
     tokenUrl:configuration.OAuthEndpoint,clientId:configuration.ClientId,clientSecret,
-    scope:configuration.Scope,grantType:'client_credentials'
-  },vault,safeOAuthTokenRequest);
+    scope:configuration.Scope,grantType:credential.authType==='OAuth Client Credentials'?'client_credentials':'authorization_code'
+  },oauthCredentialVault(tenantId,credential.id),safeOAuthTokenRequest);
 }
 
 async function performHttpCallout(
@@ -14627,8 +14654,8 @@ async function performHttpCallout(
   } else if (credential.authType === 'API Key') {
     if (!credential.headerName || !secretPayload.secret) throw new Error(`Named Credential "${credential.name}" has incomplete API Key authentication data.`);
     headers[credential.headerName] = secretPayload.secret;
-  } else if (credential.authType === 'OAuth Client Credentials') {
-    if (!namedCredential) throw new Error('OAuth client credentials require a tenant Named Credential.');
+  } else if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code') {
+    if (!namedCredential) throw new Error('OAuth authentication requires a tenant Named Credential.');
     // Debug must never contact external OAuth token endpoints.
     if (!context.debug) headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(tenantId,namedCredential)}`;
   }
