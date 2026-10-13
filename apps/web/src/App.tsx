@@ -8597,6 +8597,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
     'customerObjectApiName', 'customerNameField', 'customerPhoneField', 'customerEmailField', 'customerFilters',
     'fieldApiName', 'checkoutFlowApiName',
     'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows',
+    'basketSide', 'basketWidthPercent', 'catalogColumns',
     'layoutContainer', 'layoutParentId', 'layoutStyle', 'layoutResponsive']);
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
@@ -8640,6 +8641,26 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
       </label>)}
     </>}
     {tillMode && <>
+      <div className="properties-section-title">Till Layout — This Client</div>
+      <p className="properties-help">These settings change only this Till placement; its Object and Flow bindings stay the same.</p>
+      <label className="form-label">Basket placement
+        <select className="form-control" aria-label="Till basket placement"
+          value={properties.basketSide === 'right' ? 'right' : 'left'}
+          onChange={event => update('basketSide', event.target.value)}>
+          <option value="left">Basket on the left</option><option value="right">Basket on the right</option>
+        </select>
+      </label>
+      <label className="form-label">Basket width ({Math.max(30, Math.min(65, Number(properties.basketWidthPercent) || 45))}%)
+        <input type="range" min={30} max={65} step={1} className="form-control"
+          aria-label="Till basket width" value={Math.max(30, Math.min(65, Number(properties.basketWidthPercent) || 45))}
+          onChange={event => update('basketWidthPercent', Number(event.target.value))}/>
+      </label>
+      <label className="form-label">Product grid columns
+        <select className="form-control" aria-label="Till product columns" value={Math.max(1, Math.min(5, Number(properties.catalogColumns) || 3))}
+          onChange={event => update('catalogColumns', Number(event.target.value))}>
+          {[1,2,3,4,5].map(count => <option key={count} value={count}>{count}</option>)}
+        </select>
+      </label>
       <div className="properties-section-title">Customer Object and Fields</div>
       <label className="form-label">Customer object
         <select className="form-control" value={customerObjectApiName} onChange={(event) => update('customerObjectApiName', event.target.value)}>
