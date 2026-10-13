@@ -62,7 +62,7 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
   const password = 'Recovery-Original-Password-2026!';
   const newPassword = 'Recovery-New-Strong-Password-2026!';
   let logs = '';
-  const child = spawn(process.execPath, [cli, 'src/index.ts'], {
+  const launch = () => spawn(process.execPath, [cli, 'src/index.ts'], {
     cwd, stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env, PORT: String(apiPort), NODE_ENV: 'test', METADRIVE_TEST_MODE: 'true',
@@ -79,6 +79,7 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
       WEB_ORIGIN: 'http://localhost:5173'
     }
   });
+  let child = launch();
   child.stdout?.on('data', (value: Buffer) => { logs += value.toString(); });
   child.stderr?.on('data', (value: Buffer) => { logs += value.toString(); });
   const api = async (route: string, token = '', method = 'GET', body?: unknown, headers: Record<string, string> = {}) => {
@@ -134,7 +135,8 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     })).status, 400, 'Other tenant must not reference this SMTP credential');
 
     const settings = await api('/auth/password-recovery/settings', token, 'PUT', {
-      smtpCredentialId: credentialId, fromEmail: 'help@recovery-mail.test'
+      smtpCredentialId: credentialId, fromEmail: 'help@recovery-mail.test',
+      policy: { method:'LINK',defaultChannel:'email',allowedChannels:['email'] }
     });
     assert.equal(settings.status, 200, JSON.stringify(settings.data));
     assert.equal((await api('/auth/password-reset/request', '', 'POST', {
@@ -175,12 +177,65 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     const newLogin = await api('/auth/login', '', 'POST', { email, password: newPassword });
     assert.equal(newLogin.status, 200, JSON.stringify(newLogin.data));
 
-    const locked = await api('/auth/users/' + newLogin.data.user.id + '/lock',
-      String(newLogin.data.access_token), 'POST', { durationMinutes: 60 });
+    // Switch the same tenant to six-digit OTP without changing its SMTP credential.
+    const otpSettings = await api('/auth/password-recovery/settings', String(newLogin.data.access_token), 'PUT', {
+      smtpCredentialId: credentialId, fromEmail: 'help@recovery-mail.test',
+      policy: { method:'OTP', defaultChannel:'email', allowedChannels:['email'],
+        templates: {email:{subject:'{!Tenant.Name} code',body:'Code: {!Verification.Value} (expires {!Verification.ExpiryMinutes} minutes)'}} }
+    });
+    assert.equal(otpSettings.status, 200, JSON.stringify(otpSettings.data));
+    const otpRequest = await api('/auth/password-reset/request', '', 'POST', { email });
+    assert.equal(otpRequest.status, 202);
+    assert.equal(messages.length, 2, 'OTP mail must be sent to configured tenant recipient');
+    const otpMail = messages[1].replace(/=\n/g, '').replace(/=3D/gi, '=');
+    const otpMatch = otpMail.match(/Code:\s*([0-9]{6})/);
+    assert.ok(otpMatch, 'Email body must contain metadata-templated 6-digit code');
+    assert.equal(otpMail.includes('resetToken='), false, 'OTP must not disclose a reset URL');
+    // Regression: both metadata settings and the salted OTP challenge survive process restart.
+    child.kill('SIGTERM');
+    await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 5000))]);
+    child = launch();
+    child.stdout?.on('data', (value: Buffer) => { logs += value.toString(); });
+    child.stderr?.on('data', (value: Buffer) => { logs += value.toString(); });
+    let recoveredAfterRestart = false;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if (child.exitCode !== null) throw Error('Recovery restart failed: ' + logs);
+      try {
+        const health = await fetch('http://127.0.0.1:' + apiPort + '/health', { signal: AbortSignal.timeout(500) });
+        if (health.ok) { recoveredAfterRestart = true; break; }
+      } catch { /* restart in progress */ }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(recoveredAfterRestart, true, 'Recovery must restart with pending salted OTP challenge');
+    const persistedLogin = await api('/auth/login', '', 'POST', {email, password:newPassword});
+    assert.equal(persistedLogin.status, 200, 'Account login remains functional after OTP restart');
+    const persistedSettings = await api('/auth/password-recovery/settings', String(persistedLogin.data.access_token));
+    assert.equal(persistedSettings.status, 200);
+    assert.equal(persistedSettings.data.policy.method, 'OTP', 'Tenant verification method must survive restart');
+    assert.equal(persistedSettings.data.policy.templates.email.body.includes('Code:'), true,
+      'Tenant email template must survive restart');
+    const wrongOtp = otpMatch[1] === '000000' ? '000001' : '000000';
+    assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
+      email, token: wrongOtp, newPassword: 'Recovered-Again-2026!'
+    })).status, 400, 'Wrong one-time codes must not change passwords');
+    const otpCompleted = await api('/auth/password-reset/confirm', '', 'POST', {
+      email, token: otpMatch[1], newPassword: 'Recovered-Again-2026!'
+    });
+    assert.equal(otpCompleted.status, 200, JSON.stringify(otpCompleted.data));
+    assert.equal((await api('/auth/me', String(newLogin.data.access_token))).status, 401,
+      'OTP password reset must revoke old sessions');
+    assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
+      email, token: otpMatch[1], newPassword: 'Replay-Rejected-2026!'
+    })).status, 400, 'OTP must be single-use');
+    const otpLogin = await api('/auth/login', '', 'POST', { email, password: 'Recovered-Again-2026!' });
+    assert.equal(otpLogin.status, 200, JSON.stringify(otpLogin.data));
+
+    const locked = await api('/auth/users/' + otpLogin.data.user.id + '/lock',
+      String(otpLogin.data.access_token), 'POST', { durationMinutes: 60 });
     assert.equal(locked.status, 409, 'Security admins must not lock themselves out');
     assert.equal((await api('/auth/users/' + otherLogin.data.user.id + '/unlock',
-      String(newLogin.data.access_token), 'POST', {})).status, 404, 'Cross-tenant unlock rejected');
-    const events = await api('/auth/security-events', String(newLogin.data.access_token));
+      String(otpLogin.data.access_token), 'POST', {})).status, 404, 'Cross-tenant unlock rejected');
+    const events = await api('/auth/security-events', String(otpLogin.data.access_token));
     assert.equal(events.status, 200);
     assert.ok(events.data.events.some((item: { action: string }) => item.action === 'auth.password-reset.completed'));
     assert.equal(JSON.stringify(events.data).includes(resetToken), false, 'Audit must never leak reset tokens');
