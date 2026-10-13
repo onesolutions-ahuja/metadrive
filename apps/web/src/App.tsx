@@ -31,6 +31,8 @@ import {
   GripVertical,
   Grid2X2,
   ListFilter,
+  Lock,
+  Unlock,
   Maximize2,
   Monitor,
   MoreHorizontal,
@@ -9383,7 +9385,7 @@ function PageBuilder({
     onNotify(`Record Detail upgraded from ${selectedMigrationLayout.label}`);
   };
   const removeSelected = () => {
-    if (!selected) return;
+    if (!selected || isCanvasLocked(selected)) return;
     const parentId = rawLayoutParentId(selected);
     const remaining = page.components.filter((component) => component.id !== selected.id)
       .map((component) => rawLayoutParentId(component) === selected.id
@@ -9454,7 +9456,7 @@ function PageBuilder({
     if (selected) setComponentClipboard(structuredClone(selected));
   };
   const cutSelected = () => {
-    if (!selected) return;
+    if (!selected || isCanvasLocked(selected)) return;
     setComponentClipboard(structuredClone(selected));
     removeSelected();
   };
@@ -9473,15 +9475,7 @@ function PageBuilder({
     applyPage({ ...page, components });
     setSelectedId(pasted.id);
   };
-  const moveSelected = (offset: number) => {
-    if (!selected) return;
-    const index = page.components.findIndex((component) => component.id === selected.id);
-    const target = index + offset;
-    if (target < 0 || target >= page.components.length) return;
-    const components = [...page.components];
-    [components[index], components[target]] = [components[target], components[index]];
-    applyPage({ ...page, components });
-  };
+  const moveSelected = (offset: -1 | 1) => { if (selected) moveLayer(selected.id, offset); };
   const undo = () => {
     const previous = undoStack[undoStack.length - 1];
     if (!previous) return;
@@ -9728,7 +9722,7 @@ function PageBuilder({
     };
   };
   const moveCanvasComponent = (event: React.DragEvent<HTMLElement>, component: PageComponentMetadata) => {
-    if (page.layoutMode !== 'free-canvas' || previewMode) return;
+    if (page.layoutMode !== 'free-canvas' || previewMode || isCanvasLocked(component)) return;
     const nextPosition = canvasPositionFromEvent(event);
     if (!nextPosition || !component.position) return;
     updateComponent(component.id, {
@@ -9757,7 +9751,7 @@ function PageBuilder({
       }
       if (page.layoutMode === 'free-canvas') {
         const draggedComponent = page.components.find((component) => component.id === draggedId);
-        if (!draggedComponent) return;
+        if (!draggedComponent || isCanvasLocked(draggedComponent)) return;
         const reparented = reparentComponent(page.components, draggedId, parentId);
         const position = !parentId ? canvasPositionFromEvent(event) : undefined;
         applyPage({ ...page, components: reparented.map((item) =>
@@ -9773,6 +9767,7 @@ function PageBuilder({
       const sourceIndex = page.components.findIndex((component) => component.id === draggedId);
       if (sourceIndex < 0) return;
       const components = [...page.components];
+      if (isCanvasLocked(components[sourceIndex])) return;
       const [draggedComponent] = components.splice(sourceIndex, 1);
       if (!draggedComponent) return;
       const targetElement = event.currentTarget;
@@ -9831,7 +9826,7 @@ function PageBuilder({
     return <div
       key={component.id}
       ref={libraryPreview && !interactivePreview ? (element) => { if (element) element.inert = true; } : undefined}
-      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
+      className={`record-component ${(!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas' ? 'free-canvas-component' : ''} ${isCanvasLocked(component) ? 'canvas-component-locked' : ''} ${nested ? 'nested-page-component' : ''} ${isLayoutContainer(component) ? 'layout-container-component' : ''} ${libraryPreview ? 'component-rendered-preview' : ''} ${selectedId === component.id && !previewMode && !libraryPreview ? 'selected' : ''} ${dragOverId === component.id && !libraryPreview ? 'drop-target' : ''}`}
       style={{
         ...((!libraryPreview || interactivePreview) && page.layoutMode === 'free-canvas'
           ? nested
@@ -9851,13 +9846,20 @@ function PageBuilder({
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
       onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
-      draggable={!previewMode && !libraryPreview}
+      draggable={!previewMode && !libraryPreview && !isCanvasLocked(component) && page.layoutMode !== 'free-canvas'}
       data-component-id={libraryPreview ? undefined : component.id}
       onDragStart={!libraryPreview ? (event) => { event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
-      {!previewMode && !libraryPreview && <div className="record-component-head"><GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} /></div>}
+      {!previewMode && !libraryPreview && <div className="record-component-head"
+        onPointerDown={(event) => startCanvasMove(event, component)}
+        onPointerMove={moveCanvasPointer}
+        onPointerUp={(event) => finishCanvasMove(event, true)}
+        onPointerCancel={(event) => finishCanvasMove(event, false)}>
+        {isCanvasLocked(component) ? <Lock size={14} /> : <GripVertical size={15} />}
+        <strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} />
+      </div>}
       {isLayoutType(component.type)
         ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
           {directChildren(page.components, component.id).map((child) => renderPageComponent(child, page.components.indexOf(child), libraryPreview, interactivePreview))}
@@ -9923,10 +9925,10 @@ function PageBuilder({
         && <div className="metadata-nested-host">{nestedChildren}</div>}
       {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
         && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && selectedId === component.id && !isCanvasLocked(component) && !previewMode
         && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
           title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
-          onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
+          onPointerMove={moveCanvasResize} onPointerUp={(event) => finishCanvasResize(event, true)} onPointerCancel={(event) => finishCanvasResize(event, false)}
           onClick={(event) => event.stopPropagation()} />}
     </div>;
   };
@@ -10076,7 +10078,7 @@ function PageBuilder({
           />
         </section>
       </div>}
-      <div className="page-builder-layout" style={{ '--component-panel-width': `${componentPanelWidth}px` } as React.CSSProperties}>
+      <div className={`page-builder-layout ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''}`} style={{ '--component-panel-width': `${componentPanelWidth}px` } as React.CSSProperties}>
         <aside className="component-panel">
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
@@ -10091,8 +10093,14 @@ function PageBuilder({
                 <button type="button" className={selectedId === component.id ? 'active btn btn-small' : 'btn btn-small'}
                   onClick={() => { setSelectedId(component.id); setPageSettingsOpen(false); }}
                   aria-label={'Select layer ' + component.label}>{component.label}</button>
+                <button type="button" className="icon-button subtle" aria-label={'Move layer ' + component.label + ' up'} title="Bring forward" disabled={previewMode || isCanvasLocked(component) || page.components[0]?.id === component.id} onClick={() => moveLayer(component.id, -1)}><ArrowUp size={13}/></button>
+                <button type="button" className="icon-button subtle" aria-label={'Move layer ' + component.label + ' down'} title="Send backward" disabled={previewMode || isCanvasLocked(component) || page.components[page.components.length-1]?.id === component.id} onClick={() => moveLayer(component.id, 1)}><ArrowDown size={13}/></button>
                 <button type="button" className="icon-button subtle" aria-label={'Toggle layer ' + component.label}
-                  onClick={() => updateComponent(component.id, {visible: !component.visible})}>{component.visible ? '◉' : '○'}</button>
+                  disabled={previewMode || isCanvasLocked(component)}
+                  onClick={() => updateComponent(component.id, {visible: !component.visible})}>{component.visible ? <Eye size={14}/> : '○'}</button>
+                <button type="button" className="icon-button subtle" aria-label={(isCanvasLocked(component) ? 'Unlock ' : 'Lock ') + component.label}
+                  title={isCanvasLocked(component) ? 'Unlock layer' : 'Lock layer'}
+                  disabled={previewMode} onClick={() => toggleCanvasLock(component)}>{isCanvasLocked(component) ? <Lock size={14}/> : <Unlock size={14}/>}</button>
               </div>;
             })}
             {!page.components.length && <p className="properties-help">Add a component to see its layer.</p>}
@@ -10160,6 +10168,9 @@ function PageBuilder({
           <div className="preview-toolbar">
             <span><strong>{page.label}</strong><small>{page.pageType} · {page.status}{page.layoutMode === 'free-canvas' ? ` · ${page.canvasWidth} × ${page.canvasHeight}px` : ''}</small></span>
             <div>
+              {page.layoutMode === 'free-canvas' && <button type="button" className={snapEnabled ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
+                aria-pressed={snapEnabled} aria-label="Snap to 8 pixel grid" title="Toggle snap to grid"
+                onClick={() => setSnapEnabled(current => !current)}>⌗ Snap {snapEnabled ? 'on' : 'off'}</button>}
               {page.layoutMode === 'free-canvas' && <button
                 className={fitCanvas ? 'icon-button subtle active' : 'icon-button subtle'}
                 aria-label={fitCanvas ? 'Restore canvas size' : 'Fit canvas to view'}
@@ -10187,7 +10198,7 @@ function PageBuilder({
               } : undefined}
             >
               {page.layoutMode === 'free-canvas' ? <div
-                className="free-canvas-stage"
+                className={`free-canvas-stage ${snapEnabled && !previewMode ? 'canvas-grid-on' : ''}`}
                 style={{
                   width: page.canvasWidth,
                   height: page.canvasHeight,
@@ -10197,6 +10208,8 @@ function PageBuilder({
               >
                 {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id)))}
                 {!page.components.length && <div className="free-canvas-empty">Add custom components from the left panel.</div>}
+                {!previewMode && <><div className="canvas-magnet-guide canvas-magnet-guide-x" ref={xGuideRef} aria-hidden="true" />
+                  <div className="canvas-magnet-guide canvas-magnet-guide-y" ref={yGuideRef} aria-hidden="true" /></>}
               </div> : <>
               {page.pageType === 'Record Page' ? <>
                 <div className="record-preview-nav">
