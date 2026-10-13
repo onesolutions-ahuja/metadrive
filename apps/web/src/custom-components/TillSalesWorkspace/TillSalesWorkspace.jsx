@@ -19,7 +19,43 @@ export default function TillSalesWorkspace(props) {
   // Client-specific layout settings are persisted on the page, never the shared component.
   const basketWidth = Math.max(25, Math.min(70, Number(p.basketWidthPercent ?? 45) || 45));
   const catalogFirst = p.catalogFirst === true;
-  const splitStyle = { '--md-till-basket-width': basketWidth + '%' };
+  const splitStyle = {
+    '--md-till-basket-width': basketWidth + '%',
+    '--md-till-split-position': (catalogFirst ? 100 - basketWidth : basketWidth) + '%'
+  };
+  // Direct split resizing is available only inside the Page Builder design
+  // host. Live Till pages do not receive a layout-editing callback.
+  const splitGesture = React.useRef(null);
+  const beginSplit = (event) => {
+    if (typeof p.onLayoutChange !== 'function') return;
+    const region = event.currentTarget.parentElement;
+    const bounds = region.getBoundingClientRect();
+    if (!bounds.width || bounds.width < 250) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    splitGesture.current = { pointerId: event.pointerId, bounds, region, percent: basketWidth };
+  };
+  const dragSplit = (event) => {
+    const gesture = splitGesture.current;
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    const fromLeft = (event.clientX - gesture.bounds.left) / gesture.bounds.width * 100;
+    const next = Math.max(25, Math.min(70, Math.round(catalogFirst ? 100 - fromLeft : fromLeft)));
+    gesture.percent = next;
+    gesture.region.style.setProperty('--md-till-basket-width', next + '%');
+    gesture.region.style.setProperty('--md-till-split-position', (catalogFirst ? 100 - next : next) + '%');
+  };
+  const finishSplit = (event, cancelled = false) => {
+    const gesture = splitGesture.current;
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    splitGesture.current = null;
+    if (cancelled) {
+      gesture.region.style.setProperty('--md-till-basket-width', basketWidth + '%');
+      gesture.region.style.setProperty('--md-till-split-position', (catalogFirst ? 100 - basketWidth : basketWidth) + '%');
+    } else if (gesture.percent !== basketWidth) {
+      p.onLayoutChange({ basketWidthPercent: gesture.percent });
+    }
+  };
   const money = (x) => currency + Number(x || 0).toFixed(2);
   const configured = (event) => Boolean(p.actionFlows && p.actionFlows[event] && p.actionFlows[event].flowApiName);
   const enabled = (event) => !busy && !p.disabled && !p.preview && configured(event);
@@ -58,6 +94,19 @@ export default function TillSalesWorkspace(props) {
     {completed && <div role="status" className="md-till-success">Sale completed by the selected Flow.</div>}
     {p.loading && <div role="status" className="md-till-info">Loading object records…</div>}
     <div className={`md-till-body${catalogFirst ? " md-till-catalog-first" : ""}`} style={splitStyle}>
+      {typeof p.onLayoutChange === 'function' && <button type="button"
+        className="md-till-split-handle" role="separator"
+        aria-label="Resize Till basket and product sections"
+        aria-orientation="vertical" aria-valuemin={25} aria-valuemax={70} aria-valuenow={basketWidth}
+        onPointerDown={beginSplit} onPointerMove={dragSplit}
+        onPointerUp={event => finishSplit(event)} onPointerCancel={event => finishSplit(event, true)}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault(); event.stopPropagation();
+          const delta = event.key === 'ArrowRight' ? 1 : -1;
+          const next = Math.max(25, Math.min(70, basketWidth + (catalogFirst ? -delta : delta)));
+          if (next !== basketWidth) p.onLayoutChange({ basketWidthPercent: next });
+        }} />}
       <section className="md-till-cart" aria-label="Sale basket">
         <div className="md-till-row"><div><small className="md-till-kicker">CURRENT SALE</small><h2>Basket <em>{count}</em></h2></div><button className="md-till-link" disabled={!enabled('reset') || !lines.length} onClick={() => emit('reset',{})}>Clear</button></div>
         <button className="md-till-customer" onClick={() => setCustomerOpen(!customerOpen)} aria-expanded={customerOpen}>♙ <span><strong>{selected?.name || p.walkInLabel || 'Walk-in customer'}</strong><small>{selected ? [selected.phone,selected.email].filter(Boolean).join(' · ') : 'Search and assign customer'}</small></span>⌄</button>
