@@ -71,3 +71,19 @@ test('registered components retain client-specific properties without modifying 
   assert.equal(template.layoutStyle, undefined);
   assert.equal(pages[0].actionFlows.checkout.flowApiName, 'TILL_CHECKOUT');
 });
+
+test('typography and shadow metadata are bounded, inherited and safe to render', () => {
+  let properties = updateLayoutSettings({}, 'Base', 'fontSize', 18);
+  properties = updateLayoutSettings(properties, 'Base', 'fontWeight', '600');
+  properties = updateLayoutSettings(properties, 'Base', 'textAlign', 'center');
+  properties = updateLayoutSettings(properties, 'Base', 'boxShadow', 'md');
+  properties = updateLayoutSettings(properties, 'Phone', 'fontSize', 14);
+  const saved = JSON.parse(JSON.stringify(properties));
+  assert.equal(resolvePageComponentStyle(saved, 'Custom:KioskText', 'Desktop').fontSize, 18);
+  assert.equal(resolvePageComponentStyle(saved, 'Custom:KioskText', 'Phone').fontSize, 14);
+  assert.equal(resolvePageComponentStyle(saved, 'Custom:KioskText', 'Phone').fontWeight, 600);
+  assert.equal(resolvePageComponentStyle(saved, 'Custom:KioskText', 'Phone').textAlign, 'center');
+  assert.match(String(resolvePageComponentStyle(saved, 'Custom:KioskText').boxShadow), /rgba/);
+  assert.throws(() => updateLayoutSettings({}, 'Base', 'fontSize', 500));
+  assert.throws(() => updateLayoutSettings({}, 'Base', 'boxShadow', 'url(javascript:evil)'));
+});
