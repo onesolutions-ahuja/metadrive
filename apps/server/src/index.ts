@@ -8,6 +8,7 @@ import { decideAdvancedRecordAccess, resolveAdvancedRecordGrant, validateAdvance
 import { conversationKeyForIncoming, defaultAutomationSettings, expiredConversationInterview, retryDelayMs, retryBudgetExhausted, shouldTriggerInboundMessage, activeConversationContext, sameConversationSession } from './automation-policy.js';
 import { assertCalloutHostAllowed } from './outbound-callout-policy.js';
 import { mayRetry, retryAfterMs } from './connector-reliability.js';
+import { getOAuthAccessToken, validatedOAuthUrl, type OAuthVault, type OAuthToken, type OAuthTokenRequest } from './connector-oauth.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -1055,7 +1056,7 @@ const namedCredentialSchema = z.object({
   label: z.string().min(1),
   protocol: z.enum(['HTTPS', 'SMTP']).default('HTTPS'),
   baseUrl: z.string().url(),
-  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key']),
+  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials']),
   headerName: z.string().optional(),
   configuration: z.record(z.string()).optional(),
   keyId: z.string().min(1),
@@ -1085,13 +1086,22 @@ const namedCredentialSchema = z.object({
   if (credential.headerName && ['authorization', 'proxy-authorization', 'host', 'cookie', 'content-length', 'transfer-encoding', 'connection'].includes(credential.headerName.toLowerCase())) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['headerName'], message: 'This header cannot be used to transmit an API Key' });
   }
+  if (credential.authType === 'OAuth Client Credentials') {
+    const oauth = credential.configuration ?? {};
+    if (!oauth.ClientId?.trim() || !oauth.OAuthEndpoint?.trim()) {
+      context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration'],message:'OAuth ClientId and OAuthEndpoint are required' });
+    } else {
+      try { validatedOAuthUrl(oauth.OAuthEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','OAuthEndpoint'],message:'OAuth endpoint must be public HTTPS' }); }
+    }
+  }
 });
 const namedCredentialRequestSchema = z.object({
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   protocol: z.enum(['HTTPS', 'SMTP']).default('HTTPS'),
   baseUrl: z.string().url(),
-  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key']),
+  authType: z.enum(['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials']),
   headerName: z.string().trim().optional(),
   configuration: z.record(z.string()).optional(),
   username: z.string().max(512).optional(),
@@ -1122,6 +1132,15 @@ const namedCredentialRequestSchema = z.object({
   if (credential.authType === 'Basic' && credential.secret && !credential.username?.trim()) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['username'], message: 'Basic authentication requires a username' });
   }
+  if (credential.authType === 'OAuth Client Credentials') {
+    const oauth = credential.configuration ?? {};
+    if (!oauth.ClientId?.trim() || !oauth.OAuthEndpoint?.trim()) {
+      context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration'],message:'OAuth ClientId and OAuthEndpoint are required' });
+    } else {
+      try { validatedOAuthUrl(oauth.OAuthEndpoint); }
+      catch { context.addIssue({ code:z.ZodIssueCode.custom,path:['configuration','OAuthEndpoint'],message:'OAuth endpoint must be public HTTPS' }); }
+    }
+  }
 });
 type StoredNamedCredential = z.infer<typeof namedCredentialSchema>;
 const emailAlertSchema = z.object({
@@ -1143,7 +1162,7 @@ const emailAlertRequestSchema = emailAlertSchema.omit({
   updatedAt: true
 }).strict();
 type EmailAlert = z.infer<typeof emailAlertSchema>;
-type NamedCredentialPayload = { username?: string; secret?: string };
+type NamedCredentialPayload = { username?: string; secret?: string; oauthToken?: OAuthToken };
 type CredentialKeyRing = { activeKeyId: string; keys: Map<string, Buffer> };
 const flowConnectorSchema = z.object({
   id: z.string().min(1),
@@ -8394,7 +8413,7 @@ app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:man
     if (parsed.data.authType !== 'None' && !parsed.data.secret && !shouldPreserveSecret) {
       return res.status(400).json({ error: 'Provide a new secret when changing the authentication type' });
     }
-    const payload = shouldPreserveSecret
+    const payload: NamedCredentialPayload = shouldPreserveSecret
       ? {
           ...openCredentialPayload(principal.tenantId, existing),
           ...(parsed.data.authType === 'Basic' && parsed.data.username?.trim() ? { username: parsed.data.username.trim() } : {})
@@ -8403,6 +8422,9 @@ app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:man
           ...(parsed.data.authType === 'Basic' && parsed.data.username?.trim() ? { username: parsed.data.username.trim() } : {}),
           ...(parsed.data.authType !== 'None' && parsed.data.secret ? { secret: parsed.data.secret } : {})
         };
+    if (sameAuthType && parsed.data.authType === 'OAuth Client Credentials'
+      && JSON.stringify(existing.configuration ?? {}) !== JSON.stringify(parsed.data.configuration ?? {}))
+      delete payload.oauthToken;
     if (parsed.data.authType === 'Basic' && !payload.username) {
       return res.status(400).json({ error: 'Basic authentication requires a username and password' });
     }
@@ -8535,6 +8557,8 @@ app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentia
     if (credential.authType !== 'None' && !payload.secret) return res.status(400).json({ error: 'Authentication secret is not configured' });
     const headers: Record<string, string> = { Accept: 'application/json' };
     if (credential.authType === 'Bearer') headers.Authorization = `Bearer ${payload.secret}`;
+    if (credential.authType === 'OAuth Client Credentials')
+      headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(principal.tenantId,credential)}`;
     if (credential.authType === 'Basic') headers.Authorization = `Basic ${Buffer.from(`${payload.username ?? ''}:${payload.secret}`).toString('base64')}`;
     if (credential.authType === 'API Key') headers[credential.headerName!] = payload.secret!;
     const status = await new Promise<number>((resolve, reject) => {
@@ -14119,7 +14143,9 @@ type FlowDebugTraceEntry = { flowApiName: string; elementId: number; type: strin
 type RecordEvent = 'created' | 'updated' | 'deleted';
 const namedCredentialPayloadSchema = z.object({
   username: z.string().optional(),
-  secret: z.string().optional()
+  secret: z.string().optional(),
+  oauthToken: z.object({accessToken:z.string(),refreshToken:z.string().optional(),
+    tokenType:z.literal('Bearer'),expiresAtMs:z.number()}).optional()
 });
 
 function asConfigRows(value: unknown): Array<Record<string, unknown>> {
@@ -14336,6 +14362,79 @@ function resolveFlowTemplate(value: string, context: FlowRuntimeContext): string
   });
 }
 
+/** OAuth transport is deliberately server-side and DNS-pinned to public HTTPS hosts. */
+async function safeOAuthTokenRequest(endpoint: URL, params: URLSearchParams): Promise<{ status:number; body:unknown }> {
+  assertCalloutHostAllowed(endpoint.hostname, process.env.METADRIVE_PAUSED_CALLOUT_HOSTS);
+  validatedOAuthUrl(endpoint.toString());
+  const encoded=params.toString();
+  return new Promise((resolve,reject)=>{
+    const chunks:Buffer[]=[];
+    let size=0;
+    const request=httpsRequest(endpoint,{
+      method:'POST',timeout:15000,maxHeaderSize:8192,
+      headers:{'Content-Type':'application/x-www-form-urlencoded','Content-Length':String(Buffer.byteLength(encoded)),'Accept':'application/json'},
+      lookup:(hostname,options,callback)=>{
+        void lookup(hostname,{all:true,verbatim:true}).then(addresses=>{
+          if (!addresses.length || addresses.some(item=>!isPublicAddress(item.address))) {
+            callback(new Error('OAuth token host failed public DNS validation'),'',0);return;
+          }
+          const first=addresses[0];
+          if(options && typeof options==='object' && 'all' in options && options.all) callback(null,[first]);
+          else callback(null,first.address,first.family);
+        }).catch(()=>callback(new Error('OAuth token DNS unavailable'),'',0));
+      }
+    }, incoming=>{
+      incoming.on('data',(chunk:Buffer|string)=>{
+        const data=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=data.length;
+        if(size>65536){request.destroy(new Error('OAuth response exceeded limit'));return;}
+        chunks.push(data);
+      });
+      incoming.on('end',()=>{
+        try {resolve({status:incoming.statusCode??0,body:JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown});}
+        catch {reject(new Error('OAuth endpoint returned invalid JSON'));}
+      });
+      incoming.on('error',()=>reject(new Error('OAuth token response failed')));
+    });
+    request.on('timeout',()=>request.destroy(new Error('OAuth token request timed out')));
+    request.on('error',()=>reject(new Error('OAuth token transport failed')));
+    request.end(encoded);
+  });
+}
+
+async function oauthAccessTokenForCredential(tenantId:string,credential:StoredNamedCredential):Promise<string> {
+  if (credential.authType!=='OAuth Client Credentials' || credential.protocol!=='HTTPS')
+    throw new Error('OAuth client credential is not configured for HTTPS.');
+  const configuration=credential.configuration??{};
+  if (!configuration.ClientId || !configuration.OAuthEndpoint) throw new Error('OAuth ClientId/OAuthEndpoint missing.');
+  const scope={tenantId,credentialId:credential.id};
+  const vault:OAuthVault={
+    load:async item=>{
+      if(item.tenantId!==scope.tenantId || item.credentialId!==scope.credentialId) throw new Error('OAuth tenant scope mismatch.');
+      const current=tenantData(tenantId)?.namedCredentials.find(row=>row.id===credential.id);
+      if(!current || current.authType!=='OAuth Client Credentials' || current.enabled===false) throw new Error('OAuth credential unavailable.');
+      return openCredentialPayload(tenantId,current).oauthToken??null;
+    },
+    save:async (item,token)=>{
+      if(item.tenantId!==scope.tenantId || item.credentialId!==scope.credentialId) throw new Error('OAuth tenant scope mismatch.');
+      const currentTenant=tenantData(tenantId);
+      const current=currentTenant?.namedCredentials.find(row=>row.id===credential.id);
+      if(!currentTenant || !current || current.authType!=='OAuth Client Credentials' || current.enabled===false)
+        throw new Error('OAuth credential changed during refresh.');
+      const payload=openCredentialPayload(tenantId,current);
+      const updated=namedCredentialSchema.parse({...current,
+        ...sealCredentialPayload(tenantId,current.id,{...payload,oauthToken:token}),
+        updatedAt:new Date().toISOString()});
+      persistTenantRecords(tenantId,{...currentTenant,namedCredentials:currentTenant.namedCredentials.map(row=>row.id===current.id?updated:row)});
+    }
+  };
+  const clientSecret=openCredentialPayload(tenantId,credential).secret;
+  if(!clientSecret)throw new Error('OAuth client secret is not configured.');
+  return getOAuthAccessToken(scope,{
+    tokenUrl:configuration.OAuthEndpoint,clientId:configuration.ClientId,clientSecret,
+    scope:configuration.Scope,grantType:'client_credentials'
+  },vault,safeOAuthTokenRequest);
+}
+
 async function performHttpCallout(
   tenantId: string,
   tenant: TenantData,
@@ -14468,6 +14567,9 @@ async function performHttpCallout(
   } else if (credential.authType === 'API Key') {
     if (!credential.headerName || !secretPayload.secret) throw new Error(`Named Credential "${credential.name}" has incomplete API Key authentication data.`);
     headers[credential.headerName] = secretPayload.secret;
+  } else if (credential.authType === 'OAuth Client Credentials') {
+    if (!namedCredential) throw new Error('OAuth client credentials require a tenant Named Credential.');
+    headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(tenantId,namedCredential)}`;
   }
   // Resolve JSON fields individually instead of substituting inside serialized JSON:
   // recipient names, quotes and line breaks must remain valid JSON after mapping.
