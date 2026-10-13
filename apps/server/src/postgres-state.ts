@@ -249,7 +249,7 @@ export async function readAuthLogoutRevocations(): Promise<AuthLogoutRevocation[
     `SELECT jti,tenant_id,user_id,refresh_token_hash,access_expires_at,refresh_expires_at,revoked_at
        FROM md_auth_logout_revocations
        WHERE access_expires_at>$1 OR refresh_expires_at>$1`, [now]);
-  return result.rows.map((row) => ({
+  return (result.rows as unknown as Array<Record<string, unknown>>).map((row) => ({
     jti: String(row.jti),
     tenantId: String(row.tenant_id),
     userId: String(row.user_id),
