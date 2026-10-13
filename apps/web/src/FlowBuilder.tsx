@@ -1,9 +1,10 @@
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
+import { flowCanvasBounds, moveFlowPosition, storedFlowPosition } from './flowCanvasLayout.mjs';
 import FlowTestsPanel from './FlowTestsPanel';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { parseComponentProperties } from './componentProperties';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   Activity,
   ArrowLeft,
@@ -76,7 +77,7 @@ type FlowBuilderProps = {
   onRedo: () => void;
   onSelect: (id: number) => void;
   onToolTab: (tab: 'Elements' | 'Manager') => void;
-  onAdd: (type: string, afterId?: number) => void;
+  onAdd: (type: string, afterId?: number, connectorId?: string) => void;
   onUpdateLabel: (id: number, label: string) => void;
   onUpdateConfig: (id: number, key: string, value: unknown) => void;
   onRemove: (id: number) => void;
@@ -139,6 +140,7 @@ export default function FlowBuilder({
 }: FlowBuilderProps) {
   const flowComponents = libraryComponents.filter((component) => component.surfaces.includes('flow'));
   const [elementSearch, setElementSearch] = useState('');
+  const [insertionConnectorId, setInsertionConnectorId] = useState('');
   const [newFlowLabel, setNewFlowLabel] = useState('');
   const [newFlowType, setNewFlowType] = useState<FlowDefinitionMetadata['flowType'] | null>(null);
   const [existingFlowSearch, setExistingFlowSearch] = useState('');
@@ -214,12 +216,19 @@ export default function FlowBuilder({
   const [platformEventDescription, setPlatformEventDescription] = useState('');
   const [platformEventFields, setPlatformEventFields] = useState<PlatformEventMetadata['fields']>([]);
   const [zoom, setZoom] = useState(1);
+  const [dragPreview, setDragPreview] = useState<{ id: number; x: number; y: number } | null>(null);
+  const dragRef = useRef<{
+    id: number; startClientX: number; startClientY: number;
+    x: number; y: number; moved: boolean
+  } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const formulaEditorRef = useRef<HTMLTextAreaElement>(null);
   const selected = flow.elements.find((element) => element.id === selectedId) ?? flow.elements[0];
+  const insertionPaths = flow.connectors.filter((connector) => connector.from === selectedId);
   const selectedObject = objects.find((object) => object.apiName === flow.triggerObject);
   const selectedPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
   const toolboxGroups = [...new Set(flowElementMetadata.map((item) => item.group))];
+  const freeformLayout = flow.startConfig.canvasLayoutMode === 'Freeform';
   const graphNodeWidth = 320;
   const graphColumnGap = 115;
   const graphRowGap = 155;
@@ -249,16 +258,60 @@ export default function FlowBuilder({
   });
   const graphColumns = Math.max(1, ...Array.from(elementsByLayer.values(), (elements) => elements.length));
   const graphRows = Math.max(1, elementsByLayer.size);
-  const graphWidth = graphPadding * 2 + graphColumns * graphNodeWidth + (graphColumns - 1) * graphColumnGap;
-  const graphHeight = graphPadding * 2 + graphRows * graphRowGap;
-  const graphPositions = new Map<number, { x: number; y: number }>();
+  let graphWidth = graphPadding * 2 + graphColumns * graphNodeWidth + (graphColumns - 1) * graphColumnGap;
+  let graphHeight = graphPadding * 2 + graphRows * graphRowGap;
+  const autoGraphPositions = new Map<number, { x: number; y: number }>();
   elementsByLayer.forEach((elements, layer) => {
     const layerWidth = elements.length * graphNodeWidth + (elements.length - 1) * graphColumnGap;
     const offset = (graphWidth - layerWidth) / 2;
-    elements.forEach((element, index) => graphPositions.set(element.id, {
+    elements.forEach((element, index) => autoGraphPositions.set(element.id, {
       x: offset + index * (graphNodeWidth + graphColumnGap),
       y: graphPadding + layer * graphRowGap
     }));
+  });
+  const graphPositions = new Map<number, { x: number; y: number }>();
+  flow.elements.forEach((element) => {
+    const automatic = autoGraphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding };
+    graphPositions.set(element.id, freeformLayout ? storedFlowPosition(element, automatic) : automatic);
+  });
+  if (dragPreview && freeformLayout && graphPositions.has(dragPreview.id)) {
+    graphPositions.set(dragPreview.id, { x: dragPreview.x, y: dragPreview.y });
+  }
+  if (freeformLayout) {
+    const bounds = flowCanvasBounds(graphPositions, graphWidth, graphHeight);
+    graphWidth = bounds.width;
+    graphHeight = bounds.height;
+  }
+  const setCanvasPosition = (id: number, position: { x: number; y: number }) => {
+    onFlowChange({
+      ...flow,
+      elements: flow.elements.map((element) => element.id === id
+        ? { ...element, config: { ...element.config, canvasPosition: position } }
+        : element)
+    });
+  };
+  const switchCanvasMode = () => {
+    setDragPreview(null);
+    dragRef.current = null;
+    onFlowChange({
+      ...flow,
+      startConfig: { ...flow.startConfig, canvasLayoutMode: freeformLayout ? 'Automatic' : 'Freeform' },
+      elements: freeformLayout ? flow.elements : flow.elements.map((element) => ({
+        ...element,
+        config: {
+          ...element.config,
+          canvasPosition: storedFlowPosition(element,
+            autoGraphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding })
+        }
+      }))
+    });
+  };
+  const resetFreeformLayout = () => onFlowChange({
+    ...flow,
+    elements: flow.elements.map((element) => ({
+      ...element,
+      config: { ...element.config, canvasPosition: autoGraphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding } }
+    }))
   });
   const fitGraphToCanvas = () => {
     const canvas = canvasRef.current;
@@ -1161,9 +1214,28 @@ export default function FlowBuilder({
         <div className="toolbox-tabs"><button className={toolTab === 'Elements' ? 'active' : ''} onClick={() => onToolTab('Elements')}>Elements</button><button className={toolTab === 'Manager' ? 'active' : ''} onClick={() => onToolTab('Manager')}>Manager</button></div>
         {toolTab === 'Elements' ? <>
           <div className="component-search"><Search size={14} /><input placeholder="Search elements..." aria-label="Search flow elements" value={elementSearch} onChange={(event) => setElementSearch(event.target.value)} /></div>
+          {insertionPaths.length > 1 && <label className="form-label">Insert onto path
+            <select className="form-control" aria-label="Choose Flow insertion path"
+              value={insertionPaths.some((connector) => connector.id === insertionConnectorId) ? insertionConnectorId : ''}
+              onChange={(event) => setInsertionConnectorId(event.target.value)}>
+              <option value="">Select outcome, fault, or scheduled path</option>
+              {insertionPaths.map((connector) => <option value={connector.id} key={connector.id}>
+                {connector.label || connector.kind} · {flow.elements.find((element) => element.id === connector.to)?.label ?? connector.to}
+              </option>)}
+            </select>
+          </label>}
           {toolboxGroups.map((group) => {
             const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type));
-            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" onClick={() => onAdd(element.type)}><span>{element.icon}</span>{element.type}<Plus size={13} /></button>)}</div> : null;
+            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" onClick={() => {
+              const selectedPath = insertionPaths.some((connector) => connector.id === insertionConnectorId)
+                ? insertionConnectorId : undefined;
+              if (insertionPaths.length > 1 && !selectedPath) {
+                onNotify('Choose an outcome or fault path before inserting an element.');
+                return;
+              }
+              onAdd(element.type, selectedId, selectedPath);
+              setInsertionConnectorId('');
+            }}><span>{element.icon}</span>{element.type}<Plus size={13} /></button>)}</div> : null;
           })}
           {flowElementMetadata.filter((item) => item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type)).length === 0 && <p className="empty-list">No elements found.</p>}
         </> : <div className="resource-list">
@@ -1311,7 +1383,15 @@ export default function FlowBuilder({
         </div>}
       </aside>
       <section className="flow-canvas-region">
-        <div className="flow-canvas-top"><div><span className="flow-status-dot" />Auto-Layout · {flow.elements.length} elements · {Math.round(zoom * 100)}%</div><button className="btn btn-small" onClick={onValidate}><Activity size={13} />Errors and Warnings</button></div>
+        <div className="flow-canvas-top">
+          <div><span className="flow-status-dot" />{freeformLayout ? 'Freeform Layout' : 'Auto-Layout'} · {flow.elements.length} elements · {Math.round(zoom * 100)}%</div>
+          <div className="flow-toolbar-actions">
+            <button type="button" className="btn btn-small" onClick={switchCanvasMode}
+              aria-pressed={freeformLayout}>{freeformLayout ? 'Switch to Auto-Layout' : 'Switch to Freeform'}</button>
+            {freeformLayout && <button type="button" className="btn btn-small" onClick={resetFreeformLayout}>Reset Positions</button>}
+            <button className="btn btn-small" onClick={onValidate}><Activity size={13} />Errors and Warnings</button>
+          </div>
+        </div>
         {validation && <div className={`flow-validation ${validation.valid ? 'valid' : 'invalid'}`} role="status"><strong>{validation.valid ? 'Flow check passed' : `${validation.errors.length} error(s) found`}</strong>{validation.errors.map((error) => <div key={error}>{error}</div>)}{validation.warnings.map((warning) => <div key={warning}>Warning: {warning}</div>)}</div>}
         <div className="flow-canvas" ref={canvasRef}><div className="flow-graph" style={{ width: graphWidth, height: graphHeight, transform: `scale(${zoom})` }}>
           <svg className="flow-graph-connectors" width={graphWidth} height={graphHeight} aria-hidden="true">
@@ -1327,7 +1407,7 @@ export default function FlowBuilder({
               const bend = Math.max(35, Math.abs(endY - startY) / 2);
               const labelX = (startX + endX) / 2;
               const labelY = (startY + endY) / 2 - 6;
-              return <g key={connector.id} className={`flow-graph-edge ${connector.kind}`}>
+              return <g key={connector.id} className={`flow-graph-edge ${connector.kind} ${selectedId === connector.from ? 'is-selected' : ''}`}>
                 <path d={`M ${startX} ${startY} C ${startX} ${startY + bend}, ${endX} ${endY - bend}, ${endX} ${endY}`} markerEnd="url(#flow-graph-arrow)" />
                 {(connector.label || connector.kind !== 'normal') && <text x={labelX} y={labelY}>{connector.label || connector.kind}</text>}
               </g>;
@@ -1335,15 +1415,70 @@ export default function FlowBuilder({
           </svg>
           {flow.elements.map((element) => {
             const position = graphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding };
-            return <button key={element.id} className={`flow-step flow-graph-node ${element.type === 'Start' ? 'start-step' : ''} ${selectedId === element.id ? 'selected' : ''}`} style={{ left: position.x, top: position.y, width: graphNodeWidth }} onClick={() => onSelect(element.id)}>
+            return <Fragment key={element.id}><button className={`flow-step flow-graph-node ${element.type === 'Start' ? 'start-step' : ''} ${selectedId === element.id ? 'selected' : ''}`}
+              style={{ left: position.x, top: position.y, width: graphNodeWidth,
+                cursor: freeformLayout ? 'grab' : undefined, touchAction: freeformLayout ? 'none' : undefined }}
+              title={freeformLayout ? 'Drag to reposition. Use arrow keys to adjust; Shift + arrow moves 20px.' : undefined}
+              onClick={() => onSelect(element.id)}
+              onPointerDown={(event) => {
+                if (!freeformLayout || event.button !== 0) return;
+                dragRef.current = {
+                  id: element.id, startClientX: event.clientX, startClientY: event.clientY,
+                  x: position.x, y: position.y, moved: false
+                };
+                onSelect(element.id);
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current;
+                if (!freeformLayout || !drag || drag.id !== element.id) return;
+                const deltaX = event.clientX - drag.startClientX;
+                const deltaY = event.clientY - drag.startClientY;
+                if (!drag.moved && Math.abs(deltaX) + Math.abs(deltaY) < 3) return;
+                drag.moved = true;
+                const next = moveFlowPosition({ x: drag.x, y: drag.y }, deltaX, deltaY, zoom);
+                setDragPreview({ id: element.id, ...next });
+              }}
+              onPointerUp={(event) => {
+                const drag = dragRef.current;
+                if (!freeformLayout || !drag || drag.id !== element.id) return;
+                dragRef.current = null;
+                setDragPreview(null);
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                if (drag.moved) setCanvasPosition(element.id,
+                  moveFlowPosition({ x: drag.x, y: drag.y }, event.clientX - drag.startClientX, event.clientY - drag.startClientY, zoom));
+              }}
+              onPointerCancel={() => { dragRef.current = null; setDragPreview(null); }}
+              onKeyDown={(event) => {
+                if (!freeformLayout || !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+                event.preventDefault();
+                const step = event.shiftKey ? 20 : 10;
+                const dx = event.key === 'ArrowRight' ? step : event.key === 'ArrowLeft' ? -step : 0;
+                const dy = event.key === 'ArrowDown' ? step : event.key === 'ArrowUp' ? -step : 0;
+                setCanvasPosition(element.id, moveFlowPosition(position, dx, dy));
+              }}>
               <span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === element.type)?.icon ?? '◉'}</span><span className="flow-step-content"><small>{element.type === 'Start' ? flow.flowType.toUpperCase() : element.type.toUpperCase()}</small><strong>{element.label}</strong>{element.type === 'Start' && <em>{flow.flowType === 'Platform Event-Triggered Flow' ? `Event: ${selectedPlatformEvent?.label ?? flow.triggerObject ?? 'Select event'}` : flow.triggerObject ? `Object: ${flow.triggerObject}` : 'No record object'} · {displayValue(flow.startConfig.trigger) || displayValue(flow.startConfig.frequency) || 'Manual'}</em>}</span><MoreHorizontal size={16} className="step-menu" />
-            </button>;
+            </button>
+              {selectedId === element.id && <div className="flow-node-inline-actions"
+                style={{ left: position.x + graphNodeWidth + 8, top: position.y + 8 }}>
+                <button type="button" className="icon-button" aria-label={`Add element after ${element.label}`}
+                  title="Choose an element from the toolbox to insert on this path"
+                  onClick={() => { setInsertionConnectorId(''); onToolTab('Elements'); }}>
+                  <Plus size={16} />
+                </button>
+                <button type="button" className="icon-button" aria-label={`Remove ${element.label}`}
+                  title={flow.connectors.some((connector) => connector.from === element.id)
+                    ? 'Disconnect child paths before removing this element' : 'Remove this element'}
+                  disabled={element.type === 'Start' || flow.connectors.some((connector) => connector.from === element.id)}
+                  onClick={() => onRemove(element.id)}><span aria-hidden="true">−</span></button>
+              </div>}
+            </Fragment>;
           })}
         </div></div>
         <div className="flow-zoom"><button onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))} aria-label="Zoom in"><Plus size={15} /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))} aria-label="Zoom out"><span>−</span></button><button onClick={fitGraphToCanvas} aria-label="Fit to view"><MoveRight size={14} /></button></div>
       </section>
       <aside className="flow-settings">
-        <div className="settings-header"><h2>{selected?.type === 'Start' ? 'Configure Start' : 'Set Up'}</h2><button className="icon-button subtle" onClick={() => selected && selected.type !== 'Start' && onRemove(selected.id)} aria-label="Delete element" disabled={!selected || selected.type === 'Start'}><X size={16} /></button></div>
+        <div className="settings-header"><h2>{selected?.type === 'Start' ? 'Configure Start' : 'Set Up'}</h2><button className="icon-button subtle" onClick={() => selected && selected.type !== 'Start' && !flow.connectors.some((connector) => connector.from === selected.id) && onRemove(selected.id)} aria-label="Delete element" disabled={!selected || selected.type === 'Start' || flow.connectors.some((connector) => connector.from === selected.id)}><X size={16} /></button></div>
         <div className="settings-element-type"><span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === selected?.type)?.icon ?? '◉'}</span><div><small>{selected?.type}</small><strong>{selected?.label}</strong></div></div>
         {selected?.type === 'Start' && <label className="form-label flow-editor-field">Flow Type<select className="form-control" value={flow.flowType} onChange={(event) => updateFlowType(event.target.value as FlowDefinitionMetadata['flowType'])}>{flowTypeOptions.map((option) => <option key={option.type}>{option.type}</option>)}</select></label>}
         <label className="form-label flow-editor-field">Label<input className="form-control" value={selected?.label ?? ''} onChange={(event) => selected && onUpdateLabel(selected.id, event.target.value)} /></label>

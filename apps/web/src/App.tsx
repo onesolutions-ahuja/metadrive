@@ -1,3 +1,4 @@
+import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
 import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
@@ -2073,7 +2074,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     } else openSetupWorkspace('home');
   };
 
-  const addFlowElement = (type: string, afterId = selectedFlowId) => {
+  const addFlowElement = (type: string, afterId = selectedFlowId, connectorId?: string) => {
     if (type === 'Start') {
       notify('A flow can only have one Start element');
       return;
@@ -2105,19 +2106,15 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       'Subflow': { flowApiName: '', inputValues: [] }
     };
     const next = { id: nextId, type, label, config: defaults[type] ?? {} };
-    const insertAfter = Math.max(flow.elements.findIndex((item) => item.id === afterId), 0);
-    const previous = flow.elements[insertAfter];
-    const following = flow.elements[insertAfter + 1];
-    const retainedConnectors = flow.connectors.filter((connector) => !(connector.from === previous?.id && connector.to === following?.id));
-    commitFlow({
-      ...flow,
-      elements: [...flow.elements.slice(0, insertAfter + 1), next, ...flow.elements.slice(insertAfter + 1)],
-      connectors: [
-        ...retainedConnectors,
-        { id: `connector-${crypto.randomUUID()}`, from: previous?.id ?? 1, to: nextId, label: '', kind: 'normal' as const },
-        ...(following ? [{ id: `connector-${crypto.randomUUID()}`, from: nextId, to: following.id, label: '', kind: 'normal' as const }] : [])
-      ]
-    });
+    try {
+      // Flow connectors, not element-array order, define execution paths.
+      const inserted = insertFlowElementAtPath(flow, afterId, next, connectorId,
+        `connector-${crypto.randomUUID()}`);
+      commitFlow(inserted);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Unable to insert Flow element');
+      return;
+    }
     setSelectedFlowId(next.id);
   };
 
@@ -2141,6 +2138,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const removeFlowElement = (id: number) => {
     if (flow.elements.find((item) => item.id === id)?.type === 'Start') {
       notify('The Start element cannot be removed');
+      return;
+    }
+    if (flow.connectors.some((connector) => connector.from === id)) {
+      notify('Disconnect child paths before removing this Flow element.');
       return;
     }
     const incoming = flow.connectors.filter((connector) => connector.to === id);
