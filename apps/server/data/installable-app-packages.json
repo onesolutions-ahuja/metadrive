@@ -372,7 +372,7 @@
         {
           "apiName": "KioskSettings__c",
           "label": "Kiosk Settings",
-          "pluralLabel": "Kiosk Settingss",
+          "pluralLabel": "Kiosk Settings",
           "kind": "Custom Object",
           "description": "Reusable metadata for the installable app",
           "fields": [

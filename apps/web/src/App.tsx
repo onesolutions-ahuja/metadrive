@@ -4841,7 +4841,7 @@ function LightningAppRuntime({
   }, [page?.layoutMode, onKioskModeChange]);
   if (error) return <div className="records-page"><div className="records-message" role="alert">{error}</div></div>;
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
-  if (!page) return <div className="records-page"><div className="records-empty">No active Home Page is assigned to this app and profile. Assign one from Lightning App Builder.</div></div>;
+  if (!page) return <main className="records-page"><section className="records-empty" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home Page not assigned</h1><p>No active Home Page is assigned to this app and profile.</p><p>An administrator can assign a Home Page in Lightning App Builder.</p></section></main>;
   const isKioskRuntime = page.layoutMode === 'free-canvas' && page.components.some((component) => component.type === 'Custom:KioskOrderingExperience');
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const appVisibilityContext = { formFactor } as const;

@@ -2464,3 +2464,88 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .modern-layer>button:focus-visible,.modern-inspector-tabs button:focus-visible{outline:2px solid #2c79e6;outline-offset:2px}
 .free-canvas-component>.record-component-head[data-canvas-move-handle]{cursor:grab;touch-action:none;user-select:none}
 .free-canvas-component>.record-component-head[data-canvas-move-handle]:active{cursor:grabbing}
+
+
+/* 2026-10 UI audit: scoped accessibility and readability repairs.
+   Do not enlarge builder canvas nodes or change permission semantics. */
+.permission-matrix td:not(:first-child) { padding-top: 5px; padding-bottom: 5px; }
+.permission-matrix td:not(:first-child) label,
+.permission-matrix td:not(:first-child) input[type="checkbox"] { cursor: pointer; }
+.permission-matrix td:not(:first-child) input[type="checkbox"] {
+  width: 24px; height: 24px; min-width: 24px; vertical-align: middle;
+  accent-color: #016ec4;
+}
+.permission-matrix td small, .permission-list-item small { font-size: 12px; line-height: 1.4; }
+.app-manager-checks label {
+  box-sizing: border-box; min-height: 44px; padding: 8px 10px;
+  border-radius: 6px; cursor: pointer; line-height: 1.35;
+}
+.app-manager-checks label:focus-within { outline: 2px solid #016ec4; outline-offset: 2px; }
+.app-manager-checks input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }
+.quick-find-input, .object-search, .component-search, .mini-search { min-height: 36px; height: auto; }
+.quick-find-input input, .object-search input, .component-search input, .mini-search input {
+  min-height: 32px; font-size: 13px;
+}
+.auth-card .form-control, .auth-card input:not([type="checkbox"]) {
+  box-sizing: border-box; min-height: 44px; font-size: 14px;
+}
+.auth-card .form-label, .auth-forgot, .auth-notice, .auth-error { font-size: 13px; line-height: 1.45; }
+.auth-submit { min-height: 44px; font-size: 14px; }
+.auth-forgot a, .auth-forgot button { display: inline-flex; align-items: center; min-height: 44px; }
+.auth-forgot a:focus-visible, .auth-forgot button:focus-visible {
+  outline: 2px solid #016ec4; outline-offset: 2px;
+}
+.object-search input::placeholder { color: #6e6c6a; }
+.permission-list-item small, .permission-matrix td small { color: #62615e; }
+.exchange-card-meta { color: #67716b; font-size: 12px; }
+.exchange-card-meta small { color: #67716b; font-size: 12px; }
+@media (pointer: coarse) {
+  .permission-matrix td:not(:first-child) { padding-top: 10px; padding-bottom: 10px; }
+  .app-manager-checks label { min-height: 44px; }
+}
+
+
+/* Audit follow-up: preserve builder-specific titles while normalising Setup hierarchy. */
+.object-titlebar h1 { font-size: 22px; line-height: 1.25; }
+.report-titlebar h1 { font-size: 22px; line-height: 1.25; }
+.exchange-tabs button { min-height: 44px; font-size: 13px; color: #67716b; }
+.exchange-category-row button { min-height: 36px; font-size: 12px; }
+.exchange-search { min-height: 44px; height: auto; }
+.exchange-search input { min-height: 42px; font-size: 14px; }
+.exchange-search input::placeholder { color: #626d66; }
+.app-manager-navigation-order .btn,
+.app-manager-order-controls .btn { min-width: 36px; min-height: 36px; }
+@media (pointer: coarse) {
+  .app-manager-order-controls .btn, .exchange-category-row button { min-height: 44px; }
+}
+
+
+/* Audit-measured contrast pairs; verify live composite backgrounds in CI. */
+.create-object { color: #016ec4; min-height: 36px; padding-inline: 8px; }
+.object-manager .object-search,
+.object-manager .object-search input::placeholder { color: #6e6c6a; }
+.exchange-tabs button:not(.active) { color: #67716b; }
+.company-information .permission-help,
+.company-settings .permission-help { color: #617087; }
+@media (pointer: coarse) {
+  .create-object { min-height: 44px; }
+}
+
+
+/* Readable metadata editors: keep the canvases' spatial scale unchanged. */
+.properties-panel .form-label,
+.properties-panel .form-control,
+.named-credentials-page .form-label,
+.named-credential-modal .form-label,
+.named-credentials-page table,
+.named-credential-modal .form-control { font-size: 13px; line-height: 1.4; }
+.properties-panel .form-control,
+.named-credential-modal .form-control { min-height: 36px; }
+.properties-panel button:not(.flow-add),
+.named-credentials-page button:not(.flow-add) { min-height: 30px; }
+.records-empty h1 { color: var(--text); font-size: 22px; line-height: 1.3; margin: 0 0 12px; }
+.records-empty p { font-size: 14px; line-height: 1.55; margin: 8px 0; }
+@media (pointer: coarse) {
+  .properties-panel .form-control, .named-credential-modal .form-control { min-height: 44px; }
+  .properties-panel button:not(.flow-add), .named-credentials-page button:not(.flow-add) { min-height: 44px; }
+}

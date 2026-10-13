@@ -35,6 +35,8 @@ export function RecordObjectPicker({
   const wrap = useRef<HTMLDivElement>(null);
   useDismissOnOutside(wrap, open, () => { setOpen(false); setQuery(''); });
   const available = useMemo(() => [...objects].sort((a, b) => a.pluralLabel.localeCompare(b.pluralLabel)), [objects]);
+  const counts = useMemo(() => { const n = new Map<string, number>(); for (const item of objects) { const key = item.pluralLabel.trim().toLocaleLowerCase(); n.set(key, (n.get(key) ?? 0) + 1); } return n; }, [objects]);
+  const displayName = (item: NavigableObject) => counts.get(item.pluralLabel.trim().toLocaleLowerCase())! > 1 ? `${item.pluralLabel} (${item.apiName})` : item.pluralLabel;
   const matches = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return needle ? available.filter(item =>
@@ -43,7 +45,8 @@ export function RecordObjectPicker({
   const select = (apiName: string) => {
     setOpen(false); setQuery(''); setActiveIndex(0); onSelect(apiName);
   };
-  const selectedLabel = objects.find(item => item.apiName === selected)?.pluralLabel;
+  const selectedObject = objects.find(item => item.apiName === selected);
+  const selectedLabel = selectedObject ? displayName(selectedObject) : undefined;
   return <div className="header-record-picker" ref={wrap}>
     <div className="header-record-picker-control">
       <input role="combobox" aria-label="Find record object" aria-haspopup="listbox"
@@ -64,7 +67,7 @@ export function RecordObjectPicker({
       {matches.map((item, index) => <button key={item.apiName} role="option" type="button"
         aria-selected={item.apiName === selected} className={index === activeIndex ? 'selected' : ''}
         onMouseEnter={() => setActiveIndex(index)} onClick={() => select(item.apiName)}>
-        <span>{item.pluralLabel}</span><small>{item.apiName}</small>
+        <span>{displayName(item)}</span><small>{item.apiName}</small>
       </button>)}
       {matches.length === 0 && <p className="header-search-empty">No matching objects</p>}
     </div>}
