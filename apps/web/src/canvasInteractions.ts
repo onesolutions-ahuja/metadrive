@@ -79,3 +79,26 @@ export function wrapCanvasComponent(
       position: { ...component.position!, x: 0, y: 0 } }]
     : [component]);
 }
+
+/** Restore grouped children to absolute canvas coordinates without data migrations. */
+export function ungroupCanvasComponent(
+  components: readonly PageComponentMetadata[], id: string
+): PageComponentMetadata[] {
+  const group = components.find(item => item.id === id);
+  if (!group || group.type !== 'Container' || !group.position || isCanvasLocked(group)) return [...components];
+  const children = components.filter(item => item.parentId === id || item.properties.layoutParentId === id);
+  if (!children.length || children.some(isCanvasLocked)) return [...components];
+  return components.filter(item => item.id !== id).map(item => {
+    if (!children.some(child => child.id === item.id)) return item;
+    const props = { ...item.properties };
+    delete props.layoutParentId;
+    return { ...item, parentId: undefined, properties: props,
+      position: {
+        x: group.position!.x + (item.position?.x ?? 0),
+        y: group.position!.y + (item.position?.y ?? 0),
+        width: item.position?.width ?? group.position!.width,
+        height: item.position?.height ?? group.position!.height
+      }
+    };
+  });
+}
