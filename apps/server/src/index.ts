@@ -440,6 +440,9 @@ function numericFieldValueError(dataType: string, value: number): string | null 
   return null;
 }
 
+// Persisted legacy metadata may contain incomplete picklists. Keep the API available
+// for administrators to repair them; all new metadata writes remain strictly validated.
+let hydratingPersistedMetadata = false;
 const fieldSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
@@ -510,10 +513,10 @@ const fieldSchema = z.object({
   if (field.picklistValues && !isPicklist) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist values can only be configured on Picklist fields' });
   }
-  if (field.picklistValues && field.picklistValues.length === 0) {
+  if (!hydratingPersistedMetadata && field.picklistValues && field.picklistValues.length === 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist fields must define at least one value' });
   }
-  if (isPicklist && !field.picklistValues?.length) {
+  if (!hydratingPersistedMetadata && isPicklist && !field.picklistValues?.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist fields must define at least one value' });
   }
   if ((field.picklistRestricted !== undefined || field.controllerFieldApiName !== undefined || field.valueSettings !== undefined) && !isPicklist) {
@@ -4410,7 +4413,13 @@ function loadState(sqlState?: unknown): PlatformState {
   try {
     const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
-    const parsed = stateSchema.parse(storedState);
+    let parsed: z.infer<typeof stateSchema>;
+    hydratingPersistedMetadata = true;
+    try {
+      parsed = stateSchema.parse(storedState);
+    } finally {
+      hydratingPersistedMetadata = false;
+    }
     const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
       const consolidationReady = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
         && Boolean(process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID);
