@@ -12,9 +12,12 @@
         if (!spaPath) return;
         params.delete('__spa');
         var restored = spaPath;
+        // Accept previously shared GitHub project URLs on the canonical custom domain.
+        if (restored.indexOf('/metadrive/') === 0) restored = restored.slice('/metadrive'.length);
+        if (!restored.startsWith('/') || restored.startsWith('//')) restored = '/';
         var remainingQuery = params.toString();
         if (remainingQuery) restored += (restored.indexOf('?') >= 0 ? '&' : '?') + remainingQuery;
-        window.history.replaceState({}, '', '/metadrive' + restored);
+        window.history.replaceState({}, '', restored);
       }());
     </script>
   </head>
