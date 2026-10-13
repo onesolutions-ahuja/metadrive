@@ -77,6 +77,14 @@ async function prepare(client,state){
   const expected=definedObjects(state);
   await client.query('SELECT object_id FROM md_v2_object_registry LIMIT 1');
   const mapping=await registry(client);
+  // Inspect all physical owner constraints in one catalog round trip rather
+  // than adding a database request for every object on each Records write.
+  const guardRows=await client.query(
+    "SELECT cls.relname AS table_name,c.conname,c.contype,c.convalidated "+
+    "FROM pg_constraint c JOIN pg_class cls ON cls.oid=c.conrelid "+
+    "JOIN pg_namespace ns ON ns.oid=cls.relnamespace "+
+    "WHERE ns.nspname=current_schema() AND c.conname LIKE 'md_obj_%_tenant_owner_ck'");
+  const guardByTable=new Map(guardRows.rows.map(row=>[row.table_name,row]));
   // Retire removed objects without dropping their physical tables or values.
   for(const [identifier,saved] of [...mapping]) {
     if(expected.has(identifier)) continue;
@@ -127,14 +135,15 @@ async function prepare(client,state){
     // rejects foreign-tenant rows in the physical table even if the API were
     // to omit its tenant scope. Constraint creation validates existing rows.
     const ownership=physicalTenantOwnerConstraint(current.object_id,item.tenantId);
-    const existingGuard=await client.query(
-      'SELECT conname,contype,convalidated FROM pg_constraint WHERE conrelid=to_regclass($1) AND conname=$2',
-      [current.physical_table,ownership.name]);
-    if(existingGuard.rowCount) {
-      if(existingGuard.rows[0].contype!=='c'||existingGuard.rows[0].convalidated!==true)
+    const existingGuard=guardByTable.get(current.physical_table);
+    if(existingGuard) {
+      if(existingGuard.conname!==ownership.name
+        || existingGuard.contype!=='c'||existingGuard.convalidated!==true)
         throw Error('Physical tenant ownership constraint is not validated');
     } else {
       await client.query(ownership.ddl);
+      guardByTable.set(current.physical_table,
+        {conname:ownership.name,contype:'c',convalidated:true});
     }
     const objectLabel=item.object.label??item.object.apiName;
     if(current.object_label!==objectLabel) {
