@@ -2,6 +2,7 @@ name: MD11 approved one-time live messaging smoke
 on:
   push:
     branches: [main]
+  workflow_dispatch:
     paths:
       - scripts/module11-live-smoke.mjs
       - .github/workflows/md11-live-smoke.yml
