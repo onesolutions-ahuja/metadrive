@@ -732,11 +732,19 @@ h1, h2, h3, p { margin-top: 0; }
 .flow-graph { position: relative; flex: 0 0 auto; margin: auto; transform-origin: top center; }
 .flow-graph-connectors { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .flow-graph-edge path { fill: none; stroke: #8e8e8e; stroke-width: 2; }
+.flow-graph-edge.is-selected path { stroke: #2563a6; stroke-width: 2.5; stroke-dasharray: 7 6; animation: md10-flow-dash 1.2s linear infinite; }
+@keyframes md10-flow-dash { to { stroke-dashoffset: -26; } }
+@media (prefers-reduced-motion: reduce) { .flow-graph-edge.is-selected path { animation: none; } }
+
 .flow-graph-edge.fault path { stroke: #c23934; stroke-dasharray: 5 4; }
 .flow-graph-edge.scheduled path { stroke: #8e8e8e; stroke-dasharray: 5 4; }
 .flow-graph-edge.fault text { fill: #c23934; }
 .flow-graph-edge text { fill: #444; stroke: #f8f8f8; stroke-width: 5px; paint-order: stroke; text-anchor: middle; font-size: 10px; }
 .flow-step.flow-graph-node { position: absolute; min-height: 74px; }
+.flow-node-inline-actions { position: absolute; display: flex; flex-direction: column; gap: 4px; z-index: 2; }
+.flow-node-inline-actions .icon-button { min-width: 26px; min-height: 26px; background: #fff; border: 1px solid #c5cbd3; border-radius: 50%; box-shadow: 0 1px 3px #0001; }
+.flow-node-inline-actions .icon-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .flow-outcome-default { padding: 0 7px; color: #706e6b; font-size: 9px; }
 .flow-path { width: 100%; min-width: 560px; display: flex; flex-direction: column; align-items: center; padding: 48px 20px 100px; }
 .flow-step-wrap { width: min(380px, calc(100% - 20px)); display: flex; flex-direction: column; align-items: center; }

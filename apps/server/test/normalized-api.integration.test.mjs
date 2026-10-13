@@ -187,11 +187,31 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     const recordId=linked.data.record.Id;
     const edited=await request(port,'/records/Migration_Link__c/'+recordId,'PUT',token,{Name:'Relational Child Updated'});
     assert.equal(edited.status,200,JSON.stringify(edited.data));
+    // Offline writes are provisional: server revision/schema validation wins
+    // even when the browser queued the payload under an older form snapshot.
+    const offlineMissingRevision=await request(port,'/records/Migration_Link__c/'+recordId,
+      'PUT',token,{Name:'Offline must not overwrite'},{'X-MetaDrive-Offline-Sync':'1'});
+    assert.equal(offlineMissingRevision.status,412,
+      'Offline edit must not bypass optimistic record-version validation');
+    const offlineUnknownField=await request(port,'/records/Migration_Link__c',
+      'POST',token,{Name:'Invalid offline draft',Removed_Field__c:'old value'},
+      {'X-MetaDrive-Offline-Sync':'1'});
+    assert.equal(offlineUnknownField.status,412,
+      'Offline create must reject fields removed since the draft was queued');
+    const afterRejectedOffline=await request(port,'/records/Migration_Link__c/'+recordId,'GET',token);
+    assert.equal(afterRejectedOffline.data.record.Name,'Relational Child Updated',
+      'Rejected offline mutation must not alter committed records');
+    const offlineValidEdit=await request(port,'/records/Migration_Link__c/'+recordId,
+      'PUT',token,{Name:'Offline accepted with current permissions'},
+      {'X-MetaDrive-Offline-Sync':'1','If-Unmodified-Since':edited.data.record.LastModifiedDate});
+    assert.equal(offlineValidEdit.status,200,JSON.stringify(offlineValidEdit.data));
+    assert.equal(offlineValidEdit.data.record.Name,'Offline accepted with current permissions');
+
     const staleEdit=await request(port,'/records/Migration_Link__c/'+recordId,'PUT',token,
       {Name:'Should Not Persist'}, { 'If-Unmodified-Since': linked.data.record.LastModifiedDate });
     assert.equal(staleEdit.status,412,'stale record revision must reject unsafe update');
     const currentEdit=await request(port,'/records/Migration_Link__c/'+recordId,'GET',token);
-    assert.equal(currentEdit.data.record.Name,'Relational Child Updated');
+    assert.equal(currentEdit.data.record.Name,'Offline accepted with current permissions');
     const imported=await request(port,'/records/Migration_Link__c/import','POST',token,{
       records:Array.from({length:51},(_,index)=>({Name:'Imported '+index,Account__c:parentId}))
     });
@@ -230,7 +250,7 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
       const committed=await readNormalizedState(immediatePool,mode==='typed'?verifyTypedRecords:null);
       const values=committed.state.tenants[tenantId].records.Migration_Link__c;
       assert.equal(values.length,51,'Successful CRUD/import responses must already be durable in SQL');
-      assert.equal(values.find(item=>item.Id===recordId)?.Name,'Relational Child Updated');
+      assert.equal(values.find(item=>item.Id===recordId)?.Name,'Offline accepted with current permissions');
       assert.ok(!values.some(item=>item.Id===imported.data.records[0].Id));
     } finally {await immediatePool.end();}
     const flow=await request(port,'/metadata/flows/Relational_Smoke','PUT',token,{
@@ -255,7 +275,7 @@ for(const mode of ['normalized','typed']) test(mode+' SQL API preserves metadata
     const childAfter=await request(port,'/records/Migration_Link__c/'+recordId,'GET',freshToken);
     assert.equal(childAfter.status,200,JSON.stringify(childAfter.data));
     assert.equal(childAfter.data.record.Account__c,parentId);
-    assert.equal(childAfter.data.record.Name,'Relational Child Updated');
+    assert.equal(childAfter.data.record.Name,'Offline accepted with current permissions');
     const flowAfter=await request(port,'/metadata/flows','GET',freshToken);
     assert.equal(flowAfter.status,200,JSON.stringify(flowAfter.data));
     assert.ok(flowAfter.data.flows.some(f=>f.apiName==='Relational_Smoke'));
