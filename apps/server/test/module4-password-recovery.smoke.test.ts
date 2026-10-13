@@ -62,7 +62,7 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
   const password = 'Recovery-Original-Password-2026!';
   const newPassword = 'Recovery-New-Strong-Password-2026!';
   let logs = '';
-  const child = spawn(process.execPath, [cli, 'src/index.ts'], {
+  const launch = () => spawn(process.execPath, [cli, 'src/index.ts'], {
     cwd, stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env, PORT: String(apiPort), NODE_ENV: 'test', METADRIVE_TEST_MODE: 'true',
@@ -79,6 +79,7 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
       WEB_ORIGIN: 'http://localhost:5173'
     }
   });
+  let child = launch();
   child.stdout?.on('data', (value: Buffer) => { logs += value.toString(); });
   child.stderr?.on('data', (value: Buffer) => { logs += value.toString(); });
   const api = async (route: string, token = '', method = 'GET', body?: unknown, headers: Record<string, string> = {}) => {
@@ -190,6 +191,29 @@ test('Module 4 email recovery requires tenant SMTP, preserves MFA and invalidate
     const otpMatch = otpMail.match(/Code:\s*([0-9]{6})/);
     assert.ok(otpMatch, 'Email body must contain metadata-templated 6-digit code');
     assert.equal(otpMail.includes('resetToken='), false, 'OTP must not disclose a reset URL');
+    // Regression: both metadata settings and the salted OTP challenge survive process restart.
+    child.kill('SIGTERM');
+    await Promise.race([once(child, 'exit'), new Promise((resolve) => setTimeout(resolve, 5000))]);
+    child = launch();
+    child.stdout?.on('data', (value: Buffer) => { logs += value.toString(); });
+    child.stderr?.on('data', (value: Buffer) => { logs += value.toString(); });
+    let recoveredAfterRestart = false;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      if (child.exitCode !== null) throw Error('Recovery restart failed: ' + logs);
+      try {
+        const health = await fetch('http://127.0.0.1:' + apiPort + '/health', { signal: AbortSignal.timeout(500) });
+        if (health.ok) { recoveredAfterRestart = true; break; }
+      } catch { /* restart in progress */ }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(recoveredAfterRestart, true, 'Recovery must restart with pending salted OTP challenge');
+    const persistedLogin = await api('/auth/login', '', 'POST', {email, password:newPassword});
+    assert.equal(persistedLogin.status, 200, 'Account login remains functional after OTP restart');
+    const persistedSettings = await api('/auth/password-recovery/settings', String(persistedLogin.data.access_token));
+    assert.equal(persistedSettings.status, 200);
+    assert.equal(persistedSettings.data.policy.method, 'OTP', 'Tenant verification method must survive restart');
+    assert.equal(persistedSettings.data.policy.templates.email.body.includes('Code:'), true,
+      'Tenant email template must survive restart');
     const wrongOtp = otpMatch[1] === '000000' ? '000001' : '000000';
     assert.equal((await api('/auth/password-reset/confirm', '', 'POST', {
       email, token: wrongOtp, newPassword: 'Recovered-Again-2026!'
