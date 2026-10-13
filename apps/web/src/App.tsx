@@ -10503,9 +10503,6 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
-            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
-            {page.layoutMode === 'free-canvas' && selected.type === 'Container' && <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
-            <button type="button" className="btn btn-small" aria-expanded={showCanvasConditions} onClick={() => setShowCanvasConditions(value => !value)}>Conditions</button>
             {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
@@ -10579,6 +10576,9 @@ function PageBuilder({
               }} />{option.label}</label>)}
               {!componentRelatedListOptions.length && <div className="palette-note">No related objects have a relationship to this record object.</div>}
             </>}
+            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
+            {page.layoutMode === 'free-canvas' && selected.type === 'Container' && <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
+            <button type="button" className="btn btn-small" aria-expanded={showCanvasConditions} onClick={() => setShowCanvasConditions(value => !value)}>Conditions</button>
             {inspectorTab !== 'Design' && selected.type === 'Tabs' && <>
               <div className="properties-section-title">Tabs</div><label className="form-label" htmlFor="page-component-tabs">Tab labels</label>
               <textarea id="page-component-tabs" className="form-control" rows={3} value={stringList(selected.properties.tabs, ['Related', 'Details', 'News']).join('\n')} onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, tabs: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) } })} />
