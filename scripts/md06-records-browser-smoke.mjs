@@ -95,8 +95,14 @@ try {
   }
   await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   await list.waitFor({state:'visible'});
-  const search=list.getByRole('textbox',{name:/Search Accounts/i});
+  // Record search is now a dedicated topbar control, not a duplicated list field.
+  const search=page.getByRole('searchbox',{name:/Search Accounts records/i});
+  const global=page.getByRole('searchbox',{name:'Global search across objects'});
+  if(await list.locator('.records-search').count()) throw Error('Duplicate record search must not appear in list');
+  await global.fill('Unrelated global query');
+  if(await search.inputValue()) throw Error('Global search must not populate the record search');
   await search.fill('MD06 Browser Acceptance Account');
+  if(await global.inputValue()!=='Unrelated global query') throw Error('Record search changed the global search');
   await list.getByText('MD06 Browser Acceptance Account',{exact:false}).first().waitFor({state:'visible'});
   // Await the asynchronous metadata/record response rather than asserting
   // immediately after route rendering.
