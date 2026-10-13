@@ -15,6 +15,7 @@ export default function DeveloperAccountSettings({
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -37,7 +38,7 @@ export default function DeveloperAccountSettings({
       await request<{ activated: boolean }>('/tenant/developer-account/activate', {
         method: 'POST', body: JSON.stringify({ password })
       });
-      setPassword(''); setConfirm('');
+      setPassword(''); setConfirm(''); setActivating(false);
       setStatus((current) => current ? { ...current, active: true, activated: true } : current);
       setNotice('Developer account activated. Manage its permissions in Users and RBAC.');
     } catch (cause) {
@@ -46,7 +47,7 @@ export default function DeveloperAccountSettings({
   };
 
   if (!permitted) return null;
-  return <section aria-label="Developer account" style={{ margin: '18px 0', padding: 20, border: '1px solid #cbd5d1', borderRadius: 9, maxWidth: 780 }}>
+  return <section aria-label="Developer account" className="surface permission-section" style={{ maxWidth: 800, margin: '18px 0' }}>
     <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 0, fontSize: 19 }}>
       <UserRoundCog size={21} /> Developer account
     </h2>
@@ -66,22 +67,28 @@ export default function DeveloperAccountSettings({
       </p>
       {status.activated
         ? <p>Activation is complete. Future password, role, permission, and account-state changes use the normal tenant User and RBAC controls.</p>
-        : <form onSubmit={(event) => void activate(event)} style={{ display: 'grid', gap: 11, maxWidth: 440 }}>
-          <label style={{ display: 'grid', gap: 5 }}>New developer password
+        : <>
+          {!activating && <button type="button" className="btn" onClick={() => setActivating(true)}>Activate developer account</button>}
+          {activating && <form className="settings-edit-row" onSubmit={(event) => void activate(event)} style={{ display: 'grid', gap: 11, maxWidth: 480 }}>
+          <label className="form-label">New developer password
             <input type="password" required minLength={12} maxLength={256} autoComplete="new-password"
               value={password} onChange={(event) => setPassword(event.target.value)}
-              style={{ minHeight: 44, padding: 9, border: '1px solid #aebbb8', borderRadius: 6 }} />
+              className="form-control" />
           </label>
-          <label style={{ display: 'grid', gap: 5 }}>Confirm new password
+          <label className="form-label">Confirm new password
             <input type="password" required minLength={12} maxLength={256} autoComplete="new-password"
               value={confirm} onChange={(event) => setConfirm(event.target.value)}
-              style={{ minHeight: 44, padding: 9, border: '1px solid #aebbb8', borderRadius: 6 }} />
+              className="form-control" />
           </label>
           <button type="submit" disabled={busy || !password || password !== confirm}
-            style={{ minHeight: 44, padding: 9, color: 'white', background: '#14635d', border: 0, borderRadius: 6, cursor: 'pointer' }}>
+            className="btn btn-brand">
             {busy ? 'Activating…' : 'Activate developer account'}
           </button>
+          <button type="button" className="btn" disabled={busy} onClick={() => {
+            setActivating(false); setPassword(''); setConfirm(''); setError('');
+          }}>Cancel</button>
         </form>}
+        </>}
     </>}
   </section>;
 }

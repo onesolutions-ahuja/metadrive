@@ -1317,9 +1317,11 @@ export default function FlowBuilder({
               <option value="normal">Normal</option>
               <option value="fault" disabled={selected.type === 'Start'}>Fault</option>
               <option value="scheduled" disabled={selected.type !== 'Start' || flow.flowType !== 'Record-Triggered Flow'}>Scheduled Path</option>
+              <option value="async" disabled={selected.type !== 'Start' || flow.flowType !== 'Record-Triggered Flow' || flow.startConfig.runWhen === 'before-save' || flow.startConfig.trigger === 'deleted'}>Asynchronous Path</option>
             </select>
             <button className="row-menu" aria-label="Remove connector" onClick={() => onFlowChange({ ...flow, connectors: flow.connectors.filter((item) => item.id !== connector.id) })}><X size={14} /></button>
           </div>
+          {connector.kind === 'async' && <p className="settings-panel-copy">Runs independently after the record transaction commits. The scheduler persists this path, retries eligible failures, and shows it under Pending Work.</p>}
           {connector.kind === 'scheduled' && <div className="flow-config-row">
             <select className="form-control" aria-label="Scheduled path time source field" value={connector.scheduledPath?.timeSourceFieldApiName ?? ''} onChange={(event) => updateConnector(connector.id, { scheduledPath: { ...connector.scheduledPath!, timeSourceFieldApiName: event.target.value } })}>
               <option value="">Select Date/DateTime field</option>

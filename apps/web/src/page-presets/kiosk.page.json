@@ -79,6 +79,13 @@
             "inputs": {
               "SessionId": "$session"
             }
+          },
+          "checkout": {
+            "flowApiName": "KIOSK_CHECKOUT",
+            "inputs": {
+              "SessionId": "$session",
+              "OrderType": "$event.orderType"
+            }
           }
         },
         "brandName": "Your Restaurant",

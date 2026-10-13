@@ -151,7 +151,8 @@ async function drainStateWrites(): Promise<void> {
         normalizedSnapshot = await writeNormalizedState(
           pool as unknown as Parameters<typeof writeNormalizedState>[0],
           JSON.parse(payload), normalizedSnapshot,
-          persistenceMode === 'typed' ? synchronizeTypedRecords : null
+          persistenceMode === 'typed' ? synchronizeTypedRecords : null,
+          true // queue has already JSON.parse'd this payload
         );
       } else if (persistenceMode === 'relational') {
         if (!relationalSnapshot) throw new Error('Relational database must be verified before first write');

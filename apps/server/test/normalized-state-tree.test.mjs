@@ -51,3 +51,8 @@ test('rejects duplicate identities, orphaned nodes, incorrect cardinality and no
   assert.throws(()=>restoreNormalizedTree(nodes.filter(n=>!(n.kind==='number'&&n.numberValue===1))),/Noncontiguous|Orphaned/);
   assert.throws(()=>restoreNormalizedTree(nodes.map(n=>n.kind==='number'?{...n,parentId:999}:n)),/Orphaned/);
 });
+
+test('pre-normalized JSON skips clone while retaining identical SQL graph and digest',()=>{
+  const normalized=JSON.parse(JSON.stringify(fixture()));
+  assert.deepEqual(projectNormalizedTree(normalized,true),projectNormalizedTree(normalized));
+});

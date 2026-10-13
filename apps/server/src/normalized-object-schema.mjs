@@ -21,6 +21,19 @@ export function physicalTenantOwnerConstraint(objectId, tenantId) {
     " CHECK (tenant_id = '"+tenantId+"')"};
 }
 
+/** Verify the *definition*, not just the name, of a physical ownership guard.
+ * A named CHECK(TRUE) must never satisfy the tenant isolation attestation.
+ * PostgreSQL renders a TEXT-column equality check with an explicit ::text cast.
+ */
+export function validPhysicalTenantOwnerConstraint(objectId, tenantId, row) {
+  const expected=physicalTenantOwnerConstraint(objectId,tenantId);
+  if(!row || row.conname!==expected.name || row.contype!=='c' || row.convalidated!==true)
+    return false;
+  const canonical=String(row.definition??'').replace(/\s+/g,'');
+  return canonical==="CHECK((tenant_id='"+tenantId+"'::text))"
+    || canonical==="CHECK((tenant_id='"+tenantId+"'))";
+}
+
 function precision(type, family) {
   const match=type.match(new RegExp('^'+family+'\\((\\d+),\\s*(\\d+)\\)$','i'));
   if(!match) return null;

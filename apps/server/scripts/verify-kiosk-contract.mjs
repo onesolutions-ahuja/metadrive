@@ -21,7 +21,8 @@ for (const page of pages) {
   assert(!Object.hasOwn(p, 'products'), 'Products cannot be stored as per-card page properties');
   for (const event of ['start', 'add', 'remove', 'quantity', 'reset'])
     assert.match(p.actionFlows[event]?.flowApiName ?? '', /^KIOSK_/);
-  assert(!p.actionFlows.checkout, 'Checkout must not activate without a verified payment provider');
+  assert.equal(p.actionFlows.checkout?.flowApiName, 'KIOSK_CHECKOUT');
+  assert.deepEqual(p.actionFlows.checkout?.inputs, { SessionId: '$session', OrderType: '$event.orderType' });
 }
 for (const name of ['Product__c', 'CartLine__c', 'NamedDevice__c', 'Cart__c', 'PaymentTransaction__c'])
   assert(src.includes("'" + name + "'"), 'Missing object bootstrap: ' + name);
@@ -41,4 +42,4 @@ for (const name of ['KIOSK_SESSION_START','KIOSK_CART_ADD','KIOSK_CART_QUANTITY'
   }
 }
 assert.equal(tenant.flows.find((f) => f.apiName === 'KIOSK_CHECKOUT').status, 'Draft');
-console.log('Kiosk source, metadata, cart actions, and inactive payment guard verified.');
+console.log('Kiosk source, metadata, cart and checkout bindings, and inactive payment guard verified.');
