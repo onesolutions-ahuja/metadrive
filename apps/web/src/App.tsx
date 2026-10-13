@@ -83,6 +83,7 @@ import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
 import TenantUsagePanel from './TenantUsagePanel';
 import DeveloperAccountSettings from './DeveloperAccountSettings';
+import SettingsViewRow from './SettingsViewRow';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import kioskPagePreset from './page-presets/kiosk.editable.json';
 import tillPagePreset from './page-presets/till.editable.json';
@@ -3804,7 +3805,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} /><TenantEmailRecoverySettings /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
@@ -6711,7 +6712,7 @@ function TenantMfaSettings({ onReauthenticate }: { onReauthenticate: () => void 
   </section>;
 }
 
-function CompanySettings() {
+function CompanySettings({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<CurrencySettingsMetadata>({
     corporateCurrency: 'USD',
     currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }]
@@ -6719,6 +6720,8 @@ function CompanySettings() {
   const [corporateCode, setCorporateCode] = useState('USD');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editingRow, setEditingRow] = useState<string | null>(null);
+  const previousValue = useRef<{ draft: CurrencySettingsMetadata; corporateCode: string } | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -6740,6 +6743,23 @@ function CompanySettings() {
     return () => { active = false; };
   }, []);
 
+  const beginEdit = (row: string) => {
+    if (!canManage || saving || loading || editingRow) return;
+    previousValue.current = { draft, corporateCode };
+    setEditingRow(row);
+    setError('');
+    setNotice('');
+  };
+  const cancelEdit = () => {
+    if (saving) return;
+    if (previousValue.current) {
+      setDraft(previousValue.current.draft);
+      setCorporateCode(previousValue.current.corporateCode);
+    }
+    previousValue.current = null;
+    setEditingRow(null);
+    setError('');
+  };
   const setCorporateCurrency = () => {
     const normalized = corporateCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalized)) {
@@ -6753,8 +6773,7 @@ function CompanySettings() {
         corporateCurrency: normalized,
         currencies: hasCorporate
           ? current.currencies.map((currency) => currency.currencyIsoCode === normalized
-            ? { ...currency, conversionRate: 1 }
-            : currency)
+            ? { ...currency, conversionRate: 1 } : currency)
           : [...current.currencies, { currencyIsoCode: normalized, conversionRate: 1 }]
       };
     });
@@ -6763,6 +6782,7 @@ function CompanySettings() {
   };
 
   const save = async () => {
+    if (!canManage || !editingRow || saving) return;
     const normalizedCorporateCode = corporateCode.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(normalizedCorporateCode)) {
       setError('Corporate currency must be a three-letter ISO 4217 code.');
@@ -6773,8 +6793,7 @@ function CompanySettings() {
       corporateCurrency: normalizedCorporateCode,
       currencies: hasCorporateCurrency
         ? draft.currencies.map((currency) => currency.currencyIsoCode === normalizedCorporateCode
-          ? { ...currency, conversionRate: 1 }
-          : currency)
+          ? { ...currency, conversionRate: 1 } : currency)
         : [...draft.currencies, { currencyIsoCode: normalizedCorporateCode, conversionRate: 1 }]
     };
     setSaving(true);
@@ -6782,11 +6801,12 @@ function CompanySettings() {
     setNotice('');
     try {
       const saved = await apiRequest<CurrencySettingsMetadata>('/metadata/currencies', {
-        method: 'PUT',
-        body: JSON.stringify(settings)
+        method: 'PUT', body: JSON.stringify(settings)
       });
       setDraft(saved);
       setCorporateCode(saved.corporateCurrency);
+      previousValue.current = null;
+      setEditingRow(null);
       setNotice('Company currency settings saved.');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -6795,83 +6815,96 @@ function CompanySettings() {
     }
   };
 
-  return (
-    <div className="home-content">
-      <PageHeading eyebrow="Company Settings" title="Company Information" description="Configure the corporate currency and active conversion rates used by currency formulas." />
-      <section className="surface permission-section">
-        <div className="section-toolbar">
-          <div><h2>Currency Settings</h2><p>Rates express units of corporate currency per one unit of the active currency.</p></div>
-          <button className="btn btn-brand" type="button" onClick={() => void save()} disabled={loading || saving}>
-            <Save size={14} />{saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-        {loading ? <p className="permission-help">Loading currency settings…</p> : <>
-          <label className="form-label">Corporate Currency (ISO 4217)
-            <input className="form-control" value={corporateCode} maxLength={3}
-              onChange={(event) => {
-                setCorporateCode(event.target.value.toUpperCase());
-                setError('');
-              }}
-              onBlur={setCorporateCurrency} />
-          </label>
-          <h3 className="permission-section-heading">Active Currencies</h3>
-          <div className="currency-settings-list">
-            {draft.currencies.map((currency, index) => (
-              <div className="currency-setting-row" key={`${currency.currencyIsoCode}-${index}`}>
-                <label className="form-label">Currency Code
-                  <input className="form-control" value={currency.currencyIsoCode} maxLength={3}
-                    disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                    onChange={(event) => {
-                      const currencyIsoCode = event.target.value.toUpperCase();
-                      setDraft((current) => ({
-                        ...current,
-                        currencies: current.currencies.map((item, itemIndex) => itemIndex === index
-                          ? { ...item, currencyIsoCode }
-                          : item)
-                      }));
-                      setNotice('');
-                    }} />
+  const addCurrency = () => {
+    if (!canManage || editingRow || loading) return;
+    const index = draft.currencies.length;
+    beginEdit(`currency-${index}`);
+    setDraft((current) => ({
+      ...current, currencies: [...current.currencies, { currencyIsoCode: '', conversionRate: 1 }]
+    }));
+  };
+
+  return <div className="home-content settings-read-first-page">
+    <PageHeading eyebrow="Company Settings" title="Company Information"
+      description="View your corporate currency and active conversion rates used by currency formulas." />
+    <section className="surface permission-section">
+      <div className="section-toolbar">
+        <div><h2>Currency Settings</h2>
+          <p>Rates express units of corporate currency per one unit of the active currency.</p></div>
+      </div>
+      {loading ? <p className="permission-help">Loading currency settings…</p> : <>
+        <div className="settings-read-first-section">
+          {editingRow === 'corporate'
+            ? <div className="settings-edit-row">
+                <label className="form-label">Corporate Currency (ISO 4217)
+                  <input autoFocus className="form-control" value={corporateCode} maxLength={3}
+                    onChange={(event) => { setCorporateCode(event.target.value.toUpperCase()); setError(''); }}
+                    onBlur={setCorporateCurrency} />
                 </label>
-                <label className="form-label">Conversion Rate
-                  <input className="form-control" type="number" min="0" step="any"
-                    value={currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}
-                    disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                    onChange={(event) => {
-                      const conversionRate = Number(event.target.value);
-                      setDraft((current) => ({
-                        ...current,
-                        currencies: current.currencies.map((item, itemIndex) => itemIndex === index
-                          ? { ...item, conversionRate }
-                          : item)
-                      }));
-                      setNotice('');
-                    }} />
-                </label>
-                <button className="btn" type="button" aria-label={`Remove ${currency.currencyIsoCode || 'currency'}`}
-                  disabled={currency.currencyIsoCode === draft.corporateCurrency}
-                  onClick={() => {
-                    setDraft((current) => ({
-                      ...current,
-                      currencies: current.currencies.filter((_item, itemIndex) => itemIndex !== index)
-                    }));
-                    setNotice('');
-                  }}><Trash2 size={14} />Remove</button>
               </div>
-            ))}
-          </div>
-          <button className="btn" type="button" onClick={() => {
-            setDraft((current) => ({
-              ...current,
-              currencies: [...current.currencies, { currencyIsoCode: '', conversionRate: 1 }]
-            }));
-            setNotice('');
-          }}><Plus size={14} />Add Currency</button>
-        </>}
-        {error && <p className="form-error" role="alert">{error}</p>}
-        {notice && <p className="form-success" role="status">{notice}</p>}
-      </section>
-    </div>
-  );
+            : <SettingsViewRow label="Corporate Currency (ISO 4217)" value={draft.corporateCurrency}
+                canEdit={canManage && !editingRow} onEdit={() => beginEdit('corporate')} />}
+        </div>
+        <h3 className="permission-section-heading">Active Currencies</h3>
+        <div className="settings-read-first-section">
+          {draft.currencies.map((currency, index) => (
+            editingRow === `currency-${index}`
+              ? <div className="settings-edit-row" key={`currency-edit-${index}`}>
+                  <div className="settings-edit-row-grid">
+                    <label className="form-label">Currency Code
+                      <input autoFocus className="form-control" value={currency.currencyIsoCode} maxLength={3}
+                        disabled={currency.currencyIsoCode === draft.corporateCurrency}
+                        onChange={(event) => {
+                          const currencyIsoCode = event.target.value.toUpperCase();
+                          setDraft((current) => ({
+                            ...current, currencies: current.currencies.map((item, itemIndex) => itemIndex === index
+                              ? { ...item, currencyIsoCode } : item)
+                          }));
+                        }} />
+                    </label>
+                    <label className="form-label">Conversion Rate
+                      <input className="form-control" type="number" min="0" step="any"
+                        value={currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}
+                        disabled={currency.currencyIsoCode === draft.corporateCurrency}
+                        onChange={(event) => {
+                          const conversionRate = Number(event.target.value);
+                          setDraft((current) => ({
+                            ...current, currencies: current.currencies.map((item, itemIndex) => itemIndex === index
+                              ? { ...item, conversionRate } : item)
+                          }));
+                        }} />
+                    </label>
+                  </div>
+                  {currency.currencyIsoCode !== draft.corporateCurrency && <div className="settings-read-first-toolbar">
+                    <button type="button" className="btn" onClick={() => {
+                      setDraft((current) => ({
+                        ...current, currencies: current.currencies.filter((_item, itemIndex) => itemIndex !== index)
+                      }));
+                      setEditingRow('removed-currency');
+                    }}><Trash2 size={14} />Remove Currency</button>
+                  </div>}
+                </div>
+              : <SettingsViewRow key={`currency-view-${index}`}
+                  label={currency.currencyIsoCode || 'New currency'}
+                  value={`Conversion rate: ${currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}`}
+                  canEdit={canManage && !editingRow && currency.currencyIsoCode !== draft.corporateCurrency}
+                  onEdit={() => beginEdit(`currency-${index}`)} />
+          ))}
+        </div>
+        {canManage && !editingRow && <button className="btn" type="button" onClick={addCurrency}>
+          <Plus size={14} />Add Currency
+        </button>}
+        {canManage && editingRow && <div className="settings-read-first-toolbar">
+          <button className="btn" type="button" disabled={saving} onClick={cancelEdit}>Cancel</button>
+          <button className="btn btn-brand" type="button" onClick={() => void save()} disabled={saving}>
+            <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>}
+      </>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {notice && <p className="form-success" role="status">{notice}</p>}
+    </section>
+  </div>;
 }
 
 function ObjectManager({
