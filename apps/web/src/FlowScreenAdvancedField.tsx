@@ -1,3 +1,4 @@
+import { validateFlowScreenUpload } from './flowScreenUploadValidation.mjs';
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
 
 type ScreenConfig = Record<string, unknown>;
@@ -146,9 +147,7 @@ export default function FlowScreenAdvancedField({
     const onFiles = async (event: ChangeEvent<HTMLInputElement>) => {
       const selectedFiles = Array.from(event.target.files ?? []);
       try {
-        if (selectedFiles.some((file) => file.size > maxFileSize)) {
-          throw new Error(`Each file must be no larger than ${Math.ceil(maxFileSize / 1024)} KB.`);
-        }
+        validateFlowScreenUpload(selectedFiles, files.map(file => ({ name: String(file.name ?? ''), type: String(file.type ?? ''), size: Number(file.size ?? 0) })), { maxFiles, maxFileSize, allowedTypes });
         const uploads = await Promise.all(selectedFiles.map(readFile));
         const combined = [...files, ...uploads];
         const totalBytes = combined.reduce((total, file) => total + Number(file.size ?? 0), 0);
