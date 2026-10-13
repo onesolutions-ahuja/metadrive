@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS md_integration_outbox (
   operation_key text NOT NULL CHECK (length(operation_key) BETWEEN 1 AND 200),
   method text NOT NULL,
   request_path text NOT NULL,
-  encrypted_request text NOT NULL,
+  encrypted_request text NOT NULL CHECK (encrypted_request LIKE 'enc:%' OR encrypted_request='' AND status IN ('succeeded','dead')),
   status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','leased','succeeded','dead')),
   attempts integer NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 10),
   max_attempts integer NOT NULL DEFAULT 3 CHECK (max_attempts BETWEEN 1 AND 10),
