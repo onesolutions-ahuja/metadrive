@@ -755,7 +755,7 @@ export default function FlowBuilder({
         ? selected.config.fields.filter((item): item is string => typeof item === 'string')
         : null;
       const recordLimit = displayValue(selected.config.recordLimit) || '1';
-      const outputResources = flow.resources.filter((resource) => resource.type === (recordLimit === 'all' ? 'Record Collection' : 'Record'));
+      const outputResources = flow.resources.filter((resource) => resource.type === (recordLimit === '1' ? 'Record' : 'Record Collection'));
       return <>
         <label className="form-label">Object<select className="form-control" value={displayValue(selected.config.object)} onChange={(event) => setConfig('object', event.target.value)}><option value="">Select object</option>{objects.map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label>
         {selected.type === 'Create Records' && <>
@@ -797,7 +797,14 @@ export default function FlowBuilder({
           </>}
         </>}
         {selected.type === 'Get Records' && <>
-          <label className="form-label">How Many Records to Store<select className="form-control" value={recordLimit} onChange={(event) => setConfig('recordLimit', event.target.value)}><option value="1">Only the first record</option><option value="all">All records</option></select></label>
+          <label className="form-label">How Many Records to Store<select className="form-control" value={recordLimit === 'all' || recordLimit === '1' ? recordLimit : 'limited'} onChange={(event) => {
+            setConfig('recordLimit', event.target.value === 'limited' ? '50' : event.target.value);
+          }}><option value="1">Only the first record</option><option value="limited">Up to a specified limit</option><option value="all">All records</option></select></label>
+          {recordLimit !== 'all' && recordLimit !== '1' && <label className="form-label">Maximum Records
+            <input className="form-control" type="number" min={2} max={200} step={1} value={recordLimit}
+              onChange={(event) => setConfig('recordLimit', event.target.value)} />
+            <small className="settings-panel-copy">Store up to 200 matching records in a Record Collection.</small>
+          </label>}
           <label className="form-label">Sort By<select className="form-control" value={displayValue(selected.config.sortField)} onChange={(event) => setConfig('sortField', event.target.value)}><option value="">No sorting</option>{object?.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select></label>
           <label className="form-label">Sort Order<select className="form-control" value={displayValue(selected.config.sortOrder) || 'Ascending'} onChange={(event) => setConfig('sortOrder', event.target.value)}><option>Ascending</option><option>Descending</option></select></label>
           <label className="form-label">Output Variable<select className="form-control" value={displayValue(selected.config.outputVariable)} onChange={(event) => setConfig('outputVariable', event.target.value)}><option value="">Use default output</option>{outputResources.map((resource) => <option key={resource.name} value={resource.name}>{resource.label} · {resource.name}</option>)}</select></label>

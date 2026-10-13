@@ -17664,9 +17664,10 @@ async function executeFlow(
             }
             return projected;
           };
-          const result = config.recordLimit === 'all'
-            ? sorted.map(project)
-            : sorted[0] ? project(sorted[0]) : null;
+          const recordLimit = String(config.recordLimit ?? '1');
+          const result = recordLimit === 'all' ? sorted.map(project)
+            : recordLimit === '1' ? sorted[0] ? project(sorted[0]) : null
+              : sorted.slice(0, Number(recordLimit)).map(project);
           const variableName = typeof config.outputVariable === 'string' && config.outputVariable ? config.outputVariable : `element${element.id}`;
           context.variables[variableName] = result;
         } else if (element.type === 'Create Records') {
@@ -19347,6 +19348,12 @@ function validateFlow(
     if (element.type === 'Get Records' && element.config.sortField && elementObject && !elementObject.fields.some((field) => field.apiName === element.config.sortField)) {
       errors.push(`Sort field "${String(element.config.sortField)}" on "${element.label}" does not exist on "${elementObject.apiName}".`);
     }
+    if (element.type === 'Get Records') {
+      const limit = String(element.config.recordLimit ?? '1');
+      if (limit !== 'all' && (!/^[1-9][0-9]*$/.test(limit) || Number(limit) > 200)) {
+        errors.push(`Get Records "${element.label}" limit must be all or an integer from 1 through 200.`);
+      }
+    }
     if (element.type === 'Get Records' && element.config.sortOrder !== undefined && !['Ascending', 'Descending'].includes(String(element.config.sortOrder))) {
       errors.push(`Sort order on "${element.label}" must be Ascending or Descending.`);
     }
@@ -19366,7 +19373,7 @@ function validateFlow(
     }
     if (element.type === 'Get Records' && typeof element.config.outputVariable === 'string' && element.config.outputVariable) {
       const resource = flow.resources.find((item) => item.name === element.config.outputVariable);
-      const expectedType = element.config.recordLimit === 'all' ? 'Record Collection' : 'Record';
+      const expectedType = element.config.recordLimit === 'all' || Number(element.config.recordLimit ?? 1) > 1 ? 'Record Collection' : 'Record';
       if (!resource || resource.type !== expectedType || resource.dataType !== elementObjectName) {
         errors.push(`Output variable "${element.config.outputVariable}" on "${element.label}" must be a ${expectedType} resource.`);
       }

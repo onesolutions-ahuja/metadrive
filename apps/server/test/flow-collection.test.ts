@@ -2806,6 +2806,32 @@ test('Collection Filter and Collection Sort execute and validate record collecti
     assert.equal(scalarRemoveFlow.data.valid, false);
     assert.ok(scalarRemoveFlow.data.errors.some((error: string) => error.includes('non-collection')));
 
+    // Get Records may store a bounded Record Collection without retrieving all
+    // matching records or returning a scalar first-record result.
+    const boundedGetFlow = {
+      ...flowAccessFlow.data.flow,
+      apiName: 'Flow_Get_Records_Bounded_Smoke',
+      label: 'Flow Get Records Bounded Smoke',
+      status: 'Active', versionNumber: 1, activeVersion: null, versions: [],
+      elements: flowAccessFlow.data.flow.elements.map((element: any) => element.type === 'Get Records'
+        ? { ...element, config: { ...element.config,
+          conditions: [], recordLimit: '2', outputVariable: 'AccessibleAccounts'
+        } } : element)
+    };
+    const savedBounded = await send('/metadata/flows/Flow_Get_Records_Bounded_Smoke', token, 'PUT', boundedGetFlow);
+    assert.equal(savedBounded.status, 200, JSON.stringify(savedBounded.data));
+    const boundedRun = await send('/flows/Flow_Get_Records_Bounded_Smoke/execute', token, 'POST', {});
+    assert.equal(boundedRun.status, 200, JSON.stringify(boundedRun.data));
+    assert.equal(boundedRun.data.outputs.AccessibleAccounts.length, 2);
+    const invalidLimit = await send('/metadata/flows/Flow_Get_Records_Bounded_Smoke/validate',
+      token, 'POST', {
+        ...boundedGetFlow,
+        elements: boundedGetFlow.elements.map((element: any) => element.type === 'Get Records'
+          ? { ...element, config: { ...element.config, recordLimit: '201' } } : element)
+      });
+    assert.equal(invalidLimit.data.valid, false);
+    assert.ok(invalidLimit.data.errors.some((error: string) => error.includes('integer from 1 through 200')));
+
   } finally {
     if (child) await stopApi(child);
     await rm(directory, { recursive: true, force: true });
