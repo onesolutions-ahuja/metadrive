@@ -31,3 +31,9 @@ test('malformed metadata and forged file sizes fail closed', () => {
     assert.throws(() => validateFlowScreenUpload([file('a.pdf','application/pdf',size)], [], good), /invalid file size/);
   }
 });
+
+test('persisted uploads cannot bypass allowed type or per-file size rules', () => {
+  assert.throws(() => validateFlowScreenUpload([], [file('script.exe', 'application/x-msdownload', 20)], options), /type is not allowed/);
+  assert.throws(() => validateFlowScreenUpload([], [file('large.pdf', 'application/pdf', 400 * 1024)], options), /Each file/);
+  assert.doesNotThrow(() => validateFlowScreenUpload([], [file('valid.pdf', 'application/pdf', 20)], options));
+});

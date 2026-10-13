@@ -13,13 +13,13 @@ export function validateFlowScreenUpload(selectedFiles, existingFiles, { maxFile
   }
   const bytes = [...existingFiles, ...selectedFiles].reduce((total, file) => total + Number(file.size ?? 0), 0);
   if (bytes > 512 * 1024) throw new Error('Selected files exceed the 512 KB total limit.');
-  if (allowedTypes.length && selectedFiles.some(file => !allowedTypes.some(allowed => {
+  if (allowedTypes.length && [...existingFiles, ...selectedFiles].some(file => !allowedTypes.some(allowed => {
     const normalized = allowed.trim().toLowerCase();
     const mime = String(file.type || '').toLowerCase();
     return normalized === mime || (normalized.endsWith('/*') && mime.startsWith(normalized.slice(0, -1)))
       || (normalized.startsWith('.') && file.name.toLowerCase().endsWith(normalized));
   }))) throw new Error('A selected file type is not allowed for this Flow screen field.');
-  if (selectedFiles.some(file => file.size > maxFileSize)) {
+  if ([...existingFiles, ...selectedFiles].some(file => file.size > maxFileSize)) {
     throw new Error(`Each file must be no larger than ${Math.ceil(maxFileSize / 1024)} KB.`);
   }
 }
