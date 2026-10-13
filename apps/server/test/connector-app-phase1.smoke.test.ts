@@ -175,6 +175,39 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.equal(retainedCredential.enabled,false);
     assert.equal(retainedCredential.id,saved.data.credential.id,'Reinstall must preserve credential identity');
     assert.equal(retainedCredential.hasSecret,true,'Reinstall must preserve encrypted authentication configuration');
+    // Generic AppExchange lifecycle installs the Kiosk package only after a
+    // valid entitlement; no additional kiosk-specific backend routes.
+    const beforeKiosk=(await api(portNumber,'/metadata/objects',token)).data.objects as Array<Record<string,any>>;
+    const existingProduct=beforeKiosk.find(item=>item.apiName==='Product');
+    const installKiosk=await api(portNumber,'/flows/ONE_Install_Connector/execute',token,{AppKey:'kiosk'});
+    assert.equal(installKiosk.status,200,JSON.stringify(installKiosk.data));
+    assert.equal((await api(portNumber,'/metadata/pages',token)).data.pages.some((page:Record<string,any>)=>page.apiName==='UNE_KIOSK'),false,
+      'Unlicensed installation must not expose kiosk page yet');
+    const activateKiosk=await api(portNumber,'/flows/ONE_Start_Connector_Trial/execute',token,{AppKey:'kiosk'});
+    assert.equal(activateKiosk.status,200,JSON.stringify(activateKiosk.data));
+    const afterKiosk=(await api(portNumber,'/metadata/objects',token)).data.objects as Array<Record<string,any>>;
+    for (const apiName of ['Product','Cart__c','CartLine__c','Sale__c','SaleItem__c','NamedDevice__c','KioskSettings__c']) {
+      assert.equal(afterKiosk.filter(item=>item.apiName===apiName).length,1,apiName+' should exist exactly once');
+    }
+    const product=afterKiosk.find(item=>item.apiName==='Product');
+    if (existingProduct) {
+      assert.equal(product.kind,existingProduct.kind,'Kiosk must reuse existing Product metadata');
+    }
+    const kioskPages=(await api(portNumber,'/metadata/pages',token)).data.pages as Array<Record<string,any>>;
+    const kioskPage=kioskPages.find(page=>page.apiName==='UNE_KIOSK');
+    assert.ok(kioskPage,'Kiosk page must be installed');
+    assert.equal(kioskPage.components[0].properties.objectApiName,'Product');
+    const kioskFlows=(await api(portNumber,'/metadata/flows',token)).data.flows as Array<Record<string,any>>;
+    assert.equal(kioskFlows.find(flow=>flow.apiName==='KIOSK_CHECKOUT')?.status,'Draft',
+      'Payment remains blocked until a provider Flow is configured');
+    const kioskApps=(await api(portNumber,'/metadata/apps',token)).data.apps as Array<Record<string,any>>;
+    assert.ok(kioskApps.some(app=>app.apiName==='KioskApp'));
+    // A second write must never overwrite an edited object definition.
+    const kioskTrialAgain=await api(portNumber,'/flows/ONE_Install_Connector/execute',token,{AppKey:'kiosk'});
+    assert.equal(kioskTrialAgain.status,200);
+    assert.equal((await api(portNumber,'/metadata/objects',token)).data.objects.filter(
+      (item:Record<string,any>)=>item.apiName==='Sale__c').length,1);
+
   } finally {
     await stop(child);
     await rm(dir,{recursive:true,force:true});
