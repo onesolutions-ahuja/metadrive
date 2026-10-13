@@ -74,7 +74,7 @@ import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
-import { childrenOf, canNest, componentLayoutProps, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
+import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import { reconcileNavigationOrder } from './appNavigation';
@@ -4858,7 +4858,13 @@ function LightningAppRuntime({
     {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
-    childrenOf(page.components, null).filter((component) => isAppComponentVisible(component) && (component.region ?? 'main') === region).map(renderComponent);
+    childrenOf(page.components, null).filter((component) => isAppComponentVisible(component) && (component.region ?? 'main') === region).map(component => {
+      const content = renderComponent(component);
+      return content && !component.type.startsWith('Custom:') && !isLayoutType(component.type)
+        && hasPageComponentAppearance(component.properties)
+        ? <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{content}</div>
+        : content;
+    });
   return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
     <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18} /></div>
@@ -5908,7 +5914,12 @@ function RecordWorkspace({
       return <div className="records-message" role="status" key={component.id}>{component.label} is not supported in record runtime.</div>;
     };
     const renderRuntimeRegion = (region: 'header' | 'main' | 'sidebar') =>
-      childrenOf(assignedPage?.components ?? [], null).filter((component) => (component.region ?? 'main') === region).map(renderRuntimeComponent);
+      childrenOf(assignedPage?.components ?? [], null).filter((component) => (component.region ?? 'main') === region).map(component => {
+        const content = renderRuntimeComponent(component);
+        return content && !component.type.startsWith('Custom:') && hasPageComponentAppearance(component.properties)
+          ? <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{content}</div>
+          : content;
+      });
     return <div className="records-page">
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
