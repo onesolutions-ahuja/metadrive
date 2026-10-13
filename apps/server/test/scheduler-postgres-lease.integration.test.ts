@@ -44,3 +44,32 @@ test('scheduler lease serializes overlapping dispatches and releases after failu
     assert.equal(await withSchedulerLease(async () => { recovered = true; }), true);
     assert.equal(recovered, true);
   });
+
+
+test('scheduler lease is recovered after an abruptly disconnected replica', { skip: !local }, async () => {
+  process.env.DATABASE_URL = url;
+  process.env.PGSSLMODE = 'disable';
+  const { Client } = await import('pg');
+  const { withSchedulerLease } = await import('../src/postgres-state.js');
+  // Model a replica whose database connection dies without running the
+  // scheduler callback's finally block. PostgreSQL must release its lock.
+  const crashedReplica = new Client({ connectionString: url, ssl: false });
+  await crashedReplica.connect();
+  try {
+    const lease = await crashedReplica.query(
+      'SELECT pg_try_advisory_lock($1::integer, $2::integer) AS acquired',
+      [1330463812, 1]
+    );
+    assert.equal(lease.rows[0]?.acquired, true);
+    let invoked = false;
+    assert.equal(await withSchedulerLease(async () => { invoked = true; }), false);
+    assert.equal(invoked, false, 'second replica must not dispatch before crash');
+  } finally {
+    // Closing the session without unlocking simulates crash recovery, rather
+    // than the graceful release path exercised by the other integration test.
+    await crashedReplica.end();
+  }
+  let recoveredDispatches = 0;
+  assert.equal(await withSchedulerLease(async () => { recoveredDispatches++; }), true);
+  assert.equal(recoveredDispatches, 1, 'outstanding work must have one lease holder');
+});
