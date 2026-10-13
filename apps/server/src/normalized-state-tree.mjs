@@ -12,8 +12,10 @@ function assertJson(value) {
   return JSON.parse(serialized);
 }
 
-export function projectNormalizedTree(source) {
-  const state=assertJson(source);
+// The typed SQL queue has already JSON.parse'd its snapshot. Direct callers
+// retain the original JSON-normalization behaviour unless they opt in.
+export function projectNormalizedTree(source,alreadyNormalized=false) {
+  const state=alreadyNormalized?source:assertJson(source);
   const nodes=[];
   let nextId=0;
   function visit(value,parentId,slotKey,ordinal) {
