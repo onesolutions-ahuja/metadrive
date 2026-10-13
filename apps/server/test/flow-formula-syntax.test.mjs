@@ -26,7 +26,7 @@ test('formula syntax rejects unknown functions and malformed lazy branches befor
     'VALUE({!Price',
     'VALUE({!Price}) INVALID',
     'OR({!Ready}, )',
-    'CASE({!Key}, 1, "one", 2)'
+    'CASE({!Key}, 1, "one")'
   ]) {
     assert.throws(() => validateFlowFormulaSyntax(expression), undefined, expression);
   }
