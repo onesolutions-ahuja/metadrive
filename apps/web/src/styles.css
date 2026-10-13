@@ -2530,3 +2530,22 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 @media (pointer: coarse) {
   .create-object { min-height: 44px; }
 }
+
+
+/* Readable metadata editors: keep the canvases' spatial scale unchanged. */
+.properties-panel .form-label,
+.properties-panel .form-control,
+.named-credentials-page .form-label,
+.named-credential-modal .form-label,
+.named-credentials-page table,
+.named-credential-modal .form-control { font-size: 13px; line-height: 1.4; }
+.properties-panel .form-control,
+.named-credential-modal .form-control { min-height: 36px; }
+.properties-panel button:not(.flow-add),
+.named-credentials-page button:not(.flow-add) { min-height: 30px; }
+.records-empty h1 { color: var(--text); font-size: 22px; line-height: 1.3; margin: 0 0 12px; }
+.records-empty p { font-size: 14px; line-height: 1.55; margin: 8px 0; }
+@media (pointer: coarse) {
+  .properties-panel .form-control, .named-credential-modal .form-control { min-height: 44px; }
+  .properties-panel button:not(.flow-add), .named-credentials-page button:not(.flow-add) { min-height: 44px; }
+}
