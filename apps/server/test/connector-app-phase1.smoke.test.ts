@@ -191,6 +191,46 @@ test('AppExchange installation and trial run using stored metadata flows', async
       'Unlicensed installation must not expose kiosk page yet');
     const activateKiosk=await api(portNumber,'/flows/ONE_Start_Connector_Trial/execute',token,{AppKey:'kiosk'});
     assert.equal(activateKiosk.status,200,JSON.stringify(activateKiosk.data));
+    const publicProvision=await api(portNumber,'/kiosk/devices',undefined,{index:1});
+    assert.equal(publicProvision.status,401,'Unauthenticated visitors cannot activate kiosks');
+    const provision=await api(portNumber,'/kiosk/devices',token,{index:1});
+    assert.equal(provision.status,201,JSON.stringify(provision.data));
+    assert.equal(provision.data.username,'kiosk1@'+tenantId+'.invalid');
+    assert.equal(typeof provision.data.password,'string');
+    assert.ok(provision.data.password.length>=30);
+    const duplicate=await api(portNumber,'/kiosk/devices',token,{index:1});
+    assert.equal(duplicate.status,409,'Kiosk virtual identity must not duplicate');
+    const deviceLogin=await api(portNumber,'/auth/login',undefined,{
+      email:provision.data.username,password:provision.data.password
+    });
+    assert.equal(deviceLogin.status,200,JSON.stringify(deviceLogin.data));
+    const deviceToken=deviceLogin.data.access_token as string;
+    const deviceSession=await api(portNumber,'/auth/me',deviceToken);
+    assert.equal(deviceSession.status,200);
+    assert.equal(deviceSession.data.user.profileId,'kiosk-user');
+    const kioskOnlyApps=(await api(portNumber,'/metadata/apps',deviceToken)).data.apps as Array<Record<string,any>>;
+    assert.ok(kioskOnlyApps.some(app=>app.apiName==='KioskApp'));
+    assert.equal(kioskOnlyApps.some(app=>app.apiName==='Records'),false,'Kiosk must not access unrelated applications');
+    assert.equal(deviceSession.data.user.permissions.includes('security:manage'),false);
+    const kioskCannotSeed=await api(portNumber,'/kiosk/devices',deviceToken,{index:2});
+    assert.equal(kioskCannotSeed.status,403,'Kiosk login must not manage more devices');
+    const kioskCannotReset=await api(portNumber,'/kiosk/devices/reset',deviceToken,{index:1});
+    assert.equal(kioskCannotReset.status,403);
+    const reset=await api(portNumber,'/kiosk/devices/reset',token,{index:1});
+    assert.equal(reset.status,200,JSON.stringify(reset.data));
+    assert.equal(reset.data.username,provision.data.username);
+    assert.notEqual(reset.data.password,provision.data.password);
+    const oldLogin=await api(portNumber,'/auth/login',undefined,{
+      email:provision.data.username,password:provision.data.password
+    });
+    assert.equal(oldLogin.status,401);
+    const newLogin=await api(portNumber,'/auth/login',undefined,{
+      email:reset.data.username,password:reset.data.password
+    });
+    assert.equal(newLogin.status,200);
+    const revokedSession=await api(portNumber,'/auth/me',deviceToken);
+    assert.equal(revokedSession.status,401);
+
     const afterKiosk=(await api(portNumber,'/metadata/objects',token)).data.objects as Array<Record<string,any>>;
     for (const apiName of ['Product','Cart__c','CartLine__c','Sale__c','SaleItem__c','NamedDevice__c','KioskSettings__c']) {
       assert.equal(afterKiosk.filter(item=>item.apiName===apiName).length,1,apiName+' should exist exactly once');

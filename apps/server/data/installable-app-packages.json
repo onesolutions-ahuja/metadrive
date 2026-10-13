@@ -1291,6 +1291,7 @@
         "apiName": "Kiosk_User",
         "label": "Kiosk User",
         "systemPermissions": [
+          "metadata:read",
           "flows:run"
         ],
         "objectPermissions": {
@@ -1324,6 +1325,10 @@
             "read": true,
             "create": true
           }
+        },
+        "navigationDefaultAccess": "Deny",
+        "tabPermissions": {
+          "Product": true
         }
       },
       "components": [

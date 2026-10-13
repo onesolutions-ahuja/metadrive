@@ -812,6 +812,7 @@ export type PermissionSetMetadata = {
   recordTypePermissions: Record<string, boolean>;
   appPermissions?: Record<string, boolean>;
   tabPermissions?: Record<string, boolean>;
+  navigationDefaultAccess?: 'Allow' | 'Deny';
   fieldPermissions: Record<string, { read: boolean; edit: boolean }>;
 };
 

@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import {applyInstallableAppPackages} from '../src/installable-app-packages.mjs';
 import {ensureBundledAppComponents} from '../src/bundled-app-components.mjs';
+import {kioskDeviceIdentity,prepareKioskDevice} from '../src/kiosk-device-provision.mjs';
 const catalog=JSON.parse(readFileSync(new URL('../data/installable-app-packages.json',import.meta.url),'utf8'));
 const entry=catalog.packages.find(p=>p.appKey==='kiosk');
 const tenant=(status='Trial')=>({
@@ -36,4 +37,27 @@ test('bundled components register once from trusted signed local assets',()=>{
   assert.equal(first[0].status,'Published');
   assert.match(first[0].compiledJs,/KioskOrderingExperience/);
   assert.equal(ensureBundledAppComponents(first,working,catalog,root).length,1);
+});
+
+test('kiosk virtual device seeder requires a licensed installation and restricted profile',()=>{
+  const id=kioskDeviceIdentity('demo-tenant',1);
+  assert.equal(id,'kiosk1@demo-tenant.invalid');
+  assert.throws(()=>kioskDeviceIdentity('tenant',0));
+  assert.throws(()=>prepareKioskDevice(tenant(),id,'user-a','2026-10-13T00:00:00Z'));
+  const installed=applyInstallableAppPackages(tenant(),catalog);
+  const seeded=prepareKioskDevice(installed,id,'user-a','2026-10-13T00:00:00Z');
+  const user=seeded.accessControl.users.find(u=>u.id==='user-a');
+  assert.ok(user);
+  assert.equal(user.profileId,'kiosk-user');
+  const profile=seeded.accessControl.profiles.find(p=>p.id==='kiosk-user');
+  assert.equal(profile.navigationDefaultAccess,'Deny');
+  assert.ok(profile.systemPermissions.includes('metadata:read'));
+  assert.ok(profile.systemPermissions.includes('flows:run'));
+  assert.equal(profile.appPermissions.KioskApp,true);
+  assert.equal(profile.tabPermissions.Product,true);
+  assert.equal(user.username,id);
+  assert.deepEqual(user.permissionSetIds,[]);
+  assert.throws(()=>prepareKioskDevice(seeded,id,'user-b','2026-10-13T00:00:00Z'));
+  assert.equal(seeded.pages.find(p=>p.apiName==='UNE_KIOSK').activationAssignments
+    .some(a=>a.appId==='KioskApp' && a.scope==='App Default'),true);
 });
