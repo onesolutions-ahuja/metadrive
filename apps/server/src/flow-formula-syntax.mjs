@@ -73,7 +73,7 @@ export function validateFlowFormulaSyntax(expression) {
   const peek = () => tokens[cursor];
   const next = () => tokens[cursor++];
   const expect = (expected) => {
-    if (next() !== expected) throw new Error('Formula is missing "' + expected + '".');
+    if (next() !== expected) throw new Error(expected === ')' ? 'Formula function is missing a closing parenthesis.' : 'Formula is missing "' + expected + '".');
   };
   const nested = (parse) => {
     if (++depth > 128) throw new Error('Formula exceeds the nesting limit.');
