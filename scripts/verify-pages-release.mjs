@@ -41,6 +41,9 @@ assert(appCss && appCss.content.includes('overflow-y:auto'),
   'Built CSS is missing sticky header or scrolling Setup navigation');
 const logo = await read('une-solutions-logo.webp');
 assert(logo.length > 1000 && logo.toString('ascii', 0, 4) === 'RIFF', 'Transparent logo asset missing or invalid');
+// The SPA owns /login. A static login/index.html shadows the fallback and redirects users to Render.
+const publishedPaths = await readdir(dist);
+assert(!publishedPaths.includes('login'), 'Static /login route must not override branded SPA login');
 const fallback = (await read('404.html')).toString('utf8');
 assert(fallback.includes("window.location.replace('/?__spa='"), 'Custom-domain client-side deep-link fallback missing');
 assert(html.includes('window.history.replaceState({}, \'\', restored)'), 'Custom-domain route restoration is missing');
