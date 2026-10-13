@@ -31,6 +31,12 @@ test('MD07 component registry SQL is typed, relational, tenant-safe and reversib
     await assert.rejects(
       db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope) VALUES($1,'Shared_Card','PLATFORM')",[randomUUID()]),
       /duplicate key/i);
+    await assert.rejects(
+      db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope,owner_tenant_id) VALUES($1,'Shared_Card','TENANT','tenant_a')",[randomUUID()]),
+      /Platform component name is reserved/);
+    await assert.rejects(
+      db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope) VALUES($1,'Private_Card','PLATFORM')",[randomUUID()]),
+      /Platform component name is reserved/);
     await assert.rejects(db.query("INSERT INTO md_v4_components(component_id,api_name,registry_scope) VALUES($1,'Bad_Private','TENANT')",[randomUUID()]),/check constraint/i);
     await db.query("INSERT INTO md_v4_component_versions(component_id,version,label,source_jsx,source_css,compiled_js,scoped_css,width_default,height_default,width_min,height_min,status,author_id) VALUES($1,1,'Card','src-v1','','compiled-v1','',320,180,120,60,'PUBLISHED','test-user')",[privateComponent]);
     await db.query("INSERT INTO md_v4_component_versions(component_id,version,label,source_jsx,source_css,compiled_js,scoped_css,width_default,height_default,width_min,height_min,status,author_id) VALUES($1,2,'Card','src-v2','','compiled-v2','',320,180,120,60,'DRAFT','test-user')",[privateComponent]);
