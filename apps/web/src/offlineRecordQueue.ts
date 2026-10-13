@@ -28,7 +28,7 @@ let databasePromise: Promise<IDBDatabase> | undefined;
 function database(): Promise<IDBDatabase> {
   if (!globalThis.indexedDB || !globalThis.crypto?.subtle)
     return Promise.reject(new Error('Secure offline storage is unavailable in this browser.'));
-  if (!databasePromise) databasePromise = new Promise((resolve, reject) => {
+  if (!databasePromise) databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(databaseName, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -38,7 +38,7 @@ function database(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? Error('Offline database unavailable'));
   }).catch((error: unknown) => { databasePromise = undefined; throw error; });
-  return databasePromise;
+  return databasePromise!;
 }
 function transact<T>(db: IDBDatabase, storeName: string, mode: IDBTransactionMode,
   requestFactory: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
