@@ -32,6 +32,7 @@ import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
 import { applyInstallableAppPackages } from './installable-app-packages.mjs';
+import { ensureBundledAppComponents } from './bundled-app-components.mjs';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
 import nodemailer from 'nodemailer';
@@ -9720,7 +9721,9 @@ function persistTenantRecords(tenantId: string, tenant: TenantData): void {
     autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
   }
   const updatedTenant = applyInstallableAppPackages({ ...tenant, autoNumberSequences }, installableAppCatalog) as TenantData;
-  const nextState = { ...state, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
+  const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
+    updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
+  const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
   persistState(nextState);
   state = nextState;
 }
