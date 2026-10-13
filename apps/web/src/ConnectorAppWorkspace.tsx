@@ -54,7 +54,7 @@ function configFields(metadata?: string): { values: Record<string, string>; labe
 export default function ConnectorAppWorkspace({
   app, credentials, flows, canManageCredentials, canView, canManageSecrets, canTest,
   canInstall, canLicenceAdmin, onGrantLicence, canManageFlows, encryptionReady, onBack,
-  onSave, onDelete, onRotate, onTest, onOAuthAuthorize, loadHistory, onOpenRecord, onOpenFlow, onLifecycle, onCreateKioskDevice
+  onSave, onDelete, onRotate, onTest, onOAuthAuthorize, loadHistory, onOpenRecord, onOpenFlow, onLifecycle, onCreateKioskDevice, onResetKioskDevice
 }: {
   app: ConnectorApp;
   credentials: NamedCredentialMetadata[];
@@ -67,6 +67,7 @@ export default function ConnectorAppWorkspace({
   canLicenceAdmin: boolean;
   onGrantLicence: (appKey: string) => Promise<void>;
   onCreateKioskDevice: (index: number) => Promise<{deviceId:string;username:string;password:string}>;
+  onResetKioskDevice: (index: number) => Promise<{deviceId:string;username:string;password:string}>;
   canManageFlows: boolean;
   encryptionReady: boolean | null;
   onBack: () => void;
@@ -162,6 +163,13 @@ export default function ConnectorAppWorkspace({
           catch(e){setError(e instanceof Error?e.message:'Kiosk provisioning failed');}
           finally {setActing(false);}
         })()}>Create Kiosk Login</button>
+        <button className="btn" disabled={!licensed || acting || !canInstall} onClick={()=>void (async()=>{
+          if (!window.confirm('Reset the password for kiosk '+kioskIndex+'? Its existing sessions will be invalidated.')) return;
+          setActing(true);setError('');setKioskCredentials(null);
+          try {const reset=await onResetKioskDevice(kioskIndex);setKioskCredentials({username:reset.username,password:reset.password});}
+          catch(e){setError(e instanceof Error?e.message:'Kiosk password reset failed');}
+          finally {setActing(false);}
+        })()}>Reset Kiosk Password</button>
         <button className="btn" disabled={!licensed} onClick={()=>{
           const url=new URL('/une/apps/KioskApp/home?appId=KioskApp',window.location.origin);
           window.open(url.href,'metadrive-kiosk-preview','popup,width=1100,height=850,resizable=yes,scrollbars=yes');
