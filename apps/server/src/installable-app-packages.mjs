@@ -10,7 +10,8 @@ export function applyInstallableAppPackages(tenant, catalog) {
     const installed = (next.records?.Connector_App__c ?? []).find(row => row.AppKey__c === pkg.appKey);
     // Installed business apps must expose editable metadata even before trial/licence activation.
     // Runtime usage and protected actions remain subject to normal entitlement/RBAC checks.
-    if (!installed || installed.Installed__c !== true) continue;
+    if (!installed || installed.Installed__c !== true ||
+      (pkg.appKey !== 'pos' && !['Trial','Licensed'].includes(installed.LicenceStatus__c))) continue;
     const objects = [...next.objects];
     let changed = false;
     for (const candidate of [...(pkg.objects ?? []), ...(pkg.extendObjects ?? [])]) {
