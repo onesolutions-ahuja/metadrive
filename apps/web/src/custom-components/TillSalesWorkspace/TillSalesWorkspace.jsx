@@ -1,6 +1,15 @@
 /* Registered presentation component. Objects, records and action Flows are provided by metadata runtime. */
 export default function TillSalesWorkspace(props) {
-  const p = props || {};
+  const raw = props || {};
+  const clampBasket = value => Math.min(65, Math.max(30, Number(value ?? 45) || 45));
+  const p = {
+    ...raw,
+    catalogFirst: raw.basketSide === 'right' || (raw.basketSide !== 'left' && raw.catalogFirst === true),
+    basketWidthPercent: clampBasket(raw.basketWidthPercent),
+    onLayoutChange: typeof raw.onLayoutChange === 'function'
+      ? value => raw.onLayoutChange({ ...value, basketWidthPercent: clampBasket(value.basketWidthPercent) })
+      : undefined
+  };
   const products = Array.isArray(p.products) ? p.products : [];
   const customers = Array.isArray(p.customers) ? p.customers : [];
   const lines = Array.isArray(p.cartLines) ? p.cartLines : [];
@@ -17,12 +26,10 @@ export default function TillSalesWorkspace(props) {
   const scanner = React.useRef(null);
   const currency = typeof p.currency === 'string' ? p.currency : '£';
   // Client-specific layout settings are persisted on the page, never the shared component.
-  const basketWidth = Math.max(30, Math.min(65, Number(p.basketWidthPercent ?? 45) || 45));
-  const catalogFirst = p.basketSide === 'right' || (p.basketSide !== 'left' && p.catalogFirst === true);
-  const catalogColumns = Math.min(5, Math.max(1, Math.round(Number(p.catalogColumns) || 3)));
+  const basketWidth = Math.max(25, Math.min(70, Number(p.basketWidthPercent ?? 45) || 45));
+  const catalogFirst = p.catalogFirst === true;
   const splitStyle = {
     '--md-till-basket-width': basketWidth + '%',
-    '--md-till-product-columns': catalogColumns,
     '--md-till-split-position': (catalogFirst ? 100 - basketWidth : basketWidth) + '%'
   };
   // Direct split resizing is available only inside the Page Builder design
@@ -42,7 +49,7 @@ export default function TillSalesWorkspace(props) {
     const gesture = splitGesture.current;
     if (!gesture || event.pointerId !== gesture.pointerId) return;
     const fromLeft = (event.clientX - gesture.bounds.left) / gesture.bounds.width * 100;
-    const next = Math.max(30, Math.min(65, Math.round(catalogFirst ? 100 - fromLeft : fromLeft)));
+    const next = Math.max(25, Math.min(70, Math.round(catalogFirst ? 100 - fromLeft : fromLeft)));
     gesture.percent = next;
     gesture.region.style.setProperty('--md-till-basket-width', next + '%');
     gesture.region.style.setProperty('--md-till-split-position', (catalogFirst ? 100 - next : next) + '%');
@@ -90,7 +97,7 @@ export default function TillSalesWorkspace(props) {
     const result = await emit('checkout',{paymentMethod:method,customerId:selected?.id || null});
     if (result?.completed === true) {setCompleted(true);setCustomerId('');setBarcode('');setQuery('');scanner.current?.focus();}
   };
-  return <section className="md-till" style={{'--md-till-accent':p.accentColor || '#126be5'}} aria-label={p.label || 'Cashier till'}>
+  return <section className="md-till" style={{'--md-till-accent':p.accentColor || '#126be5', '--md-till-product-columns':Math.min(5, Math.max(1, Math.round(Number(p.catalogColumns) || 3)))}} aria-label={p.label || 'Cashier till'}>
     <header className="md-till-top"><div className="md-till-brand"><span aria-hidden="true">▦</span><div><strong>{p.title || 'Sales Till'}</strong><small>{[p.storeLabel,p.terminalLabel,p.cashierLabel].filter(Boolean).join(' · ')}</small></div></div><small>{p.statusLabel || 'Ready'}</small></header>
     {(error || p.actionError) && <div role="alert" className="md-till-error">{error || p.actionError}</div>}
     {completed && <div role="status" className="md-till-success">Sale completed by the selected Flow.</div>}
@@ -99,14 +106,14 @@ export default function TillSalesWorkspace(props) {
       {typeof p.onLayoutChange === 'function' && <button type="button"
         className="md-till-split-handle" role="separator"
         aria-label="Resize Till basket and product sections"
-        aria-orientation="vertical" aria-valuemin={30} aria-valuemax={65} aria-valuenow={basketWidth}
+        aria-orientation="vertical" aria-valuemin={25} aria-valuemax={70} aria-valuenow={basketWidth}
         onPointerDown={beginSplit} onPointerMove={dragSplit}
         onPointerUp={event => finishSplit(event)} onPointerCancel={event => finishSplit(event, true)}
         onKeyDown={event => {
           if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
           event.preventDefault(); event.stopPropagation();
           const delta = event.key === 'ArrowRight' ? 1 : -1;
-          const next = Math.max(30, Math.min(65, basketWidth + (catalogFirst ? -delta : delta)));
+          const next = Math.max(25, Math.min(70, basketWidth + (catalogFirst ? -delta : delta)));
           if (next !== basketWidth) p.onLayoutChange({ basketWidthPercent: next });
         }} />}
       <section className="md-till-cart" aria-label="Sale basket">
