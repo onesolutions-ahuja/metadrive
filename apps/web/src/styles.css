@@ -2549,3 +2549,6 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .properties-panel .form-control, .named-credential-modal .form-control { min-height: 44px; }
   .properties-panel button:not(.flow-add), .named-credentials-page button:not(.flow-add) { min-height: 44px; }
 }
+
+.audit-page-heading { margin: 0 0 6px; font-size: 22px; font-weight: 700; line-height: 1.25; }
+.audit-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
