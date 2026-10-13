@@ -313,7 +313,7 @@ export type FlowInterviewMetadata = {
   flowApiName: string;
   flowLabel: string;
   versionNumber: number;
-  kind: 'screen' | 'wait' | 'scheduled' | 'async';
+  kind: 'screen' | 'wait' | 'scheduled' | 'async' | 'orchestration';
   userId: string;
   userName: string;
   screenLabel: string | null;
@@ -1149,7 +1149,8 @@ export const flowElementMetadata = [
   { type: 'Publish Platform Event', group: 'Interaction', icon: '⇧' },
   { type: 'Action', group: 'Interaction', icon: '⚡' },
   { type: 'HTTP Callout', group: 'Interaction', icon: '⇧' },
-  { type: 'Subflow', group: 'Interaction', icon: '↪' }
+  { type: 'Subflow', group: 'Interaction', icon: '↪' },
+  { type: 'Orchestration Stage', group: 'Interaction', icon: '☷' }
 ];
 
 export const recordMetadata = [
