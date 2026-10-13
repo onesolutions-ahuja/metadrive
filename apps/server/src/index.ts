@@ -4414,6 +4414,21 @@ function loadState(sqlState?: unknown): PlatformState {
   try {
     const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
+    // Earlier signed Kiosk demo seeds omitted the record audit timestamps.
+    // Heal only known demo record IDs before strict schema validation so
+    // production can start and persist the recovered state.
+    let kioskDemoAuditRepaired = false;
+    const tenantState = (storedState as { tenants?: Record<string, { records?: Record<string, Array<Record<string, unknown>>> }> })?.tenants;
+    for (const tenant of Object.values(tenantState ?? {})) {
+      for (const objectName of ['Product', 'ProductCategory']) {
+        for (const record of tenant?.records?.[objectName] ?? []) {
+          if (!/^a9130000-0000-4000-8000-00000000000[1-9]$/.test(String(record.Id ?? ''))) continue;
+          const now = new Date().toISOString();
+          if (!record.CreatedDate) { record.CreatedDate = now; kioskDemoAuditRepaired = true; }
+          if (!record.LastModifiedDate) { record.LastModifiedDate = now; kioskDemoAuditRepaired = true; }
+        }
+      }
+    }
     let parsed: z.infer<typeof stateSchema>;
     hydratingPersistedMetadata = true;
     try {
@@ -4707,7 +4722,7 @@ function loadState(sqlState?: unknown): PlatformState {
       migrated.tenants[tenantId] = removeObjectMetadata(tenant, legacyWhatsappObjectApiName);
       console.info('Retired unused legacy WhatsApp object metadata', { tenantId });
     }
-    if (!maintenanceMode && (leadStreetFieldAdded || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
+    if (!maintenanceMode && (leadStreetFieldAdded || kioskDemoAuditRepaired || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
     return migrated;
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
