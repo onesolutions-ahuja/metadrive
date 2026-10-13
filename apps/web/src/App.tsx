@@ -6405,6 +6405,7 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
     autoRetryFailedFlows: false, maxRetryAttempts: 10, conversationIdleMinutes: 15
   });
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const beforeEdit = useRef<AutomationSettingsDraft | null>(null);
@@ -6414,7 +6415,7 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   useEffect(() => {
     let active = true;
     void apiRequest<AutomationSettingsDraft>('/metadata/automation-settings')
-      .then((result) => { if (active) setDraft(result); })
+      .then((result) => { if (active) { setDraft(result); setLoaded(true); } })
       .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -6459,7 +6460,7 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
     <PageHeading eyebrow="Setup / Automation" title="Process Automation Settings"
       description="Review failed-flow retries and conversational inactivity limits." />
     <section className="surface permission-section" style={{ maxWidth: 800 }}>
-      {loading ? <p>Loading process automation settings…</p> : <>
+      {loading ? <p>Loading process automation settings…</p> : loaded ? <>
         <h2>Execution safety</h2>
         <div className="settings-read-first-section">
           {editingRow === 'autoRetryFailedFlows'
@@ -6509,7 +6510,7 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
             <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
           </button>
         </div>}
-      </>}
+      </> : null}
       {error && <p className="form-error" role="alert">{error}</p>}
       {notice && <p className="form-success" role="status">{notice}</p>}
     </section>
@@ -6796,7 +6797,7 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
     <p>Authenticator-based MFA is configured separately for each tenant. Server-side policy controls sign-in and API access.</p>
     {error && <p className="auth-error" role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
-    {canConfigure && <>
+    <>
       <div className="settings-read-first-section">
         {editingPolicy ? <div className="settings-edit-row">
           <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy
@@ -6809,7 +6810,7 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
           </label>
           <p className="settings-view-row-help">Changing the policy may require users to sign in again.</p>
         </div> : <SettingsViewRow label="Tenant MFA policy" value={mode}
-          canEdit={canManage} onEdit={() => { setDraftMode(mode); setEditingPolicy(true); }} />}
+          canEdit={canManage && canConfigure} onEdit={() => { setDraftMode(mode); setEditingPolicy(true); }} />}
       </div>
       {editingPolicy && canManage && <div className="settings-read-first-toolbar">
         <button className="btn" type="button" disabled={busy}
@@ -6819,7 +6820,7 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
           <Save size={14} />{busy ? 'Saving…' : 'Save changes'}
         </button>
       </div>}
-    </>}
+    </>
     <h3>My authenticator</h3>
     <p>{enrolled ? 'Your account has an authenticator enrolled.' : 'Your account has no authenticator enrolled.'}</p>
     {mode === 'Off' && <p>Ask a tenant security administrator to enable Optional MFA before enrolling.</p>}
@@ -6869,6 +6870,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
   });
   const [corporateCode, setCorporateCode] = useState('USD');
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingRow, setEditingRow] = useState<string | null>(null);
   const previousValue = useRef<{ draft: CurrencySettingsMetadata; corporateCode: string } | null>(null);
@@ -6882,6 +6884,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
         if (active) {
           setDraft(settings);
           setCorporateCode(settings.corporateCurrency);
+          setLoaded(true);
         }
       })
       .catch((loadError: unknown) => {
@@ -6982,7 +6985,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
         <div><h2>Currency Settings</h2>
           <p>Rates express units of corporate currency per one unit of the active currency.</p></div>
       </div>
-      {loading ? <p className="permission-help">Loading currency settings…</p> : <>
+      {loading ? <p className="permission-help">Loading currency settings…</p> : loaded ? <>
         <div className="settings-read-first-section">
           {editingRow === 'corporate'
             ? <div className="settings-edit-row">
@@ -7050,7 +7053,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
             <Save size={14} />{saving ? 'Saving…' : 'Save changes'}
           </button>
         </div>}
-      </>}
+      </> : null}
       {error && <p className="form-error" role="alert">{error}</p>}
       {notice && <p className="form-success" role="status">{notice}</p>}
     </section>
