@@ -3563,8 +3563,15 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   };
 
+  // Kiosk is a standalone customer-facing page, not a workspace tab. Resolve it
+  // from tenant page metadata so every installed kiosk opens edge-to-edge by URL.
+  const isStandaloneKioskPage = route.kind === 'app-page' && pages.some((candidate) =>
+    candidate.apiName === route.pageApiName && candidate.status === 'Active' &&
+    candidate.components.some((component) => component.type === 'Custom:KioskOrderingExperience')
+  );
+
   return (
-    <div className={kioskMode ? 'lightning kiosk-mode' : 'lightning'}>
+    <div className={kioskMode || isStandaloneKioskPage ? 'lightning kiosk-mode' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
         <button type="button" className="header-home-link" onClick={() =>
