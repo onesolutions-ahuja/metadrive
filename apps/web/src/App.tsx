@@ -1,4 +1,7 @@
+import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
+import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
+  synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
 import SchemaBuilder from './SchemaBuilder';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
@@ -26,6 +29,9 @@ import {
   Ellipsis,
   ExternalLink,
   Eye,
+  EyeOff,
+  Lock,
+  Unlock,
   FileText,
   Filter,
   GripVertical,
@@ -75,7 +81,7 @@ import { isComponentVisible } from './componentVisibility';
 import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
-import { isCanvasLocked, snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, ungroupCanvasComponent, type CanvasPosition } from './canvasInteractions';
+import { isCanvasLocked, snapCanvasPosition, snapCanvasSize, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
@@ -98,6 +104,7 @@ import EmbeddedDashboard from './EmbeddedDashboard';
 import { inspectPageDependencies } from './pageDependencies';
 import {
   canvasDimensionsForOrientation,
+  canvasBoundPosition,
   canvasOrientation,
   canvasScaleToFitWidth,
   canvasUnitsFromScreenDelta
@@ -387,14 +394,14 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
           : '';
     throw new ApiRequestError(
       `${payload.error ?? `Request failed (${response.status})`}${details ? `: ${details}` : ''}`,
-      payload
+      payload, response.status
     );
   }
   return payload;
 }
 
 class ApiRequestError extends Error {
-  constructor(message: string, readonly responseBody: unknown) {
+  constructor(message: string, readonly responseBody: unknown, readonly status: number) {
     super(message);
     this.name = 'ApiRequestError';
   }
@@ -2074,7 +2081,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     } else openSetupWorkspace('home');
   };
 
-  const addFlowElement = (type: string, afterId = selectedFlowId) => {
+  const addFlowElement = (type: string, afterId = selectedFlowId, connectorId?: string) => {
     if (type === 'Start') {
       notify('A flow can only have one Start element');
       return;
@@ -2106,19 +2113,15 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       'Subflow': { flowApiName: '', inputValues: [] }
     };
     const next = { id: nextId, type, label, config: defaults[type] ?? {} };
-    const insertAfter = Math.max(flow.elements.findIndex((item) => item.id === afterId), 0);
-    const previous = flow.elements[insertAfter];
-    const following = flow.elements[insertAfter + 1];
-    const retainedConnectors = flow.connectors.filter((connector) => !(connector.from === previous?.id && connector.to === following?.id));
-    commitFlow({
-      ...flow,
-      elements: [...flow.elements.slice(0, insertAfter + 1), next, ...flow.elements.slice(insertAfter + 1)],
-      connectors: [
-        ...retainedConnectors,
-        { id: `connector-${crypto.randomUUID()}`, from: previous?.id ?? 1, to: nextId, label: '', kind: 'normal' as const },
-        ...(following ? [{ id: `connector-${crypto.randomUUID()}`, from: nextId, to: following.id, label: '', kind: 'normal' as const }] : [])
-      ]
-    });
+    try {
+      // Flow connectors, not element-array order, define execution paths.
+      const inserted = insertFlowElementAtPath(flow, afterId, next, connectorId,
+        `connector-${crypto.randomUUID()}`);
+      commitFlow(inserted);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Unable to insert Flow element');
+      return;
+    }
     setSelectedFlowId(next.id);
   };
 
@@ -2142,6 +2145,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const removeFlowElement = (id: number) => {
     if (flow.elements.find((item) => item.id === id)?.type === 'Start') {
       notify('The Start element cannot be removed');
+      return;
+    }
+    if (flow.connectors.some((connector) => connector.from === id)) {
+      notify('Disconnect child paths before removing this Flow element.');
       return;
     }
     const incoming = flow.connectors.filter((connector) => connector.to === id);
@@ -5001,6 +5008,128 @@ function RecordWorkspace({
   const [campaignSaving, setCampaignSaving] = useState(false);
   const [listNotice, setListNotice] = useState('');
 
+  const [offlineOwner, setOfflineOwner] = useState<OfflineQueueOwner | null>(null);
+  const [offlineItems, setOfflineItems] = useState<OfflineRecordItem[]>([]);
+  const [offlineSyncing, setOfflineSyncing] = useState(false);
+  const [offlineMessage, setOfflineMessage] = useState('');
+  const offlineSyncGuard = useRef(false);
+  const reloadOfflineItems = useCallback(async (owner: OfflineQueueOwner) => {
+    setOfflineItems(await listOfflineRecords(owner));
+  }, []);
+  // Require a freshly authenticated identity before displaying or synchronising
+  // local data. Never take tenant/user IDs from the queued payload.
+  useEffect(() => {
+    let mounted = true;
+    void apiRequest<{user:{id:string;tenantId:string}}>('/auth/me')
+      .then(({user}) => {
+        if (mounted && user.id && user.tenantId) setOfflineOwner({userId:user.id,tenantId:user.tenantId});
+      }).catch(() => { /* Offline mode is available after this session was verified online. */ });
+    return () => { mounted = false; };
+  }, []);
+  const syncPendingOfflineItems = useCallback(async (owner: OfflineQueueOwner) => {
+    if (offlineSyncGuard.current || !navigator.onLine || !accessToken) return;
+    offlineSyncGuard.current = true;
+    setOfflineSyncing(true);
+    setOfflineMessage('');
+    try {
+      const counts = await synchronizeOfflineRecords(owner, async write => {
+        try {
+          await apiRequest<{record:RecordData}>(
+            '/records/' + encodeURIComponent(write.objectApiName)
+              + (write.recordId ? '/' + encodeURIComponent(write.recordId) : ''),
+            {
+              method: write.method,
+              headers: {
+                ...(write.originalModifiedAt ? {'If-Unmodified-Since':write.originalModifiedAt} : {}),
+                'X-MetaDrive-Offline-Sync': '1'
+              },
+              body: JSON.stringify(write.values)
+            }
+          );
+          return {outcome:'saved' as const};
+        } catch (error) {
+          // 401 means this client has no usable identity: stop, keep queued data.
+          if (error instanceof ApiRequestError && error.status===401)
+            return {outcome:'unavailable' as const};
+          // Never automatically replay an ambiguous write after transport/5xx
+          // failure: the first request may have committed on the server.
+          const reason = error instanceof Error ? error.message : 'Synchronisation failed';
+          if (error instanceof ApiRequestError && [400,403,404,409,412,422].includes(error.status))
+            return {outcome:'rejected' as const,reason};
+          return {outcome:'needs-review' as const,
+            reason:'Save result could not be confirmed. Check the server before retrying. ' + reason};
+        }
+      });
+      await reloadOfflineItems(owner);
+      if (counts.saved) setRefreshKey(value=>value+1);
+      if (counts.saved || counts.rejected || counts.review)
+        setOfflineMessage(`${counts.saved} synced; ${counts.rejected} rejected; ${counts.review} need review.`);
+    } catch (error) {
+      setOfflineMessage(error instanceof Error ? error.message : 'Unable to read local offline data');
+    } finally {
+      offlineSyncGuard.current = false;
+      setOfflineSyncing(false);
+    }
+  }, [reloadOfflineItems]);
+  useEffect(() => {
+    if (!offlineOwner) return;
+    void reloadOfflineItems(offlineOwner).catch(error => {
+      setOfflineMessage(error instanceof Error ? error.message : 'Offline queue unavailable');
+    });
+    const sync = () => { void syncPendingOfflineItems(offlineOwner); };
+    window.addEventListener('online', sync);
+    if (navigator.onLine) sync();
+    return () => window.removeEventListener('online', sync);
+  }, [offlineOwner, reloadOfflineItems, syncPendingOfflineItems]);
+  const queueRecordLocally = async (
+    values: Record<string, unknown>, status: OfflineRecordItem['status'], reason?: string
+  ) => {
+    if (!offlineOwner) throw Error('Offline identity has not been verified. Reconnect and sign in once before saving offline.');
+    if (object?.apiName==='User') throw Error('User records cannot be saved offline.');
+    await queueOfflineRecord(offlineOwner, {
+      id:crypto.randomUUID(), objectApiName:object!.apiName, method:editingId?'PUT':'POST',
+      ...(editingId ? {recordId:editingId} : {}),
+      ...(editingTimestamp ? {originalModifiedAt:editingTimestamp} : {}),
+      values, createdAt:new Date().toISOString()
+    },status,reason);
+    await reloadOfflineItems(offlineOwner);
+    setFormOpen(false);
+    setFormValues({});
+    setEditingTimestamp('');
+    setListNotice(status==='pending'
+      ? 'Saved securely on this device. This is provisional until permissions are checked during sync.'
+      : 'Outcome uncertain. Your local change was retained for review, not automatically retried.');
+  };
+  const renderOfflineQueue = () => (
+    <section className="surface" aria-label="Offline record changes" style={{marginBlock:12,padding:12}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+        <strong>Offline changes ({offlineItems.length})</strong>
+        <button type="button" className="btn" disabled={!offlineOwner || offlineSyncing || !navigator.onLine}
+          onClick={() => { if(offlineOwner) void syncPendingOfflineItems(offlineOwner); }}>
+          {offlineSyncing?'Syncing…':'Sync pending'}
+        </button>
+      </div>
+      <small>Local changes are provisional; the server checks your current permissions before saving.</small>
+      {offlineMessage && <p role="status">{offlineMessage}</p>}
+      {offlineItems.map(item => <div key={item.id} style={{paddingBlock:8,borderTop:'1px solid var(--border-color, #ddd)'}}>
+        <strong>{item.objectApiName} · {item.method==='POST'?'Create':'Edit'}</strong>
+        <span> — {item.status==='pending'?'Pending sync':item.status==='rejected'?'Sync rejected':'Needs review'}</span>
+        {item.reason && <p role="alert">{item.reason}</p>}
+        {item.status!=='pending' && <button className="btn" type="button"
+          onClick={() => { if(!offlineOwner) return;
+            if(item.status==='needs-review' && !window.confirm('Confirm that this change was NOT saved on the server. Retrying an uncertain create can make a duplicate.'))return;
+            void markOfflineRecord(offlineOwner,item.id,'pending').then(()=>syncPendingOfflineItems(offlineOwner))
+              .catch(error=>setOfflineMessage(error instanceof Error?error.message:'Unable to retry'));
+          }}>Retry after review</button>}
+        <button className="btn" type="button" onClick={() => {
+          if(!offlineOwner || !window.confirm('Discard this local change? It cannot be recovered.'))return;
+          void removeOfflineRecord(offlineOwner,item.id).then(()=>reloadOfflineItems(offlineOwner))
+            .catch(error=>setOfflineMessage(error instanceof Error?error.message:'Unable to discard'));
+        }}>Discard locally</button>
+      </div>)}
+    </section>
+  );
+
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
     return () => window.clearTimeout(timer);
@@ -5318,11 +5447,25 @@ function RecordWorkspace({
         const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'UserRoleId', 'Password']);
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
-      const response = await apiRequest<{ record: RecordData }>(path, {
+      if (!navigator.onLine) {
+        await queueRecordLocally(writableValues, 'pending');
+        return;
+      }
+      let response: {record: RecordData};
+      try {
+        response = await apiRequest<{ record: RecordData }>(path, {
         method: editingId ? 'PUT' : 'POST',
         ...(editingId && editingTimestamp ? { headers: { 'If-Unmodified-Since': editingTimestamp } } : {}),
         body: JSON.stringify(writableValues)
-      });
+        });
+      } catch (failure) {
+        if (failure instanceof TypeError) {
+          await queueRecordLocally(writableValues,'needs-review',
+            'No server response was received. Confirm whether the change saved before retrying.');
+          return;
+        }
+        throw failure;
+      }
       setFormOpen(false);
       setFormValues({});
       setEditingTimestamp('');
@@ -5697,6 +5840,7 @@ function RecordWorkspace({
 
   if (route.kind === 'record-detail') {
     if (!record) return <div className="records-page">
+      {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
         <div className="record-breadcrumb">{object.label} <ChevronRight size={13} /> {route.recordId}</div>
@@ -5924,6 +6068,7 @@ function RecordWorkspace({
           : content;
       });
     return <div className="records-page">
+      {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
       <div className="record-detail-top">
         <button className="text-action" onClick={openList}><ArrowLeft size={14} />Back to {object.pluralLabel}</button>
         <div className="record-breadcrumb">{object.label} <ChevronRight size={13} /> {recordName}</div>
@@ -6064,6 +6209,7 @@ function RecordWorkspace({
       return !layout || layout.actions.includes('Delete');
     })());
   return <div className="records-page">
+    {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
     <div className="records-page-heading">
       <div className="record-object-icon"><Database size={18} /></div>
       <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
@@ -8923,8 +9069,6 @@ function PageBuilder({
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
   const [customPropertiesError, setCustomPropertiesError] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
-  const [inspectorTab, setInspectorTab] = useState<'Design' | 'Data & Actions' | 'Conditions'>('Design');
-  const [snapEnabled, setSnapEnabled] = useState(true);
   const externalPreviewWindowRef = useRef<Window | null>(null);
   const [externalPreviewTarget, setExternalPreviewTarget] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -8978,14 +9122,14 @@ function PageBuilder({
   const [redoStack, setRedoStack] = useState<LightningPageMetadata[]>([]);
   const canvasResizeStart = useRef<{ id: string; pointerId: number; pointerX: number; pointerY: number; width: number; height: number } | null>(null);
   const [canvasResizePreview, setCanvasResizePreview] = useState<{ id: string; width: number; height: number } | null>(null);
-  const canvasResizeValue = useRef<{ id: string; width: number; height: number } | null>(null);
+  const [canvasSnap, setCanvasSnap] = useState(true);
   const canvasMoveStart = useRef<{
     id: string; pointerId: number; pointerX: number; pointerY: number;
-    position: CanvasPosition; root: HTMLElement
+    original: { x: number; y: number; width: number; height: number };
+    element: HTMLElement; x: number; y: number;
   } | null>(null);
-  const canvasMoveValue = useRef<CanvasPosition | null>(null);
-  const xGuideRef = useRef<HTMLDivElement | null>(null);
-  const yGuideRef = useRef<HTMLDivElement | null>(null);
+  const [showLayers, setShowLayers] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<'Overview' | 'Design' | 'Data & Actions' | 'Conditions'>('Overview');
   const [componentClipboard, setComponentClipboard] = useState<PageComponentMetadata | null>(null);
   const [recordScope, setRecordScope] = useState<PageActivationAssignmentMetadata['scope']>('Org Default');
   const [recordAppId, setRecordAppId] = useState(builderAppApiName || apps[0]?.apiName || '');
@@ -9191,8 +9335,61 @@ function PageBuilder({
       setCustomPropertiesError(failure instanceof Error ? failure.message : 'Enter valid JSON properties.');
     }
   };
+  // Move only the selected DOM element while dragging. Commit metadata and
+  // a single undo step on release, avoiding a page-wide render per pointer frame.
+  const startCanvasMove = (event: React.PointerEvent<HTMLDivElement>, component: PageComponentMetadata) => {
+    if (previewMode || !component.position || component.properties.canvasLocked === true
+      || event.button !== 0 || canvasMoveStart.current) return;
+    const element = event.currentTarget.closest<HTMLElement>('.free-canvas-component');
+    if (!element) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    canvasMoveStart.current = {
+      id: component.id, pointerId: event.pointerId,
+      pointerX: event.clientX, pointerY: event.clientY,
+      original: { ...component.position }, element,
+      x: component.position.x, y: component.position.y
+    };
+    setSelectedId(component.id);
+    setPageSettingsOpen(false);
+  };
+  const moveCanvasPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = canvasMoveStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    const scale = fitCanvas ? fitScale : 1;
+    const x = start.original.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, scale);
+    const y = start.original.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, scale);
+    const { position: next } = snapCanvasPosition({ ...start.original, x, y },
+      { width: page.canvasWidth, height: page.canvasHeight },
+      page.components.filter(item => item.id !== start.id && item.position && !rawLayoutParentId(item)).map(item => item.position!), canvasSnap);
+    start.x = next.x; start.y = next.y;
+    start.element.style.transform =
+      `translate(${next.x - start.original.x}px, ${next.y - start.original.y}px)`;
+  };
+  const endCanvasMove = (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
+    const start = canvasMoveStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    canvasMoveStart.current = null;
+    start.element.style.transform = '';
+    if (!cancelled && (start.x !== start.original.x || start.y !== start.original.y)) {
+      updateComponent(start.id, { position: { ...start.original, x: start.x, y: start.y } });
+    }
+  };
+  const reorderLayer = (id: string, direction: -1 | 1) => {
+    const items = [...page.components];
+    const index = items.findIndex(item => item.id === id);
+    if (index < 0) return;
+    const parent = rawLayoutParentId(items[index]);
+    const siblings = items.map((item, position) => rawLayoutParentId(item) === parent ? position : -1).filter(position => position >= 0);
+    const indexAmongSiblings = siblings.indexOf(index);
+    const target = siblings[indexAmongSiblings + direction];
+    if (target === undefined) return;
+    [items[index], items[target]] = [items[target], items[index]];
+    applyPage({ ...page, components: items });
+  };
   const startCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, component: PageComponentMetadata) => {
-    if (!component.position || isCanvasLocked(component)) return;
+    if (!component.position || component.properties.canvasLocked === true) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -9205,7 +9402,7 @@ function PageBuilder({
       height: component.position.height
     };
     setSelectedId(component.id);
-    canvasResizeValue.current = { id: component.id, width: component.position.width, height: component.position.height };
+    setInspectorTab('Overview');
     setCanvasResizePreview({ id: component.id, width: component.position.width, height: component.position.height });
   };
   const moveCanvasResize = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -9216,74 +9413,21 @@ function PageBuilder({
     const definition = component.type.startsWith('Custom:')
       ? libraryComponents.find(item => item.apiName === component.type.slice('Custom:'.length))
       : undefined;
-    const next = snapCanvasSize(component.position,
-      start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale),
-      start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale),
-      { width: page.canvasWidth, height: page.canvasHeight },
-      { width: definition?.resize?.minWidth ?? 1, height: definition?.resize?.minHeight ?? 1 },
-      snapEnabled);
-    canvasResizeValue.current = { id: component.id, width: next.width, height: next.height };
-    // Direct DOM preview avoids re-rendering every component on every pointer move.
-    const root = event.currentTarget.closest<HTMLElement>('[data-component-id]');
-    if (root) { root.style.width = next.width + 'px'; root.style.height = next.height + 'px'; }
-  };
-  const finishCanvasResize = (event: React.PointerEvent<HTMLButtonElement>, commit: boolean) => {
-    const start = canvasResizeStart.current;
-    if (!start || start.pointerId !== event.pointerId) return;
-    const size = canvasResizeValue.current;
-    const component = page.components.find(item => item.id === start.id);
-    const root = event.currentTarget.closest<HTMLElement>('[data-component-id]');
-    if (root) { root.style.removeProperty('width'); root.style.removeProperty('height'); }
-    canvasResizeStart.current = null;
-    canvasResizeValue.current = null;
-    setCanvasResizePreview(null);
-    if (commit && component?.position && size && (size.width !== start.width || size.height !== start.height))
-      updateComponent(start.id, { position: { ...component.position, width: size.width, height: size.height } });
-  };
-  const startCanvasMove = (event: React.PointerEvent<HTMLDivElement>, component: PageComponentMetadata) => {
-    if (page.layoutMode !== 'free-canvas' || previewMode || !component.position ||
-      isCanvasLocked(component) || rawLayoutParentId(component) || event.button !== 0) return;
-    const root = event.currentTarget.closest<HTMLElement>('[data-component-id]');
-    if (!root) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    canvasMoveStart.current = {
-      id: component.id, pointerId: event.pointerId, pointerX: event.clientX,
-      pointerY: event.clientY, position: { ...component.position }, root
+    const minWidth = definition?.resize?.minWidth ?? 1;
+    const minHeight = definition?.resize?.minHeight ?? 1;
+    const x = component.position?.x ?? 0;
+    const y = component.position?.y ?? 0;
+    const maxWidth = Math.max(0, page.canvasWidth - x);
+    const maxHeight = Math.max(0, page.canvasHeight - y);
+    const bounded = (value: number, minimum: number, maximum: number) => {
+      const snapped = canvasSnap ? Math.round(value / 8) * 8 : Math.round(value);
+      return Math.min(maximum, Math.max(Math.min(minimum, maximum), snapped));
     };
-    canvasMoveValue.current = component.position;
-    setSelectedId(component.id);
-    setPageSettingsOpen(false);
-  };
-  const moveCanvasPointer = (event: React.PointerEvent<HTMLDivElement>) => {
-    const start = canvasMoveStart.current;
-    if (!start || start.pointerId !== event.pointerId) return;
-    const draft = {
-      ...start.position,
-      x: start.position.x + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale),
-      y: start.position.y + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale)
-    };
-    const { position, guides } = snapCanvasPosition(
-      draft, { width: page.canvasWidth, height: page.canvasHeight },
-      page.components.filter(component => component.id !== start.id && component.position
-        && !rawLayoutParentId(component)).map(component => component.position!), snapEnabled);
-    canvasMoveValue.current = position;
-    start.root.style.translate = (position.x - start.position.x) + 'px ' + (position.y - start.position.y) + 'px';
-    if (xGuideRef.current) { xGuideRef.current.style.display = guides.x ? 'block' : 'none'; xGuideRef.current.style.left = position.x + 'px'; }
-    if (yGuideRef.current) { yGuideRef.current.style.display = guides.y ? 'block' : 'none'; yGuideRef.current.style.top = position.y + 'px'; }
-  };
-  const finishCanvasMove = (event: React.PointerEvent<HTMLDivElement>, commit: boolean) => {
-    const start = canvasMoveStart.current;
-    if (!start || start.pointerId !== event.pointerId) return;
-    const position = canvasMoveValue.current;
-    start.root.style.removeProperty('translate');
-    if (xGuideRef.current) xGuideRef.current.style.display = 'none';
-    if (yGuideRef.current) yGuideRef.current.style.display = 'none';
-    canvasMoveStart.current = null;
-    canvasMoveValue.current = null;
-    if (commit && position && (position.x !== start.position.x || position.y !== start.position.y))
-      updateComponent(start.id, { position });
+    setCanvasResizePreview({
+      id: component.id,
+      width: bounded(start.width + canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale), minWidth, maxWidth),
+      height: bounded(start.height + canvasUnitsFromScreenDelta(event.clientY - start.pointerY, fitScale), minHeight, maxHeight)
+    });
   };
   const hasOverlappingPageAssignment = (assignment: PageActivationAssignmentMetadata) =>
     (page.activationAssignments ?? []).some((existing) =>
@@ -9761,22 +9905,22 @@ function PageBuilder({
       applyPage({ ...page, layoutMode });
     }
   };
-  const canvasPositionFromEvent = (event: React.DragEvent<HTMLElement>) => {
+  const canvasPositionFromEvent = (event: React.DragEvent<HTMLElement>, width = 320, height = 180) => {
     const canvas = event.currentTarget.closest('.page-stage')?.querySelector<HTMLElement>('.free-canvas-stage');
     if (!canvas) return undefined;
     const bounds = canvas.getBoundingClientRect();
     const scaleX = page.canvasWidth / bounds.width;
     const scaleY = page.canvasHeight / bounds.height;
-    return {
-      x: Math.min(Math.max(0, Math.round((event.clientX - bounds.left) * scaleX)), page.canvasWidth - 320),
-      y: Math.min(Math.max(0, Math.round((event.clientY - bounds.top) * scaleY)), page.canvasHeight - 180),
-      width: 320,
-      height: 180
-    };
+    const bound = canvasBoundPosition({
+      x: (event.clientX - bounds.left) * scaleX,
+      y: (event.clientY - bounds.top) * scaleY,
+      width, height
+    }, { width: page.canvasWidth, height: page.canvasHeight }, canvasSnap);
+    return { ...bound, width, height };
   };
   const moveCanvasComponent = (event: React.DragEvent<HTMLElement>, component: PageComponentMetadata) => {
     if (page.layoutMode !== 'free-canvas' || previewMode || isCanvasLocked(component)) return;
-    const nextPosition = canvasPositionFromEvent(event);
+    const nextPosition = canvasPositionFromEvent(event, component.position?.width ?? 320, component.position?.height ?? 180);
     if (!nextPosition || !component.position) return;
     updateComponent(component.id, {
       position: {
@@ -9798,6 +9942,11 @@ function PageBuilder({
           page.layoutMode === 'free-canvas' ? canvasPositionFromEvent(event) : undefined, parentId);
         return;
       }
+      const dragged = page.components.find(item => item.id === draggedId);
+      if (dragged?.properties.canvasLocked === true) {
+        onNotify('Unlock this component before moving it.');
+        return;
+      }
       if (!canNest(page.components, draggedId, parentId)) {
         onNotify('Cannot nest a component inside itself or one of its descendants.');
         return;
@@ -9806,13 +9955,14 @@ function PageBuilder({
         const draggedComponent = page.components.find((component) => component.id === draggedId);
         if (!draggedComponent || isCanvasLocked(draggedComponent)) return;
         const reparented = reparentComponent(page.components, draggedId, parentId);
-        const position = !parentId ? canvasPositionFromEvent(event) : undefined;
+        const position = !parentId ? canvasPositionFromEvent(event,
+          draggedComponent.position?.width ?? 320, draggedComponent.position?.height ?? 180) : undefined;
         applyPage({ ...page, components: reparented.map((item) =>
           item.id === draggedId && position && item.position
             ? { ...item, position: {
                 ...item.position,
-                x: Math.min(position.x, page.canvasWidth - item.position.width),
-                y: Math.min(position.y, page.canvasHeight - item.position.height)
+                x: position.x,
+                y: position.y
               } } : item) });
         setSelectedId(draggedId);
         return;
@@ -9895,23 +10045,40 @@ function PageBuilder({
       } as React.CSSProperties}
       onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
-      onKeyDown={!libraryPreview ? (event) => { if (event.currentTarget === event.target && !previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      onKeyDown={!libraryPreview ? (event) => {
+         if (event.currentTarget !== event.target || previewMode) return;
+         if (event.key === 'Enter' || event.key === ' ') {
+           event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false);
+         } else if (page.layoutMode === 'free-canvas' && component.position && !nested && component.properties.canvasLocked !== true
+           && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+           event.preventDefault();
+           const delta = event.shiftKey ? 1 : canvasSnap ? 8 : 1;
+           const pos = component.position;
+           const x = pos.x + (event.key === 'ArrowLeft' ? -delta : event.key === 'ArrowRight' ? delta : 0);
+           const y = pos.y + (event.key === 'ArrowUp' ? -delta : event.key === 'ArrowDown' ? delta : 0);
+           updateComponent(component.id, { position: {
+             ...pos, x: Math.max(0, Math.min(page.canvasWidth - pos.width, x)),
+             y: Math.max(0, Math.min(page.canvasHeight - pos.height, y))
+           } });
+         }
+       } : undefined}
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
       onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
       draggable={!previewMode && !libraryPreview && !isCanvasLocked(component)}
       data-component-id={libraryPreview ? undefined : component.id}
-      onDragStart={!libraryPreview ? (event) => { event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
+      onDragStart={!libraryPreview ? (event) => { if (component.properties.canvasLocked === true || canvasMoveStart.current?.id === component.id) { event.preventDefault(); return; } event.stopPropagation(); event.dataTransfer.setData('text/plain', `component:${component.type}`); event.dataTransfer.setData('application/x-metadrive-component-id', component.id); } : undefined}
       role={libraryPreview ? undefined : page.layoutMode === 'free-canvas' ? 'group' : 'button'} tabIndex={previewMode || libraryPreview ? -1 : 0} aria-label={libraryPreview ? undefined : `${component.label} component`}
       aria-hidden={libraryPreview && !interactivePreview || undefined}
     >
       {!previewMode && !libraryPreview && <div className="record-component-head"
-        onPointerDown={(event) => startCanvasMove(event, component)}
-        onPointerMove={moveCanvasPointer}
-        onPointerUp={(event) => finishCanvasMove(event, true)}
-        onPointerCancel={(event) => finishCanvasMove(event, false)}>
-        {isCanvasLocked(component) ? <Lock size={14} /> : <GripVertical size={15} />}
-        <strong>{component.label}</strong><span>{component.type}</span><MoreHorizontal size={16} />
+        data-canvas-move-handle={page.layoutMode === 'free-canvas' && !nested ? component.id : undefined}
+        onPointerDown={page.layoutMode === 'free-canvas' && !nested ? event => startCanvasMove(event, component) : undefined}
+        onPointerMove={page.layoutMode === 'free-canvas' && !nested ? moveCanvasPointer : undefined}
+        onPointerUp={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event) : undefined}
+        onPointerCancel={page.layoutMode === 'free-canvas' && !nested ? event => endCanvasMove(event, true) : undefined}>
+        <GripVertical size={15} /><strong>{component.label}</strong><span>{component.type}</span>
+        {component.properties.canvasLocked === true ? <Lock size={13} /> : <MoreHorizontal size={16} />}
       </div>}
       {isLayoutType(component.type)
         ? <div className="page-nested-layout" style={componentVisualStyle(component.properties.visualStyle, component.type, device)}>
@@ -9969,6 +10136,10 @@ function PageBuilder({
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device,
+                      ...(component.type === 'Custom:TillSalesWorkspace' && !previewMode
+                        ? { onLayoutChange: (patch: { basketWidthPercent: number }) =>
+                            updateComponent(component.id, { properties: { ...component.properties, ...patch } }) }
+                        : {}),
                       children: nestedChildren
                     }} />
                     : libraryPreview
@@ -9978,10 +10149,10 @@ function PageBuilder({
         && <div className="metadata-nested-host">{nestedChildren}</div>}
       {!libraryPreview && !previewMode && isLayoutContainer(component) && !nestedChildren?.length
         && <div className="page-nested-empty">Drop components into this {component.label} or choose a child from the palette</div>}
-      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && selectedId === component.id && !isCanvasLocked(component) && !previewMode
+      {!libraryPreview && page.layoutMode === 'free-canvas' && !nested && customDefinition && selectedId === component.id && !previewMode && component.properties.canvasLocked !== true
         && <button type="button" className="free-canvas-resize-handle" aria-label={`Resize ${component.label}`}
           title="Drag to resize" onPointerDown={(event) => startCanvasResize(event, component)}
-          onPointerMove={moveCanvasResize} onPointerUp={(event) => finishCanvasResize(event, true)} onPointerCancel={(event) => finishCanvasResize(event, false)}
+          onPointerMove={moveCanvasResize} onPointerUp={endCanvasResize} onPointerCancel={endCanvasResize}
           onClick={(event) => event.stopPropagation()} />}
     </div>;
   };
@@ -10224,15 +10395,23 @@ function PageBuilder({
               {page.layoutMode === 'free-canvas' && <button type="button" className={previewMode ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
                 aria-pressed={previewMode} aria-label={previewMode ? 'Return to design mode' : 'Preview page without editing'}
                 onClick={() => setPreviewMode(current => !current)}>{previewMode ? '✎ Design mode' : '▷ Preview'}</button>}
-              {page.layoutMode === 'free-canvas' && <button type="button" className={snapEnabled ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
-                aria-pressed={snapEnabled} aria-label="Snap to 8 pixel grid" title="Toggle snap to grid"
-                onClick={() => setSnapEnabled(current => !current)}>⌗ Snap {snapEnabled ? 'on' : 'off'}</button>}
+              {page.layoutMode === 'free-canvas' && <button type="button" className={canvasSnap ? 'canvas-snap-toggle active' : 'canvas-snap-toggle'}
+                aria-pressed={canvasSnap} aria-label="Snap to 8 pixel grid" title="Toggle snap to grid"
+                onClick={() => setCanvasSnap(current => !current)}>⌗ Snap {canvasSnap ? 'on' : 'off'}</button>}
               {page.layoutMode === 'free-canvas' && <button
                 className={fitCanvas ? 'icon-button subtle active' : 'icon-button subtle'}
                 aria-label={fitCanvas ? 'Restore canvas size' : 'Fit canvas to view'}
                 title={fitCanvas ? 'Restore canvas size' : 'Fit canvas to view'}
                 onClick={() => setFitCanvas((current) => !current)}
               ><Maximize2 size={14} /></button>}
+              {page.layoutMode === 'free-canvas' && <>
+                <button type="button" className={canvasSnap ? 'btn btn-small active' : 'btn btn-small'}
+                  aria-pressed={canvasSnap} onClick={() => setCanvasSnap(value => !value)}
+                  aria-label="Snap components to 8 pixel grid">Snap {canvasSnap ? 'On' : 'Off'}</button>
+                <button type="button" className={showLayers ? 'btn btn-small active' : 'btn btn-small'}
+                  aria-expanded={showLayers} onClick={() => setShowLayers(value => !value)}
+                  aria-label="Toggle component layers">Layers</button>
+              </>}
               <button className="icon-button subtle" aria-label="Refresh canvas" title="Refresh canvas" onClick={() => setCanvasRefreshKey((current) => current + 1)}><RefreshCw size={14} /></button>
               <button className="icon-button subtle" aria-label="Undo" title="Undo" disabled={!undoStack.length || previewMode} onClick={undo}><Undo2 size={15} /></button>
               <button className="icon-button subtle" aria-label="Redo" title="Redo" disabled={!redoStack.length || previewMode} onClick={redo}><Redo2 size={15} /></button>
@@ -10243,6 +10422,27 @@ function PageBuilder({
               <a className="icon-button subtle" aria-label="Lightning App Builder help" title="Lightning App Builder help" href="https://trailhead.salesforce.com/content/learn/modules/lightning_app_builder/lightning_app_builder_intro" target="_blank" rel="noreferrer"><CircleHelp size={14} /></a>
             </div>
           </div>
+          {page.layoutMode === 'free-canvas' && showLayers && <nav className="modern-canvas-layers" aria-label="Canvas layers">
+            <div className="modern-canvas-layers-heading"><strong>Layers</strong><small>{page.components.length} components</small></div>
+            {page.components.map((item) => <div className={selectedId === item.id ? 'modern-layer selected' : 'modern-layer'} key={item.id}>
+              <button type="button" style={{ paddingLeft: rawLayoutParentId(item) ? 20 : 8 }}
+                onClick={() => { setSelectedId(item.id); setPageSettingsOpen(false); }} aria-current={selectedId === item.id ? 'true' : undefined}>
+                <span>{item.label}</span><small>{item.type.replace(/^Custom:/, '')}</small>
+              </button>
+              <button type="button" title="Move layer down" aria-label={'Move ' + item.label + ' down'}
+                onClick={() => reorderLayer(item.id, 1)}><ArrowDown size={13} /></button>
+              <button type="button" title="Move layer up" aria-label={'Move ' + item.label + ' up'}
+                onClick={() => reorderLayer(item.id, -1)}><ArrowUp size={13} /></button>
+              <button type="button" title={item.properties.canvasLocked === true ? 'Unlock placement' : 'Lock placement'}
+                aria-pressed={item.properties.canvasLocked === true}
+                aria-label={(item.properties.canvasLocked === true ? 'Unlock ' : 'Lock ') + item.label}
+                onClick={() => updateComponent(item.id, { properties: {
+                  ...item.properties, canvasLocked: item.properties.canvasLocked !== true
+                } })}>{item.properties.canvasLocked === true ? <Lock size={13} /> : <Unlock size={13} />}</button>
+              <button type="button" title={item.visible ? 'Hide component' : 'Show component'} aria-label={(item.visible ? 'Hide ' : 'Show ') + item.label}
+                onClick={() => updateComponent(item.id, { visible: !item.visible })}>{item.visible ? <Eye size={14} /> : <EyeOff size={14} />}</button>
+            </div>)}
+          </nav>}
           <div className="page-stage" key={canvasRefreshKey} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event)}>
             <div
               className={`record-preview ${page.layoutMode === 'free-canvas' ? 'free-canvas-preview' : page.pageType === 'Record Page' ? 'record-page-preview' : page.pageType === 'App Page' ? 'app-page-preview' : 'home-page-preview'} ${device === 'Phone' ? 'phone-preview' : device === 'Tablet' ? 'tablet-preview' : ''}`}
@@ -10254,7 +10454,7 @@ function PageBuilder({
               } : undefined}
             >
               {page.layoutMode === 'free-canvas' ? <div
-                className={`free-canvas-stage ${snapEnabled && !previewMode ? 'canvas-grid-on' : ''}`}
+                className={`free-canvas-stage ${canvasSnap && !previewMode ? 'canvas-grid-on' : ''}`}
                 style={{
                   width: page.canvasWidth,
                   height: page.canvasHeight,
@@ -10290,18 +10490,11 @@ function PageBuilder({
         <aside id="lightning-page-properties" className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}>
           <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
           {selected && !pageSettingsOpen ? <>
-            <div className="canvas-inspector-identity"><strong>{selected.label}</strong>
-              <button type="button" className="icon-button subtle" aria-label={isCanvasLocked(selected) ? 'Unlock selected component' : 'Lock selected component'}
-                onClick={() => toggleCanvasLock(selected)}>{isCanvasLocked(selected) ? <Lock size={15} /> : <Unlock size={15}/>}</button>
+            <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
+              {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
+                aria-selected={inspectorTab === tab} className={inspectorTab === tab ? 'active' : ''}
+                onClick={() => setInspectorTab(tab)}>{tab}</button>)}
             </div>
-            <div className="canvas-inspector-tabs" role="group" aria-label="Component property sections">
-              {(['Design', 'Data & Actions', 'Conditions'] as const).map(tab =>
-                <button key={tab} type="button" className={inspectorTab === tab ? 'active' : ''} aria-pressed={inspectorTab === tab}
-                  onClick={() => setInspectorTab(tab)}>{tab}</button>)}
-            </div>
-            {isCanvasLocked(selected) && <p className="properties-help" role="status">This layer is locked. Unlock it to edit.</p>}
-            <fieldset className="canvas-inspector-fields" disabled={isCanvasLocked(selected)}>
-            {inspectorTab === 'Design' && <>
             <div className="properties-section-title">Component</div>
             <label className="form-label" htmlFor="page-component-type">Component type</label><div className="form-display" id="page-component-type">{selected.type}</div>
             <div className="selected-component-preview">
@@ -10310,18 +10503,30 @@ function PageBuilder({
               {selectedComponentDescription && <p>{selectedComponentDescription}</p>}
             </div>
             <label className="form-label" htmlFor="page-component-label">Label</label><input id="page-component-label" className="form-control" value={selected.label} onChange={(event) => updateComponent(selected.id, { label: event.target.value })} />
-            <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />
+            {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {rawLayoutParentId(selected) && <button type="button" className="btn btn-small"
               onClick={() => applyPage({ ...page, components: reparentComponent(page.components, selected.id, null) })}>Move out of container</button>}
             {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected)
               && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
             {page.layoutMode === 'free-canvas' && selected.type === 'Container' &&
               <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
-            <PageComponentStyleEditor properties={selected.properties}
-              onChange={(properties) => updateComponent(selected.id, { properties })} />
-            </>}
-            {inspectorTab === 'Data & Actions' && <>
-            {selectedCustomDefinition && <>
+            {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
+              onChange={(properties) => updateComponent(selected.id, { properties })} />}
+            {inspectorTab !== 'Data & Actions' && selected.type === 'Custom:TillSalesWorkspace' && <section className="modern-till-layout-controls">
+              <div className="properties-section-title">Till layout</div>
+              <label className="form-label">Basket width: {Number(selected.properties.basketWidthPercent ?? 45)}%
+                <input type="range" min="25" max="70" step="1" aria-label="Till basket width"
+                  value={Number(selected.properties.basketWidthPercent ?? 45)}
+                  onChange={event => updateComponent(selected.id, { properties: {
+                    ...selected.properties, basketWidthPercent: Number(event.target.value)
+                  } })} />
+              </label>
+              <label className="checkbox-row"><input type="checkbox" checked={selected.properties.catalogFirst === true}
+                onChange={event => updateComponent(selected.id, { properties: {
+                  ...selected.properties, catalogFirst: event.target.checked
+                } })} />Show products before basket</label>
+            </section>}
+            {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
               {!['Custom:KioskContainer','Custom:KioskRow','Custom:KioskColumn','Custom:KioskCard','Custom:KioskGrid'].includes(selected.type)
@@ -10369,25 +10574,25 @@ function PageBuilder({
                 onChange={(properties) => updateComponent(selected.id, { properties })}
               />
             </>}
-            {selected.type === 'Related List' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Related List' && <>
               <div className="properties-section-title">Related Lists</div>
               {componentRelatedListOptions.map((option) => <label className="checkbox-row property-check" key={option.apiName}><input type="checkbox" checked={selectedRelatedLists.includes(option.apiName)} onChange={(event) => {
                 updateComponent(selected.id, { properties: { ...selected.properties, relatedLists: event.target.checked ? [...selectedRelatedLists, option.apiName] : selectedRelatedLists.filter((item) => item !== option.apiName) } });
               }} />{option.label}</label>)}
               {!componentRelatedListOptions.length && <div className="palette-note">No related objects have a relationship to this record object.</div>}
             </>}
-            {selected.type === 'Tabs' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Tabs' && <>
               <div className="properties-section-title">Tabs</div><label className="form-label" htmlFor="page-component-tabs">Tab labels</label>
               <textarea id="page-component-tabs" className="form-control" rows={3} value={stringList(selected.properties.tabs, ['Related', 'Details', 'News']).join('\n')} onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, tabs: event.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) } })} />
             </>}
-            {selected.type === 'Accordion' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Accordion' && <>
               <div className="properties-section-title">Accordion Content</div>
               <label className="form-label" htmlFor="page-component-accordion-content">Content</label>
               <textarea id="page-component-accordion-content" className="form-control" rows={4}
                 value={typeof selected.properties.content === 'string' ? selected.properties.content : ''}
                 onChange={(event) => updateComponent(selected.id, { properties: { ...selected.properties, content: event.target.value } })} />
             </>}
-            {selected.type === 'Dashboard' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Dashboard' && <>
               <div className="properties-section-title">Dashboard</div>
               <label className="form-label" htmlFor="page-component-dashboard">Published dashboard</label>
               <select id="page-component-dashboard" className="form-control"
@@ -10399,7 +10604,7 @@ function PageBuilder({
               </select>
               <p className="properties-help">The live dashboard checks tenant, folder, viewer and record permissions at runtime.</p>
             </>}
-            {selected.type === 'Report Chart' && <>
+            {inspectorTab !== 'Design' && selected.type === 'Report Chart' && <>
               <div className="properties-section-title">Report</div>
               <label className="form-label" htmlFor="page-component-report">Source report</label>
               <select id="page-component-report" className="form-control" value={typeof selected.properties.reportApiName === 'string' ? selected.properties.reportApiName : ''}
@@ -10462,9 +10667,10 @@ function PageBuilder({
                 </select>
               </label>
             </>}
-            </>}
-            {inspectorTab === 'Design' && <>
-            {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
+            {inspectorTab !== 'Data & Actions' && page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <div className="free-canvas-component-properties">
+              <label className="checkbox-row"><input type="checkbox" checked={selected.properties.canvasLocked === true}
+                onChange={event => updateComponent(selected.id, { properties: { ...selected.properties, canvasLocked: event.target.checked } })} />
+                Lock component position and size</label>
               <div className="properties-section-title">Position and Size (pixels)</div>
               {([
                 ['x', 'Left'], ['y', 'Top'], ['width', 'Width'], ['height', 'Height']
@@ -10477,7 +10683,7 @@ function PageBuilder({
                   : key === 'height' ? selectedCustomDefinition?.resize?.minHeight ?? 1
                     : 0;
                 return <label className="form-label" key={key}>{label}
-                  <input className="form-control" type="number" min={min}
+                  <input className="form-control" type="number" min={min} disabled={selected.properties.canvasLocked === true}
                     max={max}
                     value={selected.position![key]}
                     onChange={(event) => {
