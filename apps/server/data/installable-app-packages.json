@@ -2001,7 +2001,8 @@
                 "categoryObjectApiName": "ProductCategory",
                 "categoryNameField": "Name",
                 "placeholder": "Search products or scan barcode…",
-                "searchField": "Name"
+                "searchField": "Name",
+                "uiBinding": "search"
               }
             },
             {
@@ -2035,7 +2036,8 @@
                 "categoryObjectApiName": "ProductCategory",
                 "categoryNameField": "Name",
                 "columns": 5,
-                "items": []
+                "items": [],
+                "uiBinding": "category"
               }
             },
             {
@@ -2082,6 +2084,12 @@
                       "SessionId": "$session",
                       "ProductId": "$event.productId",
                       "Quantity": "$event.quantity"
+                    }
+                  },
+                  "start": {
+                    "flowApiName": "KIOSK_SESSION_START",
+                    "inputs": {
+                      "SessionId": "$session"
                     }
                   }
                 }
