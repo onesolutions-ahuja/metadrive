@@ -151,7 +151,7 @@ export default function ConnectorAppWorkspace({
             onClick={() => setSection(tab)}>{tab === 'settings' ? 'Settings' : tab === 'history' ? 'Records' : tab === 'flows' ? 'Flows' : 'Licence'}</button>)}
       </div>
     </section>
-    {app.AppKey__c === 'kiosk' && <section className="surface" style={{padding:18,marginBottom:16}}>
+    {app.AppKey__c === 'kiosk' && section === 'settings' && <section className="surface" style={{padding:18,marginBottom:16}}>
       <h3>Kiosk devices</h3>
       <p>Kiosk accounts use virtual usernames: no real email address or mailbox is needed. Credentials are shown once to an administrator.</p>
       <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
@@ -184,7 +184,7 @@ export default function ConnectorAppWorkspace({
       <p style={{marginTop:10}}>The popup uses your current administrator session for preview. A dedicated kiosk device signs in using its own virtual username and generated password.</p>
     </section>}
     {error && <div className="records-message" role="alert">{error}</div>}
-    {section === 'settings' && <>
+    {section === 'settings' && app.AppKey__c !== 'kiosk' && <>
       {!licensed && <div className="info-callout"><ShieldCheck size={15}/> Start your free trial or activate a licence to configure or test this connection.</div>}
       {!canView && <div className="info-callout">******** · Missing connector configuration View permission.</div>}
       {credential && <div className="section-toolbar" style={{marginBottom:12}}><strong>Connection: {credential.enabled !== false && licensed ? 'Enabled' : 'Disabled'}</strong><span>Activation is managed in Setup &gt; Named Credentials.</span></div>}
