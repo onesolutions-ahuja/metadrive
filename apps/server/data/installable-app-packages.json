@@ -1291,6 +1291,7 @@
         "apiName": "Kiosk_User",
         "label": "Kiosk User",
         "systemPermissions": [
+          "metadata:read",
           "flows:run"
         ],
         "objectPermissions": {
