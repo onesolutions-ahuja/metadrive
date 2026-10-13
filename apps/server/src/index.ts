@@ -4654,7 +4654,7 @@ let state = loadState(persistenceMode === 'typed' ? existingPostgresState : unde
 // Security tombstones commit separately from the large SQL metadata graph.
 // Merge them before accepting requests, so logout remains revoked after crash
 // recovery even if no subsequent metadata snapshot was written.
-const durableLogouts = await readAuthLogoutRevocations();
+const durableLogouts = maintenanceMode ? [] : await readAuthLogoutRevocations();
 if (durableLogouts.length) {
   const accessRevocations = { ...state.revokedAccessTokens };
   const refreshRevocations = new Map<string, number>();
