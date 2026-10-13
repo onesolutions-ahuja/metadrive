@@ -96,6 +96,7 @@ try{
   await page.goto(site+'/une/setup/page-builder/'+appPage);
   await page.getByRole('button',{name:'Desktop preview'}).waitFor();
   await page.locator('[data-component-id="desktop-proof"]').click();
+  await page.getByRole('button',{name:'Conditions',exact:true}).click();
   const editor=page.getByLabel('Component visibility rules');
   await editor.getByLabel('Enable visibility conditions').check();
   assert.equal(await editor.getByLabel('Visibility source 1').inputValue(),'Device');
@@ -113,6 +114,7 @@ try{
   await page.reload();
   await page.getByRole('button',{name:'Desktop preview'}).waitFor();
   await page.locator('[data-component-id="desktop-proof"]').click();
+  await page.getByRole('button',{name:'Conditions',exact:true}).click();
   assert.equal(await page.getByLabel('Visibility value 1').inputValue(),'Desktop');
 
   for(const [width,height,expected,hidden] of [
