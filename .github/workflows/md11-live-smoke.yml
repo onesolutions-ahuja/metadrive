@@ -7,6 +7,7 @@ on:
       - .github/workflows/md11-live-smoke.yml
 permissions:
   contents: read
+  issues: write
 jobs:
   run-approved-flows:
     runs-on: ubuntu-latest
@@ -17,12 +18,19 @@ jobs:
         with:
           node-version: '22'
       - name: Syntax validation
-        run: node --check scripts/module11-live-smoke.mjs
+        run: |
+          node --check scripts/module11-live-smoke.mjs
+          node --check scripts/module11-publish-result.mjs
       - name: Execute one-time authorized test via MetaDrive secure Flow runtime
         env:
           METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
         run: node scripts/module11-live-smoke.mjs
+      - name: Publish masked execution result back to PR
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/module11-publish-result.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
