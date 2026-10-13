@@ -46,3 +46,12 @@ test('No POS metadata is installed without tenant entitlement',()=>{
  const t=baseTenant();t.records.Connector_App__c[0].Installed__c=false;
  assert.equal(applyInstallableAppPackages(t,catalog).apps.length,0);
 });
+
+test('Installed POS provisions editable landing page before licence activation',()=>{
+ const tenant=baseTenant();
+ tenant.records.Connector_App__c[0].LicenceStatus__c='Not Activated';
+ const installed=applyInstallableAppPackages(tenant,catalog);
+ assert.equal(installed.pages.find(p=>p.apiName==='UNE_POS')?.status,'Active');
+ assert.equal(installed.apps.find(a=>a.apiName==='POSApp')?.navigationPageApiNames?.includes('UNE_POS'),true);
+ assert.deepEqual(applyInstallableAppPackages(installed,catalog),installed);
+});
