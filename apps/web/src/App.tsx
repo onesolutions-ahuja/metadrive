@@ -9790,9 +9790,10 @@ function PageBuilder({
     const bounds = canvas.getBoundingClientRect();
     const scaleX = page.canvasWidth / bounds.width;
     const scaleY = page.canvasHeight / bounds.height;
+    const snap = (n: number) => canvasSnap ? Math.round(n / 8) * 8 : Math.round(n);
     return {
-      x: Math.min(Math.max(0, Math.round((event.clientX - bounds.left) * scaleX)), page.canvasWidth - 320),
-      y: Math.min(Math.max(0, Math.round((event.clientY - bounds.top) * scaleY)), page.canvasHeight - 180),
+      x: Math.max(0, Math.min(snap((event.clientX - bounds.left) * scaleX), page.canvasWidth - 320)),
+      y: Math.max(0, Math.min(snap((event.clientY - bounds.top) * scaleY), page.canvasHeight - 180)),
       width: 320,
       height: 180
     };
@@ -9917,7 +9918,23 @@ function PageBuilder({
       } as React.CSSProperties}
       onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
-      onKeyDown={!libraryPreview ? (event) => { if (event.currentTarget === event.target && !previewMode && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
+      onKeyDown={!libraryPreview ? (event) => {
+         if (event.currentTarget !== event.target || previewMode) return;
+         if (event.key === 'Enter' || event.key === ' ') {
+           event.preventDefault(); setSelectedId(component.id); setPageSettingsOpen(false);
+         } else if (page.layoutMode === 'free-canvas' && component.position && !nested
+           && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+           event.preventDefault();
+           const delta = event.shiftKey ? 1 : canvasSnap ? 8 : 1;
+           const pos = component.position;
+           const x = pos.x + (event.key === 'ArrowLeft' ? -delta : event.key === 'ArrowRight' ? delta : 0);
+           const y = pos.y + (event.key === 'ArrowUp' ? -delta : event.key === 'ArrowDown' ? delta : 0);
+           updateComponent(component.id, { position: {
+             ...pos, x: Math.max(0, Math.min(page.canvasWidth - pos.width, x)),
+             y: Math.max(0, Math.min(page.canvasHeight - pos.height, y))
+           } });
+         }
+       } : undefined}
       onDragOver={!libraryPreview ? (event) => { event.preventDefault(); event.stopPropagation(); setDragOverId(isLayoutContainer(component) ? component.id : rawLayoutParentId(component) ?? component.id); } : undefined}
       onDragLeave={!libraryPreview ? () => setDragOverId('') : undefined}
       onDrop={!libraryPreview ? (event) => handleDrop(event, index, component.region ?? 'main', isLayoutContainer(component) ? component.id : rawLayoutParentId(component)) : undefined}
