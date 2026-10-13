@@ -77,7 +77,7 @@ type FlowBuilderProps = {
   onRedo: () => void;
   onSelect: (id: number) => void;
   onToolTab: (tab: 'Elements' | 'Manager') => void;
-  onAdd: (type: string, afterId?: number) => void;
+  onAdd: (type: string, afterId?: number, connectorId?: string) => void;
   onUpdateLabel: (id: number, label: string) => void;
   onUpdateConfig: (id: number, key: string, value: unknown) => void;
   onRemove: (id: number) => void;
@@ -140,6 +140,7 @@ export default function FlowBuilder({
 }: FlowBuilderProps) {
   const flowComponents = libraryComponents.filter((component) => component.surfaces.includes('flow'));
   const [elementSearch, setElementSearch] = useState('');
+  const [insertionConnectorId, setInsertionConnectorId] = useState('');
   const [newFlowLabel, setNewFlowLabel] = useState('');
   const [newFlowType, setNewFlowType] = useState<FlowDefinitionMetadata['flowType'] | null>(null);
   const [existingFlowSearch, setExistingFlowSearch] = useState('');
@@ -223,6 +224,7 @@ export default function FlowBuilder({
   const canvasRef = useRef<HTMLDivElement>(null);
   const formulaEditorRef = useRef<HTMLTextAreaElement>(null);
   const selected = flow.elements.find((element) => element.id === selectedId) ?? flow.elements[0];
+  const insertionPaths = flow.connectors.filter((connector) => connector.from === selectedId);
   const selectedObject = objects.find((object) => object.apiName === flow.triggerObject);
   const selectedPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
   const toolboxGroups = [...new Set(flowElementMetadata.map((item) => item.group))];
@@ -1212,9 +1214,28 @@ export default function FlowBuilder({
         <div className="toolbox-tabs"><button className={toolTab === 'Elements' ? 'active' : ''} onClick={() => onToolTab('Elements')}>Elements</button><button className={toolTab === 'Manager' ? 'active' : ''} onClick={() => onToolTab('Manager')}>Manager</button></div>
         {toolTab === 'Elements' ? <>
           <div className="component-search"><Search size={14} /><input placeholder="Search elements..." aria-label="Search flow elements" value={elementSearch} onChange={(event) => setElementSearch(event.target.value)} /></div>
+          {insertionPaths.length > 1 && <label className="form-label">Insert onto path
+            <select className="form-control" aria-label="Choose Flow insertion path"
+              value={insertionPaths.some((connector) => connector.id === insertionConnectorId) ? insertionConnectorId : ''}
+              onChange={(event) => setInsertionConnectorId(event.target.value)}>
+              <option value="">Select outcome, fault, or scheduled path</option>
+              {insertionPaths.map((connector) => <option value={connector.id} key={connector.id}>
+                {connector.label || connector.kind} · {flow.elements.find((element) => element.id === connector.to)?.label ?? connector.to}
+              </option>)}
+            </select>
+          </label>
           {toolboxGroups.map((group) => {
             const elements = flowElementMetadata.filter((item) => item.group === group && item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type));
-            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" onClick={() => onAdd(element.type)}><span>{element.icon}</span>{element.type}<Plus size={13} /></button>)}</div> : null;
+            return elements.length ? <div className="toolbox-group" key={group}><h3>{group}</h3>{elements.map((element) => <button key={element.type} className="flow-element-option" onClick={() => {
+              const selectedPath = insertionPaths.some((connector) => connector.id === insertionConnectorId)
+                ? insertionConnectorId : undefined;
+              if (insertionPaths.length > 1 && !selectedPath) {
+                onNotify('Choose an outcome or fault path before inserting an element.');
+                return;
+              }
+              onAdd(element.type, selectedId, selectedPath);
+              setInsertionConnectorId('');
+            }}><span>{element.icon}</span>{element.type}<Plus size={13} /></button>)}</div> : null;
           })}
           {flowElementMetadata.filter((item) => item.type.toLowerCase().includes(elementSearch.trim().toLowerCase()) && isElementAvailable(item.type)).length === 0 && <p className="empty-list">No elements found.</p>}
         </> : <div className="resource-list">
