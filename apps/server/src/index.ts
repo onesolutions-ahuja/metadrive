@@ -14629,7 +14629,8 @@ async function performHttpCallout(
     headers[credential.headerName] = secretPayload.secret;
   } else if (credential.authType === 'OAuth Client Credentials') {
     if (!namedCredential) throw new Error('OAuth client credentials require a tenant Named Credential.');
-    headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(tenantId,namedCredential)}`;
+    // Debug must never contact external OAuth token endpoints.
+    if (!context.debug) headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(tenantId,namedCredential)}`;
   }
   // Resolve JSON fields individually instead of substituting inside serialized JSON:
   // recipient names, quotes and line breaks must remain valid JSON after mapping.
