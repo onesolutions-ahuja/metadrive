@@ -186,7 +186,7 @@ export default function NamedCredentials({
 
   return <section className="surface object-setting-surface named-credentials-page">
     <div className="section-toolbar">
-      <div><h2>{embedded ? 'Connection Settings' : 'Named Credentials'}</h2><p>{embedded ? 'Tenant-specific connection configuration. Secrets remain encrypted and masked.' : 'Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts and delivery features.'}</p></div>
+      <div><h1 className="audit-page-heading">{embedded ? 'Connection Settings' : 'Named Credentials'}</h1><p>{embedded ? 'Tenant-specific connection configuration. Secrets remain encrypted and masked.' : 'Manage tenant-wide HTTPS and SMTP credentials used by Flow callouts and delivery features.'}</p></div>
       <button className="btn btn-brand" disabled={!canManage || encryptionReady === false} title={!canManage ? 'Requires namedCredentials:manage permission' : encryptionReady === false ? 'Credential encryption is not configured on the server' : undefined} onClick={() => editCredential()}><Plus size={14} />{embedded ? 'Configure Connection' : 'New Named Credential'}</button>
     </div>
     {!embedded && <div className="record-type-create">
