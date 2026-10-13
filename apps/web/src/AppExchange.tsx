@@ -23,6 +23,7 @@ type Props = {
   onOAuthAuthorize?: (id: string) => Promise<string>;
   onGrantLicence: (appKey: string) => Promise<void>;
   onCreateKioskDevice: (index:number) => Promise<{deviceId:string;username:string;password:string}>;
+  onResetKioskDevice: (index:number) => Promise<{deviceId:string;username:string;password:string}>;
   loadHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<CommunicationPage>;
   onOpenRecord: (objectName: string, id: string) => void;
   onOpenFlow: (apiName: string) => void;
@@ -82,6 +83,7 @@ export default function AppExchange(props: Props) {
     canInstall={props.canInstall} canLicenceAdmin={props.canLicenceAdmin}
     onGrantLicence={async (key) => { await props.onGrantLicence(key); await refresh(); }}
     onCreateKioskDevice={props.onCreateKioskDevice}
+    onResetKioskDevice={props.onResetKioskDevice}
     canManageFlows={props.canManageFlows} encryptionReady={props.encryptionReady}
     onSave={props.onSave} onDelete={props.onDelete} onRotate={props.onRotate} onTest={props.onTest} onOAuthAuthorize={props.onOAuthAuthorize}
     loadHistory={props.loadHistory} onOpenRecord={props.onOpenRecord} onOpenFlow={props.onOpenFlow}
