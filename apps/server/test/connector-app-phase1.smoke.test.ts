@@ -205,6 +205,23 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.equal(deviceSession.data.user.permissions.includes('security:manage'),false);
     const kioskCannotSeed=await api(portNumber,'/kiosk/devices',deviceToken,{index:2});
     assert.equal(kioskCannotSeed.status,403,'Kiosk login must not manage more devices');
+    const kioskCannotReset=await api(portNumber,'/kiosk/devices/reset',deviceToken,{index:1});
+    assert.equal(kioskCannotReset.status,403);
+    const reset=await api(portNumber,'/kiosk/devices/reset',token,{index:1});
+    assert.equal(reset.status,200,JSON.stringify(reset.data));
+    assert.equal(reset.data.username,provision.data.username);
+    assert.notEqual(reset.data.password,provision.data.password);
+    const oldLogin=await api(portNumber,'/auth/login',undefined,{
+      email:provision.data.username,password:provision.data.password
+    });
+    assert.equal(oldLogin.status,401);
+    const newLogin=await api(portNumber,'/auth/login',undefined,{
+      email:reset.data.username,password:reset.data.password
+    });
+    assert.equal(newLogin.status,200);
+    const revokedSession=await api(portNumber,'/auth/me',deviceToken);
+    assert.equal(revokedSession.status,401);
+
     const afterKiosk=(await api(portNumber,'/metadata/objects',token)).data.objects as Array<Record<string,any>>;
     for (const apiName of ['Product','Cart__c','CartLine__c','Sale__c','SaleItem__c','NamedDevice__c','KioskSettings__c']) {
       assert.equal(afterKiosk.filter(item=>item.apiName===apiName).length,1,apiName+' should exist exactly once');
