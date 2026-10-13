@@ -1,6 +1,6 @@
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
-import { saveOfflineMetadata } from './offlineMetadataCache';
+import { readOfflineMetadata, saveOfflineMetadata } from './offlineMetadataCache';
 import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
 import SchemaBuilder from './SchemaBuilder';
@@ -1573,6 +1573,20 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             recover<{ user: { profileId: string; permissions: string[]; fieldAccess: Record<string, {read:boolean;edit:boolean}>; recordTypeAccess: Record<string, boolean> } }>('/auth/me',
               { user: { profileId:'',permissions:[],fieldAccess:{},recordTypeAccess:{} } })
           ]);
+          // A snapshot is display-only and is never accepted in place of
+          // authenticated identity or server-side permissions. Restore solely
+          // when the live session was verified but presentation endpoints failed.
+          const signedIn = firstSession.user as typeof firstSession.user & {id?:string;tenantId?:string};
+          const offlineView = signedIn.id && signedIn.tenantId
+            && (!firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length)
+            ? await readOfflineMetadata({ userId:signedIn.id, tenantId:signedIn.tenantId }).catch(() => null)
+            : null;
+          if (offlineView) {
+            if (!firstObjects.objects.length) firstObjects.objects = offlineView.objects as ObjectMetadata[];
+            if (!firstPages.pages.length) firstPages.pages = offlineView.pages as LightningPageMetadata[];
+            if (!firstApps.apps.length) firstApps.apps = offlineView.apps as LightningAppMetadata[];
+            setToast('Showing last saved page layout. Cloud actions require a connection.');
+          }
           if (firstObjects.objects.length) {
             setObjects(firstObjects.objects);
             setObject(firstObjects.objects.find((item) => item.apiName === object.apiName) ?? firstObjects.objects[0]);
