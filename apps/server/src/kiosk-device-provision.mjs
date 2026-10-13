@@ -7,14 +7,14 @@ export function kioskDeviceIdentity(tenantId, index) {
 }
 export function prepareKioskDevice(tenant, kioskEmail, id, createdAt) {
   if (!tenant?.accessControl?.profiles?.some(p => p.id === 'kiosk-user')) throw Error('Install and activate Kiosk first');
-  if (tenant.accessControl.users.some(u => u.username.toLowerCase() === kioskEmail.toLowerCase())) {
+  if ((tenant.accessControl.users ?? []).some(u => u.username.toLowerCase() === kioskEmail.toLowerCase())) {
     throw Error('This kiosk login already exists');
   }
   return {
     ...tenant,
     accessControl: {
       ...tenant.accessControl,
-      users: [...tenant.accessControl.users, {
+      users: [...(tenant.accessControl.users ?? []), {
         id, name:'Kiosk Device',username:kioskEmail,role:'Kiosk',
         roleId:tenant.accessControl.roles.find(r=>r.id==='role-standard-user')?.id
           ?? tenant.accessControl.roles[0]?.id,
