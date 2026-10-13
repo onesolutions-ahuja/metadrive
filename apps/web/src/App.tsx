@@ -4760,15 +4760,17 @@ function MetadataBoundPageComponent({
           method: 'POST', body: JSON.stringify(inputs)
         });
       if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
+      let completedSessionId = sessionId;
       if (binding.resetSessionOnSuccess === true) {
         const key = 'metadrive-page-session:' + pageSessionKey;
         const newSession = crypto.randomUUID();
         try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
+        completedSessionId = newSession;
         setSessionId(newSession);
       }
       setRevision((value) => value + 1);
       window.dispatchEvent(new CustomEvent('metadrive:page-flow-mutated', {
-        detail: {pageSessionKey,sessionId: binding.resetSessionOnSuccess === true ? window.sessionStorage.getItem('metadrive-page-session:' + pageSessionKey) ?? sessionId : sessionId}
+        detail: {pageSessionKey,sessionId: completedSessionId}
       }));
       return {
         ...response,
