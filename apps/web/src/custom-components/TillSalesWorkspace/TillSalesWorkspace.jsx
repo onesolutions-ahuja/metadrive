@@ -16,10 +16,48 @@ export default function TillSalesWorkspace(props) {
   const [completed,setCompleted] = React.useState(false);
   const scanner = React.useRef(null);
   const currency = typeof p.currency === 'string' ? p.currency : '£';
-  // Each tenant/page placement supplies its own layout metadata.
-  const basketSide = p.basketSide === 'right' ? 'right' : 'left';
-  const basketWidth = Math.min(65, Math.max(30, Number(p.basketWidthPercent) || 45));
+  // Client-specific layout settings are persisted on the page, never the shared component.
+  const basketWidth = Math.max(30, Math.min(65, Number(p.basketWidthPercent ?? 45) || 45));
+  const catalogFirst = p.basketSide === 'right' || (p.basketSide !== 'left' && p.catalogFirst === true);
   const catalogColumns = Math.min(5, Math.max(1, Math.round(Number(p.catalogColumns) || 3)));
+  const splitStyle = {
+    '--md-till-basket-width': basketWidth + '%',
+    '--md-till-product-columns': catalogColumns,
+    '--md-till-split-position': (catalogFirst ? 100 - basketWidth : basketWidth) + '%'
+  };
+  // Direct split resizing is available only inside the Page Builder design
+  // host. Live Till pages do not receive a layout-editing callback.
+  const splitGesture = React.useRef(null);
+  const beginSplit = (event) => {
+    if (typeof p.onLayoutChange !== 'function') return;
+    const region = event.currentTarget.parentElement;
+    const bounds = region.getBoundingClientRect();
+    if (!bounds.width || bounds.width < 250) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    splitGesture.current = { pointerId: event.pointerId, bounds, region, percent: basketWidth };
+  };
+  const dragSplit = (event) => {
+    const gesture = splitGesture.current;
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    const fromLeft = (event.clientX - gesture.bounds.left) / gesture.bounds.width * 100;
+    const next = Math.max(30, Math.min(65, Math.round(catalogFirst ? 100 - fromLeft : fromLeft)));
+    gesture.percent = next;
+    gesture.region.style.setProperty('--md-till-basket-width', next + '%');
+    gesture.region.style.setProperty('--md-till-split-position', (catalogFirst ? 100 - next : next) + '%');
+  };
+  const finishSplit = (event, cancelled = false) => {
+    const gesture = splitGesture.current;
+    if (!gesture || event.pointerId !== gesture.pointerId) return;
+    splitGesture.current = null;
+    if (cancelled) {
+      gesture.region.style.setProperty('--md-till-basket-width', basketWidth + '%');
+      gesture.region.style.setProperty('--md-till-split-position', (catalogFirst ? 100 - basketWidth : basketWidth) + '%');
+    } else if (gesture.percent !== basketWidth) {
+      p.onLayoutChange({ basketWidthPercent: gesture.percent });
+    }
+  };
   const money = (x) => currency + Number(x || 0).toFixed(2);
   const configured = (event) => Boolean(p.actionFlows && p.actionFlows[event] && p.actionFlows[event].flowApiName);
   const enabled = (event) => !busy && !p.disabled && !p.preview && configured(event);
@@ -52,16 +90,25 @@ export default function TillSalesWorkspace(props) {
     const result = await emit('checkout',{paymentMethod:method,customerId:selected?.id || null});
     if (result?.completed === true) {setCompleted(true);setCustomerId('');setBarcode('');setQuery('');scanner.current?.focus();}
   };
-  return <section className="md-till" style={{
-    '--md-till-accent':p.accentColor || '#126be5',
-    '--md-till-basket-width':basketWidth + '%',
-    '--md-till-product-columns':catalogColumns
-  }} aria-label={p.label || 'Cashier till'}>
+  return <section className="md-till" style={{'--md-till-accent':p.accentColor || '#126be5'}} aria-label={p.label || 'Cashier till'}>
     <header className="md-till-top"><div className="md-till-brand"><span aria-hidden="true">▦</span><div><strong>{p.title || 'Sales Till'}</strong><small>{[p.storeLabel,p.terminalLabel,p.cashierLabel].filter(Boolean).join(' · ')}</small></div></div><small>{p.statusLabel || 'Ready'}</small></header>
     {(error || p.actionError) && <div role="alert" className="md-till-error">{error || p.actionError}</div>}
     {completed && <div role="status" className="md-till-success">Sale completed by the selected Flow.</div>}
     {p.loading && <div role="status" className="md-till-info">Loading object records…</div>}
-    <div className={'md-till-body' + (basketSide === 'right' ? ' basket-right' : '')}>
+    <div className={`md-till-body${catalogFirst ? " md-till-catalog-first" : ""}`} style={splitStyle}>
+      {typeof p.onLayoutChange === 'function' && <button type="button"
+        className="md-till-split-handle" role="separator"
+        aria-label="Resize Till basket and product sections"
+        aria-orientation="vertical" aria-valuemin={30} aria-valuemax={65} aria-valuenow={basketWidth}
+        onPointerDown={beginSplit} onPointerMove={dragSplit}
+        onPointerUp={event => finishSplit(event)} onPointerCancel={event => finishSplit(event, true)}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault(); event.stopPropagation();
+          const delta = event.key === 'ArrowRight' ? 1 : -1;
+          const next = Math.max(30, Math.min(65, basketWidth + (catalogFirst ? -delta : delta)));
+          if (next !== basketWidth) p.onLayoutChange({ basketWidthPercent: next });
+        }} />}
       <section className="md-till-cart" aria-label="Sale basket">
         <div className="md-till-row"><div><small className="md-till-kicker">CURRENT SALE</small><h2>Basket <em>{count}</em></h2></div><button className="md-till-link" disabled={!enabled('reset') || !lines.length} onClick={() => emit('reset',{})}>Clear</button></div>
         <button className="md-till-customer" onClick={() => setCustomerOpen(!customerOpen)} aria-expanded={customerOpen}>♙ <span><strong>{selected?.name || p.walkInLabel || 'Walk-in customer'}</strong><small>{selected ? [selected.phone,selected.email].filter(Boolean).join(' · ') : 'Search and assign customer'}</small></span>⌄</button>
