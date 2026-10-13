@@ -14,6 +14,7 @@ function interviewState(interview: FlowInterviewMetadata): string {
   if (interview.kind === 'screen') return `Paused on ${interview.screenLabel ?? 'Screen'}`;
   if (interview.kind === 'scheduled') return 'Scheduled path';
   if (interview.kind === 'async') return interview.retryAt ? 'Async path retry' : 'Queued async path';
+  if (interview.kind === 'orchestration') return `Awaiting approval · ${interview.screenLabel ?? 'Orchestration Stage'}`;
   return interview.retryAt ? 'Waiting to retry' : 'Waiting';
 }
 
@@ -26,7 +27,7 @@ export default function FlowInterviews({
         <div>
           <div className="eyebrow">SETUP / AUTOMATION</div>
           <h1>Paused and Waiting Interviews</h1>
-          <p>Inspect active Screen Flow interviews, waits, scheduled paths, and asynchronous paths. Cancel an interview to prevent it from resuming.</p>
+          <p>Inspect active Screen Flow interviews, waits, scheduled paths, asynchronous paths and human-approval orchestration stages. Cancel an interview to prevent it from resuming.</p>
         </div>
         <button className="btn" type="button" onClick={onRefresh} disabled={loading}>
           <RefreshCw size={14} />Refresh
