@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  issues: write
 jobs:
   reconcile:
     runs-on: ubuntu-latest
@@ -39,3 +40,11 @@ jobs:
           set -euo pipefail
           git commit -m "Merge main into Phase 2 Till canvas after full validation"
           git push origin HEAD:feature/modern-canvas-phase2-20261013
+      - name: Report merge validation outcome to PR
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+          ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue comment 227 --body "MD227 automated resolution: **$JOB_STATUS**. Workflow: $ACTION_RUN_URL" 
