@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const defaultBase = 'https://onesolutions-ahuja.github.io/metadrive/';
+const defaultBase = 'https://unesolutions.co.uk/une/';
 const base = new URL(process.env.METADRIVE_BASE_URL || defaultBase);
 const email = process.env.METADRIVE_TEST_EMAIL;
 const password = process.env.METADRIVE_TEST_PASSWORD;
@@ -17,7 +17,7 @@ if (process.env.METADRIVE_BASE_URL && base.origin !== new URL(defaultBase).origi
     process.env.METADRIVE_ALLOW_OTHER_HOST !== 'true') throw new Error('Non-default host requires explicit opt-in');
 if (Boolean(email) !== Boolean(password)) throw new Error('Set both test email and password');
 if (!email || !password) throw new Error('Authenticated full audit requires METADRIVE_TEST_EMAIL and METADRIVE_TEST_PASSWORD (GitHub Actions secrets).');
-if (base.pathname.indexOf('/metadrive/') !== 0 && base.hostname !== 'localhost') throw new Error('Unexpected MetaDrive base path');
+if (base.pathname.indexOf('/une/') !== 0 && base.hostname !== 'localhost') throw new Error('Unexpected UNE app base path');
 
 const profiles = [
   { name: 'desktop', viewport: { width: 1440, height: 900 } },
@@ -71,7 +71,7 @@ const findIssue = (list, code, level, details) => {
   if (list.some(i => i.code === code && i.details === details)) return;
   list.push({ code, severity: level, details: String(details).slice(0, 360) });
 };
-function urlFor(relative) { return new URL(relative, base).href; }
+function urlFor(relative) { const path = base.pathname.endsWith('/une/') && relative.startsWith('une/') ? relative.slice(4) : relative; return new URL(path, base).href; }
 function safeName(value) { return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 70); }
 async function mkdir(p) { await fs.mkdir(p, { recursive: true }); }
 function isSameApp(url) {
@@ -428,8 +428,8 @@ async function run() {
         // Login once per browser context; never store credentials in logs or artifacts.
         const loginStart = performance.now();
         await page.goto(base.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        // Session restoration may retry through a slow API cold start.
-        await page.locator('input[type="email"]').first().waitFor({ state: 'visible', timeout: 110000 });
+        // A missing login form is a deployment or routing issue; fail fast rather than spending two minutes per viewport.
+        await page.locator('#login-email, input[type="email"]').first().waitFor({ state: 'visible', timeout: 20000 });
         await page.locator('input[type="email"]').first().fill(email);
         await page.locator('input[type="password"]').first().fill(password);
         p.login.validation = await page.locator('form').first().evaluate(form => ({ valid: form.checkValidity() }));
