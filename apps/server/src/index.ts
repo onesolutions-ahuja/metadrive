@@ -4406,10 +4406,41 @@ function migrateStoredLeadStreetField(value: unknown): boolean {
   }
   return changed;
 }
+// Recover legacy persisted picklists that have no configured options. Keep all
+// existing metadata and record values untouched; new writes remain validated
+// by fieldSchema and must supply at least one option.
+function migrateStoredEmptyPicklists(value: unknown): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0;
+  const tenants = (value as Record<string, unknown>).tenants;
+  if (!tenants || typeof tenants !== 'object' || Array.isArray(tenants)) return 0;
+  let repaired = 0;
+  for (const [tenantId, tenant] of Object.entries(tenants)) {
+    if (!tenant || typeof tenant !== 'object' || Array.isArray(tenant)) continue;
+    const objects = (tenant as Record<string, unknown>).objects;
+    if (!Array.isArray(objects)) continue;
+    for (const object of objects) {
+      if (!object || typeof object !== 'object' || Array.isArray(object)) continue;
+      const metadata = object as Record<string, unknown>;
+      if (!Array.isArray(metadata.fields)) continue;
+      for (const field of metadata.fields) {
+        if (!field || typeof field !== 'object' || Array.isArray(field)) continue;
+        const definition = field as Record<string, unknown>;
+        if (definition.dataType !== 'Picklist' && definition.dataType !== 'Multi-Select Picklist') continue;
+        if (Array.isArray(definition.picklistValues) && definition.picklistValues.length > 0) continue;
+        const defaultValue = typeof definition.defaultValue === 'string' ? definition.defaultValue.trim() : '';
+        definition.picklistValues = [defaultValue && !defaultValue.includes(';') ? defaultValue : 'Unspecified'];
+        repaired += 1;
+        console.warn('Recovered empty persisted picklist metadata', { tenantId, object: metadata.apiName, field: definition.apiName });
+      }
+    }
+  }
+  return repaired;
+}
 function loadState(sqlState?: unknown): PlatformState {
   try {
     const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
+    migrateStoredEmptyPicklists(storedState);
     const parsed = stateSchema.parse(storedState);
     const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
       const consolidationReady = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
