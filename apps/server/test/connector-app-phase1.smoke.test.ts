@@ -102,6 +102,12 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.equal(caps.data.install,true);
     assert.equal(caps.data.test,true);
     assert.equal(caps.data.licence,false);
+    const marketplace = await api(portNumber, '/connector-apps/catalog', token);
+    assert.equal(marketplace.status, 200, JSON.stringify(marketplace.data));
+    assert.ok(marketplace.data.records.some((row:Record<string,any>) => row.AppKey__c === 'whatsapp'),
+      'WhatsApp must be discoverable in AppExchange independently of record sharing');
+    assert.equal((await api(portNumber, '/connector-apps/catalog')).status, 401,
+      'Unauthenticated visitors must not enumerate tenant connectors');
     const list=()=>api(portNumber,'/records/Connector_App__c?limit=50',token);
     const before=await list();
     assert.equal(before.status,200,JSON.stringify(before.data));
