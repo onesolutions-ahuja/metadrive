@@ -61,7 +61,16 @@ const ARITY = {
   SUBSTITUTE: [3, 4], FIND: [2, 3], CONCATENATE: [2, 255],
   HYPERLINK: [2, 3], IMAGE: [2, 4], REGEX: [2, 2],
   ROUND: [1, 2], ROUNDUP: [1, 2], ROUNDDOWN: [1, 2],
-  TRUNC: [1, 2], LPAD: [2, 3], RPAD: [2, 3]
+  TRUNC: [1, 2], LPAD: [2, 3], RPAD: [2, 3],
+  ISBLANK: [1, 1], ISNULL: [1, 1], BLANKVALUE: [2, 2], NULLVALUE: [2, 2],
+  EXACT: [2, 2], ISNUMBER: [1, 1], ASCII: [1, 1], LOWER: [1, 1],
+  UPPER: [1, 1], TRIM: [1, 1], PROPER: [1, 1], CONTAINS: [2, 2],
+  BEGINS: [2, 2], ISPICKVAL: [2, 2], INCLUDES: [2, 2], TEXT: [1, 1],
+  YEAR: [1, 1], MONTH: [1, 1], DAY: [1, 1], WEEKDAY: [1, 1],
+  HOUR: [1, 1], MINUTE: [1, 1], SECOND: [1, 1], ABS: [1, 1],
+  SQRT: [1, 1], POWER: [2, 2], EXP: [1, 1], LN: [1, 1],
+  SIGN: [1, 1], CEILING: [1, 1], FLOOR: [1, 1], MIN: [2, 255], MAX: [2, 255],
+  REPT: [2, 2], REVERSE: [1, 1]
 };
 
 /** Return {hasReferences, references}; throw for invalid grammar or unsupported functions. */
