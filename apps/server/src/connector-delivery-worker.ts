@@ -16,7 +16,7 @@ export async function dispatchIntegrationDeliveries(options: IntegrationWorkerOp
   for (const job of jobs) {
     try {
       const response = await options.dispatch(job);
-      if (response.status >= 200 && response.status < 400) {
+      if (Number.isInteger(response.status) && response.status >= 200 && response.status < 300) {
         await options.outbox.complete(options.tenantId, options.workerId, job.id, response.status);
         outcome.succeeded++;
       } else {
