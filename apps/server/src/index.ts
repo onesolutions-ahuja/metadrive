@@ -10415,6 +10415,49 @@ app.delete('/api/records/User/:recordId', accessAuthentication, (req: Request, r
   catch { return res.status(503).json({ error: 'Unable to deactivate user' }); }
   return res.status(204).end();
 });
+/**
+ * Re-evaluate every record write against the current authorisation and record
+ * revision at its commit boundary. Offline clients are NOT trusted to supply
+ * their own permission snapshot. This also protects long-running normal saves
+ * where an admin edits RBAC while before-save/record-triggered Flows execute.
+ */
+function currentRecordCommitDenial(
+  principal: Principal, objectName: string, action: 'create' | 'edit',
+  submitted: Record<string, unknown>, opened?: RuntimeRecord
+): {status: 403 | 404 | 412; error: string} | null {
+  const user = state.users.find(item => item.id === principal.userId
+    && item.tenantId === principal.tenantId && !item.disabled);
+  const tenant = tenantData(principal.tenantId);
+  if (!user || !tenant || !tenantIsActive(principal.tenantId))
+    return {status:403,error:'Your account or tenant is no longer active.'};
+  const object = tenant.objects.find(item => item.apiName === objectName);
+  if (!object) return {status:404,error:'Object is no longer available.'};
+  const nowPrincipal: Principal = { ...principal, permissions: effectivePermissions(user,tenant) };
+  if (!hasObjectPermission(nowPrincipal, tenant, objectName, action))
+    return {status:403,error:'Permission changed: object ' + action + ' access is no longer granted.'};
+  for (const fieldName of Object.keys(submitted)) {
+    if (fieldName === 'RecordTypeId') continue;
+    if (!object.fields.some(field => field.apiName === fieldName))
+      return {status:412,error:'Object field metadata changed while this record was pending.'};
+    if (!hasFieldPermission(nowPrincipal, tenant, objectName, fieldName, 'edit'))
+      return {status:403,error:'Permission changed: field editing access is no longer granted.'};
+  }
+  const previous = opened
+    ? (tenant.records[objectName] ?? []).find(item => item.Id === opened.Id) : null;
+  if (opened && (!previous || !hasRecordAccess(nowPrincipal,tenant,objectName,previous,'Edit')))
+    return {status:403,error:'Permission changed: this record can no longer be edited.'};
+  if (previous && previous.LastModifiedDate !== opened?.LastModifiedDate)
+    return {status:412,error:'Record changed while your update was pending. Refresh and review.'};
+  const recordTypeId = typeof submitted.RecordTypeId === 'string'
+    ? submitted.RecordTypeId
+    : typeof previous?.RecordTypeId === 'string' ? previous.RecordTypeId : undefined;
+  if (recordTypeId && !hasRecordTypeAccessForUser(nowPrincipal.userId,tenant,objectName,recordTypeId))
+    return {status:403,error:'Permission changed: record type access is no longer granted.'};
+  const actionName = action === 'create' ? 'New' : 'Edit';
+  if (!recordActionEnabled(object,actionName,recordTypeId,profileIdForPrincipal(nowPrincipal,tenant)))
+    return {status:403,error:'Permission changed: the record action is no longer available.'};
+  return null;
+}
 app.post('/api/records/:objectName', accessAuthentication, async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -10490,6 +10533,8 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
     validateRuntimeRecord(principal.tenantId, working, object, { ...values, ...beforeSaveValues }, record);
     working.records[objectName] = [...(working.records[objectName] ?? []), record];
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'created', record, undefined, 0, isClone);
+    const commitDenial = currentRecordCommitDenial(principal,objectName,'create',sanitized);
+    if (commitDenial) return res.status(commitDenial.status).json({error:commitDenial.error});
     persistTenantRecords(principal.tenantId, working);
     // Do not acknowledge a record write before its transactional SQL commit.
     await waitForPersistedState();
@@ -10597,6 +10642,8 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     working.records[objectName] = (working.records[objectName] ?? []).map((item) => item.Id === existing.Id ? updated : item);
     if (objectName === 'Connector_App__c') disableOnConnectorUninstall(working, existing, updated);
     await runRecordTriggeredFlows(principal.tenantId, working, principal.userId, objectName, 'updated', updated, existing);
+    const commitDenial = currentRecordCommitDenial(principal,objectName,'edit',values,existing);
+    if (commitDenial) return res.status(commitDenial.status).json({error:commitDenial.error});
     persistTenantRecords(principal.tenantId, working);
     // Do not acknowledge a record write before its transactional SQL commit.
     await waitForPersistedState();
