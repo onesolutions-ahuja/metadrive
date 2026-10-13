@@ -4609,6 +4609,17 @@ function MetadataBoundPageComponent({
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [pageUi,setPageUi] = useState<{search:string;category:string}>({search:'',category:''});
+  useEffect(()=>{
+    const sync=(event:Event)=>{
+      const detail=(event as CustomEvent<{key:string;field:'search'|'category';value:string}>).detail;
+      if(detail?.key===pageSessionKey && (detail.field==='search'||detail.field==='category')) {
+        setPageUi(old=>({...old,[detail.field]:detail.value}));
+      }
+    };
+    window.addEventListener('metadrive:page-ui-change',sync);
+    return ()=>window.removeEventListener('metadrive:page-ui-change',sync);
+  },[pageSessionKey]);
   const initializedSessions = useRef<Set<string>>(new Set());
   // Synchronise independent POS Page Builder layers after any Flow mutation.
   useEffect(() => {
@@ -4783,6 +4794,16 @@ function MetadataBoundPageComponent({
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
+      searchQuery:pageUi.search, selectedCategoryId:pageUi.category,
+      onChange:(value:unknown)=>{
+        const field = properties.uiBinding;
+        if(field !== 'search' && field !== 'category') return;
+        const selected = field==='category' && value && typeof value==='object'
+          ? String((value as Record<string,unknown>).id ?? '') : String(value ?? '');
+        window.dispatchEvent(new CustomEvent('metadrive:page-ui-change', {
+          detail:{key:pageSessionKey,field,value:selected}
+        }));
+      },
       loading: dataLoading, cartLines, sessionId,
       customers: mappedCustomers,
       ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
