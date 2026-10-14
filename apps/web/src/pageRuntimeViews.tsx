@@ -1,3 +1,4 @@
+import { loadFlowScreenRecords } from './authClient';
 import { createSetupApp } from './setupAppShell';
 import { createRecordWorkspaceViews } from './recordWorkspaceViews';
 import { createPageBuilder } from './pageBuilderView';
