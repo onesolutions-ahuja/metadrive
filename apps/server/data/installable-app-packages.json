@@ -1973,6 +1973,51 @@
             "ImageUrl__c": "https://images.unsplash.com/photo-1513558161293-cdaf765edfd4?w=650"
           }
         ]
+      },
+      "installation": {
+        "allowInstalledMetadataWithoutLicence": false,
+        "repairMissingAdministratorPermissions": false,
+        "pageMigration": {
+          "propertyRules": [
+            {
+              "templateKey": "categoryObjectApiName",
+              "when": {
+                "key": "categoryObjectApiName",
+                "mode": "missing"
+              },
+              "copy": [
+                "categoryObjectApiName",
+                "categoryNameField"
+              ]
+            },
+            {
+              "templateKey": "accentColor",
+              "when": {
+                "key": "accentColor",
+                "mode": "equals",
+                "value": "#ffca26"
+              },
+              "copy": [
+                "accentColor",
+                {
+                  "key": "inkColor",
+                  "ifEquals": "#202124"
+                }
+              ]
+            },
+            {
+              "templateKey": "welcomeImage",
+              "when": {
+                "key": "welcomeImage",
+                "mode": "missing"
+              },
+              "copy": [
+                "welcomeImage",
+                "labels"
+              ]
+            }
+          ]
+        }
       }
     },
     {
@@ -3988,6 +4033,57 @@
           "Sale__c": true
         },
         "navigationDefaultAccess": "Deny"
+      },
+      "installation": {
+        "allowInstalledMetadataWithoutLicence": true,
+        "repairMissingAdministratorPermissions": true,
+        "pageMigration": {
+          "replaceLayouts": [
+            {
+              "id": "pos-sales-workspace",
+              "type": "Custom:TillSalesWorkspace"
+            }
+          ],
+          "propertyRules": [
+            {
+              "templateKey": "categoryObjectApiName",
+              "when": {
+                "key": "categoryObjectApiName",
+                "mode": "missing"
+              },
+              "copy": [
+                "categoryObjectApiName",
+                "categoryNameField"
+              ]
+            },
+            {
+              "templateKey": "accentColor",
+              "when": {
+                "key": "accentColor",
+                "mode": "equals",
+                "value": "#ffca26"
+              },
+              "copy": [
+                "accentColor",
+                {
+                  "key": "inkColor",
+                  "ifEquals": "#202124"
+                }
+              ]
+            },
+            {
+              "templateKey": "welcomeImage",
+              "when": {
+                "key": "welcomeImage",
+                "mode": "missing"
+              },
+              "copy": [
+                "welcomeImage",
+                "labels"
+              ]
+            }
+          ]
+        }
       }
     }
   ]

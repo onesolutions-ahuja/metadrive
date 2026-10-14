@@ -1,3 +1,4 @@
+import {upgradePackagedPageComponents} from '../src/package-page-migrations.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
@@ -150,4 +151,27 @@ test('package upgrade makes editable canvas discoverable and preserves tenant-ow
   assert.ok(app.navigationPageApiNames.includes(canvas.apiName));
   assert.ok(app.navigationOrder.some(x=>x.type==='Page'&&x.apiName===canvas.apiName));
   assert.deepEqual(applyInstallableAppPackages(upgraded,catalog),upgraded);
+});
+
+test('declarative property upgrades preserve tenant-customised values',()=>{
+  const template={id:'a',type:'Custom:Generic',properties:{categoryObjectApiName:'ProductCategory',categoryNameField:'Name',accentColor:'#d71e28',inkColor:'#111',welcomeImage:'image',labels:{title:'Welcome'}}};
+  const migration=entry.installation.pageMigration;
+  const original={components:[{id:'a',type:'Custom:Generic',properties:{accentColor:'#ffca26',inkColor:'#202124'}}]};
+  const result=upgradePackagedPageComponents(original,[template],migration);
+  assert.deepEqual(result.upgradedComponents[0].properties,{
+    accentColor:'#d71e28',inkColor:'#111',categoryObjectApiName:'ProductCategory',
+    categoryNameField:'Name',welcomeImage:'image',labels:{title:'Welcome'}
+  });
+  const customised={components:[{id:'a',type:'Custom:Generic',properties:{accentColor:'#123456',inkColor:'#fff',categoryObjectApiName:'Mine',welcomeImage:'my-image'}}]};
+  const untouched=upgradePackagedPageComponents(customised,[template],migration);
+  assert.deepEqual(untouched.upgradedComponents,customised.components);
+});
+test('legacy layout migration is metadata-controlled and never changes unrelated layouts',()=>{
+  const template=[{id:'new',type:'Custom:Button',properties:{label:'Continue'}}];
+  const migration={replaceLayouts:[{id:'legacy',type:'Custom:Old'}]};
+  const original={components:[{id:'legacy',type:'Custom:Old',properties:{}}]};
+  assert.deepEqual(upgradePackagedPageComponents(original,template,migration).upgradedComponents,template);
+  assert.deepEqual(upgradePackagedPageComponents(original,template,{}).upgradedComponents,original.components);
+  assert.equal(entry.installation.allowInstalledMetadataWithoutLicence,false);
+  assert.equal(catalog.packages.find(p=>p.appKey==='pos').installation.allowInstalledMetadataWithoutLicence,true);
 });
