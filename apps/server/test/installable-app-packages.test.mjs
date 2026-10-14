@@ -175,3 +175,46 @@ test('legacy layout migration is metadata-controlled and never changes unrelated
   assert.equal(entry.installation.allowInstalledMetadataWithoutLicence,false);
   assert.equal(catalog.packages.find(p=>p.appKey==='pos').installation.allowInstalledMetadataWithoutLicence,true);
 });
+
+test('installer selects explicit default page regardless of metadata array ordering',()=>{
+  const reordered=structuredClone(catalog);
+  const kiosk=reordered.packages.find(p=>p.appKey==='kiosk');
+  kiosk.pages.reverse();
+  const installed=applyInstallableAppPackages(tenant(),reordered);
+  const home=installed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS');
+  const legacy=installed.pages.find(p=>p.apiName==='UNE_KIOSK');
+  assert(home.activationAssignments.some(a=>a.id==='package-kiosk-home'));
+  assert(home.activationAssignments.some(a=>a.id==='package-kiosk-app-default'));
+  assert(!(legacy.activationAssignments??[]).some(a=>a.id==='package-kiosk-home'));
+  assert.deepEqual(applyInstallableAppPackages(installed,reordered),installed);
+});
+test('installer uses metadata default app even when it is not the first application',()=>{
+  const reordered=structuredClone(catalog);
+  const kiosk=reordered.packages.find(p=>p.appKey==='kiosk');
+  kiosk.apps.unshift({...structuredClone(kiosk.apps[0]),apiName:'ExtraApp',label:'Extra'});
+  const installed=applyInstallableAppPackages(tenant(),reordered);
+  const home=installed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS');
+  assert(home.activationAssignments.some(a=>a.appId==='KioskApp' && a.scope==='App Default'));
+  const profile=installed.accessControl.profiles.find(p=>p.id==='kiosk-user');
+  assert.equal(profile.appPermissions.KioskApp,true);
+  assert.equal(profile.appPermissions.ExtraApp,true);
+});
+test('installer rejects invalid explicit default metadata rather than silently choosing array position',()=>{
+  const broken=structuredClone(catalog);
+  const kiosk=broken.packages.find(p=>p.appKey==='kiosk');
+  kiosk.installation.defaultPageApiName='NotRegistered';
+  assert.throws(()=>applyInstallableAppPackages(tenant(),broken),/default page is not registered/);
+  kiosk.installation.defaultPageApiName='UNE_KIOSK_CANVAS';
+  kiosk.installation.defaultAppApiName='NotRegistered';
+  assert.throws(()=>applyInstallableAppPackages(tenant(),broken),/default app is not registered/);
+});
+test('installer preserves tenant-owned assignments and explicit permission denials across upgrades',()=>{
+  const installed=applyInstallableAppPackages(tenant(),catalog);
+  const home=installed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS');
+  const custom={id:'tenant-home',scope:'App Default',appId:'TenantApp',profileId:null,formFactors:['Phone']};
+  const customTenant={...installed,pages:installed.pages.map(p=>p.apiName===home.apiName
+    ? {...p,activationAssignments:[...p.activationAssignments,custom]}:p)};
+  const upgraded=applyInstallableAppPackages(customTenant,catalog);
+  assert(upgraded.pages.find(p=>p.apiName===home.apiName).activationAssignments.some(a=>a.id==='tenant-home'));
+  assert.deepEqual(applyInstallableAppPackages(upgraded,catalog),upgraded);
+});
