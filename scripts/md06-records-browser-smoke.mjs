@@ -162,8 +162,7 @@ try {
     throw Error('A permission-revoked offline Account was incorrectly committed');
   const restored=await adminApi('/metadata/permissions','PUT',originalAcl.data);
   if(restored.status!==200)throw Error('Cannot restore synthetic RBAC fixture');
-  await offlinePanel.getByRole('button',{name:'Retry after review'}).click();
-  await offlinePanel.waitFor({state:'hidden',timeout:15000});
+  // The rejection is displayed before the in-flight sync releases its guard.\n  // Wait for that sync to finish before explicitly retrying after RBAC recovery.\n  await offlinePanel.getByRole('button',{name:'Sync pending'}).waitFor({state:'visible'});\n  await offlinePanel.getByRole('button',{name:'Sync pending'}).waitFor({state:'visible',timeout:15000});\n  await offlinePanel.getByRole('button',{name:'Retry after review'}).click();\n  try {\n    await offlinePanel.waitFor({state:'hidden',timeout:15000});\n  } catch(error) {\n    throw Error('Reviewed offline retry did not clear: '+(await offlinePanel.innerText()).slice(0,900),{cause:error});\n  }
   const syncedRecord=await adminApi('/records/Account?search='+encodeURIComponent(offlineName));
   if(syncedRecord.status!==200 || !syncedRecord.data.records.some(item=>item.Name===offlineName))
     throw Error('Explicit retry did not synchronise a restored-permission offline draft');
