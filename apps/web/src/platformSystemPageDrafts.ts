@@ -14,7 +14,7 @@ const workspaces=[
 export const systemWorkspaceSlots:Readonly<Record<string,readonly string[]>>={
  'home':['overview'],
  'company-settings':['company-info','domains','developer-accounts','usage','recovery','mfa','email-recovery','locks','sessions','audit'],
- 'object-manager':['object-workspace'],
+ 'object-manager':['object-workspace','object-list','object-heading','object-subnav','object-setting'],
  'app-manager':['identity','brand','description','navigation-search','pages','assignments','navigation-items','navigation-order','utility','actions'],
  'app-exchange':['marketplace','marketplace-search','marketplace-filters','marketplace-catalog','marketplace-details'],
  'rbac':['permissions','rbac-tabs','rbac-list','rbac-editor','rbac-help'],
