@@ -1,3 +1,6 @@
+import { sanitizeRecordValues, withCaseClosedDate, recordUnmodified } from './modules/records/record-input.js';
+import { stampRecordAuditFields, recordActionEnabled } from './modules/records/record-actions.js';
+import { autoNumberFormatForField, formatAutoNumber, autoNumberSequenceFromValue, autoNumberSequenceKey, migrateAutoNumberSequences } from './modules/records/auto-number.js';
 import { numericFieldValueError, validateFieldChange, uniqueFieldValueKey, validateExistingFieldValues, isValidFlowDateTime, normalizeRuntimeValues, normalizeFlowRecordAssignments } from './modules/records/record-values.js';
 import { validateRelationshipReparenting, validateRequiredRecordFields } from './modules/records/field-rules.js';
 import { validateObjectLayoutProfileAssignments, pageComponentFeatureEnabled } from './modules/objects/metadata-validation.js';
@@ -3016,47 +3019,6 @@ type SecurityAuditEvent = {
   targetUserId?: string; details?: Record<string, string>;
 };
 type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string; policy?: unknown }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
-function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
-  return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
-    ? object.settings.recordNameFormat
-    : field.dataType === 'AutoNumber' ? 'REC-{00000}' : 'REC-{000000}';
-}
-function formatAutoNumber(format: string, sequence: number): string {
-  return format.replace(/\{(0+)\}/, (_match, digits: string) => String(sequence).padStart(digits.length, '0'));
-}
-function autoNumberSequenceFromValue(format: string, value: unknown): number | undefined {
-  if (typeof value !== 'string') return undefined;
-  const token = /\{0+\}/.exec(format);
-  if (!token || token.index === undefined) return undefined;
-  const prefix = format.slice(0, token.index);
-  const suffix = format.slice(token.index + token[0].length);
-  const escape = (part: string) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`^${escape(prefix)}(\\d+)${escape(suffix)}$`).exec(value);
-  if (!match) return undefined;
-  const sequence = Number(match[1]);
-  return Number.isSafeInteger(sequence) ? sequence : undefined;
-}
-function autoNumberSequenceKey(objectApiName: string, fieldApiName: string): string {
-  return `${objectApiName}.${fieldApiName}`;
-}
-function migrateAutoNumberSequences(
-  objects: ObjectMetadata[],
-  records: Record<string, RuntimeRecord[]>,
-  existingSequences: Record<string, number>
-): Record<string, number> {
-  const sequences = { ...existingSequences };
-  for (const object of objects) {
-    for (const field of object.fields) {
-      if (field.dataType !== 'AutoNumber' && field.dataType !== 'Auto Number') continue;
-      const key = autoNumberSequenceKey(object.apiName, field.apiName);
-      const format = autoNumberFormatForField(object, field);
-      const highestExisting = (records[object.apiName] ?? []).reduce((highest, record) =>
-        Math.max(highest, autoNumberSequenceFromValue(format, record[field.apiName]) ?? 0), 0);
-      sequences[key] = Math.max(sequences[key] ?? 0, highestExisting);
-    }
-  }
-  return sequences;
-}
 const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'Records', label: 'Records', description: 'Browse and manage customer records.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
   { apiName: 'SalesApp', label: 'Sales', description: 'Manage sales accounts and opportunities.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
@@ -9487,60 +9449,6 @@ function assertFieldEditPermissions(principal: Principal, tenant: TenantData, ob
   }
 }
 
-function sanitizeRecordValues(object: ObjectMetadata, input: Record<string, unknown>): Record<string, unknown> {
-  const allowedFields = new Set(object.fields.map((field) => field.apiName));
-  const readOnlyFields = new Set([
-    'Id',
-    'CreatedDate',
-    'CreatedById',
-    'LastModifiedDate',
-    'LastModifiedById',
-    'SystemModstamp',
-    ...(object.apiName === 'Opportunity' ? ['Age', 'Fiscal', 'OwnerRole'] : []),
-    ...(object.apiName === 'Case' ? ['Age', 'IsOpen', 'IsClosed'] : [])
-  ]);
-  const values: Record<string, unknown> = {};
-  for (const [fieldName, value] of Object.entries(input)) {
-    if (!allowedFields.has(fieldName) && fieldName !== 'RecordTypeId') throw new Error(`Field "${fieldName}" does not exist on "${object.apiName}".`);
-    if (readOnlyFields.has(fieldName)) throw new Error(`Field "${fieldName}" on "${object.apiName}" is read-only.`);
-    values[fieldName] = value;
-  }
-  return normalizeRuntimeValues(object, values);
-}
-
-function stampRecordAuditFields(record: RuntimeRecord, userId: string, timestamp: string, previous?: RuntimeRecord): RuntimeRecord {
-  return {
-    ...record,
-    CreatedById: previous?.CreatedById ?? userId,
-    LastModifiedById: userId,
-    SystemModstamp: timestamp
-  };
-}
-
-function withCaseClosedDate(objectApiName: string, record: RuntimeRecord, previous?: RuntimeRecord): RuntimeRecord {
-  if (objectApiName !== 'Case') return record;
-  const isClosed = /^closed(?:\b|[\s_-])/i.test(String(record.Status ?? ''));
-  if (!isClosed) return { ...record, ClosedDate: null };
-  const wasClosed = /^closed(?:\b|[\s_-])/i.test(String(previous?.Status ?? ''));
-  const closedDate = wasClosed
-    ? typeof previous?.ClosedDate === 'string' ? previous.ClosedDate : previous?.LastModifiedDate
-    : record.LastModifiedDate;
-  return { ...record, ClosedDate: closedDate ?? record.LastModifiedDate };
-}
-
-function recordActionEnabled(object: ObjectMetadata, action: 'New' | 'Edit' | 'Delete', recordTypeId?: string, profileId?: string): boolean {
-  if (object.actions && !object.actions.some((item) => item.type === 'Standard' && item.label === action && item.enabled)) return false;
-  if (action === 'New' && object.listViewButtons && !object.listViewButtons.includes('New')) return false;
-  const selectedRecordTypeId = recordTypeId
-    ?? object.recordTypes?.find((item) => item.active && item.isDefault)?.id
-    ?? object.recordTypes?.find((item) => item.active)?.id;
-  const assignments = object.pageLayoutAssignments ?? [];
-  const assignment = assignments.find((item) => item.profileId === profileId && item.recordTypeId === selectedRecordTypeId)
-    ?? assignments.find((item) => item.profileId === '*' && item.recordTypeId === selectedRecordTypeId);
-  const layout = object.pageLayouts?.find((item) => item.id === assignment?.pageLayoutId) ?? object.pageLayouts?.[0];
-  return !layout || layout.actions.includes(action);
-}
-
 function profileIdForPrincipal(principal: Principal, tenant: TenantData): string {
   const user = principalUser(principal);
   if (!user) return '';
@@ -10650,13 +10558,6 @@ app.post('/api/records/:objectName/import', accessAuthentication, async (req: Re
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record import failed' });
   }
 });
-function recordUnmodified(req: Request, record: RuntimeRecord): boolean {
-  const expected = req.get('If-Unmodified-Since');
-  if (expected === undefined) return true; // Compatible with older clients.
-  const original = new Date(expected).getTime();
-  const current = new Date(String(record.LastModifiedDate ?? '')).getTime();
-  return Number.isFinite(original) && Number.isFinite(current) && original === current;
-}
 app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -10677,7 +10578,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
-  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
+  if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
   }
@@ -10732,7 +10633,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
-  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
+  if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (Object.hasOwn(parsed.data, 'OwnerId')) {
     if (parsed.data.OwnerId !== existing.OwnerId) {
       return res.status(403).json({ error: 'OwnerId cannot be changed through record updates; use a dedicated ownership operation to transfer ownership' });
@@ -10859,7 +10760,7 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
   if (!hasObjectPermission(principal, tenant, objectName, 'delete')) return res.status(403).json({ error: `Missing delete permission for object "${objectName}"` });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Delete')) return res.status(404).json({ error: 'Record was not found' });
-  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
+  if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (!recordActionEnabled(object, 'Delete', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Delete is not enabled for this object or page layout' });
   }
