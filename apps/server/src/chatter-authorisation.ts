@@ -35,12 +35,13 @@ export function chatterScopeForUser(tenantId: string, userId: string, tenant: Ch
   const mine = rows.filter(row => asText(row.User_Id__c) === userId && row.Active__c === true);
   return {
     tenantId, userId,
-    viewAllConversations: mine.some(row => row.View_All__c === true),
+    viewAllConversations: false, // channel-specific View All is part of the grant
     grants: mine.filter(row => asText(row.Channel_Account__c)).map(row => ({
       userId, channelAccountId: asText(row.Channel_Account__c),
       canRead: row.Can_Read__c === true,
       canSend: row.Can_Send__c === true,
-      canAssign: row.Can_Assign__c === true
+      canAssign: row.Can_Assign__c === true,
+      viewAll: row.View_All__c === true
     }))
   };
 }
@@ -52,6 +53,7 @@ export function canAccessChatterRecord(
   const channelAccountId = asText(record.Channel_Account__c);
   const number = asText(String(record.Direction__c).toLowerCase() === 'incoming'
     ? record.From_Number__c : record.To_Number__c);
+  if(!channelAccountId || !number) return false;
   // Assignment belongs to the conversation, not a historical message.
   // Resolve the latest record to keep old messages visible after reassignment.
   const assignedUserId=latestAssignments(tenant.records.Communication_Records__c??[])
