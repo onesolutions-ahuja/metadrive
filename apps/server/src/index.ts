@@ -5393,7 +5393,7 @@ function provisioningIdempotencyKey(req: Request): string | undefined {
 
 app.get('/health', async (_req, res) => {
   const database = await checkDatabaseConnection();
-  return res.json({ ok: true, service: 'metadrive-api', database, authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode });
+  return res.json({ ok: true, service: 'metadrive-api', database, authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode, deploymentRevision: process.env.RENDER_GIT_COMMIT ?? null });
 });
 app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
 app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
