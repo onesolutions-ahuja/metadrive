@@ -15,8 +15,7 @@ function tenant() {
       {apiName:'Name',label:'Name',dataType:'Text',required:true}
     ]}],
     records:{Connector_App__c:[
-      {Id:'app-license-kiosk',AppKey__c:'kiosk',Installed__c:true,LicenceStatus__c:'Licensed'},
-      {Id:'app-license-pos',AppKey__c:'pos',Installed__c:true,LicenceStatus__c:'Licensed'}
+      {Id:'app-license-unrelated',AppKey__c:'whatsapp',Installed__c:true,LicenceStatus__c:'Licensed'}
     ]},
     flows:[],pages:[],apps:[],
     accessControl:{profiles:[
@@ -31,14 +30,14 @@ test('Phase 7: app installation, component registry, state snapshot and restore 
   assert.equal(original.pages.length,0,'installer never mutates input');
   assert.equal(installed.objects.find(item=>item.apiName==='Product').label,'Tenant product');
   assert.deepEqual(applyInstallableAppPackages(installed,catalog),installed,'installation is idempotent');
-  assert(installed.pages.some(page=>page.apiName==='UNE_KIOSK_CANVAS'));
-  assert(installed.pages.some(page=>page.apiName==='UNE_POS'));
+  assert.equal(installed.pages.length,0,'removed app packages must not recreate pages');
+  assert.equal(installed.records.Connector_App__c.length,1,'unrelated connector metadata remains');
   assert(installed.pages.every(page=>new Set(page.components.map(c=>c.id)).size===page.components.length));
   assert.equal(installed.accessControl.profiles.find(p=>p.id==='system-administrator').objectPermissions.Product.read,false);
 
   const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
-  const library=ensureBundledAppComponents([],installed,catalog,root);
-  assert(library.length>5);
+  const library=ensureBundledAppComponents([{apiName:'ExampleWidget',trustedBundled:true,status:'Published',surfaces:['page'],version:1}],installed,catalog,root);
+  assert.equal(library.length,1);
   assert.equal(new Set(library.map(c=>c.apiName)).size,library.length);
   assert.deepEqual(ensureBundledAppComponents(library,installed,catalog,root),library);
   assert(library.every(c=>c.trustedBundled===true));
@@ -54,7 +53,7 @@ test('Phase 7: app installation, component registry, state snapshot and restore 
   assert.deepEqual(restoreState(rows),source);
   assert.throws(()=>projectState({...source,unregisteredRoot:{}}),/unknown top-level key/);
   const changed={...rows,collectionItems:rows.collectionItems.map(row=>
-    row.key==='pages' && row.tenantId==='tenant-test' && row.position===0
+    row.key==='objects' && row.tenantId==='tenant-test' && row.position===0
       ? {...row,payload:{...row.payload,label:'Tampered'}} : row)};
   assert.throws(()=>verifyProjection(source,changed),/round-trip mismatch/);
 });
