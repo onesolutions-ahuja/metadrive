@@ -117,6 +117,22 @@ if(!canSeed){
   token=relogin.access_token;
   if(!token)throw Error('RBAC refresh yielded no token');
 }
+// Existing installations may contain lightweight placeholder Objects, so never
+// treat an existing API name as proof that its schema is ready for demo records.
+// Add only absent fields via Object Manager, keeping custom fields/layouts intact.
+const latestObjects=(await api('/metadata/objects')).objects;
+for(const definition of kioskObjectDefinitions){
+  const current=latestObjects.find(object=>object.apiName===definition.apiName);
+  if(!current)throw Error('Metadata Object missing after installation: '+definition.apiName);
+  const existingFields=new Set(current.fields.map(field=>field.apiName));
+  const missingFields=definition.fields.filter(field=>!existingFields.has(field.apiName));
+  if(!missingFields.length)continue;
+  if(current.kind!=='Custom Object')throw Error('Cannot extend non-custom Object '+definition.apiName);
+  await api('/metadata/objects/'+encodeURIComponent(definition.apiName),'PUT',{
+    ...current,fields:[...current.fields,...missingFields]
+  });
+  console.log('Upgraded '+definition.apiName+' with '+missingFields.length+' missing fields');
+}
 async function matchingRecord(object,key,value){
   const result=await api('/records/'+encodeURIComponent(object)+'?search='+encodeURIComponent(String(value)));
   return (result.records??[]).find(record=>String(record[key]??'')===String(value));
