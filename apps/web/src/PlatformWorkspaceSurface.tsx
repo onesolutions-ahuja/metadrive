@@ -1,5 +1,7 @@
 import React,{type ReactNode} from 'react';
 import {platformNavigationEntries} from './platformWorkspaceMetadata';
+import type {LightningPageMetadata,LibraryComponentMetadata} from './metadata';
+import PlatformSystemPageRenderer,{eligibleSystemPage} from './PlatformSystemPageRenderer';
 
 /** Shared, registry-resolved platform presentation wrapper.
  * The enclosing Setup route and every OneEngine API retain their RBAC gates.
@@ -24,13 +26,17 @@ export function resolveSystemWorkspace(id:string){
  return {id:id as SystemWorkspaceId,label:primary.label,description:descriptions[id as SystemWorkspaceId],
   requiredPermission:primary.permission,aliases:matches.map(entry=>entry.label)};
 }
-export default function PlatformWorkspaceSurface({workspace,children,permitted=true}:{
- workspace:SystemWorkspaceId;children:ReactNode;permitted?:boolean
+export default function PlatformWorkspaceSurface({workspace,children,permitted=true,page,libraryComponents=[]}:{
+ workspace:SystemWorkspaceId;children:ReactNode;permitted?:boolean;
+ page?:LightningPageMetadata;libraryComponents?:readonly LibraryComponentMetadata[]
 }){
  const definition=resolveSystemWorkspace(workspace);
  if(!definition||!permitted)return <div role="alert">Workspace unavailable</div>;
  return <section className="platform-workspace-surface" data-workspace={definition.id}
    aria-label={definition.label} data-metadata-source="platform-workspace-registry">
-   {children}
+   {eligibleSystemPage(page,workspace,definition.requiredPermission)
+    ? <PlatformSystemPageRenderer page={page!} workspace={workspace}
+       permission={definition.requiredPermission} components={libraryComponents}>{children}</PlatformSystemPageRenderer>
+    : children}
  </section>;
 }
