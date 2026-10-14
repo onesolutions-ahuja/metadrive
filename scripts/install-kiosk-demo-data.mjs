@@ -61,7 +61,7 @@ for(const product of demoProducts){
   const {category,...values}=product;
   const parentId=categoryIds.get(category);
   if(!parentId)throw Error('Unrecognised category '+category);
-  await upsertDemo('Product__c','SKU',{...values,CategoryId:parentId});
+  await upsertDemo('Product__c','Name',{...values,CategoryId:parentId});
 }
 const observed=await api('/metadata/objects');
 const installed=new Set((observed.objects??[]).map(item=>item.apiName));
