@@ -25,6 +25,8 @@
     "test:flow-connectors": "node --test scripts/md10-flow-connector-insertion.test.mjs apps/web/test/flow-insert-element.test.mjs",
     "test:flow-screen-upload": "node --test scripts/md10-flow-screen-upload.test.mjs",
     "test:flow-screen-datatable": "node --test scripts/md10-flow-screen-datatable.test.mjs",
-    "test:modern-canvas": "tsx --test scripts/md10-modern-canvas-contract.test.mjs"
+    "test:modern-canvas": "tsx --test scripts/md10-modern-canvas-contract.test.mjs",
+    "audit:architecture": "node scripts/audit-platform-architecture.mjs --output .artifacts/architecture-inventory.json",
+    "test:architecture-audit": "node --test scripts/audit-platform-architecture.test.mjs"
   }
 }
