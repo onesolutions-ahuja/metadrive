@@ -4211,7 +4211,7 @@ function loadState(sqlState?: unknown): PlatformState {
       ...tenant,
       records,
       autoNumberSequences: migrateAutoNumberSequences(objects, records, tenant.autoNumberSequences),
-      apps: tenant.apps, pages: seedProtectedAdministrationPages(tenant).pages,
+      apps: tenant.apps,
       fieldHistory: tenant.fieldHistory ?? [],
       interviews: tenant.interviews ?? [],
       flowLogs: tenant.flowLogs ?? [],
@@ -4267,7 +4267,7 @@ function loadState(sqlState?: unknown): PlatformState {
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
       ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
-      pages: tenant.pages.map((page) => ({
+      pages: seedProtectedAdministrationPages(tenant).pages.map((page) => ({
         ...page,
         activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
           { id: `${page.apiName}-default-desktop`, scope: 'Org Default' as const, appId: null, profileId: null, recordTypeId: null, formFactors: ['Desktop' as const] },
