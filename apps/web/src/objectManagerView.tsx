@@ -192,8 +192,6 @@ import {
 } from './metadata';
 
 
-import { objectSettings } from './appRouting';
-import { relatedLookupFilterOperators } from './recordMetadataUtils';
 export function createObjectManager(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>) {
 function ObjectManager({
   object, objects, flows, pages, reports, dashboards, profiles, activationAppIds, selectedSetting, search, onSearch, onObjectSelect, onSettingSelect, onOpenDependency, onNewField, onCreateObject, onSaveObject, onRefreshObject, onDeleteObject, onSaveField, onDeleteField, onSavePage, onOpenPageBuilder, onOpenRecords, page, onNotify
