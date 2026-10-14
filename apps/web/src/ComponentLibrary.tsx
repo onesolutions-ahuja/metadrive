@@ -225,6 +225,18 @@ export default function ComponentLibrary({
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('page')} onChange={(event) => toggleSurface('page', event.target.checked)} />Lightning page builder</label>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('dashboard')} onChange={(event) => toggleSurface('dashboard', event.target.checked)} />Dashboard builder</label>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('flow')} onChange={(event) => toggleSurface('flow', event.target.checked)} />Flow Builder screens</label>
+        <div className="properties-section-title">Reusable property definitions</div>
+        {propertyDefinitions.map((definition,index) => <div key={index} className="metadata-array-property">
+          <input className="form-control" aria-label="Property API name" value={definition.propertyKey} onChange={event => updateDefinition(index,{propertyKey:event.target.value})} />
+          <input className="form-control" aria-label="Property label" value={definition.label} onChange={event => updateDefinition(index,{label:event.target.value})} />
+          <select className="form-control" aria-label="Property type" value={definition.kind} onChange={event => updateDefinition(index,{kind:event.target.value as typeof definition.kind})}>
+            {['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY'].map(kind => <option key={kind} value={kind}>{kind}</option>)}
+          </select>
+          <label className="checkbox-row"><input type="checkbox" checked={definition.required ?? false} onChange={event => updateDefinition(index,{required:event.target.checked})}/>Required</label>
+          <label className="checkbox-row"><input type="checkbox" checked={definition.isBindable ?? false} onChange={event => updateDefinition(index,{isBindable:event.target.checked})}/>Allow data binding</label>
+          <button type="button" className="btn btn-small" onClick={() => setPropertyDefinitions(items => items.filter((_,i) => i !== index))}>Remove</button>
+        </div>)}
+        <button type="button" className="btn btn-small" onClick={addDefinition}>Add property</button>
         <div className="properties-section-title">Resizable canvas defaults (pixels)</div>
         {([
           ['defaultWidth', 'Default width'],
