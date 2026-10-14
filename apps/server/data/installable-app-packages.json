@@ -206,7 +206,8 @@
                     "flowApiName": "CHATTER_ASSIGN_CONVERSATION",
                     "inputs": {
                       "ConversationId": "$event.conversationId",
-                      "ChannelAccountId": "$event.channelAccountId"
+                      "ChannelAccountId": "$event.channelAccountId",
+                      "AssigneeId": "$event.assigneeId"
                     }
                   }
                 },
