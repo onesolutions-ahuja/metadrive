@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Building2, ChevronLeft, ChevronRight, CircleAlert, Plus, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import './TenantManagement.css';
 import {tenantCreateFieldDefinitions} from './adminTenantFieldMetadata';
+import AdminPropertyControl from './AdminPropertyControl';
 import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
 import TenantUsagePanel from './TenantUsagePanel';
@@ -217,17 +218,10 @@ export default function TenantManagement({ request, permitted }: { request: Requ
       <section className="tenant-panel tenant-detail" aria-label={showCreate ? 'Create tenant' : 'Tenant details'}>
         {showCreate ? <form onSubmit={(event) => void createTenant(event)}>
           <div className="tenant-detail-heading"><h2>New tenant</h2><button type="button" className="tenant-button" onClick={() => { setShowCreate(false); setCreate(emptyCreate); setCreateKey(crypto.randomUUID()); }}>Cancel</button></div>
-          {tenantCreateFieldDefinitions.map(field => <label key={field.key}>{field.label}
-            <input type={field.inputType} required={field.required}
-              minLength={'minLength' in field ? field.minLength : undefined}
-              maxLength={field.maxLength}
-              pattern={'pattern' in field ? field.pattern : undefined}
-              autoComplete={'autoComplete' in field ? field.autoComplete : undefined}
-              placeholder={'placeholder' in field ? field.placeholder : undefined}
-              value={create[field.key] ?? ''}
-              onChange={event => { setCreateKey(crypto.randomUUID());
-                setCreate(old => ({...old,[field.key]:event.target.value})); }} />
-          </label>)}
+          {tenantCreateFieldDefinitions.map(field=><AdminPropertyControl
+            key={field.key} definition={{...field,propertyKey:field.key,kind:'TEXT'}}
+            value={create[field.key]??''}
+            onChange={value=>{setCreateKey(crypto.randomUUID());setCreate(old=>({...old,[field.key]:value}));}}/>)}
           <p className="tenant-help">Creates an initial administrator and a disabled developer account with full starting tenant permissions. For <strong>developer@tenant-domain.com</strong>, enter tenant-domain.com. The tenant administrator activates the developer account from Company Settings; no password is shared with platform operators.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
         </form> : selected ? <><form onSubmit={(event) => void saveTenant(event)}>
