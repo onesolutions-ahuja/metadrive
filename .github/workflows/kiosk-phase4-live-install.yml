@@ -74,7 +74,15 @@ jobs:
               CODE='credentials-or-health'
             else
               CAUSE="$(grep -E 'Error:|HTTP [0-9][0-9][0-9]|Missing commerce|Invalid ' phase4-result.log 2>/dev/null | tail -n 1 || true)"
-              CODE="$(printf '%s' "$CAUSE" | sed -E 's/.*(GET|POST|PUT) (\/api)?([^ ]+) HTTP ([0-9]+).*/api-\1-\3-\4/' | tr -cs 'a-zA-Z0-9_-' '-' | cut -c1-65)"
+              if printf '%s' "$CAUSE" | grep -qi 'Concurrent writer detected'; then
+                CODE='concurrent-sql-writer'
+              elif printf '%s' "$CAUSE" | grep -qi 'Invalid custom component metadata'; then
+                CODE='invalid-component-schema'
+              elif printf '%s' "$CAUSE" | grep -qi 'Unable to compile component'; then
+                CODE='jsx-or-css-compilation'
+              else
+                CODE="$(printf '%s' "$CAUSE" | sed -E 's/.*(GET|POST|PUT) (\/api)?([^ ]+) HTTP ([0-9]+).*/api-\1-\3-\4/' | tr -cs 'a-zA-Z0-9_-' '-' | cut -c1-65)"
+              fi
               if [ -z "$CODE" ]; then CODE='installer-error'; fi
             fi
             gh api --method POST "/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
