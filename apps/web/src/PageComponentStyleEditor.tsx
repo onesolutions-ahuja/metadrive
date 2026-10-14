@@ -1,3 +1,4 @@
+import {responsiveNumberFields,responsiveOptionFields,responsiveColorFields} from './metadataAppearanceSchema';
 import { useState } from 'react';
 import {
   layoutSettings,
@@ -8,24 +9,14 @@ import {
 } from './pageComponentLayout';
 
 type Mode = 'Base' | LayoutDevice;
-const numeric: Array<[LayoutSettingKey, string, number, number]> = [
-  ['padding', 'Padding', 0, 160],
-  ['margin', 'Margin', 0, 160],
-  ['borderWidth', 'Border width', 0, 24],
-  ['borderRadius', 'Corner radius', 0, 160],
-  ['gap', 'Spacing / gap', 0, 160],
-  ['opacity', 'Opacity (%)', 0, 100],
-  ['fontSize', 'Font size', 8, 96]
-];
-const typography: Array<[LayoutSettingKey, string, string[]]> = [
-  ['fontWeight', 'Font weight', ['400', '500', '600', '700', '800']],
-  ['textAlign', 'Text alignment', ['left', 'center', 'right', 'start', 'end']],
-  ['boxShadow', 'Shadow', ['none', 'sm', 'md', 'lg']]
-];
-const alignments: Array<[LayoutSettingKey, string, string[]]> = [
-  ['alignItems', 'Cross-axis alignment', ['stretch', 'flex-start', 'center', 'flex-end']],
-  ['justifyContent', 'Main-axis alignment', ['flex-start', 'center', 'flex-end', 'space-between', 'space-around']]
-];
+const numeric: Array<[LayoutSettingKey,string,number,number]> =
+  responsiveNumberFields.map(({key,label,min,max})=>[key,label,min,max]);
+const typography: Array<[LayoutSettingKey,string,readonly string[]]> =
+  responsiveOptionFields.filter(({key})=>['fontWeight','textAlign','boxShadow'].includes(key))
+    .map(({key,label,options})=>[key,label,options]);
+const alignments: Array<[LayoutSettingKey,string,readonly string[]]> =
+  responsiveOptionFields.filter(({key})=>['alignItems','justifyContent'].includes(key))
+    .map(({key,label,options})=>[key,label,options]);
 
 export default function PageComponentStyleEditor({
   properties, onChange, disabled = false
@@ -73,13 +64,13 @@ export default function PageComponentStyleEditor({
           if (Number.isFinite(value)) change(key, value);
         }} />
     </label>)}
-    {(['backgroundColor', 'borderColor'] as const).map((key) => {
+    {responsiveColorFields.map(({key,label}) => {
       const chosen = String(current[key] ?? inherited[key] ?? '#ffffff');
       const transparent = chosen === 'transparent';
       return <div className="metadata-array-property" key={key}>
-        <label className="form-label">{key === 'backgroundColor' ? 'Background colour' : 'Border colour'}
+        <label className="form-label">{label}
           <input className="form-control" type="color" disabled={disabled}
-            aria-label={key === 'backgroundColor' ? 'Background colour picker' : 'Border colour picker'}
+            aria-label={label+' picker'}
             value={/^#[0-9a-f]{6}$/i.test(chosen) ? chosen : '#ffffff'}
             onChange={(event) => change(key, event.target.value)} />
         </label>
