@@ -1,0 +1,33 @@
+name: Kiosk demo data - authorised MetaDrive API seed
+on:
+  push:
+    branches: [feat/kiosk-shared-sales-data-seed]
+    paths:
+      - '.github/workflows/kiosk-demo-live-seed.yml'
+      - 'scripts/install-kiosk-demo-data.mjs'
+      - 'scripts/kiosk-demo-fixtures.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: kiosk-demo-live-seed
+  cancel-in-progress: false
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify seed fixtures
+        run: node --test scripts/kiosk-demo-fixtures.test.mjs
+      - name: Install and verify demo metadata through secured MetaDrive APIs
+        env:
+          METADRIVE_API_URL: https://unesolutions.co.uk
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+          METADRIVE_DEMO_SEED_APPROVED: 'true'
+        run: node scripts/install-kiosk-demo-data.mjs
