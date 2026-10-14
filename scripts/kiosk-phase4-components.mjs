@@ -132,7 +132,8 @@ export default function CommerceBasketPanel({title='Your basket',currencySymbol=
     if(!r?.outputs?.Submitted)throw Error('Add an item before submitting your order');
     setSuccess('Order submitted. Payment will be collected separately.');
    }
-   await load()
+   if(event==='submit')await onAction({event:'confirmation',value:{}});
+   else await load()
   }catch(e){setError(e.message||String(e))}
   finally{setBusy('')}
  };
