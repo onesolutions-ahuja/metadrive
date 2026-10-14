@@ -176,7 +176,7 @@ export function applyInstallableAppPackages(tenant, catalog) {
         }
         // Upgrade only a package-owned, unchanged legacy accent to the
         // revised kiosk visual preset. Customised tenant colors stay intact.
-        const seeded = pkg.pages?.[0]?.components ?? [];
+        const seeded = pkg.pages?.find(candidate => candidate.apiName === page.apiName)?.components ?? [];
         const migrateLegacyPos = pkg.appKey === 'pos' && (page.components ?? []).length === 1
           && page.components[0].id === 'pos-sales-workspace'
           && page.components[0].type === 'Custom:TillSalesWorkspace';
