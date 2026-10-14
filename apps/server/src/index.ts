@@ -5424,6 +5424,7 @@ app.get('/health', async (_req, res) => {
 app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
 app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
 app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
+const developerActivationPending = new Set<string>();
 export const phase3AuthContext = {
   app,
   jwtService,
@@ -5486,12 +5487,17 @@ export const phase3AuthContext = {
   deliverWithFallback,
   RECOVERY_FLOW_API,
   recoveryFlowActions,
+  defaultRecoveryFlowDefinition,
+  randomInt,
+  scryptSync,
+  sendTenantEmail,
   persistAuthLogoutRevocation,
   persistenceMode,
   z,
   get state() { return state; },
   set state(next: PlatformState) { state = next; },
   get latestStateCommit() { return latestStateCommit; },
+  set latestStateCommit(v: Promise<unknown>) { latestStateCommit = v; },
   get authOverlayRevision() { return authOverlayRevision; },
   set authOverlayRevision(v: number) { authOverlayRevision = v; }
 };
@@ -5731,7 +5737,6 @@ app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdm
 const activateDeveloperSchema = z.object({
   password: z.string().min(12).max(256)
 }).strict();
-const developerActivationPending = new Set<string>();
 app.get('/api/tenant/developer-account', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
