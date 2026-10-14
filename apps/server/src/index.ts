@@ -1,3 +1,5 @@
+import { stampRecordAuditFields, recordActionEnabled } from './modules/records/record-actions.js';
+import { autoNumberFormatForField, formatAutoNumber, autoNumberSequenceFromValue, autoNumberSequenceKey, migrateAutoNumberSequences } from './modules/records/auto-number.js';
 import { numericFieldValueError, validateFieldChange, uniqueFieldValueKey, validateExistingFieldValues, isValidFlowDateTime, normalizeRuntimeValues, normalizeFlowRecordAssignments } from './modules/records/record-values.js';
 import { validateRelationshipReparenting, validateRequiredRecordFields } from './modules/records/field-rules.js';
 import { validateObjectLayoutProfileAssignments, pageComponentFeatureEnabled } from './modules/objects/metadata-validation.js';
@@ -3016,47 +3018,6 @@ type SecurityAuditEvent = {
   targetUserId?: string; details?: Record<string, string>;
 };
 type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string; policy?: unknown }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
-function autoNumberFormatForField(object: ObjectMetadata, field: ObjectMetadata['fields'][number]): string {
-  return field.apiName === 'Name' && object.settings?.recordNameType === 'Auto Number'
-    ? object.settings.recordNameFormat
-    : field.dataType === 'AutoNumber' ? 'REC-{00000}' : 'REC-{000000}';
-}
-function formatAutoNumber(format: string, sequence: number): string {
-  return format.replace(/\{(0+)\}/, (_match, digits: string) => String(sequence).padStart(digits.length, '0'));
-}
-function autoNumberSequenceFromValue(format: string, value: unknown): number | undefined {
-  if (typeof value !== 'string') return undefined;
-  const token = /\{0+\}/.exec(format);
-  if (!token || token.index === undefined) return undefined;
-  const prefix = format.slice(0, token.index);
-  const suffix = format.slice(token.index + token[0].length);
-  const escape = (part: string) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`^${escape(prefix)}(\\d+)${escape(suffix)}$`).exec(value);
-  if (!match) return undefined;
-  const sequence = Number(match[1]);
-  return Number.isSafeInteger(sequence) ? sequence : undefined;
-}
-function autoNumberSequenceKey(objectApiName: string, fieldApiName: string): string {
-  return `${objectApiName}.${fieldApiName}`;
-}
-function migrateAutoNumberSequences(
-  objects: ObjectMetadata[],
-  records: Record<string, RuntimeRecord[]>,
-  existingSequences: Record<string, number>
-): Record<string, number> {
-  const sequences = { ...existingSequences };
-  for (const object of objects) {
-    for (const field of object.fields) {
-      if (field.dataType !== 'AutoNumber' && field.dataType !== 'Auto Number') continue;
-      const key = autoNumberSequenceKey(object.apiName, field.apiName);
-      const format = autoNumberFormatForField(object, field);
-      const highestExisting = (records[object.apiName] ?? []).reduce((highest, record) =>
-        Math.max(highest, autoNumberSequenceFromValue(format, record[field.apiName]) ?? 0), 0);
-      sequences[key] = Math.max(sequences[key] ?? 0, highestExisting);
-    }
-  }
-  return sequences;
-}
 const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'Records', label: 'Records', description: 'Browse and manage customer records.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
   { apiName: 'SalesApp', label: 'Sales', description: 'Manage sales accounts and opportunities.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
@@ -9508,15 +9469,6 @@ function sanitizeRecordValues(object: ObjectMetadata, input: Record<string, unkn
   return normalizeRuntimeValues(object, values);
 }
 
-function stampRecordAuditFields(record: RuntimeRecord, userId: string, timestamp: string, previous?: RuntimeRecord): RuntimeRecord {
-  return {
-    ...record,
-    CreatedById: previous?.CreatedById ?? userId,
-    LastModifiedById: userId,
-    SystemModstamp: timestamp
-  };
-}
-
 function withCaseClosedDate(objectApiName: string, record: RuntimeRecord, previous?: RuntimeRecord): RuntimeRecord {
   if (objectApiName !== 'Case') return record;
   const isClosed = /^closed(?:\b|[\s_-])/i.test(String(record.Status ?? ''));
@@ -9526,19 +9478,6 @@ function withCaseClosedDate(objectApiName: string, record: RuntimeRecord, previo
     ? typeof previous?.ClosedDate === 'string' ? previous.ClosedDate : previous?.LastModifiedDate
     : record.LastModifiedDate;
   return { ...record, ClosedDate: closedDate ?? record.LastModifiedDate };
-}
-
-function recordActionEnabled(object: ObjectMetadata, action: 'New' | 'Edit' | 'Delete', recordTypeId?: string, profileId?: string): boolean {
-  if (object.actions && !object.actions.some((item) => item.type === 'Standard' && item.label === action && item.enabled)) return false;
-  if (action === 'New' && object.listViewButtons && !object.listViewButtons.includes('New')) return false;
-  const selectedRecordTypeId = recordTypeId
-    ?? object.recordTypes?.find((item) => item.active && item.isDefault)?.id
-    ?? object.recordTypes?.find((item) => item.active)?.id;
-  const assignments = object.pageLayoutAssignments ?? [];
-  const assignment = assignments.find((item) => item.profileId === profileId && item.recordTypeId === selectedRecordTypeId)
-    ?? assignments.find((item) => item.profileId === '*' && item.recordTypeId === selectedRecordTypeId);
-  const layout = object.pageLayouts?.find((item) => item.id === assignment?.pageLayoutId) ?? object.pageLayouts?.[0];
-  return !layout || layout.actions.includes(action);
 }
 
 function profileIdForPrincipal(principal: Principal, tenant: TenantData): string {
