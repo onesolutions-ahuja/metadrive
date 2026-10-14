@@ -62,7 +62,7 @@ import {
   Workflow,
   Wifi,
   WifiOff
-} from 'lucide-react';
+, PanelLeft, PanelRight } from 'lucide-react';
 import FlowBuilderWorkspace from './FlowBuilder';
 import FlowScreenContent from './FlowScreenContent';
 import FlowLogs from './FlowLogs';
@@ -9095,7 +9095,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
       </div>;
     })}
     <CustomComponentPropertyEditor properties={properties} onChange={onChange} addOnly />
-    <button className="btn" type="button" onClick={() => {
+    {false && <><button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);
     }}>{advancedOpen ? 'Hide advanced metadata' : 'Advanced metadata'}</button>
@@ -9110,7 +9110,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
         } catch (error) { setAdvancedError(error instanceof Error ? error.message : 'Invalid metadata'); }
       }}>Apply advanced metadata</button>
       {advancedError && <div className="auth-error" role="alert">{advancedError}</div>}
-    </>}
+    </>}</>}
   </div>;
 }
 
@@ -9196,6 +9196,8 @@ function PageBuilder({
   const [favouriteComponents, setFavouriteComponents] = useState<string[]>([]);
   const [favouritesLoaded, setFavouritesLoaded] = useState(false);
   const [componentPanelWidth, setComponentPanelWidth] = useState(280);
+  const [componentPanelVisible, setComponentPanelVisible] = useState(true);
+  const [propertiesPanelVisible, setPropertiesPanelVisible] = useState(true);
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(310);
   const propertiesResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
   const [pageListObject, setPageListObject] = useState(page.targetObject || objects[0]?.apiName || '');
@@ -10399,15 +10401,17 @@ function PageBuilder({
           <span className="builder-layout-chip">{pageDeviceLabel(page)} · {page.canvasWidth} × {page.canvasHeight}px · {canvasOrientation(page.canvasWidth,page.canvasHeight)}</span>
         </div>
         <div className="toolbar-actions">
-          <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={()=>{setSelectedId('');setPageSettingsOpen(true)}}><Settings2 size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label={componentPanelVisible ? "Hide components panel" : "Show components panel"} aria-pressed={componentPanelVisible} title={componentPanelVisible ? "Hide components" : "Show components"} onClick={() => setComponentPanelVisible(value => !value)}><PanelLeft size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label={propertiesPanelVisible ? "Hide properties panel" : "Show properties panel"} aria-pressed={propertiesPanelVisible} title={propertiesPanelVisible ? "Hide properties" : "Show properties"} onClick={() => setPropertiesPanelVisible(value => !value)}><PanelRight size={17}/></button>
+          <button type="button" className="icon-button subtle" aria-label="Page properties" title="Page properties" onClick={()=>{setPageSettingsOpen(true);setPropertiesPanelVisible(true)}}><Settings2 size={17}/></button>
           <button type="button" className="icon-button subtle" aria-label="Fit canvas to view" title="Fit canvas" onClick={()=>setFitCanvas(v=>!v)}><Maximize2 size={17}/></button>
           <button type="button" className="icon-button subtle" aria-label="Preview page" title="Preview in new window" onClick={openExternalPreview}><Eye size={17}/></button>
           <button type="button" className="icon-button subtle" aria-label="Save page" title="Save" disabled={saving} onClick={()=>void savePage()}><Save size={17}/></button>
           <button type="button" className="btn btn-small" title="Cancel editing" onClick={onBackToPages}><X size={14}/> Cancel</button>
         </div>
       </div>
-      <div className={`page-builder-layout ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''}`} style={{ '--component-panel-width': `${componentPanelWidth}px`, '--properties-panel-width': `${propertiesPanelWidth}px` } as React.CSSProperties}>
-        <aside className="component-panel">
+      <div className={`page-builder-layout ${page.layoutMode === 'free-canvas' ? 'modern-canvas-builder' : ''} ${!componentPanelVisible ? 'canvas-left-hidden' : ''} ${!propertiesPanelVisible ? 'canvas-right-hidden' : ''}`} style={{ '--component-panel-width': `${componentPanelWidth}px`, '--properties-panel-width': `${propertiesPanelWidth}px` } as React.CSSProperties}>
+        <aside className="component-panel" style={!componentPanelVisible ? { display: "none" } : undefined}>
           <div className="builder-tabs">
             <button className={paletteTab === 'Components' ? 'active' : ''} onClick={() => setPaletteTab('Components')}>Components</button>
             <button className={paletteTab === 'Layers' ? 'active' : ''} onClick={() => setPaletteTab('Layers')}>Layers</button>
@@ -10537,8 +10541,8 @@ function PageBuilder({
             </div>
           </div>
         </div>
-        <aside id="lightning-page-properties" className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}><button className="properties-panel-resize" type="button" aria-label="Resize properties panel" title="Drag to resize" onPointerDown={startPropertiesResize} onPointerMove={movePropertiesResize} onPointerUp={endPropertiesResize} onPointerCancel={endPropertiesResize}/>
-          <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
+        <aside id="lightning-page-properties" style={!propertiesPanelVisible ? { display: "none" } : undefined} className={`properties-panel ${pageSettingsOpen || selected ? 'responsive-open' : ''}`}><button className="properties-panel-resize" type="button" aria-label="Resize properties panel" title="Drag to resize" onPointerDown={startPropertiesResize} onPointerMove={movePropertiesResize} onPointerUp={endPropertiesResize} onPointerCancel={endPropertiesResize}/>
+          <div className="properties-header"><h2>{pageSettingsOpen || !selected ? 'Page properties' : 'Properties'}</h2>{pageSettingsOpen && selected && <button type="button" className="btn btn-small" onClick={() => setPageSettingsOpen(false)}>Component properties</button>}{selected && !pageSettingsOpen && <button className="icon-button subtle" onClick={removeSelected} aria-label="Remove component"><Trash2 size={15} /></button>}</div>
           {selected && !pageSettingsOpen ? <>
             <div className="modern-inspector-tabs" role="tablist" aria-label="Component inspector">
               {(['Overview', 'Design', 'Data & Actions'] as const).map(tab => <button key={tab} type="button" role="tab"
@@ -10716,9 +10720,9 @@ function PageBuilder({
               <label className="checkbox-row"><input type="checkbox" checked={selected.properties.canvasLocked === true}
                 onChange={event => updateComponent(selected.id, { properties: { ...selected.properties, canvasLocked: event.target.checked } })} />
                 Lock component position and size</label>
-              <div className="properties-section-title">Position and Size (pixels)</div>
+              <div className="properties-section-title">Size (pixels)</div>
               {([
-                ['x', 'Left'], ['y', 'Top'], ['width', 'Width'], ['height', 'Height']
+                ['width', 'Width'], ['height', 'Height']
               ] as const).map(([key, label]) => {
                 const max = key === 'x' ? page.canvasWidth - selected.position!.width
                   : key === 'y' ? page.canvasHeight - selected.position!.height
@@ -10739,7 +10743,7 @@ function PageBuilder({
                 </label>;
               })}
             </div>}
-            <div className="properties-section-title">Position</div>
+            <div className="properties-section-title">Layer order</div>
             <div className="property-position-actions"><button className="btn" disabled={page.components[0]?.id === selected.id} onClick={() => moveSelected(-1)}><ArrowDown className="move-up-icon" size={13} />Move up</button><button className="btn" disabled={page.components[page.components.length - 1]?.id === selected.id} onClick={() => moveSelected(1)}><ArrowDown size={13} />Move down</button></div>
             {page.layoutMode === 'free-canvas' && selected.position && !rawLayoutParentId(selected) && <button className="btn btn-small" type="button" onClick={wrapSelectedInContainer}>Group selected component</button>}
             {page.layoutMode === 'free-canvas' && selected.type === 'Container' && <button className="btn btn-small" type="button" onClick={ungroupSelected}>Ungroup children</button>}
