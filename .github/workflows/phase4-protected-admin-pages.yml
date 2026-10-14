@@ -1,0 +1,59 @@
+name: Install protected MetaDrive administration pages
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/phase4-protected-admin-pages.yml'
+      - 'scripts/phase4-install-protected-pages.ts'
+      - 'apps/web/src/platformSystemPageDrafts.ts'
+      - 'apps/server/src/modules/pages/protected-system-pages.ts'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: metadrive-protected-system-page-installer
+  cancel-in-progress: false
+jobs:
+  install-draft-pages:
+    if: github.repository == 'onesolutions-ahuja/metadrive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify full platform build and metadata contracts
+        run: npm run build
+      - name: Wait for the exact guarded Render production revision
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          const origin='https://metadrive.onrender.com';
+          for(let attempt=0;attempt<90;attempt++){
+            try{
+              const response=await fetch(origin+'/health',{signal:AbortSignal.timeout(15000)});
+              if(response.ok){
+                const health=await response.json();
+                if(health.deploymentRevision===process.env.EXPECTED_SHA
+                  &&health.ok===true&&health.persistenceMode==='typed'
+                  &&health.maintenance===false&&health.database==='healthy'){
+                  console.log('Expected production commit, SQL-only mode and healthy database verified');
+                  process.exit(0);
+                }
+              }
+            }catch{}
+            await new Promise(resolve=>setTimeout(resolve,10000));
+          }
+          throw Error('Production revision or SQL-only safety gate not verified');
+          NODE
+      - name: Install draft Page Builder metadata through platform-superadmin API
+        env:
+          METADRIVE_API_URL: https://metadrive.onrender.com
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: npx tsx scripts/phase4-install-protected-pages.ts
