@@ -10217,7 +10217,7 @@ function PageBuilder({
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device,
-                      ...(component.type === 'Custom:TillSalesWorkspace' && !previewMode
+                      ...(component.properties.basketWidthPercent !== undefined && !previewMode
                         ? { onLayoutChange: (patch: { basketWidthPercent: number }) =>
                             updateComponent(component.id, { properties: { ...component.properties, ...patch } }) }
                         : {}),
@@ -10492,7 +10492,7 @@ function PageBuilder({
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
               onChange={(properties) => updateComponent(selected.id, { properties })} />}
-            {inspectorTab !== 'Data & Actions' && selected.type === 'Custom:TillSalesWorkspace' && <section className="modern-till-layout-controls">
+            {inspectorTab !== 'Data & Actions' && (selected.properties.basketWidthPercent !== undefined || selected.properties.catalogFirst !== undefined) && <section className="modern-till-layout-controls">
               <div className="properties-section-title">Till layout</div>
               <label className="form-label">Basket width: {Number(selected.properties.basketWidthPercent ?? 45)}%
                 <input type="range" min="25" max="70" step="1" aria-label="Till basket width"
