@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS md_v4_component_property_definitions (
   PRIMARY KEY (component_id,version,property_key),
   FOREIGN KEY (component_id,version) REFERENCES md_v4_component_versions(component_id,version) ON DELETE RESTRICT,
   CHECK (
-    ((property_kind = 'NUMBER') AND default_text IS NULL AND default_boolean IS NULL)
+    ((property_kind IN ('NUMBER','CURRENCY')) AND default_text IS NULL AND default_boolean IS NULL)
     OR ((property_kind = 'BOOLEAN') AND default_text IS NULL AND default_number IS NULL)
-    OR ((property_kind NOT IN ('NUMBER','BOOLEAN')) AND default_number IS NULL AND default_boolean IS NULL)
+    OR ((property_kind NOT IN ('NUMBER','CURRENCY','BOOLEAN')) AND default_number IS NULL AND default_boolean IS NULL)
   )
 );
 CREATE INDEX IF NOT EXISTS md_v4_component_property_order_idx
