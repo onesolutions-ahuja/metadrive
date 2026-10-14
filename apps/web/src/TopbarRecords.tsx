@@ -1,6 +1,9 @@
 import * as React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, Search, X } from 'lucide-react';
+import { useModalAccessibility } from './useModalAccessibility';
+import { createPortal } from 'react-dom';
+import { useCallback } from 'react';
 
 export type NavigableObject = { apiName: string; label: string; pluralLabel: string };
 export type SearchableRecord = { Id: string; Name?: unknown; Email?: unknown; [key: string]: unknown };
@@ -91,7 +94,21 @@ export function GlobalRecordSearch({
   const [failures, setFailures] = useState(0);
   const requestId = useRef(0);
   const wrap = useRef<HTMLFormElement>(null);
-  useDismissOnOutside(wrap, open, () => setOpen(false));
+  const palette = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => { setOpen(false); requestId.current++; setBusy(false); }, []);
+  useModalAccessibility(open, palette, close);
+  const searchInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setOpen(true);
+        searchInput.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onShortcut);
+    return () => document.removeEventListener('keydown', onShortcut);
+  }, []);
   useEffect(() => () => { requestId.current++; }, []);
 
   const performSearch = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -122,24 +139,38 @@ export function GlobalRecordSearch({
     await Promise.all(Array.from({ length: Math.min(4, objects.length) }, () => worker()));
     if (requestId.current === id) setBusy(false);
   };
-  return <form className="global-search global-record-search" role="search" onSubmit={event => void performSearch(event)} ref={wrap}>
-    <button type="submit" className="global-search-submit" aria-label="Search all records"><Search size={16} /></button>
-    <input type="search" aria-label="Global search across objects" placeholder="Global search (Enter)…"
-      value={query} onChange={event => { setQuery(event.target.value); setSearched(false); setOpen(false); requestId.current++; setBusy(false); }} />
-    {open && <div className="global-record-search-results" role="region" aria-label="Global search results">
-      {query.trim().length < 2
-        ? <p className="header-search-empty">Enter at least two characters.</p>
-        : <>
-          <div className="global-search-results-heading">
-            <strong>All records</strong><span>{busy ? `Searching ${checked}/${objects.length} objects…` : `${results.length} matches`}</span>
-          </div>
-          {results.map(({ object, record }) => <button type="button" key={`${object.apiName}:${record.Id}`}
-            onClick={() => { setOpen(false); onSelect(object.apiName, record.Id); }}>
-            <strong>{String(record.Name ?? record.Email ?? record.Id)}</strong><small>{object.pluralLabel}</small>
-          </button>)}
-          {searched && !busy && !results.length && <p className="header-search-empty">No matching accessible records.</p>}
-          {searched && !busy && failures > 0 && <p className="header-search-empty">Some objects could not be searched. Access permissions are enforced by the server.</p>}
-        </>}
-    </div>}
+  const updateQuery = (value: string) => { setQuery(value); setSearched(false); requestId.current++; setBusy(false); setResults([]); };
+  const searchForm = (inPalette: boolean) => <form role="search" onSubmit={event => void performSearch(event)}>
+    <button type="submit" className="global-search-submit" aria-label="Search all records"><Search size={18} /></button>
+    <input ref={inPalette ? searchInput : undefined} type="search" aria-label="Global record search"
+      placeholder="Search accessible records…" value={query} onChange={event => updateQuery(event.target.value)} />
   </form>;
+  return <>
+    <button type="button" className="global-search global-record-search palette-trigger"
+      aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K" onClick={() => setOpen(true)}>
+      <Search size={16} aria-hidden="true" /><span>Search records and navigation</span><kbd>⌘ K</kbd>
+    </button>
+    {open && createPortal(<div className="palette-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}>
+      <div className="palette-dialog" role="dialog" aria-modal="true" aria-label="Global search command palette" ref={palette} tabIndex={-1}>
+        <div className="palette-toolbar">{searchForm(true)}<button type="button" className="icon-button" aria-label="Close search" onClick={close}><X size={18}/></button></div>
+        <div className="palette-results">
+          <h3>Navigation</h3>
+          {objects.filter(object => `${object.pluralLabel} ${object.apiName}`.toLowerCase().includes(query.toLowerCase())).slice(0,12).map(object =>
+            <button key={object.apiName} type="button" onClick={() => { updateQuery(object.pluralLabel); searchInput.current?.focus(); }}>
+              <strong>{object.pluralLabel}</strong><small>{object.apiName} · Search records</small>
+            </button>)}
+          <h3>Records</h3>
+          {query.trim().length < 2 ? <p>Enter at least two characters and press Enter to search.</p> : <>
+            <p role="status">{busy ? `Searching ${checked}/${objects.length} objects…` : searched ? `${results.length} matches` : 'Press Enter to search'}</p>
+            {results.map(({object,record}) => <button type="button" key={`${object.apiName}:${record.Id}`}
+              onClick={() => { close(); onSelect(object.apiName, record.Id); }}>
+              <strong>{String(record.Name ?? record.Email ?? record.Id)}</strong><small>{object.pluralLabel}</small>
+            </button>)}
+            {searched && !busy && !results.length && <p>No matching accessible records.</p>}
+            {searched && !busy && failures > 0 && <p>Some objects could not be searched. Server permissions remain enforced.</p>}
+          </>}
+        </div>
+      </div>
+    </div>, document.body)}
+  </>;
 }
