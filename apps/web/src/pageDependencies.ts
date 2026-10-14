@@ -1,4 +1,5 @@
 import { resolvePageActionRoute } from './pageActionRouting';
+import { componentApiNameFromMetadata, findRegisteredComponentForInstance } from './componentRegistryLookup';
 import type {
   DashboardMetadata, FlowDefinitionMetadata, LibraryComponentMetadata,
   LightningAppMetadata, LightningPageMetadata, ObjectMetadata, ReportMetadata
@@ -63,12 +64,13 @@ export function inspectPageDependencies(page: LightningPageMetadata, scope: Depe
         scope.reports.some(item => item.apiName === name) ? 'Ready' : 'Missing',
         'Report chart data source');
     }
-    if (component.type.startsWith('Custom:')) {
-      const name = component.type.slice('Custom:'.length);
-      const definition = scope.libraryComponents.find(item =>
-        item.apiName === name && item.surfaces.includes('page'));
-      add('Component', name, component.id,
-        !definition ? 'Missing' : definition.status === 'Draft' ? 'Inactive' : 'Ready',
+    const name = componentApiNameFromMetadata(component, 'page');
+    if (name) {
+      const published = findRegisteredComponentForInstance(scope.libraryComponents,component,'page');
+      const draft = scope.libraryComponents.some(item => item.apiName === name
+        && item.surfaces.includes('page') && item.status === 'Draft');
+      add('Component',name,component.id,
+        published ? 'Ready' : draft ? 'Inactive' : 'Missing',
         'Reusable component registry');
     }
     // Generic Object binding, shared by built-in and custom components.

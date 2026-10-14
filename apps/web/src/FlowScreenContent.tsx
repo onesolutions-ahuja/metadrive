@@ -1,4 +1,4 @@
-import {findRegisteredComponent} from './componentRegistryLookup';
+import {findRegisteredComponentForInstance} from './componentRegistryLookup';
 import { useEffect, useState } from 'react';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import FlowScreenAdvancedField from './FlowScreenAdvancedField';
@@ -68,7 +68,7 @@ export default function FlowScreenContent({
     const choices = (Array.isArray(field.choices) ? field.choices : []).filter((choice): choice is string => typeof choice === 'string');
 
     if (type === 'Custom Component') {
-      const definition = findRegisteredComponent(libraryComponents,field.componentApiName,'flow');
+      const definition = findRegisteredComponentForInstance(libraryComponents,field,'flow');
       if (!definition) return <div className="flow-screen-component-error" role="alert" key={name}>
         Custom component "{String(field.componentApiName ?? '')}" is no longer registered for Flow screens.
       </div>;
