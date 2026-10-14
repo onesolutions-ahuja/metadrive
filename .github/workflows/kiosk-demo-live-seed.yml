@@ -9,6 +9,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  statuses: write
 concurrency:
   group: kiosk-demo-live-seed
   cancel-in-progress: false
@@ -43,3 +44,19 @@ jobs:
         run: |
           node scripts/install-kiosk-demo-data.mjs
           echo 'Kiosk metadata and product records verified through MetaDrive APIs.'
+      - name: Publish verifiable seed outcome to commit status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED_JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$SEED_JOB_STATUS" = "success" ]; then
+            STATE=success
+            DESCRIPTION="Kiosk API seed and record verification passed"
+          else
+            STATE=failure
+            DESCRIPTION="Kiosk API seed incomplete; inspect this workflow's failed step"
+          fi
+          gh api --method POST "/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$STATE" -f context="kiosk-demo/live-seed" \
+            -f description="$DESCRIPTION"
