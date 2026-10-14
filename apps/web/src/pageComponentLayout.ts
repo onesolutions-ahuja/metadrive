@@ -1,3 +1,4 @@
+import {appearanceNumberFields,appearanceColorFields,appearanceChoiceFields} from './metadataAppearanceSchema';
 import type { CSSProperties } from 'react';
 import type { PageComponentMetadata } from './metadata';
 
@@ -16,21 +17,23 @@ export const visualDefaults: VisualProperties = {
   backgroundColor: '', color: '', borderColor: '#d0d5dd',
   align: 'stretch', justify: 'start', desktopColumns: 3, tabletColumns: 2, mobileColumns: 1
 };
-const numbers = { padding: [0, 128], margin: [0, 128], gap: [0, 128], borderWidth: [0, 16], borderRadius: [0, 128], desktopColumns: [1, 12], tabletColumns: [1, 12], mobileColumns: [1, 12] } as const;
 const colorPattern = /^(?:#[0-9a-f]{3,8}|transparent|[a-z]+)$/i;
 export function normalizeVisualProperties(input: unknown): VisualProperties {
   const value = input && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
   const result = { ...visualDefaults };
-  for (const key of Object.keys(numbers) as Array<keyof typeof numbers>) {
+  for (const {key,min,max} of appearanceNumberFields) {
     const candidate = value[key];
-    const [min, max] = numbers[key];
-    if (typeof candidate === 'number' && Number.isFinite(candidate)) (result as unknown as Record<string, unknown>)[key] = Math.max(min, Math.min(max, Math.round(candidate)));
+    if (typeof candidate === 'number' && Number.isFinite(candidate))
+      result[key] = Math.max(min,Math.min(max,Math.round(candidate)));
   }
-  for (const key of ['backgroundColor', 'color', 'borderColor'] as const) {
-    if (typeof value[key] === 'string' && (value[key] === '' || colorPattern.test(value[key] as string))) result[key] = value[key] as string;
+  for (const {key} of appearanceColorFields) {
+    if (typeof value[key] === 'string' && (value[key] === '' || colorPattern.test(value[key] as string)))
+      result[key] = value[key] as string;
   }
-  if (['start','center','end','stretch'].includes(String(value.align))) result.align = value.align as VisualProperties['align'];
-  if (['start','center','end','space-between'].includes(String(value.justify))) result.justify = value.justify as VisualProperties['justify'];
+  for (const {key,options} of appearanceChoiceFields) {
+    if ((options as readonly string[]).includes(String(value[key])))
+      (result as unknown as Record<string,unknown>)[key] = value[key];
+  }
   return result;
 }
 export function componentVisualStyle(visual: unknown, type: string, viewport: 'Desktop' | 'Tablet' | 'Phone' = 'Desktop'): CSSProperties {
