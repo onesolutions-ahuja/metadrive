@@ -1,4 +1,4 @@
-import {seedProtectedAdministrationPages,validateProtectedAdministrationPageUpdate} from './modules/metadata/platform-admin-pages.mjs';
+import {seedProtectedAdministrationPages,validateProtectedAdministrationPageUpdate,isProtectedAdministrationPage} from './modules/metadata/platform-admin-pages.mjs';
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
 import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
 import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
@@ -93,7 +93,6 @@ import {
   matchesDashboardFilters,
   type DashboardFolderAccessLevel
 } from './dashboard-access.js';
-
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const schedulePollInterval = Number(process.env.METADRIVE_SCHEDULE_POLL_MS ?? 30_000);
@@ -116,7 +115,6 @@ function requestTenantMatches(req: Request, tenantId: string): boolean {
 const refreshCookieName = 'metadrive_refresh';
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtService = await JwtService.create();
-
 // Canonical origins are fixed. A verified customer domain may call its own
 // same-host API over HTTPS without a deployment-time CORS whitelist update.
 // Cross-origin use of a customer's domain is never allowed.
@@ -144,7 +142,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Retry-After', '120');
   return res.status(503).json({ error: 'MetaDrive database maintenance in progress' });
 });
-
 // In all SQL modes, acknowledge API writes only after the database transaction
 // commits. Otherwise a fast API response followed by restart loses records/Flows.
 // Legacy JSONB response semantics remain unchanged.
@@ -11309,7 +11306,10 @@ app.get('/api/routes/resolve/:appId/:slug', accessAuthentication, async (req: Re
 });
 
 app.get('/api/metadata/pages', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ pages: tenantData(getPrincipal(res).tenantId)?.pages ?? [] });
+  const principal=getPrincipal(res);
+  const pages=tenantData(principal.tenantId)?.pages??[];
+  res.json({pages:pages.filter(page=>!isProtectedAdministrationPage(page)
+    || (page.requiredPermissions??[]).every(permission=>principal.permissions.includes(permission)))});
 });
 app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
   const previousApiName = routeParam(req, 'apiName');
