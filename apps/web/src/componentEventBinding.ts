@@ -68,7 +68,7 @@ export function validateConfiguredFlowEvent(
     return ['Invalid typed Flow inputs.'];
   const declaration=typedInputs as Record<string,unknown>;
   for(const [name,kind] of Object.entries(declaration)){
-    if(!apiName.test(name)||!['text','number','boolean'].includes(kind))
+    if(!apiName.test(name)||typeof kind!=='string'||!['text','number','boolean'].includes(kind))
       return ['Invalid Flow input declaration: '+name];
     if(!own(values,name))continue;
     const v=values[name];
