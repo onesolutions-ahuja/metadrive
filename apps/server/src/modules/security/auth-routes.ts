@@ -633,10 +633,7 @@ app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response)
 });
 
 
-registerSessionSecurityRoutes({ app, accessAuthentication, requirePermission, getPrincipal, principalUser,
-  tenantData, jwtService, getState: () => ctx.state, setState: (next) => { ctx.state = next; },
-  persistState, revokeUserRefreshSessions, withSecurityEvent, effectivePermissions,
-  clearRefreshCookie, userLoginFailures });
+
 
 
 }
