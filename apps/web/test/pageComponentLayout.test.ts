@@ -1,3 +1,4 @@
+import {responsiveNumberFields,responsiveOptionFields,responsiveSettingKeys} from '../src/metadataAppearanceSchema';
 import * as React from 'react';
 import {compileComponentModule} from '../src/componentRuntimeModule';
 import {findRegisteredComponent} from '../src/componentRegistryLookup';
@@ -48,4 +49,30 @@ test('shared component runtime and registry respect metadata definitions',()=>{
  const list=[{apiName:'One',status:'Published',surfaces:['page','dashboard']}];
  assert.equal(findRegisteredComponent(list as any,'One','page')?.apiName,'One');
  assert.equal(findRegisteredComponent(list as any,'One','flow'),undefined);
+});
+
+test('responsive editor and persistence accept one identical metadata schema',()=>{
+  const keys=new Set(responsiveSettingKeys);
+  assert.equal(keys.size,responsiveSettingKeys.length);
+  for(const field of responsiveNumberFields) {
+    assert.equal(validateLayoutSetting(field.key,field.min),'');
+    assert.equal(validateLayoutSetting(field.key,field.max),'');
+    assert.notEqual(validateLayoutSetting(field.key,field.max+1),'');
+  }
+  for(const field of responsiveOptionFields) {
+    for(const option of field.options) assert.equal(validateLayoutSetting(field.key,option),'');
+    assert.notEqual(validateLayoutSetting(field.key,'unsupported-option'),'');
+  }
+});
+test('legacy and modern nesting reject cycles and preserve custom container capabilities',()=>{
+  const elements=[
+    {id:'a',type:'Container',properties:{},position:{x:0,y:0,width:1,height:1}},
+    {id:'b',type:'Custom:Panel',properties:{layoutContainer:true,layoutParentId:'a'},position:{x:0,y:0,width:1,height:1}},
+    {id:'c',type:'Text',properties:{layoutParentId:'b'},position:{x:0,y:0,width:1,height:1}}
+  ] as any;
+  assert.equal(canNest(elements,'a','b'),false);
+  assert.equal(canNestComponent(elements,'c','a'),true);
+  assert.equal(canNestComponent(elements,'a','b'),false);
+  assert.equal(isDescendantOf(elements,'c','a'),true);
+  assert.equal(canNest(elements,'b','c'),false);
 });
