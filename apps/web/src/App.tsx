@@ -1592,9 +1592,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           // authenticated identity or server-side permissions. Restore solely
           // when the live session was verified but presentation endpoints failed.
           const signedIn = firstSession.user as typeof firstSession.user & {id?:string;tenantId?:string};
-          const needsRecovery = !firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length;
           // Encrypted presentation fallback requires a fresh OneEngine publication digest.
-          const serverPublication = signedIn.id && signedIn.tenantId && needsRecovery
+          const serverPublication = signedIn.id && signedIn.tenantId && (!firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length)
             ? await apiRequest<MetadataPublicationResponse>('/metadata/offline-publication').catch(() => null) : null;
           const offlineView = signedIn.id && signedIn.tenantId && serverPublication
             ? await readVerifiedMetadata({userId:signedIn.id,tenantId:signedIn.tenantId},serverPublication.publication).catch(() => null) : null;
