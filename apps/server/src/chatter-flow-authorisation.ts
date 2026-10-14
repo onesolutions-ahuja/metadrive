@@ -15,7 +15,7 @@ const conversation = (input:Record<string,unknown>) => {
     const parsed=JSON.parse(val(input.ConversationId));
     if (!Array.isArray(parsed)||parsed.length!==2) return null;
     const [account,phone]=parsed;
-    if (typeof account!=='string'||!account.trim()||typeof phone!=='string'||!/^\\+?[1-9]\\d{5,14}$/.test(phone)) return null;
+    if (typeof account!=='string'||!account.trim()||typeof phone!=='string'||!/^\+?[1-9]\d{5,14}$/.test(phone)) return null;
     return {account:account.trim(),phone};
   } catch { return null; }
 };
@@ -28,7 +28,7 @@ function secureCredential(credential:Credential, account:string):boolean {
     const url=new URL(credential.baseUrl);
     const segments=url.pathname.split('/').filter(Boolean);
     return url.protocol==='https:'&&url.hostname==='graph.facebook.com'&&!url.username&&!url.password&&!url.search&&!url.hash
-      &&!url.port&&/^v\\d+\\.\\d+$/.test(segments[0]??'')
+      &&!url.port&&/^v\d+\.\d+$/.test(segments[0]??'')
       &&segments[1]===account&&(segments.length===2||(segments.length===3&&segments[2]==='messages'));
   } catch { return false; }
 }
@@ -59,7 +59,7 @@ export function authoriseChatterFlow(apiName:string,context:Context):ChatterFlow
     return {ok:true,input:{...trusted,AssigneeId:assignee}};
   }
   const body=val(context.input.Body);
-  if (!body||body.length>4096||body.includes('\\0'))return reject(400,'Invalid message body');
+  if (!body||body.length>4096||body.includes('\0'))return reject(400,'Invalid message body');
   const lastInbound=same.find(row=>val(row.Direction__c).toLowerCase()==='incoming');
   const lastAt=Date.parse(val(lastInbound?.Occurred_At__c||lastInbound?.CreatedDate));
   if (!Number.isFinite(lastAt)||lastAt>Date.now()+60000||Date.now()-lastAt>=24*60*60*1000) {
