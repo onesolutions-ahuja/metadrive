@@ -17,7 +17,7 @@ const page = {
 const scope = {
  apps: [], pages: [page], objects: [{apiName:'Account'}], reports:[{apiName:'Sales_Report'}],
  dashboards:[{apiName:'Sales',status:'Deployed'}],
- flows:[{apiName:'SAMPLE_ACTION',status:'Active'}],
+ flows:[{apiName:'SAMPLE_ACTION',status:'Active',flowType:'Autolaunched Flow'}],
  libraryComponents:[{apiName:'SampleBusinessWidget',status:'Published',surfaces:['page']}]
 };
 test('Page Builder dependencies resolve published dashboard, report, Flow and library component', () => {
