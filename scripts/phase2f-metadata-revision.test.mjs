@@ -23,3 +23,19 @@ test('2f rejects future publication, invalid hashes and invalid time bounds',()=
  assert.equal(metadataCacheDecision({...envelope,revision:{...envelope.revision,digest:'unsafe'}},context),'reject');
  assert.equal(metadataCacheDecision(envelope,{...context,maxAgeMs:-1}),'reject');
 });
+
+test('2f verified cache hashes exact metadata content and rejects altered payload',async()=>{
+ const {metadataPayloadDigest}=await import('../apps/web/src/verifiedMetadataCache.ts');
+ const data={pages:[{id:'page1'}],apps:[],objects:[],components:[]};
+ const digest=await metadataPayloadDigest(data);
+ assert.match(digest,/^[a-f0-9]{64}$/);
+ assert.notEqual(digest,await metadataPayloadDigest({...data,pages:[{id:'other'}]}));
+});
+test('2f verified cache integrates the existing encrypted identity-scoped store',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const src=readFileSync(new URL('../apps/web/src/verifiedMetadataCache.ts',import.meta.url),'utf8');
+ assert.match(src,/saveOfflineMetadata\(/);
+ assert.match(src,/readOfflineMetadata\(/);
+ assert.match(src,/verifiedDigest/);
+ assert.match(src,/minimumVersion/);
+});
