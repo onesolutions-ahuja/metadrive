@@ -123,7 +123,7 @@ if(!canSeed){
 // treat an existing API name as proof that its schema is ready for demo records.
 // Add only absent fields via Object Manager, keeping custom fields/layouts intact.
 const latestObjects=(await api('/metadata/objects')).objects;
-for(const definition of kioskObjectDefinitions){
+for(const definition of [...allDefinitions,...Object.entries(basketObjectExtensions).map(([apiName,fields])=>({apiName,fields}))]){
   const current=latestObjects.find(object=>object.apiName===definition.apiName);
   if(!current)throw Error('Metadata Object missing after installation: '+definition.apiName);
   const existingFields=new Set(current.fields.map(field=>field.apiName));
