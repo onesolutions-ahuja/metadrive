@@ -90,6 +90,7 @@ import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, 
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
 import PlatformWorkspaceSurface from './PlatformWorkspaceSurface';
+import {PlatformPageSlot} from './PlatformPageSlot';
 import {systemPageApiName} from './platformSystemPageDrafts';
 import { reconcileNavigationOrder } from './appNavigation';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
@@ -185,7 +186,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
@@ -3744,10 +3744,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
-            <PlatformWorkspaceSurface workspace="home" page={pages.find(item=>item.apiName===systemPageApiName('home'))} libraryComponents={libraryComponents}><SetupHome onNavigate={openSetupWorkspace} /></PlatformWorkspaceSurface>
+            <PlatformWorkspaceSurface workspace="home" page={pages.find(item=>item.apiName===systemPageApiName('home'))} libraryComponents={libraryComponents}><PlatformPageSlot slotKey="overview"><SetupHome onNavigate={openSetupWorkspace} /></PlatformPageSlot></PlatformWorkspaceSurface>
           )}
           {route.kind === 'setup' && workspace === 'object-manager' && (
-            <PlatformWorkspaceSurface workspace="object-manager" page={pages.find(item=>item.apiName===systemPageApiName('object-manager'))} libraryComponents={libraryComponents}><ObjectManager
+            <PlatformWorkspaceSurface workspace="object-manager" page={pages.find(item=>item.apiName===systemPageApiName('object-manager'))} libraryComponents={libraryComponents}><PlatformPageSlot slotKey="object-workspace"><ObjectManager
               object={object}
               objects={objects}
               flows={flows}
@@ -3782,7 +3782,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onOpenRecords={() => navigateRoute({ kind: 'record-list', objectApiName: object.apiName })}
               page={pages.find((item) => item.targetObject === object.apiName && item.pageType === 'Record Page') ?? page}
               onNotify={notify}
-            /></PlatformWorkspaceSurface>
+            /></PlatformPageSlot></PlatformWorkspaceSurface>
           )}
           {route.kind === 'setup' && workspace === 'page-builder' && advancedMetadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
             <section className="setup-card" role="alert" style={{ padding: 24 }}>
@@ -3866,7 +3866,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
           />}
-          {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" page={pages.find(item=>item.apiName===systemPageApiName('app-exchange'))} libraryComponents={libraryComponents}><AppExchange
+          {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" page={pages.find(item=>item.apiName===systemPageApiName('app-exchange'))} libraryComponents={libraryComponents}><PlatformPageSlot slotKey="marketplace"><AppExchange
             credentials={namedCredentials}
             flows={flows.map(({apiName,label,status,elements}) => ({
               apiName, label, status,
@@ -3891,7 +3891,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             loadHistory={loadAppCommunicationHistory}
             onOpenFlow={selectFlow}
             onOpenRecord={(objectName,id) => navigateRoute({kind:'record-detail', objectApiName:objectName, recordId:id})}
-          /></PlatformWorkspaceSurface>}
+          /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
             const provider = connectorProviders.find((item) => item.connectorKey === route.resourceApiName) ?? connectorProviders[0];
             return provider ? <ConnectorSettingsWorkspace
@@ -3981,9 +3981,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <PlatformWorkspaceSurface workspace="company-settings" page={pages.find(item=>item.apiName===systemPageApiName('company-settings'))} libraryComponents={libraryComponents}><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <PlatformWorkspaceSurface workspace="company-settings" page={pages.find(item=>item.apiName===systemPageApiName('company-settings'))} libraryComponents={libraryComponents}><PlatformPageSlot slotKey="company-info"><CompanySettings canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="domains"><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="developer-accounts"><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="usage"><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="recovery"><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="mfa"><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="email-recovery"><TenantEmailRecoverySettings canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="locks"><TenantUserLockSettings /></PlatformPageSlot><PlatformPageSlot slotKey="sessions"><AccountSessionSecurity onReauthenticate={onLogout} /></PlatformPageSlot><PlatformPageSlot slotKey="audit"><TenantSecurityAudit /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" page={pages.find(item=>item.apiName===systemPageApiName('tenant-management'))} libraryComponents={libraryComponents} permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac" page={pages.find(item=>item.apiName===systemPageApiName('rbac'))} libraryComponents={libraryComponents}><Permissions
+          {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac" page={pages.find(item=>item.apiName===systemPageApiName('rbac'))} libraryComponents={libraryComponents}><PlatformPageSlot slotKey="permissions"><Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
             objects={objects}
@@ -3995,7 +3995,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onSave={saveAccessControl}
             onNotify={notify}
             onOpenUserRecords={() => navigateRoute({kind:'record-list',objectApiName:'User'})}
-          /></PlatformWorkspaceSurface>}
+          /></PlatformPageSlot></PlatformWorkspaceSurface>}
         </section>
       </main>
 
