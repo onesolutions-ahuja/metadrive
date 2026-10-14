@@ -1,3 +1,4 @@
+import { bearerToken, tenantForRequestHost as resolveTenantForRequestHost } from './modules/security/request-auth.js';
 import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
@@ -5147,29 +5148,7 @@ function requireAnyPermission(...permissions: string[]) {
   };
 }
 
-function bearerToken(req: Request): string | undefined {
-  const authorization = req.header('authorization');
-  if (!authorization) return undefined;
-  const [scheme, token, ...extra] = authorization.split(' ');
-  return scheme?.toLowerCase() === 'bearer' && token && extra.length === 0 ? token : undefined;
-}
-// Verified host bindings are lookup-only: no network or SQL query in the login path.
-type TenantHostBinding = { tenantId: string; status: TenantDomainRecord['status'] };
-const tenantHostCache = new WeakMap<PlatformState['tenantRegistry'], Map<string, TenantHostBinding>>();
-function tenantForRequestHost(req: Request): TenantHostBinding | undefined {
-  const hostname = req.hostname?.toLowerCase();
-  if (!hostname) return undefined;
-  let map = tenantHostCache.get(state.tenantRegistry);
-  if (!map) {
-    map = new Map();
-    for (const [tenantId, entry] of Object.entries(state.tenantRegistry))
-      for (const domain of entry.domains ?? [])
-        if (domain.status !== 'REVOKED' || !map.has(domain.hostname))
-          map.set(domain.hostname, { tenantId, status: domain.status });
-    tenantHostCache.set(state.tenantRegistry, map);
-  }
-  return map.get(hostname);
-}
+const tenantForRequestHost = (req: Request) => resolveTenantForRequestHost(req, state.tenantRegistry);
 function accessAuthentication(req: Request, res: Response, next: NextFunction): void {
   const token = bearerToken(req);
   if (!token) {
