@@ -710,7 +710,7 @@ export type ReportRunMetadata = {
   generatedAt: string;
 };
 
-export type LibraryComponentMetadata = {
+export type LibraryComponentMetadata = { propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[];
   tenantId?: string;
   apiName: string;
   label: string;
@@ -733,12 +733,12 @@ export type LibraryComponentMetadata = {
   trustedBundled?: boolean;
   revisions?: Array<{
     version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow'>;
-    resize: NonNullable<LibraryComponentMetadata['resize']>;
+    resize: NonNullable<LibraryComponentMetadata['resize']>; propertyDefinitions?: LibraryComponentMetadata['propertyDefinitions'];
     jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
   }>;
   pendingDraft?: {
     version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow'>;
-    resize: NonNullable<LibraryComponentMetadata['resize']>;
+    resize: NonNullable<LibraryComponentMetadata['resize']>; propertyDefinitions?: LibraryComponentMetadata['propertyDefinitions'];
     jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
   };
 };

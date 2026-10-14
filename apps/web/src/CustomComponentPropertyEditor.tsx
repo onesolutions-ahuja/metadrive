@@ -46,10 +46,10 @@ export default function CustomComponentPropertyEditor({
     ...Object.entries(properties).filter(([name]) => !definitionByName.has(name))
   ] : Object.entries(properties);
   return <div className="metadata-component-properties" aria-label="Custom component properties">
-    {!addOnly && <>
+    {(!addOnly || typedDefinitions.length > 0) && <>
       <div className="properties-section-title">Component settings</div>
       {!Object.keys(properties).length && <p className="properties-help">No settings yet. Add a property to configure this component.</p>}
-      {visibleProperties.map(([name, value]) => {
+      {(addOnly ? visibleProperties.filter(([name]) => definitionByName.has(name)) : visibleProperties).map(([name, value]) => {
         const definition = definitionByName.get(name);
         const label = definition?.label ?? displayComponentPropertyName(name);
         const id = `component-property-${name}`;
