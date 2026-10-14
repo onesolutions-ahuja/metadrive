@@ -34,14 +34,14 @@ CREATE TABLE IF NOT EXISTS md_v4_component_versions (
 CREATE TABLE IF NOT EXISTS md_v4_component_surfaces (
   component_id UUID NOT NULL,
   version INTEGER NOT NULL,
-  surface TEXT NOT NULL CHECK(surface IN ('page','dashboard','flow')),
+  surface TEXT NOT NULL CHECK(surface IN ('page','dashboard','flow','platform')),
   PRIMARY KEY(component_id,version,surface),
   FOREIGN KEY(component_id,version) REFERENCES md_v4_component_versions(component_id,version) ON DELETE RESTRICT
 );
 CREATE TABLE IF NOT EXISTS md_v4_component_dependencies (
   tenant_id TEXT NOT NULL REFERENCES metadrive_rel_tenants(tenant_id),
   component_id UUID NOT NULL REFERENCES md_v4_components(component_id) ON DELETE RESTRICT,
-  surface TEXT NOT NULL CHECK(surface IN ('page','dashboard','flow')),
+  surface TEXT NOT NULL CHECK(surface IN ('page','dashboard','flow','platform')),
   owner_api_name TEXT NOT NULL,
   placement_id TEXT NOT NULL,
   PRIMARY KEY(tenant_id,component_id,surface,owner_api_name,placement_id)
