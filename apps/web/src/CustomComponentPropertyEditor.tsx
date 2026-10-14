@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { sortComponentSettings, validateComponentSetting, type ComponentSettingDefinition } from './componentSettingDefinitions';
 import {
   addComponentProperty,
   displayComponentPropertyName,
@@ -11,12 +12,14 @@ export default function CustomComponentPropertyEditor({
   properties,
   onChange,
   disabled = false,
-  addOnly = false
+  addOnly = false,
+  definitions
 }: {
   properties: ComponentPropertyValues;
   onChange: (next: ComponentPropertyValues) => void;
   disabled?: boolean;
   addOnly?: boolean;
+  definitions?: readonly ComponentSettingDefinition[];
 }) {
   const [propertyName, setPropertyName] = useState('');
   const [propertyType, setPropertyType] = useState<ComponentPropertyKind>('text');
@@ -36,15 +39,27 @@ export default function CustomComponentPropertyEditor({
     setError('');
   };
 
+  const typedDefinitions = definitions ? sortComponentSettings(definitions) : [];
+  const definitionByName = new Map(typedDefinitions.map(definition => [definition.propertyKey, definition]));
+  const visibleProperties = definitions ? [
+    ...typedDefinitions.map(definition => [definition.propertyKey, properties[definition.propertyKey] ?? definition.defaultValue ?? ''] as const),
+    ...Object.entries(properties).filter(([name]) => !definitionByName.has(name))
+  ] : Object.entries(properties);
   return <div className="metadata-component-properties" aria-label="Custom component properties">
     {!addOnly && <>
       <div className="properties-section-title">Component settings</div>
       {!Object.keys(properties).length && <p className="properties-help">No settings yet. Add a property to configure this component.</p>}
-      {Object.entries(properties).map(([name, value]) => {
-        const label = displayComponentPropertyName(name);
+      {visibleProperties.map(([name, value]) => {
+        const definition = definitionByName.get(name);
+        const label = definition?.label ?? displayComponentPropertyName(name);
         const id = `component-property-${name}`;
         return <div className="metadata-array-property" key={name}>
-          {typeof value === 'boolean'
+          {definition?.kind === 'SELECT' && definition.choices ? <label className="form-label" htmlFor={id}>{label}
+            <select id={id} className="form-control" disabled={disabled} value={String(value)} onChange={event => update(name,event.target.value)}>
+              {!definition.required && <option value="">None</option>}
+              {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
+            </select></label> :
+          typeof value === 'boolean'
             ? <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={value}
                 onChange={(event) => update(name, event.target.checked)} />{label}</label>
             : typeof value === 'number'
@@ -56,11 +71,12 @@ export default function CustomComponentPropertyEditor({
               : typeof value === 'string'
                 ? <label className="form-label" htmlFor={id}>{label}
                     <input id={id} className="form-control" disabled={disabled}
-                      type={/color/i.test(name) && /^#[0-9a-f]{6}$/i.test(value) ? 'color' : 'text'}
+                      type={definition?.kind === 'COLOR' || (/color/i.test(name) && /^#[0-9a-f]{6}$/i.test(value)) ? 'color' : 'text'}
                       value={value} onChange={(event) => update(name, event.target.value)} />
                   </label>
                 : <div className="properties-help">{label} contains structured data; its existing value is preserved.</div>}
-          <button className="btn btn-small" type="button" disabled={disabled}
+          {definition && !validateComponentSetting(definition,value) && <span className="auth-error">Invalid {label.toLowerCase()}</span>}
+          <button className="btn btn-small" type="button" disabled={disabled || Boolean(definition?.required)}
             aria-label={`Remove ${label} property`} onClick={() => remove(name)}>Remove property</button>
         </div>;
       })}
