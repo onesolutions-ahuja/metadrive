@@ -7,7 +7,7 @@ const tenant={records:{Chatter_Channel_Grant__c:[
   {User_Id__c:'bob',Channel_Account__c:'phone-b',Active__c:true,
     Can_Read__c:true,Can_Send__c:false,Can_Assign__c:true,View_All__c:true}
 ]}};
-const row={Event_Type__c:'Message',Communication_Mode__c:'WhatsApp',Channel_Account__c:'phone-a',Assigned_User__c:'alice'};
+const row={Event_Type__c:'Message',Communication_Mode__c:'WhatsApp',Channel_Account__c:'phone-a',Direction__c:'Incoming',From_Number__c:'447700900123',Assigned_User__c:'alice'};
 test('permission scope is tenant data derived, fail closed',()=>{
   assert.equal(canAccessChatterRecord('t','alice',tenant,row,'read'),true);
   assert.equal(canAccessChatterRecord('t','alice',tenant,row,'send'),true);
