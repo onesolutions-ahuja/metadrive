@@ -1,3 +1,4 @@
+import {upgradePackagedFlow} from '../src/package-page-migrations.mjs';
 import {upgradePackagedPageComponents} from '../src/package-page-migrations.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -217,4 +218,19 @@ test('installer preserves tenant-owned assignments and explicit permission denia
   const upgraded=applyInstallableAppPackages(customTenant,catalog);
   assert(upgraded.pages.find(p=>p.apiName===home.apiName).activationAssignments.some(a=>a.id==='tenant-home'));
   assert.deepEqual(applyInstallableAppPackages(upgraded,catalog),upgraded);
+});
+
+test('Flow migration rules are declarative, idempotent and do not alter tenant outcomes',()=>{
+  const rules=catalog.packages.find(p=>p.appKey==='kiosk').installation.flowMigrations;
+  const flow={apiName:'DemoFlow',elements:[{id:'decision',type:'Decision',config:{outcomes:[]}}],
+    connectors:[{from:'decision',kind:'normal',label:'Default Outcome',to:'finish'}]};
+  const fixed=upgradePackagedFlow(flow,rules);
+  assert.equal(fixed.elements[0].config.outcomes[0].name,'Default');
+  assert.deepEqual(upgradePackagedFlow(fixed,rules),fixed);
+  assert.deepEqual(flow.elements[0].config.outcomes,[]);
+  const tenantChanged={...flow,elements:[{...flow.elements[0],
+    config:{outcomes:[{name:'Default',label:'My custom outcome',conditions:[]}]}}]};
+  assert.equal(upgradePackagedFlow(tenantChanged,rules),tenantChanged);
+  const unrelated={...flow,connectors:[{...flow.connectors[0],label:'Different'}]};
+  assert.equal(upgradePackagedFlow(unrelated,rules),unrelated);
 });
