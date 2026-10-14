@@ -25,7 +25,7 @@ export function validateComponentEventBinding(
     if(!binding.typedInputs||typeof binding.typedInputs!=='object'||Array.isArray(binding.typedInputs))
       errors.push('Invalid input definitions.');
     else for(const [name,kind] of Object.entries(binding.typedInputs)){
-      if(!apiName.test(name)||!['text','number','boolean'].includes(kind))
+      if(!apiName.test(name)||typeof kind!=='string'||!['text','number','boolean'].includes(kind))
         errors.push('Invalid input definition: '+name);
     }
   }
