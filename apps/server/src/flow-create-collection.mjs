@@ -1,3 +1,4 @@
+import {isFlowRecordObject,validateFlowRecordFields,flowRecordCollectionLimitExceeded} from './flow-record-metadata.mjs';
 /**
  * Generic Flow Create Records collection input guard.
  *
@@ -17,20 +18,16 @@ export function prepareFlowCreateCollection(resourceDefinitions, sourceCollectio
   if (!Array.isArray(sourceValues)) {
     throw new Error('Create Records collection value must contain records.');
   }
-  if (sourceValues.length > 200) {
+  if (flowRecordCollectionLimitExceeded(sourceValues)) {
     throw new Error('Create Records collection exceeded the 200-record transaction limit.');
   }
-  const allowedFields = new Set(['RecordTypeId', ...object.fields.map(field => field.apiName)]);
   return sourceValues.map((sourceRecord, index) => {
-    if (!sourceRecord || typeof sourceRecord !== 'object' || Array.isArray(sourceRecord)) {
+    if (!isFlowRecordObject(sourceRecord)) {
       throw new Error('Create Records collection item ' + (index + 1) + ' must be a record object.');
     }
-    const fieldValues = Object.entries(sourceRecord);
-    for (const [fieldName] of fieldValues) {
-      if (!allowedFields.has(fieldName) || ['Id', 'CreatedDate', 'LastModifiedDate', 'CreatedById', 'LastModifiedById'].includes(fieldName)) {
-        throw new Error('Create Records collection item ' + (index + 1) + ' includes an unavailable or immutable field.');
-      }
+    if (!validateFlowRecordFields(sourceRecord, object)) {
+      throw new Error('Create Records collection item ' + (index + 1) + ' includes an unavailable or immutable field.');
     }
-    return Object.fromEntries(fieldValues);
+    return Object.fromEntries(Object.entries(sourceRecord));
   });
 }

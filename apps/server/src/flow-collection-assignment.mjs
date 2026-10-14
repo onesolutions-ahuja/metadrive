@@ -1,3 +1,4 @@
+import {isFlowRecordObject,equivalentFlowCollectionItem} from './flow-record-metadata.mjs';
 /**
  * Pure, typed Flow Assignment operations for collection resources.
  * Scalar Assignment arithmetic and text operations stay in the core runtime.
@@ -9,11 +10,9 @@ export function applyFlowCollectionAssignment(previous, incoming, operator, reso
   }
   const items = Array.isArray(incoming) ? incoming : [incoming];
   const isRecordCollection = resourceType === 'Record Collection';
-  const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value)
-    && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
   const requireValidItems = (values) => {
     if (values.some((value) => value === undefined || value === null
-      || (isRecordCollection && !isRecord(value)))) {
+      || (isRecordCollection && !isFlowRecordObject(value, true)))) {
       throw new Error('Collection Assignment contains an invalid value for its data type.');
     }
     return values;
@@ -31,14 +30,7 @@ export function applyFlowCollectionAssignment(previous, incoming, operator, reso
       return [...requireValidItems(items), ...collection];
     case 'Remove': {
       const removed = requireValidItems(items);
-      const equivalent = (left, right) => {
-        if (Object.is(left, right)) return true;
-        if (isRecordCollection && left && right && typeof left === 'object' && typeof right === 'object') {
-          return typeof left.Id === 'string' && left.Id.length > 0 && left.Id === right.Id;
-        }
-        return false;
-      };
-      return collection.filter(item => !removed.some(other => equivalent(item, other)));
+      return collection.filter(item => !removed.some(other => equivalentFlowCollectionItem(item, other, isRecordCollection)));
     }
     case 'Remove All':
       return [];

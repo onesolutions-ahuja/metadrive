@@ -8,6 +8,9 @@ const serverDir=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const destination=resolve(serverDir,'dist');
 mkdirSync(destination,{recursive:true});
 for(const name of [
+  'platform-state-registry.mjs',
+  'platform-state-restore.mjs',
+  'platform-state-project.mjs',
   'relational-projection.mjs',
   'relational-tables.mjs',
   'relational-runtime.mjs',
@@ -30,11 +33,15 @@ for(const name of [
   'component-scope.mjs',
   'route-aliases.mjs',
   'flow-formula-syntax.mjs',
+  'flow-record-metadata.mjs',
   'flow-create-collection.mjs',
   'flow-collection-assignment.mjs',
   'tenant-usage.mjs',
+  'package-page-migrations.mjs',
   'installable-app-packages.mjs',
   'bundled-app-components.mjs',
+  'bundled-component-migration.mjs',
+  'kiosk-device-provision.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
