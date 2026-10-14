@@ -1,6 +1,6 @@
 import { buildChatterView, type CommunicationRow } from './chatterRecordAdapter.js';
 
-export type ChannelGrant = { channelAccountId: string; canRead: boolean; canSend: boolean; canAssign: boolean };
+export type ChannelGrant = { channelAccountId: string; canRead: boolean; canSend: boolean; canAssign: boolean; viewAll?:boolean };
 type PresentationContext = { grants: readonly ChannelGrant[]; userId: string; viewAll: boolean;
   eligibleAssignees?: readonly {id:string;name:string;channelAccountId:string}[] };
 type Presenter = (records: readonly CommunicationRow[], context: PresentationContext) => Record<string, unknown>;
