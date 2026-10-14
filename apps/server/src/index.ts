@@ -4408,6 +4408,17 @@ function migrateStoredLeadStreetField(value: unknown): boolean {
   }
   return changed;
 }
+// Persisted snapshots may predate today's required picklist validation. Reads
+// retain the startup compatibility mode; metadata create/update APIs do not.
+function parsePersistedPlatformState(raw: unknown): z.infer<typeof stateSchema> {
+  const previous = hydratingPersistedMetadata;
+  hydratingPersistedMetadata = true;
+  try {
+    return stateSchema.parse(raw);
+  } finally {
+    hydratingPersistedMetadata = previous;
+  }
+}
 function loadState(sqlState?: unknown): PlatformState {
   try {
     const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
@@ -4427,13 +4438,7 @@ function loadState(sqlState?: unknown): PlatformState {
         }
       }
     }
-    let parsed: z.infer<typeof stateSchema>;
-    hydratingPersistedMetadata = true;
-    try {
-      parsed = stateSchema.parse(storedState);
-    } finally {
-      hydratingPersistedMetadata = false;
-    }
+    const parsed = parsePersistedPlatformState(storedState);
     const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
       const consolidationReady = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
         && Boolean(process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID);
@@ -20583,7 +20588,7 @@ async function dispatchScheduledFlows(): Promise<void> {
           return; // retry on the next interval with a fresh committed snapshot
         }
         if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
-        const restored = restoreDurableAuthOverlay(stateSchema.parse(committed));
+        const restored = restoreDurableAuthOverlay(parsePersistedPlatformState(committed));
         assertTenantIdentityIsolation(restored);
         state = restored;
       }
