@@ -1,3 +1,4 @@
+import { validateConfiguredFlowEvent } from './componentEventBinding';
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
@@ -4643,6 +4644,10 @@ function MetadataBoundPageComponent({
       binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs)
         ? binding.inputs as Record<string, unknown> : {}
     ).map(([key, source]) => [key, resolveInput(source, payload)]));
+    const bindingErrors = validateConfiguredFlowEvent(action.event, flowApiName,
+      binding.typedInputs, inputs,
+      new Set(availableFlows.filter(flow => flow.status === 'Active').map(flow => flow.apiName)));
+    if (bindingErrors.length) throw new Error(bindingErrors.join('; '));
     setActionError('');
     if (selected.flowType === 'Screen Flow') {
       onLaunchFlow(flowApiName, inputs);
