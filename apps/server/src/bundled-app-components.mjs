@@ -4,8 +4,11 @@ import { transformSync } from 'esbuild';
 
 /** Iterates installed, entitled package component descriptors from metadata. */
 export function* installedComponentDescriptors(tenant, catalog) {
-  const installations = new Map((tenant.records?.Connector_App__c ?? [])
-    .map(row => [row.AppKey__c, row]));
+  const installations = new Map();
+  for (const row of tenant.records?.Connector_App__c ?? []) {
+    // Keep the first matching row, as the legacy Array.find loader did.
+    if (!installations.has(row.AppKey__c)) installations.set(row.AppKey__c, row);
+  }
   for (const pkg of catalog?.packages ?? []) {
     const licence = installations.get(pkg.appKey);
     if (!licence || licence.Installed__c !== true ||
