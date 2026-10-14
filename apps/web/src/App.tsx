@@ -3564,8 +3564,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   };
 
-  // Kiosk is a standalone customer-facing page, not a workspace tab. Resolve it
-  // from tenant page metadata so every installed kiosk opens edge-to-edge by URL.
+  // Standalone presentation is a page metadata capability, not an app identity.
+  // Only an active, route-matched page can opt into the edge-to-edge shell.
   const isStandaloneMetadataPage = (route.kind === 'app-page' || route.kind === 'app-home') && pages.some((candidate) =>
     candidate.status === 'Active' &&
     (route.kind === 'app-page' ? candidate.apiName === route.pageApiName && candidate.pageType === 'App Page'
