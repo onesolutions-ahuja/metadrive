@@ -13,3 +13,11 @@ test('scheduler dispatch uses database-wide lease and durable commit boundary', 
   assert.match(store, /pg_advisory_unlock/);
   assert.match(store, /client\.release\(\)/);
 });
+
+test('scheduler refresh retries local snapshot races without overwriting a newer CAS baseline', () => {
+  const store = readFileSync(new URL('../src/postgres-state.ts', import.meta.url), 'utf8');
+  assert.match(store, /for \(let attempt = 0; attempt < 5; attempt\+\+\)/);
+  assert.match(store, /await waitForPersistedState\(\);\s*const previousSnapshot = normalizedSnapshot;/);
+  assert.match(store, /if \(normalizedSnapshot !== previousSnapshot\) continue;/);
+  assert.match(store, /normalizedSnapshot = refreshed;\s*return refreshed\.state;/);
+});
