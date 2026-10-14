@@ -226,6 +226,11 @@ export function createSetupApp(deps: {
 apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
 ApiRequestError: new (...args: any[]) => Error & {status:number};
 fetchFlowListPage: (page:number, search:string) => Promise<any>;
+isAuthErrorMessage: (message: string) => boolean;
+loadAppCommunicationHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<any>;
+loadConnectorMarketplaceApps: () => Promise<any>;
+executeConnectorAppLifecycleFlow: (apiName: string, appKey: string) => Promise<void>;
+loadFlowScreenRecords: (objectApiName: string) => Promise<Record<string, unknown>[]>;
 customTabStyles: ReadonlyArray<{name:string;color:string;icon:React.ComponentType<any>}>;
 uneSolutionsLogoUrl: string;
 ProfilePasswordMenu: React.ComponentType<any>,
@@ -246,7 +251,7 @@ TenantUserLockSettings: React.ComponentType<any>,
 AccountSessionSecurity: React.ComponentType<any>,
 TenantEmailRecoverySettings: React.ComponentType<any>
 }) {
-const {apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings} = deps;
+const {isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings} = deps;
 function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming: EntryTiming | null }) {
   const [route, setRoute] = useState<AppRoute>(() => parseAppRoute(window.location.pathname, window.location.search));
   const [routeAliasError, setRouteAliasError] = useState('');
