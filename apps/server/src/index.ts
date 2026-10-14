@@ -1,3 +1,4 @@
+import { sanitizeRecordValues, withCaseClosedDate, recordUnmodified } from './modules/records/record-input.js';
 import { stampRecordAuditFields, recordActionEnabled } from './modules/records/record-actions.js';
 import { autoNumberFormatForField, formatAutoNumber, autoNumberSequenceFromValue, autoNumberSequenceKey, migrateAutoNumberSequences } from './modules/records/auto-number.js';
 import { numericFieldValueError, validateFieldChange, uniqueFieldValueKey, validateExistingFieldValues, isValidFlowDateTime, normalizeRuntimeValues, normalizeFlowRecordAssignments } from './modules/records/record-values.js';
@@ -9448,38 +9449,6 @@ function assertFieldEditPermissions(principal: Principal, tenant: TenantData, ob
   }
 }
 
-function sanitizeRecordValues(object: ObjectMetadata, input: Record<string, unknown>): Record<string, unknown> {
-  const allowedFields = new Set(object.fields.map((field) => field.apiName));
-  const readOnlyFields = new Set([
-    'Id',
-    'CreatedDate',
-    'CreatedById',
-    'LastModifiedDate',
-    'LastModifiedById',
-    'SystemModstamp',
-    ...(object.apiName === 'Opportunity' ? ['Age', 'Fiscal', 'OwnerRole'] : []),
-    ...(object.apiName === 'Case' ? ['Age', 'IsOpen', 'IsClosed'] : [])
-  ]);
-  const values: Record<string, unknown> = {};
-  for (const [fieldName, value] of Object.entries(input)) {
-    if (!allowedFields.has(fieldName) && fieldName !== 'RecordTypeId') throw new Error(`Field "${fieldName}" does not exist on "${object.apiName}".`);
-    if (readOnlyFields.has(fieldName)) throw new Error(`Field "${fieldName}" on "${object.apiName}" is read-only.`);
-    values[fieldName] = value;
-  }
-  return normalizeRuntimeValues(object, values);
-}
-
-function withCaseClosedDate(objectApiName: string, record: RuntimeRecord, previous?: RuntimeRecord): RuntimeRecord {
-  if (objectApiName !== 'Case') return record;
-  const isClosed = /^closed(?:\b|[\s_-])/i.test(String(record.Status ?? ''));
-  if (!isClosed) return { ...record, ClosedDate: null };
-  const wasClosed = /^closed(?:\b|[\s_-])/i.test(String(previous?.Status ?? ''));
-  const closedDate = wasClosed
-    ? typeof previous?.ClosedDate === 'string' ? previous.ClosedDate : previous?.LastModifiedDate
-    : record.LastModifiedDate;
-  return { ...record, ClosedDate: closedDate ?? record.LastModifiedDate };
-}
-
 function profileIdForPrincipal(principal: Principal, tenant: TenantData): string {
   const user = principalUser(principal);
   if (!user) return '';
@@ -10589,13 +10558,6 @@ app.post('/api/records/:objectName/import', accessAuthentication, async (req: Re
     return res.status(422).json({ error: error instanceof Error ? error.message : 'Record import failed' });
   }
 });
-function recordUnmodified(req: Request, record: RuntimeRecord): boolean {
-  const expected = req.get('If-Unmodified-Since');
-  if (expected === undefined) return true; // Compatible with older clients.
-  const original = new Date(expected).getTime();
-  const current = new Date(String(record.LastModifiedDate ?? '')).getTime();
-  return Number.isFinite(original) && Number.isFinite(current) && original === current;
-}
 app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -10616,7 +10578,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
-  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
+  if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
   }
@@ -10671,7 +10633,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
-  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
+  if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (Object.hasOwn(parsed.data, 'OwnerId')) {
     if (parsed.data.OwnerId !== existing.OwnerId) {
       return res.status(403).json({ error: 'OwnerId cannot be changed through record updates; use a dedicated ownership operation to transfer ownership' });
@@ -10798,7 +10760,7 @@ app.delete('/api/records/:objectName/:recordId', accessAuthentication, async (re
   if (!hasObjectPermission(principal, tenant, objectName, 'delete')) return res.status(403).json({ error: `Missing delete permission for object "${objectName}"` });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Delete')) return res.status(404).json({ error: 'Record was not found' });
-  if (!recordUnmodified(req, existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
+  if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (!recordActionEnabled(object, 'Delete', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Delete is not enabled for this object or page layout' });
   }
