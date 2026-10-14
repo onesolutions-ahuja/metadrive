@@ -25,7 +25,7 @@ jobs:
         run: node --test scripts/kiosk-demo-fixtures.test.mjs
       - name: Install and verify demo metadata through secured MetaDrive APIs
         env:
-          METADRIVE_API_URL: https://unesolutions.co.uk
+          METADRIVE_API_URL: https://metadrive.onrender.com
           METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
           METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
