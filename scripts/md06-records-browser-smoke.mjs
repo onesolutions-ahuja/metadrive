@@ -97,12 +97,18 @@ try {
   await list.waitFor({state:'visible'});
   // Record search is now a dedicated topbar control, not a duplicated list field.
   const search=page.getByRole('searchbox',{name:/Search Accounts records/i});
-  const global=page.getByRole('searchbox',{name:'Global search across objects'});
   if(await list.locator('.records-search').count()) throw Error('Duplicate record search must not appear in list');
+  await page.getByRole('button',{name:/Search records and navigation/}).click();
+  const palette=page.getByRole('dialog',{name:'Global search command palette'});
+  const global=palette.getByRole('searchbox',{name:'Global record search'});
   await global.fill('Unrelated global query');
   if(await search.inputValue()) throw Error('Global search must not populate the record search');
+  await palette.getByRole('button',{name:'Close search'}).click();
   await search.fill('MD06 Browser Acceptance Account');
-  if(await global.inputValue()!=='Unrelated global query') throw Error('Record search changed the global search');
+  await page.getByRole('button',{name:/Search records and navigation/}).click();
+  if(await palette.getByRole('searchbox',{name:'Global record search'}).inputValue()!=='Unrelated global query')
+    throw Error('Record search changed the global search');
+  await palette.getByRole('button',{name:'Close search'}).click();
   await list.getByText('MD06 Browser Acceptance Account',{exact:false}).first().waitFor({state:'visible'});
   // Await the asynchronous metadata/record response rather than asserting
   // immediately after route rendering.
