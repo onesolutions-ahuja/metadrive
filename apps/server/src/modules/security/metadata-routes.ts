@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { Express, Request, Response, RequestHandler } from 'express';
 import type { Principal } from '../../auth.js';
 import type { TenantData, LocalUser, PlatformState } from '../../index.js';
@@ -16,6 +17,7 @@ export function registerSecurityMetadataRoutes(deps: {
   setState: (next: PlatformState) => void;
   accessControlSchema: Schema<AccessControl>;
   roleSchema: Schema<Role>;
+  sharingSettingSchema: z.ZodType<TenantData['sharingSettings'][string]>;
   validateAdvancedSharingMetadata: (...args: any[]) => any;
   profileIdForRole: (role: string, profiles: AccessControl['profiles']) => string;
   withSecurityEvent: (tenant: TenantData, actor: string, action: string) => TenantData;
@@ -26,7 +28,7 @@ export function registerSecurityMetadataRoutes(deps: {
   routeParam: (req: Request, name: string) => string;
 }) {
   const { app, requirePermission, tenantData, getPrincipal, getState, setState,
-    accessControlSchema, roleSchema, validateAdvancedSharingMetadata, profileIdForRole,
+    accessControlSchema, roleSchema, sharingSettingSchema, validateAdvancedSharingMetadata, profileIdForRole,
     withSecurityEvent, effectivePermissions, persistState, persistTenantRecords,
     roleApiNameForName, routeParam } = deps;
 app.get('/api/metadata/permissions', requirePermission('security:read'), (_req: Request, res: Response) => {
