@@ -40,12 +40,16 @@ The full inventory must cover all source, test, CSS, generated, and migration fi
 - Draft/publish/rollback and last-known-good bootstrapping are mandatory before self-editable builder pages.
 - No runtime cutover until CI, tenant/RBAC regressions, browser parity and recovery tests pass.
 
+## Subphases and acceptance
+
+See [the 49-step roadmap](universal-metadata-49-step-roadmap.md). Phase 1a adds a read-only repository/seed-definition inventory, its tests and CI report. Phase 1b–1g will complete dynamic metadata, routes, duplication, contracts, migrations and consolidated validation. Keep these in one Phase 1 PR.
+
 ## Phase 1 acceptance checklist
 - [x] Review existing repository boundaries and reusable metadata infrastructure.
 - [x] Establish a canonical target contract and protected system-metadata boundary.
 - [x] Capture measured oversized-file baseline and migration order.
-- [ ] Enumerate every component, page, Action, Flow, system route and duplication cluster programmatically.
-- [ ] Add executable metadata contract and compatibility tests.
+- [ ] Enumerate every component, page, Action, Flow, system route and duplication cluster programmatically. Phase 1a inventories checked-in definitions; later subphases handle dynamic definitions, routes and duplicates.
+- [ ] Add executable metadata contract and compatibility tests. Phase 1a adds inventory tests; schema and compatibility tests follow.
 - [ ] Validate CI and merge the consolidated Phase 1 PR.
 
 The remaining unchecked items must be completed before declaring Phase 1 finished.
