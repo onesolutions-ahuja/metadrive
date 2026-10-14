@@ -1,4 +1,4 @@
-import React,{createContext,useContext,type ReactNode} from 'react';
+import React,{createContext,useContext,useEffect,useState,type ReactNode} from 'react';
 import type {LightningPageMetadata} from './metadata';
 import {resolvePageComponentStyle} from './pageComponentLayout';
 
@@ -6,21 +6,31 @@ import {resolvePageComponentStyle} from './pageComponentLayout';
  * The slot is presentation-only: existing server-authorised operations and
  * event handlers remain in the owning admin screen.
  */
-const context=createContext<LightningPageMetadata|null>(null);
+type PlatformSlotDevice='Desktop'|'Tablet'|'Phone';
+const context=createContext<{page:LightningPageMetadata;device:PlatformSlotDevice}|null>(null);
+function viewportDevice():PlatformSlotDevice{
+ if(typeof window==='undefined')return 'Desktop';
+ return window.innerWidth<640?'Phone':window.innerWidth<1024?'Tablet':'Desktop';
+}
 export function PlatformPageSlotsProvider({page,children}:{
  page:LightningPageMetadata;children:ReactNode;
 }){
- return <context.Provider value={page}>{children}</context.Provider>;
+ const [device,setDevice]=useState<PlatformSlotDevice>('Desktop');
+ useEffect(()=>{const update=()=>setDevice(viewportDevice());update();
+  window.addEventListener('resize',update);
+  return ()=>window.removeEventListener('resize',update);
+ },[]);
+ return <context.Provider value={{page,device}}>{children}</context.Provider>;
 }
 export function PlatformPageSlot({slotKey,children}:{
  slotKey:string;children:ReactNode;
 }){
- const page=useContext(context);
- if(!page)return <>{children}</>;
- const instance=page.components.find(item=>item.properties.platformSlotKey===slotKey);
+ const state=useContext(context);
+ if(!state)return <>{children}</>;
+ const instance=state.page.components.find(item=>item.properties.platformSlotKey===slotKey);
  if(!instance)return <>{children}</>;
  if(instance.visible===false)return null;
- const computed=resolvePageComponentStyle(instance.properties,instance.type);
+ const computed=resolvePageComponentStyle(instance.properties,instance.type,state.device);
  const style=Object.keys(computed).length?computed:{display:'contents' as const};
  return <div data-page-instance={instance.id} data-platform-slot={slotKey}
   aria-label={instance.label} style={style}>{children}</div>;
