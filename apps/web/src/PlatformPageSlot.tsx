@@ -20,7 +20,8 @@ export function PlatformPageSlot({slotKey,children}:{
  const instance=page.components.find(item=>item.properties.platformSlotKey===slotKey);
  if(!instance)return <>{children}</>;
  if(instance.visible===false)return null;
- const style=resolvePageComponentStyle(instance.properties,instance.type);
+ const computed=resolvePageComponentStyle(instance.properties,instance.type);
+ const style=Object.keys(computed).length?computed:{display:'contents' as const};
  return <div data-page-instance={instance.id} data-platform-slot={slotKey}
   aria-label={instance.label} style={style}>{children}</div>;
 }
