@@ -2,7 +2,7 @@
 import type { ObjectMetadata, TenantData, RuntimeRecord, RelatedLookupFilterMetadata } from '../../index.js';
 import { uniqueFieldValueKey } from './record-values.js';
 import { validateRequiredRecordFields } from './field-rules.js';
-import { matchesRelatedLookupFilter } from './record-constraints.js';
+import { matchesRelatedLookupFilter, validateGeolocationValue } from './record-constraints.js';
 
 export function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, current: RuntimeRecord | undefined, users: readonly {id:string;tenantId:string;disabled?:boolean}[]): void {
   const fields = new Map(object.fields.map((field) => [field.apiName, field]));
