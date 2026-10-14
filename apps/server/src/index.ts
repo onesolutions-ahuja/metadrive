@@ -47,6 +47,7 @@ import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from './chatter-authorisation.js';
+import { authoriseChatterFlow } from './chatter-flow-authorisation.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
