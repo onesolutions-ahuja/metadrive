@@ -37,7 +37,7 @@ export function sandboxPublicProps(props: Record<string, unknown>): Record<strin
   for (const name of Object.keys(configured).slice(0,100)) {
     if (!/^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(name) ||
       forbiddenKey.test(name) || sensitiveKeys.has(name) ||
-      ['key','ref','children','onAction','onChange','onNavigate','onLaunchFlow'].includes(name)) continue;
+      ['__proto__','prototype','constructor','key','ref','children','onAction','onChange','onNavigate','onLaunchFlow'].includes(name)) continue;
     names.add(name);
   }
   for (const key of names) {
