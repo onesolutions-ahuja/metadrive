@@ -74,7 +74,7 @@ export default function FlowTriggerExplorer({ flows, objects, loading, onEdit }:
           <span>{loading ? 'Loading Flow metadata…' : `${rows.length} trigger ${rows.length === 1 ? 'definition' : 'definitions'} · Executing order shown within each object and timing`}</span>
         </div>
       </div>
-      <div className="flow-config-row" style={{ padding: 12, flexWrap: 'wrap' }}>
+      <div className="flow-config-row flow-trigger-explorer-filters" style={{ padding: 12, flexWrap: 'wrap' }}>
         <label className="scheduled-flows-search">
           <Search size={14} />
           <input aria-label="Search record-triggered flows" placeholder="Search flows or trigger" value={search}

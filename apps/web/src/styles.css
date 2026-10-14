@@ -895,8 +895,8 @@ h1, h2, h3, p { margin-top: 0; }
 .list-view-header > div:first-child > span { color: #706e6b; font-size: 10px; }
 .scheduled-flows-page { max-width: 1500px; margin: 0 auto; padding: 24px 30px 36px; }
 .scheduled-flows-surface { overflow: hidden; }
-.scheduled-flows-search { width: min(260px, 45%); height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid #c9c9c9; border-radius: 4px; color: #706e6b; }
-.scheduled-flows-search input { width: 100%; min-width: 0; border: 0; outline: 0; color: #181818; background: transparent; font: inherit; font-size: 11px; }
+.scheduled-flows-search { box-sizing: border-box; width: min(260px, 45%); min-height: 44px; display: flex; align-items: center; gap: 7px; padding: 0 8px; border: 1px solid #c9c9c9; border-radius: 4px; color: #706e6b; }
+.scheduled-flows-search input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 42px; border: 0; outline: 0; color: #181818; background: transparent; font: inherit; font-size: 14px; }
 .scheduled-flows-table td:last-child, .scheduled-flows-table th:last-child { width: 42px; text-align: center; }
 .scheduled-flows-empty { height: 72px !important; color: #706e6b !important; text-align: center; white-space: normal !important; }
 .flow-logs-page { max-width: 1500px; margin: 0 auto; padding: 24px 30px 36px; }
@@ -904,7 +904,7 @@ h1, h2, h3, p { margin-top: 0; }
 .flow-logs-table td { white-space: normal; }
 .flow-logs-table td:first-child { min-width: 155px; }
 .flow-logs-table td:nth-child(3), .flow-logs-table td:last-child { white-space: nowrap; }
-.flow-log-link { border: 0; padding: 0; background: none; color: #0176d3; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.flow-log-link { min-height: 44px; display: inline-flex; align-items: center; border: 0; padding: 4px 0; background: none; color: #0176d3; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
 .flow-log-link:hover { color: #014486; text-decoration: underline; }
 .flow-log-error { min-width: 220px; max-width: 560px; color: #ba0517 !important; }
 .component-library-page { max-width: 1500px; margin: 0 auto; padding: 24px 30px 36px; }
@@ -2736,3 +2736,15 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .builder-editor-mode .free-canvas-resize-handle.resize-ne { top:-6px; right:-6px; left:auto; bottom:auto; cursor:nesw-resize; }
 .builder-editor-mode .free-canvas-resize-handle.resize-sw { bottom:-6px; left:-6px; top:auto; right:auto; cursor:nesw-resize; }
 .builder-editor-mode .free-canvas-resize-handle.resize-se { bottom:-6px; right:-6px; top:auto; left:auto; cursor:nwse-resize; }
+
+@media(max-width:600px) {
+ .scheduled-flows-page .scheduled-flows-surface .list-view-header,
+ .flow-logs-page .flow-logs-surface .list-view-header { align-items:stretch; flex-direction:column; }
+ .scheduled-flows-page .scheduled-flows-search,
+ .flow-logs-page .scheduled-flows-search { width:100%; }
+ .scheduled-flows-page > .flow-config-row[aria-label="Automation explorer views"] > .btn { min-height:44px; }
+ .scheduled-flows-page .flow-config-row .form-label { min-width:0; flex:1 1 140px; margin:0; }
+ .scheduled-flows-page .flow-config-row .form-control { min-height:44px; font-size:14px; }
+ .scheduled-flows-page .flow-trigger-explorer-filters { display:flex; align-items:flex-start; }
+ .scheduled-flows-page .flow-trigger-explorer-filters .scheduled-flows-search { flex:1 0 100%; }
+}
