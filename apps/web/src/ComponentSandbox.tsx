@@ -11,7 +11,7 @@ export default function ComponentSandbox({ definition, props }: { definition: Li
   const asset = new URL(import.meta.env.BASE_URL + 'component-sandbox.js', frameOrigin).toString();
   const safeProps = useMemo(() => sandboxPublicProps(props), [props]);
   const srcDoc = useMemo(() => `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-eval' ${frameOrigin}; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-eval' ${frameOrigin}; style-src 'unsafe-inline'; img-src data: https://images.unsplash.com; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'">
 <style>html,body{margin:0;min-height:100%;font:inherit}#component-root{min-height:100%}</style><style id="component-style"></style></head>
 <body><div id="component-root"></div><script src="${asset}"></script></body></html>`, [asset, frameOrigin]);
   useEffect(() => { setReady(false); }, [instance]);
