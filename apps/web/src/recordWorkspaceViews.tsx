@@ -196,6 +196,32 @@ import {
 } from './metadata';
 
 
+type RecordActivity = {
+  id: string;
+  objectApiName: string;
+  recordId: string;
+  kind: 'Task' | 'Call' | 'Event';
+  subject: string;
+  description: string;
+  status: 'Open' | 'Completed';
+  dueAt: string | null;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+};
+type ChatterComment = { id: string; body: string; createdBy: string; createdByName: string; createdAt: string };
+type ChatterPost = {
+  id: string;
+  objectApiName: string;
+  recordId: string;
+  body: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  comments: ChatterComment[];
+};
+
+
 export function createRecordWorkspaceViews(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>, usePageLayoutDevice: () => LayoutDevice, ApiRequestError: new (...args: any[]) => Error & { status: number }, getAccessToken: () => string | undefined) {
 function RecordWorkspace({
   route,
