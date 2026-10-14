@@ -4,6 +4,7 @@ import type { LibraryComponentMetadata } from './metadata';
 import ComponentSandbox from './ComponentSandbox';
 import {resolveComponentSettings} from './componentSettingDefinitions';
 import {compileComponentModule} from './componentRuntimeModule';
+import {validatePrimitiveMetadata, primitiveAccessibilityProps} from './sharedPrimitiveMetadata';
 
 type ComponentBoundaryState = { error?: string };
 
@@ -36,8 +37,12 @@ function RegisteredComponentBody({ definition, props }: { definition: LibraryCom
 export default function RegisteredComponent({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
   if (definition.status === 'Draft') return <div role="status" className="registered-component-error">Component is a draft. Publish it before use.</div>;
   const effectiveProps = definition.propertyDefinitions?.length ? resolveComponentSettings(definition.propertyDefinitions, props) : props;
-  if (definition.trustedBundled !== true) return <ComponentSandbox definition={definition} props={effectiveProps} />;
-  return <ComponentRenderBoundary key={`${definition.apiName}-${definition.version}`}>
+  const primitive = definition.primitiveMetadata;
+  const primitiveCheck = primitive ? validatePrimitiveMetadata(primitive) : null;
+  if (primitiveCheck && !primitiveCheck.valid) return <div className="registered-component-error" role="alert">Invalid primitive metadata: {primitiveCheck.errors.join('; ')}</div>;
+  const accessibility = primitive ? primitiveAccessibilityProps(primitive) : {};
+  if (definition.trustedBundled !== true) return <div {...accessibility}><ComponentSandbox definition={definition} props={effectiveProps} /></div>;
+  return <div {...accessibility}><ComponentRenderBoundary key={`${definition.apiName}-${definition.version}`}>
     <RegisteredComponentBody definition={definition} props={effectiveProps} />
-  </ComponentRenderBoundary>;
+  </ComponentRenderBoundary></div>;
 }
