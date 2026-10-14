@@ -1,5 +1,6 @@
 import type {FieldMetadata} from './metadata';
 import {filterPageComponentRecords} from './pageComponentBindings';
+import {examineRecordFilter} from './recordFilterMetadata';
 /** Shared 3d list/table metadata, operating only on server-authorised rows.
  * The Object API and record-filter contract remain the authority.
  */
@@ -26,16 +27,11 @@ export function validateSharedListMetadata(definition:SharedListMetadata,fields:
   errors.push('Invalid page');
  if(definition.filters!==undefined){
   if(!Array.isArray(definition.filters))errors.push('Invalid filters');
-  else if(filterPageComponentRecords([{}],definition.filters,fields).length===0&&definition.filters.length){
-   // Validate saved field/operator metadata independently of whether test rows match.
-   for(const filter of definition.filters){
-    if(examineFilter(filter,fields))errors.push('Invalid filter');
-   }
-  }
+  else for(const filter of definition.filters)
+   if(examineRecordFilter(filter,fields))errors.push('Invalid filter');
  }
  return errors;
 }
-import {examineRecordFilter as examineFilter} from './recordFilterMetadata';
 export function applySharedListMetadata<T extends Record<string,unknown>>(
  rows:readonly T[],definition:SharedListMetadata,fields:ReadonlyArray<FieldMetadata>
 ):{rows:Record<string,unknown>[];total:number;errors:string[]}{
