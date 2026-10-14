@@ -1,3 +1,4 @@
+import {upgradePackagedFlow} from '../src/package-page-migrations.mjs';
 import {upgradePackagedPageComponents} from '../src/package-page-migrations.mjs';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -174,4 +175,62 @@ test('legacy layout migration is metadata-controlled and never changes unrelated
   assert.deepEqual(upgradePackagedPageComponents(original,template,{}).upgradedComponents,original.components);
   assert.equal(entry.installation.allowInstalledMetadataWithoutLicence,false);
   assert.equal(catalog.packages.find(p=>p.appKey==='pos').installation.allowInstalledMetadataWithoutLicence,true);
+});
+
+test('installer selects explicit default page regardless of metadata array ordering',()=>{
+  const reordered=structuredClone(catalog);
+  const kiosk=reordered.packages.find(p=>p.appKey==='kiosk');
+  kiosk.pages.reverse();
+  const installed=applyInstallableAppPackages(tenant(),reordered);
+  const home=installed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS');
+  const legacy=installed.pages.find(p=>p.apiName==='UNE_KIOSK');
+  assert(home.activationAssignments.some(a=>a.id==='package-kiosk-home'));
+  assert(home.activationAssignments.some(a=>a.id==='package-kiosk-app-default'));
+  assert(!(legacy.activationAssignments??[]).some(a=>a.id==='package-kiosk-home'));
+  assert.deepEqual(applyInstallableAppPackages(installed,reordered),installed);
+});
+test('installer uses metadata default app even when it is not the first application',()=>{
+  const reordered=structuredClone(catalog);
+  const kiosk=reordered.packages.find(p=>p.appKey==='kiosk');
+  kiosk.apps.unshift({...structuredClone(kiosk.apps[0]),apiName:'ExtraApp',label:'Extra'});
+  const installed=applyInstallableAppPackages(tenant(),reordered);
+  const home=installed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS');
+  assert(home.activationAssignments.some(a=>a.appId==='KioskApp' && a.scope==='App Default'));
+  const profile=installed.accessControl.profiles.find(p=>p.id==='kiosk-user');
+  assert.equal(profile.appPermissions.KioskApp,true);
+  assert.equal(profile.appPermissions.ExtraApp,true);
+});
+test('installer rejects invalid explicit default metadata rather than silently choosing array position',()=>{
+  const broken=structuredClone(catalog);
+  const kiosk=broken.packages.find(p=>p.appKey==='kiosk');
+  kiosk.installation.defaultPageApiName='NotRegistered';
+  assert.throws(()=>applyInstallableAppPackages(tenant(),broken),/default page is not registered/);
+  kiosk.installation.defaultPageApiName='UNE_KIOSK_CANVAS';
+  kiosk.installation.defaultAppApiName='NotRegistered';
+  assert.throws(()=>applyInstallableAppPackages(tenant(),broken),/default app is not registered/);
+});
+test('installer preserves tenant-owned assignments and explicit permission denials across upgrades',()=>{
+  const installed=applyInstallableAppPackages(tenant(),catalog);
+  const home=installed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS');
+  const custom={id:'tenant-home',scope:'App Default',appId:'TenantApp',profileId:null,formFactors:['Phone']};
+  const customTenant={...installed,pages:installed.pages.map(p=>p.apiName===home.apiName
+    ? {...p,activationAssignments:[...p.activationAssignments,custom]}:p)};
+  const upgraded=applyInstallableAppPackages(customTenant,catalog);
+  assert(upgraded.pages.find(p=>p.apiName===home.apiName).activationAssignments.some(a=>a.id==='tenant-home'));
+  assert.deepEqual(applyInstallableAppPackages(upgraded,catalog),upgraded);
+});
+
+test('Flow migration rules are declarative, idempotent and do not alter tenant outcomes',()=>{
+  const rules=catalog.packages.find(p=>p.appKey==='kiosk').installation.flowMigrations;
+  const flow={apiName:'DemoFlow',elements:[{id:'decision',type:'Decision',config:{outcomes:[]}}],
+    connectors:[{from:'decision',kind:'normal',label:'Default Outcome',to:'finish'}]};
+  const fixed=upgradePackagedFlow(flow,rules);
+  assert.equal(fixed.elements[0].config.outcomes[0].name,'Default');
+  assert.deepEqual(upgradePackagedFlow(fixed,rules),fixed);
+  assert.deepEqual(flow.elements[0].config.outcomes,[]);
+  const tenantChanged={...flow,elements:[{...flow.elements[0],
+    config:{outcomes:[{name:'Default',label:'My custom outcome',conditions:[]}]}}]};
+  assert.equal(upgradePackagedFlow(tenantChanged,rules),tenantChanged);
+  const unrelated={...flow,connectors:[{...flow.connectors[0],label:'Different'}]};
+  assert.equal(upgradePackagedFlow(unrelated,rules),unrelated);
 });

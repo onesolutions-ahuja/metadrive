@@ -1,4 +1,4 @@
-import {upgradePackagedPageComponents} from './package-page-migrations.mjs';
+import {upgradePackagedPageComponents,upgradePackagedFlow} from './package-page-migrations.mjs';
 
 /**
  * Install declarative business-app metadata through the shared AppExchange lifecycle.
@@ -14,6 +14,14 @@ export function applyInstallableAppPackages(tenant, catalog) {
     // Runtime usage and protected actions remain subject to normal entitlement/RBAC checks.
     if (!installed || installed.Installed__c !== true ||
       (!pkg.installation?.allowInstalledMetadataWithoutLicence && !['Trial','Licensed'].includes(installed.LicenceStatus__c))) continue;
+    const chosenPage = pkg.installation?.defaultPageApiName;
+    const chosenApp = pkg.installation?.defaultAppApiName;
+    if (chosenPage && !(pkg.pages ?? []).some(page => page.apiName === chosenPage)) {
+      throw Error('Package default page is not registered: ' + chosenPage);
+    }
+    if (chosenApp && !(pkg.apps ?? []).some(app => app.apiName === chosenApp)) {
+      throw Error('Package default app is not registered: ' + chosenApp);
+    }
     const objects = [...next.objects];
     let changed = false;
     for (const candidate of [...(pkg.objects ?? []), ...(pkg.extendObjects ?? [])]) {
@@ -37,18 +45,12 @@ export function applyInstallableAppPackages(tenant, catalog) {
       if (additions.length) changed = true;
       return [...oldItems,...structuredClone(additions)];
     };
-    const flows = mergeByApiName(next.flows, pkg.flows).map(flow => {
-      if (!(pkg.flows ?? []).some(item => item.apiName === flow.apiName)) return flow;
-      let fixed = false;
-      const elements = (flow.elements ?? []).map(element => {
-        if (element.type !== 'Decision' || (element.config?.outcomes ?? []).some(o => o.name === 'Default')) return element;
-        const linked = (flow.connectors ?? []).filter(c => c.from === element.id && c.kind === 'normal' && c.label?.trim().toLowerCase() === 'default outcome');
-        if (linked.length !== 1) return element;
-        fixed = true;
-        return {...element, config:{...element.config,outcomes:[...(element.config?.outcomes ?? []),{name:'Default',label:'Default Outcome',conditions:[]}]}};
-      });
-      if (fixed) changed = true;
-      return fixed ? {...flow,elements} : flow;
+    const packagedFlowNames = new Set((pkg.flows ?? []).map(flow => flow.apiName));
+    const flows = mergeByApiName(next.flows,pkg.flows).map(flow => {
+      if (!packagedFlowNames.has(flow.apiName)) return flow;
+      const upgraded = upgradePackagedFlow(flow,pkg.installation?.flowMigrations);
+      if (upgraded !== flow) changed = true;
+      return upgraded;
     });
     const apps = mergeByApiName(next.apps, pkg.apps).map(app => {
       const template = (pkg.apps ?? []).find(candidate => candidate.apiName === app.apiName);
@@ -70,9 +72,9 @@ export function applyInstallableAppPackages(tenant, catalog) {
     const pages = mergeByApiName(next.pages, pkg.pages);
     // A package may introduce a new editable landing page. Move only its own
     // generated activation assignments; never touch tenant-authored assignments.
-    const defaultPageApiName = pkg.pages?.[0]?.apiName;
+    const defaultPageApiName = pkg.installation?.defaultPageApiName;
     if (defaultPageApiName) {
-      const packageAssignmentIds = new Set(['package-'+pkg.appKey+'-home','package-'+pkg.appKey+'-app-default']);
+      const packageAssignmentIds = new Set((pkg.installation?.activationAssignments ?? []).map(rule => 'package-'+pkg.appKey+'-'+rule.idSuffix));
       for (let i=0;i<pages.length;i++) {
         if (pages[i].apiName === defaultPageApiName) continue;
         const original = pages[i].activationAssignments ?? [];
@@ -105,14 +107,14 @@ export function applyInstallableAppPackages(tenant, catalog) {
             read:Boolean(perms[object.apiName]?.read),
             edit:Boolean(perms[object.apiName]?.create || perms[object.apiName]?.edit)
           }]))),
-        appPermissions:{[pkg.apps?.[0]?.apiName]:true},
+        appPermissions:Object.fromEntries((pkg.apps ?? []).map(app => [app.apiName,true])),
         tabPermissions:permissionTemplate.tabPermissions ?? {},
         navigationDefaultAccess:permissionTemplate.navigationDefaultAccess ?? 'Allow'
       }]};
       changed = true;
     }
-    // POS installs can introduce existing-object fields and new order/cart objects
-    // after the administrator profile was provisioned. Grant only previously absent
+    // Package metadata may enable installation of additional object fields
+    // after administrator provisioning. Grant only previously absent
     // permissions, never overwrite an explicit deny or tenant-customized grant.
     if (pkg.installation?.repairMissingAdministratorPermissions === true) {
       const adminIndex = accessControl.profiles.findIndex(profile => profile.id === 'system-administrator');
@@ -154,54 +156,41 @@ export function applyInstallableAppPackages(tenant, catalog) {
         }
       }
     }
-    const appId = pkg.apps?.[0]?.apiName;
-    const profileId = pkg.profile?.id;
-    if (appId && profileId) {
-      const index = pages.findIndex(page=>page.apiName === pkg.pages?.[0]?.apiName);
-      if (index !== -1) {
-        const page = pages[index];
-        const exists = (page.activationAssignments ?? []).some(a => a.appId === appId && a.profileId === profileId);
-        const assignments = [...(page.activationAssignments ?? [])];
-        if (!exists) {
-          assignments.push({
-            id:'package-'+pkg.appKey+'-home',
-            scope:'App and Profile',appId,profileId,recordTypeId:null,formFactors:['Desktop','Phone']
-          });
-        }
-        // App default also allows an authorised tenant admin to preview the
-        // kiosk in a separate popup without changing their own login.
-        if (!(assignments.some(a=>a.appId===appId && a.scope==='App Default'))) {
-          assignments.push({
-            id:'package-'+pkg.appKey+'-app-default',scope:'App Default',
-            appId,profileId:null,recordTypeId:null,formFactors:['Desktop','Phone']
-          });
-        }
-        // Upgrade only a package-owned, unchanged legacy accent to the
-        // revised kiosk visual preset. Customised tenant colors stay intact.
-        const seeded = pkg.pages?.find(candidate => candidate.apiName === page.apiName)?.components ?? [];
-        const {upgradedComponents,migratedLayout} = upgradePackagedPageComponents(page,seeded,pkg.installation?.pageMigration);
-        if (assignments.length !== (page.activationAssignments ?? []).length ||
-          (migratedLayout || upgradedComponents.some((item, at) => item !== page.components[at]))) {
-          pages[index] = {...page,activationAssignments:assignments,components:upgradedComponents};
-          changed = true;
-        }
-      }
-    }
-    // Apply safe metadata repairs to every package page, not just the current
-    // landing page. This retains legacy-page compatibility after an app upgrade.
+    // Every package page is upgraded by the same metadata-driven migration engine.
+    // Only package-generated assignments are movable; tenant assignments remain.
     for (const templatePage of pkg.pages ?? []) {
-      if (templatePage.apiName === pkg.pages?.[0]?.apiName) continue;
-      const at = pages.findIndex(item => item.apiName === templatePage.apiName);
-      if (at === -1) continue;
+      const at = pages.findIndex(page => page.apiName === templatePage.apiName);
+      if (at < 0) continue;
       const page = pages[at];
       const {upgradedComponents,migratedLayout} =
         upgradePackagedPageComponents(page,templatePage.components ?? [],pkg.installation?.pageMigration);
-      if (migratedLayout || upgradedComponents.some((item,i)=>item!==page.components[i])) {
-        pages[at] = {...page,components:upgradedComponents};
+      const assignments = [...(page.activationAssignments ?? [])];
+      if (templatePage.apiName === defaultPageApiName) {
+        const appId = pkg.installation?.defaultAppApiName;
+        if (appId && !(pkg.apps ?? []).some(app => app.apiName === appId)) {
+          throw Error('Package default application is not registered: ' + appId);
+        }
+        for (const rule of pkg.installation?.activationAssignments ?? []) {
+          if (!appId) break;
+          const assignment = {
+            id:'package-'+pkg.appKey+'-'+rule.idSuffix,
+            scope:rule.scope,appId,profileId:rule.profileId ?? null,
+            recordTypeId:null,formFactors:rule.formFactors ?? ['Desktop','Phone']
+          };
+          const exists = assignments.some(existing =>
+            existing.id === assignment.id ||
+            (existing.appId === appId && existing.scope === rule.scope &&
+              (rule.scope === 'App Default' || existing.profileId === assignment.profileId)));
+          if (!exists) assignments.push(assignment);
+        }
+      }
+      if (assignments.length !== (page.activationAssignments ?? []).length ||
+          migratedLayout || upgradedComponents.some((item,index) => item !== page.components[index])) {
+        pages[at] = {...page,activationAssignments:assignments,components:upgradedComponents};
         changed = true;
       }
     }
-    // Sample menu lives in ordinary tenant records, never inside the React UI.
+    // Package demo data lives in ordinary tenant records, never inside the React UI.
     // Only seed an empty object collection; never replace customer records.
     let records = next.records;
     for (const [objectName, examples] of Object.entries(pkg.demoRecords ?? {})) {

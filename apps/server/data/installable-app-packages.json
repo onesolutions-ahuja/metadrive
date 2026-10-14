@@ -2017,7 +2017,42 @@
               ]
             }
           ]
-        }
+        },
+        "defaultPageApiName": "UNE_KIOSK_CANVAS",
+        "defaultAppApiName": "KioskApp",
+        "activationAssignments": [
+          {
+            "scope": "App and Profile",
+            "idSuffix": "home",
+            "profileId": "kiosk-user",
+            "formFactors": [
+              "Desktop",
+              "Phone"
+            ]
+          },
+          {
+            "scope": "App Default",
+            "idSuffix": "app-default",
+            "profileId": null,
+            "formFactors": [
+              "Desktop",
+              "Phone"
+            ]
+          }
+        ],
+        "flowMigrations": [
+          {
+            "elementType": "Decision",
+            "missingOutcomeName": "Default",
+            "connectorKind": "normal",
+            "connectorLabel": "default outcome",
+            "outcome": {
+              "name": "Default",
+              "label": "Default Outcome",
+              "conditions": []
+            }
+          }
+        ]
       }
     },
     {
@@ -4083,7 +4118,42 @@
               ]
             }
           ]
-        }
+        },
+        "defaultPageApiName": "UNE_POS",
+        "defaultAppApiName": "POSApp",
+        "activationAssignments": [
+          {
+            "scope": "App and Profile",
+            "idSuffix": "home",
+            "profileId": "pos-user",
+            "formFactors": [
+              "Desktop",
+              "Phone"
+            ]
+          },
+          {
+            "scope": "App Default",
+            "idSuffix": "app-default",
+            "profileId": null,
+            "formFactors": [
+              "Desktop",
+              "Phone"
+            ]
+          }
+        ],
+        "flowMigrations": [
+          {
+            "elementType": "Decision",
+            "missingOutcomeName": "Default",
+            "connectorKind": "normal",
+            "connectorLabel": "default outcome",
+            "outcome": {
+              "name": "Default",
+              "label": "Default Outcome",
+              "conditions": []
+            }
+          }
+        ]
       }
     }
   ]
