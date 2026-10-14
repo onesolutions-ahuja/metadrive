@@ -15,8 +15,8 @@ function tenant() {
       {apiName:'Name',label:'Name',dataType:'Text',required:true}
     ]}],
     records:{Connector_App__c:[
-      {AppKey__c:'kiosk',Installed__c:true,LicenceStatus__c:'Licensed'},
-      {AppKey__c:'pos',Installed__c:true,LicenceStatus__c:'Licensed'}
+      {Id:'app-license-kiosk',AppKey__c:'kiosk',Installed__c:true,LicenceStatus__c:'Licensed'},
+      {Id:'app-license-pos',AppKey__c:'pos',Installed__c:true,LicenceStatus__c:'Licensed'}
     ]},
     flows:[],pages:[],apps:[],
     accessControl:{profiles:[
