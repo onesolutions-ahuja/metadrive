@@ -32,11 +32,11 @@ test('bundled components register once from trusted signed local assets',()=>{
   const working=applyInstallableAppPackages(tenant(),catalog);
   const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
   const first=ensureBundledAppComponents([],working,catalog,root);
-  assert.equal(first.length,1);
+  assert.equal(first.length,entry.components.length);
   assert.equal(first[0].trustedBundled,true);
   assert.equal(first[0].status,'Published');
   assert.match(first[0].compiledJs,/KioskOrderingExperience/);
-  assert.equal(ensureBundledAppComponents(first,working,catalog,root).length,1);
+  assert.equal(ensureBundledAppComponents(first,working,catalog,root).length,entry.components.length);
 });
 
 test('kiosk virtual device seeder requires a licensed installation and restricted profile',()=>{
@@ -58,7 +58,7 @@ test('kiosk virtual device seeder requires a licensed installation and restricte
   assert.equal(user.username,id);
   assert.deepEqual(user.permissionSetIds,[]);
   assert.throws(()=>prepareKioskDevice(seeded,id,'user-b','2026-10-13T00:00:00Z'));
-  assert.equal(seeded.pages.find(p=>p.apiName==='UNE_KIOSK').activationAssignments
+  assert.equal(seeded.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS').activationAssignments
     .some(a=>a.appId==='KioskApp' && a.scope==='App Default'),true);
 });
 
@@ -83,7 +83,7 @@ test('licensed kiosk metadata can be repaired idempotently without replacing ten
   const page=fixed.pages.find(p=>p.apiName==='UNE_KIOSK');
   assert.equal(page.pageType,'Home Page');
   assert.equal(page.status,'Active');
-  assert.equal(page.activationAssignments.some(a=>a.appId==='KioskApp' && a.scope==='App Default'),true);
+  assert.equal(fixed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS').activationAssignments.some(a=>a.appId==='KioskApp' && a.scope==='App Default'),true);
   assert.equal(page.components[0].properties.categoryObjectApiName,'ProductCategory');
   assert.equal(page.components[0].properties.accentColor,'#d71e28');
   assert.deepEqual(applyInstallableAppPackages(fixed,catalog),fixed);
@@ -101,4 +101,29 @@ test('trusted bundled KFC-style kiosk upgrades without overwriting tenant-owned 
   assert.match(upgraded[0].compiledJs,/mdk-products/);
   const tenantOwned=[{...older[0],trustedBundled:false,compiledJs:'tenant code'}];
   assert.equal(ensureBundledAppComponents(tenantOwned,working,catalog,root)[0].compiledJs,'tenant code');
+});
+
+test('editable kiosk canvas installs independent components and preserves legacy page', () => {
+  const installed=applyInstallableAppPackages(tenant(),catalog);
+  const canvas=installed.pages.find(p=>p.apiName==='UNE_KIOSK_CANVAS');
+  assert.ok(canvas);
+  assert.equal(canvas.layoutMode,'free-canvas');
+  assert.ok(installed.pages.some(p=>p.apiName==='UNE_KIOSK'));
+  assert.ok(canvas.components.length>=10);
+  assert.equal(new Set(canvas.components.map(c=>c.id)).size,canvas.components.length);
+  assert.ok(!canvas.components.some(c=>c.type==='Custom:KioskOrderingExperience'));
+  const registry=new Set(entry.components.map(c=>c.apiName));
+  assert.ok(canvas.components.every(c=>registry.has(c.type.replace(/^Custom:/,''))));
+  assert.equal(canvas.components.find(c=>c.id==='kiosk-products').properties.actionFlows.add.flowApiName,'KIOSK_CART_ADD');
+  assert.equal(canvas.components.find(c=>c.id==='kiosk-cart').properties.actionFlows.remove.flowApiName,'KIOSK_CART_REMOVE');
+  assert.equal(canvas.components.find(c=>c.id==='kiosk-clear').properties.actionFlows.click.flowApiName,'KIOSK_CART_RESET');
+  for (const [id,orderType] of [['kiosk-eat-in','eat-in'],['kiosk-takeaway','takeaway']]) {
+    const checkout=canvas.components.find(c=>c.id===id).properties.actionFlows.click;
+    assert.equal(checkout.flowApiName,'KIOSK_CHECKOUT');
+    assert.equal(checkout.inputs.OrderType,orderType);
+  }
+  assert.ok(installed.apps.find(a=>a.apiName==='KioskApp').navigationPageApiNames.includes('UNE_KIOSK_CANVAS'));
+  const customized={...installed,pages:installed.pages.map(p=>p.apiName===canvas.apiName?{...p,label:'Tenant Custom Canvas'}:p)};
+  const rerun=applyInstallableAppPackages(customized,catalog);
+  assert.equal(rerun.pages.find(p=>p.apiName===canvas.apiName).label,'Tenant Custom Canvas');
 });
