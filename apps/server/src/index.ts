@@ -1411,7 +1411,7 @@ const libraryComponentResizeSchema = z.object({
 const defaultLibraryComponentResize = { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 };
 const libraryComponentRevisionSchema = z.object({
   version: z.number().int().positive(), label: z.string().trim().min(1).max(80),
-  description: z.string().max(500), surfaces: z.array(z.enum(['page','dashboard','flow'])).min(1),
+  description: z.string().max(500), surfaces: z.array(z.enum(['page','dashboard','flow','platform'])).min(1),
   resize: libraryComponentResizeSchema, jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000), compiledJs: z.string().min(1).max(500_000),
   scopedCss: z.string().max(150_000), updatedAt: z.string().datetime()
@@ -1420,7 +1420,7 @@ const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   description: z.string().max(500),
-  surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+  surfaces: z.array(z.enum(['page', 'dashboard', 'flow', 'platform'])).min(1),
   resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000),
@@ -1433,10 +1433,17 @@ const libraryComponentSchema = z.object({
   revisions: z.array(libraryComponentRevisionSchema).max(100).optional(),
   pendingDraft: libraryComponentRevisionSchema.optional(),
   trustedBundled: z.boolean().optional(),
+  scope: z.literal('platform-system').optional(),
   tenantId: z.string().min(1).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
+  }
+  if ((component.scope === 'platform-system' || component.surfaces.includes('platform'))
+      && !(component.scope === 'platform-system' && component.trustedBundled === true
+           && component.tenantId === undefined)) {
+    context.addIssue({code:z.ZodIssueCode.custom,path:['scope'],
+      message:'Platform definitions must be protected, unowned and trusted bundled'});
   }
 });
 const libraryComponentInputSchema = z.object({
@@ -8786,7 +8793,8 @@ function syncBundledLibraryComponents(): Promise<void> {
       apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
       label: z.string().trim().min(1).max(80),
       description: z.string().max(500),
-      surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+      surfaces: z.array(z.enum(['page', 'dashboard', 'flow', 'platform'])).min(1),
+      scope: z.literal('platform-system').optional(),
       resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
       jsx: z.string().min(1),
       css: z.string().min(1),
@@ -8811,8 +8819,12 @@ function syncBundledLibraryComponents(): Promise<void> {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
       }
       const jsxSource = readFileSync(jsxPath, 'utf8');
+      if (entry.surfaces.includes('platform') && entry.scope !== 'platform-system')
+        throw Error('Only signed-in-repository platform-system descriptors may declare the platform surface');
       if (existingBundled && existingBundled.jsxSource === jsxSource
         && existingBundled.cssSource === readFileSync(cssPath, 'utf8')
+        && existingBundled.scope === entry.scope
+        && entry.surfaces.every(surface=>existingBundled.surfaces.includes(surface))
         && (existingBundled.version ?? 1) >= entry.version) continue;
       const cssSource = readFileSync(cssPath, 'utf8');
       if (legacyCandidate) {
@@ -8827,7 +8839,7 @@ function syncBundledLibraryComponents(): Promise<void> {
         apiName: entry.apiName,
         label: entry.label,
         description: entry.description,
-        surfaces: entry.surfaces,
+        surfaces: entry.surfaces.filter((surface)=>surface!=='platform'),
         resize: entry.resize,
         jsxSource,
         cssSource
@@ -8853,7 +8865,8 @@ function syncBundledLibraryComponents(): Promise<void> {
         scopedCss: scopeLibraryCss(input.cssSource, input.apiName),
         version,
         updatedAt: new Date().toISOString(),
-        status: 'Published', publishedVersion: version, revisions: [], trustedBundled: true
+        status: 'Published', publishedVersion: version, revisions: [],
+        trustedBundled: true, scope: entry.scope, surfaces: entry.surfaces
       };
       if (legacyCandidate || existingBundled) {
         trustedUpgrades.set(entry.apiName.toLowerCase(), {
