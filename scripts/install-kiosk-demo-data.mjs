@@ -155,7 +155,14 @@ for(const product of demoProducts){
   const {category,...values}=product;
   const parentId=categoryIds.get(category);
   if(!parentId)throw Error('Unrecognised category '+category);
-  await upsertDemo('Product__c','Name',{...values,CategoryId:parentId});
+  // Preserve the existing tenant's commerce contract: some Product__c
+  // definitions require Price__c rather than the reusable DefaultPrice field.
+  const productDefinition=latestObjects.find(object=>object.apiName==='Product__c');
+  const priceRequired=productDefinition?.fields.some(field=>field.apiName==='Price__c' && field.required);
+  await upsertDemo('Product__c','Name',{
+    ...values,CategoryId:parentId,
+    ...(priceRequired?{Price__c:values.DefaultPrice}:{})
+  });
 }
 const observed=await api('/metadata/objects');
 const installed=new Set((observed.objects??[]).map(item=>item.apiName));
