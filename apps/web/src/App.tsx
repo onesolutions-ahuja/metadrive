@@ -4564,8 +4564,8 @@ function MetadataBoundPageComponent({
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [channelAccess, setChannelAccess] = useState<{userId:string;viewAll:boolean;grants:ChannelGrant[]}>({
-    userId:'',viewAll:false,grants:[]
+  const [channelAccess, setChannelAccess] = useState<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>({
+    userId:'',viewAll:false,grants:[],eligibleAssignees:[]
   });
   const initializedSessions = useRef<Set<string>>(new Set());
   // Any Flow mutation invalidates all components sharing this page session.
@@ -4600,10 +4600,10 @@ function MetadataBoundPageComponent({
   useEffect(() => {
     if (properties.recordPresenterApiName !== 'CommunicationThread') return;
     let active = true;
-    setChannelAccess({userId:'',viewAll:false,grants:[]});
-    void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[]}>('/chatter/access')
+    setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
+    void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>('/chatter/access')
       .then(value => {if(active) setChannelAccess(value);})
-      .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[]});});
+      .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
     return () => {active = false;};
   }, [properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
