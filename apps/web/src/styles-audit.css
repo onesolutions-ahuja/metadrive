@@ -31,3 +31,20 @@
 @media (prefers-reduced-motion: reduce) {
   .salesforce-header *, .setup-sidebar *, .slds-table * { scroll-behavior: auto; }
 }
+
+/* Accessible global search palette, independent of SQL-configured page components. */
+.palette-trigger { display: flex; align-items: center; gap: 9px; text-align: left; cursor: pointer; }
+.palette-trigger span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-backdrop { position: fixed; inset: 0; z-index: 10000; background: rgb(15 23 42 / 52%); display: flex; align-items: flex-start; justify-content: center; padding: min(15vh,110px) 16px 16px; }
+.palette-dialog { background: #fff; border-radius: 14px; box-shadow: 0 24px 64px rgb(0 0 0 / 24%); width: min(680px,100%); max-height: min(75dvh,720px); display: flex; flex-direction: column; overflow: hidden; outline: none; }
+.palette-toolbar { display: flex; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid #e2e8f0; }
+.palette-toolbar form { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.palette-toolbar form input { flex: 1; min-width: 0; border: 0; padding: 10px; font-size: 16px; outline: none; }
+.palette-toolbar form button { background: transparent; border: 0; }
+.palette-results { overflow-y: auto; padding: 12px; }
+.palette-results h3 { margin: 12px 8px 6px; font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: .06em; }
+.palette-results > button { width: 100%; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: 8px; background: #fff; text-align: left; }
+.palette-results > button:hover, .palette-results > button:focus-visible { background: #f1f5f9; }
+.palette-results > button small { color: #64748b; }
+.palette-results p { padding: 8px; color: #64748b; }
+.field-error { display: block; color: #b91c1c; font-size: 12px; padding-top: 4px; }
