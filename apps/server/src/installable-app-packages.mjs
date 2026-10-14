@@ -1,32 +1,4 @@
-function upgradePackagedPageComponents(page, seeded, appKey) {
-        const migrateLegacyPos = appKey === 'pos' && (page.components ?? []).length === 1
-          && page.components[0].id === 'pos-sales-workspace'
-          && page.components[0].type === 'Custom:TillSalesWorkspace';
-        const upgradedComponents = migrateLegacyPos ? structuredClone(seeded) : (page.components ?? []).map(component => {
-          const template = seeded.find(item => item.id === component.id && item.type === component.type);
-          if (!template) return component;
-          const missingCategories = template.properties?.categoryObjectApiName &&
-            !component.properties?.categoryObjectApiName;
-          const legacyAccent = component.properties?.accentColor === '#ffca26'
-            && template.properties?.accentColor !== '#ffca26';
-          const missingWelcome = template.properties?.welcomeImage && !component.properties?.welcomeImage;
-          if (!missingCategories && !legacyAccent && !missingWelcome) return component;
-          return { ...component, properties: {
-            ...component.properties,
-            ...(missingWelcome ? { welcomeImage: template.properties.welcomeImage, labels: template.properties.labels } : {}),
-            ...(missingCategories ? {
-              categoryObjectApiName: template.properties.categoryObjectApiName,
-              categoryNameField: template.properties.categoryNameField
-            } : {}),
-            ...(legacyAccent ? {
-              accentColor: template.properties.accentColor,
-              ...(component.properties.inkColor === '#202124' ? { inkColor: template.properties.inkColor } : {})
-            } : {})
-          } };
-        });
-
-        return {upgradedComponents,migrateLegacyPos};
-}
+import {upgradePackagedPageComponents} from './package-page-migrations.mjs';
 
 /**
  * Install declarative business-app metadata through the shared AppExchange lifecycle.
@@ -41,7 +13,7 @@ export function applyInstallableAppPackages(tenant, catalog) {
     // Installed business apps must expose editable metadata even before trial/licence activation.
     // Runtime usage and protected actions remain subject to normal entitlement/RBAC checks.
     if (!installed || installed.Installed__c !== true ||
-      (pkg.appKey !== 'pos' && !['Trial','Licensed'].includes(installed.LicenceStatus__c))) continue;
+      (!pkg.installation?.allowInstalledMetadataWithoutLicence && !['Trial','Licensed'].includes(installed.LicenceStatus__c))) continue;
     const objects = [...next.objects];
     let changed = false;
     for (const candidate of [...(pkg.objects ?? []), ...(pkg.extendObjects ?? [])]) {
@@ -142,7 +114,7 @@ export function applyInstallableAppPackages(tenant, catalog) {
     // POS installs can introduce existing-object fields and new order/cart objects
     // after the administrator profile was provisioned. Grant only previously absent
     // permissions, never overwrite an explicit deny or tenant-customized grant.
-    if (pkg.appKey === 'pos') {
+    if (pkg.installation?.repairMissingAdministratorPermissions === true) {
       const adminIndex = accessControl.profiles.findIndex(profile => profile.id === 'system-administrator');
       if (adminIndex !== -1) {
         const administrator = accessControl.profiles[adminIndex];
@@ -207,9 +179,9 @@ export function applyInstallableAppPackages(tenant, catalog) {
         // Upgrade only a package-owned, unchanged legacy accent to the
         // revised kiosk visual preset. Customised tenant colors stay intact.
         const seeded = pkg.pages?.find(candidate => candidate.apiName === page.apiName)?.components ?? [];
-        const {upgradedComponents,migrateLegacyPos} = upgradePackagedPageComponents(page,seeded,pkg.appKey);
+        const {upgradedComponents,migratedLayout} = upgradePackagedPageComponents(page,seeded,pkg.installation?.pageMigration);
         if (assignments.length !== (page.activationAssignments ?? []).length ||
-          (migrateLegacyPos || upgradedComponents.some((item, at) => item !== page.components[at]))) {
+          (migratedLayout || upgradedComponents.some((item, at) => item !== page.components[at]))) {
           pages[index] = {...page,activationAssignments:assignments,components:upgradedComponents};
           changed = true;
         }
@@ -222,9 +194,9 @@ export function applyInstallableAppPackages(tenant, catalog) {
       const at = pages.findIndex(item => item.apiName === templatePage.apiName);
       if (at === -1) continue;
       const page = pages[at];
-      const {upgradedComponents,migrateLegacyPos} =
-        upgradePackagedPageComponents(page,templatePage.components ?? [],pkg.appKey);
-      if (migrateLegacyPos || upgradedComponents.some((item,i)=>item!==page.components[i])) {
+      const {upgradedComponents,migratedLayout} =
+        upgradePackagedPageComponents(page,templatePage.components ?? [],pkg.installation?.pageMigration);
+      if (migratedLayout || upgradedComponents.some((item,i)=>item!==page.components[i])) {
         pages[at] = {...page,components:upgradedComponents};
         changed = true;
       }
