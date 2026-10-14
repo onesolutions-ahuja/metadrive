@@ -107,3 +107,6 @@
 .modern-canvas-builder .canvas-inspector-tabs button {min-height:30px;font-size:11px;}
 .modern-canvas-builder .selected-component-preview {max-height:110px;overflow:auto;}
 .modern-canvas-builder .properties-header {gap:8px;}
+
+/* Remove the legacy beige dotted stage: the outer editor owns the one dot grid. */
+.modern-canvas-builder .page-stage { background:transparent; background-image:none; border:0; box-shadow:none; }
