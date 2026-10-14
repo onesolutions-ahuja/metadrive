@@ -3729,7 +3729,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         )}
 
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
-          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
+          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} apps={apps} pages={pages}
+            availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
+              .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)}
+            reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={recordSearch} onNavigate={navigateRoute} />}
           {route.kind === 'route-alias' && <section className="setup-card" role="status">
             {routeAliasError ? <p role="alert">{routeAliasError}</p> : <p>Resolving route alias…</p>}
@@ -4896,6 +4900,10 @@ function LightningAppRuntime({
 function RecordWorkspace({
   route,
   objects,
+  apps,
+  pages,
+  availableFlows,
+  onLaunchFlow,
   reports,
   metadataLoaded,
   profileId,
@@ -4909,6 +4917,10 @@ function RecordWorkspace({
 }: {
   route: Extract<AppRoute, { kind: 'record-list' | 'record-detail' }>;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   reports: ReportMetadata[];
   metadataLoaded: boolean;
   profileId: string;
@@ -5907,11 +5919,17 @@ function RecordWorkspace({
         return definition
           ? <div key={component.id} data-layout-component-id={component.id}
               style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>
-              <RegisteredComponent definition={definition} props={{
-                ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
-                label: component.label, properties: component.properties,
-                record, recordId: record.Id, object, formFactor, children
-              }} />
+              {!isLayoutContainer(component) && needsMetadataComponentRuntime(component.properties)
+                ? <MetadataBoundPageComponent definition={definition} component={component}
+                    objects={objects} apps={apps} pages={pages} currentAppId="Records"
+                    pageSessionKey={'record:' + object.apiName + ':' + String(record.Id)}
+                    reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+                    onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
+                : <RegisteredComponent definition={definition} props={{
+                    ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
+                    label: component.label, properties: component.properties,
+                    record, recordId: record.Id, object, formFactor, children
+                  }} />}
             </div>
           : <div className="records-message" role="status" key={component.id}>Component “{component.type.slice('Custom:'.length)}” is not available in the component library.</div>;
       }
