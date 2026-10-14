@@ -11,6 +11,15 @@ const workspaces=[
  ['app-exchange','AppExchange'],['rbac','Users & Permissions'],
  ['tenant-management','Tenant Management']
 ] as const;
+export const systemWorkspaceSlots:Readonly<Record<string,readonly string[]>>={
+ 'home':['overview'],
+ 'company-settings':['company-info','domains','developer-accounts','usage','recovery','mfa','email-recovery','locks','sessions','audit'],
+ 'object-manager':['object-workspace'],
+ 'app-manager':['identity','brand','description','navigation-search','pages','assignments','navigation-items','navigation-order','utility','actions'],
+ 'app-exchange':['marketplace'],
+ 'rbac':['permissions'],
+ 'tenant-management':['directory','tenant-domains','tenant-usage','tenant-recovery']
+};
 export const protectedSystemPageNamespace='MetaDriveSystem';
 export function systemPageApiName(id:string){
  return protectedSystemPageNamespace+'_'+id.replace(/[^A-Za-z0-9]/g,'_')+'_Page';
@@ -21,9 +30,10 @@ export function createSystemPageDrafts(existing:readonly LightningPageMetadata[]
  return workspaces.filter(([id])=>!saved.has(systemPageApiName(id))).map(([id,label])=>{
   const entry=entries.find(e=>e.id===id);
   if(!entry)throw Error('Missing registered protected workspace: '+id);
+  const slots=systemWorkspaceSlots[id]??[];
   const page:LightningPageMetadata={
    apiName:systemPageApiName(id),label:label+' Layout',targetObject:'User',
-   pageType:'App Page',layoutMode:'free-canvas',canvasWidth:1200,canvasHeight:800,
+   pageType:'App Page',layoutMode:'free-canvas',canvasWidth:1200,canvasHeight:Math.max(800,(slots.length+2)*480),
    status:'Draft',devices:['Desktop','Phone'],components:[
     {id:id+'-heading',type:'Rich Text',label:label,visible:true,
      properties:{text:label,layoutStyle:{width:1080},systemWorkspaceId:id},
@@ -31,7 +41,11 @@ export function createSystemPageDrafts(existing:readonly LightningPageMetadata[]
     {id:id+'-content',type:'Custom:SystemPanel',label:label+' Content',visible:true,
      properties:{title:label,description:'Protected administration workspace',
       systemWorkspaceId:id,requiredPermission:entry.permission,layoutContainer:true},
-     position:{x:0,y:120,width:1100,height:600}}
+     position:{x:0,y:120,width:1100,height:600}},
+    ...slots.map((slot,index)=>({id:id+'-'+slot,type:'Custom:SystemPanel',
+      label:slot.replace(/-/g,' ').replace(/^./,letter=>letter.toUpperCase()),visible:true,
+      properties:{platformSlotKey:slot,systemWorkspaceId:id},
+      position:{x:0,y:900+index*420,width:1100,height:380}}))
    ]
   };
   return page;
