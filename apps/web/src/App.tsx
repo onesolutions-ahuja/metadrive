@@ -10492,20 +10492,6 @@ function PageBuilder({
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
               onChange={(properties) => updateComponent(selected.id, { properties })} />}
-            {inspectorTab !== 'Data & Actions' && (selected.properties.basketWidthPercent !== undefined || selected.properties.catalogFirst !== undefined) && <section className="modern-till-layout-controls">
-              <div className="properties-section-title">Till layout</div>
-              <label className="form-label">Basket width: {Number(selected.properties.basketWidthPercent ?? 45)}%
-                <input type="range" min="25" max="70" step="1" aria-label="Till basket width"
-                  value={Number(selected.properties.basketWidthPercent ?? 45)}
-                  onChange={event => updateComponent(selected.id, { properties: {
-                    ...selected.properties, basketWidthPercent: Number(event.target.value)
-                  } })} />
-              </label>
-              <label className="checkbox-row"><input type="checkbox" checked={selected.properties.catalogFirst === true}
-                onChange={event => updateComponent(selected.id, { properties: {
-                  ...selected.properties, catalogFirst: event.target.checked
-                } })} />Show products before basket</label>
-            </section>}
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
