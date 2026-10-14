@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useMemo, type ReactNode } from 'react';
 import type { LibraryComponentMetadata } from './metadata';
 import ComponentSandbox from './ComponentSandbox';
+import {compileComponentModule} from './componentRuntimeModule';
 
 type ComponentBoundaryState = { error?: string };
 
@@ -23,17 +24,7 @@ class ComponentRenderBoundary extends React.Component<{ children: ReactNode }, C
 }
 
 function RegisteredComponentBody({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
-  const Component = useMemo(() => {
-    const module: { exports: { default?: React.ComponentType<Record<string, unknown>> } } = { exports: {} };
-    const execute = new Function('React', 'module', 'exports', definition.compiledJs) as (
-      react: typeof React,
-      componentModule: typeof module,
-      componentExports: typeof module.exports
-    ) => void;
-    execute(React, module, module.exports);
-    if (typeof module.exports.default !== 'function') throw new Error('The registered default export is not a React component');
-    return module.exports.default;
-  }, [definition.compiledJs]);
+  const Component = useMemo(() => compileComponentModule(definition.compiledJs, React), [definition.compiledJs]);
 
   return <div className={`registered-component metadrive-component-${definition.apiName.toLowerCase()}`}>
     {definition.scopedCss && <style>{definition.scopedCss}</style>}
