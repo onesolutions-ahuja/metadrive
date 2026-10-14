@@ -42,7 +42,7 @@ The full inventory must cover all source, test, CSS, generated, and migration fi
 
 ## Subphases and acceptance
 
-See [the 49-step roadmap](universal-metadata-49-step-roadmap.md). Phase 1a adds a read-only repository/seed-definition inventory, its tests and CI report. Phase 1b–1g will complete dynamic metadata, routes, duplication, contracts, migrations and consolidated validation. Keep these in one Phase 1 PR.
+See [the 49-step roadmap](universal-metadata-49-step-roadmap.md). Phase 1a added a read-only repository/seed-definition inventory. Phase 1b added registered component coverage, properties and surface mapping with 6/6 CI tests passing. Phase 1c–1g will complete dynamic metadata, routes, duplication, contracts, migrations and consolidated validation. Keep these in one Phase 1 PR.
 
 ## Phase 1 acceptance checklist
 - [x] Review existing repository boundaries and reusable metadata infrastructure.
