@@ -57,7 +57,7 @@ export function canAccessChatterRecord(
   // Assignment belongs to the conversation, not a historical message.
   // Resolve the latest record to keep old messages visible after reassignment.
   const assignedUserId=latestAssignments(tenant.records.Communication_Records__c??[])
-    .get(JSON.stringify([channelAccountId,number])) || null;
+    .get(JSON.stringify([channelAccountId,number])) ?? asText(record.Assigned_User__c);
   return canAccessChatterConversation(chatterScopeForUser(tenantId,userId,tenant), {
     tenantId, channelAccountId, assignedUserId
   }, operation);
