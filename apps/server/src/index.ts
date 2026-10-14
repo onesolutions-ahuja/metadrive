@@ -42,6 +42,7 @@ import pg from 'pg';
 import { installTenantRecoveryCentre } from './tenant-recovery-centre.mjs';
 import sanitizeHtml from 'sanitize-html';
 import { z } from 'zod';
+import { appNavigationEntrySchema } from './app-navigation-schema.js';
 import { newTotpSecret, totpUri, verifyTotp } from './mfa.js';
 import {
   createRefreshToken,
@@ -1487,10 +1488,7 @@ const lightningAppSchema = z.object({
   description: z.string().max(500).default(''),
   navigationItems: z.array(z.string().min(1)).min(1),
   navigationPageApiNames: z.array(z.string().min(1)).default([]),
-  navigationOrder: z.array(z.object({
-    type: z.enum(['Object', 'App Page']),
-    apiName: z.string().min(1)
-  })).default([]),
+  navigationOrder: z.array(appNavigationEntrySchema).default([]),
   brandColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).default('#0176d3'),
   utilityItems: z.array(z.enum(['Notes', 'History'])).default([])
 }).superRefine((app, context) => {
