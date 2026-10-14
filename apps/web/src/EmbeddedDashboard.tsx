@@ -1,3 +1,4 @@
+import {findRegisteredComponent} from './componentRegistryLookup';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   DashboardComponentMetadata, DashboardMetadata, LibraryComponentMetadata, ReportRunMetadata
@@ -130,11 +131,9 @@ export default function EmbeddedDashboard({
               ? <img src={component.imageUrl} alt={component.imageAltText || component.title} loading="lazy" style={{maxWidth:'100%'}}/>
               : <p className="records-empty">No secure image is configured.</p>)
             : component.type === 'Custom' ? (() => {
-                const definition = libraryComponents.find(item =>
-                  item.apiName === component.customComponentApiName && item.surfaces.includes('dashboard')
-                  && item.status !== 'Draft');
+                const definition = findRegisteredComponent(libraryComponents,component.customComponentApiName,'dashboard');
                 return definition ? <RegisteredComponent definition={definition} props={{
-                  ...component.properties, label: component.title, disabled: false
+                  ...component.properties, properties: component.properties ?? {}, label: component.title, disabled: false
                 }}/> : <p className="records-message">Published dashboard component is unavailable.</p>;
               })()
             : !values ? <p className="records-loading">Loading data…</p>
