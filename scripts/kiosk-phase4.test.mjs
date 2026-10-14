@@ -127,3 +127,12 @@ test('component registration retries only on transient SQL failures after readba
  assert.match(source,/if\(await installRegisteredComponent\(component\)\)installedComponents\+\+/);
  assert.match(source,/Concurrent writer detected/);
 });
+
+test('component lifecycle uses secured draft creation and dedicated publish endpoint',()=>{
+ const source=readFileSync(new URL('./install-kiosk-phase4.mjs',import.meta.url),'utf8');
+ assert.match(source,/publicationStatus:'Draft'/);
+ assert.match(source,/\+'\/publish','POST'\)/);
+ assert.match(source,/existing\.status==='Published'/);
+ assert.match(source,/existing\.trustedBundled/);
+ assert.match(source,/existing\.status!=='Draft'/);
+});
