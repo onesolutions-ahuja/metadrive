@@ -13,5 +13,6 @@ test('2a retains legacy tenant component resolution',()=>{
 test('2a declares protected ownership without granting rendering access',()=>{
  assert.equal(componentRegistryScope(protectedDefinition),'platform-system');
  assert.equal(findProtectedSystemComponent([protectedDefinition],'SystemOnly'),undefined);
+ assert.equal(findRegisteredComponent([protectedDefinition],'SystemOnly','page'),undefined);
  assert.equal(findProtectedSystemComponent([ordinary],'Existing'),undefined);
 });
