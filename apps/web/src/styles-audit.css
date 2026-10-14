@@ -1,0 +1,33 @@
+/* UI audit: presentation-only defaults. Keep metadata-driven component styles untouched. */
+.salesforce-header { position: sticky; top: 0; z-index: 40; }
+.salesforce-header .global-search { min-width: 0; }
+.setup-sidebar .tree-group-label { font-size: 11px; letter-spacing: .075em; font-weight: 700; }
+.setup-sidebar .tree-item { min-height: 38px; font-weight: 500; }
+.setup-sidebar .tree-item:focus-visible, .object-list-item:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.setup-sidebar .tree-item.selected { font-weight: 700; }
+.setup-tree { max-height: calc(100vh - 180px); overflow-y: auto; scrollbar-gutter: stable; }
+.section-heading, .section-toolbar, .page-heading { flex-wrap: wrap; }
+.section-heading > :last-child, .section-toolbar > :last-child { flex-shrink: 0; }
+.slds-table { table-layout: auto; }
+.slds-table th, .slds-table td { padding: 12px 16px; vertical-align: middle; }
+.slds-table td { max-width: 360px; overflow-wrap: anywhere; white-space: normal; }
+.slds-table tbody tr:hover { background: #f8fafc; }
+.slds-table :is(input[type="checkbox"],input[type="radio"]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.empty-state, .empty-list, .empty-tree { line-height: 1.5; }
+.empty-state { min-height: 120px; display: grid; place-content: center; gap: 8px; }
+:is(input,select,textarea,button):disabled, [aria-disabled="true"] { cursor: not-allowed; }
+:is(input,select,textarea)[aria-invalid="true"] { border-color: #ba0517; }
+:is(input,select,textarea)[aria-invalid="true"]:focus-visible { outline-color: #ba0517; }
+[role="alert"], .field-error { overflow-wrap: anywhere; }
+[role="dialog"][aria-modal="true"] { max-height: 100dvh; }
+[role="dialog"] :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 768px) {
+  .salesforce-header { gap: 8px; padding-inline: 10px; }
+  .salesforce-header .global-search { width: auto; flex: 1; }
+  .setup-sidebar { width: min(240px, 38vw); min-width: min(240px, 38vw); }
+  .section-toolbar, .page-heading { align-items: flex-start; }
+  .slds-table td { max-width: 240px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .salesforce-header *, .setup-sidebar *, .slds-table * { scroll-behavior: auto; }
+}
