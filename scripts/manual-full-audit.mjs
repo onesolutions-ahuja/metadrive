@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const defaultBase = 'https://unesolutions.co.uk/une/';
 const base = new URL(process.env.METADRIVE_BASE_URL || defaultBase);
+const loginUrl = new URL('/login', base.origin);
 const email = process.env.METADRIVE_TEST_EMAIL;
 const password = process.env.METADRIVE_TEST_PASSWORD;
 const output = process.env.METADRIVE_AUDIT_OUTPUT || 'audit-results';
@@ -48,6 +49,12 @@ const routes = [
   ['Flow Logs', 'une/setup/flow-logs'],
   ['Approval Processes', 'une/setup/approval-processes']
 ];
+if (process.env.METADRIVE_AUDIT_ONLY) {
+  const selected = new Set(process.env.METADRIVE_AUDIT_ONLY.split(',').map(value => value.trim().toLowerCase()).filter(Boolean));
+  const matches = routes.filter(([name]) => selected.has(name.toLowerCase()));
+  if (!matches.length) throw new Error('METADRIVE_AUDIT_ONLY did not match an audit route');
+  routes.splice(0, routes.length, ...matches);
+}
 const report = {
   startedAt: new Date().toISOString(), base: base.origin + base.pathname,
   mode: 'read-only', targetReadyMs: limits.pageMs, profiles: [],
@@ -444,7 +451,7 @@ async function run() {
       try {
         // Login once per browser context; never store credentials in logs or artifacts.
         const loginStart = performance.now();
-        await page.goto(base.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await page.goto(loginUrl.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
         // A missing login form is a deployment or routing issue; fail fast rather than spending two minutes per viewport.
         await page.locator('#login-email, input[type="email"]').first().waitFor({ state: 'visible', timeout: 20000 });
         await page.locator('input[type="email"]').first().fill(email);

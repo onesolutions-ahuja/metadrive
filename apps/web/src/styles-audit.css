@@ -28,6 +28,9 @@
   .section-toolbar, .page-heading { align-items: flex-start; }
   .slds-table td { max-width: 240px; }
 }
+@media (max-width: 600px) {
+  .setup-sidebar { width: 48px; min-width: 48px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .salesforce-header *, .setup-sidebar *, .slds-table * { scroll-behavior: auto; }
 }

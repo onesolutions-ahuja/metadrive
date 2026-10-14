@@ -116,6 +116,7 @@ h1, h2, h3, p { margin-top: 0; }
 .btn-full { width: 100%; margin-top: 14px; }
 .text-action { border: 0; background: none; color: #0176d3; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; }
 .text-action:hover { color: #014486; text-decoration: underline; }
+.welcome-banner .text-action, .home-section-title .text-action, .recent-surface .text-action { min-height: 32px; }
 .surface { background: white; border: 1px solid #dddbda; border-radius: 4px; box-shadow: 0 1px 2px rgb(0 0 0 / 8%); }
 
 .welcome-banner { min-height: 205px; display: grid; grid-template-columns: 190px minmax(220px,1fr) 270px; align-items: center; background: #fff; border: 1px solid #dddbda; border-radius: 5px; overflow: hidden; box-shadow: var(--shadow); }
@@ -2313,11 +2314,11 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .header-home-link:hover { background: #eeece8; }
 .header-record-picker { position: relative; flex: 0 0 clamp(140px, 13vw, 210px); min-width: 0; }
 .header-record-picker-control {
-  display: flex; align-items: center; min-width: 0; height: 34px; gap: 4px;
+  display: flex; align-items: center; min-width: 0; height: 40px; gap: 4px;
   border: 1px solid #cbd3db; border-radius: 6px; padding: 0 8px; background: #fff;
 }
 .header-record-picker-control:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
-.header-record-picker-control input { flex: 1; width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; }
+.header-record-picker-control input { flex: 1; width: 100%; min-width: 0; min-height: 38px; border: 0; outline: 0; background: transparent; }
 .header-record-picker-control svg { flex: 0 0 auto; color: #68717a; pointer-events: none; }
 .header-record-picker-options {
   position: absolute; top: calc(100% + 5px); left: 0; z-index: 120;

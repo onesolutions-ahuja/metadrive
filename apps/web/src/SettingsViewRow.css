@@ -36,7 +36,7 @@
 .settings-read-first-section { margin: 14px 0 20px; border: 1px solid #e2e7ed; border-radius: 9px; overflow: hidden; background: #fff; }
 .settings-read-first-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .settings-read-first-heading { padding: 13px 16px; margin: 0; font-size: 14px; line-height: 1.4; background: #f8f9fb; border-bottom: 1px solid #e2e7ed; }
-.settings-read-first-section .permission-help { margin: 6px 16px 12px; }
+.settings-read-first-section .permission-help { margin: 6px 16px 12px; font-size: 12px; line-height: 1.5; }
 @media (max-width: 640px) {
   .settings-view-row { padding: 12px; }
   .settings-edit-row-grid { grid-template-columns: minmax(0, 1fr); }
