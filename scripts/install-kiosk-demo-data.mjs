@@ -38,6 +38,7 @@ if(!existing.has('Sale__c'))throw Error('Existing Sale__c is required. No object
 // Use the existing secured Object Manager endpoint, which validates every
 // relationship and grants initial system-administrator object/field permissions.
 let created=0;
+let seededRecords=0;
 for(const definition of kioskObjectDefinitions){
   if(existing.has(definition.apiName))continue;
   await api('/metadata/objects','POST',definition);
@@ -51,6 +52,8 @@ async function upsertDemo(object,key,values){
   const found=await matchingRecord(object,key,values[key]);
   if(found)return found;
   const response=await api('/records/'+encodeURIComponent(object),'POST',values);
+  if(!response.record?.Id)throw Error('Missing record ID after '+object+' creation');
+  seededRecords++;
   return response.record;
 }
 const categoryIds=new Map();
@@ -68,6 +71,15 @@ for(const product of demoProducts){
 const observed=await api('/metadata/objects');
 const installed=new Set((observed.objects??[]).map(item=>item.apiName));
 for(const name of expectedObjects)if(!installed.has(name))throw Error('Object activation not verified: '+name);
+for(const category of demoCategories){
+  const record=await matchingRecord('ProductCategory__c','Name',category.Name);
+  if(!record?.Id)throw Error('Category seed not verified: '+category.Name);
+}
+for(const product of demoProducts){
+  const record=await matchingRecord('Product__c','Name',product.Name);
+  if(!record?.Id || record.SKU!==product.SKU || !record.CategoryId)
+    throw Error('Product seed not verified: '+product.Name);
+}
 console.log(JSON.stringify({installed:true,createdObjects:created,
-  verifiedObjects:expectedObjects,fixtureCategories:demoCategories.length,fixtureProducts:demoProducts.length,
+  verifiedObjects:expectedObjects,fixtureCategories:demoCategories.length,fixtureProducts:demoProducts.length,seededRecords,
   rbac:'Enforced by authenticated Object and Record APIs'}));
