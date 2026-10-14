@@ -63,9 +63,34 @@ const installerSet={...(existingInstallerSet??{
 const alreadyGranted=installer.permissionSetIds?.includes(installerSetId)
   && requiredCapabilities.every(p=>existingInstallerSet?.systemPermissions?.includes(p));
 if(!alreadyGranted){
+ // Reuse the working catalogue seeder's compatibility rule: older uninstall
+ // operations leave references to deleted Objects/fields inside security grants.
+ // Their stale references cannot be submitted to the secured RBAC validator.
+ // Keep all valid unrelated grants and do not relax RBAC enforcement.
+ const knownFields=new Map(objectList.map(object=>[
+  object.apiName,new Set(object.fields.map(field=>field.apiName))
+ ]));
+ const keepValid=(grants,valid)=>Object.fromEntries(
+  Object.entries(grants??{}).filter(([key])=>valid(key))
+ );
+ const knownField=(key)=>{
+  const position=key.indexOf('.');
+  return position>0 && knownFields.get(key.slice(0,position))?.has(key.slice(position+1));
+ };
+ const scrub=(entry)=>({
+  ...entry,
+  objectPermissions:keepValid(entry.objectPermissions,name=>knownFields.has(name)),
+  fieldPermissions:keepValid(entry.fieldPermissions,knownField),
+  ...(entry.mutedObjectPermissions?{mutedObjectPermissions:
+   keepValid(entry.mutedObjectPermissions,name=>knownFields.has(name))}:{}),
+  ...(entry.mutedFieldPermissions?{mutedFieldPermissions:
+   keepValid(entry.mutedFieldPermissions,knownField)}:{})
+ });
  await api('/metadata/permissions','PUT',{
   ...initialAccess,
-  permissionSets:[...(initialAccess.permissionSets??[]).filter(p=>p.id!==installerSetId),installerSet],
+  profiles:(initialAccess.profiles??[]).map(scrub),
+  permissionSets:[...(initialAccess.permissionSets??[]).filter(p=>p.id!==installerSetId),installerSet].map(scrub),
+  permissionSetGroups:(initialAccess.permissionSetGroups??[]).map(scrub),
   users:(initialAccess.users??[]).map(u=>u.id===installer.id
    ?{...u,permissionSetIds:[...new Set([...(u.permissionSetIds??[]),installerSetId])]}:u)
  });
