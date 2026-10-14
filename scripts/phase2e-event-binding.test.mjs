@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validateComponentEventBinding,prepareComponentEventInvocation} from '../apps/web/src/componentEventBinding.ts';
+import {validateComponentEventBinding,prepareComponentEventInvocation,validateConfiguredFlowEvent} from '../apps/web/src/componentEventBinding.ts';
 const events=new Set(['onSave']);const active=new Set(['SaveAccount']);
 const binding={eventName:'onSave',flowApiName:'SaveAccount',typedInputs:{recordId:'text',approved:'boolean',count:'number'},faultPath:'SaveFailed'};
 test('2e prepares typed values for authorised server Flow dispatch',()=>{
@@ -17,4 +17,20 @@ test('2e rejects wrong types and untrusted executable input metadata',()=>{
  assert.equal(prepareComponentEventInvocation(binding,{count:Infinity},events,active),undefined);
  assert.equal(prepareComponentEventInvocation(binding,{approved:'true'},events,active),undefined);
  assert.ok(validateComponentEventBinding({...binding,typedInputs:{'__proto__':'text',amount:'script'}},events,active).length);
+});
+
+test('2e guards existing dispatch and preserves legacy bindings',()=>{
+ assert.deepEqual(validateConfiguredFlowEvent('submit','SaveAccount',undefined,{recordId:42},active),[]);
+ assert.deepEqual(validateConfiguredFlowEvent('submit','SaveAccount',{recordId:'text'},{recordId:'123'},active),[]);
+ assert.ok(validateConfiguredFlowEvent('submit','SaveAccount',{recordId:'text'},{recordId:123},active).length);
+ assert.ok(validateConfiguredFlowEvent('submit','Inactive',undefined,{},active).length);
+ assert.deepEqual(validateConfiguredFlowEvent('submit','SaveAccount',{amount:'script'}, {},active).length,1);
+});
+test('2e live page host validates event inputs before executing existing endpoint',()=>{
+ const fs=await import('node:fs');
+ const app=fs.readFileSync(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const check=app.indexOf('validateConfiguredFlowEvent(action.event, flowApiName');
+ const launch=app.indexOf("if (selected.flowType === 'Screen Flow')",check);
+ const execute=app.indexOf("'/flows/' + encodeURIComponent(flowApiName) + '/execute'",launch);
+ assert.ok(check>0&&launch>check&&execute>launch);
 });
