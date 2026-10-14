@@ -4552,7 +4552,6 @@ function MetadataBoundPageComponent({
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
-  const customerObjectApiName = String(properties.customerObjectApiName ?? '');
   const categoryObjectApiName = String(properties.categoryObjectApiName ?? '');
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
@@ -8823,8 +8822,6 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
   const cartObject = objects.find((candidate) => candidate.apiName === cartObjectApiName);
   const customerObjectApiName = String(properties.customerObjectApiName ?? '');
-  const customerObject = objects.find((candidate) => candidate.apiName === customerObjectApiName);
-  const tillMode = properties.catalogFirst !== undefined || properties.basketWidthPercent !== undefined;
   const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
     ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
@@ -8881,45 +8878,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
         </select>
       </label>)}
     </>}
-    {tillMode && <>
-      <div className="properties-section-title">Till Layout — This Client</div>
-      <p className="properties-help">These settings change only this Till placement; its Object and Flow bindings stay the same.</p>
-      <label className="form-label">Basket placement
-        <select className="form-control" aria-label="Till basket placement"
-          value={properties.basketSide === 'right' ? 'right' : 'left'}
-          onChange={event => update('basketSide', event.target.value)}>
-          <option value="left">Basket on the left</option><option value="right">Basket on the right</option>
-        </select>
-      </label>
-      <label className="form-label">Basket width ({Math.max(30, Math.min(65, Number(properties.basketWidthPercent) || 45))}%)
-        <input type="range" min={30} max={65} step={1} className="form-control"
-          aria-label="Till basket width" value={Math.max(30, Math.min(65, Number(properties.basketWidthPercent) || 45))}
-          onChange={event => update('basketWidthPercent', Number(event.target.value))}/>
-      </label>
-      <label className="form-label">Product grid columns
-        <select className="form-control" aria-label="Till product columns" value={Math.max(1, Math.min(5, Number(properties.catalogColumns) || 3))}
-          onChange={event => update('catalogColumns', Number(event.target.value))}>
-          {[1,2,3,4,5].map(count => <option key={count} value={count}>{count}</option>)}
-        </select>
-      </label>
-      <div className="properties-section-title">Customer Object and Fields</div>
-      <label className="form-label">Customer object
-        <select className="form-control" value={customerObjectApiName} onChange={(event) => update('customerObjectApiName', event.target.value)}>
-          <option value="">No customer object selected</option>
-          {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
-        </select>
-      </label>
-      {([
-        ['customerNameField', 'Name field'], ['customerPhoneField', 'Phone field'], ['customerEmailField', 'Email field']
-      ] as const).map(([key, label]) => <label className="form-label" key={key}>{label}
-        <select className="form-control" value={String(properties[key] ?? '')} onChange={(event) => update(key, event.target.value)}>
-          <option value="">Select customer field…</option>
-          {(customerObject?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
-        </select>
-      </label>)}
-      <RecordFilterEditor title="Customer Filters" fields={customerObject?.fields ?? []}
-        filters={listProperty('customerFilters')} onChange={filters => update('customerFilters', filters)} />
-    </>}
+
     
     <RecordFilterEditor title="Record Filters" fields={fields}
       filters={listProperty('filters')} onChange={filters => update('filters', filters)} />
