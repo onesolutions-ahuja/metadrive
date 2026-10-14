@@ -1,3 +1,4 @@
+import { validateObjectLayoutProfileAssignments, pageComponentFeatureEnabled } from './modules/objects/metadata-validation.js';
 import { resolvePageAssignment } from './modules/pages/page-assignment.js';
 import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-properties.js';
 import { evaluateFormula, formulaLocalDate, isSafeFlowRegex } from './modules/flows/formula-evaluator.js';
@@ -7659,12 +7660,8 @@ app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'object
   const object = withObjectDefaults(parsed.data);
   const invalidRelatedList = validateRelatedLists(object, [...tenant.objects, object]);
   if (invalidRelatedList) return res.status(400).json({ error: invalidRelatedList });
-  const invalidProfileAssignment = object.pageLayoutAssignments?.find((assignment) =>
-    assignment.profileId !== '*' && !tenant.accessControl.profiles.some((profile) => profile.id === assignment.profileId));
-  if (invalidProfileAssignment) return res.status(400).json({ error: `Page layout assignment references unknown profile "${invalidProfileAssignment.profileId}"` });
-  const invalidCompactProfileAssignment = object.compactLayoutAssignments?.find((assignment) =>
-    assignment.profileId !== '*' && !tenant.accessControl.profiles.some((profile) => profile.id === assignment.profileId));
-  if (invalidCompactProfileAssignment) return res.status(400).json({ error: `Compact layout assignment references unknown profile "${invalidCompactProfileAssignment.profileId}"` });
+  const assignmentError = validateObjectLayoutProfileAssignments(object, tenant.accessControl.profiles);
+  if (assignmentError) return res.status(400).json({ error: assignmentError });
   const relationshipError = validateObjectRelationships(object, [...tenant.objects, object]);
   if (relationshipError) return res.status(400).json({ error: relationshipError });
   const lookupFilterError = validateRelatedLookupFilters(object, [...tenant.objects, object]);
@@ -7746,21 +7743,15 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
   const invalidRelatedList = validateRelatedLists(object, tenant.objects.map((item) =>
     item.apiName === object.apiName ? object : item), current);
   if (invalidRelatedList) return res.status(400).json({ error: invalidRelatedList });
-  const invalidProfileAssignment = object.pageLayoutAssignments?.find((assignment) =>
-    assignment.profileId !== '*' && !tenant.accessControl.profiles.some((profile) => profile.id === assignment.profileId));
-  if (invalidProfileAssignment) return res.status(400).json({ error: `Page layout assignment references unknown profile "${invalidProfileAssignment.profileId}"` });
-  const invalidCompactProfileAssignment = object.compactLayoutAssignments?.find((assignment) =>
-    assignment.profileId !== '*' && !tenant.accessControl.profiles.some((profile) => profile.id === assignment.profileId));
-  if (invalidCompactProfileAssignment) return res.status(400).json({ error: `Compact layout assignment references unknown profile "${invalidCompactProfileAssignment.profileId}"` });
+  const assignmentError = validateObjectLayoutProfileAssignments(object, tenant.accessControl.profiles);
+  if (assignmentError) return res.status(400).json({ error: assignmentError });
   const relationshipError = validateObjectRelationships(object, tenant.objects);
   if (relationshipError) return res.status(400).json({ error: relationshipError });
   const candidateObjects = tenant.objects.map((item) => item.apiName === object.apiName ? object : item);
   const lookupFilterError = validateRelatedLookupFilters(object, candidateObjects);
   if (lookupFilterError) return res.status(400).json({ error: lookupFilterError });
-  const incompatiblePage = tenant.pages.find((page) => page.targetObject === object.apiName && page.components.some((component) =>
-    (component.type === 'Activities' && !object.settings?.allowActivities)
-    || (component.type === 'Chatter' && !object.settings?.allowInChatter)
-    || (component.type === 'Report Chart' && !object.settings?.allowReports)));
+  const incompatiblePage = tenant.pages.find((page) => page.targetObject === object.apiName
+    && page.components.some((component) => !pageComponentFeatureEnabled(component.type, object.settings)));
   if (incompatiblePage) return res.status(409).json({ error: `Object feature settings conflict with components on Lightning page "${incompatiblePage.label}"` });
   if (current.settings?.allowReports !== false && object.settings?.allowReports === false) {
     const referencedReport = tenant.reports.find((report) => report.objectApiName === object.apiName);
