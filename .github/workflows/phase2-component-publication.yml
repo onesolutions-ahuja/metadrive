@@ -6,6 +6,8 @@ on:
       - '.github/workflows/phase2-component-publication.yml'
       - 'scripts/phase2-publish-components.mjs'
       - 'apps/server/src/modules/metadata/phase2-replacement-definitions.mjs'
+      - 'apps/server/test/phase2-replacement-definitions.test.mjs'
+      - 'apps/server/test/phase2-replacement-runtime.test.mjs'
   workflow_dispatch:
 permissions:
   contents: read
