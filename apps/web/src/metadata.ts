@@ -711,6 +711,7 @@ export type ReportRunMetadata = {
 };
 
 export type LibraryComponentMetadata = { propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[];
+  primitiveMetadata?: import('./sharedPrimitiveMetadata').PrimitiveMetadata;
   tenantId?: string;
   apiName: string;
   label: string;
