@@ -412,7 +412,7 @@ function PageHeading({ eyebrow, title, description, actions }: { eyebrow?: strin
 
 const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
 
-const { RecordWorkspace, RecordFormDialog } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken);
+const { RecordWorkspace, RecordFormDialog } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart);
 
 const SetupHome = createSetupHome(PageHeading);
 
@@ -420,7 +420,7 @@ const { AutomationSettingsWorkspace, TenantEmailRecoverySettings, TenantUserLock
 
 const ObjectManager = createObjectManager(apiRequest);
 
-const PageBuilder = createPageBuilder(MetadataComponentProperties);
+const PageBuilder = createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent);
 
 const Permissions = createPermissions(apiRequest, PageHeading);
 
