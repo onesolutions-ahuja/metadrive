@@ -86,3 +86,36 @@ CREATE TRIGGER md_v4_component_instance_tenant_guard
 BEFORE INSERT OR UPDATE ON md_v4_component_instance_property_values
 FOR EACH ROW EXECUTE FUNCTION md_v4_guard_component_instance_tenant();
 -- No deletes, backfills, grants or live cutover in this schema addition.
+
+-- Validate typed values using the canonical registered property definition.
+CREATE OR REPLACE FUNCTION md_v4_validate_component_instance_property() RETURNS trigger
+LANGUAGE plpgsql AS $md_property_value$
+DECLARE definition_kind TEXT; allowed BOOLEAN;
+BEGIN
+  SELECT property_kind INTO definition_kind
+    FROM md_v4_component_property_definitions
+    WHERE component_id=NEW.component_id AND version=NEW.version AND property_key=NEW.property_key;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Unknown component property definition'; END IF;
+  IF definition_kind IN ('NUMBER','CURRENCY') AND
+    (NEW.value_text IS NOT NULL OR NEW.value_boolean IS NOT NULL) THEN
+    RAISE EXCEPTION 'Component numeric property type mismatch';
+  ELSIF definition_kind='BOOLEAN' AND
+    (NEW.value_text IS NOT NULL OR NEW.value_number IS NOT NULL) THEN
+    RAISE EXCEPTION 'Component boolean property type mismatch';
+  ELSIF definition_kind NOT IN ('NUMBER','CURRENCY','BOOLEAN') AND
+    (NEW.value_number IS NOT NULL OR NEW.value_boolean IS NOT NULL) THEN
+    RAISE EXCEPTION 'Component text property type mismatch';
+  END IF;
+  IF definition_kind='SELECT' AND NEW.value_text IS NOT NULL THEN
+    SELECT EXISTS(SELECT 1 FROM md_v4_component_property_choices
+      WHERE component_id=NEW.component_id AND version=NEW.version
+        AND property_key=NEW.property_key AND choice_key=NEW.value_text)
+    INTO allowed;
+    IF NOT allowed THEN RAISE EXCEPTION 'Unknown selectable component property option'; END IF;
+  END IF;
+  RETURN NEW;
+END $md_property_value$;
+DROP TRIGGER IF EXISTS md_v4_component_instance_value_guard ON md_v4_component_instance_property_values;
+CREATE TRIGGER md_v4_component_instance_value_guard
+BEFORE INSERT OR UPDATE ON md_v4_component_instance_property_values
+FOR EACH ROW EXECUTE FUNCTION md_v4_validate_component_instance_property();
