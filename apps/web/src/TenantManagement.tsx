@@ -4,6 +4,7 @@ import './TenantManagement.css';
 import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
 import TenantUsagePanel from './TenantUsagePanel';
+import {PlatformPageSlot} from './PlatformPageSlot';
 
 export type TenantSummary = {
   tenantId: string;
@@ -195,7 +196,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
     {error && <div className="tenant-alert tenant-alert-error" role="alert"><CircleAlert size={17} /> {error}</div>}
     {notice && <div className="tenant-alert" role="status">{notice}</div>}
     <div className="tenant-columns">
-      <section className="tenant-panel" aria-label="Tenants">
+      <PlatformPageSlot slotKey="directory"><section className="tenant-panel" aria-label="Tenants">
         <div className="tenant-toolbar">
           <label className="tenant-search"><Search size={16} /><input type="search" aria-label="Search tenants" placeholder="Search name or tenant ID" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
           <label className="tenant-filter">Status <select aria-label="Filter tenant status" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="ALL">All</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option><option value="ARCHIVED">Archived</option></select></label>
@@ -212,8 +213,8 @@ export default function TenantManagement({ request, permitted }: { request: Requ
           <button aria-label="Previous tenants" disabled={page === 1 || loading} onClick={() => setPage((n) => Math.max(1, n - 1))}><ChevronLeft size={16} /></button>
           <button aria-label="Next tenants" disabled={page * pageSize >= total || loading} onClick={() => setPage((n) => n + 1)}><ChevronRight size={16} /></button>
         </div></footer>
-      </section>
-      <section className="tenant-panel tenant-detail" aria-label={showCreate ? 'Create tenant' : 'Tenant details'}>
+      </section></PlatformPageSlot>
+      <PlatformPageSlot slotKey="tenant-details"><section className="tenant-panel tenant-detail" aria-label={showCreate ? 'Create tenant' : 'Tenant details'}>
         {showCreate ? <form onSubmit={(event) => void createTenant(event)}>
           <div className="tenant-detail-heading"><h2>New tenant</h2><button type="button" className="tenant-button" onClick={() => { setShowCreate(false); setCreate(emptyCreate); setCreateKey(crypto.randomUUID()); }}>Cancel</button></div>
           <label>Tenant ID<input required minLength={2} maxLength={63} pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,62}" autoComplete="off" value={create.tenantId} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, tenantId: event.target.value })); }} /></label>
@@ -244,8 +245,8 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             <button type="button" className="tenant-button" onClick={() => void saveRetention()} disabled={busy}>Save retention policy</button>
             <p className="tenant-help">Retention metadata is audited. No automatic or manual data deletion is enabled.</p>
           </section>
-        </form><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
-      </section>
+        </form><PlatformPageSlot slotKey="tenant-usage"><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /></PlatformPageSlot><PlatformPageSlot slotKey="tenant-domains"><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot><PlatformPageSlot slotKey="tenant-recovery"><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
+      </section></PlatformPageSlot>
     </div>
   </div>;
 }
