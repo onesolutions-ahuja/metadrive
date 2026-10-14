@@ -21,10 +21,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Verify kiosk metadata and compilation contract
-        run: node apps/server/scripts/verify-kiosk-contract.mjs
-      - name: Verify Till metadata and component compilation contract
-        run: node apps/server/scripts/verify-till-contract.mjs
+      - name: Verify retired ordering app cleanup
+        run: node --test apps/server/test/retired-ordering-apps.test.mjs
       - name: Build web and server
         env:
           GITHUB_PAGES: 'true'
