@@ -30,9 +30,9 @@ const source = {
   canvasWidth: 1000, canvasHeight: 780, status: 'Draft',
   devices: ['Desktop','Phone'], activationAssignments: [],
   components: [
-    { id: 'md07-root', type: 'Custom:ChatterInbox', label: 'Test Container', region: 'main', visible: true,
+    { id: 'md07-root', type: 'Container', label: 'Test Container', region: 'main', visible: true,
       position: { x: 20, y: 20, width: 850, height: 580 },
-      properties: { libraryComponentId: 'ChatterInbox', layoutContainer: true, layoutStyle: { padding: 24, backgroundColor: '#ffffff' } }
+      properties: { layoutContainer: true, layoutStyle: { padding: 24, backgroundColor: '#ffffff' } }
     },
     { id: 'md07-card', type: 'Custom:ChatterInbox', label: 'Test Card', region: 'main', visible: true,
       position: { x: 40, y: 40, width: 310, height: 180 },
