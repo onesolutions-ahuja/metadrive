@@ -1,3 +1,4 @@
+import { matchesRelatedLookupFilter, validateGeolocationValue } from './modules/records/record-constraints.js';
 import { calculateFormulaFields } from './modules/records/formula-fields.js';
 import { sanitizeRecordValues, withCaseClosedDate, recordUnmodified } from './modules/records/record-input.js';
 import { stampRecordAuditFields, recordActionEnabled } from './modules/records/record-actions.js';
@@ -3105,29 +3106,6 @@ function validateRelatedLookupFilters(object: ObjectMetadata, knownObjects: Obje
     }
   }
   return null;
-}
-
-function matchesRelatedLookupFilter(
-  actualValue: unknown,
-  expectedValue: unknown,
-  operator: z.infer<typeof relatedLookupFilterSchema>['operator']
-): boolean {
-  const actual = actualValue === undefined || actualValue === null ? '' : String(actualValue);
-  const expected = expectedValue === undefined || expectedValue === null ? '' : String(expectedValue);
-  if (operator === 'Is Null') return actual === '';
-  if (operator === 'Is Not Null') return actual !== '';
-  if (operator === 'Equals') return actual === expected;
-  if (operator === 'Not Equal To') return actual !== expected;
-  if (operator === 'Contains') return actual.toLocaleLowerCase().includes(expected.toLocaleLowerCase());
-  if (operator === 'Starts With') return actual.toLocaleLowerCase().startsWith(expected.toLocaleLowerCase());
-  const actualNumber = Number(actual);
-  const expectedNumber = Number(expected);
-  if (Number.isFinite(actualNumber) && Number.isFinite(expectedNumber)) {
-    return operator === 'Greater Than' ? actualNumber > expectedNumber : actualNumber < expectedNumber;
-  }
-  return operator === 'Greater Than'
-    ? actual.localeCompare(expected) > 0
-    : actual.localeCompare(expected) < 0;
 }
 
 function validateRelatedLists(object: ObjectMetadata, knownObjects: ObjectMetadata[], current?: ObjectMetadata): string | null {
@@ -15341,18 +15319,7 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
       throw new Error(`Currency "${String(value)}" is not active for this tenant.`);
     }
     if (field.formula) throw new Error(`Formula field "${fieldName}" is read-only.`);
-    if (field.dataType === 'Geolocation' && value !== undefined && value !== null) {
-      const coordinates = typeof value === 'object' && !Array.isArray(value)
-        ? value as Record<string, unknown>
-        : undefined;
-      const latitude = coordinates?.latitude;
-      const longitude = coordinates?.longitude;
-      if (!coordinates || Object.keys(coordinates).length !== 2
-        || typeof latitude !== 'number' || !Number.isFinite(latitude) || latitude < -90 || latitude > 90
-        || typeof longitude !== 'number' || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-        throw new Error(`Field "${field.label}" requires numeric latitude (-90 to 90) and longitude (-180 to 180).`);
-      }
-    }
+    if (field.dataType === 'Geolocation') validateGeolocationValue(field.label, value);
     if ((field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist')
       && value !== undefined && value !== null) {
       const recordType = object.recordTypes?.find((item) => item.id === recordTypeId);
