@@ -28,11 +28,11 @@ export function resolveSystemWorkspace(id:string){
   requiredPermission:primary.permission,aliases:matches.map(entry=>entry.label)};
 }
 export default function PlatformWorkspaceSurface({
- workspace,children,permitted=true,pages=[],libraryComponents=[],canEditSystemPage=false,onEditSystemPage
+ workspace,children,permitted=true,pages=[],libraryComponents=[],canEditSystemPage=false,onEditSystemPage,device='Desktop'
 }:{
  workspace:SystemWorkspaceId;children:ReactNode;permitted?:boolean;
  pages?:readonly LightningPageMetadata[];libraryComponents?:readonly LibraryComponentMetadata[];
- canEditSystemPage?:boolean;onEditSystemPage?:(apiName:string)=>void;
+ canEditSystemPage?:boolean;onEditSystemPage?:(apiName:string)=>void;device?:'Desktop'|'Tablet'|'Phone';
 }){
  const definition=resolveSystemWorkspace(workspace);
  if(!definition||!permitted)return <div role="alert">Workspace unavailable</div>;
@@ -49,7 +49,7 @@ export default function PlatformWorkspaceSurface({
        onClick={()=>onEditSystemPage(page.apiName)}>Edit page layout</button>}
      <div className="platform-system-page-components" style={{display:'flex',flexWrap:'wrap',gap:12}}>
        {registered.map(({instance,component})=><div key={instance.id}
-         style={{...resolvePageComponentStyle(instance.properties,instance.type),
+         style={{...resolvePageComponentStyle(instance.properties,instance.type,device),
            maxWidth:'100%',width:instance.position?.width??'100%'}}>
          <RegisteredComponent definition={component!} props={instance.properties}/>
        </div>)}
