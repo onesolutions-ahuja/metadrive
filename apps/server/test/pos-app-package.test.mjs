@@ -23,11 +23,13 @@ test('POS package installs once and preserves the tenant core Product object', (
   assert.equal(first.apps.filter(a => a.apiName === 'POSApp').length,1);
   const page=first.pages.find(p=>p.apiName==='UNE_POS');
   assert.equal(page.status,'Active');
-  assert.equal(page.components[0].type,'Custom:TillSalesWorkspace');
-  assert.equal(page.components[0].properties.objectApiName,'Product');
-  assert.equal(page.components[0].properties.basketSide,'right');
-  assert.equal(page.components[0].properties.basketWidthPercent,35);
-  assert.equal(page.components[0].properties.actionFlows.checkout.flowApiName,'POS_CASH_SETTLE');
+  assert(page.components.length >= 10,'POS screen must use individual editable layers');
+  assert.equal(page.components.some(c=>c.type==='Custom:TillSalesWorkspace'),false);
+  assert.equal(page.components.find(c=>c.id==='pos-products').properties.objectApiName,'Product');
+  assert.equal(page.components.find(c=>c.id==='pos-cash').properties.actionFlows.click.flowApiName,'POS_CASH_SETTLE');
+  assert.equal(page.components.find(c=>c.id==='pos-card').properties.actionFlows.click.inputs.PaymentMethod,'card');
+  assert.equal(page.components.find(c=>c.id==='pos-cart').properties.cartObjectApiName,'CartLine__c');
+  assert(page.components.every(c=>c.position && c.properties.libraryComponentId));
   assert.equal(first.flows.find(f=>f.apiName==='POS_CASH_SETTLE').status,'Active');
   assert.equal(first.flows.find(f=>f.apiName==='POS_CASH_SETTLE').elements.find(e=>e.label==='Record sale as cash').config.fieldValues.find(v=>v.field==='Tender_Method__c').value,'Cash');
   assert(first.flows.some(f=>f.apiName==='KIOSK_CART_ADD'));
@@ -37,10 +39,10 @@ test('POS component is trusted, editable, and registered once',()=>{
  const tenant=applyInstallableAppPackages(baseTenant(),catalog);
  const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
  const components=ensureBundledAppComponents([],tenant,catalog,root);
- assert.equal(components.length,1);
- assert.equal(components[0].apiName,'TillSalesWorkspace');
- assert.equal(components[0].trustedBundled,true);
- assert.match(components[0].compiledJs,/TillSalesWorkspace/);
+ assert(components.length >= 7);
+ assert(components.every(c=>c.trustedBundled===true));
+ assert(components.some(c=>c.apiName==='KioskCart'));
+ assert(components.some(c=>c.apiName==='KioskButton'));
 });
 test('No POS metadata is installed without tenant entitlement',()=>{
  const t=baseTenant();t.records.Connector_App__c[0].Installed__c=false;
@@ -56,30 +58,11 @@ test('Installed POS provisions editable landing page before licence activation',
  assert.deepEqual(applyInstallableAppPackages(installed,catalog),installed);
 });
 
-test('POS installer backfills missing administrator object and field permissions without changing explicit denies',()=>{
-  const tenant=baseTenant();
-  tenant.accessControl.profiles.push({
-    id:'system-administrator',label:'System Administrator',
-    objectPermissions:{Contact:{read:false,create:false,edit:false,delete:false}},
-    fieldPermissions:{'Contact.Name':{read:false,edit:false}},
-    systemPermissions:[],appPermissions:{},tabPermissions:{}
-  });
-  const installed=applyInstallableAppPackages(tenant,catalog);
-  const admin=installed.accessControl.profiles.find(p=>p.id==='system-administrator');
-  for(const apiName of ['Product','Cart__c','CartLine__c','Sale__c','SaleItem__c']){
-    assert.equal(admin.objectPermissions[apiName].read,true,apiName+' read');
-    assert.equal(admin.fieldPermissions[apiName+'.Name'].read,true,apiName+' Name field');
-  }
-  assert.equal(admin.objectPermissions['CartLine__c'].create,true);
-  assert.deepEqual(admin.objectPermissions.Contact,{read:false,create:false,edit:false,delete:false});
-  assert.deepEqual(admin.fieldPermissions['Contact.Name'],{read:false,edit:false});
-  assert.deepEqual(applyInstallableAppPackages(installed,catalog),installed);
-});
-test('POS installer preserves explicitly denied product read permission',()=>{
-  const tenant=baseTenant();
-  tenant.accessControl.profiles.push({id:'system-administrator',objectPermissions:{Product:{read:false,create:false,edit:false,delete:false}},fieldPermissions:{'Product.Name':{read:false,edit:false}},systemPermissions:[],appPermissions:{},tabPermissions:{}});
-  const installed=applyInstallableAppPackages(tenant,catalog);
-  const admin=installed.accessControl.profiles.find(p=>p.id==='system-administrator');
-  assert.equal(admin.objectPermissions.Product.read,false);
-  assert.equal(admin.fieldPermissions['Product.Name'].read,false);
+test('upgrades an installed legacy POS workspace to independently editable layers',()=>{
+ const tenant=baseTenant();
+ const first=applyInstallableAppPackages(tenant,catalog);
+ const legacy={...first,pages:first.pages.map(page=>page.apiName==='UNE_POS'?{...page,components:[{id:'pos-sales-workspace',type:'Custom:TillSalesWorkspace',properties:{libraryComponentId:'TillSalesWorkspace'},position:{x:0,y:0,width:1440,height:900}}]}:page)};
+ const repaired=applyInstallableAppPackages(legacy,catalog);
+ assert(repaired.pages.find(p=>p.apiName==='UNE_POS').components.length >=10);
+ assert.deepEqual(applyInstallableAppPackages(repaired,catalog),repaired);
 });

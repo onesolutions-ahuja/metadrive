@@ -4609,7 +4609,29 @@ function MetadataBoundPageComponent({
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [pageUi,setPageUi] = useState<{search:string;category:string}>({search:'',category:''});
+  useEffect(()=>{
+    const sync=(event:Event)=>{
+      const detail=(event as CustomEvent<{key:string;field:'search'|'category';value:string}>).detail;
+      if(detail?.key===pageSessionKey && (detail.field==='search'||detail.field==='category')) {
+        setPageUi(old=>({...old,[detail.field]:detail.value}));
+      }
+    };
+    window.addEventListener('metadrive:page-ui-change',sync);
+    return ()=>window.removeEventListener('metadrive:page-ui-change',sync);
+  },[pageSessionKey]);
   const initializedSessions = useRef<Set<string>>(new Set());
+  // Synchronise independent POS Page Builder layers after any Flow mutation.
+  useEffect(() => {
+    const sync = (event: Event) => {
+      const detail = (event as CustomEvent<{pageSessionKey:string;sessionId:string}>).detail;
+      if (detail?.pageSessionKey !== pageSessionKey) return;
+      if (detail.sessionId && detail.sessionId !== sessionId) setSessionId(detail.sessionId);
+      setRevision(value => value + 1);
+    };
+    window.addEventListener('metadrive:page-flow-mutated',sync);
+    return () => window.removeEventListener('metadrive:page-flow-mutated',sync);
+  },[pageSessionKey,sessionId]);
   useEffect(() => {
     let active = true;
     setRecords([]); setCartRecords([]); setCustomerRecords([]); setCategoryRecords([]); setDataError('');
@@ -4738,13 +4760,18 @@ function MetadataBoundPageComponent({
           method: 'POST', body: JSON.stringify(inputs)
         });
       if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
+      let completedSessionId = sessionId;
       if (binding.resetSessionOnSuccess === true) {
         const key = 'metadrive-page-session:' + pageSessionKey;
         const newSession = crypto.randomUUID();
         try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
+        completedSessionId = newSession;
         setSessionId(newSession);
       }
       setRevision((value) => value + 1);
+      window.dispatchEvent(new CustomEvent('metadrive:page-flow-mutated', {
+        detail: {pageSessionKey,sessionId: completedSessionId}
+      }));
       return {
         ...response,
         completed: typeof binding.successOutput === 'string'
@@ -4769,6 +4796,16 @@ function MetadataBoundPageComponent({
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
+      searchQuery:pageUi.search, selectedCategoryId:pageUi.category,
+      onChange:(value:unknown)=>{
+        const field = properties.uiBinding;
+        if(field !== 'search' && field !== 'category') return;
+        const selected = field==='category' && value && typeof value==='object'
+          ? String((value as Record<string,unknown>).id ?? '') : String(value ?? '');
+        window.dispatchEvent(new CustomEvent('metadrive:page-ui-change', {
+          detail:{key:pageSessionKey,field,value:selected}
+        }));
+      },
       loading: dataLoading, cartLines, sessionId,
       customers: mappedCustomers,
       ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
