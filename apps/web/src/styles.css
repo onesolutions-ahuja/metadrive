@@ -1385,10 +1385,10 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .free-canvas-component-properties .properties-section-title { grid-column: 1 / -1; }
 .free-canvas-runtime { position: relative; max-width: none; min-height: 0; margin: 0; padding: 0; overflow: hidden; background: white; }
 .free-canvas-runtime-component { position: absolute; overflow: auto; }
-.lightning.kiosk-mode { width: 100vw; min-height: 100vh; overflow: auto; background: white; }
-.lightning.kiosk-mode > .salesforce-header, .lightning.kiosk-mode > .app-strip { display: none; }
-.lightning.kiosk-mode > .setup-layout { height: 100vh; min-height: 100vh; }
-.lightning.kiosk-mode .workspace { overflow: auto; background: white; }
+.lightning.standalone-page-mode { width: 100vw; min-height: 100vh; overflow: auto; background: white; }
+.lightning.standalone-page-mode > .salesforce-header, .lightning.standalone-page-mode > .app-strip { display: none; }
+.lightning.standalone-page-mode > .setup-layout { height: 100vh; min-height: 100vh; }
+.lightning.standalone-page-mode .workspace { overflow: auto; background: white; }
 .record-preview-nav { min-height: 66px; padding-inline: 17px; }
 .record-preview-nav > div:nth-child(2) strong { color: var(--brand-dark); }
 .record-object-icon { background: var(--brand); }
@@ -1811,10 +1811,6 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .approval-process-manager .workspace-heading { align-items: flex-start; flex-direction: column; }
 }
 
-/* UNE KIOSK: allow the interactive registered component to fill its canvas viewport. */
-.free-canvas-component > .registered-component.metadrive-component-kioskorderingexperience { height: calc(100% - 39px); }
-.free-canvas-component:not(:has(> .record-component-head)) > .registered-component.metadrive-component-kioskorderingexperience { height: 100%; }
-.free-canvas-runtime-component > .registered-component.metadrive-component-kioskorderingexperience { height: 100%; }
 
 
 /* Compact object record lists; keep wide JSON/text values from expanding rows. */
@@ -2004,7 +2000,7 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 /* Keep shared navigation visible while scrolling without covering page content */
 .salesforce-header { position: sticky; top: 0; z-index: 80; }
 .app-strip { position: sticky; top: 50px; z-index: 70; }
-.kiosk-mode .salesforce-header, .kiosk-mode .app-strip { display: none; }
+.standalone-page-mode .salesforce-header, .standalone-page-mode .app-strip { display: none; }
 
 /* Named Credentials: compact, readable administration dialog. */
 .named-credential-modal { width: min(820px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
@@ -2450,8 +2446,6 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .modern-inspector-tabs{position:sticky;top:0;z-index:2;display:flex;gap:4px;padding:6px;background:var(--surface,#fff);border-bottom:1px solid #e6eaf0}
 .modern-inspector-tabs button{border:0;border-radius:9px;background:transparent;color:#506077;padding:10px 12px;flex:1;cursor:pointer;font:600 12px system-ui}
 .modern-inspector-tabs button.active{background:#e8f0ff;color:#1557bf}
-.modern-till-layout-controls{padding:12px;border:1px solid #e4eaf4;border-radius:12px;margin:12px 0;background:rgba(238,244,252,.5)}
-.modern-till-layout-controls input[type=range]{width:100%;accent-color:#126be5}
 .page-stage{position:relative}
 .free-canvas-component.selected{outline:2px solid #4e8df7;outline-offset:2px}
 @media(max-width:740px){.modern-canvas-layers{left:8px;width:min(244px,calc(100vw - 36px))}}
