@@ -115,26 +115,35 @@ if(installerChanged){
 
 // Component registry is the sole source of executable JSX. Do not embed code in Pages.
 async function installRegisteredComponent(component){
+ let created=false;
  for(let attempt=0;attempt<6;attempt++){
-  // Every retry starts with a fresh registry read: POST is never replayed
-  // if the previous attempt actually committed before losing its response.
+  // Registry owns publishing. Never bypass draft validation or publish a bundled asset.
   const available=(await api('/component-library')).components;
   const existing=available.find(x=>x.apiName===component.apiName);
   if(existing){
    if(existing.tenantId!==expectTenant && existing.tenantId!==undefined)
     throw Error('A component API name belongs to another tenant: '+component.apiName);
-   if(!existing.surfaces?.includes('page')||existing.status!=='Published')
-    throw Error('Existing component is not published for Page Builder: '+component.apiName);
-   return false;
+   if(existing.trustedBundled)throw Error('Refusing to overwrite a bundled component: '+component.apiName);
+   if(!existing.surfaces?.includes('page'))
+    throw Error('Existing component is not available to Page Builder: '+component.apiName);
+   if(existing.status==='Published')return created;
+   if(existing.status!=='Draft')
+    throw Error('Unexpected component publication state: '+component.apiName);
   }
-  try{await api('/component-library','POST',component);return true}
-  catch(error){
+  try{
+   if(!existing){
+    await api('/component-library','POST',{...component,publicationStatus:'Draft'});
+    created=true;
+   }else{
+    await api('/component-library/'+encodeURIComponent(component.apiName)+'/publish','POST');
+   }
+  }catch(error){
    if(!retryableWriterError(error)||attempt===5)
-    throw Error('Component '+component.apiName+' registration failed: '+String(error));
+    throw Error('Component '+component.apiName+' lifecycle failed: '+String(error));
    await sleep(Math.min(12000,1200*2**attempt));
   }
  }
- throw Error('Component registry unavailable after bounded retries: '+component.apiName);
+ throw Error('Component could not be published after bounded retries: '+component.apiName);
 }
 let installedComponents=0;
 for(const component of commerceComponents){
