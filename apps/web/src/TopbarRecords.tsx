@@ -91,6 +91,18 @@ export function GlobalRecordSearch({
   const [failures, setFailures] = useState(0);
   const requestId = useRef(0);
   const wrap = useRef<HTMLFormElement>(null);
+  const searchInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setOpen(true);
+        searchInput.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onShortcut);
+    return () => document.removeEventListener('keydown', onShortcut);
+  }, []);
   useDismissOnOutside(wrap, open, () => setOpen(false));
   useEffect(() => () => { requestId.current++; }, []);
 
@@ -122,9 +134,9 @@ export function GlobalRecordSearch({
     await Promise.all(Array.from({ length: Math.min(4, objects.length) }, () => worker()));
     if (requestId.current === id) setBusy(false);
   };
-  return <form className="global-search global-record-search" role="search" onSubmit={event => void performSearch(event)} ref={wrap}>
+  return <form className="global-search global-record-search" aria-label="Global record search" role="search" onSubmit={event => void performSearch(event)} ref={wrap}>
     <button type="submit" className="global-search-submit" aria-label="Search all records"><Search size={16} /></button>
-    <input type="search" aria-label="Global search across objects" placeholder="Global search (Enter)…"
+    <input ref={searchInput} type="search" aria-keyshortcuts="Control+K Meta+K" aria-label="Global search across objects" placeholder="Search records (Ctrl/⌘ K)…"
       value={query} onChange={event => { setQuery(event.target.value); setSearched(false); setOpen(false); requestId.current++; setBusy(false); }} />
     {open && <div className="global-record-search-results" role="region" aria-label="Global search results">
       {query.trim().length < 2
