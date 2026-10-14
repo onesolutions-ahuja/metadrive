@@ -24,5 +24,6 @@ test('trusted and sandboxed components share metadata default resolver',()=>{
 test('existing builders read same registered property contract',()=>{
   for(const code of [page,flow,dashboard]) assert.match(code,/\?\.propertyDefinitions/);
   assert.match(library,/setPropertyDefinitions/);
-  assert.match(server,/function libraryRevision\(component: LibraryComponent\)/);
+  assert.match(server,/import \{libraryRevision,nextLibraryRevision,libraryHistory\}/);
+  assert.match(load('../apps/server/src/modules/metadata/component-revisions.mjs'),/function libraryRevision\(component\)/);
 });

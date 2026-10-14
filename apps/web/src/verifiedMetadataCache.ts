@@ -1,13 +1,14 @@
 import {readOfflineMetadata,saveOfflineMetadata,type OfflineMetadataIdentity,type OfflineMetadataSnapshot} from './offlineMetadataCache';
 import {metadataCacheDecision,type MetadataRevision} from './metadataRevisionPolicy';
 
-type Content = Pick<OfflineMetadataSnapshot,'pages'|'apps'|'objects'|'components'>;
-type TrustedPublication = {
+export type Content = Pick<OfflineMetadataSnapshot,'pages'|'apps'|'objects'|'components'>;
+export type TrustedPublication = {
   revision:MetadataRevision;
   /** Must come from an authenticated server publication response, not saved browser state. */
   verifiedDigest:string;
   minimumVersion:number;
 };
+export type MetadataPublicationResponse={content:Content;publication:TrustedPublication};
 const contentOf=(snapshot:Content):Content=>({
   pages:snapshot.pages,apps:snapshot.apps,objects:snapshot.objects,components:snapshot.components
 });

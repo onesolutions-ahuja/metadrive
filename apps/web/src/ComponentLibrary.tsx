@@ -57,7 +57,7 @@ export default function ComponentLibrary({
     const draft = component.pendingDraft;
     setLabel(draft?.label ?? component.label);
     setDescription(draft?.description ?? component.description);
-    setSurfaces(draft?.surfaces ?? component.surfaces);
+    setSurfaces((draft?.surfaces ?? component.surfaces).filter(surface => surface !== 'platform'));
     setResize(draft?.resize ?? component.resize ?? { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
     setPropertyDefinitions(component.propertyDefinitions ?? []);
     setJsxSource(draft?.jsxSource ?? component.jsxSource);

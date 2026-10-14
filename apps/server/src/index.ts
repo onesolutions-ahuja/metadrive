@@ -1,4 +1,7 @@
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
+import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
+import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
+import {libraryRevision,nextLibraryRevision,libraryHistory} from './modules/metadata/component-revisions.mjs';
 import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
 import { registerSessionSecurityRoutes } from './modules/security/session-routes.js';
 import { registerSecurityMetadataRoutes } from './modules/security/metadata-routes.js';
@@ -1387,13 +1390,6 @@ const flowExecutionLogSchema = z.object({
   error: z.string(),
   userId: z.string().nullable()
 });
-const pageComponentSchema = z.object({
-  id: z.string().min(1),
-  type: z.string().min(1),
-  label: z.string().min(1),
-  properties: z.record(z.unknown()).default({}),
-  visible: z.boolean()
-});
 const libraryComponentResizeSchema = z.object({
   defaultWidth: z.number().int().min(80).max(2000),
   defaultHeight: z.number().int().min(40).max(2000),
@@ -1410,7 +1406,7 @@ const libraryComponentResizeSchema = z.object({
 const defaultLibraryComponentResize = { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 };
 const propertyDefinitionSchema = z.object({propertyKey:z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),label:z.string().min(1).max(100),kind:z.enum(['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY']),required:z.boolean().optional(),isBindable:z.boolean().optional(),displayOrder:z.number().int().optional(),defaultValue:z.union([z.string(),z.number(),z.boolean()]).optional(),choices:z.array(z.object({key:z.string().min(1),label:z.string().min(1)})).max(200).optional()}); const libraryComponentRevisionSchema = z.object({
   version: z.number().int().positive(), label: z.string().trim().min(1).max(80),
-  description: z.string().max(500), surfaces: z.array(z.enum(['page','dashboard','flow'])).min(1),
+  description: z.string().max(500), surfaces: z.array(z.enum(['page','dashboard','flow','platform'])).min(1),
   resize: libraryComponentResizeSchema, jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000), compiledJs: z.string().min(1).max(500_000),
   scopedCss: z.string().max(150_000), updatedAt: z.string().datetime(), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
@@ -1419,7 +1415,7 @@ const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   description: z.string().max(500),
-  surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+  surfaces: z.array(z.enum(['page', 'dashboard', 'flow', 'platform'])).min(1),
   resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000),
@@ -1432,11 +1428,15 @@ const libraryComponentSchema = z.object({
   revisions: z.array(libraryComponentRevisionSchema).max(100).optional(),
   pendingDraft: libraryComponentRevisionSchema.optional(),
   trustedBundled: z.boolean().optional(),
+  scope: z.literal('platform-system').optional(),
   tenantId: z.string().min(1).optional(), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
   }
+  if ((component.scope === 'platform-system' || component.surfaces.includes('platform'))
+    && !(component.scope === 'platform-system' && component.trustedBundled === true && component.tenantId === undefined))
+    context.addIssue({code:z.ZodIssueCode.custom,path:['scope'],message:'Platform metadata requires unowned trusted bundle'});
 });
 const libraryComponentInputSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
@@ -1454,18 +1454,6 @@ const libraryComponentInputSchema = z.object({
 });
 type LibraryComponent = z.infer<typeof libraryComponentSchema>;
 type LibraryComponentRevision = z.infer<typeof libraryComponentRevisionSchema>;
-function libraryRevision(component: LibraryComponent): LibraryComponentRevision {
-  const { version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions } = component;
-  return {version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions};
-}
-function nextLibraryRevision(component: LibraryComponent): number {
-  return Math.max(component.version,component.pendingDraft?.version ?? 0,...(component.revisions ?? []).map((r)=>r.version))+1;
-}
-function libraryHistory(component: LibraryComponent) {
-  return [...(component.revisions ?? []).map((r)=>({version:r.version,status:'Published',updatedAt:r.updatedAt})),
-    {version:component.version,status:component.status ?? 'Published',updatedAt:component.updatedAt},
-    ...(component.pendingDraft?[{version:component.pendingDraft.version,status:'Draft',updatedAt:component.pendingDraft.updatedAt}]:[])];
-}
 const pageActivationAssignmentSchema = z.object({
   id: z.string().min(1),
   scope: z.enum(['Org Default', 'App Default', 'App and Profile', 'App, Record Type, and Profile']),
@@ -8785,7 +8773,8 @@ function syncBundledLibraryComponents(): Promise<void> {
       apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
       label: z.string().trim().min(1).max(80),
       description: z.string().max(500),
-      surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
+      surfaces: z.array(z.enum(['page', 'dashboard', 'flow', 'platform'])).min(1),
+      scope: z.literal('platform-system').optional(),
       resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
       jsx: z.string().min(1),
       css: z.string().min(1),
@@ -8810,8 +8799,12 @@ function syncBundledLibraryComponents(): Promise<void> {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
       }
       const jsxSource = readFileSync(jsxPath, 'utf8');
+      if (entry.surfaces.includes('platform') && entry.scope !== 'platform-system')
+        throw Error('Untrusted platform component descriptor');
       if (existingBundled && existingBundled.jsxSource === jsxSource
         && existingBundled.cssSource === readFileSync(cssPath, 'utf8')
+        && existingBundled.scope === entry.scope
+        && entry.surfaces.every(surface=>existingBundled.surfaces.includes(surface))
         && (existingBundled.version ?? 1) >= entry.version) continue;
       const cssSource = readFileSync(cssPath, 'utf8');
       if (legacyCandidate) {
@@ -8826,7 +8819,7 @@ function syncBundledLibraryComponents(): Promise<void> {
         apiName: entry.apiName,
         label: entry.label,
         description: entry.description,
-        surfaces: entry.surfaces,
+        surfaces: entry.surfaces.filter(surface=>surface!=='platform'),
         resize: entry.resize,
         jsxSource,
         cssSource
@@ -8852,7 +8845,8 @@ function syncBundledLibraryComponents(): Promise<void> {
         scopedCss: scopeLibraryCss(input.cssSource, input.apiName),
         version,
         updatedAt: new Date().toISOString(),
-        status: 'Published', publishedVersion: version, revisions: [], trustedBundled: true
+        status: 'Published', publishedVersion: version, revisions: [],
+        trustedBundled: true, scope: entry.scope, surfaces: entry.surfaces
       };
       if (legacyCandidate || existingBundled) {
         trustedUpgrades.set(entry.apiName.toLowerCase(), {
@@ -8879,6 +8873,10 @@ function syncBundledLibraryComponents(): Promise<void> {
   return bundledComponentSync;
 }
 
+registerMetadataPublicationRoute(app,requirePermission('metadata:read'),{
+ sync:syncBundledLibraryComponents,principal:getPrincipal,tenant:tenantData,
+ canOpenApp,canOpenTab,visible:libraryComponentVisible,state:()=>state
+});
 app.get('/api/component-library', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
   try {
     await syncBundledLibraryComponents();
@@ -8957,7 +8955,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     return res.status(404).json({ error: 'Library component was not found' });
   const usages = findLibraryComponentUsages(state, apiName, principal.tenantId);
   const unavailableSurfaces = existing.surfaces.filter((surface) =>
-    !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
+    surface !== 'platform' && !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
   if (unavailableSurfaces.length) {
     const blockers = usageBlockerDetails(usages.filter((usage) => unavailableSurfaces.includes(usage.surface)), principal.tenantId);
     return res.status(409).json({

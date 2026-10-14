@@ -44,6 +44,13 @@ for(const name of [
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
+// Shared metadata services used by the compiled server's protected registry.
+for(const name of ['offline-publication.mjs','offline-publication-route.mjs','component-revisions.mjs']){
+ const relativePath='modules/metadata/'+name;
+ const target=resolve(destination,relativePath);
+ mkdirSync(dirname(target),{recursive:true});
+ copyFileSync(resolve(serverDir,'src',relativePath),target);
+}
 // Catch missing runtime imports in the production build itself, not in Render.
 // TypeScript deliberately leaves .mjs specifiers untouched, and tsc does not
 // copy these files. Scan every emitted module, including nested JS outputs.
