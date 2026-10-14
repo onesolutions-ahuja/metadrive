@@ -13,9 +13,9 @@ export function calculateFormulaFields<T extends Record<string, unknown>>(
     userCurrencyIsoCode?: string;
     isClone?: boolean;
   } = {}
-): T {
+): T & Record<string, unknown> {
   const fields = new Map(object.fields.map((field) => [field.apiName, field]));
-  const result = { ...record };
+  const result: Record<string, unknown> = { ...record };
   const calculating = new Set<string>();
   const calculateField = (fieldName: string): unknown => {
     const field = fields.get(fieldName);
@@ -53,6 +53,6 @@ export function calculateFormulaFields<T extends Record<string, unknown>>(
     return result[fieldName];
   };
   for (const field of object.fields) if (field.formula) calculateField(field.apiName);
-  return result as T;
+  return result as T & Record<string, unknown>;
 }
 
