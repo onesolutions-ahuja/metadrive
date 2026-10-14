@@ -1,3 +1,0 @@
-/* Phase 2: metadata-controlled product column count, including narrow displays. */
-.md-till-products{grid-template-columns:repeat(var(--md-till-product-columns,3),minmax(0,1fr))}
-@media(max-width:630px){.md-till-products{grid-template-columns:repeat(var(--md-till-product-columns,3),minmax(0,1fr))}}
