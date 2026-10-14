@@ -67,6 +67,25 @@ The component renderer receives validated typed property values, record bindings
 
 Use one batched metadata load per page/workspace with cache keys incorporating tenant, scope, role/permission revisions, published metadata version and component registry revision as appropriate. Invalidate on publish, permission changes and tenant upgrades. Do not cache privileged data across tenants. Preserve offline-friendly published metadata without treating offline cache as permission authority. Protect recovery and sign-in bootstrap from circular dependencies on editable system pages.
 
+## Phase 1c — Existing Object / Action / Flow / RBAC / Route integration (implementation)
+
+Rather than repeat a repository-wide audit, Phase 1c fixes the existing `inspectPageDependencies` service in `apps/web/src/pageDependencies.ts`, using the **actual** `resolvePageActionRoute` contract and the already-loaded metadata. This is a compatibility-preserving UI dependency diagnostic, not a new execution or permission engine.
+
+| Existing authority | Concrete route / service | Existing enforcement and decision |
+| --- | --- | --- |
+| Object definitions | `modules/objects/routes.ts` and `GET /api/metadata/objects` | Reuse `metadata:read` and existing object-management permissions; no app-specific CRUD |
+| Record data | `modules/records/routes.ts`, `/api/records/:objectName` | Reuse authenticated tenant context and `hasObjectPermission`, plus field/record policies |
+| Component Action bindings | `PageComponentRuntime` in `App.tsx`, `properties.actionFlows` | Existing page events resolve to Flow execution or Navigation; no new Action endpoint |
+| Flow definitions | `GET /api/metadata/flows` | Reuse `metadata:read`; active Screen/Autolaunched Flow options validated by existing builder |
+| Flow execution | `POST /api/flows/:apiName/execute` | Reuse `accessAuthentication`, `flows:run`, tenant-scoped lookup and Flow input validation |
+| RBAC | `modules/security/metadata-routes.ts` | Read `security:read`; mutation `security:manage`; tenant RBAC cannot grant `platform:*` |
+| Navigation | `pageActionRouting.ts`, `routeDirectory.ts`, `appNavigation.ts` | Existing stored Object/App Page references, app membership and active page status; final destination access checked server-side |
+| Page dependencies | `apps/web/src/pageDependencies.ts` | **Fixed in 1c**: current navigation keys, generic Object bindings, active supported Flows, contextual destinations; diagnostics do not authorise access |
+
+Regression tests are in `scripts/phase1c-page-dependencies.test.mjs` and run through the existing `npm run test:page-routing` build gate. An omitted app context is now represented as `Contextual` rather than incorrectly claiming access; the checker still never replaces server RBAC.
+
+**Scope adjustment requested by owner:** Preserve the 49 development subphases but stop serial re-auditing. 1c onward should reuse existing findings and make narrow implementation/contract improvements with relevant tests. The published platform surface and expanded metadata property definitions are still Phase 2–3 work.
+
 ## Phase-by-phase migration boundary
 
 1. Phase 1 (this PR): inventory, canonical contract, migration map, audit command, contract tests and CI. No customer-facing behaviour change.
