@@ -65,9 +65,16 @@
             {
               "apiName": "User_Id__c",
               "label": "User ID",
-              "dataType": "Text(120)",
+              "dataType": "Lookup",
               "required": true,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "User",
+                "relationshipName": "AssignedUser",
+                "childRelationshipName": "ChatterChannelGrants",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "Channel_Account__c",
