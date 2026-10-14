@@ -29,6 +29,8 @@ async function api(path,method='GET',body){
 }
 const login=await api('/auth/login','POST',{email,password});
 token=login.access_token;
+const expectedTenant=process.env.METADRIVE_EXPECTED_TENANT_ID;
+if(expectedTenant && login.user?.tenantId !== expectedTenant) throw Error('Tenant mismatch: installer refused all writes');
 if(!token)throw Error('Admin session did not return an access token');
 const initial=await api('/metadata/objects');
 const existing=new Set((initial.objects??[]).map(item=>item.apiName));
