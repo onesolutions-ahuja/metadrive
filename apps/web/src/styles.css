@@ -2490,7 +2490,10 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   border-radius: 6px; cursor: pointer; line-height: 1.35;
 }
 .app-manager-checks label:focus-within { outline: 2px solid #016ec4; outline-offset: 2px; }
-.app-manager-checks input[type="checkbox"] { width: 20px; height: 20px; flex: 0 0 20px; }
+.app-manager-checks input[type="checkbox"] {
+  width: 24px; height: 24px; min-width: 24px; min-height: 24px; flex: 0 0 24px;
+  accent-color: #016ec4;
+}
 .quick-find-input, .object-search, .component-search, .mini-search { min-height: 36px; height: auto; }
 .quick-find-input input, .object-search input, .component-search input, .mini-search input {
   min-height: 32px; font-size: 13px;
@@ -2522,11 +2525,19 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .exchange-search { min-height: 44px; height: auto; }
 .exchange-search input { min-height: 42px; font-size: 14px; }
 .exchange-search input::placeholder { color: #626d66; }
+.exchange-section-heading p { font-size: 12px; line-height: 1.5; }
+.exchange-price, .exchange-installed-tag, .exchange-category-label { font-size: 11px; }
+.exchange-card-info > span { font-size: 11px; }
+.exchange-card-info p { min-height: 36px; font-size: 12px; line-height: 1.5; }
+.exchange-safe-note { font-size: 12px; }
+.exchange-app-card .btn, .exchange-featured-card .btn { min-height: 36px; font-size: 11px; }
 .app-manager-navigation-order .btn,
 .app-manager-order-controls .btn { min-width: 36px; min-height: 36px; }
 @media (pointer: coarse) {
   .app-manager-order-controls .btn, .exchange-category-row button { min-height: 44px; }
+  .exchange-app-card .btn, .exchange-featured-card .btn { min-height: 44px; }
 }
+.connector-settings-page p { font-size: 12px; line-height: 1.5; }
 
 
 /* Audit-measured contrast pairs; verify live composite backgrounds in CI. */
