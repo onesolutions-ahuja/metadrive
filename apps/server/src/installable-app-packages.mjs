@@ -48,7 +48,23 @@ export function applyInstallableAppPackages(tenant, catalog) {
       if (fixed) changed = true;
       return fixed ? {...flow,elements} : flow;
     });
-    const apps = mergeByApiName(next.apps, pkg.apps);
+    const apps = mergeByApiName(next.apps, pkg.apps).map(app => {
+      const template = (pkg.apps ?? []).find(candidate => candidate.apiName === app.apiName);
+      if (!template) return app;
+      // Add package-provided pages without replacing tenant-owned navigation or order.
+      const missing = (template.navigationPageApiNames ?? []).filter(name =>
+        !(app.navigationPageApiNames ?? []).includes(name));
+      if (!missing.length) return app;
+      changed = true;
+      const navigationOrder = [...(app.navigationOrder ?? [])];
+      for (const apiName of missing) {
+        if (!navigationOrder.some(item => item.type === 'Page' && item.apiName === apiName))
+          navigationOrder.push({type:'Page',apiName});
+      }
+      return {...app,
+        navigationPageApiNames:[...(app.navigationPageApiNames ?? []),...missing],
+        navigationOrder};
+    });
     const pages = mergeByApiName(next.pages, pkg.pages);
     const permissionTemplate = pkg.profile;
     let accessControl = next.accessControl;
