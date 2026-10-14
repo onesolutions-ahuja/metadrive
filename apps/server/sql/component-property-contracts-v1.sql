@@ -15,9 +15,9 @@ CREATE TABLE IF NOT EXISTS md_v4_component_property_definitions (
   PRIMARY KEY (component_id,version,property_key),
   FOREIGN KEY (component_id,version) REFERENCES md_v4_component_versions(component_id,version) ON DELETE RESTRICT,
   CHECK (
-    ((property_kind = 'NUMBER') AND default_text IS NULL AND default_boolean IS NULL)
+    ((property_kind IN ('NUMBER','CURRENCY')) AND default_text IS NULL AND default_boolean IS NULL)
     OR ((property_kind = 'BOOLEAN') AND default_text IS NULL AND default_number IS NULL)
-    OR ((property_kind NOT IN ('NUMBER','BOOLEAN')) AND default_number IS NULL AND default_boolean IS NULL)
+    OR ((property_kind NOT IN ('NUMBER','CURRENCY','BOOLEAN')) AND default_number IS NULL AND default_boolean IS NULL)
   )
 );
 CREATE INDEX IF NOT EXISTS md_v4_component_property_order_idx
@@ -86,3 +86,20 @@ CREATE TRIGGER md_v4_component_instance_tenant_guard
 BEFORE INSERT OR UPDATE ON md_v4_component_instance_property_values
 FOR EACH ROW EXECUTE FUNCTION md_v4_guard_component_instance_tenant();
 -- No deletes, backfills, grants or live cutover in this schema addition.
+
+-- Reconcile property-definition existence and tenant ownership for each placement.
+CREATE OR REPLACE FUNCTION md_v4_guard_component_property_binding() RETURNS trigger
+LANGUAGE plpgsql AS $md_component_binding$
+DECLARE bindable BOOLEAN;
+BEGIN
+  SELECT is_bindable INTO bindable FROM md_v4_component_property_definitions
+  WHERE component_id=NEW.component_id AND version=NEW.version AND property_key=NEW.property_key;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Unknown component property'; END IF;
+  IF NEW.binding_object_api_name IS NOT NULL AND NOT bindable
+    THEN RAISE EXCEPTION 'Component property is not bindable'; END IF;
+  RETURN NEW;
+END $md_component_binding$;
+DROP TRIGGER IF EXISTS md_v4_component_binding_guard ON md_v4_component_instance_property_values;
+CREATE TRIGGER md_v4_component_binding_guard BEFORE INSERT OR UPDATE
+ON md_v4_component_instance_property_values FOR EACH ROW
+EXECUTE FUNCTION md_v4_guard_component_property_binding();
