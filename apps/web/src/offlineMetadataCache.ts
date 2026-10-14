@@ -3,9 +3,13 @@
  * as an authentication or entitlement source. Payment and Flow execution stay online/LAN.
  */
 export type OfflineMetadataIdentity = { tenantId: string; userId: string };
+import type { MetadataRevision } from './metadataRevisionPolicy';
+
 export type OfflineMetadataSnapshot = {
   version: 1;
   savedAt: number;
+  /** Optional verified publication revision; legacy encrypted snapshots remain readable. */
+  revision?: MetadataRevision;
   pages: unknown[];
   apps: unknown[];
   objects: unknown[];
