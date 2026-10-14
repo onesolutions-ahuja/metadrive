@@ -111,11 +111,17 @@ try {
   await editor.getByLabel('Record Filters value 1').fill('MD09 Blue');
   await page.getByRole('button',{name:'Save page'}).click();
 
-  const saved=(await req('/metadata/pages',token)).pages.find(item=>item.apiName===pageId);
+  // Save is asynchronous in the builder; verify committed metadata, not an
+  // immediate GET racing the request. Never accept a stale or partial save.
+  const expectedFilters=[{field:'Name',operator:'Equals',value:'MD09 Blue'}];
+  let saved;
+  for(let attempt=0;attempt<40;attempt++){
+    saved=(await req('/metadata/pages',token)).pages.find(item=>item.apiName===pageId);
+    if(JSON.stringify(saved?.components?.[0]?.properties?.filters)===JSON.stringify(expectedFilters)) break;
+    await sleep(250);
+  }
   assert(saved,'Page must persist');
-  assert.deepEqual(saved.components[0].properties.filters,[
-    {field:'Name',operator:'Equals',value:'MD09 Blue'}
-  ]);
+  assert.deepEqual(saved.components[0].properties.filters,expectedFilters);
   await page.reload();
   await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
