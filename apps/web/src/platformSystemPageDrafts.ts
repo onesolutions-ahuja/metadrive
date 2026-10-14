@@ -18,7 +18,7 @@ export const systemWorkspaceSlots:Readonly<Record<string,readonly string[]>>={
  'app-manager':['identity','brand','description','navigation-search','pages','assignments','navigation-items','navigation-order','utility','actions'],
  'app-exchange':['marketplace'],
  'rbac':['permissions'],
- 'tenant-management':['directory','tenant-domains','tenant-usage','tenant-recovery']
+ 'tenant-management':['directory','tenant-details','tenant-domains','tenant-usage','tenant-recovery']
 };
 export const protectedSystemPageNamespace='MetaDriveSystem';
 export function systemPageApiName(id:string){
