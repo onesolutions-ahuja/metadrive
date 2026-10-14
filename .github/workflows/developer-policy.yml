@@ -32,6 +32,8 @@ jobs:
         run: node --test scripts/kiosk-demo-fixtures.test.mjs
       - name: Test reusable meal modifiers and basket contracts
         run: node --test scripts/kiosk-commerce-capabilities.test.mjs
+      - name: Test editable Phase 4 kiosk Pages, components and Flows
+        run: node --test scripts/kiosk-phase4.test.mjs
       - name: Generate architecture inventory
         run: node scripts/audit-platform-architecture.mjs --output .artifacts/architecture-inventory.json
       - name: Generate component registry and reuse inventory

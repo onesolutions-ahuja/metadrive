@@ -1,0 +1,66 @@
+name: Phase 4 Kiosk - Install editable Pages and Flows
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kiosk-phase4-live-install.yml'
+      - 'scripts/kiosk-phase4-components.mjs'
+      - 'scripts/kiosk-phase4-flows.mjs'
+      - 'scripts/kiosk-phase4-pages.mjs'
+      - 'scripts/install-kiosk-phase4.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+  statuses: write
+concurrency:
+  group: kiosk-phase4-live-install
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate pages, actions and Flow contracts
+        run: node --test scripts/kiosk-phase4.test.mjs
+      - name: Check authorised endpoint and installer credentials
+        env:
+          ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: |
+          if [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_PASSWORD" ]; then
+            echo '::error::Missing MetaDrive admin GitHub Actions secrets.'
+            exit 1
+          fi
+          curl --fail --retry 3 --retry-delay 5 --max-time 30 https://metadrive.onrender.com/health >/dev/null
+      - name: Install and verify reusable kiosk Pages, Flows, components and RBAC
+        shell: bash
+        env:
+          METADRIVE_API_URL: https://metadrive.onrender.com
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+          METADRIVE_PHASE4_INSTALL_APPROVED: 'true'
+        run: |
+          set -o pipefail
+          node scripts/install-kiosk-phase4.mjs 2>&1 | tee phase4-result.log
+      - name: Publish real installation status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            STATE=success
+            DESCRIPTION='Phase 4 Pages, active Flows, editable Components and RBAC verified'
+          else
+            STATE=failure
+            DESCRIPTION="$(tail -n 1 phase4-result.log 2>/dev/null | cut -c1-100)"
+            if [ -z "$DESCRIPTION" ]; then DESCRIPTION='Phase 4 installation failed before installer run'; fi
+          fi
+          gh api --method POST "/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$STATE" -f context='kiosk-phase4/live-install' \
+            -f description="$DESCRIPTION"
