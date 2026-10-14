@@ -36,7 +36,7 @@
     "test:phase3a": "tsx --test scripts/phase3a-shared-primitives.test.mjs",
     "test:phase3b": "tsx --test scripts/phase3b-shared-layout.test.mjs",
     "test:phase3runtime": "tsx --test scripts/phase3-runtime-primitive.test.ts",
-    "test:phase4runtime": "tsx --test scripts/phase4-setup-runtime-integration.test.ts scripts/phase4-system-workspace-host.test.ts scripts/phase4-admin-host-coverage.test.ts scripts/phase4-system-page-drafts.test.ts scripts/phase4-protected-admin-rbac.test.ts",
+    "test:phase4runtime": "tsx --test scripts/phase4-setup-runtime-integration.test.ts scripts/phase4-system-workspace-host.test.ts scripts/phase4-admin-host-coverage.test.ts scripts/phase4-system-page-drafts.test.ts scripts/phase4-protected-admin-rbac.test.ts scripts/phase4-system-page-renderer.test.ts",
     "test:phase4abc": "tsx --test scripts/phase4abc-platform-workspaces.test.mjs",
     "test:phase4defg": "tsx --test scripts/phase4defg-administration.test.mjs",
     "test:phase6": "tsx --test scripts/phase6-backend-convergence.test.mjs",
