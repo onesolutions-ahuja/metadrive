@@ -79,3 +79,18 @@ export function validateConfiguredFlowEvent(
   }
   return [];
 }
+
+/** Resolve only active Flows for the existing component runtime. Existing
+ * server-side Flow authorisation remains mandatory at execution time. */
+export function requireActiveComponentFlow<T extends {apiName:string;status:string}>(
+  eventName:string,flowApiName:string,typedInputs:unknown,
+  inputs:Readonly<Record<string,unknown>>,availableFlows:readonly T[]
+):T{
+  const active=availableFlows.filter(flow=>flow.status==='Active');
+  const errors=validateConfiguredFlowEvent(eventName,flowApiName,typedInputs,inputs,
+    new Set(active.map(flow=>flow.apiName)));
+  if(errors.length)throw Error(errors.join('; '));
+  const flow=active.find(item=>item.apiName===flowApiName);
+  if(!flow)throw Error('Choose an active Flow for the configured component event.');
+  return flow;
+}
