@@ -8781,7 +8781,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
     </label>)}
     {Object.keys(properties).filter(isField).map((key) => fieldPicker(key, properties[key]))}
     {Array.from(new Set(['filters', ...Object.keys(properties).filter(isFilter)])).map(key =>
-      <RecordFilterEditor key={key} title={labelFor(key)} fields={fieldsFor(key)}
+      <RecordFilterEditor key={key} title={key === 'filters' ? 'Record Filters' : labelFor(key)} fields={fieldsFor(key)}
         filters={listProperty(key)} onChange={filters => update(key, filters)} />)}
     <div className="properties-section-title">Actions</div>
     <div className="properties-section-title">Event → Flow / Navigation bindings</div>
