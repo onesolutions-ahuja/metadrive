@@ -8592,7 +8592,7 @@ function ObjectManager({
         </aside>
 
         <div className="object-details">
-          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div>
+          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div>
           <div className="object-subnav">
             {objectSettings.map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
           </div>
