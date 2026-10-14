@@ -1,6 +1,6 @@
 import {workspaces} from './metadata';
 import {validateComponentPropertyName} from './componentProperties';
-import {normalizeLayoutSettings,type LayoutDevice} from './pageComponentLayout';
+import type {LayoutDevice} from './pageComponentLayout';
 
 /** The single builder contract reuses registered workspace routes and existing
  * authoring engines. Server authorisation remains mandatory for every write.
