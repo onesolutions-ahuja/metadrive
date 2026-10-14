@@ -1,7 +1,7 @@
 name: Kiosk demo data - authorised MetaDrive API seed
 on:
   push:
-    branches: [feat/kiosk-shared-sales-data-seed]
+    branches: [main]
     paths:
       - '.github/workflows/kiosk-demo-live-seed.yml'
       - 'scripts/install-kiosk-demo-data.mjs'
