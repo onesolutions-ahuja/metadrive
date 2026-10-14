@@ -1,4 +1,4 @@
-import {isFlowRecordObject,validateFlowRecordFields} from './flow-record-metadata.mjs';
+import {isFlowRecordObject,validateFlowRecordFields,flowRecordCollectionLimitExceeded} from './flow-record-metadata.mjs';
 /**
  * Generic Flow Create Records collection input guard.
  *
@@ -18,7 +18,7 @@ export function prepareFlowCreateCollection(resourceDefinitions, sourceCollectio
   if (!Array.isArray(sourceValues)) {
     throw new Error('Create Records collection value must contain records.');
   }
-  if (sourceValues.length > 200) {
+  if (flowRecordCollectionLimitExceeded(sourceValues)) {
     throw new Error('Create Records collection exceeded the 200-record transaction limit.');
   }
   return sourceValues.map((sourceRecord, index) => {
