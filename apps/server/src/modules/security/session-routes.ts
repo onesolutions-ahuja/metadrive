@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { verifyPassword, type JwtService, type Principal } from '../../auth.js';
+import { hashPassword, verifyPassword, type JwtService, type Principal } from '../../auth.js';
 import type { Express, Request, Response, RequestHandler } from 'express';
 import type { LocalUser, TenantData, PlatformState } from '../../index.js';
 
@@ -139,6 +139,54 @@ app.get('/api/auth/security-events', accessAuthentication, requirePermission('se
   if (!Number.isInteger(max) || max < 1 || max > 500)
     return res.status(400).json({ error: 'limit must be between 1 and 500' });
   return res.json({ events: tenant.securityAudit.slice(-max).reverse() });
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: z.string().min(12).max(256)
+});
+const passwordChangeAttempts = new Map<string, { count: number; resetAt: number }>();
+app.post('/api/auth/change-password', accessAuthentication, async (req: Request, res: Response) => {
+  if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Password changes are managed by the identity provider' });
+  const principal = getPrincipal(res);
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid password request; new password must have at least 12 characters' });
+  if (parsed.data.currentPassword === parsed.data.newPassword) return res.status(400).json({ error: 'Choose a different new password' });
+  const key = principal.userId;
+  const now = Date.now();
+  const attempts = passwordChangeAttempts.get(key);
+  if (attempts && attempts.resetAt > now && attempts.count >= 5) return res.status(429).json({ error: 'Too many attempts; try again later' });
+  const user = principalUser(principal);
+  if (!user) return res.status(401).json({ error: 'User not available' });
+  const verified = await verifyPassword(parsed.data.currentPassword, user.passwordSalt, user.passwordHash);
+  if (!verified) {
+    passwordChangeAttempts.set(key, { count: attempts && attempts.resetAt > now ? attempts.count + 1 : 1, resetAt: now + 15 * 60 * 1000 });
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+  passwordChangeAttempts.delete(key);
+  const hashed = await hashPassword(parsed.data.newPassword);
+  const changedAt = Math.floor(Date.now() / 1000);
+  const nextState: PlatformState = {
+    ...deps.getState(),
+    users: deps.getState().users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+      ? (() => {
+        const updated: LocalUser = { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
+          authVersion: (item.authVersion ?? 0) + 1 };
+        delete updated.passwordReset;
+        return updated;
+      })()
+      : item),
+    refreshSessions: deps.getState().refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
+      ? { ...session, revokedAt: changedAt } : session),
+    tenants: {
+      ...deps.getState().tenants,
+      [user.tenantId]: withSecurityEvent(tenantData(user.tenantId)!, user.id, 'auth.password.changed')
+    }
+  };
+  try { persistState(nextState); deps.setState(nextState); }
+  catch { return res.status(503).json({ error: 'Could not save new password. Please retry.' }); }
+  clearRefreshCookie(res);
+  return res.status(200).json({ changed: true, signedOut: true });
 });
 
 }
