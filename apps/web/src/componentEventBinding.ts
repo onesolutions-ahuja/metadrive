@@ -51,3 +51,31 @@ export function prepareComponentEventInvocation(
   }
   return {flowApiName:binding.flowApiName,inputs,...(binding.faultPath?{faultPath:binding.faultPath}:{})};
 }
+
+/** Adapter for the saved Page Builder actionFlows contract. No second executor:
+ * the caller retains its existing /flows/:apiName/execute dispatch and UI
+ * interview launch. Typed inputs, when supplied, are checked before dispatch.
+ */
+export function validateConfiguredFlowEvent(
+  eventName:string, flowApiName:string, typedInputs:unknown,
+  values:Readonly<Record<string,unknown>>, activeFlowNames:ReadonlySet<string>
+):string[] {
+  if(!apiName.test(eventName))return ['Invalid component event name.'];
+  if(!apiName.test(flowApiName)||!activeFlowNames.has(flowApiName))
+    return ['Flow is not active or available.'];
+  if(typedInputs===undefined)return [];
+  if(!typedInputs||typeof typedInputs!=='object'||Array.isArray(typedInputs))
+    return ['Invalid typed Flow inputs.'];
+  const declaration=typedInputs as Record<string,unknown>;
+  for(const [name,kind] of Object.entries(declaration)){
+    if(!apiName.test(name)||!['text','number','boolean'].includes(kind))
+      return ['Invalid Flow input declaration: '+name];
+    if(!own(values,name))continue;
+    const v=values[name];
+    if(v!==null&&!((kind==='text'&&typeof v==='string')
+      ||(kind==='boolean'&&typeof v==='boolean')
+      ||(kind==='number'&&typeof v==='number'&&Number.isFinite(v))))
+      return ['Invalid value for Flow input: '+name];
+  }
+  return [];
+}
