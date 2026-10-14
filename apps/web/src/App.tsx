@@ -1592,16 +1592,15 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           // authenticated identity or server-side permissions. Restore solely
           // when the live session was verified but presentation endpoints failed.
           const signedIn = firstSession.user as typeof firstSession.user & {id?:string;tenantId?:string};
-          // Fail closed: identity alone cannot validate cached UI metadata.
-          // Compare the encrypted snapshot with a fresh, RBAC-filtered server
-          // publication. Never recover presentation after a failed proof.
           const needsRecovery = !firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length;
           const serverPublication = signedIn.id && signedIn.tenantId && needsRecovery
             ? await apiRequest<MetadataPublicationResponse>('/metadata/offline-publication').catch(() => null)
             : null;
+          // Cached metadata is presentation-only and requires a live OneEngine
+          // publication digest from this same authenticated tenant and user.
           const offlineView = signedIn.id && signedIn.tenantId && serverPublication
             ? await readVerifiedMetadata(
-              { userId:signedIn.id, tenantId:signedIn.tenantId },serverPublication.publication
+              {userId:signedIn.id,tenantId:signedIn.tenantId},serverPublication.publication
             ).catch(() => null)
             : null;
           const displayObjects = firstObjects.objects.length ? firstObjects.objects : (offlineView?.objects ?? []) as ObjectMetadata[];
@@ -1708,13 +1707,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         // credentials, permissions, business records or executable checkout state.
         if (sessionPayload.user.id && sessionPayload.user.tenantId
           && !failures.length && objectPayload.objects.length && pagePayload.pages.length) {
-          // Snapshot and digest both originate from the same authenticated,
-          // RBAC-filtered server response; never bless browser-assembled data.
           void apiRequest<MetadataPublicationResponse>('/metadata/offline-publication')
             .then(({content,publication})=>saveVerifiedMetadata(
               {userId:sessionPayload.user.id,tenantId:sessionPayload.user.tenantId},
               content,publication
-            )).catch(() => { /* Online mode remains authoritative. */ });
+            )).catch(() => { /* Online rendering remains authoritative. */ });
         }
         setCurrentProfileId(sessionPayload.user.profileId);
         setCanManageUserIdentities(sessionPayload.user.permissions.includes('security:manage'));
@@ -8738,7 +8735,7 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange }: {
+function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, definitions }: { definitions?: LibraryComponentMetadata['propertyDefinitions'];
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
   apps: LightningAppMetadata[];
@@ -8930,7 +8927,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
           [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
       </div>;
     })}
-    <CustomComponentPropertyEditor properties={properties} onChange={onChange} addOnly />
+    <CustomComponentPropertyEditor properties={properties} onChange={onChange} definitions={definitions} addOnly />
     {false && <><button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);
@@ -10395,8 +10392,7 @@ function PageBuilder({
                   onClick={() => setSelectedId(child.id)}>{child.label}</button>)}
                 {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
               </>}
-              <MetadataComponentProperties
-                properties={selected.properties}
+              <MetadataComponentProperties definitions={libraryComponents.find(component => selected.type === `Custom:${component.apiName}` && component.status !== 'Draft')?.propertyDefinitions} properties={selected.properties}
                 objects={objects}
                 apps={apps}
                 pages={pages}

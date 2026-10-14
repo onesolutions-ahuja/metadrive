@@ -3,7 +3,7 @@ import { Check, Code2, Grid2X2, Pencil, Plus, Puzzle, Save, Trash2, X } from 'lu
 import type { LibraryComponentMetadata } from './metadata';
 import { standardDashboardComponents, standardPageComponents } from './componentCatalog';
 
-type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'> & {publicationStatus: 'Draft' | 'Published'};
+type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource' | 'propertyDefinitions'> & {publicationStatus: 'Draft' | 'Published'};
 
 export default function ComponentLibrary({
   components, canManage, onSave, onDelete, onPublish, onRollback
@@ -23,6 +23,7 @@ export default function ComponentLibrary({
   const [resize, setResize] = useState<NonNullable<LibraryComponentMetadata['resize']>>({
     defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60
   });
+  const [propertyDefinitions, setPropertyDefinitions] = useState<NonNullable<LibraryComponentMetadata['propertyDefinitions']>>([]);
   const [jsxSource, setJsxSource] = useState('');
   const [cssSource, setCssSource] = useState('');
   const [jsxFileName, setJsxFileName] = useState('');
@@ -40,6 +41,7 @@ export default function ComponentLibrary({
     setDescription('');
     setSurfaces(['page', 'dashboard']);
     setResize({ defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
+    setPropertyDefinitions([]);
     setJsxSource('');
     setCssSource('');
     setJsxFileName('');
@@ -57,6 +59,7 @@ export default function ComponentLibrary({
     setDescription(draft?.description ?? component.description);
     setSurfaces(draft?.surfaces ?? component.surfaces);
     setResize(draft?.resize ?? component.resize ?? { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
+    setPropertyDefinitions(component.propertyDefinitions ?? []);
     setJsxSource(draft?.jsxSource ?? component.jsxSource);
     setCssSource(draft?.cssSource ?? component.cssSource);
     setJsxFileName(`${component.apiName}.jsx`);
@@ -76,6 +79,7 @@ export default function ComponentLibrary({
         resize,
         jsxSource,
         cssSource,
+        propertyDefinitions,
         publicationStatus
       }, Boolean(editingApiName));
       reset();
@@ -85,6 +89,9 @@ export default function ComponentLibrary({
       setBusy(false);
     }
   };
+
+  const addDefinition = () => setPropertyDefinitions(current => [...current,{propertyKey:'setting'+(current.length+1),label:'Setting '+(current.length+1),kind:'TEXT'}]);
+  const updateDefinition = (index:number, patch:Partial<NonNullable<LibraryComponentMetadata['propertyDefinitions']>[number]>) => setPropertyDefinitions(current => current.map((definition,i) => i === index ? {...definition,...patch} : definition));
 
   const chooseFile = async (file: File, kind: 'jsx' | 'css') => {
     const limit = kind === 'jsx' ? 200_000 : 100_000;
@@ -218,6 +225,23 @@ export default function ComponentLibrary({
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('page')} onChange={(event) => toggleSurface('page', event.target.checked)} />Lightning page builder</label>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('dashboard')} onChange={(event) => toggleSurface('dashboard', event.target.checked)} />Dashboard builder</label>
         <label className="checkbox-row property-check"><input type="checkbox" checked={surfaces.includes('flow')} onChange={(event) => toggleSurface('flow', event.target.checked)} />Flow Builder screens</label>
+        <div className="properties-section-title">Reusable property definitions</div>
+        {propertyDefinitions.map((definition,index) => <div key={index} className="metadata-array-property">
+          <input className="form-control" aria-label="Property API name" value={definition.propertyKey} onChange={event => updateDefinition(index,{propertyKey:event.target.value})} />
+          <input className="form-control" aria-label="Property label" value={definition.label} onChange={event => updateDefinition(index,{label:event.target.value})} />
+          <select className="form-control" aria-label="Property type" value={definition.kind} onChange={event => updateDefinition(index,{kind:event.target.value as typeof definition.kind})}>
+            {['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY'].map(kind => <option key={kind} value={kind}>{kind}</option>)}
+          </select>
+          {definition.kind === 'BOOLEAN' ? <label className="checkbox-row"><input type="checkbox" checked={definition.defaultValue === true} onChange={event => updateDefinition(index,{defaultValue:event.target.checked})}/>Default enabled</label> :
+            <input className="form-control" aria-label="Default property value" type={['NUMBER','CURRENCY'].includes(definition.kind) ? 'number' : 'text'} value={definition.defaultValue === undefined ? '' : String(definition.defaultValue)}
+              onChange={event => updateDefinition(index,{defaultValue:event.target.value === '' ? undefined : ['NUMBER','CURRENCY'].includes(definition.kind) ? Number(event.target.value) : event.target.value})}/>}
+          {definition.kind === 'SELECT' && <input className="form-control" aria-label="Choices separated by commas" value={(definition.choices ?? []).map(choice => choice.key).join(',')}
+            onChange={event => updateDefinition(index,{choices:event.target.value.split(',').map(value => value.trim()).filter(Boolean).map(key => ({key,label:key}))})}/>}
+          <label className="checkbox-row"><input type="checkbox" checked={definition.required ?? false} onChange={event => updateDefinition(index,{required:event.target.checked})}/>Required</label>
+          <label className="checkbox-row"><input type="checkbox" checked={definition.isBindable ?? false} onChange={event => updateDefinition(index,{isBindable:event.target.checked})}/>Allow data binding</label>
+          <button type="button" className="btn btn-small" onClick={() => setPropertyDefinitions(items => items.filter((_,i) => i !== index))}>Remove</button>
+        </div>)}
+        <button type="button" className="btn btn-small" onClick={addDefinition}>Add property</button>
         <div className="properties-section-title">Resizable canvas defaults (pixels)</div>
         {([
           ['defaultWidth', 'Default width'],

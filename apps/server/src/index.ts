@@ -1409,12 +1409,12 @@ const libraryComponentResizeSchema = z.object({
   }
 });
 const defaultLibraryComponentResize = { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 };
-const libraryComponentRevisionSchema = z.object({
+const propertyDefinitionSchema = z.object({propertyKey:z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),label:z.string().min(1).max(100),kind:z.enum(['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY']),required:z.boolean().optional(),isBindable:z.boolean().optional(),displayOrder:z.number().int().optional(),defaultValue:z.union([z.string(),z.number(),z.boolean()]).optional(),choices:z.array(z.object({key:z.string().min(1),label:z.string().min(1)})).max(200).optional()}); const libraryComponentRevisionSchema = z.object({
   version: z.number().int().positive(), label: z.string().trim().min(1).max(80),
   description: z.string().max(500), surfaces: z.array(z.enum(['page','dashboard','flow','platform'])).min(1),
   resize: libraryComponentResizeSchema, jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000), compiledJs: z.string().min(1).max(500_000),
-  scopedCss: z.string().max(150_000), updatedAt: z.string().datetime()
+  scopedCss: z.string().max(150_000), updatedAt: z.string().datetime(), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
 });
 const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
@@ -1434,7 +1434,7 @@ const libraryComponentSchema = z.object({
   pendingDraft: libraryComponentRevisionSchema.optional(),
   trustedBundled: z.boolean().optional(),
   scope: z.literal('platform-system').optional(),
-  tenantId: z.string().min(1).optional()
+  tenantId: z.string().min(1).optional(), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -1442,8 +1442,7 @@ const libraryComponentSchema = z.object({
   if ((component.scope === 'platform-system' || component.surfaces.includes('platform'))
       && !(component.scope === 'platform-system' && component.trustedBundled === true
            && component.tenantId === undefined)) {
-    context.addIssue({code:z.ZodIssueCode.custom,path:['scope'],
-      message:'Platform definitions must be protected, unowned and trusted bundled'});
+    context.addIssue({code:z.ZodIssueCode.custom,path:['scope'],message:'Platform metadata requires unowned trusted bundle'});
   }
 });
 const libraryComponentInputSchema = z.object({
@@ -1454,7 +1453,7 @@ const libraryComponentInputSchema = z.object({
   resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000).default(''),
-  publicationStatus: z.enum(['Draft','Published']).default('Published')
+  publicationStatus: z.enum(['Draft','Published']).default('Published'), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -1463,8 +1462,8 @@ const libraryComponentInputSchema = z.object({
 type LibraryComponent = z.infer<typeof libraryComponentSchema>;
 type LibraryComponentRevision = z.infer<typeof libraryComponentRevisionSchema>;
 function libraryRevision(component: LibraryComponent): LibraryComponentRevision {
-  const { version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt } = component;
-  return {version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt};
+  const { version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions } = component;
+  return {version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions};
 }
 function nextLibraryRevision(component: LibraryComponent): number {
   return Math.max(component.version,component.pendingDraft?.version ?? 0,...(component.revisions ?? []).map((r)=>r.version))+1;
@@ -8820,7 +8819,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       }
       const jsxSource = readFileSync(jsxPath, 'utf8');
       if (entry.surfaces.includes('platform') && entry.scope !== 'platform-system')
-        throw Error('Only signed-in-repository platform-system descriptors may declare the platform surface');
+        throw Error('Untrusted platform component descriptor');
       if (existingBundled && existingBundled.jsxSource === jsxSource
         && existingBundled.cssSource === readFileSync(cssPath, 'utf8')
         && existingBundled.scope === entry.scope
@@ -8839,7 +8838,7 @@ function syncBundledLibraryComponents(): Promise<void> {
         apiName: entry.apiName,
         label: entry.label,
         description: entry.description,
-        surfaces: entry.surfaces.filter((surface)=>surface!=='platform'),
+        surfaces: entry.surfaces.filter(surface=>surface!=='platform'),
         resize: entry.resize,
         jsxSource,
         cssSource
@@ -8893,16 +8892,14 @@ function syncBundledLibraryComponents(): Promise<void> {
   return bundledComponentSync;
 }
 
-// Verified presentation cache publication: derives its digest only from
-// metadata already allowed by authenticated OneEngine API routes.
+// Content hash originates only from authenticated, existing filtered metadata.
 app.get('/api/metadata/offline-publication', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
   try { await syncBundledLibraryComponents(); }
   catch (error) {
-    console.error('Unable to prepare metadata publication', error);
+    console.error('Unable to prepare metadata publication',error);
     return res.status(503).json({error:'Metadata publication unavailable'});
   }
-  const principal=getPrincipal(res);
-  const tenant=tenantData(principal.tenantId);
+  const principal=getPrincipal(res),tenant=tenantData(principal.tenantId);
   if(!tenant)return res.status(403).json({error:'Tenant membership is no longer active'});
   const apps=tenant.apps.filter(item=>canOpenApp(principal,tenant,item.apiName)).map(item=>({
     ...item,
@@ -9020,14 +9017,14 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     }
     const compiledRevision: LibraryComponentRevision = {
       version: nextLibraryRevision(existing), label: parsed.data.label, description: parsed.data.description,
-      surfaces: parsed.data.surfaces, resize: parsed.data.resize,
+      surfaces: parsed.data.surfaces, resize: parsed.data.resize, propertyDefinitions: parsed.data.propertyDefinitions ?? existing.propertyDefinitions,
       jsxSource: parsed.data.jsxSource, cssSource: parsed.data.cssSource,
       compiledJs: compiled.code, scopedCss: scopeLibraryCss(parsed.data.cssSource, apiName),
       updatedAt: new Date().toISOString()
     };
     const component: LibraryComponent = parsed.data.publicationStatus === 'Draft'
       ? { ...existing, pendingDraft: compiledRevision }
-      : { ...existing, ...compiledRevision, status: 'Published', trustedBundled: false,
+      : { ...existing, ...compiledRevision, propertyDefinitions: parsed.data.propertyDefinitions ?? existing.propertyDefinitions, status: 'Published', trustedBundled: false,
         publishedVersion: compiledRevision.version,
         revisions: [...(existing.revisions ?? []), ...(existing.status === 'Draft' ? [] : [libraryRevision(existing)])].slice(-100),
         pendingDraft: undefined };

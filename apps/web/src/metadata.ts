@@ -710,7 +710,7 @@ export type ReportRunMetadata = {
   generatedAt: string;
 };
 
-export type LibraryComponentMetadata = {
+export type LibraryComponentMetadata = { propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[];
   tenantId?: string;
   apiName: string;
   label: string;
@@ -731,16 +731,15 @@ export type LibraryComponentMetadata = {
   status?: 'Draft' | 'Published';
   publishedVersion?: number;
   trustedBundled?: boolean;
-  /** Reserved by server-owned bundled system registry, never tenant-writable. */
   scope?: 'platform-system';
   revisions?: Array<{
     version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow' | 'platform'>;
-    resize: NonNullable<LibraryComponentMetadata['resize']>;
+    resize: NonNullable<LibraryComponentMetadata['resize']>; propertyDefinitions?: LibraryComponentMetadata['propertyDefinitions'];
     jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
   }>;
   pendingDraft?: {
     version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow' | 'platform'>;
-    resize: NonNullable<LibraryComponentMetadata['resize']>;
+    resize: NonNullable<LibraryComponentMetadata['resize']>; propertyDefinitions?: LibraryComponentMetadata['propertyDefinitions'];
     jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
   };
 };

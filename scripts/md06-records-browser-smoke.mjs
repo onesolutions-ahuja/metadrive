@@ -97,12 +97,18 @@ try {
   await list.waitFor({state:'visible'});
   // Record search is now a dedicated topbar control, not a duplicated list field.
   const search=page.getByRole('searchbox',{name:/Search Accounts records/i});
-  const global=page.getByRole('searchbox',{name:'Global search across objects'});
   if(await list.locator('.records-search').count()) throw Error('Duplicate record search must not appear in list');
+  await page.getByRole('button',{name:/Search records and navigation/}).click();
+  const palette=page.getByRole('dialog',{name:'Global search command palette'});
+  const global=palette.getByRole('searchbox',{name:'Global record search'});
   await global.fill('Unrelated global query');
   if(await search.inputValue()) throw Error('Global search must not populate the record search');
+  await palette.getByRole('button',{name:'Close search'}).click();
   await search.fill('MD06 Browser Acceptance Account');
-  if(await global.inputValue()!=='Unrelated global query') throw Error('Record search changed the global search');
+  await page.getByRole('button',{name:/Search records and navigation/}).click();
+  if(await palette.getByRole('searchbox',{name:'Global record search'}).inputValue()!=='Unrelated global query')
+    throw Error('Record search changed the global search');
+  await palette.getByRole('button',{name:'Close search'}).click();
   await list.getByText('MD06 Browser Acceptance Account',{exact:false}).first().waitFor({state:'visible'});
   // Await the asynchronous metadata/record response rather than asserting
   // immediately after route rendering.
@@ -138,10 +144,18 @@ try {
     return {status:response.status,data:await response.json()};
   };
   const offlineName='MD06 Offline Permission Revoked Draft';
-  await page.context().setOffline(true);
   await newButton.click();
   await dialog.waitFor({state:'visible'});
+  try {
+    await dialog.locator('input[name="Name"]').waitFor({state:'visible',timeout:7000});
+  } catch(error) {
+    throw Error('Offline Account form lacked Name field. Dialog: '+(await dialog.innerText()).slice(0,1800)
+      +'; controls: '+JSON.stringify(await dialog.locator('input').evaluateAll(items => items.map(item => ({name:item.getAttribute('name'),type:item.getAttribute('type')}))))
+      +'; alerts: '+JSON.stringify(await page.locator('[role="alert"]').allTextContents()),{cause:error});
+  }
   await dialog.locator('input[name="Name"]').fill(offlineName);
+  // Load metadata-backed form while online, then test that Save queues while offline.
+  await page.context().setOffline(true);
   await dialog.getByRole('button',{name:'Save',exact:true}).click();
   await dialog.waitFor({state:'hidden'});
   const offlinePanel=page.getByRole('region',{name:'Offline record changes'});
@@ -165,7 +179,21 @@ try {
   // Wait for the rejected sync to release its in-flight guard before retrying.
   await offlinePanel.getByRole('button',{name:'Sync pending'}).waitFor({state:'visible',timeout:15000});
   await offlinePanel.getByRole('button',{name:'Retry after review'}).click();
-  await offlinePanel.waitFor({state:'hidden',timeout:15000});
+  // A preceding automatic sync can still hold the guard when the manual retry
+  // is queued. Once that pass finishes, explicitly request a fresh sync.
+  try {
+    await offlinePanel.waitFor({state:'hidden',timeout:5000});
+  } catch {
+    const pending=offlinePanel.getByText('Pending sync');
+    if(await pending.isVisible().catch(()=>false)) {
+      await offlinePanel.getByRole('button',{name:'Sync pending',exact:true}).click();
+    }
+    try {
+      await offlinePanel.waitFor({state:'hidden',timeout:15000});
+    } catch(error) {
+      throw Error('Offline retry did not clear: '+(await offlinePanel.innerText()).slice(0,1500),{cause:error});
+    }
+  }
   // Offline queue removal is asynchronous to records-list refresh: poll the
   // independently authenticated server until the successful write is visible.
   let syncedRecord;

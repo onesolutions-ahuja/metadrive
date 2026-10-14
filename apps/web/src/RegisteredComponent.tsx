@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useMemo, type ReactNode } from 'react';
 import type { LibraryComponentMetadata } from './metadata';
 import ComponentSandbox from './ComponentSandbox';
+import {resolveComponentSettings} from './componentSettingDefinitions';
 import {compileComponentModule} from './componentRuntimeModule';
 
 type ComponentBoundaryState = { error?: string };
@@ -34,8 +35,9 @@ function RegisteredComponentBody({ definition, props }: { definition: LibraryCom
 
 export default function RegisteredComponent({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
   if (definition.status === 'Draft') return <div role="status" className="registered-component-error">Component is a draft. Publish it before use.</div>;
-  if (definition.trustedBundled !== true) return <ComponentSandbox definition={definition} props={props} />;
+  const effectiveProps = definition.propertyDefinitions?.length ? resolveComponentSettings(definition.propertyDefinitions, props) : props;
+  if (definition.trustedBundled !== true) return <ComponentSandbox definition={definition} props={effectiveProps} />;
   return <ComponentRenderBoundary key={`${definition.apiName}-${definition.version}`}>
-    <RegisteredComponentBody definition={definition} props={props} />
+    <RegisteredComponentBody definition={definition} props={effectiveProps} />
   </ComponentRenderBoundary>;
 }
