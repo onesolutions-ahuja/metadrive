@@ -29,3 +29,9 @@ test('Phase 2 source preflight is read only, parameterised, and returns counts n
  assert.deepEqual(calls[0].args,['public',Object.keys(requiredTables)]);
  assert.ok(calls.every(({sql})=>/^SELECT /i.test(sql)));
 });
+
+test('Phase 2 SQL registry supports the protected platform surface',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const sql=readFileSync(new URL('../apps/server/sql/component-registry-v4.sql',import.meta.url),'utf8');
+ assert.equal(sql.split("surface IN ('page','dashboard','flow','platform')").length-1,2);
+});
