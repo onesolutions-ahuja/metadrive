@@ -797,7 +797,8 @@
       "defaultHeight": 1920,
       "minWidth": 320,
       "minHeight": 600
-    }
+    },
+    "version": 3
   },
   {
     "apiName": "TillSalesWorkspace",
