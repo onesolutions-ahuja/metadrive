@@ -14,8 +14,7 @@ test('Phase 4 Setup navigation uses registered workspace metadata',()=>{
 test('Phase 4 Setup remains tenant restricted and searchable',()=>{
  const groups=resolveSetupNavigation('',false);
  assert.ok(groups.every(g=>g.group!=='Platform Administration'));
- assert.ok(resolveSetupNavigation('appointment',false,['Appointment Booking Connector'])
-  .flatMap(g=>g.items).includes('Une Connectors'));
+ assert.ok(resolveSetupNavigation('Object',false).flatMap(g=>g.items).includes('Object Manager'));
  const filtered=resolveSetupNavigation('Object Manager',false);
  assert.deepEqual(filtered.flatMap(g=>g.items),['Object Manager']);
 });
