@@ -3,7 +3,7 @@ import { Check, Code2, Grid2X2, Pencil, Plus, Puzzle, Save, Trash2, X } from 'lu
 import type { LibraryComponentMetadata } from './metadata';
 import { standardDashboardComponents, standardPageComponents } from './componentCatalog';
 
-type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource'> & {publicationStatus: 'Draft' | 'Published'};
+type ComponentInput = Pick<LibraryComponentMetadata, 'apiName' | 'label' | 'description' | 'surfaces' | 'resize' | 'jsxSource' | 'cssSource' | 'propertyDefinitions'> & {publicationStatus: 'Draft' | 'Published'};
 
 export default function ComponentLibrary({
   components, canManage, onSave, onDelete, onPublish, onRollback
@@ -23,6 +23,7 @@ export default function ComponentLibrary({
   const [resize, setResize] = useState<NonNullable<LibraryComponentMetadata['resize']>>({
     defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60
   });
+  const [propertyDefinitions, setPropertyDefinitions] = useState<NonNullable<LibraryComponentMetadata['propertyDefinitions']>>([]);
   const [jsxSource, setJsxSource] = useState('');
   const [cssSource, setCssSource] = useState('');
   const [jsxFileName, setJsxFileName] = useState('');
@@ -40,6 +41,7 @@ export default function ComponentLibrary({
     setDescription('');
     setSurfaces(['page', 'dashboard']);
     setResize({ defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
+    setPropertyDefinitions([]);
     setJsxSource('');
     setCssSource('');
     setJsxFileName('');
@@ -57,6 +59,7 @@ export default function ComponentLibrary({
     setDescription(draft?.description ?? component.description);
     setSurfaces(draft?.surfaces ?? component.surfaces);
     setResize(draft?.resize ?? component.resize ?? { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 });
+    setPropertyDefinitions(component.propertyDefinitions ?? []);
     setJsxSource(draft?.jsxSource ?? component.jsxSource);
     setCssSource(draft?.cssSource ?? component.cssSource);
     setJsxFileName(`${component.apiName}.jsx`);
@@ -76,6 +79,7 @@ export default function ComponentLibrary({
         resize,
         jsxSource,
         cssSource,
+        propertyDefinitions,
         publicationStatus
       }, Boolean(editingApiName));
       reset();
@@ -85,6 +89,9 @@ export default function ComponentLibrary({
       setBusy(false);
     }
   };
+
+  const addDefinition = () => setPropertyDefinitions(current => [...current,{propertyKey:'setting'+(current.length+1),label:'Setting '+(current.length+1),kind:'TEXT'}]);
+  const updateDefinition = (index:number, patch:Partial<NonNullable<LibraryComponentMetadata['propertyDefinitions']>[number]>) => setPropertyDefinitions(current => current.map((definition,i) => i === index ? {...definition,...patch} : definition));
 
   const chooseFile = async (file: File, kind: 'jsx' | 'css') => {
     const limit = kind === 'jsx' ? 200_000 : 100_000;
