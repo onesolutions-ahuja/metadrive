@@ -18,4 +18,5 @@ test('permission scope is tenant data derived, fail closed',()=>{
   assert.equal(chatterScopeForUser('t','alice',tenant).viewAllConversations,false);
   assert.equal(canAccessChatterRecord('t','alice',tenant,{...row,Assigned_User__c:'bob'},'read'),false);
   assert.equal(canAccessChatterRecord('t','bob',tenant,{...row,Channel_Account__c:'phone-b'},'read'),true);
+  assert.equal(chatterScopeForUser('t','bob',tenant).grants[0].viewAll,true);
 });
