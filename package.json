@@ -43,6 +43,7 @@
     "test:phase7": "node --test scripts/phase7-completion-inventory.test.mjs",
     "audit:phase7": "node scripts/phase7-completion-inventory.mjs --json",
     "test:phase2runtime": "tsx --test scripts/phase2-runtime-completion.test.mjs",
+    "test:phase2replacements": "node --test apps/server/test/phase2-replacement-definitions.test.mjs",
     "test:phase2sql": "node --test scripts/phase2-sql-activation-preflight.test.mjs",
     "verify:phase2sql": "node apps/server/scripts/verify-component-registry-activation.mjs"
   }
