@@ -32,6 +32,6 @@ test('platform ownership and RBAC cannot be forged with ordinary metadata:write 
  assert.equal(validateProtectedAdministrationPageUpdate(page,page,['platform:superadmin','metadata:write']),null);
  assert.match(validateProtectedAdministrationPageUpdate(page,{...page,scope:'tenant'},['platform:superadmin']),/ownership/);
  assert.match(validateProtectedAdministrationPageUpdate(page,{...page,apiName:'Impostor'},['platform:superadmin']),/renamed/);
- assert.match(validateProtectedAdministrationPageUpdate(page,{...page,requiredPermissions:[]},['platform:superadmin']),/security metadata/);
+ assert.match(validateProtectedAdministrationPageUpdate(page,{...page,requiredPermissions:[]},['platform:superadmin']),/(?:security metadata|required permission)/);
  assert.equal(validateProtectedAdministrationPageUpdate(null,{apiName:'Normal_Page'},['metadata:write']),null);
 });
