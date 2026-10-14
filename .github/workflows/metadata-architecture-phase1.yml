@@ -5,6 +5,11 @@ on:
       - 'contracts/**'
       - 'docs/metadata-driven-platform/**'
       - 'scripts/metadata-architecture-*'
+      - 'scripts/phase1*'
+      - 'scripts/audit-platform-architecture*'
+      - '.github/workflows/developer-policy.yml'
+      - 'apps/server/data/platform-metadata.json'
+      - 'package.json'
       - 'apps/web/src/**'
       - 'apps/server/src/**'
       - '.github/workflows/metadata-architecture-phase1.yml'
@@ -30,3 +35,5 @@ jobs:
         run: node scripts/metadata-architecture-audit.mjs --check
       - name: Validate shared contract and migration ownership
         run: node --test scripts/metadata-architecture-contract.test.mjs
+      - name: Verify Phase 1a–g acceptance and rollback dependencies
+        run: node --test scripts/audit-platform-architecture.test.mjs scripts/phase1f-migration-dependencies.test.mjs scripts/phase1g-acceptance.test.mjs scripts/phase1-final-acceptance.test.mjs
