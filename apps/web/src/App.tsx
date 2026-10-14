@@ -61,8 +61,10 @@ import {
   X,
   Workflow,
   Wifi,
-  WifiOff
-, PanelLeft, PanelRight } from 'lucide-react';
+  WifiOff,
+  PanelLeft,
+  PanelRight
+} from 'lucide-react';
 import FlowBuilderWorkspace from './FlowBuilder';
 import FlowScreenContent from './FlowScreenContent';
 import FlowLogs from './FlowLogs';
