@@ -2039,6 +2039,19 @@
               "Phone"
             ]
           }
+        ],
+        "flowMigrations": [
+          {
+            "elementType": "Decision",
+            "missingOutcomeName": "Default",
+            "connectorKind": "normal",
+            "connectorLabel": "default outcome",
+            "outcome": {
+              "name": "Default",
+              "label": "Default Outcome",
+              "conditions": []
+            }
+          }
         ]
       }
     },
@@ -4126,6 +4139,19 @@
               "Desktop",
               "Phone"
             ]
+          }
+        ],
+        "flowMigrations": [
+          {
+            "elementType": "Decision",
+            "missingOutcomeName": "Default",
+            "connectorKind": "normal",
+            "connectorLabel": "default outcome",
+            "outcome": {
+              "name": "Default",
+              "label": "Default Outcome",
+              "conditions": []
+            }
           }
         ]
       }
