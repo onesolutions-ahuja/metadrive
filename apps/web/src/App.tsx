@@ -308,7 +308,6 @@ function ConnectionHealthIndicator() {
   </div>;
 }
 
-
 function isAuthErrorMessage(message: string): boolean {
   const text = message.toLowerCase();
   return text.includes('401')
@@ -6982,9 +6981,7 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   </div>;
 }
 
-
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
-
 
 
 function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
@@ -10149,7 +10146,6 @@ function PageBuilder({
         </div>,
         externalPreviewTarget
       )}
-
 
       {!editorMode && <section className="page-manager-view" aria-label="Page management">
         <header className="page-manager-header"><div><h1>Page Builder</h1><p>Manage pages and their device layouts by related record or object.</p></div>
