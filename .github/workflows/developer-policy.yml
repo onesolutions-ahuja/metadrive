@@ -1,0 +1,22 @@
+name: Developer Policy - Code File Size
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  code-file-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enforce changed code file limit
+        env:
+          POLICY_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          POLICY_HEAD_SHA: ${{ github.sha }}
+        run: node scripts/check-developer-policy.mjs
