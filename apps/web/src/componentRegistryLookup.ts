@@ -11,6 +11,7 @@ export function findRegisteredComponent(
   if (typeof apiName !== 'string' || !apiName) return undefined;
   return components.find(definition =>
     definition.apiName === apiName &&
+    (definition as ScopedComponentDefinition).scope !== 'platform-system' &&
     definition.status !== 'Draft' &&
     definition.surfaces.includes(surface)
   );
