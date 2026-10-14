@@ -8,6 +8,9 @@ const component=(apiName,label,description,jsxSource,cssSource,propertyDefinitio
  publicationStatus:'Published',propertyDefinitions
 });
 const buttonStyles=`
+.md-commerce-grid{display:grid;grid-template-columns:repeat(var(--commerce-columns,3),minmax(0,1fr));gap:12px}
+@media(max-width:760px){.md-commerce-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.md-commerce-grid{grid-template-columns:minmax(0,1fr)}}
 .md-commerce-btn{border:0;background:#103e51;color:white;padding:12px 16px;border-radius:12px;cursor:pointer;font-weight:700}
 .md-commerce-btn:disabled{cursor:default;opacity:.5}
 .md-commerce-ghost{background:#fff;color:#103e51;border:1px solid #bfd2dc}
@@ -39,7 +42,7 @@ export default function CommerceProductGrid({title='Choose your meal',records=[]
  const active=(records||[]).filter(p=>p.IsActive!==false);
  const money=(v)=>currencySymbol+Number(v||0).toFixed(2);
  const open=async(p)=>{
-  setSelected(p);setChosen([]);setQty(1);setError('');setInfo('');
+  setSelected(p);setChosen([]);setGroups([]);setOptions([]);setQty(1);setError('');setInfo('');
   try{const r=await onAction({event:'options',value:{productId:p.Id}});
    const data=r?.outputs||{};const linked=new Set((data.Assignments||[]).map(a=>a.GroupId));
    setGroups((data.Groups||[]).filter(g=>linked.has(g.Id)).sort((a,b)=>(a.SortOrder||0)-(b.SortOrder||0)));
@@ -74,7 +77,7 @@ export default function CommerceProductGrid({title='Choose your meal',records=[]
   {loading&&<p role="status">Loading menu…</p>}
   {info&&<p role="status" style={{color:'#17664b'}}>{info}</p>}
   {error&&!selected&&<p role="alert" className="md-commerce-error">{error}</p>}
-  <div style={{display:'grid',gridTemplateColumns:'repeat('+Math.max(1,Math.min(5,Number(columns)||3))+',minmax(0,1fr))',gap:12}}>
+  <div className="md-commerce-grid" style={{'--commerce-columns':String(Math.max(1,Math.min(5,Number(columns)||3)))}}>
    {active.map(p=><article className="md-commerce-card" key={p.Id}>
     {p[imageField]&&<img src={String(p[imageField])} referrerPolicy="no-referrer" alt="" style={{width:'100%',height:150,objectFit:'cover'}}/>}
     <div style={{padding:12}}>
