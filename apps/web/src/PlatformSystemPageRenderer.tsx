@@ -11,6 +11,8 @@ import {PlatformPageSlotsProvider} from './PlatformPageSlot';
  */
 export function eligibleSystemPage(page:LightningPageMetadata|undefined,workspace:string,permission:string){
  if(!page||page.apiName!==systemPageApiName(workspace)||page.status!=='Active'
+   ||page.scope!=='platform-system'||page.ownerNamespace!=='MetaDrive'
+   ||page.overridePolicy!=='presentation-only'||!page.requiredPermissions?.includes(permission)
    ||page.pageType!=='App Page'||page.layoutMode!=='free-canvas')return false;
  return page.components.some(c=>c.type==='Custom:SystemPanel'
    &&c.properties.systemWorkspaceId===workspace
