@@ -1,3 +1,4 @@
+import { compareMetadataValue } from './metadataValueComparison';
 import type { FieldMetadata, PageComponentMetadata } from './metadata';
 import { examineRecordFilter } from './recordFilterMetadata';
 
@@ -76,19 +77,8 @@ export function isComponentVisible(
     }
     if (!context.record || !context.readableFieldApiNames?.has(condition.fieldApiName)
       || !Object.prototype.hasOwnProperty.call(context.record, condition.fieldApiName)) return false;
-    const value = context.record[condition.fieldApiName];
-    // Only evaluate against API-authorized readable record fields.
-    if (value === null || value === undefined) return false;
-    const current = String(value);
-    const target = String(condition.value);
-    switch (condition.operator) {
-      case 'Equals': return current === target;
-      case 'Not Equals': return current !== target;
-      case 'Contains': return current.toLowerCase().includes(target.toLowerCase());
-      case 'Greater Than': return Number(current) > Number(target);
-      case 'Less Than': return Number(current) < Number(target);
-      default: return false;
-    }
+    // Only compare fields already authorised by the caller's readable set.
+    return compareMetadataValue(context.record[condition.fieldApiName], condition.operator, condition.value);
   });
   return definition.logic === 'All' ? results.every(Boolean) : results.some(Boolean);
 }
