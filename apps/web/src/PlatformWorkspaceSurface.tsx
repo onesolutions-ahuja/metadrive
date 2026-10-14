@@ -5,9 +5,12 @@ import {platformNavigationEntries} from './platformWorkspaceMetadata';
  * The enclosing Setup route and every OneEngine API retain their RBAC gates.
  * A client-side descriptor does not grant permissions or execute actions.
  */
-export type SystemWorkspaceId='app-manager'|'app-exchange'|'tenant-management'|'rbac';
-const supported:ReadonlySet<string>=new Set(['app-manager','app-exchange','tenant-management','rbac']);
+export type SystemWorkspaceId='home'|'company-settings'|'object-manager'|'app-manager'|'app-exchange'|'tenant-management'|'rbac';
+const supported:ReadonlySet<string>=new Set(['home','company-settings','object-manager','app-manager','app-exchange','tenant-management','rbac']);
 const descriptions:Readonly<Record<SystemWorkspaceId,string>>={
+ 'home':'Platform Setup',
+ 'company-settings':'Configure company information and tenant settings',
+ 'object-manager':'Configure Objects, fields and relationships',
  'app-manager':'Configure applications and navigation',
  'app-exchange':'Manage installed applications',
  'tenant-management':'Manage authorised tenant administration',
