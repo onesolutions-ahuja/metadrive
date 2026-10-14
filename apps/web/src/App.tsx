@@ -1090,7 +1090,7 @@ function App() {
     let cancelled = false;
     void (async () => {
       // Select only an app authorised by the server for this login.
-      // This lets the SAME Metadrive binary open Kiosk, Till or Records
+      // The same application shell resolves any authorised landing page.
       // without hardcoded role-to-application routes.
       const allowed = entryTiming?.landing?.apps?.length
         ? entryTiming.landing.apps
@@ -3746,12 +3746,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setStandalonePageMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setStandalonePageMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
@@ -3890,8 +3890,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             canLicenceAdmin={connectorRights.licence}
             encryptionReady={namedCredentialsEncryptionReady}
             onGrantLicence={grantConnectorLicence}
-            onCreateKioskDevice={(index) => apiRequest<{deviceId:string;username:string;password:string}>('/kiosk/devices', {method:'POST',body:JSON.stringify({index})})}
-            onResetKioskDevice={(index) => apiRequest<{deviceId:string;username:string;password:string}>('/kiosk/devices/reset', {method:'POST',body:JSON.stringify({index})})}
             loadApps={loadConnectorMarketplaceApps}
             executeLifecycleFlow={executeConnectorAppLifecycleFlow}
             onSave={saveNamedCredential}
@@ -4802,7 +4800,7 @@ function LightningAppRuntime({
   formFactor,
   onNavigate,
   onLaunchFlow,
-  onKioskModeChange
+  onStandaloneModeChange
 }: {
   appId: string;
   pageApiName?: string;
@@ -4815,7 +4813,7 @@ function LightningAppRuntime({
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
-  onKioskModeChange: (enabled: boolean) => void;
+  onStandaloneModeChange: (enabled: boolean) => void;
 }) {
   const [page, setPage] = useState<LightningPageMetadata | null>(null);
   const layoutDevice = usePageLayoutDevice();
@@ -4843,9 +4841,9 @@ function LightningAppRuntime({
     setActiveTab('');
   }, [page?.apiName]);
   useEffect(() => {
-    onKioskModeChange(isStandalonePagePresentation(page));
-    return () => onKioskModeChange(false);
-  }, [page?.layoutMode, onKioskModeChange]);
+    onStandaloneModeChange(isStandalonePagePresentation(page));
+    return () => onStandaloneModeChange(false);
+  }, [page?.layoutMode, onStandaloneModeChange]);
   if (error) return <div className="records-page"><div className="records-message" role="alert">{error}</div></div>;
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
   if (!page) return <main className="records-page"><section className="records-empty" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home Page not assigned</h1><p>No active Home Page is assigned to this app and profile.</p><p>An administrator can assign a Home Page in Lightning App Builder.</p></section></main>;
