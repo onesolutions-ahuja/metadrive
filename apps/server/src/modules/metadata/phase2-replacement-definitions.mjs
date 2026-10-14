@@ -14,10 +14,6 @@ export const replacementKinds = Object.freeze([
 const interactive = new Set(['Button','TextInput','TextArea','Select','Checkbox','Toggle','Search','DateInput','NumberInput','CurrencyInput','RadioGroup']);
 const labelOf = kind => kind.replace(/([a-z])([A-Z])/g,'$1 $2');
 const eventMap={Button:'click',TextInput:'change',TextArea:'change',Select:'change',Checkbox:'change',Toggle:'change',Search:'change',DateInput:'change',NumberInput:'change',CurrencyInput:'change',RadioGroup:'change'};
-const baseSource = `module.exports.default=function ReplacementComponent(props){
-const React=arguments.length>=0?arguments.callee.__react:undefined;
-return null;
-};`;
 /** Compiled JS uses only the React injected by the existing trusted compiler.
  * Definitions are explicitly untrusted, so tenant instances remain sandboxed.
  */
