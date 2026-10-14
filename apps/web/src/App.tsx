@@ -86,6 +86,7 @@ import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, i
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
+import { presentPageRecords, type ChannelGrant } from './recordPresentationAdapters';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
@@ -4559,6 +4560,9 @@ function MetadataBoundPageComponent({
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [channelAccess, setChannelAccess] = useState<{userId:string;viewAll:boolean;grants:ChannelGrant[]}>({
+    userId:'',viewAll:false,grants:[]
+  });
   const initializedSessions = useRef<Set<string>>(new Set());
   // Any Flow mutation invalidates all components sharing this page session.
   useEffect(() => {
@@ -4589,8 +4593,18 @@ function MetadataBoundPageComponent({
       .finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
   }, [objectApiName, revision]);
+  useEffect(() => {
+    if (properties.recordPresenterApiName !== 'CommunicationThread') return;
+    let active = true;
+    setChannelAccess({userId:'',viewAll:false,grants:[]});
+    void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[]}>('/chatter/access')
+      .then(value => {if(active) setChannelAccess(value);})
+      .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[]});});
+    return () => {active = false;};
+  }, [properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
     ? rawActions as Record<string, unknown> : {};
@@ -4688,7 +4702,8 @@ function MetadataBoundPageComponent({
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
       loading: dataLoading, sessionId,
-      ...(objectApiName ? { records: visibleRecords } : {})
+      ...(objectApiName ? { records: visibleRecords } : {}),
+      ...presented
     }} />
   </div>;
 }
