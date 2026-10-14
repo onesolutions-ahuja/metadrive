@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
+import {compileComponentModule} from './componentRuntimeModule';
 
 type FrameMessage = { kind: string; instance: string; requestId?: string; props?: Record<string, unknown>; definition?: { compiledJs: string; scopedCss: string }; result?: unknown; error?: string };
 const root = createRoot(document.getElementById('component-root')!);
@@ -26,12 +27,7 @@ window.addEventListener('message', (event: MessageEvent<FrameMessage>) => {
   currentInstance = message.instance;
   try {
     if (activeSource !== message.definition.compiledJs || !activeComponent) {
-      const mod: { exports: { default?: React.ComponentType<Record<string, unknown>> } } = { exports: {} };
-      const execute = new Function('React','module','exports', message.definition.compiledJs) as
-        (react: typeof React, m: typeof mod, exports: typeof mod.exports) => void;
-      execute(React, mod, mod.exports);
-      if (typeof mod.exports.default !== 'function') throw Error('Missing default React component');
-      activeComponent = mod.exports.default;
+      activeComponent = compileComponentModule(message.definition.compiledJs, React);
       activeSource = message.definition.compiledJs;
     }
     const Component = activeComponent;
