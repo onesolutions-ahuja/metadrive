@@ -41,8 +41,10 @@ jobs:
           METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
           METADRIVE_DEMO_SEED_APPROVED: 'true'
+        shell: bash
         run: |
-          node scripts/install-kiosk-demo-data.mjs
+          set -o pipefail
+          node scripts/install-kiosk-demo-data.mjs 2>&1 | tee kiosk-seed-result.log
           echo 'Kiosk metadata and product records verified through MetaDrive APIs.'
       - name: Publish verifiable seed outcome to commit status
         if: always()
