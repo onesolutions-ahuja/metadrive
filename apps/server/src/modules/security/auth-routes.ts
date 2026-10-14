@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import type { phase3AuthContext, TenantData, LocalUser, PlatformState } from '../../index.js';
 import type { RecoveryStage } from '../../recovery-flow.js';
-import type { MfaEncryptedSecret } from '../../mfa.js';
+import type { MfaEncryptedSecret } from '../../index.js';
 
 export function registerAuthenticationRoutes(ctx: typeof phase3AuthContext): void {
   const {app,jwtService,tenantHostRouting,requestTenantMatches,refreshCookieName,webOrigins,tenantInfoForRecovery,activeFlowDefinition,durableLogouts,TenantProvisioningStoreError,createTenant,tenantIsActive,withSecurityEvent,tenantData,getPrincipal,principalUser,effectivePermissions,requirePermission,tenantForRequestHost,accessAuthentication,cookieValue,setRefreshCookie,clearRefreshCookie,issueRefreshSession,authenticatedLandingBootstrap,issueLoginResponse,mfaLoginChallenges,mfaEnrollments,mfaFailures,mfaChallengeTtlMs,mfaRequiredForUser,sealMfaSecret,openMfaSecret,mfaCredentialReady,newMfaToken,mfaRateLimited,recordMfaFailure,revokeUserRefreshSessions,loginAttempts,userLoginFailures,recordUserLoginFailure,loginSchema,provisioningSchema,provisioningIdempotencyKey,persistState,persistTenantRecords,developerActivationPending,hashPassword,verifyPassword,hashToken,randomBytes,timingSafeEqual,performance,newTotpSecret,totpUri,verifyTotp,normalizeRecoveryPolicy,renderRecoveryTemplate,deliverWithFallback,RECOVERY_FLOW_API,recoveryFlowActions,persistAuthLogoutRevocation,persistenceMode,z} = ctx;
