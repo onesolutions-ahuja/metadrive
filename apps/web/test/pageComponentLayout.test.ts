@@ -5,7 +5,7 @@ import {findRegisteredComponent} from '../src/componentRegistryLookup';
 import {appearanceNumberFields,appearanceColorFields,appearanceChoiceFields} from '../src/metadataAppearanceSchema';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canNestComponent, componentVisualStyle, directChildren, normalizeVisualProperties } from '../src/pageComponentLayout';
+import { canNest, canNestComponent, isDescendantOf, validateLayoutSetting, componentVisualStyle, directChildren, normalizeVisualProperties } from '../src/pageComponentLayout';
 import type { PageComponentMetadata } from '../src/metadata';
 const components: PageComponentMetadata[] = [
   { id: 'grid', type: 'Grid', label: 'Grid', properties: {}, visible: true },
