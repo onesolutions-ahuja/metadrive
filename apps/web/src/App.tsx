@@ -3983,7 +3983,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           )}
           {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'rbac' && <Permissions
+          {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac"><Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
             objects={objects}
@@ -3995,7 +3995,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onSave={saveAccessControl}
             onNotify={notify}
             onOpenUserRecords={() => navigateRoute({kind:'record-list',objectApiName:'User'})}
-          />}
+          /></PlatformWorkspaceSurface>}
         </section>
       </main>
 
@@ -6982,7 +6982,6 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
 }
 
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
-
 
 function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
   const [smtpCredentialId, setSmtpCredentialId] = useState('');
