@@ -3744,10 +3744,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
             onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
-            <SetupHome onNavigate={openSetupWorkspace} />
+            <PlatformWorkspaceSurface workspace="home"><SetupHome onNavigate={openSetupWorkspace} /></PlatformWorkspaceSurface>
           )}
           {route.kind === 'setup' && workspace === 'object-manager' && (
-            <ObjectManager
+            <PlatformWorkspaceSurface workspace="object-manager"><ObjectManager
               object={object}
               objects={objects}
               flows={flows}
@@ -3782,7 +3782,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onOpenRecords={() => navigateRoute({ kind: 'record-list', objectApiName: object.apiName })}
               page={pages.find((item) => item.targetObject === object.apiName && item.pageType === 'Record Page') ?? page}
               onNotify={notify}
-            />
+            /></PlatformWorkspaceSurface>
           )}
           {route.kind === 'setup' && workspace === 'page-builder' && advancedMetadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
             <section className="setup-card" role="alert" style={{ padding: 24 }}>
@@ -3981,7 +3981,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
+          {route.kind === 'setup' && workspace === 'company-settings' && <PlatformWorkspaceSurface workspace="company-settings"><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac"><Permissions
             accessControl={accessControl}
