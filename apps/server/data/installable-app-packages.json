@@ -1861,7 +1861,7 @@
             "minWidth": 80,
             "minHeight": 40
           },
-          "version": 1
+          "version": 4
         },
         {
           "apiName": "KioskTotals",
@@ -3903,7 +3903,7 @@
             "minWidth": 80,
             "minHeight": 40
           },
-          "version": 1
+          "version": 4
         },
         {
           "apiName": "KioskTotals",
