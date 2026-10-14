@@ -43,57 +43,68 @@ for(const [name,fields] of Object.entries({
  const found=new Set(objectMap.get(name).fields.map(f=>f.apiName));
  for(const field of fields)if(!found.has(field))throw Error('Missing commerce field: '+name+'.'+field);
 }
-// Provision narrowly scoped installation permissions through central OneEngine RBAC.
-// The automation account may be able to seed Objects without managing published UI.
-const initialAccess=await api('/metadata/permissions');
-const installer=(initialAccess.users??[]).find(u=>u.id===login.user?.id)
-  ??(initialAccess.users??[]).find(u=>String(u.username??u.email??'').toLowerCase()===email.toLowerCase());
-if(!installer)throw Error('Phase 4 installer identity is absent from tenant RBAC');
-const installerProfile=(initialAccess.profiles??[]).find(p=>p.id===installer.profileId);
-if(!installerProfile)throw Error('Phase 4 installer profile is missing');
+// Security updates are full snapshots. On optimistic-writer contention,
+// READ THE LATEST grants before retrying so concurrent RBAC edits are preserved.
+async function updateSecurity(prepare){
+ for(let attempt=0;attempt<6;attempt++){
+  const current=await api('/metadata/permissions');
+  const proposed=prepare(current);
+  if(!proposed)return false;
+  try { await api('/metadata/permissions','PUT',proposed);return true; }
+  catch(error){
+   if(!/HTTP (409|502|503|504)/.test(String(error))||attempt===5)throw error;
+   await new Promise(resolve=>setTimeout(resolve,Math.min(12000,1200*2**attempt)));
+  }
+ }
+ throw Error('Unable to commit security metadata without concurrent overwrite');
+}
+// Only stale Object/field grants are removed. All valid tenant RBAC is retained.
+const knownFields=new Map(objectList.map(object=>[
+ object.apiName,new Set(object.fields.map(field=>field.apiName))
+]));
+const keepKnown=(grants,valid)=>Object.fromEntries(
+ Object.entries(grants??{}).filter(([key])=>valid(key))
+);
+const knownField=(key)=>{
+ const dot=key.indexOf('.');
+ return dot>0 && knownFields.get(key.slice(0,dot))?.has(key.slice(dot+1));
+};
+const scrub=(entry)=>({
+ ...entry,
+ objectPermissions:keepKnown(entry.objectPermissions,name=>knownFields.has(name)),
+ fieldPermissions:keepKnown(entry.fieldPermissions,knownField),
+ ...(entry.mutedObjectPermissions?{mutedObjectPermissions:
+  keepKnown(entry.mutedObjectPermissions,name=>knownFields.has(name))}:{}),
+ ...(entry.mutedFieldPermissions?{mutedFieldPermissions:
+  keepKnown(entry.mutedFieldPermissions,knownField)}:{})
+});
 const installerSetId='md-commerce-metadata-installer';
 const requiredCapabilities=['metadata:read','metadata:write','components:manage','flows:manage','pages:manage'];
-const existingInstallerSet=(initialAccess.permissionSets??[]).find(p=>p.id===installerSetId);
-const installerSet={...(existingInstallerSet??{
- id:installerSetId,label:'Commerce Metadata Installer',apiName:'MD_Commerce_Metadata_Installer',
- license:installerProfile.license,description:'Restricted metadata installation service role',
- objectPermissions:{},fieldPermissions:{},recordTypePermissions:{},
- appPermissions:{},tabPermissions:{}
-}),systemPermissions:[...new Set([...(existingInstallerSet?.systemPermissions??[]),...requiredCapabilities])]};
-const alreadyGranted=installer.permissionSetIds?.includes(installerSetId)
-  && requiredCapabilities.every(p=>existingInstallerSet?.systemPermissions?.includes(p));
-if(!alreadyGranted){
- // Reuse the working catalogue seeder's compatibility rule: older uninstall
- // operations leave references to deleted Objects/fields inside security grants.
- // Their stale references cannot be submitted to the secured RBAC validator.
- // Keep all valid unrelated grants and do not relax RBAC enforcement.
- const knownFields=new Map(objectList.map(object=>[
-  object.apiName,new Set(object.fields.map(field=>field.apiName))
- ]));
- const keepValid=(grants,valid)=>Object.fromEntries(
-  Object.entries(grants??{}).filter(([key])=>valid(key))
- );
- const knownField=(key)=>{
-  const position=key.indexOf('.');
-  return position>0 && knownFields.get(key.slice(0,position))?.has(key.slice(position+1));
- };
- const scrub=(entry)=>({
-  ...entry,
-  objectPermissions:keepValid(entry.objectPermissions,name=>knownFields.has(name)),
-  fieldPermissions:keepValid(entry.fieldPermissions,knownField),
-  ...(entry.mutedObjectPermissions?{mutedObjectPermissions:
-   keepValid(entry.mutedObjectPermissions,name=>knownFields.has(name))}:{}),
-  ...(entry.mutedFieldPermissions?{mutedFieldPermissions:
-   keepValid(entry.mutedFieldPermissions,knownField)}:{})
- });
- await api('/metadata/permissions','PUT',{
-  ...initialAccess,
-  profiles:(initialAccess.profiles??[]).map(scrub),
-  permissionSets:[...(initialAccess.permissionSets??[]).filter(p=>p.id!==installerSetId),installerSet].map(scrub),
-  permissionSetGroups:(initialAccess.permissionSetGroups??[]).map(scrub),
-  users:(initialAccess.users??[]).map(u=>u.id===installer.id
+const installerChanged=await updateSecurity(access=>{
+ const installer=(access.users??[]).find(u=>u.id===login.user?.id)
+  ??(access.users??[]).find(u=>String(u.username??u.email??'').toLowerCase()===email.toLowerCase());
+ if(!installer)throw Error('Phase 4 installer identity is absent from tenant RBAC');
+ const profile=(access.profiles??[]).find(p=>p.id===installer.profileId);
+ if(!profile)throw Error('Phase 4 installer profile is missing');
+ const existing=(access.permissionSets??[]).find(p=>p.id===installerSetId);
+ if(installer.permissionSetIds?.includes(installerSetId)
+  &&requiredCapabilities.every(p=>existing?.systemPermissions?.includes(p)))return null;
+ const grant={...(existing??{
+  id:installerSetId,label:'Commerce Metadata Installer',apiName:'MD_Commerce_Metadata_Installer',
+  license:profile.license,description:'Restricted metadata installation service role',
+  objectPermissions:{},fieldPermissions:{},recordTypePermissions:{},
+  appPermissions:{},tabPermissions:{}
+ }),systemPermissions:[...new Set([...(existing?.systemPermissions??[]),...requiredCapabilities])]};
+ return {
+  ...access,
+  profiles:(access.profiles??[]).map(scrub),
+  permissionSets:[...(access.permissionSets??[]).filter(p=>p.id!==installerSetId),grant].map(scrub),
+  permissionSetGroups:(access.permissionSetGroups??[]).map(scrub),
+  users:(access.users??[]).map(u=>u.id===installer.id
    ?{...u,permissionSetIds:[...new Set([...(u.permissionSetIds??[]),installerSetId])]}:u)
- });
+ };
+});
+if(installerChanged){
  const refreshed=await api('/auth/login','POST',{email,password});
  if(refreshed.user?.tenantId!==expectTenant||!refreshed.access_token)
   throw Error('Phase 4 RBAC refresh failed, refusing metadata writes');
