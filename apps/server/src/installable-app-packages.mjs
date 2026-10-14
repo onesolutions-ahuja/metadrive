@@ -1,3 +1,33 @@
+function upgradePackagedPageComponents(page, seeded, appKey) {
+        const migrateLegacyPos = appKey === 'pos' && (page.components ?? []).length === 1
+          && page.components[0].id === 'pos-sales-workspace'
+          && page.components[0].type === 'Custom:TillSalesWorkspace';
+        const upgradedComponents = migrateLegacyPos ? structuredClone(seeded) : (page.components ?? []).map(component => {
+          const template = seeded.find(item => item.id === component.id && item.type === component.type);
+          if (!template) return component;
+          const missingCategories = template.properties?.categoryObjectApiName &&
+            !component.properties?.categoryObjectApiName;
+          const legacyAccent = component.properties?.accentColor === '#ffca26'
+            && template.properties?.accentColor !== '#ffca26';
+          const missingWelcome = template.properties?.welcomeImage && !component.properties?.welcomeImage;
+          if (!missingCategories && !legacyAccent && !missingWelcome) return component;
+          return { ...component, properties: {
+            ...component.properties,
+            ...(missingWelcome ? { welcomeImage: template.properties.welcomeImage, labels: template.properties.labels } : {}),
+            ...(missingCategories ? {
+              categoryObjectApiName: template.properties.categoryObjectApiName,
+              categoryNameField: template.properties.categoryNameField
+            } : {}),
+            ...(legacyAccent ? {
+              accentColor: template.properties.accentColor,
+              ...(component.properties.inkColor === '#202124' ? { inkColor: template.properties.inkColor } : {})
+            } : {})
+          } };
+        });
+
+        return {upgradedComponents,migrateLegacyPos};
+}
+
 /**
  * Install declarative business-app metadata through the shared AppExchange lifecycle.
  * Neither this primitive nor Object/Flow execution contains kiosk-specific logic.
@@ -177,36 +207,26 @@ export function applyInstallableAppPackages(tenant, catalog) {
         // Upgrade only a package-owned, unchanged legacy accent to the
         // revised kiosk visual preset. Customised tenant colors stay intact.
         const seeded = pkg.pages?.find(candidate => candidate.apiName === page.apiName)?.components ?? [];
-        const migrateLegacyPos = pkg.appKey === 'pos' && (page.components ?? []).length === 1
-          && page.components[0].id === 'pos-sales-workspace'
-          && page.components[0].type === 'Custom:TillSalesWorkspace';
-        const upgradedComponents = migrateLegacyPos ? structuredClone(seeded) : (page.components ?? []).map(component => {
-          const template = seeded.find(item => item.id === component.id && item.type === component.type);
-          if (!template) return component;
-          const missingCategories = template.properties?.categoryObjectApiName &&
-            !component.properties?.categoryObjectApiName;
-          const legacyAccent = component.properties?.accentColor === '#ffca26'
-            && template.properties?.accentColor !== '#ffca26';
-          const missingWelcome = template.properties?.welcomeImage && !component.properties?.welcomeImage;
-          if (!missingCategories && !legacyAccent && !missingWelcome) return component;
-          return { ...component, properties: {
-            ...component.properties,
-            ...(missingWelcome ? { welcomeImage: template.properties.welcomeImage, labels: template.properties.labels } : {}),
-            ...(missingCategories ? {
-              categoryObjectApiName: template.properties.categoryObjectApiName,
-              categoryNameField: template.properties.categoryNameField
-            } : {}),
-            ...(legacyAccent ? {
-              accentColor: template.properties.accentColor,
-              ...(component.properties.inkColor === '#202124' ? { inkColor: template.properties.inkColor } : {})
-            } : {})
-          } };
-        });
+        const {upgradedComponents,migrateLegacyPos} = upgradePackagedPageComponents(page,seeded,pkg.appKey);
         if (assignments.length !== (page.activationAssignments ?? []).length ||
           (migrateLegacyPos || upgradedComponents.some((item, at) => item !== page.components[at]))) {
           pages[index] = {...page,activationAssignments:assignments,components:upgradedComponents};
           changed = true;
         }
+      }
+    }
+    // Apply safe metadata repairs to every package page, not just the current
+    // landing page. This retains legacy-page compatibility after an app upgrade.
+    for (const templatePage of pkg.pages ?? []) {
+      if (templatePage.apiName === pkg.pages?.[0]?.apiName) continue;
+      const at = pages.findIndex(item => item.apiName === templatePage.apiName);
+      if (at === -1) continue;
+      const page = pages[at];
+      const {upgradedComponents,migrateLegacyPos} =
+        upgradePackagedPageComponents(page,templatePage.components ?? [],pkg.appKey);
+      if (migrateLegacyPos || upgradedComponents.some((item,i)=>item!==page.components[i])) {
+        pages[at] = {...page,components:upgradedComponents};
+        changed = true;
       }
     }
     // Sample menu lives in ordinary tenant records, never inside the React UI.
