@@ -117,15 +117,19 @@ export async function readPersistedState(): Promise<unknown | null> {
   if (persistenceMode === 'normalized' || persistenceMode === 'typed') {
     // SQL-only read. Typed mode verifies physical records under the SAME SQL snapshot.
     // No fallback to legacy JSONB, even on first start or lost connections.
-    const previousSnapshot = normalizedSnapshot;
-    const refreshed = await readNormalizedState(pool as unknown as Parameters<typeof readNormalizedState>[0],
-      persistenceMode === 'typed' ? verifyTypedRecords : null);
-    // Reading a stale revision must not replace a local write's newer CAS
-    // baseline. The scheduler retries after concurrent writes settle.
-    if (normalizedSnapshot !== previousSnapshot)
-      throw new Error('Concurrent SQL write while refreshing scheduled state');
-    normalizedSnapshot = refreshed;
-    return refreshed.state;
+    // Scheduler refresh can overlap an ordinary API commit in this process.
+    // Serialize against the local writer, then discard any read whose CAS
+    // baseline changed while SQL was being fetched. Never install stale state.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await waitForPersistedState();
+      const previousSnapshot = normalizedSnapshot;
+      const refreshed = await readNormalizedState(pool as unknown as Parameters<typeof readNormalizedState>[0],
+        persistenceMode === 'typed' ? verifyTypedRecords : null);
+      if (normalizedSnapshot !== previousSnapshot) continue;
+      normalizedSnapshot = refreshed;
+      return refreshed.state;
+    }
+    throw new Error('Concurrent SQL write while refreshing scheduled state');
   }
   if (persistenceMode === 'relational') {
     // Never silently fall back to a stale JSONB blob or empty seed.
