@@ -15,7 +15,7 @@
     "start:server": "npm run start --workspace apps/server",
     "test:foundation": "node --test scripts/foundation-contract.test.mjs",
     "test:foundation:live": "node scripts/foundation-live-smoke.mjs",
-    "test:page-routing": "node --experimental-strip-types --test scripts/page-action-routing.test.mjs",
+    "test:page-routing": "node --experimental-strip-types --test scripts/page-action-routing.test.mjs && tsx --test scripts/phase1c-page-dependencies.test.mjs",
     "test:flow-binding": "node --experimental-strip-types --test scripts/md09-flow-input-bindings.test.mjs",
     "test:record-filter": "node --experimental-strip-types --test scripts/md09-record-filter-metadata.test.mjs",
     "test:visibility": "tsx --test scripts/md09-component-visibility.test.mjs",
