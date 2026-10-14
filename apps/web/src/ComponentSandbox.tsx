@@ -45,7 +45,7 @@ export default function ComponentSandbox({ definition, props }: { definition: Li
   useEffect(() => {
     if (!ready) return;
     ref.current?.contentWindow?.postMessage({ kind:'RENDER',instance,
-      definition:{compiledJs:definition.compiledJs,scopedCss:definition.scopedCss},props:safeProps }, '*');
+      definition:{apiName:definition.apiName,compiledJs:definition.compiledJs,scopedCss:definition.scopedCss},props:safeProps }, '*');
   }, [ready, instance, definition.compiledJs, definition.scopedCss, safeProps]);
   return <iframe ref={ref} title={definition.label} sandbox="allow-scripts"
     referrerPolicy="no-referrer" srcDoc={srcDoc}
