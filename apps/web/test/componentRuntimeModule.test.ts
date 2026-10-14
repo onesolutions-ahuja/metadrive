@@ -1,3 +1,5 @@
+import {findRegisteredComponent} from '../src/componentRegistryLookup';
+import type {LibraryComponentMetadata} from '../src/metadata';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import * as React from 'react';
@@ -50,4 +52,13 @@ test('sandbox refuses undeclared and malformed property keys',()=>{
   assert.equal(output.clientSecret,undefined);
   assert.equal(output.userTitle,'y');
   assert.equal(output.children,undefined);
+});
+
+test('component resolver honors published status and declared metadata surface',()=>{
+ const base={apiName:'Published',label:'Published',description:'',version:1,updatedAt:'2026-10-14',jsxSource:'',cssSource:'',compiledJs:'',scopedCss:'',surfaces:['page','dashboard'] as Array<'page'|'dashboard'|'flow'>};
+ const list:LibraryComponentMetadata[]=[{...base,status:'Published'},{...base,apiName:'DraftComponent',status:'Draft'}];
+ assert.equal(findRegisteredComponent(list,'Published','page')?.apiName,'Published');
+ assert.equal(findRegisteredComponent(list,'Published','flow'),undefined);
+ assert.equal(findRegisteredComponent(list,'DraftComponent','page'),undefined);
+ assert.equal(findRegisteredComponent(list,null,'page'),undefined);
 });
