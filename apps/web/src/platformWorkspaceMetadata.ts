@@ -13,7 +13,13 @@ const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission'
  'Tenant Management':'platform:superadmin',
  'Object Manager':'metadata:read',
  'Company Information':'metadata:read',
- 'Currencies':'metadata:read'
+ 'Currencies':'metadata:read',
+ 'Named Credentials':'metadata:write',
+ 'AppExchange':'metadata:write',
+ 'App Manager':'metadata:read',
+ 'Users':'metadata:read',
+ 'Profiles':'metadata:read',
+ 'Permission Sets':'metadata:read'
 };
 export function platformWorkspaceDescriptors():PlatformWorkspaceDescriptor[]{
  const byLabel=new Map<string,SetupWorkspace>(workspaces.map(w=>[w.label,w]));
@@ -50,4 +56,32 @@ export function validatePlatformEditorBinding(
    (typeof binding.objectApiName!=='string'||!availableObjectApiNames.has(binding.objectApiName)))
   return ['Object metadata unavailable'];
  return [];
+}
+
+/** 4d–4g: resolve all existing Setup navigation entries through the same
+ * central workspace implementation; aliases are not separate modules.
+ */
+const workspaceAliases:Readonly<Record<string,string>>={
+ 'Currencies':'company-settings','Named Devices':'named-credentials',
+ 'Users':'rbac','Roles':'rbac','Public Groups':'rbac','Profiles':'rbac',
+ 'Permission Sets':'rbac','Permission Set Groups':'rbac',
+ 'Sharing Settings':'rbac','Sharing Rules':'rbac',
+ 'Paused and Waiting Interviews':'flow-builder','Scheduled Flows':'flow-builder',
+ 'Failed Flow Logs':'flow-builder'
+};
+export function platformNavigationEntries():PlatformWorkspaceDescriptor[]{
+ const canonical=new Map(workspaces.map(item=>[item.label,item.id]));
+ return setupNavigation.flatMap(group=>group.items.flatMap(label=>{
+  const id=canonical.get(label)??workspaceAliases[label];
+  if(!id)return [];
+  return [{id,label,group:group.group,permission:restricted[label]??'metadata:read'}];
+ }));
+}
+export function authorizePlatformNavigation(
+ label:string,grants:ReadonlySet<string>,mode:'view'|'edit'='view'
+):PlatformWorkspaceDescriptor|undefined{
+ const descriptor=platformNavigationEntries().find(item=>item.label===label);
+ if(!descriptor||!grants.has(descriptor.permission))return undefined;
+ if(mode==='edit'&&!grants.has('metadata:write'))return undefined;
+ return descriptor;
 }
