@@ -222,7 +222,7 @@ type ChatterPost = {
 };
 
 
-export function createRecordWorkspaceViews(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>, usePageLayoutDevice: () => LayoutDevice, ApiRequestError: new (...args: any[]) => Error & { status: number }, getAccessToken: () => string | undefined) {
+export function createRecordWorkspaceViews(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>, usePageLayoutDevice: () => LayoutDevice, ApiRequestError: new (...args: any[]) => Error & { status: number }, getAccessToken: () => string | undefined, RuntimeReportChart: React.ComponentType<any>) {
 function RecordWorkspace({
   route,
   objects,
