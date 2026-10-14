@@ -72,13 +72,45 @@ if(!canSeed){
     objectPermissions:{...(existingSet?.objectPermissions??{}),...objectPermissions},
     fieldPermissions:{...(existingSet?.fieldPermissions??{}),...fieldPermissions}
   };
+  // Legacy connector uninstall left RBAC references to absent metadata fields.
+  // Sanitize only orphaned object/field grants before using the secured
+  // security:manage endpoint; valid unrelated permissions remain unchanged.
+  const objectsByName=new Map((await api('/metadata/objects')).objects.map(object=>
+    [object.apiName,new Set(object.fields.map(field=>field.apiName))]));
+  const knownObject=name=>objectsByName.has(name);
+  const knownField=key=>{
+    const dot=key.indexOf('.');
+    return dot>0 && objectsByName.get(key.slice(0,dot))?.has(key.slice(dot+1));
+  };
+  let orphanedPermissions=0;
+  const keepKnown=(entries,valid)=>{
+    const kept=Object.fromEntries(Object.entries(entries??{}).filter(([key])=>{
+      if(valid(key))return true;
+      orphanedPermissions++;return false;
+    }));
+    return kept;
+  };
+  const cleanGrants=entry=>({
+    ...entry,
+    objectPermissions:keepKnown(entry.objectPermissions,knownObject),
+    fieldPermissions:keepKnown(entry.fieldPermissions,knownField),
+    ...(entry.mutedObjectPermissions?{
+      mutedObjectPermissions:keepKnown(entry.mutedObjectPermissions,knownObject)
+    }:{}),
+    ...(entry.mutedFieldPermissions?{
+      mutedFieldPermissions:keepKnown(entry.mutedFieldPermissions,knownField)
+    }:{})
+  });
   const updated={
     ...access,
-    permissionSets:[...access.permissionSets.filter(set=>set.id!==seederSetId),seedSet],
+    profiles:access.profiles.map(cleanGrants),
+    permissionSets:[...access.permissionSets.filter(set=>set.id!==seederSetId),seedSet].map(cleanGrants),
+    permissionSetGroups:(access.permissionSetGroups??[]).map(cleanGrants),
     users:access.users.map(user=>user.id===seedUser.id?{
       ...user,permissionSetIds:[...new Set([...(user.permissionSetIds??[]),seederSetId])]
     }:user)
   };
+  if(orphanedPermissions)console.log('Discarding orphaned RBAC references to absent metadata: '+orphanedPermissions);
   await api('/metadata/permissions','PUT',updated);
   const relogin=await api('/auth/login','POST',{email,password});
   if(relogin.user?.tenantId!==login.user?.tenantId)throw Error('Tenant changed across RBAC refresh');
