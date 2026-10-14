@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import {compileComponentModule} from './componentRuntimeModule';
 
-type FrameMessage = { kind: string; instance: string; requestId?: string; props?: Record<string, unknown>; definition?: { compiledJs: string; scopedCss: string }; result?: unknown; error?: string };
+type FrameMessage = { kind: string; instance: string; requestId?: string; props?: Record<string, unknown>; definition?: { apiName: string; compiledJs: string; scopedCss: string }; result?: unknown; error?: string };
 const root = createRoot(document.getElementById('component-root')!);
 const requests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 let currentInstance = '';
@@ -38,7 +38,11 @@ window.addEventListener('message', (event: MessageEvent<FrameMessage>) => {
       requests.set(requestId, { resolve, reject });
       send({ kind: 'ACTION', requestId, result: action });
     });
-    root.render(<React.StrictMode><div className="registered-component"><Component {...message.props} onAction={onAction}
+    const safeApiName = typeof message.definition.apiName === 'string' &&
+      /^[A-Za-z][A-Za-z0-9_]*$/.test(message.definition.apiName)
+      ? message.definition.apiName.toLowerCase() : '';
+    root.render(<React.StrictMode><div className={safeApiName
+      ? `registered-component metadrive-component-${safeApiName}` : 'registered-component'}><Component {...message.props} onAction={onAction}
       onChange={(value: unknown) => { void onAction({ event: 'change', value }); }} /></div></React.StrictMode>);
   } catch (error) {
     root.render(<div role="alert">Component render failed: {error instanceof Error ? error.message : 'Invalid component'}</div>);
