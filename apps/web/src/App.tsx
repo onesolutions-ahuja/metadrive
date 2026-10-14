@@ -4552,6 +4552,7 @@ function MetadataBoundPageComponent({
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
   const cartObjectApiName = String(properties.cartObjectApiName ?? '');
+  const customerObjectApiName = String(properties.customerObjectApiName ?? '');
   const categoryObjectApiName = String(properties.categoryObjectApiName ?? '');
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
