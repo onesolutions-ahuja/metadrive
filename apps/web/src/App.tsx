@@ -3575,7 +3575,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   );
 
   return (
-    <div className={standalonePageMode || isStandaloneMetadataPage ? 'lightning kiosk-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
+    <div className={standalonePageMode || isStandaloneMetadataPage ? 'lightning standalone-page-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
         <button type="button" className="header-home-link" onClick={() =>
