@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {projectState,restoreState,stateDigest} from '../src/relational-projection.mjs';
+import {projectState,restoreState,stateDigest,verifyProjection} from '../src/relational-projection.mjs';
 import {restoreState as restoreModule} from '../src/platform-state-restore.mjs';
 
 const fixture=()=>({
@@ -23,4 +23,11 @@ test('restore refuses incompatible platform metadata shape',()=>{
   const rows=projectState(fixture());
   const wrong=rows.platformSettings.map(item=>item.key==='platformPolicyAudit'?{...item,payload:{}}:item);
   assert.throws(()=>restoreState({...rows,platformSettings:wrong}),/must be an array/);
+});
+
+test('public verification fails closed if normalized record payload changes',()=>{
+  const source=fixture(),rows=projectState(source);
+  assert.equal(verifyProjection(source,rows).digest,stateDigest(source));
+  const altered={...rows,records:rows.records.map(row=>({...row,payload:{...row.payload,Name:'Changed'}}))};
+  assert.throws(()=>verifyProjection(source,altered),/round-trip mismatch/);
 });
