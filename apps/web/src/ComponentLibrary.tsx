@@ -178,20 +178,16 @@ export default function ComponentLibrary({
           <input id="component-library-search" className="form-control" type="search" value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder="Search label, API name or description" />
         </label>
         <p className="properties-help">Showing {shownCount} of {standardPageComponents.length + standardDashboardComponents.length + components.length} components</p>
-        <div className="component-library-section">
-          <div className="component-library-section-heading"><h3>Standard components</h3><span>Built in · Lightning pages</span></div>
-          {visibleStandardPages.map((component) => <article className="library-component-card" key={component.apiName}>
-            <span className="component-option-icon"><Grid2X2 size={16} /></span>
-            <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>Standard · Lightning pages</small><p>{component.description}</p></div>
+        {[
+          { key:'pages',heading:'Standard components',description:'Built in · Lightning pages',label:'Standard · Lightning pages',items:visibleStandardPages },
+          { key:'dashboards',heading:'Standard dashboard widgets',description:'Built in · Dashboards',label:'Standard · Dashboards',items:visibleDashboardWidgets }
+        ].map(section => <div className="component-library-section" key={section.key}>
+          <div className="component-library-section-heading"><h3>{section.heading}</h3><span>{section.description}</span></div>
+          {section.items.map(component => <article className="library-component-card" key={component.apiName}>
+            <span className="component-option-icon"><Grid2X2 size={16}/></span>
+            <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>{section.label}</small><p>{component.description}</p></div>
           </article>)}
-        </div>
-        <div className="component-library-section">
-          <div className="component-library-section-heading"><h3>Standard dashboard widgets</h3><span>Built in · Dashboards</span></div>
-          {visibleDashboardWidgets.map((component) => <article className="library-component-card" key={component.apiName}>
-            <span className="component-option-icon"><Grid2X2 size={16} /></span>
-            <div className="library-component-info"><strong>{component.label}</strong><code>{component.apiName}</code><small>Standard · Dashboards</small><p>{component.description}</p></div>
-          </article>)}
-        </div>
+        </div>)}
         <div className="component-library-section">
           <div className="component-library-section-heading"><h3>Custom components</h3><span>Registered in this shared library</span></div>
         {visibleCustomComponents.map((component) => <article className={`library-component-card ${editingApiName === component.apiName ? 'selected' : ''}`} key={component.apiName}>
