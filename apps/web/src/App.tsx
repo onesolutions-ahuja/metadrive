@@ -184,7 +184,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
@@ -194,7 +193,6 @@ type NewFieldLookupFilterDraft = {
   valueFieldApiName: string;
   required: boolean;
 };
-
 const customTabStyles = [
   { name: 'Blue', color: '#1589ee', icon: Database },
   { name: 'Green', color: '#2e844a', icon: UsersRound },
@@ -3746,6 +3744,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           {route.kind === 'setup' && workspace === 'home' && (
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
+          {route.kind === 'setup' && workspace === 'object-manager' && <PlatformWorkspaceSurface workspace="object-manager" pages={pages} libraryComponents={libraryComponents} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName)=>navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName})}>{null}</PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'object-manager' && (
             <ObjectManager
               object={object}
@@ -3803,7 +3802,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               delete next[pageApiName];
               return next;
             })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} request={apiRequest} canManageRoutes={canManageApps} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
-          {route.kind === 'setup' && workspace === 'app-manager' && <PlatformWorkspaceSurface workspace="app-manager"><AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} /></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'app-manager' && <PlatformWorkspaceSurface workspace="app-manager" pages={pages} libraryComponents={libraryComponents} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName)=>navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName})}><AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
             dashboardFolders={dashboardFolders}
@@ -3866,7 +3865,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
           />}
-          {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange"><AppExchange
+          {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" pages={pages} libraryComponents={libraryComponents} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName)=>navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName})}><AppExchange
             credentials={namedCredentials}
             flows={flows.map(({apiName,label,status,elements}) => ({
               apiName, label, status,
@@ -3981,9 +3980,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
+          {route.kind === 'setup' && workspace === 'company-settings' && <PlatformWorkspaceSurface workspace="company-settings" pages={pages} libraryComponents={libraryComponents} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName)=>navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName})}>{null}</PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
-          {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac"><Permissions
+          {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" pages={pages} libraryComponents={libraryComponents} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName)=>navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName})} permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac" pages={pages} libraryComponents={libraryComponents} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName)=>navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName})}><Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
             objects={objects}
