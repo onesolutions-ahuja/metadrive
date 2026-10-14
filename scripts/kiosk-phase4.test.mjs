@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {test} from 'node:test';
+import {transformSync} from 'esbuild';
 import {commerceComponents} from './kiosk-phase4-components.mjs';
 import {commerceFlows} from './kiosk-phase4-flows.mjs';
 import {commercePages,commerceApp} from './kiosk-phase4-pages.mjs';
@@ -135,4 +136,12 @@ test('component lifecycle uses secured draft creation and dedicated publish endp
  assert.match(source,/existing\.status==='Published'/);
  assert.match(source,/existing\.trustedBundled/);
  assert.match(source,/existing\.status!=='Draft'/);
+});
+
+test('every kiosk JSX block compiles with the same esbuild settings as the shared registry',()=>{
+ for(const item of commerceComponents){
+  assert.doesNotThrow(()=>transformSync(item.jsxSource,{
+   loader:'jsx',format:'cjs',jsx:'transform',target:'es2020'
+  }),item.apiName);
+ }
 });
