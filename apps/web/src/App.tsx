@@ -205,10 +205,8 @@ const customTabStyles = [
   { name: 'Yellow', color: '#dd7a01', icon: ClipboardList }
 ] as const;
 
-const defaultApiUrl = new URL(window.location.origin);
-defaultApiUrl.port = '3001';
-defaultApiUrl.pathname = '/api';
-const apiBase = import.meta.env.VITE_API_BASE_URL ?? defaultApiUrl.toString().replace(/\/$/, '');
+// Same-origin API in deployed builds and Vite (which proxies /api in development).
+const apiBase = import.meta.env.VITE_API_BASE_URL ?? `${window.location.origin}/api`;
 let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
 function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => Promise<void> | void; onPasswordChanged: () => void }) {
