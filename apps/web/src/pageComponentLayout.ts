@@ -80,18 +80,12 @@ export function resolvePageComponentStyle(
   return { ...legacy, ...resolveLayoutStyle(properties, device) };
 }
 
+/** Compatibility API for legacy page components. Use the same cycle checker
+ * as responsive layouts, while retaining the legacy built-in-parent restriction.
+ */
 export function canNestComponent(components: PageComponentMetadata[], childId: string, parentId: string): boolean {
-  if (childId === parentId) return false;
-  const parent = components.find((item) => item.id === parentId);
-  if (!parent || !isLayoutType(parent.type)) return false;
-  const visited = new Set<string>([childId]);
-  let cursor: PageComponentMetadata | undefined = parent;
-  while (cursor) {
-    if (visited.has(cursor.id)) return false;
-    visited.add(cursor.id);
-    cursor = components.find((item) => item.id === cursor?.parentId);
-  }
-  return true;
+  const parent = components.find(item=>item.id===parentId);
+  return Boolean(parent && isLayoutType(parent.type) && canNest(components,childId,parentId));
 }
 export function directChildren(components: PageComponentMetadata[], parentId?: string): PageComponentMetadata[] {
   return components.filter((component) => (component.parentId || undefined) === parentId);
@@ -99,11 +93,14 @@ export function directChildren(components: PageComponentMetadata[], parentId?: s
 
 export function isDescendantOf(components: PageComponentMetadata[], childId: string, ancestorId: string): boolean {
   const visited = new Set<string>();
-  let cursor = components.find((item) => item.id === childId);
-  while (cursor?.parentId && !visited.has(cursor.id)) {
-    if (cursor.parentId === ancestorId) return true;
+  const byId = new Map(components.map(item=>[item.id,item]));
+  let cursor = byId.get(childId);
+  while (cursor && !visited.has(cursor.id)) {
     visited.add(cursor.id);
-    cursor = components.find((item) => item.id === cursor?.parentId);
+    const parentId = rawLayoutParentId(cursor);
+    if (!parentId) return false;
+    if (parentId === ancestorId) return true;
+    cursor = byId.get(parentId);
   }
   return false;
 }
