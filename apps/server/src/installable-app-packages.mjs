@@ -1,4 +1,4 @@
-import {upgradePackagedPageComponents} from './package-page-migrations.mjs';
+import {upgradePackagedPageComponents,upgradePackagedFlow} from './package-page-migrations.mjs';
 
 /**
  * Install declarative business-app metadata through the shared AppExchange lifecycle.
@@ -45,18 +45,12 @@ export function applyInstallableAppPackages(tenant, catalog) {
       if (additions.length) changed = true;
       return [...oldItems,...structuredClone(additions)];
     };
-    const flows = mergeByApiName(next.flows, pkg.flows).map(flow => {
-      if (!(pkg.flows ?? []).some(item => item.apiName === flow.apiName)) return flow;
-      let fixed = false;
-      const elements = (flow.elements ?? []).map(element => {
-        if (element.type !== 'Decision' || (element.config?.outcomes ?? []).some(o => o.name === 'Default')) return element;
-        const linked = (flow.connectors ?? []).filter(c => c.from === element.id && c.kind === 'normal' && c.label?.trim().toLowerCase() === 'default outcome');
-        if (linked.length !== 1) return element;
-        fixed = true;
-        return {...element, config:{...element.config,outcomes:[...(element.config?.outcomes ?? []),{name:'Default',label:'Default Outcome',conditions:[]}]}};
-      });
-      if (fixed) changed = true;
-      return fixed ? {...flow,elements} : flow;
+    const packagedFlowNames = new Set((pkg.flows ?? []).map(flow => flow.apiName));
+    const flows = mergeByApiName(next.flows,pkg.flows).map(flow => {
+      if (!packagedFlowNames.has(flow.apiName)) return flow;
+      const upgraded = upgradePackagedFlow(flow,pkg.installation?.flowMigrations);
+      if (upgraded !== flow) changed = true;
+      return upgraded;
     });
     const apps = mergeByApiName(next.apps, pkg.apps).map(app => {
       const template = (pkg.apps ?? []).find(candidate => candidate.apiName === app.apiName);
@@ -119,8 +113,8 @@ export function applyInstallableAppPackages(tenant, catalog) {
       }]};
       changed = true;
     }
-    // POS installs can introduce existing-object fields and new order/cart objects
-    // after the administrator profile was provisioned. Grant only previously absent
+    // Package metadata may enable installation of additional object fields
+    // after administrator provisioning. Grant only previously absent
     // permissions, never overwrite an explicit deny or tenant-customized grant.
     if (pkg.installation?.repairMissingAdministratorPermissions === true) {
       const adminIndex = accessControl.profiles.findIndex(profile => profile.id === 'system-administrator');
@@ -196,7 +190,7 @@ export function applyInstallableAppPackages(tenant, catalog) {
         changed = true;
       }
     }
-    // Sample menu lives in ordinary tenant records, never inside the React UI.
+    // Package demo data lives in ordinary tenant records, never inside the React UI.
     // Only seed an empty object collection; never replace customer records.
     let records = next.records;
     for (const [objectName, examples] of Object.entries(pkg.demoRecords ?? {})) {
