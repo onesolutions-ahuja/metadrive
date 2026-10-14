@@ -10726,10 +10726,8 @@ function PageBuilder({
               {([
                 ['width', 'Width'], ['height', 'Height']
               ] as const).map(([key, label]) => {
-                const max = key === 'x' ? page.canvasWidth - selected.position!.width
-                  : key === 'y' ? page.canvasHeight - selected.position!.height
-                    : key === 'width' ? page.canvasWidth - selected.position!.x
-                      : page.canvasHeight - selected.position!.y;
+                const max = key === 'width' ? page.canvasWidth - selected.position!.x
+                  : page.canvasHeight - selected.position!.y;
                 const min = key === 'width' ? selectedCustomDefinition?.resize?.minWidth ?? 1
                   : key === 'height' ? selectedCustomDefinition?.resize?.minHeight ?? 1
                     : 0;
