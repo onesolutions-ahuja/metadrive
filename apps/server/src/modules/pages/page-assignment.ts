@@ -1,9 +1,9 @@
 /** Page activation is metadata, not one router/condition tree per application. */
 type Assignment = {
   scope: string;
-  appId?: string;
-  profileId?: string;
-  recordTypeId?: string;
+  appId?: string | null;
+  profileId?: string | null;
+  recordTypeId?: string | null;
   formFactors: string[];
 };
 type Page = {
