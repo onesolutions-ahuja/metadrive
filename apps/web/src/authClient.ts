@@ -54,7 +54,7 @@ function refreshAccessToken() {
   return refreshInFlight;
 }
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const send = (token: string | undefined) => fetch(`${apiBase}${path}`, {
     ...init,
     credentials: 'include',
