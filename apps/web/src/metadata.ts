@@ -710,8 +710,7 @@ export type ReportRunMetadata = {
   generatedAt: string;
 };
 
-export type LibraryComponentMetadata = { propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[];
-  primitiveMetadata?: import('./sharedPrimitiveMetadata').PrimitiveMetadata;
+export type LibraryComponentMetadata = { propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[]; primitiveMetadata?: import('./sharedPrimitiveMetadata').PrimitiveMetadata;
   tenantId?: string;
   apiName: string;
   label: string;
