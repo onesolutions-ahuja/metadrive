@@ -37,3 +37,25 @@ export function upgradePackagedPageComponents(page, seeded, migration = {}) {
   });
   return {upgradedComponents:changed ? upgradedComponents : page.components ?? [],migratedLayout:false};
 }
+
+/** Apply signed package-defined Flow metadata migrations without replacing user changes. */
+export function upgradePackagedFlow(flow, rules = []) {
+  if (!rules.length) return flow;
+  let changed = false;
+  const elements = (flow.elements ?? []).map(element => {
+    let next = element;
+    for (const rule of rules) {
+      if (next.type !== rule.elementType) continue;
+      const outcomes = next.config?.outcomes ?? [];
+      if (outcomes.some(outcome => outcome.name === rule.missingOutcomeName)) continue;
+      const matches = (flow.connectors ?? []).filter(connector =>
+        connector.from === next.id && connector.kind === rule.connectorKind &&
+        connector.label?.trim().toLowerCase() === rule.connectorLabel.toLowerCase());
+      if (matches.length !== 1) continue;
+      next = {...next,config:{...next.config,outcomes:[...outcomes,structuredClone(rule.outcome)]}};
+      changed = true;
+    }
+    return next;
+  });
+  return changed ? {...flow,elements} : flow;
+}
