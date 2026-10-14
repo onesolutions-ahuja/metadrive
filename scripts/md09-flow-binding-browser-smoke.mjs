@@ -141,13 +141,21 @@ try {
   await mapping.getByLabel('Confirmed source').selectOption('Literal');
   await mapping.getByLabel('Confirmed fixed value').selectOption('true');
 
-  await page.getByRole('button', { name: 'Save page' }).click();
-  const storedPage = (await request('/metadata/pages', token)).pages.find(item => item.apiName === pageApiName);
-  assert(storedPage);
-  assert.deepEqual(storedPage.components[0].properties.actionFlows.submit.inputs, {
+  // The editor persists asynchronously: observe the committed mapping before
+  // asserting or reloading, rather than racing the save request.
+  const expectedInputs = {
     ItemId: '$event.item.id', Quantity: '$event.quantity',
     SessionId: '$session', Confirmed: true
-  });
+  };
+  await page.getByRole('button', { name: 'Save page' }).click();
+  let storedPage;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    storedPage = (await request('/metadata/pages', token)).pages.find(item => item.apiName === pageApiName);
+    if (JSON.stringify(storedPage?.components?.[0]?.properties?.actionFlows?.submit?.inputs) === JSON.stringify(expectedInputs)) break;
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert(storedPage, 'Page metadata must persist');
+  assert.deepEqual(storedPage.components[0].properties.actionFlows.submit.inputs, expectedInputs);
 
   await page.reload();
   await page.getByRole('button', { name: 'Back to page list' }).waitFor();
