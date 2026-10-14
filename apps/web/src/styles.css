@@ -2053,12 +2053,12 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 @media (max-width: 600px) { .navigation-load-time { font-size: 11px; min-width: 70px; } }
 
 /* Accessible connection enable/disable switch. No permissions are changed. */
-.credential-switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; white-space:nowrap; }
-.credential-switch input { position:absolute; width:1px; height:1px; opacity:0; }
-.credential-switch-track { position:relative; display:inline-block; width:36px; height:20px; border-radius:12px; background:#8794a3; transition:background .15s ease; }
-.credential-switch-track::after { content:""; position:absolute; left:3px; top:3px; width:14px; height:14px; border-radius:50%; background:white; transition:transform .15s ease; }
+.credential-switch { position:relative; min-height:44px; display:inline-flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; white-space:nowrap; }
+.credential-switch input { position:absolute; top:10px; left:0; width:44px; height:24px; opacity:0; }
+.credential-switch-track { position:relative; display:inline-block; width:44px; height:24px; flex:0 0 44px; border-radius:12px; background:#8794a3; transition:background .15s ease; }
+.credential-switch-track::after { content:""; position:absolute; left:4px; top:4px; width:16px; height:16px; border-radius:50%; background:white; transition:transform .15s ease; }
 .credential-switch input:checked + .credential-switch-track { background:#147d64; }
-.credential-switch input:checked + .credential-switch-track::after { transform:translateX(16px); }
+.credential-switch input:checked + .credential-switch-track::after { transform:translateX(20px); }
 .credential-switch input:focus-visible + .credential-switch-track { outline:2px solid #1264c8; outline-offset:3px; }
 .credential-switch input:disabled + .credential-switch-track { opacity:.45; }
 
@@ -2538,6 +2538,55 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
   .exchange-app-card .btn, .exchange-featured-card .btn { min-height: 44px; }
 }
 .connector-settings-page p { font-size: 12px; line-height: 1.5; }
+.permissions-page .permission-tabs { min-height: 44px; gap: 12px; }
+.permissions-page .permission-tabs button {
+  min-height: 44px;
+  padding-inline: 5px;
+  font-size: 12px;
+}
+.permissions-page .page-heading p { font-size: 12px; }
+.permissions-page .form-label,
+.permissions-page .checkbox-row,
+.permissions-page .permission-help { font-size: 12px; line-height: 1.45; }
+.permissions-page .permission-check-grid .checkbox-row {
+  min-height: 44px;
+  gap: 8px;
+  padding: 8px;
+}
+.permissions-page .permission-check-grid input[type="checkbox"] {
+  width: 24px; height: 24px; min-width: 24px; min-height: 24px; flex: 0 0 24px;
+  accent-color: #016ec4;
+}
+.settings-read-first-page .permission-help { font-size: 12px; line-height: 1.5; }
+.tenant-recovery-panel .permission-help { font-size: 12px; line-height: 1.5; }
+.tenant-recovery-panel .form-label { font-size: 12px; line-height: 1.45; }
+.tenant-recovery-panel .form-label input {
+  box-sizing: border-box;
+  display: block;
+  width: min(100%, 440px);
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 8px 11px;
+  border: 1px solid #c9c9c9;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--text);
+  font-size: 14px;
+}
+@media (max-width: 600px) {
+  .permissions-page .permission-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    height: auto;
+  }
+  .permissions-page .permission-tabs button {
+    min-width: 0;
+    padding: 4px 5px;
+    line-height: 1.2;
+    text-align: center;
+  }
+}
 
 
 /* Audit-measured contrast pairs; verify live composite backgrounds in CI. */

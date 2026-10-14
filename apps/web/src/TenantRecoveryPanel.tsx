@@ -46,7 +46,7 @@ export default function TenantRecoveryPanel({ request, operator, permitted, tena
     void execute(path, body, message);
   };
   if (operator && !permitted) return null;
-  return <section className="surface permission-section" aria-label="Tenant Recovery Centre">
+  return <section className="surface permission-section tenant-recovery-panel" aria-label="Tenant Recovery Centre">
     <h2>Tenant Emergency Recovery</h2>
     <p className="permission-help">
       Recovery requires two mature verified contacts, DNS ownership, a 24-hour cooling-off period,
