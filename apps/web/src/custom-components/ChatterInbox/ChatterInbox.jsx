@@ -12,7 +12,7 @@ export default function ChatterInbox(props) {
   const messages = Array.isArray(p.messages) ? p.messages : [];
   const accounts = Array.isArray(p.channelAccounts) ? p.channelAccounts : [];
   const scoped = conversations.filter(c => {
-    if (!p.canViewAll && p.restrictToAssigned && c.assignedUserId !== p.currentUserId) return false;
+    if (!p.canViewAll && p.restrictToAssigned && c.assignedUserId && c.assignedUserId !== p.currentUserId) return false;
     if (p.allowedAccountIds && Array.isArray(p.allowedAccountIds) && !p.allowedAccountIds.includes(c.channelAccountId)) return false;
     return true;
   });
