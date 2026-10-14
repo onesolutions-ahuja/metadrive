@@ -28,11 +28,14 @@ export default function PlatformSystemPageRenderer({page,workspace,permission,co
  components:readonly LibraryComponentMetadata[];children:ReactNode;
 }){
  if(!eligibleSystemPage(page,workspace,permission))return <>{children}</>;
+ const contentSlot=page.components.find(item=>item.type==='Custom:SystemPanel'
+  && item.properties.systemWorkspaceId===workspace
+  && item.properties.requiredPermission===permission&&item.visible!==false);
  return <div className="platform-system-page-layout" style={{position:'relative',minHeight:page.canvasHeight,maxWidth:page.canvasWidth}}>
  {page.components.filter(item=>item.visible!==false).map(item=>{
   const style=positionStyle(item,page);
   if(item.type==='Custom:SystemPanel'&&item.properties.systemWorkspaceId===workspace){
-   if(item.properties.requiredPermission!==permission)return null;
+   if(item.id!==contentSlot?.id||item.properties.requiredPermission!==permission)return null;
    return <section key={item.id} aria-label={item.label} style={style} data-page-instance={item.id}>
     {children}
    </section>;
