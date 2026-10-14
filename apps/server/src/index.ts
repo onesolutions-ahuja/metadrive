@@ -46,7 +46,7 @@ import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorizatio
 import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
-import { canAccessChatterRecord, isWhatsAppMessage } from './chatter-authorisation.js';
+import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from './chatter-authorisation.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
@@ -8113,6 +8113,25 @@ function routeParam(req: Request, name: string): string {
 const recordRoutesDependencies = { app, accessAuthentication, accessControlSchema, recordShareSchema, recordActivitySchema, chatterCommentSchema, chatterPostSchema, appendFieldHistory, profileIdForRole, persistState, getState: () => state, setState: (next: PlatformState) => { state = next; }, tenantIsActive, withSecurityEvent, tenantData, getPrincipal, principalUser, effectivePermissions, disableOnConnectorUninstall, assertConnectorLifecycleAccess, canOpenApp, hasObjectPermission, hasObjectWidePermission, queueContainsUser, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions, profileIdForPrincipal, resolveActiveLightningRecordPage, hasRecordTypeAccessForUser, applyRecordDefaults, persistTenantRecords, deleteRecordCascade, routeParam, formulaContextForUser, validateRuntimeRecord, runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows, calculateFormulaFields, sanitizeRecordValues, withCaseClosedDate, recordUnmodified, stampRecordAuditFields, recordActionEnabled, normalizeFlowRecordAssignments, validateRelationshipReparenting, waitForPersistedState, randomUUID, applyConnectorLifecycle, z, hashPassword };
 export type RecordRoutesDependencies = typeof recordRoutesDependencies;
 registerRecordRoutes(recordRoutesDependencies);
+// Data-source-neutral Chatter channel grants come from server-owned tenant records.
+// Never accept account grants, user IDs, or view-all flags from browser properties.
+app.get('/api/chatter/access', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant || !hasObjectPermission(principal, tenant, communicationObjectApiName, 'read')) {
+    return res.status(403).json({error:'Communication access denied'});
+  }
+  const scope = chatterScopeForUser(principal.tenantId, principal.userId, tenant);
+  res.setHeader('Cache-Control','private, no-store');
+  return res.json({
+    userId: principal.userId,
+    viewAll: scope.viewAllConversations,
+    grants: scope.grants.filter(grant => grant.canRead).map(grant => ({
+      channelAccountId:grant.channelAccountId,canRead:grant.canRead,
+      canSend:grant.canSend,canAssign:grant.canAssign
+    }))
+  });
+});
 function validateFlowInputValues(flow: FlowMetadata, values: Record<string, unknown>): string | undefined {
   const inputResources = flow.resources.filter((resource) => resource.availableForInput);
   for (const [name, value] of Object.entries(values)) {
