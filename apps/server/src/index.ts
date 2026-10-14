@@ -1,5 +1,6 @@
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
 import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
+import {canWritePageMetadata,visiblePageMetadata} from './modules/pages/protected-system-pages.js';
 import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
 import {libraryRevision,nextLibraryRevision,libraryHistory} from './modules/metadata/component-revisions.mjs';
 import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
@@ -92,7 +93,6 @@ import {
   matchesDashboardFilters,
   type DashboardFolderAccessLevel
 } from './dashboard-access.js';
-
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const schedulePollInterval = Number(process.env.METADRIVE_SCHEDULE_POLL_MS ?? 30_000);
@@ -454,7 +454,6 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
     return res.sendStatus(500); // Meta retries unsuccessful deliveries.
   }
 });
-
 
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
@@ -11309,7 +11308,7 @@ app.get('/api/routes/resolve/:appId/:slug', accessAuthentication, async (req: Re
 });
 
 app.get('/api/metadata/pages', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ pages: tenantData(getPrincipal(res).tenantId)?.pages ?? [] });
+  res.json({ pages: visiblePageMetadata(tenantData(getPrincipal(res).tenantId)?.pages ?? [],getPrincipal(res).permissions) });
 });
 app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
   const previousApiName = routeParam(req, 'apiName');
@@ -11319,6 +11318,7 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const existingPage = tenant.pages.find((page) => page.apiName === previousApiName);
+  if (!canWritePageMetadata(existingPage,parsed.data,principal.permissions)) return res.status(403).json({error:'Platform administrator policy required'});
   if (tenant.pages.some((page) => page.apiName.toLocaleLowerCase() === parsed.data.apiName.toLocaleLowerCase()
     && page.apiName !== previousApiName)) {
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
