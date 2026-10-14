@@ -25,7 +25,7 @@ export default function ChatterInbox(props) {
   const accountName = id => accounts.find(a => String(a.id) === String(id))?.name || '';
   const send = async event => {
     event.preventDefault();
-    if (!selected || !draft.trim() || busy) return;
+    if (!selected || !draft.trim() || busy || p.canSend !== true) return;
     if (typeof p.onAction !== 'function') { setError('Configure the Send Flow action in Page Builder.'); return; }
     setBusy(true); setError('');
     try {
@@ -66,7 +66,7 @@ export default function ChatterInbox(props) {
         <button type="button" className="md-chatter-back" aria-label="Back to chats" onClick={()=>select(null)}>‹</button>
         <span className="md-chatter-avatar" aria-hidden="true">{String(selected.contactName || '?').slice(0,1).toUpperCase()}</span>
         <div><strong>{selected.contactName || selected.phoneNumber}</strong><small>{selected.phoneNumber} · {accountName(selected.channelAccountId)}</small></div>
-        {p.enableAssignment !== false && <button type="button" className="md-chatter-assignment" disabled={busy}
+        {p.enableAssignment === true && p.canAssign === true && <button type="button" className="md-chatter-assignment" disabled={busy}
           onClick={()=>action('assign',{conversationId:selected.id,channelAccountId:selected.channelAccountId})}>Assign</button>}
       </header><div className="md-chatter-messages" role="log" aria-label="Conversation messages">
         {thread.map(m => <div key={m.id} className={'md-chatter-bubble ' + (m.direction === 'outbound' || m.direction === 'Outgoing' ? 'outbound':'inbound')}>
@@ -77,8 +77,8 @@ export default function ChatterInbox(props) {
         </div>)}</div>
         {error && <p role="alert" className="md-chatter-error">{error}</p>}
         <form onSubmit={send} className="md-chatter-compose"><input aria-label="Message" value={draft} onChange={e=>setDraft(e.target.value)}
-          disabled={busy || p.canSend === false} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
-          <button type="submit" disabled={!draft.trim() || busy || p.canSend===false}>Send</button></form>
+          disabled={busy || p.canSend !== true} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
+          <button type="submit" disabled={!draft.trim() || busy || p.canSend !== true}>Send</button></form>
         {p.composerHelpText && <p className="md-chatter-help">{p.composerHelpText}</p>}
       </> : <div className="md-chatter-welcome"><strong>{p.emptyTitle || 'Select a conversation'}</strong><p>Choose a customer to see their messages.</p></div>}
     </div>
