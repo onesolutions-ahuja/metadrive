@@ -262,7 +262,6 @@ function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => 
     </div>}
   </div>;
 }
-
 function ConnectionHealthIndicator() {
   const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; database: string; latency: number | null; checked: string }>({ status: 'checking', database: 'checking', latency: null, checked: '' });
   const [expanded, setExpanded] = useState(false);
