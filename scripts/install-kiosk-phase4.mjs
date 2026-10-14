@@ -14,6 +14,8 @@ if(!/^https:\/\//i.test(origin))throw Error('HTTPS METADRIVE_API_URL is required
 const email=process.env.METADRIVE_ADMIN_EMAIL,password=process.env.METADRIVE_ADMIN_PASSWORD;
 if(!email||!password||!expectTenant)throw Error('Admin credentials and expected tenant ID are required');
 let token='';
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const retryableWriterError=error=>/Concurrent writer detected|Concurrent SQL write|HTTP (502|503|504)/i.test(String(error));
 async function api(path,method='GET',body){
  const response=await fetch(origin+'/api'+path,{
   method,headers:{accept:'application/json',...(token?{authorization:'Bearer '+token}:{}),
@@ -112,21 +114,33 @@ if(installerChanged){
 }
 
 // Component registry is the sole source of executable JSX. Do not embed code in Pages.
-let libraries=(await api('/component-library')).components;
+async function installRegisteredComponent(component){
+ for(let attempt=0;attempt<6;attempt++){
+  // Every retry starts with a fresh registry read: POST is never replayed
+  // if the previous attempt actually committed before losing its response.
+  const available=(await api('/component-library')).components;
+  const existing=available.find(x=>x.apiName===component.apiName);
+  if(existing){
+   if(existing.tenantId!==expectTenant && existing.tenantId!==undefined)
+    throw Error('A component API name belongs to another tenant: '+component.apiName);
+   if(!existing.surfaces?.includes('page')||existing.status!=='Published')
+    throw Error('Existing component is not published for Page Builder: '+component.apiName);
+   return false;
+  }
+  try{await api('/component-library','POST',component);return true}
+  catch(error){
+   if(!retryableWriterError(error)||attempt===5)
+    throw Error('Component '+component.apiName+' registration failed: '+String(error));
+   await sleep(Math.min(12000,1200*2**attempt));
+  }
+ }
+ throw Error('Component registry unavailable after bounded retries: '+component.apiName);
+}
 let installedComponents=0;
 for(const component of commerceComponents){
- if(libraries.some(x=>x.apiName===component.apiName)){
-  const existing=libraries.find(x=>x.apiName===component.apiName);
-  if(existing.tenantId!==expectTenant && existing.tenantId!==undefined)
-   throw Error('A component API name belongs to another tenant: '+component.apiName);
-  if(!existing.surfaces?.includes('page')||existing.status==='Draft')
-   throw Error('Existing component is unavailable to Page Builder: '+component.apiName);
-  continue;
- }
- await api('/component-library','POST',component);
- installedComponents++;
+ if(await installRegisteredComponent(component))installedComponents++;
 }
-libraries=(await api('/component-library')).components;
+let libraries=(await api('/component-library')).components;
 for(const name of expected.components)if(!libraries.some(x=>x.apiName===name&&x.status==='Published'))
  throw Error('Published UI component missing: '+name);
 
