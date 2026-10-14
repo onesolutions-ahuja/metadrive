@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useModalAccessibility } from './useModalAccessibility';
 import { Eye, KeyRound, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react';
 import type { NamedCredentialMetadata } from './metadata';
 
@@ -63,9 +64,15 @@ export default function NamedCredentials({
   onOAuthAuthorize?: (id: string) => Promise<string>;
 }) {
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
+  const modalRef = useRef<HTMLElement>(null);
   const [viewing, setViewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const dismissModal = useCallback(() => { if (!saving) setDraft(null); }, [saving]);
+  useModalAccessibility(Boolean(draft), modalRef, dismissModal);
   const [error, setError] = useState('');
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const fieldErrors = { name: !/^[A-Za-z][A-Za-z0-9_]*$/.test(draft?.name ?? '') ? 'Use a name starting with a letter, containing only letters, numbers and underscores.' : '', label: !(draft?.label.trim()) ? 'Label is required.' : '', baseUrl: !(draft?.baseUrl.trim()) ? 'URL is required.' : draft?.protocol === 'HTTPS' && !/^https:\/\//i.test(draft.baseUrl.trim()) ? 'Use an HTTPS URL.' : '' };
+  const blurField = (field: keyof typeof fieldErrors) => setTouched(current => ({...current, [field]: true}));
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const [busyId, setBusyId] = useState('');
@@ -83,6 +90,7 @@ export default function NamedCredentials({
 
   const editCredential = (credential?: NamedCredentialMetadata, readOnly = false) => {
     setError('');
+    setTouched({});
     setViewing(readOnly);
     setDraft(credential ? {
       id: credential.id,
@@ -100,6 +108,8 @@ export default function NamedCredentials({
 
   const submit = async () => {
     if (!draft || saving) return;
+    setTouched({ name: true, label: true, baseUrl: true });
+    if (Object.values(fieldErrors).some(Boolean)) return;
     setSaving(true);
     setError('');
     try {
@@ -232,18 +242,18 @@ export default function NamedCredentials({
     </div>}
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <section className="modal named-credential-modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
+      <section ref={modalRef} tabIndex={-1} className="modal named-credential-modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
         <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Connection Details' : draft.id ? 'Edit Connection' : 'Configure Connection'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
         <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
         <div className="named-credential-form-grid">
-        <label className="form-label">API Name<input className="form-control" autoComplete="off" disabled={Boolean(providerName)} value={draft.name} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" /></label>
-        <label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" /></label>
+        <label className="form-label">API Name<input className="form-control" autoComplete="off" disabled={Boolean(providerName)} value={draft.name} aria-invalid={Boolean(touched.name && fieldErrors.name)} onBlur={() => blurField('name')} onChange={(event) => updateDraft({ name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })} placeholder="Partner_API" />{touched.name && fieldErrors.name && <small role="alert" className="field-error">{fieldErrors.name}</small>}</label>
+        <label className="form-label">Label<input className="form-control" value={draft.label} aria-invalid={Boolean(touched.label && fieldErrors.label)} onBlur={() => blurField('label')} onChange={(event) => updateDraft({ label: event.target.value })} placeholder="Partner API" />{touched.label && fieldErrors.label && <small role="alert" className="field-error">{fieldErrors.label}</small>}</label>
         <label className="form-label">Protocol<select className="form-control" value={draft.protocol} onChange={(event) => {
           const protocol = event.target.value as NamedCredentialMetadata['protocol'];
           updateDraft({ protocol, authType: protocol === 'SMTP' && !['None', 'Basic'].includes(draft.authType) ? 'Basic' : draft.authType });
         }}><option>HTTPS</option><option>SMTP</option></select></label>
-        <label className="form-label">{draft.protocol === 'SMTP' ? 'SMTP Server URL' : 'Base URL'}<input className="form-control" type="url" value={draft.baseUrl} onChange={(event) => updateDraft({ baseUrl: event.target.value })} placeholder={draft.protocol === 'SMTP' ? 'smtp://smtp.example.com:587' : 'https://api.example.com/'} /></label>
+        <label className="form-label">{draft.protocol === 'SMTP' ? 'SMTP Server URL' : 'Base URL'}<input className="form-control" type="url" value={draft.baseUrl} aria-invalid={Boolean(touched.baseUrl && fieldErrors.baseUrl)} onBlur={() => blurField('baseUrl')} onChange={(event) => updateDraft({ baseUrl: event.target.value })} placeholder={draft.protocol === 'SMTP' ? 'smtp://smtp.example.com:587' : 'https://api.example.com/'} />{touched.baseUrl && fieldErrors.baseUrl && <small role="alert" className="field-error">{fieldErrors.baseUrl}</small>}</label>
         <label className="form-label">Authentication<select className="form-control" value={draft.authType} onChange={(event) => {
           const authType = event.target.value as NamedCredentialMetadata['authType'];
           updateDraft({ authType, configuration: ['OAuth Client Credentials','OAuth Authorization Code'].includes(authType)
