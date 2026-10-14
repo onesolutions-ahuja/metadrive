@@ -66,6 +66,21 @@ export function applyInstallableAppPackages(tenant, catalog) {
         navigationOrder};
     });
     const pages = mergeByApiName(next.pages, pkg.pages);
+    // A package may introduce a new editable landing page. Move only its own
+    // generated activation assignments; never touch tenant-authored assignments.
+    const defaultPageApiName = pkg.pages?.[0]?.apiName;
+    if (defaultPageApiName) {
+      const packageAssignmentIds = new Set(['package-'+pkg.appKey+'-home','package-'+pkg.appKey+'-app-default']);
+      for (let i=0;i<pages.length;i++) {
+        if (pages[i].apiName === defaultPageApiName) continue;
+        const original = pages[i].activationAssignments ?? [];
+        const retained = original.filter(assignment=>!packageAssignmentIds.has(assignment.id));
+        if (retained.length !== original.length) {
+          pages[i] = {...pages[i],activationAssignments:retained};
+          changed = true;
+        }
+      }
+    }
     const permissionTemplate = pkg.profile;
     let accessControl = next.accessControl;
     if (permissionTemplate && !accessControl.profiles.some(p => p.id === permissionTemplate.id)) {
