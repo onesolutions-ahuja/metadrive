@@ -730,8 +730,7 @@ export type LibraryComponentMetadata = { propertyDefinitions?: import('./compone
   updatedAt: string;
   status?: 'Draft' | 'Published';
   publishedVersion?: number;
-  trustedBundled?: boolean;
-  scope?: 'platform-system';
+  trustedBundled?: boolean; scope?: 'platform-system';
   revisions?: Array<{
     version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow' | 'platform'>;
     resize: NonNullable<LibraryComponentMetadata['resize']>; propertyDefinitions?: LibraryComponentMetadata['propertyDefinitions'];
