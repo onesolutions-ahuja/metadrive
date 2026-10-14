@@ -1,3 +1,4 @@
+import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
 import { readOfflineMetadata, saveOfflineMetadata } from './offlineMetadataCache';
@@ -1416,7 +1417,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   } | null>(null);
   const [flowRunnerSubmitting, setFlowRunnerSubmitting] = useState(false);
   const [flowRunnerError, setFlowRunnerError] = useState('');
-  const [kioskMode, setKioskMode] = useState(false);
+  const [standalonePageMode, setStandalonePageMode] = useState(false);
   const flowHistory = useRef<{ undo: FlowDefinitionMetadata[]; redo: FlowDefinitionMetadata[] }>({ undo: [], redo: [] });
   const flowSnapshots = useRef(new Map<string, string>());
   const [page, setPage] = useState<LightningPageMetadata>(defaultLightningPage);
@@ -3565,16 +3566,16 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
 
   // Kiosk is a standalone customer-facing page, not a workspace tab. Resolve it
   // from tenant page metadata so every installed kiosk opens edge-to-edge by URL.
-  const isStandaloneKioskPage = (route.kind === 'app-page' || route.kind === 'app-home') && pages.some((candidate) =>
+  const isStandaloneMetadataPage = (route.kind === 'app-page' || route.kind === 'app-home') && pages.some((candidate) =>
     candidate.status === 'Active' &&
     (route.kind === 'app-page' ? candidate.apiName === route.pageApiName && candidate.pageType === 'App Page'
       : candidate.pageType === 'Home Page' && (candidate.activationAssignments ?? []).some((assignment) =>
           assignment.appId === route.appId && (assignment.scope === 'App Default' || assignment.scope === 'App and Profile'))) &&
-    candidate.components.some((component) => component.type === 'Custom:KioskOrderingExperience')
+    isStandalonePagePresentation(candidate)
   );
 
   return (
-    <div className={kioskMode || isStandaloneKioskPage ? 'lightning kiosk-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
+    <div className={standalonePageMode || isStandaloneMetadataPage ? 'lightning kiosk-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
         <button type="button" className="header-home-link" onClick={() =>
@@ -3745,12 +3746,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setStandalonePageMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setStandalonePageMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
@@ -4842,13 +4843,13 @@ function LightningAppRuntime({
     setActiveTab('');
   }, [page?.apiName]);
   useEffect(() => {
-    onKioskModeChange(Boolean(page?.components.some((component) => component.type === 'Custom:KioskOrderingExperience')));
+    onKioskModeChange(isStandalonePagePresentation(page));
     return () => onKioskModeChange(false);
   }, [page?.layoutMode, onKioskModeChange]);
   if (error) return <div className="records-page"><div className="records-message" role="alert">{error}</div></div>;
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
   if (!page) return <main className="records-page"><section className="records-empty" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home Page not assigned</h1><p>No active Home Page is assigned to this app and profile.</p><p>An administrator can assign a Home Page in Lightning App Builder.</p></section></main>;
-  const isKioskRuntime = page.layoutMode === 'free-canvas' && page.components.some((component) => component.type === 'Custom:KioskOrderingExperience');
+  const isStandaloneRuntime = isStandalonePagePresentation(page);
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const appVisibilityContext = { formFactor } as const;
   const isAppComponentVisible = (component: PageComponentMetadata) =>
@@ -4929,7 +4930,7 @@ function LightningAppRuntime({
               height: component.position?.height ?? 180
             }),
         ...resolvePageComponentStyle(component.properties, component.type, layoutDevice),
-        ...(isKioskRuntime && component.type === 'Custom:KioskOrderingExperience' && !nested
+        ...(isStandaloneRuntime && component.properties?.standalonePresentation === true && !nested
           ? { left: 0, top: 0, width: '100%', height: '100%' } : {})
       } as React.CSSProperties}>
       {renderComponent(component)}
@@ -4938,7 +4939,7 @@ function LightningAppRuntime({
   if (page.layoutMode === 'free-canvas') return <div className="free-canvas-runtime"
     data-lightning-page={page.apiName}
     data-layout-mode="free-canvas"
-    style={isKioskRuntime ? { width: '100%', height: '100dvh', maxWidth: 'none' } : { width: page.canvasWidth, height: page.canvasHeight }}>
+    style={pageCanvasPresentationStyle(page)}>
     {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
@@ -8823,7 +8824,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
   const cartObject = objects.find((candidate) => candidate.apiName === cartObjectApiName);
   const customerObjectApiName = String(properties.customerObjectApiName ?? '');
   const customerObject = objects.find((candidate) => candidate.apiName === customerObjectApiName);
-  const tillMode = properties.libraryComponentId === 'TillSalesWorkspace';
+  const tillMode = properties.catalogFirst !== undefined || properties.basketWidthPercent !== undefined;
   const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
     ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
@@ -8919,7 +8920,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
       <RecordFilterEditor title="Customer Filters" fields={customerObject?.fields ?? []}
         filters={listProperty('customerFilters')} onChange={filters => update('customerFilters', filters)} />
     </>}
-    {kioskMode && <p className="properties-help">Products come from the selected object and filters. Static product cards are not used. Checkout requires a verified, active Flow that creates the Sale record.</p>}
+    
     <RecordFilterEditor title="Record Filters" fields={fields}
       filters={listProperty('filters')} onChange={filters => update('filters', filters)} />
     <div className="properties-section-title">Actions</div>
@@ -9021,7 +9022,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
       </select>
     </label>}
     <div className="properties-section-title">Appearance and Settings</div>
-    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && (!kioskMode || !/^products(?:[0-9]+)?$|^categories$/i.test(key))).map(([key, value]) => {
+    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key)).map(([key, value]) => {
       if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
         <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{labelFor(key)}
       </label>;
@@ -10508,7 +10509,7 @@ function PageBuilder({
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
-              {!['Custom:KioskContainer','Custom:KioskRow','Custom:KioskColumn','Custom:KioskCard','Custom:KioskGrid'].includes(selected.type)
+              {true
                 && <label className="checkbox-row">
                   <input type="checkbox" checked={isLayoutContainer(selected)}
                     onChange={(event) => {
@@ -10543,7 +10544,7 @@ function PageBuilder({
                 {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
               </>}
               <MetadataComponentProperties
-                kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
+                kioskMode={selected.properties.standalonePresentation === true}
                 properties={selected.properties}
                 objects={objects}
                 apps={apps}
