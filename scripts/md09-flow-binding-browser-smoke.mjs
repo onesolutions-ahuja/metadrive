@@ -126,7 +126,7 @@ try {
   });
 
   await page.goto(base + '/une/setup/page-builder/' + pageApiName);
-  await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
+  await page.getByRole('button', { name: 'Back to page list' }).waitFor();
   await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const mapping = page.getByLabel('Flow input mapping').first();
   await mapping.waitFor();
@@ -141,7 +141,7 @@ try {
   await mapping.getByLabel('Confirmed source').selectOption('Literal');
   await mapping.getByLabel('Confirmed fixed value').selectOption('true');
 
-  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('button', { name: 'Save page' }).click();
   const storedPage = (await request('/metadata/pages', token)).pages.find(item => item.apiName === pageApiName);
   assert(storedPage);
   assert.deepEqual(storedPage.components[0].properties.actionFlows.submit.inputs, {
@@ -150,7 +150,7 @@ try {
   });
 
   await page.reload();
-  await page.getByRole('button', { name: 'Desktop preview' }).waitFor();
+  await page.getByRole('button', { name: 'Back to page list' }).waitFor();
   await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const restored = page.getByLabel('Flow input mapping').first();
   assert.equal(await restored.getByLabel('ItemId source').inputValue(), 'Event Field');

@@ -78,6 +78,49 @@ export function applyInstallableAppPackages(tenant, catalog) {
       }]};
       changed = true;
     }
+    // POS installs can introduce existing-object fields and new order/cart objects
+    // after the administrator profile was provisioned. Grant only previously absent
+    // permissions, never overwrite an explicit deny or tenant-customized grant.
+    if (pkg.appKey === 'pos') {
+      const adminIndex = accessControl.profiles.findIndex(profile => profile.id === 'system-administrator');
+      if (adminIndex !== -1) {
+        const administrator = accessControl.profiles[adminIndex];
+        const objectPermissions = {...(administrator.objectPermissions ?? {})};
+        const fieldPermissions = {...(administrator.fieldPermissions ?? {})};
+        let repaired = false;
+        const required = pkg.profile?.objectPermissions ?? {};
+        for (const [objectApiName, templateRights] of Object.entries(required)) {
+          const object = objects.find(candidate => candidate.apiName === objectApiName);
+          if (!object) continue;
+          const permission = objectPermissions[objectApiName];
+          // Existing tenant permission settings (including denies) are authoritative.
+          if (!permission) {
+            objectPermissions[objectApiName] = {
+              read: Boolean(templateRights.read), create: Boolean(templateRights.create),
+              edit: Boolean(templateRights.edit), delete: Boolean(templateRights.delete),
+              viewAll: false, modifyAll: false
+            };
+            repaired = true;
+          }
+          const effective = objectPermissions[objectApiName];
+          for (const field of object.fields ?? []) {
+            const key = objectApiName + '.' + field.apiName;
+            if (Object.hasOwn(fieldPermissions, key)) continue;
+            fieldPermissions[key] = {
+              read: Boolean(effective.read || effective.viewAll || effective.modifyAll),
+              edit: Boolean(effective.create || effective.edit || effective.modifyAll)
+            };
+            repaired = true;
+          }
+        }
+        if (repaired) {
+          const profiles = [...accessControl.profiles];
+          profiles[adminIndex] = {...administrator,objectPermissions,fieldPermissions};
+          accessControl = {...accessControl,profiles};
+          changed = true;
+        }
+      }
+    }
     const appId = pkg.apps?.[0]?.apiName;
     const profileId = pkg.profile?.id;
     if (appId && profileId) {

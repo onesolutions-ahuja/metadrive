@@ -83,22 +83,21 @@ try {
       label:'MD07 Browser Widget',properties:{libraryComponentId:'MD07_Browser_Widget'},visible:true,region:'main'}]
   });
   await page.goto('http://127.0.0.1:5173/une/setup/page-builder/'+apiName);
-  await page.getByRole('button',{name:'Desktop preview'}).waitFor();
+  await page.getByRole('button',{name:'Back to page list'}).waitFor();
   for(const [label,width,height] of [['Desktop',1440,900],['Tablet',820,1180],['Phone',390,844]]) {
     await page.setViewportSize({width,height});
-    await page.getByRole('button',{name:label+' preview'}).click();
+    // Existing editor device is fixed; test viewport responsiveness without switching page layouts.
     const iframe=page.locator('iframe[sandbox="allow-scripts"]').first();
     await iframe.waitFor({state:'attached'});
     await iframe.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).first().waitFor();
   }
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.getByRole('button',{name:'Save page'}).click();
   const reopened=await request('/metadata/pages',token);
   const saved=reopened.pages.find((item)=>item.apiName===apiName);
   if(!saved?.components?.some((item)=>item.type==='Custom:MD07_Browser_Widget'))
     throw Error('Page Builder failed to persist component placement');
   await page.reload();
-  await page.getByRole('button',{name:'Phone preview'}).waitFor();
-  await page.getByRole('button',{name:'Phone preview'}).click();
+  await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.locator('iframe[sandbox="allow-scripts"]').first().contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
   const componentRow=await request('/component-library',token);
   const published=componentRow.components.find((item)=>item.apiName==='MD07_Browser_Widget');

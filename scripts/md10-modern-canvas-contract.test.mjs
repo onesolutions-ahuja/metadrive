@@ -14,7 +14,10 @@ test('phase 2 canvas preserves the existing Page Builder, filters, conditions an
     'resolvePageComponentStyle', 'updateComponent', 'applyPage'])
     assert.ok(src.includes(token), token);
   assert.match(src, /modern-inspector-tabs/);
-  assert.match(src, /Canvas layers/);
+  assert.match(src, /Page component layers/);
+  assert.match(src, /builder-compact-toolbar/);
+  assert.match(src, /page-manager-table/);
+  assert.match(src, /properties-panel-resize/);
   assert.match(src, /canvasSnap/);
   assert.match(src, /ArrowLeft.*ArrowRight.*ArrowUp.*ArrowDown/);
 });

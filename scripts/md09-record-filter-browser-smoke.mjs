@@ -101,7 +101,7 @@ try {
     brandColor:'#0176d3',utilityItems:[]
   });
   await page.goto(web+'/une/setup/page-builder/'+pageId);
-  await page.getByRole('button',{name:'Desktop preview'}).waitFor();
+  await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   const editor=page.getByLabel('Record Filters filter editor').first();
   await editor.waitFor();
@@ -109,7 +109,7 @@ try {
   await editor.getByLabel('Record Filters field 1').selectOption('Name');
   await editor.getByLabel('Record Filters operator 1').selectOption('Equals');
   await editor.getByLabel('Record Filters value 1').fill('MD09 Blue');
-  await page.getByRole('button',{name:'Save',exact:true}).click();
+  await page.getByRole('button',{name:'Save page'}).click();
 
   const saved=(await req('/metadata/pages',token)).pages.find(item=>item.apiName===pageId);
   assert(saved,'Page must persist');
@@ -117,7 +117,7 @@ try {
     {field:'Name',operator:'Equals',value:'MD09 Blue'}
   ]);
   await page.reload();
-  await page.getByRole('button',{name:'Desktop preview'}).waitFor();
+  await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.getByRole('tab', { name: 'Data & Actions' }).first().click();
   assert.equal(await page.getByLabel('Record Filters value 1').inputValue(),'MD09 Blue');
 
