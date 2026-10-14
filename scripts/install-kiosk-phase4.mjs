@@ -184,6 +184,24 @@ for(const page of commercePages){
  if(existing){
   if(existing.pageType!=='App Page'||existing.status!=='Active')
    throw Error('Existing commerce Page is not active: '+page.apiName);
+  // Upgrade only our known v1 blocks; preserve editor-adjusted position, bindings,
+  // visibility and styles. Other/custom blocks are never touched.
+  const newById=new Map(page.components.map(block=>[block.id,block]));
+  const upgrades=existing.components.map(block=>{
+   const target=newById.get(block.id);
+   if(!target || !/^Custom:MD_Commerce(?:Navigation|ProductGrid|BasketPanel|Status)$/.test(block.type))
+    return block;
+   return {...block,type:target.type,properties:{...block.properties,
+    ...(block.properties?.accentColor==='#103e51'?{accentColor:'#e4002b'}:{}),
+    ...(target.properties?.standalonePresentation?{standalonePresentation:true}:{}),
+    ...(block.properties?.title==='Order kiosk'?{title:'ORDER NOW'}:{})}};
+  });
+  if(upgrades.some((block,i)=>JSON.stringify(block)!==JSON.stringify(existing.components[i]))){
+   await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',{
+    ...existing,components:upgrades,canvasWidth:existing.canvasWidth,canvasHeight:existing.canvasHeight
+   });
+   installedPages++;
+  }
   continue;
  }
  await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',page);
