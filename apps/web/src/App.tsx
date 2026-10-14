@@ -1594,15 +1594,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           const signedIn = firstSession.user as typeof firstSession.user & {id?:string;tenantId?:string};
           const needsRecovery = !firstObjects.objects.length || !firstPages.pages.length || !firstApps.apps.length;
           const serverPublication = signedIn.id && signedIn.tenantId && needsRecovery
-            ? await apiRequest<MetadataPublicationResponse>('/metadata/offline-publication').catch(() => null)
-            : null;
+            ? await apiRequest<MetadataPublicationResponse>('/metadata/offline-publication').catch(() => null) : null;
           // Cached metadata is presentation-only and requires a live OneEngine
           // publication digest from this same authenticated tenant and user.
           const offlineView = signedIn.id && signedIn.tenantId && serverPublication
-            ? await readVerifiedMetadata(
-              {userId:signedIn.id,tenantId:signedIn.tenantId},serverPublication.publication
-            ).catch(() => null)
-            : null;
+            ? await readVerifiedMetadata({userId:signedIn.id,tenantId:signedIn.tenantId},serverPublication.publication)
+              .catch(() => null) : null;
           const displayObjects = firstObjects.objects.length ? firstObjects.objects : (offlineView?.objects ?? []) as ObjectMetadata[];
           const displayPages = firstPages.pages.length ? firstPages.pages : (offlineView?.pages ?? []) as LightningPageMetadata[];
           const displayApps = firstApps.apps.length ? firstApps.apps : (offlineView?.apps ?? []) as LightningAppMetadata[];
@@ -1709,8 +1706,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           && !failures.length && objectPayload.objects.length && pagePayload.pages.length) {
           void apiRequest<MetadataPublicationResponse>('/metadata/offline-publication')
             .then(({content,publication})=>saveVerifiedMetadata(
-              {userId:sessionPayload.user.id,tenantId:sessionPayload.user.tenantId},
-              content,publication
+              {userId:sessionPayload.user.id,tenantId:sessionPayload.user.tenantId},content,publication
             )).catch(() => { /* Online rendering remains authoritative. */ });
         }
         setCurrentProfileId(sessionPayload.user.profileId);
