@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import {customisationObjects,basketObjectExtensions,demoModifierGroups,demoModifierOptions,demoModifierAssignments} from './kiosk-commerce-capabilities.mjs';
 import {validateSelections,priceBasketLine,basketTotals,lineFingerprint} from './kiosk-commerce-basket.mjs';
 
@@ -41,4 +42,10 @@ test('approved installer remains inert by default, now including customisation m
  const run=spawnSync(process.execPath,['scripts/install-kiosk-demo-data.mjs'],{encoding:'utf8',env:{...process.env,METADRIVE_DEMO_SEED_APPROVED:'false'}});
  assert.equal(run.status,0,run.stderr);
  for(const name of customisationObjects.map(o=>o.apiName)) assert.ok(JSON.parse(run.stdout).objects.includes(name));
+});
+
+test('approved installer upgrades basket extensions and all modifier definitions',()=>{
+ const source=readFileSync(new URL('./install-kiosk-demo-data.mjs',import.meta.url),'utf8');
+ assert.match(source,/for\(const definition of \[\.\.\.allDefinitions,\.\.\.Object\.entries\(basketObjectExtensions\)/);
+ assert.match(source,/fields:\[\.\.\.current\.fields,\.\.\.missingFields\]/);
 });
