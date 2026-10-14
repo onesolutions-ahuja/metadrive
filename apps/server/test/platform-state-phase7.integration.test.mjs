@@ -52,9 +52,9 @@ test('Phase 7: app installation, component registry, state snapshot and restore 
   assert.equal(verifyProjection(source,rows).digest,stateDigest(source));
   assert.deepEqual(restoreState(rows),source);
   assert.throws(()=>projectState({...source,unregisteredRoot:{}}),/unknown top-level key/);
-  const changed={...rows,collectionItems:rows.collectionItems.map(row=>
-    row.key==='objects' && row.tenantId==='tenant-test' && row.position===0
-      ? {...row,payload:{...row.payload,label:'Tampered'}} : row)};
+  assert(rows.collectionItems.length > 0, 'snapshot must contain projected metadata');
+  const changed=structuredClone(rows);
+  changed.collectionItems[0].payload={...changed.collectionItems[0].payload,unexpectedTamper:true};
   assert.throws(()=>verifyProjection(source,changed),/round-trip mismatch/);
 });
 test('Phase 7: Flow record collections use object metadata and retain immutable-field protection',()=>{
