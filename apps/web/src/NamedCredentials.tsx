@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useModalAccessibility } from './useModalAccessibility';
 import { Eye, KeyRound, Pencil, Plus, RotateCw, Trash2, X } from 'lucide-react';
 import type { NamedCredentialMetadata } from './metadata';
 
@@ -63,8 +64,11 @@ export default function NamedCredentials({
   onOAuthAuthorize?: (id: string) => Promise<string>;
 }) {
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
+  const modalRef = useRef<HTMLElement>(null);
   const [viewing, setViewing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const dismissModal = useCallback(() => { if (!saving) setDraft(null); }, [saving]);
+  useModalAccessibility(Boolean(draft), modalRef, dismissModal);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
@@ -232,7 +236,7 @@ export default function NamedCredentials({
     </div>}
     {!visibleCredentials.length && <div className="empty-state">{credentials.length ? 'No Named Credentials match your search.' : 'No Named Credentials are configured yet.'}</div>}
     {draft && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDraft(null); }}>
-      <section className="modal named-credential-modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
+      <section ref={modalRef} tabIndex={-1} className="modal named-credential-modal" role="dialog" aria-modal="true" aria-labelledby="named-credential-title">
         <div className="modal-header"><h2 id="named-credential-title">{viewing ? 'Connection Details' : draft.id ? 'Edit Connection' : 'Configure Connection'}</h2><button className="icon-button dark" aria-label="Close" disabled={saving} onClick={() => setDraft(null)}><X size={18} /></button></div>
         <p className="modal-copy"><KeyRound size={14} /> Credentials are shared within this tenant. Secrets are encrypted at rest and never displayed after saving.</p>
         <fieldset disabled={viewing} style={{ border: 0, padding: 0, margin: 0 }}>
