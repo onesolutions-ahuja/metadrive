@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
 import { moveNavigationEntry, reconcileNavigationOrder } from './appNavigation';
 import {appManagerFieldDefinitions,validateAppManagerField,type AppManagerFieldKey} from './adminAppFieldMetadata';
+import AdminPropertyControl from './AdminPropertyControl';
 import type { LightningAppMetadata, LightningPageMetadata, ObjectMetadata } from './metadata';
 
 type AppDraft = LightningAppMetadata;
@@ -204,16 +205,8 @@ export default function AppManager({
                 setNotice('');
               } else update(field,next);
             };
-            return <label className="form-label" key={field}>{definition.label}
-              {isDescription
-                ? <textarea className="form-control" rows={2} maxLength={500} value={value} onChange={event => change(event.target.value)} />
-                : <input className="form-control" type={definition.kind === 'COLOR' ? 'color' : 'text'}
-                    required={definition.required} disabled={disabled}
-                    maxLength={field==='label'?80:field==='apiName'?80:undefined}
-                    pattern={field==='apiName'?'[A-Za-z][A-Za-z0-9_]*':field==='brandColor'?'#[0-9a-fA-F]{6}':undefined}
-                    aria-label={definition.label} value={value}
-                    onChange={event => change(event.target.value)} />}
-            </label>;
+            return <AdminPropertyControl key={field} definition={definition}
+              value={value} disabled={disabled} onChange={change}/>;
           })}
         </div>
         <label className="form-label">Find navigation items
