@@ -17,7 +17,7 @@ export function registerSecurityMetadataRoutes(deps: {
   setState: (next: PlatformState) => void;
   accessControlSchema: Schema<AccessControl>;
   roleSchema: Schema<Role>;
-  sharingSettingSchema: z.ZodType<TenantData['sharingSettings'][string]>;
+  sharingSettingSchema: z.ZodTypeAny;
   validateAdvancedSharingMetadata: (...args: any[]) => any;
   profileIdForRole: (role: string, profiles: AccessControl['profiles']) => string;
   withSecurityEvent: (tenant: TenantData, actor: string, action: string) => TenantData;
@@ -97,7 +97,7 @@ app.put('/api/metadata/permissions', requirePermission('security:manage'), (req:
   const unknownSharingObject = Object.keys(requestedSharingSettings.data)
     .find((objectName) => !tenant.objects.some((object) => object.apiName === objectName));
   if (unknownSharingObject) return res.status(400).json({ error: `Sharing settings reference unknown object "${unknownSharingObject}"` });
-  const sharingSettings = Object.fromEntries(tenant.objects.map((object) => [
+  const sharingSettings: Record<string, TenantData['sharingSettings'][string]> = Object.fromEntries(tenant.objects.map((object) => [
     object.apiName,
     requestedSharingSettings.data[object.apiName] ?? tenant.sharingSettings[object.apiName] ?? {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
