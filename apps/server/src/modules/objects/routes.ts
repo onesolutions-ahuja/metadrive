@@ -1,3 +1,5 @@
+import { removeObjectMetadata } from './remove-object.js';
+import { pageComponentFeatureEnabled } from './metadata-validation.js';
 /** All Object Manager metadata HTTP routes, kept as a cohesive module. */
 import type { Request, Response } from 'express';
 import type { ObjectMetadata, ObjectMetadataChange, TenantData, ObjectMetadataRoutesDependencies } from '../../index.js';
@@ -238,40 +240,6 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
   const saved = commitObjectMetadata(principal.tenantId, principal.userId, updated, 'UPDATED', current, object)!;
   return res.json({ object: saved });
 });
-function removeObjectMetadata(tenant: TenantData, apiName: string): TenantData {
-  const updatedTenant: TenantData = {
-    ...tenant,
-    objects: tenant.objects.filter((item) => item.apiName !== apiName),
-    records: Object.fromEntries(Object.entries(tenant.records).filter(([name]) => name !== apiName)),
-    fieldHistory: tenant.fieldHistory.filter((entry) => entry.objectApiName !== apiName),
-    activities: tenant.activities.filter((activity) => activity.objectApiName !== apiName),
-    chatterPosts: tenant.chatterPosts.filter((post) => post.objectApiName !== apiName),
-    approvalRequests: tenant.approvalRequests.filter((request) => request.objectApiName !== apiName),
-    sharingSettings: Object.fromEntries(Object.entries(tenant.sharingSettings).filter(([name]) => name !== apiName)),
-    recordShares: tenant.recordShares.filter((share) => share.objectApiName !== apiName),
-    accessControl: {
-      ...tenant.accessControl,
-      profiles: tenant.accessControl.profiles.map((profile) => ({
-        ...profile,
-        objectPermissions: Object.fromEntries(Object.entries(profile.objectPermissions).filter(([name]) => name !== apiName)),
-        fieldPermissions: Object.fromEntries(Object.entries(profile.fieldPermissions).filter(([name]) => !name.startsWith(`${apiName}.`)))
-      })),
-      permissionSets: tenant.accessControl.permissionSets.map((permissionSet) => {
-        return {
-          ...permissionSet,
-          objectPermissions: Object.fromEntries(Object.entries(permissionSet.objectPermissions).filter(([name]) => name !== apiName)),
-          fieldPermissions: Object.fromEntries(Object.entries(permissionSet.fieldPermissions).filter(([name]) => !name.startsWith(`${apiName}.`)))
-        };
-      }),
-      permissionSetGroups: tenant.accessControl.permissionSetGroups.map((group) => ({
-        ...group,
-        mutedObjectPermissions: Object.fromEntries(Object.entries(group.mutedObjectPermissions).filter(([name]) => name !== apiName)),
-        mutedFieldPermissions: Object.fromEntries(Object.entries(group.mutedFieldPermissions).filter(([name]) => !name.startsWith(`${apiName}.`)))
-      }))
-    }
-  };
-  return updatedTenant;
-}
 app.delete('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const apiName = routeParam(req, 'apiName');
   const principal = getPrincipal(res);

@@ -1,3 +1,4 @@
+import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
 import { registerRecordRoutes } from './modules/records/routes.js';
