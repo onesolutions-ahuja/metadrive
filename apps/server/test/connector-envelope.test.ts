@@ -15,7 +15,10 @@ test('tenant isolation and operation replay protection are enforced by authentic
   const envelope = sealIntegrationEnvelope('tenant-A','order-1',{total:100},ring);
   assert.throws(()=>openIntegrationEnvelope('tenant-B','order-1',envelope,ring),/INTEGRATION_ENVELOPE_INVALID/);
   assert.throws(()=>openIntegrationEnvelope('tenant-A','order-2',envelope,ring),/INTEGRATION_ENVELOPE_INVALID/);
-  const damaged=envelope.slice(0,-2)+'aa';
+  const parts=envelope.split('.');
+  const tag=Buffer.from(parts[2],'base64url');
+  tag[0]^=1;
+  const damaged=[parts[0],parts[1],tag.toString('base64url'),parts[3]].join('.');
   assert.throws(()=>openIntegrationEnvelope('tenant-A','order-1',damaged,ring),/INTEGRATION_ENVELOPE_INVALID/);
 });
 test('existing encryption keys remain usable after active-key rotation', () => {
