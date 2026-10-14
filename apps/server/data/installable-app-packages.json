@@ -22,7 +22,30 @@
             "viewAll": false,
             "modifyAll": false
           }
-        }
+        },
+        "credentialGrantSeeds": [
+          {
+            "objectApiName": "Chatter_Channel_Grant__c",
+            "profileId": "system-administrator",
+            "credentialHost": "graph.facebook.com",
+            "accountPathPattern": "^/v\\d+\\.\\d+/([A-Za-z0-9_-]{5,120})(?:/messages)?/?$",
+            "accountConfigField": "PhoneNumberId",
+            "uniqueBy": [
+              "User_Id__c",
+              "Channel_Account__c"
+            ],
+            "fields": {
+              "Name": "@credential.name",
+              "User_Id__c": "@user.id",
+              "Channel_Account__c": "@credential.accountId",
+              "Can_Read__c": true,
+              "Can_Send__c": true,
+              "Can_Assign__c": true,
+              "View_All__c": true,
+              "Active__c": true
+            }
+          }
+        ]
       },
       "objects": [
         {
