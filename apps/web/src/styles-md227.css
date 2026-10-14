@@ -62,3 +62,48 @@
 @media(prefers-reduced-motion:reduce) {
  .modern-canvas-builder .free-canvas-component { transition:none; }
 }
+
+/* Page Builder UI consolidation: compact inspector, palette and single canvas. */
+.modern-canvas-builder {
+  grid-template-columns:var(--component-panel-width,248px) minmax(0,1fr) var(--properties-panel-width,310px);
+}
+.modern-canvas-builder.canvas-left-hidden { grid-template-columns:minmax(0,1fr) var(--properties-panel-width,310px); }
+.modern-canvas-builder.canvas-right-hidden { grid-template-columns:var(--component-panel-width,248px) minmax(0,1fr); }
+.modern-canvas-builder.canvas-left-hidden.canvas-right-hidden { grid-template-columns:minmax(0,1fr); }
+.modern-canvas-builder.canvas-left-hidden .component-panel,
+.modern-canvas-builder.canvas-right-hidden .properties-panel { display:none; }
+.modern-canvas-builder .page-preview-area {
+  background:#f5f7fb;
+  background-image:radial-gradient(#d5dce7 .75px, transparent .75px);
+  background-size:18px 18px;
+  min-width:0;
+}
+.modern-canvas-builder .free-canvas-stage.canvas-grid-on { background-image:none; }
+.modern-canvas-builder .free-canvas-component > .record-component-head[data-canvas-move-handle],
+.modern-canvas-builder .free-canvas-component > .record-component-head[data-canvas-move-handle]:active { cursor:default; }
+.modern-canvas-builder .component-grid { display:flex;flex-direction:column;gap:5px;padding:4px 10px 12px; }
+.modern-canvas-builder .component-library-card {
+  min-height:38px;max-height:42px;display:flex;align-items:center;gap:8px;
+  padding:4px 8px;border:1px solid #e0e5ee;border-radius:8px;
+  box-shadow:none;cursor:default;overflow:hidden;
+}
+.modern-canvas-builder .component-library-card:active {cursor:default;}
+.modern-canvas-builder .component-card-preview {display:none;}
+.modern-canvas-builder .component-card-copy {display:flex;align-items:center;min-width:0;flex:1;padding:0;}
+.modern-canvas-builder .component-card-copy strong {font-size:12px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.modern-canvas-builder .component-card-copy span {display:none;}
+.modern-canvas-builder .component-favourite {position:static;flex-shrink:0;}
+.modern-canvas-builder .component-card-action {position:static;flex-shrink:0;}
+.modern-canvas-builder .properties-panel,
+.modern-canvas-builder .component-panel {font-family:inherit;font-size:12px;line-height:1.4;}
+.modern-canvas-builder .properties-panel {padding:12px;}
+.modern-canvas-builder .properties-panel .form-label {font-size:12px;line-height:18px;font-weight:600;}
+.modern-canvas-builder .properties-panel .form-control,
+.modern-canvas-builder .properties-panel .form-display,
+.modern-canvas-builder .properties-panel select {font:inherit;min-height:34px;border-radius:8px;}
+.modern-canvas-builder .properties-section-title {margin:12px -12px 8px;padding:7px 12px;}
+.modern-canvas-builder .modern-inspector-tabs {grid-template-columns:repeat(3,minmax(0,1fr));margin:8px 0;}
+.modern-canvas-builder .modern-inspector-tabs button {min-height:30px;font-size:11px;line-height:1.2;padding:5px 3px;}
+.modern-canvas-builder .canvas-inspector-tabs button {min-height:30px;font-size:11px;}
+.modern-canvas-builder .selected-component-preview {max-height:110px;overflow:auto;}
+.modern-canvas-builder .properties-header {gap:8px;}
