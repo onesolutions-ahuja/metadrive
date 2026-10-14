@@ -383,7 +383,15 @@ export type LightningPageTemplate =
   | 'main-sidebar'
   | 'header-main-sidebar';
 
-export type LightningPageMetadata = {
+export type PlatformPageOwnership = {
+  scope?: 'tenant' | 'platform-system' | 'tenant-presentation-override';
+  ownerNamespace?: string;
+  definitionVersion?: number;
+  overridePolicy?: 'none' | 'appearance-only';
+  requiredPermissions?: string[];
+};
+
+export type LightningPageMetadata = PlatformPageOwnership & {
   apiName: string;
   label: string;
   updatedAt?: string;
