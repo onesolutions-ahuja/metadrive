@@ -7730,6 +7730,13 @@ function hasRecordAccess(
     });
     if (!decision.allowed) return false;
   }
+  // Channel grants are a centrally enforced form of record sharing; they do not
+  // override object permission checks or higher-priority restriction rules.
+  if (objectName === communicationObjectApiName && isWhatsAppMessage(record)) {
+    if (accessLevel === 'Delete') return false;
+    return canAccessChatterRecord(principal.tenantId, principal.userId, tenant, record,
+      accessLevel === 'Edit' ? 'assign' : 'read');
+  }
   if (accessLevel === 'Read' && hasObjectWidePermission(principal, tenant, objectName, 'viewAll')) return true;
   if ((accessLevel === 'Edit' || accessLevel === 'Delete')
     && hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')) return true;
