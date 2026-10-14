@@ -8178,7 +8178,13 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
-  const inputError = validateFlowInputValues(flow, input.data);
+  const guard = authoriseChatterFlow(apiName, {
+    tenantId: principal.tenantId, userId: principal.userId,
+    tenant, input: input.data, credentials: tenant.namedCredentials, users: state.users
+  });
+  if (guard && !guard.ok) return res.status(guard.status).json({error:guard.error});
+  const authorisedInput = guard?.ok ? guard.input : input.data;
+  const inputError = validateFlowInputValues(flow, authorisedInput);
   if (inputError) return res.status(400).json({ error: inputError });
   const validation = validateFlow(
     flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
@@ -8188,7 +8194,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
   try {
     const working = structuredClone(tenant);
-    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, input.data, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
+    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, authorisedInput, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
     if (result.status === 'waiting') {
       const interview = createFlowInterview(flow, principal.userId, result);
       working.interviews = [...working.interviews, interview];
