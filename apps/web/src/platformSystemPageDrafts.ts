@@ -33,6 +33,8 @@ export function createSystemPageDrafts(existing:readonly LightningPageMetadata[]
   const slots=systemWorkspaceSlots[id]??[];
   const page:LightningPageMetadata={
    apiName:systemPageApiName(id),label:label+' Layout',targetObject:'User',
+   scope:'platform-system',ownerNamespace:'MetaDrive',definitionVersion:1,
+   overridePolicy:'presentation-only',requiredPermissions:[entry.permission],
    pageType:'App Page',layoutMode:'free-canvas',canvasWidth:1200,canvasHeight:Math.max(800,(slots.length+2)*480),
    status:'Draft',devices:['Desktop','Phone'],components:[
     {id:id+'-heading',type:'Rich Text',label:label,visible:true,
