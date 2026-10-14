@@ -1,7 +1,5 @@
-const defaultApiUrl = new URL(window.location.origin);
-defaultApiUrl.port = '3001';
-defaultApiUrl.pathname = '/api';
-export const apiBase = import.meta.env.VITE_API_BASE_URL ?? defaultApiUrl.toString().replace(/\/$/, '');
+// Same-origin API for deployed builds and development's Vite /api proxy.
+export const apiBase = import.meta.env.VITE_API_BASE_URL ?? `${window.location.origin}/api`;
 let accessToken: string | undefined;
 let refreshInFlight: Promise<string | undefined> | undefined;
 export function isAuthErrorMessage(message: string): boolean {
