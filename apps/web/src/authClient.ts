@@ -105,7 +105,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-async export function loadAppCommunicationHistory(objectName: string, field: string, source: string, offset: number, search: string) {
+export async function loadAppCommunicationHistory(objectName: string, field: string, source: string, offset: number, search: string) {
   const params = new URLSearchParams({
     limit: '50', offset: String(offset), ...(field ? {filterField:field, filterValue:source} : {}),
     ...(search ? { search } : {})
@@ -114,16 +114,16 @@ async export function loadAppCommunicationHistory(objectName: string, field: str
     `/records/${encodeURIComponent(objectName)}?${params.toString()}`);
 }
 
-async export function loadConnectorMarketplaceApps() {
+export async function loadConnectorMarketplaceApps() {
   const result = await apiRequest<{records: import('./ConnectorAppWorkspace').ConnectorApp[]}>(`/connector-apps/catalog`);
   return result.records;
 }
-async export function executeConnectorAppLifecycleFlow(apiName: string, appKey: string): Promise<void> {
+export async function executeConnectorAppLifecycleFlow(apiName: string, appKey: string): Promise<void> {
   await apiRequest(`/flows/${encodeURIComponent(apiName)}/execute`, {
     method: 'POST', body: JSON.stringify({AppKey:appKey})
   });
 }
-async export function loadFlowScreenRecords(objectApiName: string): Promise<Record<string, unknown>[]> {
+export async function loadFlowScreenRecords(objectApiName: string): Promise<Record<string, unknown>[]> {
   const result = await apiRequest<{ records: Record<string, unknown>[] }>(`/records/${encodeURIComponent(objectApiName)}`);
   return result.records;
 }
