@@ -1,7 +1,7 @@
 // Idempotent, authorised Chatter installation and post-deploy smoke verification.
 // Never log access tokens, contact numbers, customer messages, or credentials.
 import {writeFile} from 'node:fs/promises';
-const origin=(process.env.METADRIVE_API_URL||'').replace(/\\/$/,'');
+const origin=String(process.env.METADRIVE_API_URL||'').trim().replace(/\/$/,'');
 const tenantId=process.env.METADRIVE_EXPECTED_TENANT_ID;
 const email=process.env.METADRIVE_ADMIN_EMAIL;
 const password=process.env.METADRIVE_ADMIN_PASSWORD;
