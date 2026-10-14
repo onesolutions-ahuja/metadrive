@@ -57,7 +57,6 @@ import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
 import { applyInstallableAppPackages } from './installable-app-packages.mjs';
-import { kioskDeviceIdentity, prepareKioskDevice } from './kiosk-device-provision.mjs';
 import { ensureBundledAppComponents } from './bundled-app-components.mjs';
 import { bundledLegacyMigrationDecision } from './bundled-component-migration.mjs';
 import postcss from 'postcss';
@@ -11497,84 +11496,6 @@ app.put('/api/metadata/currencies', requirePermission('security:manage'), (req: 
   const updatedTenant = { ...tenant, currencySettings: parsed.data };
   persistTenantRecords(principal.tenantId, updatedTenant);
   return res.json(parsed.data);
-});
-// Virtual kiosk logins are administered as devices. No real email is needed.
-// Provision after the kiosk package is licensed and its restricted RBAC profile exists.
-app.post('/api/kiosk/devices', accessAuthentication, requirePermission('security:manage'), async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(501).json({error:'Device password provisioning requires local authentication'});
-  const parsed = z.object({index:z.number().int().min(1).max(999)}).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({error:'Enter a kiosk number from 1 to 999'});
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const installed = (tenant.records.Connector_App__c ?? []).find(row=>row.AppKey__c === 'kiosk');
-  if (!installed || installed.Installed__c !== true || !['Trial','Licensed'].includes(String(installed.LicenceStatus__c)))
-    return res.status(409).json({error:'Install and activate the Kiosk app before provisioning a device'});
-  const username = kioskDeviceIdentity(principal.tenantId, parsed.data.index);
-  if (state.users.some(user => user.email.toLowerCase() === username))
-    return res.status(409).json({error:'This Kiosk already exists. Revoke or reset its login through security administration.'});
-  const deviceId = randomUUID();
-  const passphrase = randomBytes(24).toString('base64url');
-  try {
-    const credentials = await hashPassword(passphrase);
-    // Recheck after the awaited password hash: concurrent administrator
-    // requests must never provision the same virtual identity twice.
-    if (state.users.some(user => user.email.toLowerCase() === username))
-      return res.status(409).json({error:'This kiosk login already exists'});
-    const currentTenant = tenantData(principal.tenantId)!;
-    const updated = prepareKioskDevice(currentTenant,username,deviceId,new Date().toISOString());
-    const device: LocalUser = {
-      id:deviceId,tenantId:principal.tenantId,name:'Kiosk '+parsed.data.index,
-      email:username,passwordSalt:credentials.salt,passwordHash:credentials.hash,
-      role:'Kiosk',permissionSetIds:[],permissionSetGroupIds:[],
-      disabled:false,createdAt:new Date().toISOString()
-    };
-    const nextState = {...state,
-      tenants:{...state.tenants,[principal.tenantId]:updated},
-      users:[...state.users,device]};
-    persistState(nextState);
-    state = nextState;
-    res.setHeader('Cache-Control','no-store');
-    return res.status(201).json({
-      deviceId,username,password:passphrase,
-      appApiName:'KioskApp',
-      note:'Copy these device credentials securely now. No email will be sent.'
-    });
-  } catch(error) {
-    return res.status(409).json({error:error instanceof Error?error.message:'Unable to register kiosk'});
-  }
-});
-// Email-free recovery. Reset invalidates the prior device access-token
-// generation and refresh sessions; the new secret is returned once.
-app.post('/api/kiosk/devices/reset', accessAuthentication, requirePermission('security:manage'), async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(501).json({error:'Device reset is unavailable in external OIDC mode'});
-  const parsed = z.object({index:z.number().int().min(1).max(999)}).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({error:'Enter a kiosk number from 1 to 999'});
-  const principal = getPrincipal(res);
-  const username = kioskDeviceIdentity(principal.tenantId,parsed.data.index);
-  const device = state.users.find(user => user.email.toLowerCase() === username && user.tenantId === principal.tenantId);
-  if (!device) return res.status(404).json({error:'Kiosk login was not found'});
-  const passphrase = randomBytes(24).toString('base64url');
-  const credentials = await hashPassword(passphrase);
-  const activeDevice = state.users.find(user => user.id === device.id && user.tenantId === principal.tenantId);
-  if (!activeDevice) return res.status(409).json({error:'Kiosk was modified during reset'});
-  const replacement: LocalUser = {
-    ...activeDevice,
-    passwordSalt:credentials.salt,passwordHash:credentials.hash,
-    passwordReset:undefined,lockedUntil:undefined,
-    authVersion:(activeDevice.authVersion ?? 0)+1
-  };
-  const nextState = {...state,
-    users:state.users.map(user => user.id === device.id ? replacement : user),
-    refreshSessions:state.refreshSessions.filter(session => session.userId !== device.id)
-  };
-  try {
-    persistState(nextState);
-    state = nextState;
-    res.setHeader('Cache-Control','no-store');
-    return res.json({deviceId:device.id,username,password:passphrase});
-  } catch (error) {
-    return res.status(503).json({error:'Unable to persist Kiosk password reset'});
-  }
 });
 registerSecurityMetadataRoutes({
   app, requirePermission, tenantData, getPrincipal, getState: () => state,
