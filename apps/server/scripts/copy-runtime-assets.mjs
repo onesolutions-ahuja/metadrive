@@ -9,6 +9,7 @@ const destination=resolve(serverDir,'dist');
 mkdirSync(destination,{recursive:true});
 for(const name of [
   'platform-state-registry.mjs',
+  'platform-state-restore.mjs',
   'relational-projection.mjs',
   'relational-tables.mjs',
   'relational-runtime.mjs',
