@@ -22,6 +22,10 @@ const tenant=login.user?.tenantId;
 if(!tenant||tenant!==process.env.METADRIVE_EXPECTED_TENANT_ID)
  throw Error('Tenant binding differs from approved deployment');
 await call('/platform/policies',token); // Enforce central platform:superadmin before any mutation.
+const registry=(await call('/component-library',token)).components;
+if(!Array.isArray(registry)||!registry.some(c=>c.apiName==='SystemPanel'
+  &&c.status==='Published'&&Array.isArray(c.surfaces)&&c.surfaces.includes('page')))
+ throw Error('Published registered SystemPanel component is required before page installation');
 const initial=(await call('/metadata/pages',token)).pages;
 if(!Array.isArray(initial))throw Error('Page registry unavailable');
 const drafts=createSystemPageDrafts(initial);
