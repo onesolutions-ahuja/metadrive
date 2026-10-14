@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {presentPageRecords} from '../src/recordPresentationAdapters';
+import {presentPageRecords} from '../src/recordPresentationAdapters.js';
 const rows=[{Id:'one',Event_Type__c:'Message',Communication_Mode__c:'WhatsApp',
   Direction__c:'Incoming',Channel_Account__c:'1234567890',From_Number__c:'447700900123',
   Contact_Name__c:'Customer',Message_Body__c:'Hello',Occurred_At__c:'2026-10-14T21:00:00Z'}];
