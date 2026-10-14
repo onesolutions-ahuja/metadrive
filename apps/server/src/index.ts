@@ -5496,6 +5496,10 @@ export const phase3AuthContext = {
   set authOverlayRevision(v: number) { authOverlayRevision = v; }
 };
 registerAuthenticationRoutes(phase3AuthContext);
+registerSessionSecurityRoutes({ app, accessAuthentication, requirePermission, getPrincipal, principalUser,
+  tenantData, jwtService, getState: () => state, setState: (next) => { state = next; },
+  persistState, revokeUserRefreshSessions, withSecurityEvent, effectivePermissions,
+  clearRefreshCookie, userLoginFailures });
 
 // MD-01A: separate, audited platform policies. All lookups use the current in-memory
 // platform state; no additional database read is introduced on guarded requests.
