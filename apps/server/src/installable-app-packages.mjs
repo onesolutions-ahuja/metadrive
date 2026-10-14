@@ -1,3 +1,33 @@
+function upgradePackagedPageComponents(page, seeded, appKey) {
+        const migrateLegacyPos = appKey === 'pos' && (page.components ?? []).length === 1
+          && page.components[0].id === 'pos-sales-workspace'
+          && page.components[0].type === 'Custom:TillSalesWorkspace';
+        const upgradedComponents = migrateLegacyPos ? structuredClone(seeded) : (page.components ?? []).map(component => {
+          const template = seeded.find(item => item.id === component.id && item.type === component.type);
+          if (!template) return component;
+          const missingCategories = template.properties?.categoryObjectApiName &&
+            !component.properties?.categoryObjectApiName;
+          const legacyAccent = component.properties?.accentColor === '#ffca26'
+            && template.properties?.accentColor !== '#ffca26';
+          const missingWelcome = template.properties?.welcomeImage && !component.properties?.welcomeImage;
+          if (!missingCategories && !legacyAccent && !missingWelcome) return component;
+          return { ...component, properties: {
+            ...component.properties,
+            ...(missingWelcome ? { welcomeImage: template.properties.welcomeImage, labels: template.properties.labels } : {}),
+            ...(missingCategories ? {
+              categoryObjectApiName: template.properties.categoryObjectApiName,
+              categoryNameField: template.properties.categoryNameField
+            } : {}),
+            ...(legacyAccent ? {
+              accentColor: template.properties.accentColor,
+              ...(component.properties.inkColor === '#202124' ? { inkColor: template.properties.inkColor } : {})
+            } : {})
+          } };
+        });
+
+        return {upgradedComponents,migrateLegacyPos};
+}
+
 /**
  * Install declarative business-app metadata through the shared AppExchange lifecycle.
  * Neither this primitive nor Object/Flow execution contains kiosk-specific logic.
@@ -48,8 +78,39 @@ export function applyInstallableAppPackages(tenant, catalog) {
       if (fixed) changed = true;
       return fixed ? {...flow,elements} : flow;
     });
-    const apps = mergeByApiName(next.apps, pkg.apps);
+    const apps = mergeByApiName(next.apps, pkg.apps).map(app => {
+      const template = (pkg.apps ?? []).find(candidate => candidate.apiName === app.apiName);
+      if (!template) return app;
+      // Add package-provided pages without replacing tenant-owned navigation or order.
+      const missing = (template.navigationPageApiNames ?? []).filter(name =>
+        !(app.navigationPageApiNames ?? []).includes(name));
+      if (!missing.length) return app;
+      changed = true;
+      const navigationOrder = [...(app.navigationOrder ?? [])];
+      for (const apiName of missing) {
+        if (!navigationOrder.some(item => item.type === 'Page' && item.apiName === apiName))
+          navigationOrder.push({type:'Page',apiName});
+      }
+      return {...app,
+        navigationPageApiNames:[...(app.navigationPageApiNames ?? []),...missing],
+        navigationOrder};
+    });
     const pages = mergeByApiName(next.pages, pkg.pages);
+    // A package may introduce a new editable landing page. Move only its own
+    // generated activation assignments; never touch tenant-authored assignments.
+    const defaultPageApiName = pkg.pages?.[0]?.apiName;
+    if (defaultPageApiName) {
+      const packageAssignmentIds = new Set(['package-'+pkg.appKey+'-home','package-'+pkg.appKey+'-app-default']);
+      for (let i=0;i<pages.length;i++) {
+        if (pages[i].apiName === defaultPageApiName) continue;
+        const original = pages[i].activationAssignments ?? [];
+        const retained = original.filter(assignment=>!packageAssignmentIds.has(assignment.id));
+        if (retained.length !== original.length) {
+          pages[i] = {...pages[i],activationAssignments:retained};
+          changed = true;
+        }
+      }
+    }
     const permissionTemplate = pkg.profile;
     let accessControl = next.accessControl;
     if (permissionTemplate && !accessControl.profiles.some(p => p.id === permissionTemplate.id)) {
@@ -145,37 +206,27 @@ export function applyInstallableAppPackages(tenant, catalog) {
         }
         // Upgrade only a package-owned, unchanged legacy accent to the
         // revised kiosk visual preset. Customised tenant colors stay intact.
-        const seeded = pkg.pages?.[0]?.components ?? [];
-        const migrateLegacyPos = pkg.appKey === 'pos' && (page.components ?? []).length === 1
-          && page.components[0].id === 'pos-sales-workspace'
-          && page.components[0].type === 'Custom:TillSalesWorkspace';
-        const upgradedComponents = migrateLegacyPos ? structuredClone(seeded) : (page.components ?? []).map(component => {
-          const template = seeded.find(item => item.id === component.id && item.type === component.type);
-          if (!template) return component;
-          const missingCategories = template.properties?.categoryObjectApiName &&
-            !component.properties?.categoryObjectApiName;
-          const legacyAccent = component.properties?.accentColor === '#ffca26'
-            && template.properties?.accentColor !== '#ffca26';
-          const missingWelcome = template.properties?.welcomeImage && !component.properties?.welcomeImage;
-          if (!missingCategories && !legacyAccent && !missingWelcome) return component;
-          return { ...component, properties: {
-            ...component.properties,
-            ...(missingWelcome ? { welcomeImage: template.properties.welcomeImage, labels: template.properties.labels } : {}),
-            ...(missingCategories ? {
-              categoryObjectApiName: template.properties.categoryObjectApiName,
-              categoryNameField: template.properties.categoryNameField
-            } : {}),
-            ...(legacyAccent ? {
-              accentColor: template.properties.accentColor,
-              ...(component.properties.inkColor === '#202124' ? { inkColor: template.properties.inkColor } : {})
-            } : {})
-          } };
-        });
+        const seeded = pkg.pages?.find(candidate => candidate.apiName === page.apiName)?.components ?? [];
+        const {upgradedComponents,migrateLegacyPos} = upgradePackagedPageComponents(page,seeded,pkg.appKey);
         if (assignments.length !== (page.activationAssignments ?? []).length ||
           (migrateLegacyPos || upgradedComponents.some((item, at) => item !== page.components[at]))) {
           pages[index] = {...page,activationAssignments:assignments,components:upgradedComponents};
           changed = true;
         }
+      }
+    }
+    // Apply safe metadata repairs to every package page, not just the current
+    // landing page. This retains legacy-page compatibility after an app upgrade.
+    for (const templatePage of pkg.pages ?? []) {
+      if (templatePage.apiName === pkg.pages?.[0]?.apiName) continue;
+      const at = pages.findIndex(item => item.apiName === templatePage.apiName);
+      if (at === -1) continue;
+      const page = pages[at];
+      const {upgradedComponents,migrateLegacyPos} =
+        upgradePackagedPageComponents(page,templatePage.components ?? [],pkg.appKey);
+      if (migrateLegacyPos || upgradedComponents.some((item,i)=>item!==page.components[i])) {
+        pages[at] = {...page,components:upgradedComponents};
+        changed = true;
       }
     }
     // Sample menu lives in ordinary tenant records, never inside the React UI.

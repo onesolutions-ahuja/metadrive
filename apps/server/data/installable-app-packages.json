@@ -3,7 +3,7 @@
     {
       "appKey": "kiosk",
       "label": "Kiosk",
-      "version": 3,
+      "version": 4,
       "objects": [
         {
           "apiName": "Product",
@@ -457,6 +457,384 @@
         }
       ],
       "pages": [
+        {
+          "apiName": "UNE_KIOSK_CANVAS",
+          "label": "Kiosk Editable Canvas",
+          "targetObject": "Sale__c",
+          "pageType": "Home Page",
+          "layoutMode": "free-canvas",
+          "canvasWidth": 1440,
+          "canvasHeight": 900,
+          "status": "Active",
+          "devices": [
+            "Desktop",
+            "Phone"
+          ],
+          "template": "one-region",
+          "components": [
+            {
+              "id": "kiosk-heading",
+              "type": "Custom:KioskText",
+              "label": "POS header",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 12,
+                "width": 1400,
+                "height": 52
+              },
+              "properties": {
+                "libraryComponentId": "KioskText",
+                "text": "Order Here",
+                "fontSize": 26,
+                "fontWeight": 700
+              }
+            },
+            {
+              "id": "kiosk-search",
+              "type": "Custom:KioskSearch",
+              "label": "Product search",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 78,
+                "width": 895,
+                "height": 56
+              },
+              "properties": {
+                "libraryComponentId": "KioskSearch",
+                "objectApiName": "Product",
+                "nameField": "Name",
+                "priceField": "DefaultPrice",
+                "imageField": "ImageUrl__c",
+                "categoryField": "CategoryId",
+                "descriptionField": "Description__c",
+                "barcodeField": "SKU",
+                "filters": [
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": "true"
+                  }
+                ],
+                "categoryObjectApiName": "ProductCategory",
+                "categoryNameField": "Name",
+                "placeholder": "Search products or scan barcode…",
+                "searchField": "Name",
+                "uiBinding": "search"
+              }
+            },
+            {
+              "id": "kiosk-categories",
+              "type": "Custom:KioskCategoryGrid",
+              "label": "Categories",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 150,
+                "width": 895,
+                "height": 128
+              },
+              "properties": {
+                "libraryComponentId": "KioskCategoryGrid",
+                "objectApiName": "Product",
+                "nameField": "Name",
+                "priceField": "DefaultPrice",
+                "imageField": "ImageUrl__c",
+                "categoryField": "CategoryId",
+                "descriptionField": "Description__c",
+                "barcodeField": "SKU",
+                "filters": [
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": "true"
+                  }
+                ],
+                "categoryObjectApiName": "ProductCategory",
+                "categoryNameField": "Name",
+                "columns": 5,
+                "items": [],
+                "uiBinding": "category"
+              }
+            },
+            {
+              "id": "kiosk-products",
+              "type": "Custom:KioskProductGrid",
+              "label": "Product grid",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 290,
+                "width": 895,
+                "height": 565
+              },
+              "properties": {
+                "libraryComponentId": "KioskProductGrid",
+                "objectApiName": "Product",
+                "nameField": "Name",
+                "priceField": "DefaultPrice",
+                "imageField": "ImageUrl__c",
+                "categoryField": "CategoryId",
+                "descriptionField": "Description__c",
+                "barcodeField": "SKU",
+                "filters": [
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": "true"
+                  }
+                ],
+                "categoryObjectApiName": "ProductCategory",
+                "categoryNameField": "Name",
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "columns": 4,
+                "currency": "£",
+                "actionFlows": {
+                  "add": {
+                    "flowApiName": "KIOSK_CART_ADD",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "ProductId": "$event.productId",
+                      "Quantity": "$event.quantity"
+                    }
+                  },
+                  "start": {
+                    "flowApiName": "KIOSK_SESSION_START",
+                    "inputs": {
+                      "SessionId": "$session"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "kiosk-cart-heading",
+              "type": "Custom:KioskText",
+              "label": "Basket heading",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 935,
+                "y": 78,
+                "width": 485,
+                "height": 55
+              },
+              "properties": {
+                "libraryComponentId": "KioskText",
+                "text": "Your Order",
+                "fontSize": 22,
+                "fontWeight": 700
+              }
+            },
+            {
+              "id": "kiosk-cart",
+              "type": "Custom:KioskCart",
+              "label": "Basket items",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 935,
+                "y": 145,
+                "width": 485,
+                "height": 420
+              },
+              "properties": {
+                "libraryComponentId": "KioskCart",
+                "objectApiName": "Product",
+                "nameField": "Name",
+                "priceField": "DefaultPrice",
+                "imageField": "ImageUrl__c",
+                "categoryField": "CategoryId",
+                "descriptionField": "Description__c",
+                "barcodeField": "SKU",
+                "filters": [
+                  {
+                    "field": "IsActive",
+                    "operator": "Equals",
+                    "value": "true"
+                  }
+                ],
+                "categoryObjectApiName": "ProductCategory",
+                "categoryNameField": "Name",
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "currency": "£",
+                "title": "Basket",
+                "actionFlows": {
+                  "remove": {
+                    "flowApiName": "KIOSK_CART_REMOVE",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "LineId": "$event.lineId"
+                    }
+                  },
+                  "quantity": {
+                    "flowApiName": "KIOSK_CART_QUANTITY",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "LineId": "$event.lineId",
+                      "Quantity": "$event.quantity"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "kiosk-totals",
+              "type": "Custom:KioskTotals",
+              "label": "Order totals",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 935,
+                "y": 578,
+                "width": 485,
+                "height": 135
+              },
+              "properties": {
+                "libraryComponentId": "KioskTotals",
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "currency": "£"
+              }
+            },
+            {
+              "id": "kiosk-clear",
+              "type": "Custom:KioskButton",
+              "label": "Clear order",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 935,
+                "y": 724,
+                "width": 135,
+                "height": 52
+              },
+              "properties": {
+                "libraryComponentId": "KioskButton",
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "fullWidth": true,
+                "label": "Clear",
+                "variant": "secondary",
+                "value": null,
+                "actionFlows": {
+                  "click": {
+                    "flowApiName": "KIOSK_CART_RESET",
+                    "inputs": {
+                      "SessionId": "$session"
+                    },
+                    "resetSessionOnSuccess": true
+                  }
+                }
+              }
+            },
+            {
+              "id": "kiosk-eat-in",
+              "type": "Custom:KioskButton",
+              "label": "Checkout Eat In",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 1080,
+                "y": 724,
+                "width": 155,
+                "height": 52
+              },
+              "properties": {
+                "libraryComponentId": "KioskButton",
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "fullWidth": true,
+                "label": "Checkout Eat In",
+                "variant": "secondary",
+                "value": null,
+                "actionFlows": {
+                  "click": {
+                    "flowApiName": "KIOSK_CHECKOUT",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "OrderType": "eat-in"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "kiosk-takeaway",
+              "type": "Custom:KioskButton",
+              "label": "Checkout Takeaway",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 1245,
+                "y": 724,
+                "width": 155,
+                "height": 52
+              },
+              "properties": {
+                "libraryComponentId": "KioskButton",
+                "cartObjectApiName": "CartLine__c",
+                "cartSessionField": "Session__c",
+                "cartProductField": "Product__c",
+                "cartQuantityField": "Quantity__c",
+                "cartPriceField": "Unit_Price__c",
+                "fullWidth": true,
+                "label": "Checkout Takeaway",
+                "variant": "secondary",
+                "value": null,
+                "actionFlows": {
+                  "click": {
+                    "flowApiName": "KIOSK_CHECKOUT",
+                    "inputs": {
+                      "SessionId": "$session",
+                      "OrderType": "takeaway"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "kiosk-instructions",
+              "type": "Custom:KioskText",
+              "label": "Instructions",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 935,
+                "y": 790,
+                "width": 465,
+                "height": 65
+              },
+              "properties": {
+                "libraryComponentId": "KioskText",
+                "text": "Choose your items, review your basket and select Eat In or Takeaway to checkout.",
+                "fontSize": 14
+              }
+            }
+          ]
+        },
         {
           "apiName": "UNE_KIOSK",
           "label": "UNE KIOSK",
@@ -1308,8 +1686,14 @@
           "navigationItems": [
             "Product"
           ],
-          "navigationPageApiNames": [],
+          "navigationPageApiNames": [
+            "UNE_KIOSK_CANVAS"
+          ],
           "navigationOrder": [
+            {
+              "type": "Page",
+              "apiName": "UNE_KIOSK_CANVAS"
+            },
             {
               "type": "Object",
               "apiName": "Product"
@@ -1383,6 +1767,139 @@
             "minHeight": 600
           },
           "version": 3
+        },
+        {
+          "apiName": "KioskText",
+          "label": "KioskText",
+          "description": "Reusable POS Page Builder layer",
+          "jsxFile": "KioskText/KioskText.jsx",
+          "cssFile": "KioskText/KioskText.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 400,
+            "defaultHeight": 200,
+            "minWidth": 80,
+            "minHeight": 40
+          },
+          "version": 1
+        },
+        {
+          "apiName": "KioskSearch",
+          "label": "KioskSearch",
+          "description": "Reusable POS Page Builder layer",
+          "jsxFile": "KioskSearch/KioskSearch.jsx",
+          "cssFile": "KioskSearch/KioskSearch.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 400,
+            "defaultHeight": 200,
+            "minWidth": 80,
+            "minHeight": 40
+          },
+          "version": 1
+        },
+        {
+          "apiName": "KioskCategoryGrid",
+          "label": "KioskCategoryGrid",
+          "description": "Reusable POS Page Builder layer",
+          "jsxFile": "KioskCategoryGrid/KioskCategoryGrid.jsx",
+          "cssFile": "KioskCategoryGrid/KioskCategoryGrid.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 400,
+            "defaultHeight": 200,
+            "minWidth": 80,
+            "minHeight": 40
+          },
+          "version": 1
+        },
+        {
+          "apiName": "KioskProductGrid",
+          "label": "KioskProductGrid",
+          "description": "Reusable POS Page Builder layer",
+          "jsxFile": "KioskProductGrid/KioskProductGrid.jsx",
+          "cssFile": "KioskProductGrid/KioskProductGrid.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 400,
+            "defaultHeight": 200,
+            "minWidth": 80,
+            "minHeight": 40
+          },
+          "version": 1
+        },
+        {
+          "apiName": "KioskCart",
+          "label": "KioskCart",
+          "description": "Reusable POS Page Builder layer",
+          "jsxFile": "KioskCart/KioskCart.jsx",
+          "cssFile": "KioskCart/KioskCart.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 400,
+            "defaultHeight": 200,
+            "minWidth": 80,
+            "minHeight": 40
+          },
+          "version": 4
+        },
+        {
+          "apiName": "KioskTotals",
+          "label": "KioskTotals",
+          "description": "Reusable POS Page Builder layer",
+          "jsxFile": "KioskTotals/KioskTotals.jsx",
+          "cssFile": "KioskTotals/KioskTotals.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 400,
+            "defaultHeight": 200,
+            "minWidth": 80,
+            "minHeight": 40
+          },
+          "version": 1
+        },
+        {
+          "apiName": "KioskButton",
+          "label": "KioskButton",
+          "description": "Reusable POS Page Builder layer",
+          "jsxFile": "KioskButton/KioskButton.jsx",
+          "cssFile": "KioskButton/KioskButton.css",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "resize": {
+            "defaultWidth": 400,
+            "defaultHeight": 200,
+            "minWidth": 80,
+            "minHeight": 40
+          },
+          "version": 1
         }
       ],
       "demoRecords": {
@@ -3386,7 +3903,7 @@
             "minWidth": 80,
             "minHeight": 40
           },
-          "version": 1
+          "version": 4
         },
         {
           "apiName": "KioskTotals",
