@@ -12305,7 +12305,7 @@ app.post('/api/kiosk/devices/reset', accessAuthentication, requirePermission('se
 });
 registerSecurityMetadataRoutes({
   app, requirePermission, tenantData, getPrincipal, getState: () => state,
-  setState: (next) => { state = next; }, accessControlSchema, roleSchema,
+  setState: (next) => { state = next; }, accessControlSchema, roleSchema, sharingSettingSchema,
   validateAdvancedSharingMetadata, profileIdForRole, withSecurityEvent,
   effectivePermissions, persistState, persistTenantRecords, roleApiNameForName, routeParam
 });
