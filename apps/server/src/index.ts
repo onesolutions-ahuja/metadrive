@@ -8124,9 +8124,14 @@ app.get('/api/chatter/access', accessAuthentication, (req: Request, res: Respons
   }
   const scope = chatterScopeForUser(principal.tenantId, principal.userId, tenant);
   res.setHeader('Cache-Control','private, no-store');
+  const eligibleAssignees = scope.grants.filter(grant => grant.canAssign).flatMap(grant =>
+    state.users.filter(user => user.tenantId === principal.tenantId && !user.disabled
+      && chatterScopeForUser(principal.tenantId, user.id, tenant).grants.some(candidate =>
+        candidate.channelAccountId === grant.channelAccountId && candidate.canRead))
+      .map(user => ({id:user.id,name:user.name,channelAccountId:grant.channelAccountId})));
   return res.json({
-    userId: principal.userId,
-    viewAll: scope.viewAllConversations,
+    userId: principal.userId, viewAll: scope.viewAllConversations,
+    eligibleAssignees,
     grants: scope.grants.filter(grant => grant.canRead).map(grant => ({
       channelAccountId:grant.channelAccountId,canRead:grant.canRead,
       canSend:grant.canSend,canAssign:grant.canAssign
