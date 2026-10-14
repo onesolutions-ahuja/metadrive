@@ -1408,14 +1408,14 @@ const libraryComponentResizeSchema = z.object({
   }
 });
 const defaultLibraryComponentResize = { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 };
-const libraryComponentRevisionSchema = z.object({
+const propertyDefinitionSchema = z.object({propertyKey:z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),label:z.string().min(1).max(100),kind:z.enum(['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY']),required:z.boolean().optional(),isBindable:z.boolean().optional(),displayOrder:z.number().int().optional(),defaultValue:z.union([z.string(),z.number(),z.boolean()]).optional(),choices:z.array(z.object({key:z.string().min(1),label:z.string().min(1)})).max(200).optional()}); const libraryComponentRevisionSchema = z.object({
   version: z.number().int().positive(), label: z.string().trim().min(1).max(80),
   description: z.string().max(500), surfaces: z.array(z.enum(['page','dashboard','flow'])).min(1),
   resize: libraryComponentResizeSchema, jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000), compiledJs: z.string().min(1).max(500_000),
-  scopedCss: z.string().max(150_000), updatedAt: z.string().datetime()
+  scopedCss: z.string().max(150_000), updatedAt: z.string().datetime(), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
 });
-const propertyDefinitionSchema = z.object({propertyKey:z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),label:z.string().min(1).max(100),kind:z.enum(['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY']),required:z.boolean().optional(),isBindable:z.boolean().optional(),displayOrder:z.number().int().optional(),defaultValue:z.union([z.string(),z.number(),z.boolean()]).optional(),choices:z.array(z.object({key:z.string().min(1),label:z.string().min(1)})).max(200).optional()}); const libraryComponentSchema = z.object({
+const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   description: z.string().max(500),
@@ -1455,8 +1455,8 @@ const libraryComponentInputSchema = z.object({
 type LibraryComponent = z.infer<typeof libraryComponentSchema>;
 type LibraryComponentRevision = z.infer<typeof libraryComponentRevisionSchema>;
 function libraryRevision(component: LibraryComponent): LibraryComponentRevision {
-  const { version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt } = component;
-  return {version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt};
+  const { version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions } = component;
+  return {version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions};
 }
 function nextLibraryRevision(component: LibraryComponent): number {
   return Math.max(component.version,component.pendingDraft?.version ?? 0,...(component.revisions ?? []).map((r)=>r.version))+1;
@@ -8982,7 +8982,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     }
     const compiledRevision: LibraryComponentRevision = {
       version: nextLibraryRevision(existing), label: parsed.data.label, description: parsed.data.description,
-      surfaces: parsed.data.surfaces, resize: parsed.data.resize,
+      surfaces: parsed.data.surfaces, resize: parsed.data.resize, propertyDefinitions: parsed.data.propertyDefinitions ?? existing.propertyDefinitions,
       jsxSource: parsed.data.jsxSource, cssSource: parsed.data.cssSource,
       compiledJs: compiled.code, scopedCss: scopeLibraryCss(parsed.data.cssSource, apiName),
       updatedAt: new Date().toISOString()
