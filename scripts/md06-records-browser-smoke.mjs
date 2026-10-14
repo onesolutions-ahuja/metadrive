@@ -147,6 +147,13 @@ try {
   await page.context().setOffline(true);
   await newButton.click();
   await dialog.waitFor({state:'visible'});
+  try {
+    await dialog.locator('input[name="Name"]').waitFor({state:'visible',timeout:7000});
+  } catch(error) {
+    throw Error('Offline Account form lacked Name field. Dialog: '+(await dialog.innerText()).slice(0,1800)
+      +'; controls: '+JSON.stringify(await dialog.locator('input').evaluateAll(items => items.map(item => ({name:item.getAttribute('name'),type:item.getAttribute('type')}))))
+      +'; alerts: '+JSON.stringify(await page.locator('[role="alert"]').allTextContents()),{cause:error});
+  }
   await dialog.locator('input[name="Name"]').fill(offlineName);
   await dialog.getByRole('button',{name:'Save',exact:true}).click();
   await dialog.waitFor({state:'hidden'});
