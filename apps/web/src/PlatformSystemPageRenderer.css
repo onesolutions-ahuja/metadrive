@@ -1,0 +1,9 @@
+.platform-system-page-layout{width:100%;max-width:100%;overflow:visible}
+.platform-system-page-layout>[data-page-instance]{box-sizing:border-box;max-width:100%}
+@media(max-width:767px){
+ .platform-system-page-layout{display:flex;flex-direction:column;gap:16px;min-height:0!important}
+ .platform-system-page-layout>[data-page-instance]{
+  position:relative!important;left:auto!important;top:auto!important;
+  width:100%!important;min-height:0!important
+ }
+}
