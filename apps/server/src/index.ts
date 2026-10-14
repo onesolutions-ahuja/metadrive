@@ -1,4 +1,5 @@
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
+import {createAuthorizedMetadataPublication} from './modules/metadata/offline-publication.mjs';
 import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
 import { registerSessionSecurityRoutes } from './modules/security/session-routes.js';
 import { registerSecurityMetadataRoutes } from './modules/security/metadata-routes.js';
@@ -8879,6 +8880,30 @@ function syncBundledLibraryComponents(): Promise<void> {
   return bundledComponentSync;
 }
 
+// Verified presentation cache publication: derives its digest only from
+// metadata already allowed by authenticated OneEngine API routes.
+app.get('/api/metadata/offline-publication', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
+  try { await syncBundledLibraryComponents(); }
+  catch (error) {
+    console.error('Unable to prepare metadata publication', error);
+    return res.status(503).json({error:'Metadata publication unavailable'});
+  }
+  const principal=getPrincipal(res);
+  const tenant=tenantData(principal.tenantId);
+  if(!tenant)return res.status(403).json({error:'Tenant membership is no longer active'});
+  const apps=tenant.apps.filter(item=>canOpenApp(principal,tenant,item.apiName)).map(item=>({
+    ...item,
+    navigationItems:item.navigationItems.filter(name=>canOpenTab(principal,tenant,name)),
+    navigationOrder:item.navigationOrder.filter(entry=>entry.type!=='Object'||canOpenTab(principal,tenant,entry.apiName))
+  }));
+  const components=state.libraryComponents.filter(item=>
+    libraryComponentVisible(item,principal.tenantId,Object.keys(state.tenants)));
+  res.setHeader('Cache-Control','private, no-store');
+  return res.json(createAuthorizedMetadataPublication({
+    tenantId:principal.tenantId,userId:principal.userId,
+    objects:tenant.objects,pages:tenant.pages,apps,components
+  }));
+});
 app.get('/api/component-library', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
   try {
     await syncBundledLibraryComponents();
