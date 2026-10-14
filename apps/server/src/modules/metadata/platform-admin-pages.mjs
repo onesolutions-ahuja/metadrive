@@ -41,6 +41,9 @@ export function validateProtectedAdministrationPageUpdate(existing,proposed,perm
  if(existing&&existing.apiName!==proposed.apiName)return 'Protected administration page cannot be renamed';
  if(proposed.scope!=='platform-system'||proposed.ownerNamespace!=='MetaDrive')
   return 'Protected administration page ownership cannot change';
+ const canonical=protectedWorkspacePageDescriptors.find(item=>protectedPageApiName(item.workspace)===proposed.apiName);
+ if(canonical&&JSON.stringify(proposed.requiredPermissions)!==JSON.stringify([canonical.permission]))
+  return 'Protected administration page required permission cannot change';
  if(existing){
   for(const key of ['requiredPermissions','overridePolicy'])
    if(JSON.stringify(existing[key]??null)!==JSON.stringify(proposed[key]??null))
