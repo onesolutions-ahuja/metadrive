@@ -1,125 +1,20 @@
-// Lossless metadata-driven projection of current MetaDrive state.
-// Contains no database calls. Custom objects/fields are never hardcoded as SQL identifiers.
-import { createHash } from 'node:crypto';
-import {platformStateSectionKeys,platformSettingSections} from './platform-state-registry.mjs';
+// Stable public entrypoint for lossless state projection and restoration.
+import {createHash} from 'node:crypto';
+import {projectState} from './platform-state-project.mjs';
 import {restoreState} from './platform-state-restore.mjs';
-
-const rootKeys = new Set(platformStateSectionKeys);
-const userFields = ['id','tenantId','name','email','passwordSalt','passwordHash','role','permissionSetIds','permissionSetGroupIds','disabled','createdAt'];
-const sessionFields = ['tokenHash','familyId','userId','tenantId','expiresAt','usedAt','revokedAt'];
+export {projectState,restoreState};
 function fail(message) { throw new Error('MetaDrive relational projection: ' + message); }
-function obj(value, path) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) fail(path + ' must be an object');
-  return value;
-}
-function arr(value, path) {
-  if (!Array.isArray(value)) fail(path + ' must be an array');
-  return value;
-}
-function name(value, path) {
-  if (typeof value !== 'string' || !value.trim()) fail(path + ' must be a nonempty string');
-  return value;
-}
-function define(object, key, value) {
-  Object.defineProperty(object, key, { value, enumerable:true, writable:true, configurable:true });
-}
-function extras(value, fields) {
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !fields.includes(key)));
-}
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
-  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])]));
+  if (value && typeof value==='object') return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])]));
   return value;
 }
 export function stateDigest(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
-export function projectState(input) {
-  const state = obj(input, 'state');
-  for (const key of Object.keys(state)) if (!rootKeys.has(key)) fail('unknown top-level key: ' + key);
-  const rows = {
-    tenants:[], objects:[], collections:[], collectionItems:[], settings:[],
-    recordBuckets:[], records:[], users:[], sessions:[], revokedTokens:[], components:[],
-    platformSettings:[]
-  };
-  for (const [tenantId, tenantValue] of Object.entries(obj(state.tenants, 'tenants'))) {
-    name(tenantId, 'tenant ID');
-    rows.tenants.push({ tenantId });
-    const tenant = obj(tenantValue, 'tenant ' + tenantId);
-    for (const [key,value] of Object.entries(tenant)) {
-      if (key === 'objects') {
-        const seen = new Set();
-        arr(value, tenantId + '.objects').forEach((metadata,position) => {
-          const item = obj(metadata, tenantId + '.objects[' + position + ']');
-          const apiName = name(item.apiName, 'object API name');
-          if (seen.has(apiName)) fail('duplicate object ' + tenantId + '/' + apiName);
-          seen.add(apiName);
-          rows.objects.push({tenantId,apiName,position,payload:item});
-        });
-      } else if (key === 'records') {
-        const buckets = obj(value, tenantId + '.records');
-        Object.entries(buckets).forEach(([objectApiName,records],position) => {
-          name(objectApiName, 'record object API name');
-          rows.recordBuckets.push({tenantId,objectApiName,position});
-          const seen = new Set();
-          arr(records, tenantId + '.records.' + objectApiName).forEach((record,ordinal) => {
-            const item = obj(record,'record');
-            const id = name(item.Id, 'record Id');
-            if (seen.has(id)) fail('duplicate record Id ' + tenantId + '/' + objectApiName + '/' + id);
-            seen.add(id);
-            rows.records.push({tenantId,objectApiName,id,position:ordinal,payload:item});
-          });
-        });
-      } else if (Array.isArray(value)) {
-        rows.collections.push({tenantId,key});
-        value.forEach((payload,position) => rows.collectionItems.push({tenantId,key,position,payload}));
-      } else {
-        rows.settings.push({tenantId,key,payload:value});
-      }
-    }
-  }
-  // Platform policy grants are platform-scoped, not tenant-specific metadata.
-  // Keep root-key presence intact so legacy snapshots also round-trip losslessly.
-  for (const section of platformSettingSections) {
-    if (!Object.hasOwn(state,section.key)) continue;
-    const value = section.valueType === 'array'
-      ? arr(state[section.key],section.key)
-      : obj(state[section.key],section.key);
-    rows.platformSettings.push({key:section.key,payload:value});
-  }
-  arr(state.libraryComponents,'libraryComponents').forEach((payload,position)=>rows.components.push({position,payload}));
-  const seenUsers=new Set(), seenEmails=new Set();
-  arr(state.users,'users').forEach((value,position)=>{
-    const item=obj(value,'users['+position+']');
-    for(const key of userFields) if(!(key in item)) fail('missing users['+position+'].'+key);
-    name(item.id,'user id'); name(item.tenantId,'user tenantId');
-    if(seenUsers.has(item.id)) fail('duplicate user ID ' + item.id);
-    seenUsers.add(item.id);
-    const email=name(item.email,'user email').trim().toLowerCase();
-    if(seenEmails.has(email)) fail('duplicate user email ' + email);
-    seenEmails.add(email);
-    rows.users.push({position,...Object.fromEntries(userFields.map(key=>[key,item[key]])),extra:extras(item,userFields)});
-  });
-  const seenSessions=new Set();
-  arr(state.refreshSessions,'refreshSessions').forEach((value,position)=>{
-    const item=obj(value,'refreshSessions['+position+']');
-    for(const key of sessionFields) if(!(key in item)) fail('missing refreshSessions['+position+'].'+key);
-    name(item.tokenHash,'session tokenHash');
-    if(seenSessions.has(item.tokenHash)) fail('duplicate session tokenHash ' + item.tokenHash);
-    seenSessions.add(item.tokenHash);
-    rows.sessions.push({position,...Object.fromEntries(sessionFields.map(key=>[key,item[key]])),extra:extras(item,sessionFields)});
-  });
-  for(const [tokenHash,expiresAt] of Object.entries(obj(state.revokedAccessTokens,'revokedAccessTokens'))) {
-    name(tokenHash,'revoked access token hash');
-    if(typeof expiresAt!=='number'||!Number.isFinite(expiresAt)) fail('invalid revoked token expiry ' + tokenHash);
-    rows.revokedTokens.push({tokenHash,expiresAt});
-  }
-  return rows;
-}
-export {restoreState} from './platform-state-restore.mjs';
-export function verifyProjection(state, rows=projectState(state)) {
+export function verifyProjection(state,rows=projectState(state)) {
   const expected=stateDigest(state);
   const actual=stateDigest(restoreState(rows));
-  if(actual!==expected) fail('round-trip mismatch: expected '+expected+' but reconstructed '+actual);
+  if (actual!==expected) fail('round-trip mismatch: expected '+expected+' but reconstructed '+actual);
   return {digest:expected,counts:Object.fromEntries(Object.entries(rows).map(([key,value])=>[key,value.length]))};
 }
