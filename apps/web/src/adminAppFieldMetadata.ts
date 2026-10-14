@@ -1,14 +1,14 @@
-import type {ComponentSettingDefinition} from './componentSettingDefinitions';
+import type {AdminControlDefinition} from './AdminPropertyControl';
 import type {LightningAppMetadata} from './metadata';
 
 /** Single metadata contract for standard App Manager form fields.
  * Existing app CRUD, navigation actions and server RBAC remain authoritative.
  */
-export const appManagerFieldDefinitions:readonly ComponentSettingDefinition[]=[
- {propertyKey:'label',label:'App Label',kind:'TEXT',required:true,displayOrder:10},
- {propertyKey:'apiName',label:'Developer Name',kind:'TEXT',required:true,displayOrder:20},
- {propertyKey:'brandColor',label:'Brand Color',kind:'COLOR',required:true,defaultValue:'#0176d3',displayOrder:30},
- {propertyKey:'description',label:'Description',kind:'TEXT',displayOrder:40}
+export const appManagerFieldDefinitions:readonly AdminControlDefinition[]=[
+ {propertyKey:'label',label:'App Label',kind:'TEXT',required:true,maxLength:80,displayOrder:10},
+ {propertyKey:'apiName',label:'Developer Name',kind:'TEXT',required:true,maxLength:80,pattern:'[A-Za-z][A-Za-z0-9_]*',displayOrder:20},
+ {propertyKey:'brandColor',label:'Brand Color',kind:'COLOR',required:true,inputType:'color',pattern:'#[0-9a-fA-F]{6}',defaultValue:'#0176d3',displayOrder:30},
+ {propertyKey:'description',label:'Description',kind:'TEXT',multiline:true,maxLength:500,displayOrder:40}
 ];
 export type AppManagerFieldKey='label'|'apiName'|'brandColor'|'description';
 export function validateAppManagerField(key:AppManagerFieldKey,value:unknown):string|null{
