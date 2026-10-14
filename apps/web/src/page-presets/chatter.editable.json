@@ -2,7 +2,7 @@
   "apiName": "UNE_CHATTER",
   "label": "Chatter",
   "targetObject": "Communication_Records__c",
-  "pageType": "App Page",
+  "pageType": "Record Page",
   "layoutMode": "free-canvas",
   "canvasWidth": 1200,
   "canvasHeight": 800,
@@ -52,6 +52,19 @@
           }
         }
       }
+    }
+  ],
+  "activationAssignments": [
+    {
+      "id": "chatter-communication-org-default",
+      "scope": "Org Default",
+      "appId": null,
+      "profileId": null,
+      "recordTypeId": null,
+      "formFactors": [
+        "Desktop",
+        "Phone"
+      ]
     }
   ]
 }
