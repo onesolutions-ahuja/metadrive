@@ -18,7 +18,8 @@ export type BuilderEditorContext={workspaceId:string;tenantId:string;userId:stri
 export function resolveBuilderContext(context:BuilderEditorContext){
  const definition=builderDefinitions.find(x=>x.id===context.workspaceId);
  if(!definition||!workspaces.some(x=>x.id===definition.id))throw Error('Builder not registered');
- if(!context.tenantId.trim()||!context.userId.trim())throw Error('Authenticated tenant context required');
+ if(!context.tenantId?.trim()||!context.userId?.trim())throw Error('Authenticated tenant context required');
+ if(!(['Desktop','Tablet','Phone'] as const).some(device=>device===context.device))throw Error('Unsupported builder viewport');
  if(!context.grants.has(definition.capability))throw Error('Builder permission denied');
  return {definition,device:context.device,canEdit:true};
 }

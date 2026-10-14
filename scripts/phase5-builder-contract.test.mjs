@@ -6,6 +6,8 @@ test('5a-f canonical builder workspaces and tenant RBAC',()=>{
  for(const definition of builderDefinitions){
   assert.equal(resolveBuilderContext({workspaceId:definition.id,tenantId:'t',userId:'u',grants:new Set(['metadata:write']),device:'Phone'}).definition.kind,definition.kind);
   assert.throws(()=>resolveBuilderContext({workspaceId:definition.id,tenantId:'t',userId:'u',grants:new Set(),device:'Phone'}));
+  assert.throws(()=>resolveBuilderContext({workspaceId:definition.id,tenantId:'t',userId:'u',grants:new Set(['metadata:write']),device:'Unknown'}),/viewport/);
+  assert.throws(()=>resolveBuilderContext({workspaceId:definition.id,tenantId:'',userId:'u',grants:new Set(['metadata:write']),device:'Phone'}),/tenant context/);
  }
 });
 test('5b properties reject duplicates, unsafe identifiers, and invalid values',()=>{
