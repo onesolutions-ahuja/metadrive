@@ -27,9 +27,16 @@ export function useModalAccessibility<T extends HTMLElement>(
         event.preventDefault(); first.focus();
       }
     };
+    const containFocus = (event: FocusEvent) => {
+      if (dialog.current && event.target instanceof Node && !dialog.current.contains(event.target)) {
+        (focusable()[0] ?? dialog.current).focus();
+      }
+    };
+    document.addEventListener('focusin', containFocus);
     document.addEventListener('keydown', handleKeyDown, true);
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('focusin', containFocus);
       document.body.style.overflow = previousOverflow;
       previousFocus?.focus();
     };
