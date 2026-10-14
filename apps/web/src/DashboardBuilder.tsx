@@ -2613,8 +2613,7 @@ export default function DashboardBuilder({
               onChange={(properties) => updateComponent(selected.id, { properties })}
             />
             <CustomComponentPropertyEditor
-              definitions={libraryComponents.find(component => component.apiName === selected.customComponentApiName && component.status !== 'Draft')?.propertyDefinitions}
-              properties={selected.properties ?? {}}
+              definitions={libraryComponents.find(component => component.apiName === selected.customComponentApiName && component.status !== 'Draft')?.propertyDefinitions}               properties={selected.properties ?? {}}
               disabled={!canEditCurrent}
               onChange={(properties) => updateComponent(selected.id, { properties })}
             />
