@@ -1,4 +1,4 @@
-import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage, type ChatterRow, type ChatterGrantSource } from './chatter-authorisation.js';
+import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage, type ChatterGrantSource } from './chatter-authorisation.js';
 
 type Credential = { id:string; protocol:string; enabled?:boolean; baseUrl:string;
   configuration?:Record<string,string>; name:string };
