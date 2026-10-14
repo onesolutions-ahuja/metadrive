@@ -64,3 +64,12 @@ jobs:
           gh api --method POST "/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
             -f state="$STATE" -f context='kiosk-phase4/live-install' \
             -f description="$DESCRIPTION"
+          if [ "$STATE" = failure ] && [ -f phase4-result.log ]; then
+            STEP="$(sed -n 's/^PHASE4_STEP://p' phase4-result.log | tail -1 | tr -cd 'A-Za-z0-9-')"
+            CODE="$(grep -Eo 'HTTP [0-9]{3}' phase4-result.log | tail -1 | tr -cd '0-9' || true)"
+            STEP="${STEP:-preflight}"
+            CODE="${CODE:-none}"
+            gh api --method POST "/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+              -f state=failure -f context="kiosk-phase4/failure-${STEP}-${CODE}" \
+              -f description="Phase 4 stopped at ${STEP}, HTTP ${CODE}; see installer step log"
+          fi
