@@ -7,7 +7,8 @@ import { transformSync } from 'esbuild';
  * Tenant-created JavaScript is never run by this installer.
  */
 export function ensureBundledAppComponents(library, tenant, catalog, bundledRoot) {
-  const result = [...library];
+  // Retire only repository-owned ordering UI components; preserve tenant-authored widgets.
+  const result = library.filter(item => !(item.trustedBundled === true && /^(Kiosk|Till)/.test(item.apiName ?? '')));
   const root = resolve(bundledRoot);
   for (const pkg of catalog?.packages ?? []) {
     const licence = (tenant.records?.Connector_App__c ?? []).find(row =>
