@@ -11658,7 +11658,8 @@ function syncBundledLibraryComponents(): Promise<void> {
       surfaces: z.array(z.enum(['page', 'dashboard', 'flow'])).min(1),
       resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
       jsx: z.string().min(1),
-      css: z.string().min(1)
+      css: z.string().min(1),
+      version: z.number().int().min(1).default(1)
     })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')));
     const imported: LibraryComponent[] = [];
     const trustedUpgrades = new Map<string, LibraryComponent>();
@@ -11678,10 +11679,10 @@ function syncBundledLibraryComponents(): Promise<void> {
         || isAbsolute(jsxRelativePath) || isAbsolute(cssRelativePath)) {
         throw new Error(`Component "${entry.apiName}" contains a source path outside the bundled component directory`);
       }
-      if (existingBundled && entry.apiName !== 'KioskOrderingExperience') continue;
       const jsxSource = readFileSync(jsxPath, 'utf8');
       if (existingBundled && existingBundled.jsxSource === jsxSource
-        && existingBundled.cssSource === readFileSync(cssPath, 'utf8')) continue;
+        && existingBundled.cssSource === readFileSync(cssPath, 'utf8')
+        && (existingBundled.version ?? 1) >= entry.version) continue;
       const cssSource = readFileSync(cssPath, 'utf8');
       if (legacyCandidate) {
         const decision = bundledLegacyMigrationDecision(legacyCandidate, entry.apiName, jsxSource, cssSource);
@@ -11714,7 +11715,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       if (/\brequire\s*\(/.test(compiled.code)) {
         throw new Error(`Bundled component "${input.apiName}" cannot import external modules`);
       }
-      const version = entry.apiName === 'KioskOrderingExperience' ? 3 : 1;
+      const version = entry.version;
       const registered: LibraryComponent = {
         ...input,
         compiledJs: compiled.code,
