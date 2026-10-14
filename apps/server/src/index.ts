@@ -1,3 +1,4 @@
+import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
 import { registerSessionSecurityRoutes } from './modules/security/session-routes.js';
 import { registerSecurityMetadataRoutes } from './modules/security/metadata-routes.js';
 import { createAccessAuthentication } from './modules/security/access-authentication.js';
@@ -6778,26 +6779,8 @@ installTenantRecoveryCentre(app, {
   }
 });
 
-app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const user = principalUser(principal);
-  if (!user) return res.status(401).json({ error: 'User is not active' });
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(401).json({ error: 'Tenant is unavailable' });
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profileId = accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles);
-  const fieldAccess = Object.fromEntries(tenant.objects.flatMap((object) => object.fields.map((field) => [
-    `${object.apiName}.${field.apiName}`,
-    {
-      read: hasFieldPermission(principal, tenant, object.apiName, field.apiName, 'read'),
-      edit: hasFieldPermission(principal, tenant, object.apiName, field.apiName, 'edit')
-    }
-  ])));
-  const recordTypeAccess = Object.fromEntries(tenant.objects.flatMap((object) => (object.recordTypes ?? [])
-    .filter((recordType) => recordType.active)
-    .map((recordType) => [`${object.apiName}.${recordType.id}`, hasRecordTypeAccessForUser(user.id, tenant, object.apiName, recordType.id)])));
-  return res.json({ user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, profileId, permissions: effectivePermissions(user, tenant), fieldAccess, recordTypeAccess } });
-});
+registerIdentityProfileRoute({ app, accessAuthentication, getPrincipal, principalUser, tenantData,
+  profileIdForRole, hasFieldPermission, hasRecordTypeAccessForUser, effectivePermissions });
 
 app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
