@@ -22,14 +22,16 @@ export function createSystemPageDrafts(existing:readonly LightningPageMetadata[]
   const entry=entries.find(e=>e.id===id);
   if(!entry)throw Error('Missing registered protected workspace: '+id);
   const page:LightningPageMetadata={
-   apiName:systemPageApiName(id),label:label+' Layout',targetObject:'',
+   apiName:systemPageApiName(id),label:label+' Layout',targetObject:'User',
    pageType:'App Page',layoutMode:'free-canvas',canvasWidth:1200,canvasHeight:800,
    status:'Draft',devices:['Desktop','Phone'],components:[
     {id:id+'-heading',type:'Rich Text',label:label,visible:true,
-     properties:{text:label,layoutStyle:{width:1080},systemWorkspaceId:id}},
+     properties:{text:label,layoutStyle:{width:1080},systemWorkspaceId:id},
+     position:{x:0,y:0,width:1100,height:110}},
     {id:id+'-content',type:'Custom:SystemPanel',label:label+' Content',visible:true,
      properties:{title:label,description:'Protected administration workspace',
-      systemWorkspaceId:id,requiredPermission:entry.permission,layoutContainer:true}}
+      systemWorkspaceId:id,requiredPermission:entry.permission,layoutContainer:true},
+     position:{x:0,y:120,width:1100,height:600}}
    ]
   };
   return page;
