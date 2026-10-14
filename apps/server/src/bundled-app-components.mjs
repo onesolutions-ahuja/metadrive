@@ -32,10 +32,21 @@ function readTrustedAsset(root, path) {
  * The Map avoids repeated scans as the component library grows.
  */
 export function ensureBundledAppComponents(library, tenant, catalog, bundledRoot) {
-  const result = library.filter(item => !(item.trustedBundled === true && /^(Kiosk|Till)/.test(item.apiName ?? '')));
+  // Historical removals are supplied by the versioned package catalog,
+  // never by app-name conditions inside the shared registry engine.
+  const descriptors = [...installedComponentDescriptors(tenant, catalog)];
+  const activeNames = new Set(descriptors.map(item => item.apiName));
+  const retiredPrefixes = (Array.isArray(catalog?.retiredTrustedComponentPrefixes)
+    ? catalog.retiredTrustedComponentPrefixes : [])
+    .filter(prefix => typeof prefix === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(prefix));
+  const result = library.filter(item => !(
+    item?.trustedBundled === true && item.tenantId == null &&
+    !activeNames.has(item.apiName) &&
+    retiredPrefixes.some(prefix => typeof item.apiName === 'string' && item.apiName.startsWith(prefix))
+  ));
   const root = resolve(bundledRoot);
   const positions = new Map(result.map((component, index) => [component.apiName, index]));
-  for (const descriptor of installedComponentDescriptors(tenant, catalog)) {
+  for (const descriptor of descriptors) {
     const position = positions.get(descriptor.apiName);
     const current = position === undefined ? undefined : result[position];
     const bundleVersion = Number.isInteger(descriptor.version) && descriptor.version > 0

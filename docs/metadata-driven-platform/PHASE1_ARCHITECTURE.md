@@ -86,6 +86,28 @@ Regression tests are in `scripts/phase1c-page-dependencies.test.mjs` and run thr
 
 **Scope adjustment requested by owner:** Preserve the 49 development subphases but stop serial re-auditing. 1c onward should reuse existing findings and make narrow implementation/contract improvements with relevant tests. The published platform surface and expanded metadata property definitions are still Phase 2–3 work.
 
+## Phase 1d — Remove component-name dependencies from shared code
+
+Phase 1d replaces two concrete platform-specific branches without introducing a new
+engine or doing another repository-wide audit:
+
+- **Page Builder palette** now infers only generic Layout/Display/Inputs/Data/Navigation
+  categories through one shared rules array; app-specific Kiosk and Till categories
+  are no longer built into the palette. Existing components remain available under
+  All Components and their inferred generic group.
+- **Page component data binding** recognises any configured `*ObjectApiName` string
+  property, so new business apps do not require adding new key names to the platform.
+- **Trusted bundled component retirement** is driven by
+  `retiredTrustedComponentPrefixes` in the existing installation catalog, not a
+  Kiosk/Till regex in the shared loader. The existing historical retirement rules
+  are preserved as versioned package metadata. Tenant-owned/modified definitions
+  remain untouched; entitled active descriptors are not retired.
+- Existing generic rendering, Object APIs, Flow execution, sandbox and OneEngine RBAC
+  remain authoritative. No app/module is newly installed; no privileges are seeded.
+- New focused tests cover generic categorisation/bindings and package-driven
+  retirement. Phase 2–3 will replace fallback naming heuristics with database-backed
+  component category/property definitions rather than inventing another registry.
+
 ## Phase-by-phase migration boundary
 
 1. Phase 1 (this PR): inventory, canonical contract, migration map, audit command, contract tests and CI. No customer-facing behaviour change.

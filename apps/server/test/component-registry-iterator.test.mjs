@@ -43,3 +43,30 @@ test('entitled descriptors may not escape the audited bundle directory',()=>{
   const t=tenant([installed('c')]);
   assert.throws(()=>ensureBundledAppComponents([],t,catalog,tmpdir()),/outside the signed source tree|Invalid app bundle path/);
 });
+
+test('retired bundle cleanup uses catalog metadata, not platform app-name conditions', () => {
+  const originals = [
+    {apiName:'KioskContainer',trustedBundled:true},
+    {apiName:'TillCart',trustedBundled:true},
+    {apiName:'KioskTenant',trustedBundled:true,tenantId:'tenant-1'},
+    {apiName:'TillCustom',trustedBundled:false},
+    {apiName:'CommonTable',trustedBundled:true}
+  ];
+  const t = tenant([]);
+  const retired = {packages:[],retiredTrustedComponentPrefixes:['Kiosk','Till']};
+  assert.deepEqual(ensureBundledAppComponents(originals,t,retired,tmpdir()).map(c=>c.apiName),
+    ['KioskTenant','TillCustom','CommonTable']);
+  assert.deepEqual(ensureBundledAppComponents(originals,t,{packages:[]},tmpdir()), originals);
+  assert.deepEqual(ensureBundledAppComponents(originals,t,
+    {packages:[],retiredTrustedComponentPrefixes:['','.*']},tmpdir()), originals);
+});
+
+test('entitled current package definitions override a historical retirement prefix', () => {
+  const descriptor={apiName:'KioskCurrent',version:1};
+  const catalog={retiredTrustedComponentPrefixes:['Kiosk'],packages:[
+    {appKey:'active',components:[descriptor]}
+  ]};
+  const current={apiName:'KioskCurrent',version:1,trustedBundled:true};
+  assert.deepEqual(ensureBundledAppComponents([current],tenant([installed('active')]),
+    catalog,tmpdir()),[current]);
+});

@@ -8,8 +8,10 @@ import { examineRecordFilter } from './recordFilterMetadata';
  * Never execute user-supplied expressions or attach business logic to JSX.
  */
 export function needsMetadataComponentRuntime(properties: Record<string, unknown>): boolean {
-  if (['objectApiName', 'cartObjectApiName', 'customerObjectApiName'].some(key =>
-    typeof properties[key] === 'string' && (properties[key] as string).trim().length > 0)) return true;
+  // Any registered component can bind to an Object, not just a named business
+  // vertical. Keep legacy *ObjectApiName properties working without per-app code.
+  if (Object.entries(properties).some(([key, value]) =>
+    /objectApiName$/i.test(key) && typeof value === 'string' && value.trim().length > 0)) return true;
   const bindings = properties.actionFlows;
   return Boolean(bindings && typeof bindings === 'object' && !Array.isArray(bindings)
     && Object.keys(bindings).length > 0);
