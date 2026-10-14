@@ -32,5 +32,5 @@ test('rollback safeguards protect tenant data and platform privileges',()=>{
  assert.match(rules,/permissions/);
  assert.match(rules,/No physical data deletion/);
  assert.ok(plan.stages.some(s=>s.rollback.includes('last-known-good')));
- assert.ok(plan.stages.some(s=>s.rollback.includes('newer customer writes')));
+ assert.ok(plan.invariants.some(rule=>rule.includes('newer customer writes')));
 });
