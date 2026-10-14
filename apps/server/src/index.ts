@@ -1,3 +1,4 @@
+import { resolvePageAssignment } from './modules/pages/page-assignment.js';
 import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-properties.js';
 import { evaluateFormula, formulaLocalDate, isSafeFlowRegex } from './modules/flows/formula-evaluator.js';
 import { evaluateCustomConditionLogic } from './modules/flows/condition-logic.js';
@@ -9640,34 +9641,12 @@ function resolveActiveLightningRecordPage(
   profileId: string,
   formFactor: 'Desktop' | 'Phone'
 ): LightningPage | undefined {
-  const matches: Array<{ page: LightningPage; specificity: number }> = [];
-  for (const page of tenant.pages) {
-    if (page.status !== 'Active' || page.pageType !== 'Record Page'
-      || page.targetObject !== objectApiName || !page.devices.includes(formFactor)) continue;
-    for (const assignment of page.activationAssignments ?? []) {
-      if (!assignment.formFactors.includes(formFactor)) continue;
-      const matchesAssignment = assignment.scope === 'Org Default'
-        ? 1
-        : assignment.scope === 'App Default' && assignment.appId === appId
-          ? 2
-          : assignment.scope === 'App and Profile'
-            && assignment.appId === appId
-            && assignment.profileId === profileId
-            ? 3
-          : assignment.scope === 'App, Record Type, and Profile'
-            && assignment.appId === appId
-            && assignment.recordTypeId === recordTypeId
-            && assignment.profileId === profileId
-            ? 4
-            : 0;
-      if (matchesAssignment) matches.push({ page, specificity: matchesAssignment });
-    }
-  }
-  matches.sort((left, right) => right.specificity - left.specificity);
-  if (matches.length) return matches[0].page;
-  // Older installed Kiosk packages may have a Home Page but lack the
-  // App Default activation introduced after installation. Resolve the
-  // packaged page without broadening permissions for other apps.
+  const match = resolvePageAssignment(tenant.pages, {
+    pageType: 'Record Page', objectApiName, appId, recordTypeId, profileId, formFactor
+  });
+  if (match) return match;
+  // Compatibility for older licensed installations lacking activation metadata.
+  // New packages must use normal declarative page assignments.
   if (appId === 'KioskApp') {
     const entitlement = (tenant.records.Connector_App__c ?? []).find(row =>
       row.AppKey__c === 'kiosk' && row.Installed__c === true
@@ -9685,19 +9664,9 @@ function resolveActiveLightningHomePage(
   profileId: string,
   formFactor: 'Desktop' | 'Phone'
 ): LightningPage | undefined {
-  const matches: Array<{ page: LightningPage; specificity: number }> = [];
-  for (const page of tenant.pages) {
-    if (page.status !== 'Active' || page.pageType !== 'Home Page' || !page.devices.includes(formFactor)) continue;
-    for (const assignment of page.activationAssignments ?? []) {
-      if (!assignment.formFactors.includes(formFactor) || assignment.appId !== appId) continue;
-      if (assignment.scope === 'App Default') matches.push({ page, specificity: 1 });
-      else if (assignment.scope === 'App and Profile' && assignment.profileId === profileId) {
-        matches.push({ page, specificity: 2 });
-      }
-    }
-  }
-  matches.sort((left, right) => right.specificity - left.specificity);
-  return matches[0]?.page;
+  return resolvePageAssignment(tenant.pages, {
+    pageType: 'Home Page', appId, profileId, formFactor
+  });
 }
 
 function hasRecordTypeAccessForUser(userId: string, tenant: TenantData, objectName: string, recordTypeId: string): boolean {
