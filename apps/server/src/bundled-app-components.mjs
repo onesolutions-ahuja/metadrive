@@ -32,7 +32,7 @@ function readTrustedAsset(root, path) {
  * The Map avoids repeated scans as the component library grows.
  */
 export function ensureBundledAppComponents(library, tenant, catalog, bundledRoot) {
-  const result = [...library];
+  const result = library.filter(item => !(item.trustedBundled === true && /^(Kiosk|Till)/.test(item.apiName ?? '')));
   const root = resolve(bundledRoot);
   const positions = new Map(result.map((component, index) => [component.apiName, index]));
   for (const descriptor of installedComponentDescriptors(tenant, catalog)) {

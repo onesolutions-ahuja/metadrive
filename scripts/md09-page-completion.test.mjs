@@ -1,6 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { inspectPageDependencies } from '../apps/web/src/pageDependencies.ts';
 import { dashboardComponentValue } from '../apps/web/src/EmbeddedDashboard.tsx';
 
@@ -10,16 +9,16 @@ const page = {
   status:'Draft',devices:['Desktop','Phone'],components:[
     {id:'dashboard',type:'Dashboard',label:'Dashboard',visible:true,properties:{dashboardApiName:'Sales'}},
     {id:'report',type:'Report Chart',label:'Report',visible:true,properties:{reportApiName:'Sales_Report'}},
-    {id:'flow',type:'Custom:KioskOrderingExperience',label:'Order',visible:true,properties:{
-      actionFlows:{ add: {flowApiName:'KIOSK_CART_ADD',inputs:{SessionId:'$session'}}}
+    {id:'flow',type:'Custom:SampleBusinessWidget',label:'Order',visible:true,properties:{
+      actionFlows:{ add: {flowApiName:'SAMPLE_ACTION',inputs:{SessionId:'$session'}}}
     }}
   ], activationAssignments: []
 };
 const scope = {
  apps: [], pages: [page], objects: [{apiName:'Account'}], reports:[{apiName:'Sales_Report'}],
  dashboards:[{apiName:'Sales',status:'Deployed'}],
- flows:[{apiName:'KIOSK_CART_ADD',status:'Active'}],
- libraryComponents:[{apiName:'KioskOrderingExperience',status:'Published',surfaces:['page']}]
+ flows:[{apiName:'SAMPLE_ACTION',status:'Active'}],
+ libraryComponents:[{apiName:'SampleBusinessWidget',status:'Published',surfaces:['page']}]
 };
 test('Page Builder dependencies resolve published dashboard, report, Flow and library component', () => {
  const result=inspectPageDependencies(page,scope);
@@ -39,14 +38,4 @@ test('generic dashboard aggregation uses report summary rather than truncated vi
  assert.equal(dashboardComponentValue(metric,input),900);
  assert.equal(dashboardComponentValue({...metric,aggregation:'Count'},input),345);
  assert.equal(dashboardComponentValue({...metric,aggregation:'Average'},input),900/345);
-});
-test('kiosk remains an editable metadata contract with guarded checkout provider Flow',()=>{
- const preset=JSON.parse(readFileSync('apps/web/src/page-presets/kiosk.editable.json','utf8'));
- const kiosk=preset.components.find(component=>component.type==='Custom:KioskOrderingExperience');
- assert(kiosk);
- for(const event of ['start','add','quantity','remove','reset','checkout'])
-   assert.equal(typeof kiosk.properties.actionFlows[event]?.flowApiName,'string',event);
- assert.deepEqual(kiosk.properties.actionFlows.checkout.inputs,
-   {SessionId:'$session',OrderType:'$event.orderType'});
- assert(!JSON.stringify(kiosk.properties).includes('paymentSecret'));
 });

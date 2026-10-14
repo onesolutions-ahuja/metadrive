@@ -2247,10 +2247,10 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal((await api.send('/component-library')).status, 401, 'component library metadata must require authentication');
     const componentLibrary = await api.send('/component-library', adminToken);
     assert.equal(componentLibrary.status, 200, 'authenticated metadata readers can load the component library');
-    const bundledKioskCard = componentLibrary.data.components.find((component: { apiName: string }) => component.apiName === 'KioskCard');
-    assert.ok(bundledKioskCard, 'reading the shared library registers bundled custom components');
-    assert.ok(bundledKioskCard.surfaces.includes('flow'), 'bundled components are available in Flow Builder screens');
-    assert.deepEqual(bundledKioskCard.resize, { defaultWidth: 320, defaultHeight: 180, minWidth: 120, minHeight: 60 },
+    const bundledChatWidget = componentLibrary.data.components.find((component: { apiName: string }) => component.apiName === 'ChatterInbox');
+    assert.ok(bundledChatWidget, 'reading the shared library registers bundled custom components');
+    assert.ok(bundledChatWidget.surfaces.includes('flow'), 'bundled components are available in Flow Builder screens');
+    assert.deepEqual(bundledChatWidget.resize, { defaultWidth: 900, defaultHeight: 650, minWidth: 320, minHeight: 380 },
       'bundled component resize metadata is preserved in the shared library');
     let permissions = (await api.send('/metadata/permissions', adminToken)).data;
 
@@ -2647,9 +2647,9 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       label: 'MD07 Nested Style Page',
       components: [
         {
-          id: 'md07-container', type: 'Custom:KioskContainer', label: 'Layout Container', visible: true, region: 'main',
+          id: 'md07-container', type: 'Custom:Snapshot_Card', label: 'Layout Container', visible: true, region: 'main',
           properties: {
-            libraryComponentId: 'KioskContainer',
+            libraryComponentId: 'Snapshot_Card',
             layoutStyle: { padding: 24, backgroundColor: '#ffffff', gap: 12 },
             layoutResponsive: { Tablet: { padding: 16 }, Phone: { padding: 8, hidden: false } }
           }
@@ -2766,8 +2766,8 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
       'renamed App Pages must remain accessible through their app navigation');
     const freeCanvasPage = {
       ...componentPage,
-      apiName: 'Kiosk_Free_Canvas',
-      label: 'Kiosk Free Canvas',
+      apiName: 'MD07_Free_Canvas',
+      label: 'MD07 Free Canvas',
       pageType: 'Home Page',
       layoutMode: 'free-canvas',
       canvasWidth: 1280,
@@ -2779,7 +2779,7 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         position: { x: 100, y: 120, width: 640, height: 320 }
       }],
       activationAssignments: [{
-        id: 'kiosk-free-canvas-app-default',
+        id: 'md07-free-canvas-app-default',
         scope: 'App Default',
         appId: 'Records',
         profileId: null,
@@ -2787,7 +2787,7 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
         formFactors: ['Desktop']
       }]
     };
-    const savedFreeCanvasPage = await api.send('/metadata/pages/Kiosk_Free_Canvas', adminToken, 'PUT', freeCanvasPage);
+    const savedFreeCanvasPage = await api.send('/metadata/pages/MD07_Free_Canvas', adminToken, 'PUT', freeCanvasPage);
     assert.equal(savedFreeCanvasPage.status, 200, JSON.stringify(savedFreeCanvasPage.data));
     assert.equal(savedFreeCanvasPage.data.page.layoutMode, 'free-canvas');
     assert.equal(savedFreeCanvasPage.data.page.canvasWidth, 1280);
@@ -2795,16 +2795,16 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.deepEqual(savedFreeCanvasPage.data.page.components[0].position, { x: 100, y: 120, width: 640, height: 320 });
     const kioskHomePage = await api.send('/apps/Records/home-page?formFactor=Desktop', adminToken);
     assert.equal(kioskHomePage.status, 200, JSON.stringify(kioskHomePage.data));
-    assert.equal(kioskHomePage.data.page.apiName, 'Kiosk_Free_Canvas',
-      'an app-assigned Home Page Free Canvas must be resolvable for kiosk runtime');
-    assert.equal((await api.send('/metadata/pages/Kiosk_Free_Canvas_Out_Of_Bounds', adminToken, 'PUT', {
+    assert.equal(kioskHomePage.data.page.apiName, 'MD07_Free_Canvas',
+      'an app-assigned Home Page Free Canvas must be resolvable for generic runtime');
+    assert.equal((await api.send('/metadata/pages/MD07_Free_Canvas_Out_Of_Bounds', adminToken, 'PUT', {
       ...freeCanvasPage,
-      apiName: 'Kiosk_Free_Canvas_Out_Of_Bounds',
+      apiName: 'MD07_Free_Canvas_Out_Of_Bounds',
       components: [{ ...freeCanvasPage.components[0], position: { x: 700, y: 120, width: 640, height: 320 } }]
     })).status, 400, 'Free Canvas components must remain within the configured canvas bounds');
-    assert.equal((await api.send('/metadata/pages/Kiosk_Free_Canvas_Missing_Position', adminToken, 'PUT', {
+    assert.equal((await api.send('/metadata/pages/MD07_Free_Canvas_Missing_Position', adminToken, 'PUT', {
       ...freeCanvasPage,
-      apiName: 'Kiosk_Free_Canvas_Missing_Position',
+      apiName: 'MD07_Free_Canvas_Missing_Position',
       components: [{ ...componentPage.components[0] }]
     })).status, 400, 'Free Canvas components must store their position and size');
     for (const pageType of ['App Page', 'Home Page']) {

@@ -22,7 +22,7 @@ const request = async (path, method = 'GET', body) => {
   return data;
 };
 const lib = await request('/component-library');
-for (const id of ['KioskContainer', 'KioskCard']) assert.ok(lib.components.some((x) => x.apiName === id), id);
+for (const id of ['ChatterInbox']) assert.ok(lib.components.some((x) => x.apiName === id), id);
 const name = 'MD07_NESTED_BROWSER_E2E';
 const source = {
   apiName: name, label: 'MD07 Nested Browser Test', targetObject: 'Account',
@@ -30,13 +30,13 @@ const source = {
   canvasWidth: 1000, canvasHeight: 780, status: 'Draft',
   devices: ['Desktop','Phone'], activationAssignments: [],
   components: [
-    { id: 'md07-root', type: 'Custom:KioskContainer', label: 'Test Container', region: 'main', visible: true,
+    { id: 'md07-root', type: 'Custom:ChatterInbox', label: 'Test Container', region: 'main', visible: true,
       position: { x: 20, y: 20, width: 850, height: 580 },
-      properties: { libraryComponentId: 'KioskContainer', layoutContainer: true, layoutStyle: { padding: 24, backgroundColor: '#ffffff' } }
+      properties: { libraryComponentId: 'ChatterInbox', layoutContainer: true, layoutStyle: { padding: 24, backgroundColor: '#ffffff' } }
     },
-    { id: 'md07-card', type: 'Custom:KioskCard', label: 'Test Card', region: 'main', visible: true,
+    { id: 'md07-card', type: 'Custom:ChatterInbox', label: 'Test Card', region: 'main', visible: true,
       position: { x: 40, y: 40, width: 310, height: 180 },
-      properties: { libraryComponentId: 'KioskCard', layoutParentId: 'md07-root', title: 'Nested card works' }
+      properties: { libraryComponentId: 'ChatterInbox', layoutParentId: 'md07-root', title: 'Nested card works' }
     }
   ]
 };

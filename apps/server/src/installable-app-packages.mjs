@@ -1,3 +1,35 @@
+// Retire only the two named demo applications and their metadata. Preserve
+// reusable Product/Sale objects, tenant business records and unrelated flows.
+export function removeRetiredOrderingApps(tenant) {
+  const apps = new Set(['KioskApp', 'POSApp']);
+  const pages = new Set(['UNE_KIOSK', 'UNE_POS']);
+  const flows = new Set(['KIOSK_SESSION_START', 'KIOSK_CART_ADD',
+    'KIOSK_CART_QUANTITY', 'KIOSK_CART_REMOVE', 'KIOSK_CART_RESET',
+    'KIOSK_CHECKOUT', 'POS_CASH_SETTLE']);
+  const keptApps = (tenant.apps ?? []).filter(app => !apps.has(app.apiName))
+    .map(app => ({
+      ...app,
+      navigationPageApiNames: (app.navigationPageApiNames ?? []).filter(id => !pages.has(id)),
+      navigationItems: (app.navigationItems ?? []).filter(id => !pages.has(id))
+    }));
+  const keptPages = (tenant.pages ?? []).filter(page => !pages.has(page.apiName))
+    .map(page => ({
+      ...page,
+      activationAssignments: (page.activationAssignments ?? []).filter(
+        assignment => !apps.has(assignment.appId))
+    }));
+  const records = {...(tenant.records ?? {})};
+  if (Array.isArray(records.Connector_App__c)) {
+    records.Connector_App__c = records.Connector_App__c.filter(
+      item => !['kiosk', 'pos'].includes(item.AppKey__c));
+  }
+  return {
+    ...tenant, apps: keptApps, pages: keptPages,
+    flows: (tenant.flows ?? []).filter(flow => !flows.has(flow.apiName)),
+    records
+  };
+}
+
 import {upgradePackagedPageComponents,upgradePackagedFlow} from './package-page-migrations.mjs';
 
 /**
@@ -6,7 +38,7 @@ import {upgradePackagedPageComponents,upgradePackagedFlow} from './package-page-
  * Existing tenant definitions and customisations are never overwritten.
  */
 export function applyInstallableAppPackages(tenant, catalog) {
-  let next = tenant;
+  let next = removeRetiredOrderingApps(tenant);
   const packages = Array.isArray(catalog?.packages) ? catalog.packages : [];
   for (const pkg of packages) {
     const installed = (next.records?.Connector_App__c ?? []).find(row => row.AppKey__c === pkg.appKey);

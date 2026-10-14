@@ -112,9 +112,9 @@ test('AppExchange installation and trial run using stored metadata flows', async
     const before=await list();
     assert.equal(before.status,200,JSON.stringify(before.data));
     const records=before.data.records as Array<Record<string,any>>;
-    assert.equal(records.length,7);
-    assert.ok(records.some(x=>x.AppKey__c==='kiosk'));
-    assert.ok(records.some(x=>x.AppKey__c==='pos'));
+    assert.equal(records.length,5);
+    assert.equal(records.some(x=>x.AppKey__c==='kiosk'),false);
+    assert.equal(records.some(x=>x.AppKey__c==='pos'),false);
     assert.equal(new Set(records.map(x=>x.AppKey__c)).size,records.length,'AppExchange package keys must be unique');
     const app=records.find(x=>x.AppKey__c==='xero');
     assert.ok(app);
@@ -183,78 +183,6 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.equal(retainedCredential.enabled,false);
     assert.equal(retainedCredential.id,saved.data.credential.id,'Reinstall must preserve credential identity');
     assert.equal(retainedCredential.hasSecret,true,'Reinstall must preserve encrypted authentication configuration');
-    // Generic AppExchange lifecycle installs the Kiosk package only after a
-    // valid entitlement; no additional kiosk-specific backend routes.
-    const beforeKiosk=(await api(portNumber,'/metadata/objects',token)).data.objects as Array<Record<string,any>>;
-    const existingProduct=beforeKiosk.find(item=>item.apiName==='Product');
-    const installKiosk=await api(portNumber,'/flows/ONE_Install_Connector/execute',token,{AppKey:'kiosk'});
-    assert.equal(installKiosk.status,200,JSON.stringify(installKiosk.data));
-    assert.equal((await api(portNumber,'/metadata/pages',token)).data.pages.some((page:Record<string,any>)=>page.apiName==='UNE_KIOSK'),false,
-      'Unlicensed installation must not expose kiosk page yet');
-    const activateKiosk=await api(portNumber,'/flows/ONE_Start_Connector_Trial/execute',token,{AppKey:'kiosk'});
-    assert.equal(activateKiosk.status,200,JSON.stringify(activateKiosk.data));
-    const publicProvision=await api(portNumber,'/kiosk/devices',undefined,{index:1});
-    assert.equal(publicProvision.status,401,'Unauthenticated visitors cannot activate kiosks');
-    const provision=await api(portNumber,'/kiosk/devices',token,{index:1});
-    assert.equal(provision.status,201,JSON.stringify(provision.data));
-    assert.equal(provision.data.username,'kiosk1@'+tenantId+'.invalid');
-    assert.equal(typeof provision.data.password,'string');
-    assert.ok(provision.data.password.length>=30);
-    const duplicate=await api(portNumber,'/kiosk/devices',token,{index:1});
-    assert.equal(duplicate.status,409,'Kiosk virtual identity must not duplicate');
-    const deviceLogin=await api(portNumber,'/auth/login',undefined,{
-      email:provision.data.username,password:provision.data.password
-    });
-    assert.equal(deviceLogin.status,200,JSON.stringify(deviceLogin.data));
-    const deviceToken=deviceLogin.data.access_token as string;
-    const deviceSession=await api(portNumber,'/auth/me',deviceToken);
-    assert.equal(deviceSession.status,200);
-    assert.equal(deviceSession.data.user.profileId,'kiosk-user');
-    const kioskOnlyApps=(await api(portNumber,'/metadata/apps',deviceToken)).data.apps as Array<Record<string,any>>;
-    assert.ok(kioskOnlyApps.some(app=>app.apiName==='KioskApp'));
-    assert.equal(kioskOnlyApps.some(app=>app.apiName==='Records'),false,'Kiosk must not access unrelated applications');
-    assert.equal(deviceSession.data.user.permissions.includes('security:manage'),false);
-    const kioskCannotSeed=await api(portNumber,'/kiosk/devices',deviceToken,{index:2});
-    assert.equal(kioskCannotSeed.status,403,'Kiosk login must not manage more devices');
-    const kioskCannotReset=await api(portNumber,'/kiosk/devices/reset',deviceToken,{index:1});
-    assert.equal(kioskCannotReset.status,403);
-    const reset=await api(portNumber,'/kiosk/devices/reset',token,{index:1});
-    assert.equal(reset.status,200,JSON.stringify(reset.data));
-    assert.equal(reset.data.username,provision.data.username);
-    assert.notEqual(reset.data.password,provision.data.password);
-    const oldLogin=await api(portNumber,'/auth/login',undefined,{
-      email:provision.data.username,password:provision.data.password
-    });
-    assert.equal(oldLogin.status,401);
-    const newLogin=await api(portNumber,'/auth/login',undefined,{
-      email:reset.data.username,password:reset.data.password
-    });
-    assert.equal(newLogin.status,200);
-    const revokedSession=await api(portNumber,'/auth/me',deviceToken);
-    assert.equal(revokedSession.status,401);
-
-    const afterKiosk=(await api(portNumber,'/metadata/objects',token)).data.objects as Array<Record<string,any>>;
-    for (const apiName of ['Product','Cart__c','CartLine__c','Sale__c','SaleItem__c','NamedDevice__c','KioskSettings__c']) {
-      assert.equal(afterKiosk.filter(item=>item.apiName===apiName).length,1,apiName+' should exist exactly once');
-    }
-    const product=afterKiosk.find(item=>item.apiName==='Product');
-    if (existingProduct) {
-      assert.equal(product.kind,existingProduct.kind,'Kiosk must reuse existing Product metadata');
-    }
-    const kioskPages=(await api(portNumber,'/metadata/pages',token)).data.pages as Array<Record<string,any>>;
-    const kioskPage=kioskPages.find(page=>page.apiName==='UNE_KIOSK');
-    assert.ok(kioskPage,'Kiosk page must be installed');
-    assert.equal(kioskPage.components[0].properties.objectApiName,'Product');
-    const kioskFlows=(await api(portNumber,'/metadata/flows',token)).data.flows as Array<Record<string,any>>;
-    assert.equal(kioskFlows.find(flow=>flow.apiName==='KIOSK_CHECKOUT')?.status,'Draft',
-      'Payment remains blocked until a provider Flow is configured');
-    const kioskApps=(await api(portNumber,'/metadata/apps',token)).data.apps as Array<Record<string,any>>;
-    assert.ok(kioskApps.some(app=>app.apiName==='KioskApp'));
-    // A second write must never overwrite an edited object definition.
-    const kioskTrialAgain=await api(portNumber,'/flows/ONE_Install_Connector/execute',token,{AppKey:'kiosk'});
-    assert.equal(kioskTrialAgain.status,200);
-    assert.equal((await api(portNumber,'/metadata/objects',token)).data.objects.filter(
-      (item:Record<string,any>)=>item.apiName==='Sale__c').length,1);
 
   } finally {
     await stop(child);
