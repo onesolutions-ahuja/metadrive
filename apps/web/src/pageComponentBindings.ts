@@ -1,3 +1,4 @@
+import { compareMetadataValue } from './metadataValueComparison';
 import type { FieldMetadata } from './metadata';
 import { examineRecordFilter } from './recordFilterMetadata';
 
@@ -30,17 +31,6 @@ export function filterPageComponentRecords<T extends Record<string, unknown>>(
   return records.filter(record => definitions.every(item => {
     const filter = item as { field: string; operator: string; value: unknown };
     if (!Object.prototype.hasOwnProperty.call(record, filter.field)) return false;
-    const actual = record[filter.field];
-    if (actual === null || actual === undefined) return false;
-    const expected = String(filter.value ?? '');
-    const value = String(actual);
-    switch (filter.operator) {
-      case 'Equals': return value === expected;
-      case 'Not Equals': return value !== expected;
-      case 'Contains': return value.toLocaleLowerCase().includes(expected.toLocaleLowerCase());
-      case 'Greater Than': return Number(actual) > Number(expected);
-      case 'Less Than': return Number(actual) < Number(expected);
-      default: return false;
-    }
+    return compareMetadataValue(record[filter.field], filter.operator, filter.value, true);
   }));
 }

@@ -1,3 +1,4 @@
+import {appearanceNumberFields,appearanceColorFields,appearanceChoiceFields} from '../src/metadataAppearanceSchema';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canNestComponent, componentVisualStyle, directChildren, normalizeVisualProperties } from '../src/pageComponentLayout';
@@ -26,4 +27,14 @@ test('responsive grid styles use configured device columns', () => {
   assert.equal(componentVisualStyle(visual, 'Grid', 'Desktop').gridTemplateColumns, 'repeat(4, minmax(0, 1fr))');
   assert.equal(componentVisualStyle(visual, 'Grid', 'Tablet').gridTemplateColumns, 'repeat(2, minmax(0, 1fr))');
   assert.equal(componentVisualStyle(visual, 'Grid', 'Phone').gridTemplateColumns, 'repeat(1, minmax(0, 1fr))');
+});
+
+test('appearance editor and normalizer share a single ordered metadata schema',()=>{
+  assert.equal(new Set(appearanceNumberFields.map(x=>x.key)).size,appearanceNumberFields.length);
+  const maxes=Object.fromEntries(appearanceNumberFields.map(x=>[x.key,x.max]));
+  const input=Object.fromEntries(appearanceNumberFields.map(x=>[x.key,x.max+100]));
+  const normal=normalizeVisualProperties(input);
+  for(const [key,max] of Object.entries(maxes)) assert.equal((normal as unknown as Record<string,unknown>)[key],max);
+  assert.deepEqual(appearanceColorFields.map(x=>x.key),['backgroundColor','color','borderColor']);
+  assert.deepEqual(appearanceChoiceFields.map(x=>x.key),['align','justify']);
 });
