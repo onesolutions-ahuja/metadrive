@@ -25,7 +25,7 @@ All 13 developer policy rules apply. A requirement conflicting with any rule is 
 | Package management | apps/server/src/installable-app-packages.mjs | Existing install/upgrade machinery, not a new installer |
 | State registry | apps/server/src/platform-state-registry.mjs | Preserve persisted shape until compatible migration |
 
-Measured baseline oversized files: App.tsx 12,887 lines; server index.ts 15,830; DashboardBuilder.tsx 3,016; FlowBuilder.tsx 1,586; metadata.ts 1,350; styles.css 2,670; rbac-sharing.smoke.test.ts 5,542. The complete live inventory (not just these examples) is produced by scripts/metadata-architecture-audit.mjs. Any touched code file must be reduced to at most 1,000 lines; untouched legacy files are tracked for phased extraction, never silently exempted.
+Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829; DashboardBuilder.tsx 3,015; FlowBuilder.tsx 1,585; metadata.ts 1,349; styles.css 2,669; rbac-sharing.smoke.test.ts 5,541. The 14 October 2026 audit counted 330 scanned source files and 10 above the line limit, all assigned a migration owner. The complete live inventory (not just these examples) is produced by scripts/metadata-architecture-audit.mjs. Any touched code file must be reduced to at most 1,000 lines; untouched legacy files are tracked for phased extraction, never silently exempted.
 
 ### Existing reuse that must not be replaced
 
@@ -83,7 +83,7 @@ No later phase may declare completion with a partial migrated screen, untested R
 
 - Every owner and target phase in the machine-readable migration map points to a current repository file.
 - A single versioned contract identifies authoritative pre-existing engines and safe extension points.
-- A repeatable audit enumerates all code files and reports legacy over-limit files, without hiding them.
+- A repeatable audit enumerates all code files and reports legacy over-limit files, and CI rejects any over-limit file lacking a migration owner.
 - Contract tests verify source references, security invariants, ownership and phase mapping.
 - CI executes audit and contract tests without database migrations, deployments or external services.
 - No runtime, tenant records, grants, routes or customer-facing behaviour is changed in this phase.

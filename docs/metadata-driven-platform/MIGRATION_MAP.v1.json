@@ -44,13 +44,13 @@
       "path": "apps/web/src/App.tsx",
       "phase": 4,
       "reason": "Platform shell, navigation and legacy per-workspace UI",
-      "baselineLines": 12887
+      "baselineLines": 12886
     },
     {
       "path": "apps/web/src/metadata.ts",
       "phase": 2,
       "reason": "Canonical frontend metadata types",
-      "baselineLines": 1350
+      "baselineLines": 1349
     },
     {
       "path": "apps/web/src/RegisteredComponent.tsx",
@@ -121,13 +121,13 @@
       "path": "apps/web/src/FlowBuilder.tsx",
       "phase": 5,
       "reason": "Metadata inspector, panels and registry-driven flow elements",
-      "baselineLines": 1586
+      "baselineLines": 1585
     },
     {
       "path": "apps/web/src/DashboardBuilder.tsx",
       "phase": 5,
       "reason": "Shared inspector/table/layout, dashboard canvas remains runtime capability",
-      "baselineLines": 3016
+      "baselineLines": 3015
     },
     {
       "path": "apps/web/src/SchemaBuilder.tsx",
@@ -148,7 +148,7 @@
       "path": "apps/server/src/index.ts",
       "phase": 6,
       "reason": "Extract remaining generic routes, schemas and runtime, no new app engines",
-      "baselineLines": 15830
+      "baselineLines": 15829
     },
     {
       "path": "apps/server/src/modules/objects/routes.ts",
@@ -179,7 +179,8 @@
     {
       "path": "apps/server/src/modules/flows/formula-evaluator.ts",
       "phase": 6,
-      "reason": "Reuse Flow evaluator; never create a second interpreter"
+      "reason": "Reuse Flow evaluator; never create a second interpreter",
+      "baselineLines": 1228
     },
     {
       "path": "apps/server/data/platform-metadata.json",
@@ -190,13 +191,25 @@
       "path": "apps/web/src/styles.css",
       "phase": 7,
       "reason": "Split shared styles into domain-aligned modules",
-      "baselineLines": 2670
+      "baselineLines": 2669
     },
     {
       "path": "apps/server/test/rbac-sharing.smoke.test.ts",
       "phase": 7,
       "reason": "Split large regression suite without weakening tests",
-      "baselineLines": 5542
+      "baselineLines": 5541
+    },
+    {
+      "path": "apps/server/test/flow-collection.test.ts",
+      "phase": 7,
+      "reason": "Split oversized Flow collection regression suite while preserving all Flow execution and RBAC assertions",
+      "baselineLines": 2839
+    },
+    {
+      "path": "apps/server/test/report-builder.test.ts",
+      "phase": 7,
+      "reason": "Split oversized Report Builder regressions while preserving report metadata and permission coverage",
+      "baselineLines": 1078
     }
   ],
   "knownRisks": [

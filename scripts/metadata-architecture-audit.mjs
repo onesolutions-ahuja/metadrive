@@ -50,7 +50,7 @@ if (process.argv.includes('--json')) {
   for (const item of oversize) console.log('  ' + item.lines + '  ' + item.path + (tracked.has(item.path) ? ' [mapped]' : ' [unmapped debt]'));
   console.log('Migration sources: ' + map.sources.length + '; missing referenced files: ' + (missingSources.length + missingAuthorities.length));
 }
-if (process.argv.includes('--check') && (missingSources.length || missingAuthorities.length)) {
-  console.error('Phase 1 migration map or contract points to missing source files.');
+if (process.argv.includes('--check') && (missingSources.length || missingAuthorities.length || unmappedOversize.length)) {
+  console.error('Phase 1 contract failure: missing metadata source or unowned oversized legacy file.');
   process.exitCode = 1;
 }
