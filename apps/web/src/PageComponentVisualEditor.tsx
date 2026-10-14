@@ -1,3 +1,4 @@
+import {appearanceNumberFields,appearanceColorFields,appearanceChoiceFields} from './metadataAppearanceSchema';
 import { normalizeVisualProperties, type VisualProperties } from './pageComponentLayout';
 
 export default function PageComponentVisualEditor({ value, onChange }: {
@@ -21,27 +22,15 @@ export default function PageComponentVisualEditor({ value, onChange }: {
     </label>;
   return <fieldset className="metadata-component-visual-editor">
     <legend className="properties-section-title">Appearance & responsive layout</legend>
-    {number('padding', 'Padding (px)', 0, 128)}
-    {number('margin', 'Margin (px)', 0, 128)}
-    {number('gap', 'Child spacing (px)', 0, 128)}
-    {number('borderWidth', 'Border width (px)', 0, 16)}
-    {number('borderRadius', 'Corner radius (px)', 0, 128)}
-    {color('backgroundColor', 'Background colour')}
-    {color('color', 'Text colour')}
-    {color('borderColor', 'Border colour')}
-    <label className="form-label">Align items
-      <select className="form-control" value={visual.align} onChange={(event) => set('align', event.target.value as VisualProperties['align'])}>
-        {['start','center','end','stretch'].map((item) => <option key={item} value={item}>{item}</option>)}
-      </select>
-    </label>
-    <label className="form-label">Justify content
-      <select className="form-control" value={visual.justify} onChange={(event) => set('justify', event.target.value as VisualProperties['justify'])}>
-        {['start','center','end','space-between'].map((item) => <option key={item} value={item}>{item}</option>)}
-      </select>
-    </label>
-    {number('desktopColumns', 'Desktop grid columns', 1, 12)}
-    {number('tabletColumns', 'Tablet grid columns', 1, 12)}
-    {number('mobileColumns', 'Phone grid columns', 1, 12)}
+    {appearanceNumberFields.map(({key,label,min,max}) => number(key,label,min,max))}
+    {appearanceColorFields.map(({key,label}) => color(key,label))}
+    {appearanceChoiceFields.map(({key,label,options}) =>
+      <label className="form-label" key={key}>{label}
+        <select className="form-control" value={visual[key]} onChange={(event) => set(key,event.target.value as VisualProperties[typeof key])}>
+          {options.map(item => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </label>
+    )}
     <button type="button" className="btn btn-small" onClick={() => onChange(normalizeVisualProperties(null))}>Reset appearance to defaults</button>
   </fieldset>;
 }
