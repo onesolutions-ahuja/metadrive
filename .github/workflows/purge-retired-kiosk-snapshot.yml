@@ -1,0 +1,33 @@
+name: Purge retired Kiosk snapshot entries
+
+on:
+  push:
+    branches:
+      - fix/purge-kiosk-platform-state-snapshot
+    paths:
+      - scripts/purge-retired-kiosk-snapshot.mjs
+      - .github/workflows/purge-retired-kiosk-snapshot.yml
+
+permissions:
+  contents: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rewrite only retired component entries
+        run: node scripts/purge-retired-kiosk-snapshot.mjs
+      - name: Commit cleaned snapshot
+        run: |
+          git diff --exit-code --quiet -- apps/server/data/platform-state.json && exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/server/data/platform-state.json
+          git commit -m "Remove retired Kiosk components from platform-state snapshot"
+          git push origin HEAD:fix/purge-kiosk-platform-state-snapshot
