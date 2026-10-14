@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "status": "proposed extensions to existing MetaDrive metadata only; this is NOT a parallel persistence model",
+  "purpose": "Make platform pages and builders consume the same Objects, Actions, Flows and registered Components as tenant applications",
+  "authorities": [
+    {
+      "area": "Objects/CRUD",
+      "path": "apps/server/src/modules/objects/routes.ts",
+      "reuse": "existing object definitions and generic tenant record API"
+    },
+    {
+      "area": "Components",
+      "path": "apps/web/src/RegisteredComponent.tsx",
+      "reuse": "existing published registered component renderer and sandbox"
+    },
+    {
+      "area": "Component Lookup",
+      "path": "apps/web/src/componentRegistryLookup.ts",
+      "reuse": "existing registry resolver, extended surface scope"
+    },
+    {
+      "area": "Pages",
+      "path": "apps/web/src/metadata.ts",
+      "reuse": "existing page and layout metadata; add protected system ownership fields"
+    },
+    {
+      "area": "Actions and Flows",
+      "path": "apps/web/src/pageComponentBindings.ts",
+      "reuse": "existing metadata bindings and server-authorised Action/Flow execution"
+    },
+    {
+      "area": "RBAC",
+      "path": "apps/server/src/modules/security/metadata-routes.ts",
+      "reuse": "existing permission system and platform/tenant boundary"
+    },
+    {
+      "area": "Installation",
+      "path": "apps/server/src/installable-app-packages.mjs",
+      "reuse": "existing installer and additive/idempotent metadata merge"
+    },
+    {
+      "area": "State",
+      "path": "apps/server/src/platform-state-registry.mjs",
+      "reuse": "existing metadata state registry, backed by existing persistence"
+    }
+  ],
+  "proposedCompatibleAdditions": {
+    "libraryComponentSurfaces": [
+      "page",
+      "dashboard",
+      "flow",
+      "platform"
+    ],
+    "componentRegistration": [
+      "apiName",
+      "publishedVersion",
+      "propertyDefinitions",
+      "eventDefinitions",
+      "supportedSurfaces",
+      "trustedExecutionPolicy"
+    ],
+    "pageDefinitions": [
+      "apiName",
+      "pageType",
+      "components",
+      "ownerNamespace",
+      "definitionVersion",
+      "scope",
+      "overridePolicy",
+      "requiredPermissions"
+    ],
+    "componentInstances": [
+      "componentInstanceId",
+      "registeredApiName",
+      "propertyValues",
+      "dataBindings",
+      "eventBindings",
+      "responsiveLayout"
+    ],
+    "actionsAndFlows": [
+      "referenceByApiName",
+      "typedParameters",
+      "serverSideAuthorisation",
+      "executionAudit"
+    ],
+    "installation": [
+      "packageApiName",
+      "packageVersion",
+      "dependencies",
+      "metadataSeedVersion",
+      "oneEngineGrantTemplate"
+    ]
+  },
+  "scopes": [
+    {
+      "name": "platform-system",
+      "owner": "MetaDrive",
+      "writableBy": "authorised platform publishers only",
+      "tenantOverride": "allowlist presentation properties only"
+    },
+    {
+      "name": "tenant",
+      "owner": "tenant",
+      "writableBy": "tenant principals authorised by existing RBAC",
+      "tenantOverride": "full for tenant-owned metadata"
+    },
+    {
+      "name": "tenant-presentation-override",
+      "owner": "tenant",
+      "writableBy": "authorised tenant designers only",
+      "tenantOverride": "only safe system-designated appearance/layout settings"
+    }
+  ],
+  "resolutionOrder": [
+    "authenticated tenant context and server-side permission check",
+    "published tenant-owned page or permitted system presentation override",
+    "protected published system definition",
+    "fail closed when no authorised definition exists"
+  ],
+  "securityInvariants": [
+    "The browser never authorises access; server-side RBAC remains authoritative on Objects, fields, records, Actions, Flows and platform operations",
+    "A tenant metadata override cannot change platform-only permissions, impersonate a user or bypass tenant isolation",
+    "OneEngine permission seeding creates initially editable grants without resetting administrators' subsequent changes",
+    "Untrusted custom components stay sandboxed; trustedBundled cannot be set by tenant metadata",
+    "Render only published versioned definitions; keep immutable last-known-good system page and secure recovery access"
+  ],
+  "migrationRules": [
+    "Add compatible metadata fields and migration functions to current data structures; do not invent a second metadata engine",
+    "Seed system pages through versioned idempotent package metadata; preserve existing tenant pages and navigation",
+    "Run old and new rendering paths behind a reversible compatibility boundary until parity tests pass",
+    "Do not remove legacy routes or direct JSX until behaviour, deep links, accessibility, mobile and RBAC parity are verified",
+    "Keep every new or touched code file at most 1000 lines and extract cohesive modules rather than one-off app handlers"
+  ]
+}

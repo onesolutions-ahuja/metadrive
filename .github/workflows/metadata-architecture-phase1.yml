@@ -1,0 +1,32 @@
+name: Metadata Architecture Contract
+on:
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - 'docs/metadata-driven-platform/**'
+      - 'scripts/metadata-architecture-*'
+      - 'apps/web/src/**'
+      - 'apps/server/src/**'
+      - '.github/workflows/metadata-architecture-phase1.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - 'docs/metadata-driven-platform/**'
+      - 'scripts/metadata-architecture-*'
+      - 'apps/web/src/**'
+      - 'apps/server/src/**'
+permissions:
+  contents: read
+jobs:
+  metadata-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Audit existing architecture
+        run: node scripts/metadata-architecture-audit.mjs --check
+      - name: Validate shared contract and migration ownership
+        run: node --test scripts/metadata-architecture-contract.test.mjs

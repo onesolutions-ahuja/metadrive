@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "2476e989a60915b4540c13b8630d46d109d73b44",
+  "status": "phase-1-inventory; adoption happens in phases 2-7",
+  "phases": [
+    {
+      "number": 1,
+      "name": "Audit and shared contract",
+      "gate": "Source inventory, ownership, boundaries and contract tests committed"
+    },
+    {
+      "number": 2,
+      "name": "Registry and metadata foundation",
+      "gate": "Existing registry supports protected platform scopes, versioning, caching, seeds and rollback"
+    },
+    {
+      "number": 3,
+      "name": "Shared UI and properties",
+      "gate": "Common components and properties rendered through one registry across surfaces"
+    },
+    {
+      "number": 4,
+      "name": "Administration self-hosting",
+      "gate": "Settings, Object Manager, RBAC, App Manager and tenant administration migrated"
+    },
+    {
+      "number": 5,
+      "name": "Builder self-hosting",
+      "gate": "All builders use registered controls and metadata-configured inspectors"
+    },
+    {
+      "number": 6,
+      "name": "Backend and application unification",
+      "gate": "Object/Action/Flow APIs, installer and permission enforcement consolidated"
+    },
+    {
+      "number": 7,
+      "name": "Cleanup, cutover and verification",
+      "gate": "Compatibility paths removed, source files modularised, production checks verified"
+    }
+  ],
+  "sources": [
+    {
+      "path": "apps/web/src/App.tsx",
+      "phase": 4,
+      "reason": "Platform shell, navigation and legacy per-workspace UI",
+      "baselineLines": 12887
+    },
+    {
+      "path": "apps/web/src/metadata.ts",
+      "phase": 2,
+      "reason": "Canonical frontend metadata types",
+      "baselineLines": 1350
+    },
+    {
+      "path": "apps/web/src/RegisteredComponent.tsx",
+      "phase": 2,
+      "reason": "Reuse secure registered component host"
+    },
+    {
+      "path": "apps/web/src/componentRegistryLookup.ts",
+      "phase": 2,
+      "reason": "Resolve component by registered API name and permitted surface"
+    },
+    {
+      "path": "apps/web/src/componentCatalog.ts",
+      "phase": 3,
+      "reason": "Replace separate page/dashboard static catalogs by registry queries"
+    },
+    {
+      "path": "apps/web/src/componentProperties.ts",
+      "phase": 3,
+      "reason": "Use registered property definitions with common validation"
+    },
+    {
+      "path": "apps/web/src/metadataAppearanceSchema.ts",
+      "phase": 3,
+      "reason": "Unify appearance schemas with registered property controls"
+    },
+    {
+      "path": "apps/web/src/PageComponentVisualEditor.tsx",
+      "phase": 3,
+      "reason": "Generate inspector controls from canonical definitions"
+    },
+    {
+      "path": "apps/web/src/CustomComponentPropertyEditor.tsx",
+      "phase": 3,
+      "reason": "Retain generic editing; add metadata property schema and bindings"
+    },
+    {
+      "path": "apps/web/src/pageComponentBindings.ts",
+      "phase": 3,
+      "reason": "Reuse record and event bindings via existing Action/Flow engine"
+    },
+    {
+      "path": "apps/web/src/appNavigation.ts",
+      "phase": 4,
+      "reason": "Resolve platform and customer navigation from existing app/page metadata"
+    },
+    {
+      "path": "apps/web/src/AppManager.tsx",
+      "phase": 4,
+      "reason": "Render application management from system page metadata"
+    },
+    {
+      "path": "apps/web/src/AppExchange.tsx",
+      "phase": 4,
+      "reason": "Render catalog and installer screens from system page metadata"
+    },
+    {
+      "path": "apps/web/src/TenantManagement.tsx",
+      "phase": 4,
+      "reason": "Protected tenant-management system page"
+    },
+    {
+      "path": "apps/web/src/AdvancedSharingSettings.tsx",
+      "phase": 4,
+      "reason": "Metadata-configured security settings without RBAC bypass"
+    },
+    {
+      "path": "apps/web/src/FlowBuilder.tsx",
+      "phase": 5,
+      "reason": "Metadata inspector, panels and registry-driven flow elements",
+      "baselineLines": 1586
+    },
+    {
+      "path": "apps/web/src/DashboardBuilder.tsx",
+      "phase": 5,
+      "reason": "Shared inspector/table/layout, dashboard canvas remains runtime capability",
+      "baselineLines": 3016
+    },
+    {
+      "path": "apps/web/src/SchemaBuilder.tsx",
+      "phase": 5,
+      "reason": "Shared generic object editor controls"
+    },
+    {
+      "path": "apps/web/src/ComponentLibrary.tsx",
+      "phase": 5,
+      "reason": "Use same registry, editor and publication semantics"
+    },
+    {
+      "path": "apps/web/src/FlowScreenContent.tsx",
+      "phase": 5,
+      "reason": "Use the same component host for flow screens"
+    },
+    {
+      "path": "apps/server/src/index.ts",
+      "phase": 6,
+      "reason": "Extract remaining generic routes, schemas and runtime, no new app engines",
+      "baselineLines": 15830
+    },
+    {
+      "path": "apps/server/src/modules/objects/routes.ts",
+      "phase": 4,
+      "reason": "Preserve generic object CRUD and relationship enforcement"
+    },
+    {
+      "path": "apps/server/src/modules/security/metadata-routes.ts",
+      "phase": 4,
+      "reason": "Preserve central RBAC and protected platform settings"
+    },
+    {
+      "path": "apps/server/src/modules/records/routes.ts",
+      "phase": 6,
+      "reason": "Preserve generic tenant-scoped record API",
+      "baselineLines": 1000
+    },
+    {
+      "path": "apps/server/src/installable-app-packages.mjs",
+      "phase": 6,
+      "reason": "Versioned idempotent packages and OneEngine seeding"
+    },
+    {
+      "path": "apps/server/src/platform-state-registry.mjs",
+      "phase": 2,
+      "reason": "Reuse normalized metadata state registry and iteration"
+    },
+    {
+      "path": "apps/server/src/modules/flows/formula-evaluator.ts",
+      "phase": 6,
+      "reason": "Reuse Flow evaluator; never create a second interpreter"
+    },
+    {
+      "path": "apps/server/data/platform-metadata.json",
+      "phase": 2,
+      "reason": "Migrate metadata definitions to protected database-backed system seeds"
+    },
+    {
+      "path": "apps/web/src/styles.css",
+      "phase": 7,
+      "reason": "Split shared styles into domain-aligned modules",
+      "baselineLines": 2670
+    },
+    {
+      "path": "apps/server/test/rbac-sharing.smoke.test.ts",
+      "phase": 7,
+      "reason": "Split large regression suite without weakening tests",
+      "baselineLines": 5542
+    }
+  ],
+  "knownRisks": [
+    {
+      "id": "PLATFORM_SHELL",
+      "source": "apps/web/src/App.tsx",
+      "details": "Platform/workspace rendering still contains direct JSX and a Kiosk-specific standalone page condition; remove via generic page mode metadata, not another app special case",
+      "phase": 4
+    },
+    {
+      "id": "SURFACE_GAP",
+      "source": "apps/web/src/metadata.ts",
+      "details": "Published LibraryComponentMetadata surfaces currently enumerate page/dashboard/flow, not platform",
+      "phase": 2
+    },
+    {
+      "id": "PROPERTY_GAP",
+      "source": "apps/web/src/componentProperties.ts",
+      "details": "Property values are generic, but property types and controls are not yet fully schema-backed in database metadata",
+      "phase": 3
+    },
+    {
+      "id": "STATE_CONTRACT",
+      "source": "apps/server/src/platform-state-registry.mjs",
+      "details": "Preserve tenant records and existing state projection while adding versioned system metadata",
+      "phase": 2
+    },
+    {
+      "id": "SECURITY_BOUNDARY",
+      "source": "apps/server/src/modules/security/metadata-routes.ts",
+      "details": "Platform-only permissions must remain separate from tenant-managed RBAC",
+      "phase": 4
+    },
+    {
+      "id": "OVERSIZED_LEGACY",
+      "source": "apps/server/src/index.ts",
+      "details": "Existing oversized files require phased cohesive extraction, no hardcoded file-size exemption for changed code",
+      "phase": 7
+    }
+  ]
+}
