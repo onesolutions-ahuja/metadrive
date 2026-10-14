@@ -1415,6 +1415,7 @@ const libraryComponentRevisionSchema = z.object({
   cssSource: z.string().max(100_000), compiledJs: z.string().min(1).max(500_000),
   scopedCss: z.string().max(150_000), updatedAt: z.string().datetime()
 });
+const propertyDefinitionSchema = z.object({propertyKey:z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),label:z.string().min(1).max(100),kind:z.enum(['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY']),required:z.boolean().optional(),isBindable:z.boolean().optional(),displayOrder:z.number().int().optional(),defaultValue:z.union([z.string(),z.number(),z.boolean()]).optional(),choices:z.array(z.object({key:z.string().min(1),label:z.string().min(1)})).max(200).optional()});
 const libraryComponentSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
@@ -1432,7 +1433,7 @@ const libraryComponentSchema = z.object({
   revisions: z.array(libraryComponentRevisionSchema).max(100).optional(),
   pendingDraft: libraryComponentRevisionSchema.optional(),
   trustedBundled: z.boolean().optional(),
-  tenantId: z.string().min(1).optional()
+  tenantId: z.string().min(1).optional(), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -1446,7 +1447,7 @@ const libraryComponentInputSchema = z.object({
   resize: libraryComponentResizeSchema.default(defaultLibraryComponentResize),
   jsxSource: z.string().min(1).max(200_000),
   cssSource: z.string().max(100_000).default(''),
-  publicationStatus: z.enum(['Draft','Published']).default('Published')
+  publicationStatus: z.enum(['Draft','Published']).default('Published'), propertyDefinitions:z.array(propertyDefinitionSchema).max(200).optional()
 }).superRefine((component, context) => {
   if (new Set(component.surfaces).size !== component.surfaces.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
@@ -8989,7 +8990,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     };
     const component: LibraryComponent = parsed.data.publicationStatus === 'Draft'
       ? { ...existing, pendingDraft: compiledRevision }
-      : { ...existing, ...compiledRevision, status: 'Published', trustedBundled: false,
+      : { ...existing, ...compiledRevision, propertyDefinitions: parsed.data.propertyDefinitions ?? existing.propertyDefinitions, status: 'Published', trustedBundled: false,
         publishedVersion: compiledRevision.version,
         revisions: [...(existing.revisions ?? []), ...(existing.status === 'Draft' ? [] : [libraryRevision(existing)])].slice(-100),
         pendingDraft: undefined };
