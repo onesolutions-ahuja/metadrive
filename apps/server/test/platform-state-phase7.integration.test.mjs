@@ -45,14 +45,14 @@ test('Phase 7: app installation, component registry, state snapshot and restore 
 
   const source={tenants:{'tenant-test':{...installed,
     // Arbitrary tenant extensions require no application-specific persistence code.
+    ...Object.fromEntries(Array.from({length:80},(_,index)=>['extension_'+index,[{id:index,enabled:true}]])),
     customModuleMetadata:[{apiName:'Example',properties:{enabled:true}}],
     customModuleSettings:{layout:'Compact'}
   }},libraryComponents:library,users:[],refreshSessions:[],revokedAccessTokens:{}};
   const rows=projectState(source);
   assert.equal(verifyProjection(source,rows).digest,stateDigest(source));
   assert.deepEqual(restoreState(rows),source);
-  const damaged={...rows,pages:[]}; // Unknown projection fields must not affect the verified rows.
-  assert.deepEqual(restoreState(damaged),source);
+  assert.throws(()=>projectState({...source,unregisteredRoot:{}}),/unknown top-level key/);
   const changed={...rows,collectionItems:rows.collectionItems.map(row=>
     row.key==='pages' && row.tenantId==='tenant-test' && row.position===0
       ? {...row,payload:{...row.payload,label:'Tampered'}} : row)};
