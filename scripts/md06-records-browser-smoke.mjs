@@ -171,7 +171,21 @@ try {
   // Wait for the rejected sync to release its in-flight guard before retrying.
   await offlinePanel.getByRole('button',{name:'Sync pending'}).waitFor({state:'visible',timeout:15000});
   await offlinePanel.getByRole('button',{name:'Retry after review'}).click();
-  await offlinePanel.waitFor({state:'hidden',timeout:15000});
+  // A preceding automatic sync can still hold the guard when the manual retry
+  // is queued. Once that pass finishes, explicitly request a fresh sync.
+  try {
+    await offlinePanel.waitFor({state:'hidden',timeout:5000});
+  } catch {
+    const pending=offlinePanel.getByText('Pending sync');
+    if(await pending.isVisible().catch(()=>false)) {
+      await offlinePanel.getByRole('button',{name:'Sync pending',exact:true}).click();
+    }
+    try {
+      await offlinePanel.waitFor({state:'hidden',timeout:15000});
+    } catch(error) {
+      throw Error('Offline retry did not clear: '+(await offlinePanel.innerText()).slice(0,1500),{cause:error});
+    }
+  }
   // Offline queue removal is asynchronous to records-list refresh: poll the
   // independently authenticated server until the successful write is visible.
   let syncedRecord;
