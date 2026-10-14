@@ -25,10 +25,12 @@ async function api(path,method='GET',body){
  if(!response.ok)throw Error(method+' '+path+' HTTP '+response.status+': '+JSON.stringify(data).slice(0,1500));
  return data;
 }
+console.log('PHASE4_STEP:authentication');
 const login=await api('/auth/login','POST',{email,password});
 if(login.user?.tenantId!==expectTenant)throw Error('Tenant mismatch, refusing installation');
 token=login.access_token;
 if(!token)throw Error('No authenticated token returned');
+console.log('PHASE4_STEP:object-contract');
 const objectList=(await api('/metadata/objects')).objects;
 const objectMap=new Map(objectList.map(o=>[o.apiName,o]));
 const usedObjects=['Product__c','ProductCategory__c','ModifierGroup__c','ModifierOption__c',
@@ -44,6 +46,7 @@ for(const [name,fields] of Object.entries({
  for(const field of fields)if(!found.has(field))throw Error('Missing commerce field: '+name+'.'+field);
 }
 // Component registry is the sole source of executable JSX. Do not embed code in Pages.
+console.log('PHASE4_STEP:component-registry');
 let libraries=(await api('/component-library')).components;
 let installedComponents=0;
 for(const component of commerceComponents){
@@ -63,6 +66,7 @@ for(const name of expected.components)if(!libraries.some(x=>x.apiName===name&&x.
  throw Error('Published UI component missing: '+name);
 
 // Flows use the built-in versioned Flow Builder. Never overwrite user-edited versions.
+console.log('PHASE4_STEP:flow-registration');
 let flows=(await api('/metadata/flows')).flows;
 let installedFlows=0;
 for(const definition of commerceFlows){
@@ -79,6 +83,7 @@ for(const name of expected.flows)if(!flows.some(f=>f.apiName===name&&f.status===
  throw Error('Active commerce Flow missing: '+name);
 
 // App must exist before scoped Page activation can reference it.
+console.log('PHASE4_STEP:app-registration');
 let apps=(await api('/metadata/apps')).apps;
 let installedApp=0;
 if(!apps.some(a=>a.apiName===commerceApp.apiName)){
@@ -86,6 +91,7 @@ if(!apps.some(a=>a.apiName===commerceApp.apiName)){
   navigationOrder:[{type:'Object',apiName:'Product__c'}]});
  installedApp=1;
 }
+console.log('PHASE4_STEP:page-registration');
 let pages=(await api('/metadata/pages')).pages;
 let installedPages=0;
 for(const page of commercePages){
@@ -117,6 +123,7 @@ if(expected.pages.some(x=>!currentApp.navigationPageApiNames?.includes(x))){
  });
 }
 // Prepare a limited OneEngine permission set. No user is automatically assigned.
+console.log('PHASE4_STEP:security-permissions');
 const access=await api('/metadata/permissions');
 const readOnly={read:true,create:false,edit:false,delete:false,viewAll:false,modifyAll:false};
 const transaction={read:true,create:true,edit:true,delete:true,viewAll:false,modifyAll:false};
@@ -142,6 +149,7 @@ if(JSON.stringify(existingSet??{})!==JSON.stringify(operator)){
  await api('/metadata/permissions','PUT',{...access,
   permissionSets:[...access.permissionSets.filter(s=>s.id!==id),operator]});
 }
+console.log('PHASE4_STEP:final-verification');
 const verifiedApps=(await api('/metadata/apps')).apps;
 if(!verifiedApps.some(app=>app.apiName===commerceApp.apiName
  && expected.pages.every(name=>app.navigationPageApiNames?.includes(name))))
