@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "phase": "1e",
+  "status": "contract-only; no runtime cutover",
+  "existingAuthorities": [
+    "apps/web/src/metadata.ts",
+    "apps/web/src/componentRegistryLookup.ts",
+    "apps/web/src/pageComponentBindings.ts",
+    "apps/server/src/modules/objects/routes.ts",
+    "apps/server/src/modules/records/routes.ts",
+    "apps/server/src/modules/security/metadata-routes.ts",
+    "apps/server/src/platform-state-registry.mjs"
+  ],
+  "contracts": [
+    {
+      "name": "ComponentDefinition",
+      "identity": "apiName",
+      "legacy": "LibraryComponentMetadata",
+      "extend": [
+        "publishedVersion",
+        "propertyDefinitions",
+        "eventDefinitions",
+        "scope"
+      ]
+    },
+    {
+      "name": "ComponentInstance",
+      "identity": "id",
+      "legacy": "saved component instances",
+      "extend": [
+        "registeredApiName",
+        "versionPolicy",
+        "parentId",
+        "slot",
+        "responsiveLayout",
+        "dataBindings",
+        "eventBindings"
+      ]
+    },
+    {
+      "name": "PageDefinition",
+      "identity": "apiName",
+      "legacy": "saved pages",
+      "extend": [
+        "scope",
+        "ownerNamespace",
+        "definitionVersion",
+        "overridePolicy"
+      ]
+    },
+    {
+      "name": "ActionBinding",
+      "identity": "flowApiName",
+      "legacy": "properties.actionFlows",
+      "extend": [
+        "eventName",
+        "typedInputs",
+        "faultPath"
+      ]
+    },
+    {
+      "name": "DataBinding",
+      "identity": "objectApiName",
+      "legacy": "object binding properties",
+      "extend": [
+        "fieldApiNames",
+        "filters",
+        "sort",
+        "pagination"
+      ]
+    },
+    {
+      "name": "SystemDefinition",
+      "identity": "apiName",
+      "legacy": "platform pages",
+      "extend": [
+        "protectedOwner",
+        "lastKnownGoodRevision",
+        "overrideAllowlist"
+      ]
+    },
+    {
+      "name": "PackageManifest",
+      "identity": "packageApiName",
+      "legacy": "installable-app-packages",
+      "extend": [
+        "metadataSeedVersion",
+        "dependencies",
+        "grantTemplate"
+      ]
+    }
+  ],
+  "guarantees": [
+    "Existing IDs, API names, instance properties and layouts remain stable",
+    "Published component references remain valid for page, dashboard and flow",
+    "Future platform surface cannot activate before protected server-side authorisation",
+    "Tenant overrides cannot change trust, RBAC, executable logic or credentials",
+    "Existing SQL metadata, Object API and Flow runtime remain authoritative",
+    "Unknown references and unapproved surfaces fail closed",
+    "Retain last-known-good secure recovery before migrations",
+    "Legacy fields and routes only retire after reversible migration and parity tests"
+  ]
+}
