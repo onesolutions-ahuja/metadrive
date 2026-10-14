@@ -26,6 +26,8 @@ jobs:
         run: node --test scripts/audit-component-registry.test.mjs
       - name: Test shared SQL component property guards
         run: node --test scripts/component-property-sql-guard.test.mjs
+      - name: Test shared component registration and builder contracts
+        run: node --test scripts/shared-component-runtime.test.mjs
       - name: Generate architecture inventory
         run: node scripts/audit-platform-architecture.mjs --output .artifacts/architecture-inventory.json
       - name: Generate component registry and reuse inventory
