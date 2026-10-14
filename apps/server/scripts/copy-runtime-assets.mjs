@@ -40,8 +40,7 @@ for(const name of [
   'package-page-migrations.mjs',
   'installable-app-packages.mjs',
   'bundled-app-components.mjs',
-  'bundled-component-migration.mjs',
-  'kiosk-device-provision.mjs'
+  'bundled-component-migration.mjs'
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
