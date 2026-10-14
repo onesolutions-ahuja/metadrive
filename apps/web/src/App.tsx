@@ -8560,7 +8560,7 @@ function ObjectManager({
         </div>}
       </div>
       <div className="object-manager-layout">
-        <aside className="object-list-panel">
+        <PlatformPageSlot slotKey="object-list"><aside className="object-list-panel">
           <div className="object-list-header"><h2>Object Manager</h2><button className="icon-button subtle" aria-label="Filter objects" aria-expanded={showObjectFilterMenu} onClick={() => setShowObjectFilterMenu((current) => !current)}><ListFilter size={15} /></button>
             {showObjectFilterMenu && <div className="object-manager-menu">
               {(['All Objects', 'Standard Objects', 'Custom Objects'] as const).map((mode) => <button type="button" key={mode} className={viewMode === mode ? 'selected' : ''} onClick={() => { setViewMode(mode); setShowObjectFilterMenu(false); }}>{mode}</button>)}
@@ -8577,15 +8577,15 @@ function ObjectManager({
             {visibleObjects.length === 0 && <p className="empty-list">No objects found.</p>}
           </div>
           <button className="create-object" onClick={onCreateObject}><Plus size={15} />Create</button>
-        </aside>
+        </aside></PlatformPageSlot>
 
         <div className="object-details">
-          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div>
-          <div className="object-subnav">
+          <PlatformPageSlot slotKey="object-heading"><div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div>
+          </PlatformPageSlot><PlatformPageSlot slotKey="object-subnav"><div className="object-subnav">
             {objectSettings.map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
           </div>
 
-          {renderSetting()}
+          </PlatformPageSlot><PlatformPageSlot slotKey="object-setting">{renderSetting()}</PlatformPageSlot>
         </div>
       </div>
       {editingField && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingField(null); }}>
