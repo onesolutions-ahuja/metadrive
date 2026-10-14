@@ -1,3 +1,4 @@
+import { calculateFormulaFields } from './modules/records/formula-fields.js';
 import { sanitizeRecordValues, withCaseClosedDate, recordUnmodified } from './modules/records/record-input.js';
 import { stampRecordAuditFields, recordActionEnabled } from './modules/records/record-actions.js';
 import { autoNumberFormatForField, formatAutoNumber, autoNumberSequenceFromValue, autoNumberSequenceKey, migrateAutoNumberSequences } from './modules/records/auto-number.js';
@@ -15286,61 +15287,6 @@ function flowFieldValues(config: Record<string, unknown>, context: FlowRuntimeCo
     values[config.field] = resolveFlowValue(config.value, context);
   }
   return values;
-}
-
-function calculateFormulaFields(
-  object: ObjectMetadata,
-  record: RuntimeRecord,
-  formulaContext: {
-    timeZone?: string;
-    locale?: string;
-    currentUser?: Record<string, unknown>;
-    corporateCurrency?: string;
-    currencyRates?: Record<string, number>;
-    userCurrencyIsoCode?: string;
-    isClone?: boolean;
-  } = {}
-): RuntimeRecord {
-  const fields = new Map(object.fields.map((field) => [field.apiName, field]));
-  const result = { ...record };
-  const calculating = new Set<string>();
-  const calculateField = (fieldName: string): unknown => {
-    const field = fields.get(fieldName);
-    if (!field?.formula) return result[fieldName];
-    if (calculating.has(fieldName)) throw new Error(`Formula dependency cycle detected at "${fieldName}".`);
-    calculating.add(fieldName);
-    const value = evaluateFormula(field.formula.expression, (reference) => {
-      const referencedField = fields.get(reference);
-      return referencedField?.formula ? calculateField(reference) : result[reference];
-    }, {
-      ...formulaContext,
-      currencyIsoCode: typeof result.CurrencyIsoCode === 'string'
-        ? result.CurrencyIsoCode
-        : formulaContext.corporateCurrency
-    });
-    calculating.delete(fieldName);
-    switch (field.formula.returnType) {
-      case 'Number':
-      case 'Currency':
-      case 'Percent': {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric)) throw new Error(`Formula field "${fieldName}" did not produce a valid number.`);
-        result[fieldName] = numeric;
-        break;
-      }
-      case 'Checkbox': result[fieldName] = Boolean(value); break;
-      case 'Date': {
-        const date = new Date(String(value));
-        if (!Number.isFinite(date.getTime())) throw new Error(`Formula field "${fieldName}" did not produce a valid date.`);
-        result[fieldName] = date.toISOString().slice(0, 10);
-        break;
-      }
-      default: result[fieldName] = String(value ?? '');
-    }
-    return result[fieldName];
-  };
-  for (const field of object.fields) if (field.formula) calculateField(field.apiName);
-  return result;
 }
 
 function formulaContextForUser(tenant: TenantData, userId: string): {
