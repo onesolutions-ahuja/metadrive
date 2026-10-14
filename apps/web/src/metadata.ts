@@ -710,9 +710,7 @@ export type ReportRunMetadata = {
   generatedAt: string;
 };
 
-export type LibraryComponentMetadata = {
-  /** Optional typed registry definitions; older published components retain legacy properties. */
-  propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[];
+export type LibraryComponentMetadata = { propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[];
   tenantId?: string;
   apiName: string;
   label: string;
