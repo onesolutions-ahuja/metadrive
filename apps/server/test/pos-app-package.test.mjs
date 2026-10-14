@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { applyInstallableAppPackages } from '../src/installable-app-packages.mjs';
-import { ensureBundledAppComponents } from '../src/bundled-app-components.mjs';
+import { ensureBundledAppComponents, installedComponentDescriptors } from '../src/bundled-app-components.mjs';
 const catalog = JSON.parse(readFileSync(new URL('../data/installable-app-packages.json', import.meta.url), 'utf8'));
 const pos = catalog.packages.find(p => p.appKey === 'pos');
 const baseTenant = () => ({
@@ -65,4 +65,20 @@ test('upgrades an installed legacy POS workspace to independently editable layer
  const repaired=applyInstallableAppPackages(legacy,catalog);
  assert(repaired.pages.find(p=>p.apiName==='UNE_POS').components.length >=10);
  assert.deepEqual(applyInstallableAppPackages(repaired,catalog),repaired);
+});
+
+test('metadata-driven loader iterates installed component descriptors and preserves shared registry versions',()=>{
+  const onlyPos=baseTenant();
+  const descriptors=[...installedComponentDescriptors(onlyPos,catalog)];
+  assert(descriptors.length>=7);
+  assert(descriptors.every(item=>typeof item.apiName==='string'));
+  const absent={...onlyPos,records:{Connector_App__c:[]}};
+  assert.equal([...installedComponentDescriptors(absent,catalog)].length,0);
+  const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
+  const once=ensureBundledAppComponents([],onlyPos,catalog,root);
+  const twice=ensureBundledAppComponents(once,onlyPos,catalog,root);
+  assert.deepEqual(twice,once);
+  const protectedComponent={...once[0],trustedBundled:false,compiledJs:'custom tenant code'};
+  const result=ensureBundledAppComponents([protectedComponent,...once.slice(1)],onlyPos,catalog,root);
+  assert.equal(result[0].compiledJs,'custom tenant code');
 });
