@@ -185,7 +185,6 @@ if(expected.pages.some(x=>!currentApp.navigationPageApiNames?.includes(x))){
  });
 }
 // Prepare a limited OneEngine permission set. No user is automatically assigned.
-const access=await api('/metadata/permissions');
 const readOnly={read:true,create:false,edit:false,delete:false,viewAll:false,modifyAll:false};
 const transaction={read:true,create:true,edit:true,delete:true,viewAll:false,modifyAll:false};
 const grants=Object.fromEntries(usedObjects.map(name=>[name,
@@ -194,22 +193,26 @@ const grants=Object.fromEntries(usedObjects.map(name=>[name,
 const fields=Object.fromEntries(usedObjects.flatMap(name=>objectMap.get(name).fields.map(f=>
  [name+'.'+f.apiName,{read:true,edit:['Order__c','OrderLine__c','OrderLineModifier__c'].includes(name)}])));
 const id='md-commerce-kiosk-operator';
-const existingSet=access.permissionSets.find(p=>p.id===id);
-const operator={
- ...(existingSet??{id,label:'Kiosk Operator',apiName:'MD_Commerce_Kiosk_Operator',
-  license:access.profiles.find(p=>p.id==='system-administrator')?.license??'MetaDrive',
-  description:'Least-privilege role for the metadata-driven commerce kiosk'}),
- systemPermissions:[...new Set([...(existingSet?.systemPermissions??[]),'flows:run','metadata:read'])],
- objectPermissions:{...(existingSet?.objectPermissions??{}),...grants},
- fieldPermissions:{...(existingSet?.fieldPermissions??{}),...fields},
- recordTypePermissions:existingSet?.recordTypePermissions??{},
- appPermissions:{...(existingSet?.appPermissions??{}),[commerceApp.apiName]:true},
- tabPermissions:{...(existingSet?.tabPermissions??{}),Product__c:true}
-};
-if(JSON.stringify(existingSet??{})!==JSON.stringify(operator)){
- await api('/metadata/permissions','PUT',{...access,
-  permissionSets:[...access.permissionSets.filter(s=>s.id!==id),operator]});
-}
+await updateSecurity(access=>{
+ const existingSet=(access.permissionSets??[]).find(p=>p.id===id);
+ const operator={
+  ...(existingSet??{id,label:'Kiosk Operator',apiName:'MD_Commerce_Kiosk_Operator',
+   license:access.profiles.find(p=>p.id==='system-administrator')?.license??'MetaDrive',
+   description:'Least-privilege role for the metadata-driven commerce kiosk'}),
+  systemPermissions:[...new Set([...(existingSet?.systemPermissions??[]),'flows:run','metadata:read'])],
+  objectPermissions:{...(existingSet?.objectPermissions??{}),...grants},
+  fieldPermissions:{...(existingSet?.fieldPermissions??{}),...fields},
+  recordTypePermissions:existingSet?.recordTypePermissions??{},
+  appPermissions:{...(existingSet?.appPermissions??{}),[commerceApp.apiName]:true},
+  tabPermissions:{...(existingSet?.tabPermissions??{}),Product__c:true}
+ };
+ if(JSON.stringify(existingSet??{})===JSON.stringify(operator))return null;
+ return {...access,
+  profiles:(access.profiles??[]).map(scrub),
+  permissionSets:[...(access.permissionSets??[]).filter(s=>s.id!==id),operator].map(scrub),
+  permissionSetGroups:(access.permissionSetGroups??[]).map(scrub)
+ };
+});
 const verifiedApps=(await api('/metadata/apps')).apps;
 if(!verifiedApps.some(app=>app.apiName===commerceApp.apiName
  && expected.pages.every(name=>app.navigationPageApiNames?.includes(name))))
