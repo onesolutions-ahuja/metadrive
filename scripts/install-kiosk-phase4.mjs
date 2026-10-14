@@ -43,6 +43,38 @@ for(const [name,fields] of Object.entries({
  const found=new Set(objectMap.get(name).fields.map(f=>f.apiName));
  for(const field of fields)if(!found.has(field))throw Error('Missing commerce field: '+name+'.'+field);
 }
+// Provision narrowly scoped installation permissions through central OneEngine RBAC.
+// The automation account may be able to seed Objects without managing published UI.
+const initialAccess=await api('/metadata/permissions');
+const installer=(initialAccess.users??[]).find(u=>u.id===login.user?.id)
+  ??(initialAccess.users??[]).find(u=>String(u.username??u.email??'').toLowerCase()===email.toLowerCase());
+if(!installer)throw Error('Phase 4 installer identity is absent from tenant RBAC');
+const installerProfile=(initialAccess.profiles??[]).find(p=>p.id===installer.profileId);
+if(!installerProfile)throw Error('Phase 4 installer profile is missing');
+const installerSetId='md-commerce-metadata-installer';
+const requiredCapabilities=['metadata:read','metadata:write','components:manage','flows:manage','pages:manage'];
+const existingInstallerSet=(initialAccess.permissionSets??[]).find(p=>p.id===installerSetId);
+const installerSet={...(existingInstallerSet??{
+ id:installerSetId,label:'Commerce Metadata Installer',apiName:'MD_Commerce_Metadata_Installer',
+ license:installerProfile.license,description:'Restricted metadata installation service role',
+ objectPermissions:{},fieldPermissions:{},recordTypePermissions:{},
+ appPermissions:{},tabPermissions:{}
+}),systemPermissions:[...new Set([...(existingInstallerSet?.systemPermissions??[]),...requiredCapabilities])]};
+const alreadyGranted=installer.permissionSetIds?.includes(installerSetId)
+  && requiredCapabilities.every(p=>existingInstallerSet?.systemPermissions?.includes(p));
+if(!alreadyGranted){
+ await api('/metadata/permissions','PUT',{
+  ...initialAccess,
+  permissionSets:[...(initialAccess.permissionSets??[]).filter(p=>p.id!==installerSetId),installerSet],
+  users:(initialAccess.users??[]).map(u=>u.id===installer.id
+   ?{...u,permissionSetIds:[...new Set([...(u.permissionSetIds??[]),installerSetId])]}:u)
+ });
+ const refreshed=await api('/auth/login','POST',{email,password});
+ if(refreshed.user?.tenantId!==expectTenant||!refreshed.access_token)
+  throw Error('Phase 4 RBAC refresh failed, refusing metadata writes');
+ token=refreshed.access_token;
+}
+
 // Component registry is the sole source of executable JSX. Do not embed code in Pages.
 let libraries=(await api('/component-library')).components;
 let installedComponents=0;
