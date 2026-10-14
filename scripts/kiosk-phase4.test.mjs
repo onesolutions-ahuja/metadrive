@@ -119,3 +119,11 @@ test('SQL writer conflicts re-read current permissions before bounded retries',(
  assert.match(installer,/HTTP \(409\|502\|503\|504\)/);
  assert.match(installer,/await updateSecurity\(access=>/);
 });
+
+test('component registration retries only on transient SQL failures after readback',()=>{
+ const source=readFileSync(new URL('./install-kiosk-phase4.mjs',import.meta.url),'utf8');
+ assert.match(source,/const existing=available\.find\(x=>x\.apiName===component\.apiName\)/);
+ assert.match(source,/if\(!retryableWriterError\(error\)\|\|attempt===5\)/);
+ assert.match(source,/if\(await installRegisteredComponent\(component\)\)installedComponents\+\+/);
+ assert.match(source,/Concurrent writer detected/);
+});
