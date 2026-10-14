@@ -16,7 +16,7 @@ function communicationThread(records: readonly CommunicationRow[], context: Pres
   }));
   return {
     conversations, messages:model.messages, currentUserId:context.userId,
-    canViewAll:context.viewAll, allowedAccountIds:[...grants.keys()],
+    canViewAll:context.viewAll || context.grants.some(grant => grant.viewAll === true), allowedAccountIds:[...grants.keys()],
     canSend:conversations.some(chat=>chat.canSend),
     eligibleAssignees:context.eligibleAssignees??[],
     channelAccounts:[...grants.keys()].map(id=>({id,name:id}))
