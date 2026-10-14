@@ -157,8 +157,7 @@ for(const product of demoProducts){
   if(!parentId)throw Error('Unrecognised category '+category);
   // Preserve the existing tenant's commerce contract: some Product__c
   // definitions require Price__c rather than the reusable DefaultPrice field.
-  const productDefinition=(await api('/metadata/objects')).objects
-    .find(object=>object.apiName==='Product__c');
+  const productDefinition=latestObjects.find(object=>object.apiName==='Product__c');
   const priceRequired=productDefinition?.fields.some(field=>field.apiName==='Price__c' && field.required);
   await upsertDemo('Product__c','Name',{
     ...values,CategoryId:parentId,
