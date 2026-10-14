@@ -8955,7 +8955,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     return res.status(404).json({ error: 'Library component was not found' });
   const usages = findLibraryComponentUsages(state, apiName, principal.tenantId);
   const unavailableSurfaces = existing.surfaces.filter((surface) =>
-    !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
+    surface !== 'platform' && !parsed.data.surfaces.includes(surface) && usages.some((usage) => usage.surface === surface));
   if (unavailableSurfaces.length) {
     const blockers = usageBlockerDetails(usages.filter((usage) => unavailableSurfaces.includes(usage.surface)), principal.tenantId);
     return res.status(409).json({
