@@ -36,6 +36,7 @@ for(const name of [
   'flow-create-collection.mjs',
   'flow-collection-assignment.mjs',
   'tenant-usage.mjs',
+  'package-page-migrations.mjs',
   'installable-app-packages.mjs',
   'bundled-app-components.mjs',
   'bundled-component-migration.mjs',
