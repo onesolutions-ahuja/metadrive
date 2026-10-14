@@ -5,6 +5,7 @@ export default function ChatterInbox(props) {
   const [search, setSearch] = React.useState('');
   const [tab, setTab] = React.useState('all');
   const [draft, setDraft] = React.useState('');
+  const [assigneeId, setAssigneeId] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const conversations = Array.isArray(p.conversations) ? p.conversations : [];
@@ -20,12 +21,16 @@ export default function ChatterInbox(props) {
       (tab === 'mine' && c.assignedUserId === p.currentUserId)) &&
     [c.contactName, c.phoneNumber, c.preview].join(' ').toLowerCase().includes(search.toLowerCase()));
   const selected = scoped.find(c => String(c.id) === String(selectedId)) || null;
+  const selectableAgents = (Array.isArray(p.eligibleAssignees) ? p.eligibleAssignees : [])
+    .filter(a => selected && a.channelAccountId === selected.channelAccountId);
+  const canSendSelected = selected?.canSend === true && p.canSend === true;
+  const canAssignSelected = selected?.canAssign === true && p.enableAssignment === true;
   const thread = selected ? messages.filter(m => String(m.conversationId) === String(selected.id))
     .sort((a,b) => String(a.sentAt || '').localeCompare(String(b.sentAt || ''))) : [];
   const accountName = id => accounts.find(a => String(a.id) === String(id))?.name || '';
   const send = async event => {
     event.preventDefault();
-    if (!selected || !draft.trim() || busy || p.canSend !== true) return;
+    if (!selected || !draft.trim() || busy || !canSendSelected) return;
     if (typeof p.onAction !== 'function') { setError('Configure the Send Flow action in Page Builder.'); return; }
     setBusy(true); setError('');
     try {
@@ -52,7 +57,7 @@ export default function ChatterInbox(props) {
       <nav aria-label="Chat filters">{[['all','All'],['unread','Unread'],['mine','Assigned to me']].map(([id,label]) =>
         <button key={id} type="button" aria-pressed={tab===id} onClick={()=>setTab(id)}>{label}</button>)}</nav></header>
       <div className="md-chatter-scroll">{filtered.map(c => <button key={c.id} type="button"
-        className={'md-chatter-contact ' + (selected?.id===c.id ? 'active' : '')} onClick={()=>select(c.id)}>
+        className={'md-chatter-contact ' + (selected?.id===c.id ? 'active' : '')} onClick={()=>{select(c.id);setAssigneeId('');}}>
         <span className="md-chatter-avatar" aria-hidden="true">{String(c.contactName || c.phoneNumber || '?').slice(0,1).toUpperCase()}</span>
         <span className="md-chatter-contact-copy"><strong>{c.contactName || c.phoneNumber}</strong>
           <small>{c.preview || c.phoneNumber}</small>
@@ -66,8 +71,13 @@ export default function ChatterInbox(props) {
         <button type="button" className="md-chatter-back" aria-label="Back to chats" onClick={()=>select(null)}>‹</button>
         <span className="md-chatter-avatar" aria-hidden="true">{String(selected.contactName || '?').slice(0,1).toUpperCase()}</span>
         <div><strong>{selected.contactName || selected.phoneNumber}</strong><small>{selected.phoneNumber} · {accountName(selected.channelAccountId)}</small></div>
-        {p.enableAssignment === true && p.canAssign === true && <button type="button" className="md-chatter-assignment" disabled={busy}
-          onClick={()=>action('assign',{conversationId:selected.id,channelAccountId:selected.channelAccountId})}>Assign</button>}
+        {canAssignSelected && <><select aria-label="Assign conversation to" className="md-chatter-assignment"
+          value={assigneeId} onChange={e=>setAssigneeId(e.target.value)} disabled={busy}>
+          <option value="">Select agent</option>
+          {selectableAgents.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}
+        </select><button type="button" className="md-chatter-assignment" disabled={busy || !assigneeId}
+          onClick={()=>action('assign',{conversationId:selected.id,channelAccountId:selected.channelAccountId,
+            assigneeId})}>Assign</button></>}
       </header><div className="md-chatter-messages" role="log" aria-label="Conversation messages">
         {thread.map(m => <div key={m.id} className={'md-chatter-bubble ' + (m.direction === 'outbound' || m.direction === 'Outgoing' ? 'outbound':'inbound')}>
           {m.mediaUrl && (m.mediaType === 'image' ? <img src={m.mediaUrl} alt={m.mediaName || 'Chat image'} loading="lazy"/> :
@@ -77,8 +87,8 @@ export default function ChatterInbox(props) {
         </div>)}</div>
         {error && <p role="alert" className="md-chatter-error">{error}</p>}
         <form onSubmit={send} className="md-chatter-compose"><input aria-label="Message" value={draft} onChange={e=>setDraft(e.target.value)}
-          disabled={busy || p.canSend !== true} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
-          <button type="submit" disabled={!draft.trim() || busy || p.canSend !== true}>Send</button></form>
+          disabled={busy || !canSendSelected} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
+          <button type="submit" disabled={!draft.trim() || busy || !canSendSelected}>Send</button></form>
         {p.composerHelpText && <p className="md-chatter-help">{p.composerHelpText}</p>}
       </> : <div className="md-chatter-welcome"><strong>{p.emptyTitle || 'Select a conversation'}</strong><p>Choose a customer to see their messages.</p></div>}
     </div>
