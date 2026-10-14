@@ -33,6 +33,7 @@ for(const name of [
   'component-scope.mjs',
   'route-aliases.mjs',
   'flow-formula-syntax.mjs',
+  'flow-record-metadata.mjs',
   'flow-create-collection.mjs',
   'flow-collection-assignment.mjs',
   'tenant-usage.mjs',
