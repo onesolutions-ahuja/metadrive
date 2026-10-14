@@ -6,13 +6,13 @@ type ActionObject = {
   pageLayoutAssignments?: readonly {profileId:string;recordTypeId:string;pageLayoutId:string}[];
   pageLayouts?: readonly {id:string;actions:readonly string[]}[];
 };
-export function stampRecordAuditFields(record: Record<string, unknown>, userId: string, timestamp: string, previous?: Record<string, unknown>): Record<string, unknown> {
+export function stampRecordAuditFields<T extends Record<string, unknown>>(record: T, userId: string, timestamp: string, previous?: T): T {
   return {
     ...record,
     CreatedById: previous?.CreatedById ?? userId,
     LastModifiedById: userId,
     SystemModstamp: timestamp
-  };
+  } as T;
 }
 
 export function recordActionEnabled(object: ActionObject, action: 'New' | 'Edit' | 'Delete', recordTypeId?: string, profileId?: string): boolean {
