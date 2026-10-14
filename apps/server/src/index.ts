@@ -1,4 +1,5 @@
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
+import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
 import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
 import {libraryRevision,nextLibraryRevision,libraryHistory} from './modules/metadata/component-revisions.mjs';
 import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
@@ -1388,13 +1389,6 @@ const flowExecutionLogSchema = z.object({
   failedAt: z.string().datetime(),
   error: z.string(),
   userId: z.string().nullable()
-});
-const pageComponentSchema = z.object({
-  id: z.string().min(1),
-  type: z.string().min(1),
-  label: z.string().min(1),
-  properties: z.record(z.unknown()).default({}),
-  visible: z.boolean()
 });
 const libraryComponentResizeSchema = z.object({
   defaultWidth: z.number().int().min(80).max(2000),
