@@ -7,7 +7,7 @@ import {
 import { resolvePageComponentStyle } from '../apps/web/src/pageComponentLayout.ts';
 
 const component = {
-  id: 'basket', type: 'Custom:TillSalesWorkspace', label: 'Till',
+  id: 'basket', type: 'Custom:InventoryWorkspace', label: 'Inventory',
   visible: true, region: 'main', position: { x: 37, y: 28, width: 320, height: 240 },
   properties: { objectApiName: 'Product__c', basketSide: 'left', actionFlows: { add: { flowApiName: 'CART_ADD' } } }
 };
@@ -61,7 +61,7 @@ test('locking is metadata-only, preserves design and prevents regrouping', () =>
   assert.equal(isCanvasLocked(component), false);
   assert.equal(resolvePageComponentStyle(locked.properties, locked.type).opacity, undefined);
 });
-test('per-client Till placement metadata survives serialization independently of Flow setup', () => {
+test('per-client component placement metadata survives serialization independently of Flow setup', () => {
   const a = structuredClone(component);
   const b = structuredClone(component);
   b.properties.basketSide = 'right';

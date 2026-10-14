@@ -15,17 +15,17 @@ const node = (id: string, type: string, properties: Record<string, unknown> = {}
   position: { x: 20, y: 40, width: 320, height: 180 }
 });
 const original: PageComponentMetadata[] = [
-  node('container', 'Custom:KioskContainer', { layoutContainer: true }),
-  node('row', 'Custom:KioskRow', { layoutContainer: true }),
-  node('card', 'Custom:KioskCard', { layoutContainer: true }),
-  node('text', 'Custom:KioskText')
+  node('container', 'Custom:GenericContainer', { layoutContainer: true }),
+  node('row', 'Custom:GenericRow', { layoutContainer: true }),
+  node('card', 'Custom:GenericCard', { layoutContainer: true }),
+  node('text', 'Custom:GenericText')
 ];
 
 test('all five supported layout components can contain child components', () => {
-  for (const name of ['KioskContainer', 'KioskRow', 'KioskColumn', 'KioskGrid', 'KioskCard'])
+  for (const name of ['GenericContainer', 'GenericRow', 'GenericColumn', 'GenericGrid', 'GenericCard'])
     assert.equal(isLayoutContainer(node(name, 'Custom:' + name, { layoutContainer: true })), true);
-  assert.equal(isLayoutContainer(node('text', 'Custom:KioskText')), false);
-  assert.equal(isLayoutContainer(node('text', 'Custom:KioskText', { layoutContainer: false })), false);
+  assert.equal(isLayoutContainer(node('text', 'Custom:GenericText')), false);
+  assert.equal(isLayoutContainer(node('text', 'Custom:GenericText', { layoutContainer: false })), false);
   assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: true })), true);
   assert.equal(isLayoutContainer(node('generic', 'Custom:UserLayout', { layoutContainer: false })), false);
 });
@@ -48,9 +48,9 @@ test('drag and drop nesting persists across JSON save/reopen without mutating or
 });
 
 test('deleted/unregistered parent and malicious circular metadata recover safely as root nodes', () => {
-  const lost = [node('a','Custom:KioskText',{layoutParentId:'missing'})];
+  const lost = [node('a','Custom:GenericText',{layoutParentId:'missing'})];
   assert.deepEqual(childrenOf(lost,null).map(x=>x.id), ['a']);
-  const cycle = [node('a','Custom:KioskRow',{layoutParentId:'b',layoutContainer:true}),node('b','Custom:KioskGrid',{layoutParentId:'a',layoutContainer:true})];
+  const cycle = [node('a','Custom:GenericRow',{layoutParentId:'b',layoutContainer:true}),node('b','Custom:GenericGrid',{layoutParentId:'a',layoutContainer:true})];
   assert.deepEqual(childrenOf(cycle,null).map(x=>x.id), ['a','b']);
   assert.deepEqual(childrenOf(cycle,'a'),[]);
 });

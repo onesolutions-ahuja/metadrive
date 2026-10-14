@@ -1,4 +1,4 @@
-# MetaDrive Mandatory Developer Policy (v1.0)
+# MetaDrive Mandatory Developer Policy (v1.1)
 
 All development in MetaDrive MUST follow all 13 rules below. This applies to features, bug fixes, refactors, migrations, application installations, pull requests, and generated code. Inspect existing architecture before implementation. If a requested implementation conflicts with this policy, explain the conflict and obtain the project owner's decision **before implementing the conflicting approach**. Never silently bypass a rule.
 
@@ -39,7 +39,7 @@ Use reusable schemas and property controls for style, layout, responsiveness, vi
 Before completion or merge, inspect implementation for reuse, metadata usage, central RBAC, seeders/migrations, dependency safety, and regressions. Run applicable tests and CI, report actual results, and do not declare work complete when required verification is missing. Review the full requested scope; do not silently leave partial work.
 
 ## 13. Maximum 1,000 lines per code file
-Every newly added code file must contain **at most 1,000 lines**. Split oversized files by cohesive responsibility into reusable modules; do not merely move duplication elsewhere or circumvent the limit. Existing legacy files exceeding the limit must be modularised when touched, and progressively reduced through dedicated refactoring. Automated CI must reject new or modified code files above the limit. No automatic exceptions or silent exclusions.
+Every newly added code file and every existing code file originally at most 1,000 lines must remain **at most 1,000 lines**. Existing oversized legacy files may be edited during the agreed phased extraction **only without increasing their base-branch line count**, with a documented migration owner and progressive reduction. New extracted modules must respect the limit. CI rejects newly oversized files and growth of legacy files. This is an explicit, temporary owner-approved transition, not a permanent exemption.
 
 ## Mandatory implementation sequence
 1. Inspect architecture, registered metadata, security controls, and existing reusable utilities.
@@ -54,4 +54,4 @@ Every newly added code file must contain **at most 1,000 lines**. Split oversize
 - `AGENTS.md` directs coding agents to this full policy.
 - `.github/workflows/developer-policy.yml` runs the changed-code-file size guard on PRs and pushes.
 - The line guard can detect file length, but cannot prove architectural correctness. Reviewers and development agents MUST verify rules 1–12. Do not claim CI automatically validates metadata-driven architecture or RBAC semantics.
-- Historic over-limit files are not silently approved: the changed-file guard makes any modification to them require modularisation; untouched legacy files are technical debt to be addressed separately.
+- Historic oversized files are tracked migration debt. During phased extraction CI permits edits only without net growth beyond the base-branch size and with an assigned migration owner.

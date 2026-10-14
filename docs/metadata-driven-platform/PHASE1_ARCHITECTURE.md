@@ -25,7 +25,7 @@ All 13 developer policy rules apply. A requirement conflicting with any rule is 
 | Package management | apps/server/src/installable-app-packages.mjs | Existing install/upgrade machinery, not a new installer |
 | State registry | apps/server/src/platform-state-registry.mjs | Preserve persisted shape until compatible migration |
 
-Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829; DashboardBuilder.tsx 3,015; FlowBuilder.tsx 1,585; metadata.ts 1,349; styles.css 2,669; rbac-sharing.smoke.test.ts 5,541. The 14 October 2026 audit counted 330 scanned source files and 10 above the line limit, all assigned a migration owner. The complete live inventory (not just these examples) is produced by scripts/metadata-architecture-audit.mjs. Any touched code file must be reduced to at most 1,000 lines; untouched legacy files are tracked for phased extraction, never silently exempted.
+Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829; DashboardBuilder.tsx 3,015; FlowBuilder.tsx 1,585; metadata.ts 1,349; styles.css 2,669; rbac-sharing.smoke.test.ts 5,541. The 14 October 2026 audit counted 330 scanned source files and 10 above the line limit, all assigned a migration owner. The complete live inventory (not just these examples) is produced by scripts/metadata-architecture-audit.mjs. Existing oversized files may be edited only without net growth against the base branch and while owned by the migration map; all new extracted modules must be at most 1,000 lines.
 
 ### Existing reuse that must not be replaced
 
@@ -66,6 +66,47 @@ The component renderer receives validated typed property values, record bindings
 ### Reliability and performance
 
 Use one batched metadata load per page/workspace with cache keys incorporating tenant, scope, role/permission revisions, published metadata version and component registry revision as appropriate. Invalidate on publish, permission changes and tenant upgrades. Do not cache privileged data across tenants. Preserve offline-friendly published metadata without treating offline cache as permission authority. Protect recovery and sign-in bootstrap from circular dependencies on editable system pages.
+
+## Phase 1c — Existing Object / Action / Flow / RBAC / Route integration (implementation)
+
+Rather than repeat a repository-wide audit, Phase 1c fixes the existing `inspectPageDependencies` service in `apps/web/src/pageDependencies.ts`, using the **actual** `resolvePageActionRoute` contract and the already-loaded metadata. This is a compatibility-preserving UI dependency diagnostic, not a new execution or permission engine.
+
+| Existing authority | Concrete route / service | Existing enforcement and decision |
+| --- | --- | --- |
+| Object definitions | `modules/objects/routes.ts` and `GET /api/metadata/objects` | Reuse `metadata:read` and existing object-management permissions; no app-specific CRUD |
+| Record data | `modules/records/routes.ts`, `/api/records/:objectName` | Reuse authenticated tenant context and `hasObjectPermission`, plus field/record policies |
+| Component Action bindings | `PageComponentRuntime` in `App.tsx`, `properties.actionFlows` | Existing page events resolve to Flow execution or Navigation; no new Action endpoint |
+| Flow definitions | `GET /api/metadata/flows` | Reuse `metadata:read`; active Screen/Autolaunched Flow options validated by existing builder |
+| Flow execution | `POST /api/flows/:apiName/execute` | Reuse `accessAuthentication`, `flows:run`, tenant-scoped lookup and Flow input validation |
+| RBAC | `modules/security/metadata-routes.ts` | Read `security:read`; mutation `security:manage`; tenant RBAC cannot grant `platform:*` |
+| Navigation | `pageActionRouting.ts`, `routeDirectory.ts`, `appNavigation.ts` | Existing stored Object/App Page references, app membership and active page status; final destination access checked server-side |
+| Page dependencies | `apps/web/src/pageDependencies.ts` | **Fixed in 1c**: current navigation keys, generic Object bindings, active supported Flows, contextual destinations; diagnostics do not authorise access |
+
+Regression tests are in `scripts/phase1c-page-dependencies.test.mjs` and run through the existing `npm run test:page-routing` build gate. An omitted app context is now represented as `Contextual` rather than incorrectly claiming access; the checker still never replaces server RBAC.
+
+**Scope adjustment requested by owner:** Preserve the 49 development subphases but stop serial re-auditing. 1c onward should reuse existing findings and make narrow implementation/contract improvements with relevant tests. The published platform surface and expanded metadata property definitions are still Phase 2–3 work.
+
+## Phase 1d — Remove component-name dependencies from shared code
+
+Phase 1d replaces two concrete platform-specific branches without introducing a new
+engine or doing another repository-wide audit:
+
+- **Page Builder palette** now infers only generic Layout/Display/Inputs/Data/Navigation
+  categories through one shared rules array; app-specific Kiosk and Till categories
+  are no longer built into the palette. Existing components remain available under
+  All Components and their inferred generic group.
+- **Page component data binding** recognises any configured `*ObjectApiName` string
+  property, so new business apps do not require adding new key names to the platform.
+- **Trusted bundled component retirement** is driven by
+  `retiredTrustedComponentPrefixes` in the existing installation catalog, not a
+  Kiosk/Till regex in the shared loader. The existing historical retirement rules
+  are preserved as versioned package metadata. Tenant-owned/modified definitions
+  remain untouched; entitled active descriptors are not retired.
+- Existing generic rendering, Object APIs, Flow execution, sandbox and OneEngine RBAC
+  remain authoritative. No app/module is newly installed; no privileges are seeded.
+- New focused tests cover generic categorisation/bindings and package-driven
+  retirement. Phase 2–3 will replace fallback naming heuristics with database-backed
+  component category/property definitions rather than inventing another registry.
 
 ## Phase-by-phase migration boundary
 

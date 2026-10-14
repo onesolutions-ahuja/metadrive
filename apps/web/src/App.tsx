@@ -1,3 +1,4 @@
+import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
 import { readOfflineMetadata, saveOfflineMetadata } from './offlineMetadataCache';
@@ -1089,7 +1090,7 @@ function App() {
     let cancelled = false;
     void (async () => {
       // Select only an app authorised by the server for this login.
-      // This lets the SAME Metadrive binary open Kiosk, Till or Records
+      // The same application shell resolves any authorised landing page.
       // without hardcoded role-to-application routes.
       const allowed = entryTiming?.landing?.apps?.length
         ? entryTiming.landing.apps
@@ -1416,7 +1417,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   } | null>(null);
   const [flowRunnerSubmitting, setFlowRunnerSubmitting] = useState(false);
   const [flowRunnerError, setFlowRunnerError] = useState('');
-  const [kioskMode, setKioskMode] = useState(false);
+  const [standalonePageMode, setStandalonePageMode] = useState(false);
   const flowHistory = useRef<{ undo: FlowDefinitionMetadata[]; redo: FlowDefinitionMetadata[] }>({ undo: [], redo: [] });
   const flowSnapshots = useRef(new Map<string, string>());
   const [page, setPage] = useState<LightningPageMetadata>(defaultLightningPage);
@@ -3563,18 +3564,18 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     }
   };
 
-  // Kiosk is a standalone customer-facing page, not a workspace tab. Resolve it
-  // from tenant page metadata so every installed kiosk opens edge-to-edge by URL.
-  const isStandaloneKioskPage = (route.kind === 'app-page' || route.kind === 'app-home') && pages.some((candidate) =>
+  // Standalone presentation is a page metadata capability, not an app identity.
+  // Only an active, route-matched page can opt into the edge-to-edge shell.
+  const isStandaloneMetadataPage = (route.kind === 'app-page' || route.kind === 'app-home') && pages.some((candidate) =>
     candidate.status === 'Active' &&
     (route.kind === 'app-page' ? candidate.apiName === route.pageApiName && candidate.pageType === 'App Page'
       : candidate.pageType === 'Home Page' && (candidate.activationAssignments ?? []).some((assignment) =>
           assignment.appId === route.appId && (assignment.scope === 'App Default' || assignment.scope === 'App and Profile'))) &&
-    candidate.components.some((component) => component.type === 'Custom:KioskOrderingExperience')
+    isStandalonePagePresentation(candidate)
   );
 
   return (
-    <div className={kioskMode || isStandaloneKioskPage ? 'lightning kiosk-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
+    <div className={standalonePageMode || isStandaloneMetadataPage ? 'lightning standalone-page-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
         <button type="button" className="header-home-link" onClick={() =>
@@ -3745,12 +3746,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onKioskModeChange={setKioskMode} />}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
@@ -3889,8 +3890,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             canLicenceAdmin={connectorRights.licence}
             encryptionReady={namedCredentialsEncryptionReady}
             onGrantLicence={grantConnectorLicence}
-            onCreateKioskDevice={(index) => apiRequest<{deviceId:string;username:string;password:string}>('/kiosk/devices', {method:'POST',body:JSON.stringify({index})})}
-            onResetKioskDevice={(index) => apiRequest<{deviceId:string;username:string;password:string}>('/kiosk/devices/reset', {method:'POST',body:JSON.stringify({index})})}
             loadApps={loadConnectorMarketplaceApps}
             executeLifecycleFlow={executeConnectorAppLifecycleFlow}
             onSave={saveNamedCredential}
@@ -4550,9 +4549,7 @@ function MetadataBoundPageComponent({
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName ?? '');
-  const cartObjectApiName = String(properties.cartObjectApiName ?? '');
-  const customerObjectApiName = String(properties.customerObjectApiName ?? '');
-  const categoryObjectApiName = String(properties.categoryObjectApiName ?? '');
+  // An application-independent session can be referenced by configured Flows.
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
     try {
@@ -4567,26 +4564,12 @@ function MetadataBoundPageComponent({
     }
   });
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
-  const [cartRecords, setCartRecords] = useState<Record<string, unknown>[]>([]);
-  const [customerRecords, setCustomerRecords] = useState<Record<string, unknown>[]>([]);
-  const [categoryRecords, setCategoryRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
-  const [pageUi,setPageUi] = useState<{search:string;category:string}>({search:'',category:''});
-  useEffect(()=>{
-    const sync=(event:Event)=>{
-      const detail=(event as CustomEvent<{key:string;field:'search'|'category';value:string}>).detail;
-      if(detail?.key===pageSessionKey && (detail.field==='search'||detail.field==='category')) {
-        setPageUi(old=>({...old,[detail.field]:detail.value}));
-      }
-    };
-    window.addEventListener('metadrive:page-ui-change',sync);
-    return ()=>window.removeEventListener('metadrive:page-ui-change',sync);
-  },[pageSessionKey]);
   const initializedSessions = useRef<Set<string>>(new Set());
-  // Synchronise independent POS Page Builder layers after any Flow mutation.
+  // Any Flow mutation invalidates all components sharing this page session.
   useEffect(() => {
     const sync = (event: Event) => {
       const detail = (event as CustomEvent<{pageSessionKey:string;sessionId:string}>).detail;
@@ -4594,80 +4577,29 @@ function MetadataBoundPageComponent({
       if (detail.sessionId && detail.sessionId !== sessionId) setSessionId(detail.sessionId);
       setRevision(value => value + 1);
     };
-    window.addEventListener('metadrive:page-flow-mutated',sync);
-    return () => window.removeEventListener('metadrive:page-flow-mutated',sync);
-  },[pageSessionKey,sessionId]);
+    window.addEventListener('metadrive:page-flow-mutated', sync);
+    return () => window.removeEventListener('metadrive:page-flow-mutated', sync);
+  }, [pageSessionKey, sessionId]);
   useEffect(() => {
     let active = true;
-    setRecords([]); setCartRecords([]); setCustomerRecords([]); setCategoryRecords([]); setDataError('');
-    const tasks: Array<Promise<Record<string, unknown>[]>> = [
-      objectApiName ? loadFlowScreenRecords(objectApiName) : Promise.resolve([]),
-      cartObjectApiName ? apiRequest<{ records: Record<string, unknown>[] }>(
-        '/records/' + encodeURIComponent(cartObjectApiName)
-        + '?filterField=' + encodeURIComponent(String(properties.cartSessionField ?? 'Session__c'))
-        + '&filterValue=' + encodeURIComponent(sessionId)
-        + '&limit=200'
-      ).then((response) => response.records) : Promise.resolve([]),
-      customerObjectApiName ? loadFlowScreenRecords(customerObjectApiName) : Promise.resolve([]),
-      categoryObjectApiName ? loadFlowScreenRecords(categoryObjectApiName).catch(() => []) : Promise.resolve([])
-    ];
+    setRecords([]);
+    setDataError('');
+    if (!objectApiName) {
+      setDataLoading(false);
+      return () => { active = false; };
+    }
     setDataLoading(true);
-    void Promise.allSettled(tasks).then(([products, basket, customers, categoryRows]) => {
-      if (!active) return;
-      if (products.status === 'fulfilled') setRecords(products.value);
-      else setDataError(products.reason instanceof Error ? products.reason.message : 'Unable to load products');
-      if (basket.status === 'fulfilled') setCartRecords(basket.value);
-      else setActionError(basket.reason instanceof Error ? basket.reason.message : 'Cart read permission required');
-      if (customers.status === 'fulfilled') setCustomerRecords(customers.value);
-      if (categoryRows.status === 'fulfilled') setCategoryRecords(categoryRows.value);
-    }).finally(() => { if (active) setDataLoading(false); });
+    // Existing shared Object API enforces tenant, field and record permissions.
+    void loadFlowScreenRecords(objectApiName)
+      .then((rows) => { if (active) setRecords(rows); })
+      .catch((reason: unknown) => {
+        if (active) setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
+      })
+      .finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
-  }, [objectApiName, cartObjectApiName, customerObjectApiName, categoryObjectApiName, sessionId, revision]);
-  // The existing Page Builder filter schema is validated centrally; invalid
-  // or inaccessible fields must not silently widen a component's result set.
+  }, [objectApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
-  const customerFields = objects.find((item) => item.apiName === customerObjectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
-  const mappedProducts = visibleRecords.map((record) => ({
-    id: String(record.Id ?? ''),
-    name: String(record[String(properties.nameField ?? 'Name')] ?? ''),
-    price: Number(record[String(properties.priceField ?? 'Price__c')] ?? 0),
-    image: String(record[String(properties.imageField ?? 'Image__c')] ?? ''),
-    description: String(record[String(properties.descriptionField ?? 'Description__c')] ?? ''),
-    categoryId: String(record[String(properties.categoryField ?? 'Category__c')] ?? ''),
-    barcode: properties.barcodeField ? String(record[String(properties.barcodeField)] ?? '') : '',
-    sku: properties.skuField ? String(record[String(properties.skuField)] ?? '') : ''
-  }));
-  const mappedCustomers = filterPageComponentRecords(customerRecords, properties.customerFilters, customerFields).map((record) => ({
-    id: String(record.Id ?? ''),
-    name: properties.customerNameField ? String(record[String(properties.customerNameField)] ?? '') : '',
-    phone: properties.customerPhoneField ? String(record[String(properties.customerPhoneField)] ?? '') : '',
-    email: properties.customerEmailField ? String(record[String(properties.customerEmailField)] ?? '') : ''
-  }));
-  const categories = [...new Set(mappedProducts.map((item) => item.categoryId).filter(Boolean))]
-    .map((id) => {
-      const category = categoryRecords.find((item) => String(item.Id ?? '') === id);
-      return {
-        id,
-        name: String(category?.[String(properties.categoryNameField || 'Name')] ?? id),
-        icon: String(category?.[String(properties.categoryIconField || 'Icon__c')] ?? '🍽️')
-      };
-    });
-  const cartSessionField = String(properties.cartSessionField ?? 'Session__c');
-  const cartProductField = String(properties.cartProductField ?? 'Product__c');
-  const cartQuantityField = String(properties.cartQuantityField ?? 'Quantity__c');
-  const cartPriceField = String(properties.cartPriceField ?? 'Unit_Price__c');
-  const cartLines = cartRecords.filter((record) => String(record[cartSessionField] ?? '') === sessionId)
-    .map((record) => {
-      const product = mappedProducts.find((item) => item.id === String(record[cartProductField] ?? ''));
-      return {
-        id: String(record.Id ?? ''), productId: String(record[cartProductField] ?? ''),
-        name: String(record.Name ?? product?.name ?? 'Product'),
-        quantity: Number(record[cartQuantityField] ?? 0),
-        unitPrice: Number(record[cartPriceField] ?? 0),
-        image: product?.image ?? '', emoji: '🍽️'
-      };
-    });
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
     ? rawActions as Record<string, unknown> : {};
@@ -4686,7 +4618,7 @@ function MetadataBoundPageComponent({
     return source;
   };
   const onAction = async (action: { event: string; value?: unknown }) => {
-    if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test checkout.');
+    if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test actions.');
     const config = actionFlows[action.event];
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       throw new Error('No metadata event action is configured for "' + action.event + '".');
@@ -4761,19 +4693,11 @@ function MetadataBoundPageComponent({
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
-      searchQuery:pageUi.search, selectedCategoryId:pageUi.category,
-      onChange:(value:unknown)=>{
-        const field = properties.uiBinding;
-        if(field !== 'search' && field !== 'category') return;
-        const selected = field==='category' && value && typeof value==='object'
-          ? String((value as Record<string,unknown>).id ?? '') : String(value ?? '');
-        window.dispatchEvent(new CustomEvent('metadrive:page-ui-change', {
-          detail:{key:pageSessionKey,field,value:selected}
-        }));
+      onChange: (value: unknown) => {
+        if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
-      loading: dataLoading, cartLines, sessionId,
-      customers: mappedCustomers,
-      ...(objectApiName ? { records: visibleRecords, products: mappedProducts, categories } : {})
+      loading: dataLoading, sessionId,
+      ...(objectApiName ? { records: visibleRecords } : {})
     }} />
   </div>;
 }
@@ -4801,7 +4725,7 @@ function LightningAppRuntime({
   formFactor,
   onNavigate,
   onLaunchFlow,
-  onKioskModeChange
+  onStandaloneModeChange
 }: {
   appId: string;
   pageApiName?: string;
@@ -4814,7 +4738,7 @@ function LightningAppRuntime({
   formFactor: 'Desktop' | 'Phone';
   onNavigate: (route: AppRoute) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
-  onKioskModeChange: (enabled: boolean) => void;
+  onStandaloneModeChange: (enabled: boolean) => void;
 }) {
   const [page, setPage] = useState<LightningPageMetadata | null>(null);
   const layoutDevice = usePageLayoutDevice();
@@ -4842,13 +4766,13 @@ function LightningAppRuntime({
     setActiveTab('');
   }, [page?.apiName]);
   useEffect(() => {
-    onKioskModeChange(Boolean(page?.components.some((component) => component.type === 'Custom:KioskOrderingExperience')));
-    return () => onKioskModeChange(false);
-  }, [page?.layoutMode, onKioskModeChange]);
+    onStandaloneModeChange(isStandalonePagePresentation(page));
+    return () => onStandaloneModeChange(false);
+  }, [page?.layoutMode, onStandaloneModeChange]);
   if (error) return <div className="records-page"><div className="records-message" role="alert">{error}</div></div>;
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
   if (!page) return <main className="records-page"><section className="records-empty" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home Page not assigned</h1><p>No active Home Page is assigned to this app and profile.</p><p>An administrator can assign a Home Page in Lightning App Builder.</p></section></main>;
-  const isKioskRuntime = page.layoutMode === 'free-canvas' && page.components.some((component) => component.type === 'Custom:KioskOrderingExperience');
+  const isStandaloneRuntime = isStandalonePagePresentation(page);
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const appVisibilityContext = { formFactor } as const;
   const isAppComponentVisible = (component: PageComponentMetadata) =>
@@ -4929,7 +4853,7 @@ function LightningAppRuntime({
               height: component.position?.height ?? 180
             }),
         ...resolvePageComponentStyle(component.properties, component.type, layoutDevice),
-        ...(isKioskRuntime && component.type === 'Custom:KioskOrderingExperience' && !nested
+        ...(isStandaloneRuntime && component.properties?.standalonePresentation === true && !nested
           ? { left: 0, top: 0, width: '100%', height: '100%' } : {})
       } as React.CSSProperties}>
       {renderComponent(component)}
@@ -4938,7 +4862,7 @@ function LightningAppRuntime({
   if (page.layoutMode === 'free-canvas') return <div className="free-canvas-runtime"
     data-lightning-page={page.apiName}
     data-layout-mode="free-canvas"
-    style={isKioskRuntime ? { width: '100%', height: '100dvh', maxWidth: 'none' } : { width: page.canvasWidth, height: page.canvasHeight }}>
+    style={pageCanvasPresentationStyle(page)}>
     {childrenOf(page.components, null).map((component) => renderCanvasComponent(component))}
   </div>;
   const renderRegion = (region: 'header' | 'main' | 'sidebar') =>
@@ -8804,7 +8728,7 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, kioskMode = false }: {
+function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange }: {
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
   apps: LightningAppMetadata[];
@@ -8812,18 +8736,12 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
   currentAppId: string;
   flows: FlowDefinitionMetadata[];
   onChange: (next: ComponentPropertyRecord) => void;
-  kioskMode?: boolean;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedDraft, setAdvancedDraft] = useState('');
   const [advancedError, setAdvancedError] = useState('');
   const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
   const selectedObject = objects.find((candidate) => candidate.apiName === objectApiName);
-  const cartObjectApiName = String(properties.cartObjectApiName ?? '');
-  const cartObject = objects.find((candidate) => candidate.apiName === cartObjectApiName);
-  const customerObjectApiName = String(properties.customerObjectApiName ?? '');
-  const customerObject = objects.find((candidate) => candidate.apiName === customerObjectApiName);
-  const tillMode = properties.libraryComponentId === 'TillSalesWorkspace';
   const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
     ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
@@ -8832,96 +8750,39 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
     const value = properties[key];
     return Array.isArray(value) ? value : [];
   };
-  const sourceKeys = new Set(['libraryComponentId', 'objectApiName', 'targetObject', 'flowApiName', 'filters',
-    'nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'barcodeField', 'skuField',
-    'customerObjectApiName', 'customerNameField', 'customerPhoneField', 'customerEmailField', 'customerFilters',
-    'fieldApiName', 'checkoutFlowApiName',
-    'cartObjectApiName', 'cartSessionField', 'cartProductField', 'cartQuantityField', 'cartPriceField', 'actionFlows',
-    'basketSide', 'basketWidthPercent', 'catalogColumns',
-    'layoutContainer', 'layoutParentId', 'layoutStyle', 'layoutResponsive']);
+  const sourceKeys = new Set(['libraryComponentId', 'targetObject', 'flowApiName',
+    'actionFlows', 'layoutContainer', 'layoutParentId', 'layoutStyle', 'layoutResponsive']);
+  const isObjectBinding = (key: string) => key === 'objectApiName' || key.endsWith('ObjectApiName');
   const isField = (key: string) => /(?:Field|FieldApiName)$/.test(key);
+  const isFilter = (key: string) => key === 'filters' || key.endsWith('Filters');
+  const objectBindings = Array.from(new Set(['objectApiName', ...Object.keys(properties).filter(isObjectBinding)]));
+  const fieldsFor = (key: string) => {
+    const prefix = key.replace(/(?:Field(?:ApiName)?|Filters)$/, '');
+    const binding = objectBindings.filter(name => name !== 'objectApiName' &&
+      prefix.startsWith(name.slice(0, -'ObjectApiName'.length)))
+      .sort((a, b) => b.length - a.length)[0];
+    const boundName = binding ? properties[binding] : objectApiName;
+    return objects.find(object => object.apiName === boundName)?.fields ?? [];
+  };
   const labelFor = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/ApiName$/, '').replace(/^./, (v) => v.toUpperCase());
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
     <select className="form-control" value={String(value ?? '')} onChange={(event) => update(key, event.target.value)}>
       <option value="">Select field…</option>
-      {fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
+      {fieldsFor(key).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
     </select>
   </label>;
   return <div className="metadata-component-properties">
-    <label className="form-label">Data Object
-      <select className="form-control" value={objectApiName} onChange={(event) => onChange({
-        ...properties, objectApiName: event.target.value
-      })}>
+    {objectBindings.map((key) => <label className="form-label" key={key}>{labelFor(key)}
+      <select className="form-control" value={String(properties[key] ?? '')}
+        onChange={(event) => update(key, event.target.value)}>
         <option value="">No object selected</option>
         {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
       </select>
-    </label>
-    {['nameField', 'priceField', 'imageField', 'categoryField', 'descriptionField', 'barcodeField', 'skuField', 'fieldApiName']
-      .filter((key) => key in properties || (objectApiName && ['nameField', 'priceField', 'imageField', 'categoryField'].includes(key)))
-      .map((key) => fieldPicker(key, properties[key]))}
-    {actionFlows && <>
-      <div className="properties-section-title">Temporary Cart Object</div>
-      <label className="form-label">Cart line object
-        <select className="form-control" value={cartObjectApiName}
-          onChange={(event) => update('cartObjectApiName', event.target.value)}>
-          <option value="">Select cart object…</option>
-          {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
-        </select>
-      </label>
-      {([
-        ['cartSessionField', 'Session field'], ['cartProductField', 'Product reference'],
-        ['cartQuantityField', 'Quantity field'], ['cartPriceField', 'Unit price field']
-      ] as const).map(([key, label]) => <label className="form-label" key={key}>{label}
-        <select className="form-control" value={String(properties[key] ?? '')}
-          onChange={(event) => update(key, event.target.value)}>
-          <option value="">Select field…</option>
-          {(cartObject?.fields ?? []).map((field) =>
-            <option value={field.apiName} key={field.apiName}>{field.label}</option>)}
-        </select>
-      </label>)}
-    </>}
-    {tillMode && <>
-      <div className="properties-section-title">Till Layout — This Client</div>
-      <p className="properties-help">These settings change only this Till placement; its Object and Flow bindings stay the same.</p>
-      <label className="form-label">Basket placement
-        <select className="form-control" aria-label="Till basket placement"
-          value={properties.basketSide === 'right' ? 'right' : 'left'}
-          onChange={event => update('basketSide', event.target.value)}>
-          <option value="left">Basket on the left</option><option value="right">Basket on the right</option>
-        </select>
-      </label>
-      <label className="form-label">Basket width ({Math.max(30, Math.min(65, Number(properties.basketWidthPercent) || 45))}%)
-        <input type="range" min={30} max={65} step={1} className="form-control"
-          aria-label="Till basket width" value={Math.max(30, Math.min(65, Number(properties.basketWidthPercent) || 45))}
-          onChange={event => update('basketWidthPercent', Number(event.target.value))}/>
-      </label>
-      <label className="form-label">Product grid columns
-        <select className="form-control" aria-label="Till product columns" value={Math.max(1, Math.min(5, Number(properties.catalogColumns) || 3))}
-          onChange={event => update('catalogColumns', Number(event.target.value))}>
-          {[1,2,3,4,5].map(count => <option key={count} value={count}>{count}</option>)}
-        </select>
-      </label>
-      <div className="properties-section-title">Customer Object and Fields</div>
-      <label className="form-label">Customer object
-        <select className="form-control" value={customerObjectApiName} onChange={(event) => update('customerObjectApiName', event.target.value)}>
-          <option value="">No customer object selected</option>
-          {objects.map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}
-        </select>
-      </label>
-      {([
-        ['customerNameField', 'Name field'], ['customerPhoneField', 'Phone field'], ['customerEmailField', 'Email field']
-      ] as const).map(([key, label]) => <label className="form-label" key={key}>{label}
-        <select className="form-control" value={String(properties[key] ?? '')} onChange={(event) => update(key, event.target.value)}>
-          <option value="">Select customer field…</option>
-          {(customerObject?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
-        </select>
-      </label>)}
-      <RecordFilterEditor title="Customer Filters" fields={customerObject?.fields ?? []}
-        filters={listProperty('customerFilters')} onChange={filters => update('customerFilters', filters)} />
-    </>}
-    {kioskMode && <p className="properties-help">Products come from the selected object and filters. Static product cards are not used. Checkout requires a verified, active Flow that creates the Sale record.</p>}
-    <RecordFilterEditor title="Record Filters" fields={fields}
-      filters={listProperty('filters')} onChange={filters => update('filters', filters)} />
+    </label>)}
+    {Object.keys(properties).filter(isField).map((key) => fieldPicker(key, properties[key]))}
+    {Array.from(new Set(['filters', ...Object.keys(properties).filter(isFilter)])).map(key =>
+      <RecordFilterEditor key={key} title={key === 'filters' ? 'Record Filters' : labelFor(key)} fields={fieldsFor(key)}
+        filters={listProperty(key)} onChange={filters => update(key, filters)} />)}
     <div className="properties-section-title">Actions</div>
     <div className="properties-section-title">Event → Flow / Navigation bindings</div>
     <p className="properties-help">Each event name is emitted by a custom component. Select a Flow or an RBAC-checked route and map input variables to event fields. No executable code is stored here.</p>
@@ -9014,14 +8875,14 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
       update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
     }}>Add event action</button>
     {!actionFlows && <label className="form-label">Flow API Name
-      <select className="form-control" value={String(properties.checkoutFlowApiName ?? properties.flowApiName ?? '')}
-        onChange={(event) => update('checkoutFlowApiName' in properties ? 'checkoutFlowApiName' : 'flowApiName', event.target.value)}>
+      <select className="form-control" value={String(properties.flowApiName ?? '')}
+        onChange={(event) => update('flowApiName', event.target.value)}>
         <option value="">No flow selected</option>
         {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
       </select>
     </label>}
     <div className="properties-section-title">Appearance and Settings</div>
-    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && (!kioskMode || !/^products(?:[0-9]+)?$|^categories$/i.test(key))).map(([key, value]) => {
+    {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && !isObjectBinding(key) && !isField(key) && !isFilter(key)).map(([key, value]) => {
       if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
         <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{labelFor(key)}
       </label>;
@@ -9034,7 +8895,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
       if (typeof value === 'string') return fieldPicker(key, value);
       return null;
     })}
-    {Object.entries(properties).filter(([key, value]) => !sourceKeys.has(key) && Array.isArray(value)).map(([key, value]) => {
+    {Object.entries(properties).filter(([key, value]) => !sourceKeys.has(key) && !isFilter(key) && Array.isArray(value)).map(([key, value]) => {
       const items = value as unknown[];
       const template = items.find((item) => item && typeof item === 'object' && !Array.isArray(item));
       const keys = template ? Object.keys(template) : [];
@@ -10216,10 +10077,6 @@ function PageBuilder({
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device,
-                      ...(component.type === 'Custom:TillSalesWorkspace' && !previewMode
-                        ? { onLayoutChange: (patch: { basketWidthPercent: number }) =>
-                            updateComponent(component.id, { properties: { ...component.properties, ...patch } }) }
-                        : {}),
                       children: nestedChildren
                     }} />
                     : libraryPreview
@@ -10491,24 +10348,10 @@ function PageBuilder({
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
               onChange={(properties) => updateComponent(selected.id, { properties })} />}
-            {inspectorTab !== 'Data & Actions' && selected.type === 'Custom:TillSalesWorkspace' && <section className="modern-till-layout-controls">
-              <div className="properties-section-title">Till layout</div>
-              <label className="form-label">Basket width: {Number(selected.properties.basketWidthPercent ?? 45)}%
-                <input type="range" min="25" max="70" step="1" aria-label="Till basket width"
-                  value={Number(selected.properties.basketWidthPercent ?? 45)}
-                  onChange={event => updateComponent(selected.id, { properties: {
-                    ...selected.properties, basketWidthPercent: Number(event.target.value)
-                  } })} />
-              </label>
-              <label className="checkbox-row"><input type="checkbox" checked={selected.properties.catalogFirst === true}
-                onChange={event => updateComponent(selected.id, { properties: {
-                  ...selected.properties, catalogFirst: event.target.checked
-                } })} />Show products before basket</label>
-            </section>}
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
-              {!['Custom:KioskContainer','Custom:KioskRow','Custom:KioskColumn','Custom:KioskCard','Custom:KioskGrid'].includes(selected.type)
+              {true
                 && <label className="checkbox-row">
                   <input type="checkbox" checked={isLayoutContainer(selected)}
                     onChange={(event) => {
@@ -10543,7 +10386,6 @@ function PageBuilder({
                 {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
               </>}
               <MetadataComponentProperties
-                kioskMode={selected.type === 'Custom:KioskOrderingExperience'}
                 properties={selected.properties}
                 objects={objects}
                 apps={apps}
@@ -10794,7 +10636,7 @@ function PageBuilder({
             <input id="new-lightning-page-label" className="form-control" autoFocus
               value={newPageLabel} onChange={event => setNewPageLabel(event.target.value)}
               onKeyDown={event => { if (event.key === 'Enter') void createPage(); }}
-              placeholder="For example, Kiosk Ordering" />
+              placeholder="For example, Inventory Management" />
           </label>
           <label className="form-label" htmlFor="new-lightning-page-layout-mode">Canvas mode
             <select id="new-lightning-page-layout-mode" className="form-control" value={newPageLayoutMode}

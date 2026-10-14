@@ -1,44 +1,12 @@
-// Retire only the two named demo applications and their metadata. Preserve
-// reusable Product/Sale objects, tenant business records and unrelated flows.
-export function removeRetiredOrderingApps(tenant) {
-  const apps = new Set(['KioskApp', 'POSApp']);
-  const pages = new Set(['UNE_KIOSK', 'UNE_POS']);
-  const flows = new Set(['KIOSK_SESSION_START', 'KIOSK_CART_ADD',
-    'KIOSK_CART_QUANTITY', 'KIOSK_CART_REMOVE', 'KIOSK_CART_RESET',
-    'KIOSK_CHECKOUT', 'POS_CASH_SETTLE']);
-  const keptApps = (tenant.apps ?? []).filter(app => !apps.has(app.apiName))
-    .map(app => ({
-      ...app,
-      navigationPageApiNames: (app.navigationPageApiNames ?? []).filter(id => !pages.has(id)),
-      navigationItems: (app.navigationItems ?? []).filter(id => !pages.has(id))
-    }));
-  const keptPages = (tenant.pages ?? []).filter(page => !pages.has(page.apiName))
-    .map(page => ({
-      ...page,
-      activationAssignments: (page.activationAssignments ?? []).filter(
-        assignment => !apps.has(assignment.appId))
-    }));
-  const records = {...(tenant.records ?? {})};
-  if (Array.isArray(records.Connector_App__c)) {
-    records.Connector_App__c = records.Connector_App__c.filter(
-      item => !['kiosk', 'pos'].includes(item.AppKey__c));
-  }
-  return {
-    ...tenant, apps: keptApps, pages: keptPages,
-    flows: (tenant.flows ?? []).filter(flow => !flows.has(flow.apiName)),
-    records
-  };
-}
-
 import {upgradePackagedPageComponents,upgradePackagedFlow} from './package-page-migrations.mjs';
 
 /**
  * Install declarative business-app metadata through the shared AppExchange lifecycle.
- * Neither this primitive nor Object/Flow execution contains kiosk-specific logic.
+ * No application-specific execution paths are permitted in the shared installer.
  * Existing tenant definitions and customisations are never overwritten.
  */
 export function applyInstallableAppPackages(tenant, catalog) {
-  let next = removeRetiredOrderingApps(tenant);
+  let next = retireUninstalledPackageMetadata(tenant, catalog);
   const packages = Array.isArray(catalog?.packages) ? catalog.packages : [];
   for (const pkg of packages) {
     const installed = (next.records?.Connector_App__c ?? []).find(row => row.AppKey__c === pkg.appKey);
@@ -244,4 +212,67 @@ export function applyInstallableAppPackages(tenant, catalog) {
     if (changed) next = {...next,objects,flows,apps,pages,records,accessControl};
   }
   return next;
+}
+/** Retire a packaged app's generated metadata exactly once, only while its old
+ * Connector App installation record exists and no current package reuses its key.
+ * All business Objects and their records remain untouched. */
+export function retireUninstalledPackageMetadata(tenant, catalog) {
+  const activeKeys = new Set((catalog?.packages ?? []).map(pkg => pkg.appKey));
+  const rows = tenant.records?.Connector_App__c ?? [];
+  const retired = (catalog?.retiredPackages ?? []).filter(pkg =>
+    !activeKeys.has(pkg.appKey) && rows.some(row => row.AppKey__c === pkg.appKey));
+  if (!retired.length) return tenant;
+  const appKeys = new Set(retired.map(pkg => pkg.appKey));
+  const apps = new Set(retired.flatMap(pkg => pkg.apps ?? []));
+  const pages = new Set(retired.flatMap(pkg => pkg.pages ?? []));
+  const flows = new Set(retired.flatMap(pkg => pkg.flows ?? []));
+  const keepNavigation = app => ({
+    ...app,
+    navigationItems: (app.navigationItems ?? []).filter(name => !pages.has(name)),
+    navigationPageApiNames: (app.navigationPageApiNames ?? []).filter(name => !pages.has(name)),
+    navigationOrder: (app.navigationOrder ?? []).filter(item =>
+      !((item.type === 'Page' || item.type === 'App Page') && pages.has(item.apiName)))
+  });
+  const stripAppGrants = item => ({
+    ...item,
+    appPermissions: Object.fromEntries(Object.entries(item.appPermissions ?? {})
+      .filter(([name]) => !apps.has(name)))
+  });
+  return {
+    ...tenant,
+    apps: (tenant.apps ?? []).filter(app => !apps.has(app.apiName)).map(keepNavigation),
+    pages: (tenant.pages ?? []).filter(page => !pages.has(page.apiName))
+      .map(page => ({
+        ...page,
+        activationAssignments: (page.activationAssignments ?? [])
+          .filter(rule => !apps.has(rule.appId))
+      })),
+    flows: (tenant.flows ?? []).filter(flow => !flows.has(flow.apiName)),
+    accessControl: {
+      ...tenant.accessControl,
+      profiles: (tenant.accessControl?.profiles ?? []).map(stripAppGrants),
+      permissionSets: (tenant.accessControl?.permissionSets ?? []).map(stripAppGrants)
+    },
+    records: {...tenant.records, Connector_App__c: rows.filter(row => !appKeys.has(row.AppKey__c))}
+  };
+}
+
+/** Repair exact signed historical record IDs before strict snapshot parsing. */
+export function repairHistoricPackageRecordAudits(raw, catalog) {
+  if (!raw || typeof raw !== 'object') return false;
+  let changed = false;
+  const now = new Date().toISOString();
+  for (const pkg of catalog?.retiredPackages ?? []) {
+    for (const [objectName, ids] of Object.entries(pkg.auditRecordIds ?? {})) {
+      const allowed = new Set(Array.isArray(ids) ? ids : []);
+      for (const tenant of Object.values(raw.tenants ?? {})) {
+        for (const record of tenant?.records?.[objectName] ?? []) {
+          if (!allowed.has(record?.Id)) continue;
+          if (!record.CreatedDate) { record.CreatedDate = now; changed = true; }
+          if (!record.LastModifiedDate) { record.LastModifiedDate = now; changed = true; }
+        }
+      }
+    }
+  }
+  return changed;
 }

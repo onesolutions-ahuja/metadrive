@@ -1,9 +1,24 @@
+/** Platform palette groups are generic. Application-specific categories belong
+ * to registered component metadata, not this shared Page Builder module. */
 export const pageBuilderPaletteCategories = [
   'All Components', 'Favourites', 'Layout', 'Display', 'Inputs',
-  'Data', 'Navigation', 'Kiosk', 'Till'
+  'Data', 'Navigation'
 ] as const;
 
 export type PageBuilderPaletteCategory = (typeof pageBuilderPaletteCategories)[number];
+
+// Reuse the same rule iterator for standard and registered component suggestions.
+// Full metadata-defined category discovery is part of the shared registry migration.
+const inferredCategoryRules: ReadonlyArray<{
+  category: PageBuilderPaletteCategory;
+  matches: RegExp;
+}> = [
+  { category: 'Layout', matches: /container|section|column|grid|layout|tab|accordion|split/ },
+  { category: 'Inputs', matches: /form|input|checkbox|radio|select|dropdown|picker|slider|toggle/ },
+  { category: 'Data', matches: /record|table|list|chart|report|dashboard|related/ },
+  { category: 'Navigation', matches: /navigation|menu|top bar|bottom bar|header|footer|button|breadcrumb/ },
+  { category: 'Display', matches: /text|image|card|badge|carousel|label|icon|media/ }
+];
 
 export function getPageBuilderComponentCategories(
   apiName: string,
@@ -12,14 +27,9 @@ export function getPageBuilderComponentCategories(
   _standard = false
 ): PageBuilderPaletteCategory[] {
   const name = `${apiName} ${label} ${description}`.toLowerCase();
-  const categories: PageBuilderPaletteCategory[] = [];
-  if (/kiosk|self-order|product tile/.test(name)) categories.push('Kiosk');
-  if (/till|cashier|checkout|sales workspace/.test(name)) categories.push('Till');
-  if (/container|section|column|grid|layout|tab|accordion|split/.test(name)) categories.push('Layout');
-  if (/form|input|checkbox|radio|select|dropdown|picker|slider|toggle/.test(name)) categories.push('Inputs');
-  if (/record|table|list|chart|report|dashboard|related/.test(name)) categories.push('Data');
-  if (/navigation|menu|top bar|bottom bar|header|footer|button|breadcrumb/.test(name)) categories.push('Navigation');
-  if (/text|image|card|badge|carousel|label|icon|media/.test(name)) categories.push('Display');
+  const categories = inferredCategoryRules
+    .filter(rule => rule.matches.test(name))
+    .map(rule => rule.category);
   return categories.length ? categories : ['Display'];
 }
 

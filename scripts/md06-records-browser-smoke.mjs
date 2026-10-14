@@ -162,11 +162,21 @@ try {
     throw Error('A permission-revoked offline Account was incorrectly committed');
   const restored=await adminApi('/metadata/permissions','PUT',originalAcl.data);
   if(restored.status!==200)throw Error('Cannot restore synthetic RBAC fixture');
+  // Wait for the rejected sync to release its in-flight guard before retrying.
+  await offlinePanel.getByRole('button',{name:'Sync pending'}).waitFor({state:'visible',timeout:15000});
   await offlinePanel.getByRole('button',{name:'Retry after review'}).click();
   await offlinePanel.waitFor({state:'hidden',timeout:15000});
-  const syncedRecord=await adminApi('/records/Account?search='+encodeURIComponent(offlineName));
+  // Offline queue removal is asynchronous to records-list refresh: poll the
+  // independently authenticated server until the successful write is visible.
+  let syncedRecord;
+  for(let attempt=0;attempt<20;attempt++){
+    syncedRecord=await adminApi('/records/Account?search='+encodeURIComponent(offlineName));
+    if(syncedRecord.status===200 && syncedRecord.data.records.some(item=>item.Name===offlineName)) break;
+    await pause(250);
+  }
   if(syncedRecord.status!==200 || !syncedRecord.data.records.some(item=>item.Name===offlineName))
-    throw Error('Explicit retry did not synchronise a restored-permission offline draft');
+    throw Error('Explicit retry did not synchronise a restored-permission offline draft. Last server response: '+
+      JSON.stringify(syncedRecord).slice(0,1200));
   if(pageErrors.length)throw Error('Uncaught browser errors: '+pageErrors.join('; '));
   console.log(JSON.stringify({module:'Records & Data Management',browser:'chromium',login:true,
     recordList:true,sorting:true,search:true,create:true,export:true,pageErrors:0,offlineOnly:true}));
