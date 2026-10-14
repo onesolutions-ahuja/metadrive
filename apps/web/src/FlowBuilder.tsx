@@ -873,8 +873,7 @@ export default function FlowBuilder({
                         itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
                     />
                     <CustomComponentPropertyEditor
-                      definitions={libraryComponents.find(item => item.apiName === field.componentApiName && item.status !== 'Draft')?.propertyDefinitions}
-                      properties={parseComponentProperties(field.componentPropsJson).properties}
+                      definitions={libraryComponents.find(item => item.apiName === field.componentApiName && item.status !== 'Draft')?.propertyDefinitions}                       properties={parseComponentProperties(field.componentPropsJson).properties}
                       onChange={(properties) => setConfig('fields', screenFields.map((item, itemIndex) =>
                         itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
                     />
