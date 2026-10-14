@@ -1,9 +1,9 @@
 // Lossless metadata-driven projection of current MetaDrive state.
 // Contains no database calls. Custom objects/fields are never hardcoded as SQL identifiers.
 import { createHash } from 'node:crypto';
+import {platformStateSectionKeys,platformSettingSections} from './platform-state-registry.mjs';
 
-const rootKeys = new Set(['tenants', 'libraryComponents', 'users', 'refreshSessions', 'revokedAccessTokens',
-  'platformPolicies', 'platformPolicyAudit', 'tenantRegistry', 'tenantManagementAudit']);
+const rootKeys = new Set(platformStateSectionKeys);
 const userFields = ['id','tenantId','name','email','passwordSalt','passwordHash','role','permissionSetIds','permissionSetGroupIds','disabled','createdAt'];
 const sessionFields = ['tokenHash','familyId','userId','tenantId','expiresAt','usedAt','revokedAt'];
 function fail(message) { throw new Error('MetaDrive relational projection: ' + message); }
@@ -79,17 +79,12 @@ export function projectState(input) {
   }
   // Platform policy grants are platform-scoped, not tenant-specific metadata.
   // Keep root-key presence intact so legacy snapshots also round-trip losslessly.
-  if (Object.hasOwn(state,'platformPolicies')) {
-    rows.platformSettings.push({key:'platformPolicies',payload:obj(state.platformPolicies,'platformPolicies')});
-  }
-  if (Object.hasOwn(state,'platformPolicyAudit')) {
-    rows.platformSettings.push({key:'platformPolicyAudit',payload:arr(state.platformPolicyAudit,'platformPolicyAudit')});
-  }
-  if (Object.hasOwn(state,'tenantRegistry')) {
-    rows.platformSettings.push({key:'tenantRegistry',payload:obj(state.tenantRegistry,'tenantRegistry')});
-  }
-  if (Object.hasOwn(state,'tenantManagementAudit')) {
-    rows.platformSettings.push({key:'tenantManagementAudit',payload:arr(state.tenantManagementAudit,'tenantManagementAudit')});
+  for (const section of platformSettingSections) {
+    if (!Object.hasOwn(state,section.key)) continue;
+    const value = section.valueType === 'array'
+      ? arr(state[section.key],section.key)
+      : obj(state[section.key],section.key);
+    rows.platformSettings.push({key:section.key,payload:value});
   }
   arr(state.libraryComponents,'libraryComponents').forEach((payload,position)=>rows.components.push({position,payload}));
   const seenUsers=new Set(), seenEmails=new Set();
