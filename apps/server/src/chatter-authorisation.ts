@@ -4,6 +4,28 @@ import { canAccessChatterConversation, type ChatterScope, type ChatterOperation 
 export type ChatterRow = Record<string, unknown>;
 export type ChatterGrantSource = { records: Record<string, ChatterRow[]> };
 const asText = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+const conversationAssignmentCache = new WeakMap<ChatterRow[], Map<string,string>>();
+function latestAssignments(rows:ChatterRow[]): Map<string,string> {
+  const existing=conversationAssignmentCache.get(rows);
+  if(existing)return existing;
+  const latest=new Map<string,{timestamp:string;assignee:string}>();
+  for(const row of rows){
+    if(!isWhatsAppMessage(row))continue;
+    const account=asText(row.Channel_Account__c);
+    const phone=asText(String(row.Direction__c).toLowerCase()==='incoming'
+      ? row.From_Number__c : row.To_Number__c);
+    if(!account||!phone)continue;
+    const key=JSON.stringify([account,phone]);
+    const timestamp=asText(row.Occurred_At__c||row.CreatedDate);
+    const previous=latest.get(key);
+    if(!previous||timestamp>=previous.timestamp)latest.set(key,{
+      timestamp,assignee:asText(row.Assigned_User__c)
+    });
+  }
+  const result=new Map([...latest.entries()].map(([key,value])=>[key,value.assignee]));
+  conversationAssignmentCache.set(rows,result);
+  return result;
+}
 export function isWhatsAppMessage(record: ChatterRow): boolean {
   return asText(record.Event_Type__c).toLowerCase() === 'message'
     && asText(record.Communication_Mode__c).toLowerCase() === 'whatsapp';
@@ -32,15 +54,9 @@ export function canAccessChatterRecord(
     ? record.From_Number__c : record.To_Number__c);
   // Assignment belongs to the conversation, not a historical message.
   // Resolve the latest record to keep old messages visible after reassignment.
-  const latest = (tenant.records.Communication_Records__c ?? [])
-    .filter(row => isWhatsAppMessage(row)
-      && asText(row.Channel_Account__c) === channelAccountId
-      && asText(String(row.Direction__c).toLowerCase() === 'incoming'
-        ? row.From_Number__c : row.To_Number__c) === number)
-    .sort((a,b)=>asText(b.Occurred_At__c||b.CreatedDate)
-      .localeCompare(asText(a.Occurred_At__c||a.CreatedDate)))[0];
+  const assignedUserId=latestAssignments(tenant.records.Communication_Records__c??[])
+    .get(JSON.stringify([channelAccountId,number])) || null;
   return canAccessChatterConversation(chatterScopeForUser(tenantId,userId,tenant), {
-    tenantId, channelAccountId,
-    assignedUserId: asText(latest?.Assigned_User__c) || null
+    tenantId, channelAccountId, assignedUserId
   }, operation);
 }
