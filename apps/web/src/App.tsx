@@ -89,6 +89,7 @@ import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pag
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
+import PlatformWorkspaceSurface from './PlatformWorkspaceSurface';
 import { reconcileNavigationOrder } from './appNavigation';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
@@ -306,7 +307,6 @@ function ConnectionHealthIndicator() {
     </div>}
   </div>;
 }
-
 
 function isAuthErrorMessage(message: string): boolean {
   const text = message.toLowerCase();
@@ -3803,7 +3803,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               delete next[pageApiName];
               return next;
             })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} request={apiRequest} canManageRoutes={canManageApps} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
-          {route.kind === 'setup' && workspace === 'app-manager' && <AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} />}
+          {route.kind === 'setup' && workspace === 'app-manager' && <PlatformWorkspaceSurface workspace="app-manager"><AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
             dashboardFolders={dashboardFolders}
@@ -3866,7 +3866,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
           />}
-          {route.kind === 'setup' && workspace === 'app-exchange' && <AppExchange
+          {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange"><AppExchange
             credentials={namedCredentials}
             flows={flows.map(({apiName,label,status,elements}) => ({
               apiName, label, status,
@@ -3891,7 +3891,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             loadHistory={loadAppCommunicationHistory}
             onOpenFlow={selectFlow}
             onOpenRecord={(objectName,id) => navigateRoute({kind:'record-detail', objectApiName:objectName, recordId:id})}
-          />}
+          /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
             const provider = connectorProviders.find((item) => item.connectorKey === route.resourceApiName) ?? connectorProviders[0];
             return provider ? <ConnectorSettingsWorkspace
@@ -3982,7 +3982,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             />
           )}
           {route.kind === 'setup' && workspace === 'company-settings' && <><CompanySettings canManage={canManageUserIdentities} /><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /><TenantEmailRecoverySettings canManage={canManageUserIdentities} /><TenantUserLockSettings /><AccountSessionSecurity onReauthenticate={onLogout} /><TenantSecurityAudit /></>}
-          {route.kind === 'setup' && workspace === 'tenant-management' && <TenantManagement request={apiRequest} permitted={canManagePlatformTenants} />}
+          {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'rbac' && <Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
@@ -6981,9 +6981,7 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
   </div>;
 }
 
-
 type TenantMfaMode = 'Off' | 'Optional' | 'Required';
-
 
 
 function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
@@ -10148,7 +10146,6 @@ function PageBuilder({
         </div>,
         externalPreviewTarget
       )}
-
 
       {!editorMode && <section className="page-manager-view" aria-label="Page management">
         <header className="page-manager-header"><div><h1>Page Builder</h1><p>Manage pages and their device layouts by related record or object.</p></div>
