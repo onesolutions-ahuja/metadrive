@@ -3057,7 +3057,7 @@ function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous
   if (entries.length) tenant.fieldHistory.push(...entries);
 }
 
-type MfaEncryptedSecret = { keyId: string; iv: string; authTag: string; ciphertext: string };
+export type MfaEncryptedSecret = { keyId: string; iv: string; authTag: string; ciphertext: string };
 export type LocalUser = {
   id: string;
   tenantId: string;
