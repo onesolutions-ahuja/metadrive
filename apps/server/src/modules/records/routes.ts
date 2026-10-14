@@ -4,7 +4,7 @@ import type { RecordRoutesDependencies, TenantData, RuntimeRecord, LocalUser, Pl
 import type { Principal } from '../../auth.js';
 
 export function registerRecordRoutes(deps: RecordRoutesDependencies): void {
-  const { app, accessAuthentication, accessControlSchema, recordShareSchema, recordActivitySchema, chatterCommentSchema, chatterPostSchema, appendFieldHistory, profileIdForRole, persistState, state, tenantIsActive, withSecurityEvent, tenantData, getPrincipal, principalUser, effectivePermissions, disableOnConnectorUninstall, assertConnectorLifecycleAccess, canOpenApp, hasObjectPermission, hasObjectWidePermission, queueContainsUser, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions, profileIdForPrincipal, resolveActiveLightningRecordPage, hasRecordTypeAccessForUser, applyRecordDefaults, persistTenantRecords, deleteRecordCascade, routeParam, formulaContextForUser, validateRuntimeRecord, runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows, calculateFormulaFields, sanitizeRecordValues, withCaseClosedDate, recordUnmodified, stampRecordAuditFields, recordActionEnabled, normalizeFlowRecordAssignments, validateRelationshipReparenting, waitForPersistedState, randomUUID, applyConnectorLifecycle, z, hashPassword } = deps;
+  const { app, accessAuthentication, accessControlSchema, recordShareSchema, recordActivitySchema, chatterCommentSchema, chatterPostSchema, appendFieldHistory, profileIdForRole, persistState, getState, setState, tenantIsActive, withSecurityEvent, tenantData, getPrincipal, principalUser, effectivePermissions, disableOnConnectorUninstall, assertConnectorLifecycleAccess, canOpenApp, hasObjectPermission, hasObjectWidePermission, queueContainsUser, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions, profileIdForPrincipal, resolveActiveLightningRecordPage, hasRecordTypeAccessForUser, applyRecordDefaults, persistTenantRecords, deleteRecordCascade, routeParam, formulaContextForUser, validateRuntimeRecord, runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows, calculateFormulaFields, sanitizeRecordValues, withCaseClosedDate, recordUnmodified, stampRecordAuditFields, recordActionEnabled, normalizeFlowRecordAssignments, validateRelationshipReparenting, waitForPersistedState, randomUUID, applyConnectorLifecycle, z, hashPassword } = deps;
 function canManageRecordShares(principal: Principal, tenant: TenantData, objectName: string, record: RuntimeRecord): boolean {
   return record.OwnerId === principal.userId
     || hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')
@@ -21,7 +21,7 @@ app.get('/api/records/:objectName/:recordId/shares', accessAuthentication, (req:
   if (!canManageRecordShares(principal, tenant, objectName, record)) {
     return res.status(403).json({ error: 'Only the record owner, a Modify All user, or a security administrator can manage record shares' });
   }
-  const users = new Map(state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => [user.id, user]));
+  const users = new Map(getState().users.filter((user) => user.tenantId === principal.tenantId).map((user) => [user.id, user]));
   const groups = new Map(tenant.accessControl.publicGroups.map((group) => [group.id, group]));
   const shares = tenant.recordShares
     .filter((share) => share.objectApiName === objectName && share.recordId === recordId)
@@ -53,7 +53,7 @@ app.post('/api/records/:objectName/:recordId/shares', accessAuthentication, (req
     }
   }).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'A target user or public group and Read or Edit access level are required' });
-  const targetUser = input.data.userId ? state.users.find((user) =>
+  const targetUser = input.data.userId ? getState().users.find((user) =>
     user.id === input.data.userId && user.tenantId === principal.tenantId && !user.disabled) : undefined;
   const targetGroup = input.data.groupId
     ? tenant.accessControl.publicGroups.find((group) => group.id === input.data.groupId) : undefined;
@@ -159,7 +159,7 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
     return res.status(400).json({ error: 'Invalid search query' });
   }
   const records = objectName === 'User'
-    ? state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => sanitizeRecordForRead(principal, tenant, object, ({
+    ? getState().users.filter((user) => user.tenantId === principal.tenantId).map((user) => sanitizeRecordForRead(principal, tenant, object, ({
         Id: user.id, Name: user.name, Email: user.email, Username: user.email, IsActive: !user.disabled,
         UserRoleId: user.role, CreatedDate: user.createdAt, LastModifiedDate: user.createdAt
       })))
@@ -249,7 +249,7 @@ app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Reques
     formFactor
   );
   if (objectName === 'User') {
-    const user = state.users.find((item) => item.id === routeParam(req, 'recordId') && item.tenantId === principal.tenantId);
+    const user = getState().users.find((item) => item.id === routeParam(req, 'recordId') && item.tenantId === principal.tenantId);
     if (!user) return res.status(404).json({ error: 'Record was not found' });
     const lightningPage = resolvePage();
     return res.json({ record: sanitizeRecordForRead(principal, tenant, object, ({
@@ -419,7 +419,7 @@ app.get('/api/records/:objectName/:recordId/history', accessAuthentication, (req
   const record = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
   if (!record || !hasRecordAccess(principal, tenant, objectName, record, 'Read')) return res.status(404).json({ error: 'Record was not found' });
   const fieldLabels = new Map(object.fields.map((field) => [field.apiName, field.label]));
-  const users = new Map(state.users.map((user) => [user.id, user.name]));
+  const users = new Map(getState().users.map((user) => [user.id, user.name]));
   const history = tenant.fieldHistory.filter((entry) => entry.objectApiName === objectName && entry.recordId === recordId
     && hasFieldPermission(principal, tenant, objectName, entry.fieldApiName, 'read'))
     .sort((left, right) => right.changedAt.localeCompare(left.changedAt))
@@ -468,7 +468,7 @@ app.post('/api/campaigns/:campaignId/members', accessAuthentication, (req: Reque
 });
 
 /**
- * User is a security identity backed by state.users and accessControl.users,
+ * User is a security identity backed by getState().users and accessControl.users,
  * not an ordinary tenant record. Keep these identities in sync and never
  * let generic record writes bypass authentication and security controls.
  */
@@ -501,7 +501,7 @@ app.post('/api/records/User', accessAuthentication, async (req: Request, res: Re
   if (input.Username.trim().toLowerCase() !== input.Email.trim().toLowerCase())
     return res.status(400).json({ error: 'Username must equal Email for tenant login' });
   const email = input.Email.trim().toLowerCase();
-  if (state.users.some((item) => item.email.toLowerCase() === email))
+  if (getState().users.some((item) => item.email.toLowerCase() === email))
     return res.status(409).json({ error: 'Email is already registered' });
   const role = userRoleFromValue(tenant, input.UserRoleId);
   if (!role) return res.status(400).json({ error: 'Select an existing tenant role' });
@@ -523,9 +523,9 @@ app.post('/api/records/User', accessAuthentication, async (req: Request, res: Re
   const nextAccess = { ...tenant.accessControl, users: [...tenant.accessControl.users, accessUser] };
   const validation = accessControlSchema.safeParse(nextAccess);
   if (!validation.success) return res.status(400).json({ error: 'Invalid User RBAC assignment', details: validation.error.flatten() });
-  const nextState: PlatformState = { ...state, users: [...state.users, identity],
-    tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, accessControl: validation.data } } };
-  try { persistState(nextState); state = nextState; }
+  const nextState: PlatformState = { ...getState(), users: [...getState().users, identity],
+    tenants: { ...getState().tenants, [principal.tenantId]: { ...tenant, accessControl: validation.data } } };
+  try { persistState(nextState); setState(nextState); }
   catch { return res.status(503).json({ error: 'Unable to persist user' }); }
   return res.status(201).json({ record: safeUserIdentity(identity) });
 });
@@ -534,7 +534,7 @@ app.put('/api/records/User/:recordId', accessAuthentication, (req: Request, res:
   const tenant = tenantData(principal.tenantId)!;
   if (!userWriteRight(principal, tenant, 'edit')) return res.status(403).json({ error: 'Missing User edit and security management permission' });
   const id = routeParam(req, 'recordId');
-  const existing = state.users.find((item) => item.id === id && item.tenantId === principal.tenantId);
+  const existing = getState().users.find((item) => item.id === id && item.tenantId === principal.tenantId);
   const existingAccess = tenant.accessControl.users.find((item) => item.id === id);
   if (!existing || !existingAccess) return res.status(404).json({ error: 'Tenant user was not found' });
   const parsed = userRecordEditSchema.safeParse(req.body);
@@ -543,7 +543,7 @@ app.put('/api/records/User/:recordId', accessAuthentication, (req: Request, res:
   const email = (values.Email ?? existing.email).trim().toLowerCase();
   if (values.Username && values.Username.trim().toLowerCase() !== email)
     return res.status(400).json({ error: 'Username must equal Email for tenant login' });
-  if (state.users.some((item) => item.id !== id && item.email.toLowerCase() === email))
+  if (getState().users.some((item) => item.id !== id && item.email.toLowerCase() === email))
     return res.status(409).json({ error: 'Email is already registered' });
   // System Administrator is a profile/seeded login role, not a hierarchy role.
   // An IsActive/name edit must not silently downgrade its assigned profile.
@@ -565,15 +565,15 @@ app.put('/api/records/User/:recordId', accessAuthentication, (req: Request, res:
   const validation = accessControlSchema.safeParse(nextAccess);
   if (!validation.success) return res.status(400).json({ error: 'Invalid user access configuration', details: validation.error.flatten() });
   const updatedTenant = { ...tenant, accessControl: validation.data };
-  const updatedUsers = state.users.map((item) => item.id === id ? changedIdentity : item);
+  const updatedUsers = getState().users.map((item) => item.id === id ? changedIdentity : item);
   if (!updatedUsers.some((item) => item.tenantId === principal.tenantId && !item.disabled
     && effectivePermissions(item, updatedTenant).includes('security:manage')))
     return res.status(409).json({ error: 'At least one active security administrator must remain' });
-  const nextState: PlatformState = { ...state, users: updatedUsers,
-    tenants: { ...state.tenants, [principal.tenantId]: updatedTenant },
-    refreshSessions: state.refreshSessions.map((session) => session.userId === id && (disabling || email !== existing.email || nextRoleName !== existing.role)
+  const nextState: PlatformState = { ...getState(), users: updatedUsers,
+    tenants: { ...getState().tenants, [principal.tenantId]: updatedTenant },
+    refreshSessions: getState().refreshSessions.map((session) => session.userId === id && (disabling || email !== existing.email || nextRoleName !== existing.role)
       ? { ...session, revokedAt: revocation } : session) };
-  try { persistState(nextState); state = nextState; }
+  try { persistState(nextState); setState(nextState); }
   catch { return res.status(503).json({ error: 'Unable to persist user changes' }); }
   return res.json({ record: safeUserIdentity(changedIdentity) });
 });
@@ -583,17 +583,17 @@ app.delete('/api/records/User/:recordId', accessAuthentication, (req: Request, r
   const tenant = tenantData(principal.tenantId)!;
   if (!userWriteRight(principal, tenant, 'delete')) return res.status(403).json({ error: 'Missing User delete and security management permission' });
   const id = routeParam(req, 'recordId');
-  const existing = state.users.find((item) => item.id === id && item.tenantId === principal.tenantId);
+  const existing = getState().users.find((item) => item.id === id && item.tenantId === principal.tenantId);
   if (!existing) return res.status(404).json({ error: 'Tenant user was not found' });
   if (existing.disabled) return res.status(409).json({ error: 'User is already inactive' });
   const revocation = Math.floor(Date.now() / 1000);
-  const updatedUsers = state.users.map((item) => item.id === id ? { ...item, disabled:true, authRevokedBefore:revocation } : item);
+  const updatedUsers = getState().users.map((item) => item.id === id ? { ...item, disabled:true, authRevokedBefore:revocation } : item);
   if (!updatedUsers.some((item) => item.tenantId === principal.tenantId && !item.disabled
     && effectivePermissions(item, tenant).includes('security:manage')))
     return res.status(409).json({ error: 'At least one active security administrator must remain' });
-  const nextState: PlatformState = { ...state, users:updatedUsers, refreshSessions:state.refreshSessions.map((session) =>
+  const nextState: PlatformState = { ...getState(), users:updatedUsers, refreshSessions:getState().refreshSessions.map((session) =>
     session.userId === id ? { ...session, revokedAt:revocation } : session) };
-  try { persistState(nextState); state = nextState; }
+  try { persistState(nextState); setState(nextState); }
   catch { return res.status(503).json({ error: 'Unable to deactivate user' }); }
   return res.status(204).end();
 });
@@ -607,7 +607,7 @@ function currentRecordCommitDenial(
   principal: Principal, objectName: string, action: 'create' | 'edit',
   submitted: Record<string, unknown>, opened?: RuntimeRecord
 ): {status: 403 | 404 | 412; error: string} | null {
-  const user = state.users.find(item => item.id === principal.userId
+  const user = getState().users.find(item => item.id === principal.userId
     && item.tenantId === principal.tenantId && !item.disabled);
   const tenant = tenantData(principal.tenantId);
   if (!user || !tenant || !tenantIsActive(principal.tenantId))
@@ -803,7 +803,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
     return res.status(403).json({ error: 'Edit is not enabled for this object or page layout' });
   }
-  const owner = state.users.find((user) => user.id === parsed.data.ownerId && user.tenantId === principal.tenantId && !user.disabled);
+  const owner = getState().users.find((user) => user.id === parsed.data.ownerId && user.tenantId === principal.tenantId && !user.disabled);
   const ownerQueue = tenant.accessControl.queues.find((queue) =>
     queue.id === parsed.data.ownerId && queue.supportedObjectApiNames.includes(objectName));
   if (!owner && !ownerQueue) return res.status(422).json({ error: 'The selected owner is not an active tenant user or eligible queue' });
@@ -934,7 +934,7 @@ app.post('/api/records/:objectName/:recordId/transfer-owner', accessAuthenticati
   if (!hasFieldPermission(principal, tenant, objectName, 'OwnerId', 'edit'))
     return res.status(403).json({ error: 'Missing OwnerId edit permission' });
   const ownerId = request.data.ownerId;
-  const targetUser = state.users.find((user) => user.id === ownerId
+  const targetUser = getState().users.find((user) => user.id === ownerId
     && user.tenantId === principal.tenantId && !user.disabled);
   const targetQueue = tenant.accessControl.queues.find((queue) =>
     queue.id === ownerId && queue.supportedObjectApiNames.includes(objectName));
