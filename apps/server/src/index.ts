@@ -4437,8 +4437,10 @@ if (!maintenanceMode) {
   let repaired = 0;
   for (const [tenantId, tenant] of Object.entries(state.tenants)) {
     if (!(tenant.records?.Connector_App__c ?? []).some(row =>
-      row.Installed__c === true && ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)) &&
-      installableAppCatalog.packages.some((pkg: { appKey: string }) => pkg.appKey === row.AppKey__c))) continue;
+      row.Installed__c === true &&
+      installableAppCatalog.packages.some((pkg: { appKey: string; installation?: { allowInstalledMetadataWithoutLicence?: boolean } }) =>
+        pkg.appKey === row.AppKey__c && (pkg.installation?.allowInstalledMetadataWithoutLicence === true
+          || ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)))))) continue;
     try {
       const installed = applyInstallableAppPackages(tenant, installableAppCatalog) as TenantData;
       if (JSON.stringify(installed) !== JSON.stringify(tenant)) {
