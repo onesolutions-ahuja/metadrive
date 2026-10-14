@@ -345,12 +345,6 @@
                   }
                 ]
               }
-            },
-            {
-              "id": 4,
-              "type": "End",
-              "label": "End",
-              "config": {}
             }
           ],
           "connectors": [
@@ -365,13 +359,6 @@
               "id": "send_log",
               "from": 2,
               "to": 3,
-              "kind": "normal",
-              "label": ""
-            },
-            {
-              "id": "log_end",
-              "from": 3,
-              "to": 4,
               "kind": "normal",
               "label": ""
             }
@@ -497,12 +484,6 @@
                   }
                 ]
               }
-            },
-            {
-              "id": 3,
-              "type": "End",
-              "label": "End",
-              "config": {}
             }
           ],
           "connectors": [
@@ -510,13 +491,6 @@
               "id": "start_assign",
               "from": 1,
               "to": 2,
-              "kind": "normal",
-              "label": ""
-            },
-            {
-              "id": "assign_end",
-              "from": 2,
-              "to": 3,
               "kind": "normal",
               "label": ""
             }
