@@ -202,6 +202,20 @@ for(const product of demoProducts){
   if(!record?.Id || record.SKU!==product.SKU || !record.CategoryId)
     throw Error('Product seed not verified: '+product.Name);
 }
+for(const group of demoModifierGroups){
+  if(!(await matchingRecord('ModifierGroup__c','Name',group.Name))?.Id)
+    throw Error('Modifier group seed not verified: '+group.Name);
+}
+for(const option of demoModifierOptions){
+  const record=await matchingRecord('ModifierOption__c','Name',option.Name);
+  if(!record?.Id || !record.GroupId)throw Error('Modifier option seed not verified: '+option.Name);
+}
+for(const assignment of demoModifierAssignments){
+  const name='Demo assignment: '+assignment.product+' / '+assignment.group;
+  const record=await matchingRecord('ProductModifierGroup__c','Name',name);
+  if(!record?.Id || !record.ProductId || !record.GroupId)
+    throw Error('Product modifier assignment not verified: '+name);
+}
 console.log(JSON.stringify({installed:true,createdObjects:created,
   verifiedObjects:expectedObjects,fixtureCategories:demoCategories.length,fixtureProducts:demoProducts.length,
   fixtureModifierGroups:demoModifierGroups.length,fixtureModifierOptions:demoModifierOptions.length,seededRecords,
