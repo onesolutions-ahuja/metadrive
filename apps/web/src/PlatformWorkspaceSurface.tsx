@@ -1,4 +1,4 @@
-import type {ReactNode} from 'react';
+import React,{type ReactNode} from 'react';
 import {platformNavigationEntries} from './platformWorkspaceMetadata';
 
 /** Shared, registry-resolved platform presentation wrapper.
