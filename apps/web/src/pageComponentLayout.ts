@@ -1,4 +1,4 @@
-import {appearanceNumberFields,appearanceColorFields,appearanceChoiceFields} from './metadataAppearanceSchema';
+import {appearanceNumberFields,appearanceColorFields,appearanceChoiceFields,responsiveNumberFields,responsiveOptionFields,responsiveColorFields,responsiveSettingKeys} from './metadataAppearanceSchema';
 import type { CSSProperties } from 'react';
 import type { PageComponentMetadata } from './metadata';
 
@@ -182,24 +182,12 @@ export function reparentComponent(
   });
 }
 
-const settingsKeys: LayoutSettingKey[] = [
-  'padding', 'margin', 'backgroundColor', 'borderColor', 'borderWidth',
-  'borderRadius', 'alignItems', 'justifyContent', 'gap', 'opacity', 'hidden',
-  'fontSize', 'fontWeight', 'textAlign', 'boxShadow'
-];
-const numberLimits: Partial<Record<LayoutSettingKey, [number, number]>> = {
-  padding: [0, 160], margin: [0, 160], borderWidth: [0, 24],
-  borderRadius: [0, 160], gap: [0, 160], opacity: [0, 100], fontSize: [8, 96]
-};
-const alignmentOptions: Record<string, string[]> = {
-  alignItems: ['stretch', 'flex-start', 'center', 'flex-end'],
-  justifyContent: ['flex-start', 'center', 'flex-end', 'space-between', 'space-around']
-};
-const typographyOptions: Partial<Record<LayoutSettingKey, string[]>> = {
-  fontWeight: ['400', '500', '600', '700', '800'],
-  textAlign: ['left', 'center', 'right', 'start', 'end'],
-  boxShadow: ['none', 'sm', 'md', 'lg']
-};
+const settingsKeys: readonly LayoutSettingKey[] = responsiveSettingKeys;
+const numberLimits: Partial<Record<LayoutSettingKey,[number,number]>> =
+  Object.fromEntries(responsiveNumberFields.map(({key,min,max})=>[key,[min,max]]));
+const supportedOptions: Partial<Record<LayoutSettingKey,readonly string[]>> =
+  Object.fromEntries(responsiveOptionFields.map(({key,options})=>[key,options]));
+const colorKeys = new Set<string>(responsiveColorFields.map(item=>item.key));
 const safeShadows: Record<string, string> = {
   none: 'none',
   sm: '0 1px 3px rgba(15, 23, 42, .12)',
@@ -210,11 +198,9 @@ const cssColorPattern = /^(transparent|#[0-9a-f]{3}(?:[0-9a-f]{3})?|rgba?\([0-9.
 
 export function validateLayoutSetting(key: LayoutSettingKey, value: unknown): string {
   if (key === 'hidden') return typeof value === 'boolean' ? '' : 'Must be true or false';
-  if (key === 'backgroundColor' || key === 'borderColor') return typeof value === 'string' && cssColorPattern.test(value)
+  if (colorKeys.has(key)) return typeof value === 'string' && cssColorPattern.test(value)
     ? '' : 'Choose a valid hex or RGB colour';
-  if (key in alignmentOptions) return typeof value === 'string' && alignmentOptions[key].includes(value)
-    ? '' : 'Choose a supported alignment';
-  if (typographyOptions[key]) return typeof value === 'string' && typographyOptions[key]?.includes(value)
+  if (supportedOptions[key]) return typeof value === 'string' && supportedOptions[key]?.includes(value)
     ? '' : 'Choose a supported appearance value';
   const limits = numberLimits[key];
   return limits && typeof value === 'number' && Number.isFinite(value) && value >= limits[0] && value <= limits[1]
