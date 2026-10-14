@@ -5508,6 +5508,7 @@ registerSessionSecurityRoutes({ app, accessAuthentication, requirePermission, ge
   persistState, revokeUserRefreshSessions, withSecurityEvent, effectivePermissions,
   clearRefreshCookie, userLoginFailures });
 
+let domainCommitUncertain = false;
 export const platformGovernanceContext = {
   app,
   jwtService,
@@ -5540,6 +5541,8 @@ export const platformGovernanceContext = {
   set state(next: PlatformState) { state = next; },
   get latestStateCommit() { return latestStateCommit; },
   set latestStateCommit(next: Promise<unknown>) { latestStateCommit = next; },
+  get provisioningCommitFailed() { return provisioningCommitFailed; },
+  set provisioningCommitFailed(next: boolean) { provisioningCommitFailed = next; },
   get domainCommitUncertain() { return domainCommitUncertain; },
   set domainCommitUncertain(next: boolean) { domainCommitUncertain = next; }
 };
