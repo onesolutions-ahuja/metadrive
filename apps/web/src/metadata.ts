@@ -711,6 +711,8 @@ export type ReportRunMetadata = {
 };
 
 export type LibraryComponentMetadata = {
+  /** Optional typed registry definitions; older published components retain legacy properties. */
+  propertyDefinitions?: import('./componentSettingDefinitions').ComponentSettingDefinition[];
   tenantId?: string;
   apiName: string;
   label: string;
