@@ -6,6 +6,8 @@ on:
       - '.github/workflows/kiosk-demo-live-seed.yml'
       - 'scripts/install-kiosk-demo-data.mjs'
       - 'scripts/kiosk-demo-fixtures.mjs'
+      - 'scripts/kiosk-commerce-capabilities.mjs'
+      - 'scripts/kiosk-commerce-basket.mjs'
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +25,7 @@ jobs:
         with:
           node-version: '22'
       - name: Verify seed fixtures
-        run: node --test scripts/kiosk-demo-fixtures.test.mjs
+        run: node --test scripts/kiosk-demo-fixtures.test.mjs scripts/kiosk-commerce-capabilities.test.mjs
       - name: Validate live endpoint and authorised seed credentials
         env:
           METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}

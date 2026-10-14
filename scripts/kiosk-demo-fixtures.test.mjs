@@ -2,13 +2,14 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {kioskObjectDefinitions,demoCategories,demoProducts} from './kiosk-demo-fixtures.mjs';
+import {customisationObjects} from './kiosk-commerce-capabilities.mjs';
 
 test('demo installer is inert unless operator explicitly approves',()=>{
   const run=spawnSync(process.execPath,['scripts/install-kiosk-demo-data.mjs'],{
     env:{...process.env,METADRIVE_DEMO_SEED_APPROVED:'false'},encoding:'utf8'
   });
   assert.equal(run.status,0,run.stderr);
-  assert.deepEqual(JSON.parse(run.stdout).objects,kioskObjectDefinitions.map(value=>value.apiName));
+  assert.deepEqual(JSON.parse(run.stdout).objects,[...kioskObjectDefinitions,...customisationObjects].map(value=>value.apiName));
 });
 test('all commerce objects use existing central Object Manager identity rules',()=>{
   const names=kioskObjectDefinitions.map(value=>value.apiName);

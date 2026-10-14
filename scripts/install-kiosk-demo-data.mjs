@@ -3,10 +3,12 @@
 // METADRIVE_DEMO_SEED_APPROVED=true node scripts/install-kiosk-demo-data.mjs
 // An omitted approval performs only a dry run and never touches a tenant.
 import {kioskObjectDefinitions,demoCategories,demoProducts} from './kiosk-demo-fixtures.mjs';
+import {customisationObjects,basketObjectExtensions,demoModifierGroups,demoModifierOptions,demoModifierAssignments} from './kiosk-commerce-capabilities.mjs';
+const allDefinitions=[...kioskObjectDefinitions,...customisationObjects];
 
 const base=(process.env.METADRIVE_API_URL ?? '').replace(/\/$/,'').replace(/\/api$/,'');
 const approved=process.env.METADRIVE_DEMO_SEED_APPROVED==='true';
-const expectedObjects=kioskObjectDefinitions.map(item=>item.apiName);
+const expectedObjects=allDefinitions.map(item=>item.apiName);
 if(!approved){
   console.log(JSON.stringify({mode:'dry-run',objects:expectedObjects,categories:demoCategories.length,products:demoProducts.length}));
   process.exit(0);
@@ -39,7 +41,7 @@ if(!existing.has('Sale__c'))throw Error('Existing Sale__c is required. No object
 // relationship and grants initial system-administrator object/field permissions.
 let created=0;
 let seededRecords=0;
-for(const definition of kioskObjectDefinitions){
+for(const definition of allDefinitions){
   if(existing.has(definition.apiName))continue;
   await api('/metadata/objects','POST',definition);
   existing.add(definition.apiName);created++;
@@ -61,7 +63,7 @@ if(!canSeed){
   const objectPermissions=Object.fromEntries(expectedObjects.map(name=>[name,{
     read:true,create:true,edit:true,delete:false,viewAll:false,modifyAll:false
   }]));
-  const fieldPermissions=Object.fromEntries(kioskObjectDefinitions.flatMap(object=>
+  const fieldPermissions=Object.fromEntries(allDefinitions.flatMap(object=>
     object.fields.map(field=>[object.apiName+'.'+field.apiName,{read:true,edit:true}])));
   const seedSet={
     ...(existingSet??{
@@ -164,9 +166,33 @@ for(const product of demoProducts){
     ...(priceRequired?{Price__c:values.DefaultPrice}:{})
   });
 }
+// Seed only standalone product customisation metadata, not fake transactions.
+const groupIds=new Map();
+for(const group of demoModifierGroups){
+  const record=await upsertDemo('ModifierGroup__c','Name',group);
+  groupIds.set(group.Name,record.Id);
+}
+for(const option of demoModifierOptions){
+  const {group,...values}=option;
+  await upsertDemo('ModifierOption__c','Name',{...values,GroupId:groupIds.get(group)});
+}
+for(const assignment of demoModifierAssignments){
+  const product=await matchingRecord('Product__c','Name',assignment.product);
+  const groupId=groupIds.get(assignment.group);
+  if(!product?.Id||!groupId)throw Error('Missing product or group assignment');
+  await upsertDemo('ProductModifierGroup__c','Name',{
+    Name:'Demo assignment: '+assignment.product+' / '+assignment.group,
+    ProductId:product.Id,GroupId:groupId
+  });
+}
 const observed=await api('/metadata/objects');
 const installed=new Set((observed.objects??[]).map(item=>item.apiName));
 for(const name of expectedObjects)if(!installed.has(name))throw Error('Object activation not verified: '+name);
+for(const [name,fields] of Object.entries(basketObjectExtensions)){
+  const current=observed.objects.find(item=>item.apiName===name);
+  if(!current||fields.some(field=>!current.fields.some(existing=>existing.apiName===field.apiName)))
+    throw Error('Basket metadata fields not installed on '+name);
+}
 for(const category of demoCategories){
   const record=await matchingRecord('ProductCategory__c','Name',category.Name);
   if(!record?.Id)throw Error('Category seed not verified: '+category.Name);
@@ -176,6 +202,21 @@ for(const product of demoProducts){
   if(!record?.Id || record.SKU!==product.SKU || !record.CategoryId)
     throw Error('Product seed not verified: '+product.Name);
 }
+for(const group of demoModifierGroups){
+  if(!(await matchingRecord('ModifierGroup__c','Name',group.Name))?.Id)
+    throw Error('Modifier group seed not verified: '+group.Name);
+}
+for(const option of demoModifierOptions){
+  const record=await matchingRecord('ModifierOption__c','Name',option.Name);
+  if(!record?.Id || !record.GroupId)throw Error('Modifier option seed not verified: '+option.Name);
+}
+for(const assignment of demoModifierAssignments){
+  const name='Demo assignment: '+assignment.product+' / '+assignment.group;
+  const record=await matchingRecord('ProductModifierGroup__c','Name',name);
+  if(!record?.Id || !record.ProductId || !record.GroupId)
+    throw Error('Product modifier assignment not verified: '+name);
+}
 console.log(JSON.stringify({installed:true,createdObjects:created,
-  verifiedObjects:expectedObjects,fixtureCategories:demoCategories.length,fixtureProducts:demoProducts.length,seededRecords,
+  verifiedObjects:expectedObjects,fixtureCategories:demoCategories.length,fixtureProducts:demoProducts.length,
+  fixtureModifierGroups:demoModifierGroups.length,fixtureModifierOptions:demoModifierOptions.length,seededRecords,
   rbac:'Enforced by authenticated Object and Record APIs'}));
