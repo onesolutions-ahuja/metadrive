@@ -1,3 +1,4 @@
+import { validateRelationshipReparenting, validateRequiredRecordFields } from './modules/records/field-rules.js';
 import { validateObjectLayoutProfileAssignments, pageComponentFeatureEnabled } from './modules/objects/metadata-validation.js';
 import { resolvePageAssignment } from './modules/pages/page-assignment.js';
 import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-properties.js';
@@ -15617,20 +15618,7 @@ function normalizeFlowRecordAssignments(object: ObjectMetadata, record: RuntimeR
   return normalized;
 }
 
-function validateRelationshipReparenting(
-  object: ObjectMetadata,
-  previous: RuntimeRecord,
-  next: RuntimeRecord
-): void {
-  for (const field of object.fields) {
-    if (field.relationship?.type !== 'Master-Detail' || field.relationship.allowReparenting === true) continue;
-    const previousParentId = previous[field.apiName];
-    const nextParentId = next[field.apiName];
-    if (previousParentId !== undefined && previousParentId !== nextParentId) {
-      throw new Error(`Master-detail relationship "${field.label}" does not allow reparenting.`);
-    }
-  }
-}
+
 
 function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, current?: RuntimeRecord): void {
   const fields = new Map(object.fields.map((field) => [field.apiName, field]));
@@ -15735,12 +15723,7 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
       : filterMatches.every(Boolean);
     if (!matches) throw new Error(`Related record does not satisfy required lookup filters for "${fieldApiName}".`);
   }
-  for (const field of object.fields) {
-    const value = values[field.apiName] ?? current?.[field.apiName];
-    if (field.required && !field.formula && (value === undefined || value === null || value === '')) {
-      throw new Error(`Required field "${field.apiName}" is missing.`);
-    }
-  }
+  validateRequiredRecordFields(object.fields, values, current);
 }
 
 type FlowExecutionResult =
