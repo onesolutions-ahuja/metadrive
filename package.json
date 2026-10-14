@@ -27,6 +27,8 @@
     "test:flow-screen-datatable": "node --test scripts/md10-flow-screen-datatable.test.mjs",
     "test:modern-canvas": "tsx --test scripts/md10-modern-canvas-contract.test.mjs",
     "audit:architecture": "node scripts/audit-platform-architecture.mjs --output .artifacts/architecture-inventory.json",
-    "test:architecture-audit": "node --test scripts/audit-platform-architecture.test.mjs"
+    "test:architecture-audit": "node --test scripts/audit-platform-architecture.test.mjs",
+    "audit:components": "node scripts/audit-component-registry.mjs --output .artifacts/component-registry-inventory.json",
+    "test:component-audit": "node --test scripts/audit-component-registry.test.mjs"
   }
 }
