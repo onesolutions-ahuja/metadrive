@@ -123,7 +123,7 @@ export function applyInstallableAppPackages(tenant, catalog) {
         const objectPermissions = {...(administrator.objectPermissions ?? {})};
         const fieldPermissions = {...(administrator.fieldPermissions ?? {})};
         let repaired = false;
-        const required = pkg.profile?.objectPermissions ?? {};
+        const required = pkg.installation?.administratorObjectPermissions ?? pkg.profile?.objectPermissions ?? {};
         for (const [objectApiName, templateRights] of Object.entries(required)) {
           const object = objects.find(candidate => candidate.apiName === objectApiName);
           if (!object) continue;
