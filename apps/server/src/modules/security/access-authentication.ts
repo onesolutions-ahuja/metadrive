@@ -17,13 +17,13 @@ export interface AccessAuthenticationDependencies {
 export function createAccessAuthentication(deps: AccessAuthenticationDependencies) {
   const { jwtService, tenantIsActive, requestTenantMatches, mfaRequiredForUser, effectivePermissions } = deps;
   return function accessAuthentication(req: Request, res: Response, next: NextFunction): void {
-    const state = deps.getState();
   const token = bearerToken(req);
   if (!token) {
     res.status(401).json({ error: 'Bearer access token required' });
     return;
   }
   void jwtService.verify(token).then((claims) => {
+    const state = deps.getState();
     const tokenId = claims.jti;
     const tenantId = claims.tenant_id;
     const userId = claims.sub;
