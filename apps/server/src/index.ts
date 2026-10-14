@@ -1,3 +1,4 @@
+import { validateRuntimeRecord as validateMetadataRecord } from './modules/records/runtime-validation.js';
 import { matchesRelatedLookupFilter, validateGeolocationValue } from './modules/records/record-constraints.js';
 import { calculateFormulaFields } from './modules/records/formula-fields.js';
 import { sanitizeRecordValues, withCaseClosedDate, recordUnmodified } from './modules/records/record-input.js';
@@ -699,7 +700,7 @@ const relatedLookupFilterSchema = z.object({
   valueFieldApiName: z.string().min(1).optional(),
   required: z.boolean()
 });
-type RelatedLookupFilterMetadata = z.infer<typeof relatedLookupFilterSchema>;
+export type RelatedLookupFilterMetadata = z.infer<typeof relatedLookupFilterSchema>;
 const objectActionSchema = z.object({
   id: z.string().min(1),
   label: z.string().trim().min(1).max(80),
@@ -2460,7 +2461,7 @@ const accessControlSchema = z.object({
   }
 });
 
-type ObjectMetadata = z.infer<typeof objectSchema>;
+export type ObjectMetadata = z.infer<typeof objectSchema>;
 function isNumericField(field: { dataType: string; formula?: { returnType: string } } | undefined): boolean {
   const numericTypes = /^(Number|Currency|Percent)(\(|$)/;
   return Boolean(field && (numericTypes.test(field.dataType)
@@ -2607,7 +2608,7 @@ type AccessRole = z.infer<typeof roleSchema>;
 type PublicGroup = z.infer<typeof publicGroupSchema>;
 type RecordQueue = z.infer<typeof queueSchema>;
 type SharingRule = z.infer<typeof sharingRuleSchema>;
-type RuntimeRecord = z.infer<typeof runtimeRecordSchema>;
+export type RuntimeRecord = z.infer<typeof runtimeRecordSchema>;
 function sanitizeDashboardRichText(value: string): string {
   return sanitizeHtml(value, {
     allowedTags: ['a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'hr', 'i', 'li', 'ol', 'p', 'small', 'span', 'strong', 'sub', 'sup', 'u', 'ul'],
@@ -3020,7 +3021,7 @@ type SecurityAuditEvent = {
   id: string; at: string; actorUserId: string; action: string;
   targetUserId?: string; details?: Record<string, string>;
 };
-type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string; policy?: unknown }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+export type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string; policy?: unknown }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
 const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'Records', label: 'Records', description: 'Browse and manage customer records.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
   { apiName: 'SalesApp', label: 'Sales', description: 'Manage sales accounts and opportunities.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
@@ -15302,98 +15303,7 @@ function formulaContextForUser(tenant: TenantData, userId: string): {
 
 
 function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, current?: RuntimeRecord): void {
-  const fields = new Map(object.fields.map((field) => [field.apiName, field]));
-  const recordTypeId = values.RecordTypeId ?? current?.RecordTypeId
-    ?? object.recordTypes?.find((recordType) => recordType.isDefault && recordType.active)?.id;
-  if (object.recordTypes?.length) {
-    if (typeof recordTypeId !== 'string' || !object.recordTypes.some((recordType) => recordType.id === recordTypeId && recordType.active)) {
-      throw new Error(`Record type "${String(recordTypeId ?? '')}" is not active on "${object.apiName}".`);
-    }
-  }
-  for (const [fieldName, value] of Object.entries(values)) {
-    if (fieldName === 'RecordTypeId') continue;
-    const field = fields.get(fieldName);
-    if (!field) throw new Error(`Field "${fieldName}" does not exist on "${object.apiName}".`);
-    if (fieldName === 'CurrencyIsoCode' && value !== undefined && value !== null
-      && !tenant.currencySettings.currencies.some((currency) => currency.currencyIsoCode === value)) {
-      throw new Error(`Currency "${String(value)}" is not active for this tenant.`);
-    }
-    if (field.formula) throw new Error(`Formula field "${fieldName}" is read-only.`);
-    if (field.dataType === 'Geolocation') validateGeolocationValue(field.label, value);
-    if ((field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist')
-      && value !== undefined && value !== null) {
-      const recordType = object.recordTypes?.find((item) => item.id === recordTypeId);
-      const recordTypeValues = recordType?.picklistValues?.[fieldName];
-      const allowedValues = recordTypeValues ?? field.picklistValues;
-      const submittedValues = field.dataType === 'Multi-Select Picklist' ? String(value).split(';').filter(Boolean) : [String(value)];
-      if (field.dataType === 'Multi-Select Picklist'
-        && String(value) !== ''
-        && (String(value).split(';').some((item) => item.length === 0) || new Set(submittedValues).size !== submittedValues.length)) {
-        throw new Error(`Field "${field.label}" contains an empty or repeated selection.`);
-      }
-      if (field.picklistRestricted && (recordTypeValues !== undefined || field.picklistValues !== undefined)
-        && submittedValues.some((item) => !allowedValues?.includes(item))) {
-        throw new Error(`Value "${String(value)}" contains an inactive picklist option for record type "${recordType?.label ?? recordTypeId ?? 'default'}" on "${field.label}".`);
-      }
-    }
-    if (field.unique && value !== undefined && value !== null
-      && uniqueFieldValueKey(field, current?.[fieldName]) !== uniqueFieldValueKey(field, value)) {
-      if (tenant.records[object.apiName]?.some((record) =>
-        record.Id !== current?.Id && uniqueFieldValueKey(field, record[fieldName]) === uniqueFieldValueKey(field, value))) {
-        throw new Error(`Value for unique field "${fieldName}" already exists.`);
-      }
-    }
-    if (field.relationship && value !== undefined && value !== null) {
-      const queueOwner = field.apiName === 'OwnerId' && field.relationship.targetObject === 'User'
-        ? tenant.accessControl.queues.some((queue) =>
-          queue.id === value && queue.supportedObjectApiNames.includes(object.apiName))
-        : false;
-      const targetExists = queueOwner || (field.relationship.targetObject === 'User'
-        ? state.users.some((user) => user.id === value && user.tenantId === tenantId && !user.disabled)
-        : tenant.records[field.relationship.targetObject]?.some((record) => record.Id === value) ?? false);
-      if (!targetExists) throw new Error(`Related record "${String(value)}" does not exist in "${field.relationship.targetObject}".`);
-    }
-  }
-  for (const field of object.fields) {
-    if (!field.controllerFieldApiName) continue;
-    const dependentValue = values[field.apiName] ?? current?.[field.apiName];
-    if (dependentValue === undefined || dependentValue === null || dependentValue === '') continue;
-    const controllerValue = values[field.controllerFieldApiName] ?? current?.[field.controllerFieldApiName];
-    const allowedValues = controllerValue === undefined || controllerValue === null || controllerValue === ''
-      ? []
-      : field.valueSettings?.[String(controllerValue)] ?? [];
-    const selectedDependentValues = field.dataType === 'Multi-Select Picklist'
-      ? String(dependentValue).split(';').filter(Boolean)
-      : [String(dependentValue)];
-    if (selectedDependentValues.some((value) => !allowedValues.includes(value))) {
-      throw new Error(`Value "${String(dependentValue)}" is not allowed for "${field.label}" when "${field.controllerFieldApiName}" is "${String(controllerValue ?? '')}".`);
-    }
-  }
-  const requiredFiltersByField = new Map<string, RelatedLookupFilterMetadata[]>();
-  for (const filter of object.relatedLookupFilters ?? []) {
-    if (!filter.required) continue;
-    requiredFiltersByField.set(filter.fieldApiName, [...(requiredFiltersByField.get(filter.fieldApiName) ?? []), filter]);
-  }
-  for (const [fieldApiName, filters] of requiredFiltersByField) {
-    const relatedId = values[fieldApiName] ?? current?.[fieldApiName];
-    if (relatedId === undefined || relatedId === null || relatedId === '') continue;
-    const relatedRecord = tenant.records[filters[0].relatedObject]?.find((record) => record.Id === relatedId);
-    if (!relatedRecord) continue;
-    const filterMatches = filters.map((filter) => {
-      const actual = relatedRecord[filter.relatedFieldApiName];
-      const expected = filter.valueFieldApiName
-        ? Object.hasOwn(values, filter.valueFieldApiName)
-          ? values[filter.valueFieldApiName]
-          : current?.[filter.valueFieldApiName]
-        : filter.value;
-      return matchesRelatedLookupFilter(actual, expected, filter.operator);
-    });
-    const matches = object.relatedLookupFilterLogic?.[fieldApiName] === 'Any'
-      ? filterMatches.some(Boolean)
-      : filterMatches.every(Boolean);
-    if (!matches) throw new Error(`Related record does not satisfy required lookup filters for "${fieldApiName}".`);
-  }
-  validateRequiredRecordFields(object.fields, values, current);
+  validateMetadataRecord(tenantId, tenant, object, values, current, state.users);
 }
 
 type FlowExecutionResult =
