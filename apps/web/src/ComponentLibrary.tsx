@@ -232,6 +232,11 @@ export default function ComponentLibrary({
           <select className="form-control" aria-label="Property type" value={definition.kind} onChange={event => updateDefinition(index,{kind:event.target.value as typeof definition.kind})}>
             {['TEXT','NUMBER','BOOLEAN','COLOR','IMAGE','SELECT','OBJECT_FIELD','FLOW','CURRENCY'].map(kind => <option key={kind} value={kind}>{kind}</option>)}
           </select>
+          {definition.kind === 'BOOLEAN' ? <label className="checkbox-row"><input type="checkbox" checked={definition.defaultValue === true} onChange={event => updateDefinition(index,{defaultValue:event.target.checked})}/>Default enabled</label> :
+            <input className="form-control" aria-label="Default property value" type={['NUMBER','CURRENCY'].includes(definition.kind) ? 'number' : 'text'} value={definition.defaultValue === undefined ? '' : String(definition.defaultValue)}
+              onChange={event => updateDefinition(index,{defaultValue:event.target.value === '' ? undefined : ['NUMBER','CURRENCY'].includes(definition.kind) ? Number(event.target.value) : event.target.value})}/>}
+          {definition.kind === 'SELECT' && <input className="form-control" aria-label="Choices separated by commas" value={(definition.choices ?? []).map(choice => choice.key).join(',')}
+            onChange={event => updateDefinition(index,{choices:event.target.value.split(',').map(value => value.trim()).filter(Boolean).map(key => ({key,label:key}))})}/>}
           <label className="checkbox-row"><input type="checkbox" checked={definition.required ?? false} onChange={event => updateDefinition(index,{required:event.target.checked})}/>Required</label>
           <label className="checkbox-row"><input type="checkbox" checked={definition.isBindable ?? false} onChange={event => updateDefinition(index,{isBindable:event.target.checked})}/>Allow data binding</label>
           <button type="button" className="btn btn-small" onClick={() => setPropertyDefinitions(items => items.filter((_,i) => i !== index))}>Remove</button>
