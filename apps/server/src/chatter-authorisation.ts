@@ -27,9 +27,20 @@ export function canAccessChatterRecord(
   record: ChatterRow, operation: ChatterOperation
 ): boolean {
   if (!isWhatsAppMessage(record)) return false;
+  const channelAccountId = asText(record.Channel_Account__c);
+  const number = asText(String(record.Direction__c).toLowerCase() === 'incoming'
+    ? record.From_Number__c : record.To_Number__c);
+  // Assignment belongs to the conversation, not a historical message.
+  // Resolve the latest record to keep old messages visible after reassignment.
+  const latest = (tenant.records.Communication_Records__c ?? [])
+    .filter(row => isWhatsAppMessage(row)
+      && asText(row.Channel_Account__c) === channelAccountId
+      && asText(String(row.Direction__c).toLowerCase() === 'incoming'
+        ? row.From_Number__c : row.To_Number__c) === number)
+    .sort((a,b)=>asText(b.Occurred_At__c||b.CreatedDate)
+      .localeCompare(asText(a.Occurred_At__c||a.CreatedDate)))[0];
   return canAccessChatterConversation(chatterScopeForUser(tenantId,userId,tenant), {
-    tenantId,
-    channelAccountId: asText(record.Channel_Account__c),
-    assignedUserId: asText(record.Assigned_User__c) || null
+    tenantId, channelAccountId,
+    assignedUserId: asText(latest?.Assigned_User__c) || null
   }, operation);
 }
