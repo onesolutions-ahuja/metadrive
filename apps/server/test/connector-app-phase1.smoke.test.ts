@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -113,8 +114,10 @@ test('AppExchange installation and trial run using stored metadata flows', async
     assert.equal(before.status,200,JSON.stringify(before.data));
     const records=before.data.records as Array<Record<string,any>>;
     assert.equal(records.length,5);
-    assert.equal(records.some(x=>x.AppKey__c==='kiosk'),false);
-    assert.equal(records.some(x=>x.AppKey__c==='pos'),false);
+    const catalog=JSON.parse(readFileSync(new URL('../data/installable-app-packages.json',import.meta.url),'utf8'));
+    const retiredKeys=new Set((catalog.retiredPackages??[]).map((pkg:{appKey:string})=>pkg.appKey));
+    assert.equal(records.some(row=>retiredKeys.has(row.AppKey__c)),false,
+      'Retired packages must not be exposed as installable connector apps');
     assert.equal(new Set(records.map(x=>x.AppKey__c)).size,records.length,'AppExchange package keys must be unique');
     const app=records.find(x=>x.AppKey__c==='xero');
     assert.ok(app);

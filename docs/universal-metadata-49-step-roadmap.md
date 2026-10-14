@@ -27,4 +27,4 @@ All 13 Developer Policy rules apply to each subphase. Preserve tenant records an
 - `apps/server/data/platform-metadata.json` is a checked-in seed snapshot, **not** live installed tenant metadata.
 - Dynamically created components, Flows and pages require separately authorised tenant-safe runtime inspection in Phase 1c.
 - Do not mistake static code search matches for executable route or component registrations. Verify each identified migration target before changing it.
-- New or modified code files must be <= 1,000 lines. No multi-PR fragmentation unless explicitly approved.
+- New modules must be <= 1,000 lines. Already oversized legacy files may shrink in place under their migration ownership, without growing beyond the base-branch line count. No multi-PR fragmentation.

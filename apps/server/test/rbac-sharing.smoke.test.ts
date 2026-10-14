@@ -2793,9 +2793,9 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal(savedFreeCanvasPage.data.page.canvasWidth, 1280);
     assert.equal(savedFreeCanvasPage.data.page.canvasHeight, 800);
     assert.deepEqual(savedFreeCanvasPage.data.page.components[0].position, { x: 100, y: 120, width: 640, height: 320 });
-    const kioskHomePage = await api.send('/apps/Records/home-page?formFactor=Desktop', adminToken);
-    assert.equal(kioskHomePage.status, 200, JSON.stringify(kioskHomePage.data));
-    assert.equal(kioskHomePage.data.page.apiName, 'MD07_Free_Canvas',
+    const recordHomePage = await api.send('/apps/Records/home-page?formFactor=Desktop', adminToken);
+    assert.equal(recordHomePage.status, 200, JSON.stringify(recordHomePage.data));
+    assert.equal(recordHomePage.data.page.apiName, 'MD07_Free_Canvas',
       'an app-assigned Home Page Free Canvas must be resolvable for generic runtime');
     assert.equal((await api.send('/metadata/pages/MD07_Free_Canvas_Out_Of_Bounds', adminToken, 'PUT', {
       ...freeCanvasPage,

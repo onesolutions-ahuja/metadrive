@@ -9,10 +9,10 @@ const fixture=()=>({
       records:{Product__c:[{Id:'rec1',Price__c:13.5,Active__c:false,Stock__c:0,Notes__c:null}], Empty__c:[]},
       flows:[
         {apiName:'ONE_WhatsApp',versions:[{number:20,status:'Inactive',elements:[{config:{message:'Hello\nWorld'}}]},{number:21,status:'Active',elements:[]}],activeVersion:21},
-        {apiName:'Kiosk',status:'Inactive',elements:[]}
+        {apiName:'Example',status:'Inactive',elements:[]}
       ],
       namedCredentials:[{secrets:{accessToken:'encrypted-do-not-display'},disabled:false}],
-      pages:[{apiName:'Kiosk',slots:[],showModal:false}],
+      pages:[{apiName:'Example',slots:[],showModal:false}],
       accessControl:{profiles:[],sharedWith:null},
       settings:{'__proto__':'value',x:0.001,percent:0.05},
       emptyObject:{}, emptyArray:[],nullable:null

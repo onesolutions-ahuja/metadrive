@@ -26,6 +26,20 @@ function readTrustedAsset(root, path) {
   return readFileSync(full, 'utf8');
 }
 
+/** Drop obsolete global bundles only when metadata opts into retirement.
+ * Never strip tenant-owned or currently packaged registrations. */
+export function pruneRetiredTrustedComponents(library, catalog) {
+  const activeNames = new Set((catalog?.packages ?? [])
+    .flatMap(pkg => pkg.components ?? []).map(component => component.apiName));
+  const prefixes = (catalog?.retiredTrustedComponentPrefixes ?? [])
+    .filter(prefix => typeof prefix === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(prefix));
+  return library.filter(item => !(
+    item?.trustedBundled === true && item.tenantId == null &&
+    !activeNames.has(item.apiName) &&
+    prefixes.some(prefix => typeof item.apiName === 'string' && item.apiName.startsWith(prefix))
+  ));
+}
+
 /**
  * Metadata-driven component registration. Keep existing trusted-bundle version
  * rules: tenant-owned and newer components are never overwritten.
@@ -35,15 +49,7 @@ export function ensureBundledAppComponents(library, tenant, catalog, bundledRoot
   // Historical removals are supplied by the versioned package catalog,
   // never by app-name conditions inside the shared registry engine.
   const descriptors = [...installedComponentDescriptors(tenant, catalog)];
-  const activeNames = new Set(descriptors.map(item => item.apiName));
-  const retiredPrefixes = (Array.isArray(catalog?.retiredTrustedComponentPrefixes)
-    ? catalog.retiredTrustedComponentPrefixes : [])
-    .filter(prefix => typeof prefix === 'string' && /^[A-Za-z][A-Za-z0-9_]*$/.test(prefix));
-  const result = library.filter(item => !(
-    item?.trustedBundled === true && item.tenantId == null &&
-    !activeNames.has(item.apiName) &&
-    retiredPrefixes.some(prefix => typeof item.apiName === 'string' && item.apiName.startsWith(prefix))
-  ));
+  const result = pruneRetiredTrustedComponents(library, catalog);
   const root = resolve(bundledRoot);
   const positions = new Map(result.map((component, index) => [component.apiName, index]));
   for (const descriptor of descriptors) {

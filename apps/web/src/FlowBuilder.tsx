@@ -1210,7 +1210,7 @@ export default function FlowBuilder({
             setNewFlowLabel('');
           }
         }}
-        placeholder="For example, Start Kiosk Order" />
+        placeholder="For example, Send Appointment Reminder" />
       <button className="btn btn-brand" type="button" disabled={!newFlowLabel.trim()}
         onClick={() => {
           onCreateFlow(newFlowLabel.trim(), newFlowType);

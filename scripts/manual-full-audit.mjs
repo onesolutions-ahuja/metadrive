@@ -21,7 +21,7 @@ if (base.pathname.indexOf('/une/') !== 0 && base.hostname !== 'localhost') throw
 
 const profiles = [
   { name: 'desktop', viewport: { width: 1440, height: 900 } },
-  { name: 'till-15-inch', viewport: { width: 1920, height: 1080 }, hasTouch: true },
+  { name: 'large-touch-display', viewport: { width: 1920, height: 1080 }, hasTouch: true },
   { name: 'tablet', viewport: { width: 820, height: 1180 }, isMobile: true, hasTouch: true },
   { name: 'phone', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
   { name: 'phone-landscape', viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true },
@@ -34,7 +34,6 @@ const routes = [
   ['Object Manager', 'une/setup/object-manager'],
   ['Flow Builder', 'une/setup/flow-builder'],
   ['Page Builder', 'une/setup/page-builder'],
-  ['Kiosk Page Builder', 'une/setup/page-builder/UNE_KIOSK'],
   ['Dashboard Builder', 'une/setup/dashboard-builder'],
   ['Report Builder', 'une/setup/report-builder'],
   ['Component Library', 'une/setup/component-library'],
@@ -378,14 +377,14 @@ async function run() {
           s.layout = await collectLayout(page);
           // Regression checks for the defects recorded in PRs #119, #121 and #123.
           // Read-only geometry checks; never click business actions or reveal field values.
-          if (name === 'Component Library' || name === 'Page Builder' || name === 'Kiosk Page Builder') {
+          if (name === 'Component Library' || name === 'Page Builder') {
             s.checks.favouriteTargets = await page.locator('.component-favourite:visible').evaluateAll(nodes =>
               nodes.map(node => { const r = node.getBoundingClientRect(); return { width: r.width, height: r.height }; })
             );
             if (s.checks.favouriteTargets.some(r => r.width < limits.preferredTouchPx || r.height < limits.preferredTouchPx))
               findIssue(s.issues, 'FAVOURITE_TARGET_BELOW_44PX', 'medium', 'Visible favourite action is smaller than 44x44px');
           }
-          if (name === 'Page Builder' || name === 'Kiosk Page Builder') {
+          if (name === 'Page Builder') {
             s.checks.builderToolbar = await page.locator('.builder-titlebar > .toolbar-actions:visible').evaluateAll(nodes =>
               nodes.map(node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right }; })
             );

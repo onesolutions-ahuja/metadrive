@@ -11,12 +11,12 @@ test('unmodified global legacy component can be adopted without name special cas
 });
 
 test('retirement is catalog-driven and preserves tenant components', () => {
-  const shared = {apiName:'KioskOldBundle',trustedBundled:true,tenantId:null};
+  const shared = {apiName:'RetiredOldBundle',trustedBundled:true,tenantId:null};
   const tenantOwned = {...shared,tenantId:'tenant-1'};
   const customer = {...shared,trustedBundled:false};
   const other = {apiName:'AnotherBundle',trustedBundled:true,tenantId:null};
   const library = [shared,tenantOwned,customer,other];
-  const catalog = {packages:[],retiredTrustedComponentPrefixes:['Kiosk']};
+  const catalog = {packages:[],retiredTrustedComponentPrefixes:['Retired']};
   assert.deepEqual(ensureBundledAppComponents(library,{records:{}},catalog,'.'),[tenantOwned,customer,other]);
   assert.deepEqual(ensureBundledAppComponents(library,{records:{}},{packages:[]},'.'),library);
 });

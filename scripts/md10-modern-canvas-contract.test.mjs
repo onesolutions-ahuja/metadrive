@@ -36,5 +36,5 @@ test('drag and layer lock use design metadata, not application actions', () => {
   assert.match(src, /Lock component position and size/);
   assert.match(src, /canvasLocked/);
   assert.match(src, /reorderLayer/);
-  assert.match(src, /onLayoutChange:/);
+  assert.match(src, /updateComponent\(start\.id, \{ position:/);
 });

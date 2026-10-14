@@ -56,8 +56,8 @@ import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
-import { applyInstallableAppPackages } from './installable-app-packages.mjs';
-import { ensureBundledAppComponents } from './bundled-app-components.mjs';
+import { applyInstallableAppPackages, retireUninstalledPackageMetadata, repairHistoricPackageRecordAudits } from './installable-app-packages.mjs';
+import { ensureBundledAppComponents, pruneRetiredTrustedComponents } from './bundled-app-components.mjs';
 import { bundledLegacyMigrationDecision } from './bundled-component-migration.mjs';
 import postcss from 'postcss';
 import selectorParser from 'postcss-selector-parser';
@@ -4044,21 +4044,7 @@ function loadState(sqlState?: unknown): PlatformState {
   try {
     const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
     const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
-    // Earlier signed Kiosk demo seeds omitted the record audit timestamps.
-    // Heal only known demo record IDs before strict schema validation so
-    // production can start and persist the recovered state.
-    let kioskDemoAuditRepaired = false;
-    const tenantState = (storedState as { tenants?: Record<string, { records?: Record<string, Array<Record<string, unknown>>> }> })?.tenants;
-    for (const tenant of Object.values(tenantState ?? {})) {
-      for (const objectName of ['Product', 'ProductCategory']) {
-        for (const record of tenant?.records?.[objectName] ?? []) {
-          if (!/^a9130000-0000-4000-8000-00000000000[1-9]$/.test(String(record.Id ?? ''))) continue;
-          const now = new Date().toISOString();
-          if (!record.CreatedDate) { record.CreatedDate = now; kioskDemoAuditRepaired = true; }
-          if (!record.LastModifiedDate) { record.LastModifiedDate = now; kioskDemoAuditRepaired = true; }
-        }
-      }
-    }
+    const legacySeedAuditRepaired = repairHistoricPackageRecordAudits(storedState, installableAppCatalog);
     const parsed = parsePersistedPlatformState(storedState);
     const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
       const consolidationReady = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
@@ -4328,8 +4314,10 @@ function loadState(sqlState?: unknown): PlatformState {
     const migrated: PlatformState = {
       ...parsed,
       users: parsed.users.map((user) => ({ ...user, permissionSetIds: user.permissionSetIds.filter((id) => id !== 'oneengine-named-credentials') })),
-      tenants: tenantsWithLibraryManagement,
-      libraryComponents: parsed.libraryComponents ?? []
+      tenants: Object.fromEntries(Object.entries(tenantsWithLibraryManagement).map(([tenantId, tenant]) => [
+        tenantId, retireUninstalledPackageMetadata(tenant, installableAppCatalog)
+      ])),
+      libraryComponents: pruneRetiredTrustedComponents(parsed.libraryComponents ?? [], installableAppCatalog)
     };
     // One-time, fail-closed retirement of the superseded WhatsApp object.
     // The unified Communication Records object remains authoritative.
@@ -4346,7 +4334,7 @@ function loadState(sqlState?: unknown): PlatformState {
       migrated.tenants[tenantId] = removeObjectMetadata(tenant, legacyWhatsappObjectApiName);
       console.info('Retired unused legacy WhatsApp object metadata', { tenantId });
     }
-    if (!maintenanceMode && (leadStreetFieldAdded || kioskDemoAuditRepaired || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
+    if (!maintenanceMode && (leadStreetFieldAdded || legacySeedAuditRepaired || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
     return migrated;
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
@@ -4451,7 +4439,7 @@ state = restoreDurableAuthOverlay(state);
 // Reconcile installed, licensed declarative app packages on every startup.
 // Historical installations can have a valid licence but no materialised
 // Home Page or registered component; they must be repaired without a
-// manual reinstall, account impersonation or a Kiosk-specific API bypass.
+// manual reinstall, account impersonation or an app-specific API bypass.
 if (!maintenanceMode) {
   const nextTenants = { ...state.tenants };
   let bundledLibrary = state.libraryComponents;
@@ -7861,16 +7849,7 @@ function resolveActiveLightningRecordPage(
     pageType: 'Record Page', objectApiName, appId, recordTypeId, profileId, formFactor
   });
   if (match) return match;
-  // Compatibility for older licensed installations lacking activation metadata.
-  // New packages must use normal declarative page assignments.
-  if (appId === 'KioskApp') {
-    const entitlement = (tenant.records.Connector_App__c ?? []).find(row =>
-      row.AppKey__c === 'kiosk' && row.Installed__c === true
-      && ['Trial','Licensed'].includes(String(row.LicenceStatus__c)));
-    if (entitlement) return tenant.pages.find(page =>
-      page.apiName === 'UNE_KIOSK' && page.pageType === 'Home Page'
-      && page.status === 'Active' && page.devices.includes(formFactor));
-  }
+  // Normal activation metadata is authoritative; no application-specific fallback.
   return undefined;
 }
 

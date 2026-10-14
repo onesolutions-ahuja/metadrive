@@ -25,7 +25,7 @@ All 13 developer policy rules apply. A requirement conflicting with any rule is 
 | Package management | apps/server/src/installable-app-packages.mjs | Existing install/upgrade machinery, not a new installer |
 | State registry | apps/server/src/platform-state-registry.mjs | Preserve persisted shape until compatible migration |
 
-Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829; DashboardBuilder.tsx 3,015; FlowBuilder.tsx 1,585; metadata.ts 1,349; styles.css 2,669; rbac-sharing.smoke.test.ts 5,541. The 14 October 2026 audit counted 330 scanned source files and 10 above the line limit, all assigned a migration owner. The complete live inventory (not just these examples) is produced by scripts/metadata-architecture-audit.mjs. Any touched code file must be reduced to at most 1,000 lines; untouched legacy files are tracked for phased extraction, never silently exempted.
+Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829; DashboardBuilder.tsx 3,015; FlowBuilder.tsx 1,585; metadata.ts 1,349; styles.css 2,669; rbac-sharing.smoke.test.ts 5,541. The 14 October 2026 audit counted 330 scanned source files and 10 above the line limit, all assigned a migration owner. The complete live inventory (not just these examples) is produced by scripts/metadata-architecture-audit.mjs. Existing oversized files may be edited only without net growth against the base branch and while owned by the migration map; all new extracted modules must be at most 1,000 lines.
 
 ### Existing reuse that must not be replaced
 

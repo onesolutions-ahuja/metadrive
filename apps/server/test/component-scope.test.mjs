@@ -13,7 +13,7 @@ test('tenant private components are never visible or editable from another tenan
 });
 
 test('bundled platform primitives are shared read-only, never tenant-mutable',()=>{
-  const bundled={apiName:'KioskGrid',trustedBundled:true};
+  const bundled={apiName:'GenericGrid',trustedBundled:true};
   assert.equal(visible(bundled,'tenant-b',['tenant-a','tenant-b']),true);
   assert.equal(editable(bundled,'tenant-b',['tenant-a','tenant-b']),false);
 });
