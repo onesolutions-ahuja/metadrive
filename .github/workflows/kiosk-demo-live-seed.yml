@@ -23,6 +23,16 @@ jobs:
           node-version: '22'
       - name: Verify seed fixtures
         run: node --test scripts/kiosk-demo-fixtures.test.mjs
+      - name: Validate live endpoint and authorised seed credentials
+        env:
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: |
+          if [ -z "$METADRIVE_ADMIN_EMAIL" ] || [ -z "$METADRIVE_ADMIN_PASSWORD" ]; then
+            echo '::error::Missing METADRIVE_TEST_EMAIL or METADRIVE_TEST_PASSWORD; live seed not run.'
+            exit 1
+          fi
+          curl --fail --retry 3 --retry-delay 5 --max-time 20 https://metadrive.onrender.com/health >/dev/null
       - name: Install and verify demo metadata through secured MetaDrive APIs
         env:
           METADRIVE_API_URL: https://metadrive.onrender.com
@@ -30,4 +40,6 @@ jobs:
           METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
           METADRIVE_DEMO_SEED_APPROVED: 'true'
-        run: node scripts/install-kiosk-demo-data.mjs
+        run: |
+          node scripts/install-kiosk-demo-data.mjs
+          echo 'Kiosk metadata and product records verified through MetaDrive APIs.'
