@@ -1,4 +1,4 @@
-import {isFlowRecordObject} from './flow-record-metadata.mjs';
+import {isFlowRecordObject,equivalentFlowCollectionItem} from './flow-record-metadata.mjs';
 /**
  * Pure, typed Flow Assignment operations for collection resources.
  * Scalar Assignment arithmetic and text operations stay in the core runtime.
@@ -30,14 +30,7 @@ export function applyFlowCollectionAssignment(previous, incoming, operator, reso
       return [...requireValidItems(items), ...collection];
     case 'Remove': {
       const removed = requireValidItems(items);
-      const equivalent = (left, right) => {
-        if (Object.is(left, right)) return true;
-        if (isRecordCollection && left && right && typeof left === 'object' && typeof right === 'object') {
-          return typeof left.Id === 'string' && left.Id.length > 0 && left.Id === right.Id;
-        }
-        return false;
-      };
-      return collection.filter(item => !removed.some(other => equivalent(item, other)));
+      return collection.filter(item => !removed.some(other => equivalentFlowCollectionItem(item, other, isRecordCollection)));
     }
     case 'Remove All':
       return [];

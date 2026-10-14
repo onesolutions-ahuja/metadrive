@@ -18,3 +18,16 @@ export function validateFlowRecordFields(source, object) {
   const allowed = flowRecordWritableFields(object);
   return Object.keys(source).every(field => allowed.has(field));
 }
+
+/** Identity rules shared by Flow collection operators and record processors.
+ * Values without usable IDs are equal by identity only.
+ */
+export function equivalentFlowCollectionItem(left,right,isRecordCollection) {
+  if (Object.is(left,right)) return true;
+  if (!isRecordCollection || !isFlowRecordObject(left) || !isFlowRecordObject(right)) return false;
+  return typeof left.Id === 'string' && left.Id.length > 0 && left.Id === right.Id;
+}
+
+export function flowRecordCollectionLimitExceeded(items,maximum=200) {
+  return Array.isArray(items) && items.length > maximum;
+}
