@@ -738,7 +738,7 @@ export type LibraryComponentMetadata = { propertyDefinitions?: import('./compone
   }>;
   pendingDraft?: {
     version: number; label: string; description: string; surfaces: Array<'page' | 'dashboard' | 'flow'>;
-    resize: NonNullable<LibraryComponentMetadata['resize']>;
+    resize: NonNullable<LibraryComponentMetadata['resize']>; propertyDefinitions?: LibraryComponentMetadata['propertyDefinitions'];
     jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
   };
 };
