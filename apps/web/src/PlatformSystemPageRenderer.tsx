@@ -3,6 +3,7 @@ import type {LightningPageMetadata,LibraryComponentMetadata,PageComponentMetadat
 import {systemPageApiName} from './platformSystemPageDrafts';
 import {findRegisteredComponent} from './componentRegistryLookup';
 import RegisteredComponent from './RegisteredComponent';
+import {PlatformPageSlotsProvider} from './PlatformPageSlot';
 
 /** Existing Page Builder component instances control platform layout.
  * Secure administration controls remain passed as React children: untrusted
@@ -32,12 +33,12 @@ export default function PlatformSystemPageRenderer({page,workspace,permission,co
   && item.properties.systemWorkspaceId===workspace
   && item.properties.requiredPermission===permission&&item.visible!==false);
  return <div className="platform-system-page-layout" style={{position:'relative',minHeight:page.canvasHeight,maxWidth:page.canvasWidth}}>
- {page.components.filter(item=>item.visible!==false).map(item=>{
+ {page.components.filter(item=>item.visible!==false&&!item.properties.platformSlotKey).map(item=>{
   const style=positionStyle(item,page);
   if(item.type==='Custom:SystemPanel'&&item.properties.systemWorkspaceId===workspace){
    if(item.id!==contentSlot?.id||item.properties.requiredPermission!==permission)return null;
    return <section key={item.id} aria-label={item.label} style={style} data-page-instance={item.id}>
-    {children}
+    <PlatformPageSlotsProvider page={page}>{children}</PlatformPageSlotsProvider>
    </section>;
   }
   if(item.type==='Rich Text'){
