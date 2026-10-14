@@ -8805,7 +8805,7 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, kioskMode = false }: {
+function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange }: {
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
   apps: LightningAppMetadata[];
@@ -8813,7 +8813,6 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
   currentAppId: string;
   flows: FlowDefinitionMetadata[];
   onChange: (next: ComponentPropertyRecord) => void;
-  kioskMode?: boolean;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedDraft, setAdvancedDraft] = useState('');
@@ -10177,10 +10176,6 @@ function PageBuilder({
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device,
-                      ...(component.properties.basketWidthPercent !== undefined && !previewMode
-                        ? { onLayoutChange: (patch: { basketWidthPercent: number }) =>
-                            updateComponent(component.id, { properties: { ...component.properties, ...patch } }) }
-                        : {}),
                       children: nestedChildren
                     }} />
                     : libraryPreview
@@ -10490,7 +10485,6 @@ function PageBuilder({
                 {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
               </>}
               <MetadataComponentProperties
-                kioskMode={selected.properties.standalonePresentation === true}
                 properties={selected.properties}
                 objects={objects}
                 apps={apps}
