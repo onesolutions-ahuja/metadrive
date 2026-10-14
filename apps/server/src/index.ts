@@ -8096,7 +8096,7 @@ app.get('/api/chatter/access', accessAuthentication, (req: Request, res: Respons
     eligibleAssignees,
     grants: scope.grants.filter(grant => grant.canRead).map(grant => ({
       channelAccountId:grant.channelAccountId,canRead:grant.canRead,
-      canSend:grant.canSend,canAssign:grant.canAssign
+      canSend:grant.canSend,canAssign:grant.canAssign,viewAll:grant.viewAll === true
     }))
   });
 });
