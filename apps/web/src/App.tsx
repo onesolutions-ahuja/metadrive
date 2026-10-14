@@ -10733,7 +10733,7 @@ function PageBuilder({
             <input id="new-lightning-page-label" className="form-control" autoFocus
               value={newPageLabel} onChange={event => setNewPageLabel(event.target.value)}
               onKeyDown={event => { if (event.key === 'Enter') void createPage(); }}
-              placeholder="For example, Kiosk Ordering" />
+              placeholder="For example, Inventory Management" />
           </label>
           <label className="form-label" htmlFor="new-lightning-page-layout-mode">Canvas mode
             <select id="new-lightning-page-layout-mode" className="form-control" value={newPageLayoutMode}
