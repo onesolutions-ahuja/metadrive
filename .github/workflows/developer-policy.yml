@@ -30,6 +30,8 @@ jobs:
         run: node --test scripts/shared-component-runtime.test.mjs
       - name: Test kiosk shared Objects and safe demo seed
         run: node --test scripts/kiosk-demo-fixtures.test.mjs
+      - name: Test reusable meal modifiers and basket contracts
+        run: node --test scripts/kiosk-commerce-capabilities.test.mjs
       - name: Generate architecture inventory
         run: node scripts/audit-platform-architecture.mjs --output .artifacts/architecture-inventory.json
       - name: Generate component registry and reuse inventory
