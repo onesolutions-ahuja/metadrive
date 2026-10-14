@@ -1,6 +1,6 @@
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
 import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
-import {canWritePageMetadata,visiblePageMetadata} from './modules/pages/protected-system-pages.js';
+import {canWritePageMetadata,visiblePageMetadata,validSystemPageScope} from './modules/pages/protected-system-pages.js';
 import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
 import {libraryRevision,nextLibraryRevision,libraryHistory} from './modules/metadata/component-revisions.mjs';
 import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
@@ -115,7 +115,6 @@ function requestTenantMatches(req: Request, tenantId: string): boolean {
 const refreshCookieName = 'metadrive_refresh';
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtService = await JwtService.create();
-
 // Canonical origins are fixed. A verified customer domain may call its own
 // same-host API over HTTPS without a deployment-time CORS whitelist update.
 // Cross-origin use of a customer's domain is never allowed.
@@ -143,7 +142,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Retry-After', '120');
   return res.status(503).json({ error: 'MetaDrive database maintenance in progress' });
 });
-
 // In all SQL modes, acknowledge API writes only after the database transaction
 // commits. Otherwise a fast API response followed by restart loses records/Flows.
 // Legacy JSONB response semantics remain unchanged.
@@ -226,7 +224,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   });
   next();
 });
-
 // Meta webhook transport is a platform primitive; routing and replies remain in editable Flows.
 // Configure these four values on Render before enabling the callback.
 app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
@@ -242,7 +239,6 @@ app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
   if (typeof challenge !== 'string' || !/^\d+$/.test(challenge)) return res.sendStatus(400);
   return res.status(200).type('text/plain').send(challenge);
 });
-
 app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const reject = (status: number, reason: string) => { console.warn('[WhatsApp webhook] rejected', { status, reason }); return res.sendStatus(status); };
   console.info('[WhatsApp webhook] delivery received');
@@ -255,7 +251,6 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const supplied = Buffer.from(signature.toLowerCase());
   const expected = Buffer.from(digest);
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return reject(403, 'signature_mismatch');
-
   const payload = req.body as { object?: unknown; entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string; display_phone_number?: string }; messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }> } }> }> };
   if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) { console.info('[WhatsApp webhook] ignored unsupported payload'); return res.sendStatus(200); }
   const phoneIds = [...new Set(payload.entry.flatMap(entry => (entry.changes ?? []).filter(change => (change.value?.messages?.length ?? 0) > 0).map(change => change.value?.metadata?.phone_number_id?.trim()).filter((id): id is string => Boolean(id))))];
@@ -454,7 +449,6 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
     return res.sendStatus(500); // Meta retries unsuccessful deliveries.
   }
 });
-
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
 let hydratingPersistedMetadata = false;
@@ -1525,6 +1519,11 @@ const pageSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
   updatedAt: z.string().datetime().optional(),
+  scope: z.enum(['tenant','platform-system']).optional(),
+  ownerNamespace: z.string().min(1).optional(),
+  definitionVersion: z.number().int().min(1).optional(),
+  overridePolicy: z.enum(['none','presentation-only']).optional(),
+  requiredPermissions: z.array(z.string().min(1)).optional(),
   targetObject: z.string().min(1),
   pageType: z.enum(['Record Page', 'App Page', 'Home Page']),
   layoutMode: z.enum(['template', 'free-canvas']).default('template'),
@@ -11319,6 +11318,7 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
   const tenant = tenantData(principal.tenantId)!;
   const existingPage = tenant.pages.find((page) => page.apiName === previousApiName);
   if (!canWritePageMetadata(existingPage,parsed.data,principal.permissions)) return res.status(403).json({error:'Platform administrator policy required'});
+  if (!validSystemPageScope(parsed.data)) return res.status(400).json({error:'Invalid protected system page scope'});
   if (tenant.pages.some((page) => page.apiName.toLocaleLowerCase() === parsed.data.apiName.toLocaleLowerCase()
     && page.apiName !== previousApiName)) {
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
