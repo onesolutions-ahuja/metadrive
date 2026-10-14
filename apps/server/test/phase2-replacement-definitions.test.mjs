@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {replacementDefinitions,replacementKinds,replacementDefinition} from '../apps/server/src/modules/metadata/phase2-replacement-definitions.mjs';
+import {replacementDefinitions,replacementKinds,replacementDefinition} from '../src/modules/metadata/phase2-replacement-definitions.mjs';
 test('all 39 replacements are distinct, metadata-configured and draft',()=>{
  const defs=replacementDefinitions();
  assert.equal(defs.length,39);
