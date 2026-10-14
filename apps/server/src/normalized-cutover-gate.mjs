@@ -1,5 +1,6 @@
 // Pure, read-only compatibility assessment. Never writes state or includes customer values in reports.
 import {projectState, restoreState, stateDigest, verifyProjection} from './relational-projection.mjs';
+import {forEachTenantSection,identitySnapshotSections} from './platform-state-registry.mjs';
 
 function itemCount(value) {
   if (Array.isArray(value)) return value.length;
@@ -9,11 +10,9 @@ function itemCount(value) {
 
 export function describeState(state) {
   const sections = {};
-  for (const tenant of Object.values(state.tenants ?? {})) {
-    for (const [name, value] of Object.entries(tenant)) {
-      sections[name] = (sections[name] ?? 0) + itemCount(value);
-    }
-  }
+  forEachTenantSection(state, ({key,value}) => {
+    sections[key] = (sections[key] ?? 0) + itemCount(value);
+  });
   const records = Object.values(state.tenants ?? {}).reduce((n, tenant) =>
     n + Object.values(tenant.records ?? {}).reduce((total, values) => total + (Array.isArray(values) ? values.length : 0), 0), 0);
   return {
@@ -51,7 +50,7 @@ export function assessCutoverCompatibility(liveState, stagedRows, migration, run
         changedSections.push(name);
     }
   }
-  for (const name of ['users','refreshSessions','revokedAccessTokens','libraryComponents']) {
+  for (const name of identitySnapshotSections) {
     if (stateDigest(liveState[name] ?? null) !== stateDigest(restored[name] ?? null))
       changedSections.push(name);
   }
