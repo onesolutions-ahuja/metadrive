@@ -10,7 +10,6 @@ import {
   Workflow,
   type LucideIcon
 } from 'lucide-react';
-
 export type WorkspaceId =
   | 'home'
   | 'object-manager'
@@ -31,7 +30,6 @@ export type WorkspaceId =
   | 'company-settings'
   | 'tenant-management'
   | 'rbac';
-
 export type FieldMetadata = {
   apiName: string;
   label: string;
@@ -58,21 +56,18 @@ export type FieldMetadata = {
     allowReparenting?: boolean;
   };
 };
-
 export type PageLayoutSectionMetadata = {
   id: string;
   label: string;
   columns: 1 | 2;
   fieldApiNames: string[];
 };
-
 export type PageLayoutCustomLinkMetadata = {
   id: string;
   label: string;
   url: string;
   openInNewWindow: boolean;
 };
-
 export type PageLayoutMetadata = {
   id: string;
   label: string;
@@ -397,6 +392,11 @@ export type LightningPageMetadata = {
   devices: Array<'Desktop' | 'Phone'>;
   components: PageComponentMetadata[];
   activationAssignments?: PageActivationAssignmentMetadata[];
+  scope?: 'tenant' | 'platform-system';
+  ownerNamespace?: string;
+  definitionVersion?: number;
+  overridePolicy?: 'none' | 'presentation-only';
+  requiredPermissions?: string[];
 };
 
 export type DashboardComponentMetadata = {
