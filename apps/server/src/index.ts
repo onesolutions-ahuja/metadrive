@@ -1,5 +1,6 @@
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
-import {createAuthorizedMetadataPublication} from './modules/metadata/offline-publication.mjs';
+import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
+import {libraryRevision,nextLibraryRevision,libraryHistory} from './modules/metadata/component-revisions.mjs';
 import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
 import { registerSessionSecurityRoutes } from './modules/security/session-routes.js';
 import { registerSecurityMetadataRoutes } from './modules/security/metadata-routes.js';
@@ -1440,10 +1441,8 @@ const libraryComponentSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['surfaces'], message: 'Component surfaces must be unique' });
   }
   if ((component.scope === 'platform-system' || component.surfaces.includes('platform'))
-      && !(component.scope === 'platform-system' && component.trustedBundled === true
-           && component.tenantId === undefined)) {
+    && !(component.scope === 'platform-system' && component.trustedBundled === true && component.tenantId === undefined))
     context.addIssue({code:z.ZodIssueCode.custom,path:['scope'],message:'Platform metadata requires unowned trusted bundle'});
-  }
 });
 const libraryComponentInputSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
@@ -1461,18 +1460,6 @@ const libraryComponentInputSchema = z.object({
 });
 type LibraryComponent = z.infer<typeof libraryComponentSchema>;
 type LibraryComponentRevision = z.infer<typeof libraryComponentRevisionSchema>;
-function libraryRevision(component: LibraryComponent): LibraryComponentRevision {
-  const { version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions } = component;
-  return {version,label,description,surfaces,resize,jsxSource,cssSource,compiledJs,scopedCss,updatedAt,propertyDefinitions};
-}
-function nextLibraryRevision(component: LibraryComponent): number {
-  return Math.max(component.version,component.pendingDraft?.version ?? 0,...(component.revisions ?? []).map((r)=>r.version))+1;
-}
-function libraryHistory(component: LibraryComponent) {
-  return [...(component.revisions ?? []).map((r)=>({version:r.version,status:'Published',updatedAt:r.updatedAt})),
-    {version:component.version,status:component.status ?? 'Published',updatedAt:component.updatedAt},
-    ...(component.pendingDraft?[{version:component.pendingDraft.version,status:'Draft',updatedAt:component.pendingDraft.updatedAt}]:[])];
-}
 const pageActivationAssignmentSchema = z.object({
   id: z.string().min(1),
   scope: z.enum(['Org Default', 'App Default', 'App and Profile', 'App, Record Type, and Profile']),
@@ -8892,27 +8879,9 @@ function syncBundledLibraryComponents(): Promise<void> {
   return bundledComponentSync;
 }
 
-// Content hash originates only from authenticated, existing filtered metadata.
-app.get('/api/metadata/offline-publication', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
-  try { await syncBundledLibraryComponents(); }
-  catch (error) {
-    console.error('Unable to prepare metadata publication',error);
-    return res.status(503).json({error:'Metadata publication unavailable'});
-  }
-  const principal=getPrincipal(res),tenant=tenantData(principal.tenantId);
-  if(!tenant)return res.status(403).json({error:'Tenant membership is no longer active'});
-  const apps=tenant.apps.filter(item=>canOpenApp(principal,tenant,item.apiName)).map(item=>({
-    ...item,
-    navigationItems:item.navigationItems.filter(name=>canOpenTab(principal,tenant,name)),
-    navigationOrder:item.navigationOrder.filter(entry=>entry.type!=='Object'||canOpenTab(principal,tenant,entry.apiName))
-  }));
-  const components=state.libraryComponents.filter(item=>
-    libraryComponentVisible(item,principal.tenantId,Object.keys(state.tenants)));
-  res.setHeader('Cache-Control','private, no-store');
-  return res.json(createAuthorizedMetadataPublication({
-    tenantId:principal.tenantId,userId:principal.userId,
-    objects:tenant.objects,pages:tenant.pages,apps,components
-  }));
+registerMetadataPublicationRoute(app,requirePermission('metadata:read'),{
+ sync:syncBundledLibraryComponents,principal:getPrincipal,tenant:tenantData,
+ canOpenApp,canOpenTab,visible:libraryComponentVisible,state:()=>state
 });
 app.get('/api/component-library', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
   try {
