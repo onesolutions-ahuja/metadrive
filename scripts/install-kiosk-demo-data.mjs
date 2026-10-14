@@ -44,6 +44,47 @@ for(const definition of kioskObjectDefinitions){
   await api('/metadata/objects','POST',definition);
   existing.add(definition.apiName);created++;
 }
+// Metadata creation grants access only to the system-administrator profile.
+// The CI service account may use another profile; grant it an explicitly scoped
+// permission set through the normal security:manage API, never bypass RBAC.
+const access=await api('/metadata/permissions');
+const seedUser=(access.users??[]).find(user=>user.id===login.user?.id)
+  ?? (access.users??[]).find(user=>user.username?.toLowerCase()===email.toLowerCase());
+if(!seedUser)throw Error('Seeder user is not registered in tenant RBAC; refusing privilege changes');
+const seedProfile=(access.profiles??[]).find(profile=>profile.id===seedUser.profileId);
+if(!seedProfile)throw Error('Seeder user has no matching tenant profile; refusing privilege changes');
+const seederSetId='kiosk-demo-catalog-seeder';
+const canSeed=expectedObjects.every(name=>seedUser.permissionSetIds?.some(id=>
+  access.permissionSets?.find(set=>set.id===id)?.objectPermissions?.[name]?.create));
+if(!canSeed){
+  const existingSet=access.permissionSets.find(set=>set.id===seederSetId);
+  const objectPermissions=Object.fromEntries(expectedObjects.map(name=>[name,{
+    read:true,create:true,edit:true,delete:false,viewAll:false,modifyAll:false
+  }]));
+  const fieldPermissions=Object.fromEntries(kioskObjectDefinitions.flatMap(object=>
+    object.fields.map(field=>[object.apiName+'.'+field.apiName,{read:true,edit:true}])));
+  const seedSet={
+    ...(existingSet??{
+      id:seederSetId,label:'Kiosk Demo Catalog Seeder',apiName:'Kiosk_Demo_Catalog_Seeder',
+      license:seedProfile.license,description:'Narrow, tenant-scoped catalog demo seed privileges',
+      systemPermissions:[],recordTypePermissions:{},appPermissions:{},tabPermissions:{}
+    }),
+    objectPermissions:{...(existingSet?.objectPermissions??{}),...objectPermissions},
+    fieldPermissions:{...(existingSet?.fieldPermissions??{}),...fieldPermissions}
+  };
+  const updated={
+    ...access,
+    permissionSets:[...access.permissionSets.filter(set=>set.id!==seederSetId),seedSet],
+    users:access.users.map(user=>user.id===seedUser.id?{
+      ...user,permissionSetIds:[...new Set([...(user.permissionSetIds??[]),seederSetId])]
+    }:user)
+  };
+  await api('/metadata/permissions','PUT',updated);
+  const relogin=await api('/auth/login','POST',{email,password});
+  if(relogin.user?.tenantId!==login.user?.tenantId)throw Error('Tenant changed across RBAC refresh');
+  token=relogin.access_token;
+  if(!token)throw Error('RBAC refresh yielded no token');
+}
 async function matchingRecord(object,key,value){
   const result=await api('/records/'+encodeURIComponent(object)+'?search='+encodeURIComponent(String(value)));
   return (result.records??[]).find(record=>String(record[key]??'')===String(value));
