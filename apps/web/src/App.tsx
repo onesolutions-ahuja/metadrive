@@ -98,8 +98,6 @@ import TenantUsagePanel from './TenantUsagePanel';
 import DeveloperAccountSettings from './DeveloperAccountSettings';
 import SettingsViewRow from './SettingsViewRow';
 import ApprovalProcessManager from './ApprovalProcessManager';
-import kioskPagePreset from './page-presets/kiosk.editable.json';
-import tillPagePreset from './page-presets/till.editable.json';
 import { standardPageComponents } from './componentCatalog';
 import EmbeddedDashboard from './EmbeddedDashboard';
 import { inspectPageDependencies } from './pageDependencies';
@@ -3799,41 +3797,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               <h2>{metadataLoadError ? "Unable to load Lightning pages" : "Lightning page not found"}</h2>
               <p>{metadataLoadError ? `Metadata API error: ${metadataLoadError}` : `The page "${route.resourceApiName}" was not returned by the metadata API. No other page has been substituted.`}</p>
               <p>Check that the page exists in this tenant and that your account can access it.</p>
-              {!metadataLoadError && route.resourceApiName === 'Kiosk' && (
-                <button className="btn btn-brand" onClick={async () => {
-                  const preset = kioskPagePreset as LightningPageMetadata;
-                  const missing = preset.components.filter((component) =>
-                    !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
-                  if (missing.length) {
-                    notify(`Register kiosk components first: ${missing.map((item) => item.type).join(', ')}`);
-                    return;
-                  }
-                  const targetObject = objects[0]?.apiName;
-                  if (!targetObject) {
-                    notify('No objects available for the Kiosk page target');
-                    return;
-                  }
-                  await savePageFromBuilder({
-                    ...preset,
-                    targetObject,
-                    template: 'one-region',
-                    activationAssignments: []
-                  }, 'Kiosk', 'Kiosk page created with editable layout');
-                }}>Create Kiosk page with editable layout</button>
-              )}
-              {!metadataLoadError && route.resourceApiName === 'UNE_TILL' && (
-                <button className="btn btn-brand" onClick={async () => {
-                  const preset = tillPagePreset as LightningPageMetadata;
-                  const missing = preset.components.filter((component) =>
-                    !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
-                  if (missing.length) { notify('Register the Till Sales Workspace component first.'); return; }
-                  if (!objects.some((object) => object.apiName === preset.targetObject)) {
-                    notify('Create or select the Sales object before creating the Till page.');
-                    return;
-                  }
-                  await savePageFromBuilder({ ...preset, activationAssignments: [] }, preset.apiName, 'Editable Till page created as a draft.');
-                }}>Create UNE TILL page</button>
-              )}
               <button className="btn" onClick={() => navigateRoute({ kind: 'setup', workspace: 'page-builder' })}>Open saved pages</button>
             </section>
           )}
@@ -9886,41 +9849,6 @@ function PageBuilder({
         setUndoStack([]);
         setRedoStack([]);
         if (returnToList) onBackToPages();
-      }
-    } finally {
-      setSaving(false);
-    }
-  };
-  const applyRetailPreset = async (variant: 'kiosk' | 'till') => {
-    const allowed = variant === 'till' ? ['UNE_TILL'] : ['Kiosk', 'UNE_KIOSK'];
-    if (!allowed.includes(page.apiName)) return;
-    const preset = (variant === 'till' ? tillPagePreset : kioskPagePreset) as LightningPageMetadata;
-    const name = variant === 'till' ? 'Till' : 'Kiosk';
-    const missing = preset.components.filter((component) =>
-      !libraryComponents.some((item) => item.apiName === component.type.replace(/^Custom:/, '') && item.surfaces.includes('page')));
-    if (missing.length) {
-      onNotify(`Register ${name} components first: ${missing.map((item) => item.type).join(', ')}`);
-      return;
-    }
-    if (page.components.length && !window.confirm(`Replace the current ${name} layout with the editable starter layout?`)) return;
-    const nextPage: LightningPageMetadata = {
-      ...page,
-      layoutMode: 'free-canvas',
-      canvasWidth: preset.canvasWidth,
-      canvasHeight: preset.canvasHeight,
-      components: preset.components.map((component) => ({
-        ...component,
-        properties: { ...component.properties },
-        position: component.position ? { ...component.position } : undefined
-      }))
-    };
-    setSaving(true);
-    try {
-      const saved = await onSave(nextPage, savedPageApiName.current, `${name} layout saved. You can now edit every component.`);
-      if (saved) {
-        setSelectedId(nextPage.components[0]?.id ?? '');
-        setUndoStack([]);
-        setRedoStack([]);
       }
     } finally {
       setSaving(false);
