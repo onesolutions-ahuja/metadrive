@@ -144,7 +144,6 @@ try {
     return {status:response.status,data:await response.json()};
   };
   const offlineName='MD06 Offline Permission Revoked Draft';
-  await page.context().setOffline(true);
   await newButton.click();
   await dialog.waitFor({state:'visible'});
   try {
@@ -155,6 +154,8 @@ try {
       +'; alerts: '+JSON.stringify(await page.locator('[role="alert"]').allTextContents()),{cause:error});
   }
   await dialog.locator('input[name="Name"]').fill(offlineName);
+  // Load metadata-backed form while online, then test that Save queues while offline.
+  await page.context().setOffline(true);
   await dialog.getByRole('button',{name:'Save',exact:true}).click();
   await dialog.waitFor({state:'hidden'});
   const offlinePanel=page.getByRole('region',{name:'Offline record changes'});
