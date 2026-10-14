@@ -1703,7 +1703,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           && !failures.length && objectPayload.objects.length && pagePayload.pages.length) {
           void apiRequest<MetadataPublicationResponse>('/metadata/offline-publication')
             .then(({content,publication})=>saveVerifiedMetadata(
-              {userId:sessionPayload.user.id,tenantId:sessionPayload.user.tenantId},content,publication))
+              {userId:sessionPayload.user.id!,tenantId:sessionPayload.user.tenantId!},content,publication))
             .catch(() => { /* Online rendering remains authoritative. */ });
         }
         setCurrentProfileId(sessionPayload.user.profileId);
