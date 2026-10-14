@@ -46,6 +46,7 @@ import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorizatio
 import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
+import { canAccessChatterRecord, isWhatsAppMessage } from './chatter-authorisation.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
@@ -386,6 +387,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
             Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
             Direction__c: 'Incoming', From_Number__c: message.from,
+            Channel_Account__c: phoneId,
             To_Number__c: value?.metadata?.display_phone_number ?? '',
             Message_Body__c: body, Conversation_Key__c: conversationKey,
             Conversation_Context__c: currentContext,
@@ -7697,6 +7699,10 @@ function hasRecordAccess(
   if (visited.has(recordKey)) return false;
   visited.add(recordKey);
   const objectAction = accessLevel === 'Read' ? 'read' : accessLevel === 'Edit' ? 'edit' : 'delete';
+  // WhatsApp channel permission is independent of object-wide grants, ownership and sharing.
+  // Other Communication Records (API audit, email, SMS) keep existing RBAC semantics.
+  if (objectName === communicationObjectApiName && isWhatsAppMessage(record) &&
+      !canAccessChatterRecord(principal.tenantId, principal.userId, tenant, record, 'read')) return false;
   if (!hasObjectPermission(principal, tenant, objectName, objectAction)) return false;
   const advancedSettings = tenant.sharingSettings[objectName];
   const advancedUser = tenant.accessControl.users.find((user) => user.id === principal.userId);
