@@ -24,10 +24,25 @@ export function sandboxSafeValue(input: unknown, depth = 0, seen = new WeakSet<o
   seen.delete(input);
   return result;
 }
+/** Only platform-safe props and explicitly configured component metadata properties
+ * can cross the sandbox boundary. A tenant cannot opt arbitrary host keys in.
+ */
 export function sandboxPublicProps(props: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  for (const key of SAFE_COMPONENT_PROP_KEYS) {
-    if (!(key in props)) continue;
+  const configured = props.properties && typeof props.properties === 'object' &&
+    !Array.isArray(props.properties) ? props.properties as Record<string, unknown> : {};
+  const names = new Set<string>(SAFE_COMPONENT_PROP_KEYS);
+  // Bound both the metadata and the outgoing message. Never pass host callbacks,
+  // reserved prototype names, credentials or internal runtime resources through.
+  for (const name of Object.keys(configured).slice(0,100)) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,79}$/.test(name) ||
+      forbiddenKey.test(name) || sensitiveKeys.has(name) ||
+      ['key','ref','children','onAction','onChange','onNavigate','onLaunchFlow'].includes(name)) continue;
+    names.add(name);
+  }
+  for (const key of names) {
+    if (!Object.prototype.hasOwnProperty.call(props,key)) continue;
+    if (forbiddenKey.test(key) || sensitiveKeys.has(key)) continue;
     const clean = sandboxSafeValue(props[key]);
     if (clean !== undefined) result[key] = clean;
   }
