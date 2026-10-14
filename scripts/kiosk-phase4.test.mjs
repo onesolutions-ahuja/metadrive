@@ -106,7 +106,16 @@ test('approved demo images are explicitly allowlisted without enabling network f
 test('tenant-scoped metadata installer preserves valid RBAC and discards deleted Object references',()=>{
  const installer=readFileSync(new URL('./install-kiosk-phase4.mjs',import.meta.url),'utf8');
  assert.match(installer,/const knownFields=new Map\(objectList\.map/);
- assert.match(installer,/fieldPermissions:keepValid\(entry\.fieldPermissions,knownField\)/);
- assert.match(installer,/permissionSetGroups:\(initialAccess\.permissionSetGroups\?\?\[\]\)\.map\(scrub\)/);
+ assert.match(installer,/fieldPermissions:keepKnown\(entry\.fieldPermissions,knownField\)/);
+ assert.match(installer,/permissionSetGroups:\(access\.permissionSetGroups\?\?\[\]\)\.map\(scrub\)/);
  assert.match(installer,/refreshed\.user\?\.tenantId!==expectTenant/);
+});
+
+test('SQL writer conflicts re-read current permissions before bounded retries',()=>{
+ const installer=readFileSync(new URL('./install-kiosk-phase4.mjs',import.meta.url),'utf8');
+ assert.match(installer,/for\(let attempt=0;attempt<6;attempt\+\+\)/);
+ assert.match(installer,/const current=await api\('\/metadata\/permissions'\)/);
+ assert.match(installer,/const proposed=prepare\(current\)/);
+ assert.match(installer,/HTTP \(409\|502\|503\|504\)/);
+ assert.match(installer,/await updateSecurity\(access=>/);
 });
