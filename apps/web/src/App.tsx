@@ -1,3 +1,6 @@
+import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, type RecordData } from './recordMetadataUtils';
+import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
+import { initialScreenValues, screenFieldIsVisible } from './flowScreenRuntimeUtils';
 import { objectSettings, settingFromRoute, settingToRoute, parseAppRoute, appRoutePath, appRoutePathWithoutBase, type AppRoute } from './appRouting';
 import { NavigationLoadTime, resolveCurrentAppNavigation } from './appNavigationView';
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
@@ -448,7 +451,6 @@ type LandingBootstrap = {
 type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
 
 
-type RecordData = { Id: string; [fieldApiName: string]: unknown };
 type RecordActivity = {
   id: string;
   objectApiName: string;
@@ -473,60 +475,6 @@ type ChatterPost = {
   createdAt: string;
   comments: ChatterComment[];
 };
-
-function pageLayoutForRecord(object: ObjectMetadata, recordTypeId: string, profileId: string): PageLayoutMetadata | undefined {
-  const assignments = object.pageLayoutAssignments ?? [];
-  const assignment = assignments.find((item) => item.profileId === profileId && item.recordTypeId === recordTypeId)
-    ?? assignments.find((item) => item.profileId === '*' && item.recordTypeId === recordTypeId);
-  return object.pageLayouts?.find((layout) => layout.id === assignment?.pageLayoutId) ?? object.pageLayouts?.[0];
-}
-
-function compactLayoutForRecord(object: ObjectMetadata, recordTypeId: string, profileId: string) {
-  const layouts = object.compactLayouts ?? [];
-  const assignments = object.compactLayoutAssignments ?? [];
-  const assignment = assignments.find((item) => item.profileId === profileId && item.recordTypeId === recordTypeId)
-    ?? assignments.find((item) => item.profileId === '*' && item.recordTypeId === recordTypeId);
-  return layouts.find((layout) => layout.id === assignment?.compactLayoutId)
-    ?? layouts[0]
-    ?? (object.compactLayout ? { id: `${object.apiName}-legacy-compact`, ...object.compactLayout } : undefined);
-}
-
-const relatedLookupFilterOperators: RelatedLookupFilterMetadata['operator'][] = [
-  'Equals', 'Not Equal To', 'Contains', 'Starts With', 'Greater Than', 'Less Than', 'Is Null', 'Is Not Null'
-];
-
-function matchesLookupFilter(record: RecordData, filter: RelatedLookupFilterMetadata, sourceRecord: Record<string, unknown>): boolean {
-  const rawValue = record[filter.relatedFieldApiName];
-  const actual = rawValue === undefined || rawValue === null ? '' : String(rawValue);
-  const expectedValue = filter.valueFieldApiName ? sourceRecord[filter.valueFieldApiName] : filter.value;
-  const expected = expectedValue === undefined || expectedValue === null ? '' : String(expectedValue);
-  if (filter.operator === 'Is Null') return rawValue === undefined || rawValue === null || rawValue === '';
-  if (filter.operator === 'Is Not Null') return rawValue !== undefined && rawValue !== null && rawValue !== '';
-  if (filter.operator === 'Equals') return actual === expected;
-  if (filter.operator === 'Not Equal To') return actual !== expected;
-  if (filter.operator === 'Contains') return actual.toLocaleLowerCase().includes(expected.toLocaleLowerCase());
-  if (filter.operator === 'Starts With') return actual.toLocaleLowerCase().startsWith(expected.toLocaleLowerCase());
-  const actualNumber = Number(actual);
-  const expectedNumber = Number(expected);
-  if (Number.isFinite(actualNumber) && Number.isFinite(expectedNumber)) {
-    return filter.operator === 'Greater Than' ? actualNumber > expectedNumber : actualNumber < expectedNumber;
-  }
-  return filter.operator === 'Greater Than'
-    ? actual.localeCompare(expected) > 0
-    : actual.localeCompare(expected) < 0;
-}
-
-function matchesLookupFilterGroup(
-  record: RecordData,
-  filters: RelatedLookupFilterMetadata[],
-  sourceRecord: Record<string, unknown>,
-  logic: 'All' | 'Any'
-): boolean {
-  if (filters.length === 0) return true;
-  const results = filters.map((filter) => matchesLookupFilter(record, filter, sourceRecord));
-  return logic === 'Any' ? results.some(Boolean) : results.every(Boolean);
-}
-
 
 function ConnectorSettingsWorkspace({
   provider,
@@ -815,48 +763,6 @@ function ConnectorSettingsWorkspace({
       </section>
     </div>
   </div>;
-}
-
-function initialScreenValues(screen: FlowElementMetadata): Record<string, unknown> {
-  const fields = Array.isArray(screen.config.fields)
-    ? screen.config.fields.filter((field): field is Record<string, unknown> =>
-      typeof field === 'object' && field !== null && !Array.isArray(field)
-      && !['Display Text', 'Display Image', 'Section'].includes(String(field.type)))
-    : [];
-  return Object.fromEntries(fields.flatMap((field, index) => {
-    const name = typeof field.apiName === 'string'
-      ? field.apiName
-      : String(field.label ?? `Field_${index + 1}`).replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
-    if (Object.hasOwn(field, 'defaultValue')) return [[name, field.defaultValue]];
-    if (field.type === 'Checkbox' || field.type === 'Toggle') return [[name, false]];
-    if (field.type === 'Slider') return [[name, typeof field.min === 'number' ? field.min : 0]];
-    return [];
-  }));
-}
-
-function screenFieldIsVisible(field: Record<string, unknown>, values: Record<string, unknown>): boolean {
-  const conditions = Array.isArray(field.visibilityConditions)
-    ? field.visibilityConditions.filter((condition): condition is Record<string, unknown> =>
-      typeof condition === 'object' && condition !== null && !Array.isArray(condition))
-    : [];
-  if (!conditions.length) return true;
-  const checks = conditions.map((condition) => {
-    const actual = values[String(condition.field ?? '')];
-    const expected = condition.value;
-    switch (String(condition.operator ?? 'Equals')) {
-      case 'Not Equals':
-      case 'Not Equal To': return String(actual ?? '') !== String(expected ?? '');
-      case 'Is Null': return actual === undefined || actual === null || actual === '';
-      case 'Is Not Null': return actual !== undefined && actual !== null && actual !== '';
-      case 'Contains': return String(actual ?? '').includes(String(expected ?? ''));
-      case 'Starts With': return String(actual ?? '').toLocaleLowerCase().startsWith(String(expected ?? '').toLocaleLowerCase());
-      case 'Equals':
-      default: return String(actual ?? '') === String(expected ?? '');
-    }
-  });
-  return String(field.visibilityLogic ?? 'All').toLowerCase() === 'any'
-    ? checks.some(Boolean)
-    : checks.every(Boolean);
 }
 
 function App() {
@@ -6564,68 +6470,6 @@ function RecordFormDialog({
       </div>;
     })()}
   </div>;
-}
-
-function formatRecordValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—';
-  if (typeof value === 'object') {
-    if (!Array.isArray(value) && value !== null && 'latitude' in value && 'longitude' in value) {
-      return `${String(value.latitude)}, ${String(value.longitude)}`;
-    }
-    return JSON.stringify(value) ?? String(value);
-  }
-  return String(value);
-}
-
-function parseCsvImport(text: string, object: ObjectMetadata): Array<Record<string, unknown>> {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let quoted = false;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (quoted) {
-      if (character === '"' && text[index + 1] === '"') {
-        cell += '"';
-        index += 1;
-      } else if (character === '"') quoted = false;
-      else cell += character;
-    } else if (character === '"' && cell === '') quoted = true;
-    else if (character === ',') {
-      row.push(cell);
-      cell = '';
-    } else if (character === '\n' || character === '\r') {
-      if (character === '\r' && text[index + 1] === '\n') index += 1;
-      row.push(cell);
-      if (row.some((value) => value.trim())) rows.push(row);
-      row = [];
-      cell = '';
-    } else cell += character;
-  }
-  if (quoted) throw new Error('The CSV has an unclosed quoted value.');
-  row.push(cell);
-  if (row.some((value) => value.trim())) rows.push(row);
-  if (rows.length < 2) throw new Error('The CSV must include a header row and at least one record.');
-  const headers = rows[0].map((header) => header.replace(/^\uFEFF/, '').trim());
-  if (headers.some((header) => !header)) throw new Error('CSV column headers cannot be blank.');
-  if (new Set(headers.map((header) => header.toLocaleLowerCase())).size !== headers.length) {
-    throw new Error('CSV column headers must be unique.');
-  }
-  const fieldByHeader = new Map(object.fields.flatMap((field) => [
-    [field.apiName.toLocaleLowerCase(), field.apiName],
-    [field.label.toLocaleLowerCase(), field.apiName]
-  ]));
-  const fieldNames = headers.map((header) => fieldByHeader.get(header.toLocaleLowerCase()));
-  const unknownHeader = headers.find((header) => !fieldByHeader.has(header.toLocaleLowerCase()) && header.toLocaleLowerCase() !== 'recordtypeid');
-  if (unknownHeader) throw new Error(`CSV column "${unknownHeader}" does not match a field API name or label on ${object.label}.`);
-  const mappedNames = headers.map((header, index) => header.toLocaleLowerCase() === 'recordtypeid' ? 'RecordTypeId' : fieldNames[index]!);
-  if (new Set(mappedNames).size !== mappedNames.length) {
-    throw new Error('CSV headers map more than once to the same field; remove duplicate label/API name columns.');
-  }
-  return rows.slice(1).map((values, index) => {
-    if (values.length !== headers.length) throw new Error(`CSV row ${index + 2} has ${values.length} values; expected ${headers.length}.`);
-    return Object.fromEntries(values.map((value, columnIndex) => [mappedNames[columnIndex], value]));
-  });
 }
 
 function SetupHome({ onNavigate }: { onNavigate: (workspace: WorkspaceId) => void }) {
