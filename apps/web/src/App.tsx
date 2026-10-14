@@ -1,3 +1,4 @@
+import { requireActiveComponentFlow } from './componentEventBinding';
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
@@ -4633,16 +4634,14 @@ function MetadataBoundPageComponent({
       return { navigated: true };
     }
     const flowApiName = String(binding.flowApiName ?? '');
-    const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
-    if (!selected || selected.status !== 'Active') {
-      throw new Error('Choose an active Flow for the "' + action.event + '" action in Page Builder.');
-    }
     const payload = action.value && typeof action.value === 'object' && !Array.isArray(action.value)
       ? action.value as Record<string, unknown> : { value: action.value };
     const inputs = Object.fromEntries(Object.entries(
       binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs)
         ? binding.inputs as Record<string, unknown> : {}
     ).map(([key, source]) => [key, resolveInput(source, payload)]));
+    const selected = requireActiveComponentFlow(action.event, flowApiName,
+      binding.typedInputs, inputs, availableFlows);
     setActionError('');
     if (selected.flowType === 'Screen Flow') {
       onLaunchFlow(flowApiName, inputs);
