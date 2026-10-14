@@ -18,7 +18,7 @@ export function compactLayoutForRecord(object: ObjectMetadata, recordTypeId: str
     ?? (object.compactLayout ? { id: `${object.apiName}-legacy-compact`, ...object.compactLayout } : undefined);
 }
 
-const relatedLookupFilterOperators: RelatedLookupFilterMetadata['operator'][] = [
+export const relatedLookupFilterOperators: RelatedLookupFilterMetadata['operator'][] = [
   'Equals', 'Not Equal To', 'Contains', 'Starts With', 'Greater Than', 'Less Than', 'Is Null', 'Is Not Null'
 ];
 
