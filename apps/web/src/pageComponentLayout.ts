@@ -198,7 +198,7 @@ export function validateLayoutSetting(key: LayoutSettingKey, value: unknown): st
   if (colorKeys.has(key)) return typeof value === 'string' && cssColorPattern.test(value)
     ? '' : 'Choose a valid hex or RGB colour';
   if (supportedOptions[key]) return typeof value === 'string' && supportedOptions[key]?.includes(value)
-    ? '' : 'Choose a supported appearance value';
+    ? '' : (key === 'alignItems' || key === 'justifyContent' ? 'Choose a supported alignment' : 'Choose a supported appearance value');
   const limits = numberLimits[key];
   return limits && typeof value === 'number' && Number.isFinite(value) && value >= limits[0] && value <= limits[1]
     ? '' : 'Enter a number within the allowed range';
