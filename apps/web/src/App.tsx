@@ -1,6 +1,7 @@
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
+import {resolveSetupNavigation} from './platformSetupNavigation';
 import {readVerifiedMetadata,saveVerifiedMetadata,type MetadataPublicationResponse} from './verifiedMetadataCache';
 import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
@@ -119,7 +120,6 @@ import {
   defaultLightningPage,
   defaultAccessControl,
   objectMetadata,
-  setupNavigation,
   setupShortcuts,
   workspaces,
   type ObjectMetadata,
@@ -1957,17 +1957,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const appUtilityRef = useRef<HTMLDivElement>(null);
   useDismissOnOutside(appUtilityRef, Boolean(activeUtility), () => setActiveUtility(null));
   const filteredSetupGroups = useMemo(() => {
-    const query = quickFind.trim().toLowerCase();
-    const allowedGroups = setupNavigation.filter((group) => group.group !== 'Platform Administration' || canManagePlatformTenants);
-    if (!query) return allowedGroups;
-    return allowedGroups
-      .map((group) => ({
-        ...group,
-        items: group.items.filter((item) => item.toLowerCase().includes(query)
-          || (item === 'Une Connectors' && connectorProviders.some((provider) =>
-            `${provider.name} ${provider.connectorKey}`.toLowerCase().includes(query))))
-      }))
-      .filter((group) => group.items.length);
+    return resolveSetupNavigation(quickFind,canManagePlatformTenants,
+      connectorProviders.map(provider=>provider.name+' '+provider.connectorKey));
   }, [quickFind, connectorProviders, canManagePlatformTenants]);
   const filteredConnectorProviders = useMemo(() => {
     const query = quickFind.trim().toLowerCase();
