@@ -1,3 +1,6 @@
+import * as React from 'react';
+import {compileComponentModule} from '../src/componentRuntimeModule';
+import {findRegisteredComponent} from '../src/componentRegistryLookup';
 import {appearanceNumberFields,appearanceColorFields,appearanceChoiceFields} from '../src/metadataAppearanceSchema';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -37,4 +40,12 @@ test('appearance editor and normalizer share a single ordered metadata schema',(
   for(const [key,max] of Object.entries(maxes)) assert.equal((normal as unknown as Record<string,unknown>)[key],max);
   assert.deepEqual(appearanceColorFields.map(x=>x.key),['backgroundColor','color','borderColor']);
   assert.deepEqual(appearanceChoiceFields.map(x=>x.key),['align','justify']);
+});
+
+test('shared component runtime and registry respect metadata definitions',()=>{
+ const Component=compileComponentModule('module.exports.default = function A(){return null}',React);
+ assert.equal(typeof Component,'function');
+ const list=[{apiName:'One',status:'Published',surfaces:['page','dashboard']}];
+ assert.equal(findRegisteredComponent(list as any,'One','page')?.apiName,'One');
+ assert.equal(findRegisteredComponent(list as any,'One','flow'),undefined);
 });

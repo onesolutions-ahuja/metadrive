@@ -1,3 +1,4 @@
+import {findRegisteredComponent} from './componentRegistryLookup';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
@@ -1290,7 +1291,7 @@ export default function DashboardBuilder({
         : <p className="dashboard-no-data">Set an HTTPS image URL in component properties.</p>;
     }
     if (component.type === 'Custom') {
-      const definition = libraryComponents.find((item) => item.apiName === component.customComponentApiName);
+      const definition = findRegisteredComponent(libraryComponents,component.customComponentApiName,'dashboard');
       return definition
         ? <div data-dashboard-custom-component-id={component.id}
             style={resolveLayoutStyle(component.properties ?? {}, layoutDevice)}>
