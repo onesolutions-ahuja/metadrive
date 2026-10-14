@@ -8,6 +8,7 @@ export type ChatterGrant = {
   canRead: boolean;
   canSend: boolean;
   canAssign: boolean;
+  viewAll?: boolean;
 };
 export type ChatterScope = {
   tenantId: string;
@@ -36,7 +37,7 @@ export function canAccessChatterConversation(
   if (operation === 'send' && !grant.canSend) return false;
   if (operation === 'assign' && !grant.canAssign) return false;
   if (operation === 'read' && !grant.canRead) return false;
-  return principal.viewAllConversations ||
+  return grant.viewAll === true || principal.viewAllConversations ||
     conversation.assignedUserId === principal.userId ||
     conversation.assignedUserId == null;
 }
