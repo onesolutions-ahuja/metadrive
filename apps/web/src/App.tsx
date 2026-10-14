@@ -1,4 +1,5 @@
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
+import TemplatePageRuntimeLayout from './TemplatePageRuntimeLayout';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
 import {resolveSetupNavigation} from './platformSetupNavigation';
@@ -4864,30 +4865,10 @@ function LightningAppRuntime({
         ? <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{content}</div>
         : content;
     });
-  const hasSidebar = page.template === 'main-sidebar' || page.template === 'header-main-sidebar';
-  const fullscreenLayout = isStandaloneRuntime && page.layoutMode === 'template';
-  const phoneLayout = formFactor === 'Phone';
-  return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}
-    data-standalone-presentation={fullscreenLayout ? 'true' : undefined}
-    style={fullscreenLayout ? {width:'100%',maxWidth:'none',height:'100dvh',minHeight:0,
-      padding:0,margin:0,display:'flex',flexDirection:'column',overflow:'hidden',background:'#f7f7f7'} : undefined}>
-    {!fullscreenLayout && <div className="record-detail-heading surface">
-      <div className="record-object-icon"><Grid2X2 size={18} /></div>
-      <div><div className="eyebrow">{page.pageType}</div><h1>{page.label}</h1></div>
-    </div>}
-    {renderRegion('header')}
-    <div className={hasSidebar ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}
-      style={fullscreenLayout ? {flex:1,minHeight:0,minWidth:0,display:'grid',
-        gridTemplateColumns:hasSidebar && !phoneLayout ? 'minmax(0,1fr) minmax(300px,30%)' : 'minmax(0,1fr)',
-        gap:0,margin:0,padding:0,width:'100%',overflow:'hidden'} : undefined}>
-      <main className="record-runtime-main"
-        style={fullscreenLayout ? {minWidth:0,minHeight:0,overflowY:'auto',padding:phoneLayout?12:20,
-          boxSizing:'border-box',background:'#f7f7f7'} : undefined}>{renderRegion('main')}</main>
-      {hasSidebar && <aside className="record-runtime-sidebar"
-        style={fullscreenLayout ? {minWidth:0,minHeight:0,overflowY:'auto',padding:0,
-          borderLeft:phoneLayout?'none':'1px solid #e8e8e8',background:'#fff'} : undefined}>{renderRegion('sidebar')}</aside>}
-    </div>
-  </div>;
+  return <TemplatePageRuntimeLayout apiName={page.apiName} label={page.label}
+    pageType={page.pageType} template={page.template}
+    fullscreen={isStandaloneRuntime && page.layoutMode === 'template'} phone={formFactor === 'Phone'}
+    header={renderRegion('header')} main={renderRegion('main')} sidebar={renderRegion('sidebar')} />;
 }
 
 function RecordWorkspace({
