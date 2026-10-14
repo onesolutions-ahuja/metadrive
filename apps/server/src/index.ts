@@ -1,3 +1,9 @@
+import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
+import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
+import { registerSessionSecurityRoutes } from './modules/security/session-routes.js';
+import { registerSecurityMetadataRoutes } from './modules/security/metadata-routes.js';
+import { createAccessAuthentication } from './modules/security/access-authentication.js';
+import { bearerToken, tenantForRequestHost as resolveTenantForRequestHost } from './modules/security/request-auth.js';
 import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
@@ -3051,7 +3057,7 @@ function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous
   if (entries.length) tenant.fieldHistory.push(...entries);
 }
 
-type MfaEncryptedSecret = { keyId: string; iv: string; authTag: string; ciphertext: string };
+export type MfaEncryptedSecret = { keyId: string; iv: string; authTag: string; ciphertext: string };
 export type LocalUser = {
   id: string;
   tenantId: string;
@@ -5147,108 +5153,11 @@ function requireAnyPermission(...permissions: string[]) {
   };
 }
 
-function bearerToken(req: Request): string | undefined {
-  const authorization = req.header('authorization');
-  if (!authorization) return undefined;
-  const [scheme, token, ...extra] = authorization.split(' ');
-  return scheme?.toLowerCase() === 'bearer' && token && extra.length === 0 ? token : undefined;
-}
-// Verified host bindings are lookup-only: no network or SQL query in the login path.
-type TenantHostBinding = { tenantId: string; status: TenantDomainRecord['status'] };
-const tenantHostCache = new WeakMap<PlatformState['tenantRegistry'], Map<string, TenantHostBinding>>();
-function tenantForRequestHost(req: Request): TenantHostBinding | undefined {
-  const hostname = req.hostname?.toLowerCase();
-  if (!hostname) return undefined;
-  let map = tenantHostCache.get(state.tenantRegistry);
-  if (!map) {
-    map = new Map();
-    for (const [tenantId, entry] of Object.entries(state.tenantRegistry))
-      for (const domain of entry.domains ?? [])
-        if (domain.status !== 'REVOKED' || !map.has(domain.hostname))
-          map.set(domain.hostname, { tenantId, status: domain.status });
-    tenantHostCache.set(state.tenantRegistry, map);
-  }
-  return map.get(hostname);
-}
-function accessAuthentication(req: Request, res: Response, next: NextFunction): void {
-  const token = bearerToken(req);
-  if (!token) {
-    res.status(401).json({ error: 'Bearer access token required' });
-    return;
-  }
-  void jwtService.verify(token).then((claims) => {
-    const tokenId = claims.jti;
-    const tenantId = claims.tenant_id;
-    const userId = claims.sub;
-    const hostTenant = tenantForRequestHost(req);
-    if (hostTenant && (hostTenant.status !== 'VERIFIED' || hostTenant.tenantId !== tenantId)) {
-      res.status(401).json({ error: 'This session belongs to a different tenant domain' });
-      return;
-    }
-    if (!tokenId || !tenantId || !userId) {
-      res.status(401).json({ error: 'Access token is missing identity claims' });
-      return;
-    }
-    const revokedUntil = state.revokedAccessTokens[tokenId];
-    if (revokedUntil && revokedUntil > Date.now() / 1000) {
-      res.status(401).json({ error: 'Access token has been revoked' });
-      return;
-    }
-    const user = state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
-    if (!user || !state.tenants[tenantId] || !tenantIsActive(tenantId)) {
-      res.status(401).json({ error: 'Tenant membership is no longer active' });
-      return;
-    }
-    if (!requestTenantMatches(req, user.tenantId)) {
-      res.status(403).json({ error: 'This account cannot access the requested tenant hostname.' });
-      return;
-    }
-    if (user.lockedUntil && user.lockedUntil > Date.now()) {
-      res.status(401).json({ error: 'Account temporarily locked' });
-      return;
-    }
-    if ((claims.auth_version ?? 0) !== (user.authVersion ?? 0)) {
-      res.status(401).json({ error: 'Authentication state has changed; sign in again' });
-      return;
-    }
-    if ((claims.mfa_version ?? 0) !== (user.mfaVersion ?? 0)) {
-      res.status(401).json({ error: 'Authentication state has changed; sign in again' });
-      return;
-    }
-    if (mfaRequiredForUser(state.tenants[tenantId], user) && !claims.amr?.includes('otp')) {
-      res.status(401).json({ error: 'MFA verification is required' });
-      return;
-    }
-    if (user.authRevokedBefore !== undefined &&
-        (typeof claims.iat !== 'number' || claims.iat <= user.authRevokedBefore)) {
-      res.status(401).json({ error: 'Access token was issued before credentials changed' });
-      return;
-    }
-    // Portal identities have a deliberately narrow route allowlist, separate
-    // from role and object permissions. They cannot reach Setup, credentials,
-    // sharing administration, Flows, reports, or record mutation endpoints.
-    const accessMetadataUser = state.tenants[tenantId].accessControl.users
-      .find((member) => member.id === user.id);
-    if (accessMetadataUser?.userType === 'external') {
-      const portalRecordRead = req.method === 'GET' &&
-        /^\/api\/records\/[A-Za-z0-9_]+(?:\/[A-Za-z0-9_-]+)?$/.test(req.path);
-      if (!(portalRecordRead || (req.method === 'GET' && req.path === '/api/auth/me'))) {
-        res.status(403).json({ error: 'External identities cannot use this tenant API' });
-        return;
-      }
-    }
-    res.locals.principal = {
-      userId: user.id,
-      tenantId: user.tenantId,
-      email: user.email,
-      roles: claims.roles,
-      permissions: effectivePermissions(user, state.tenants[tenantId])
-    } satisfies Principal;
-    next();
-  }).catch(() => {
-    res.status(401).json({ error: 'Access token is invalid or expired' });
-  });
-}
+const tenantForRequestHost = (req: Request) => resolveTenantForRequestHost(req, state.tenantRegistry);
+const accessAuthentication = createAccessAuthentication({
+  jwtService, getState: () => state, tenantIsActive, requestTenantMatches,
+  mfaRequiredForUser, effectivePermissions
+});
 
 function cookieValue(req: Request, name: string): string | undefined {
   const header = req.header('cookie');
@@ -5515,799 +5424,88 @@ app.get('/health', async (_req, res) => {
 app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
 app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
 app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
-app.get('/api/auth/config', (_req, res) => res.json({
-  mode: jwtService.config.mode,
-  issuer: jwtService.config.issuer,
-  audience: jwtService.config.audience,
-  tenantLoginRequired: false,
-  tenantResolvedFromEmail: true,
-  tenantHostBindingEnabled: tenantHostRouting.enabled
-}));
-
-app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
-  const expected = process.env.METADRIVE_PROVISIONING_KEY;
-  const provided = req.header('x-provisioning-key');
-  if (!expected) return res.status(503).json({ error: 'Tenant provisioning is disabled until METADRIVE_PROVISIONING_KEY is configured' });
-  if (!provided || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
-    return res.status(401).json({ error: 'Invalid provisioning credential' });
-  }
-  const parsed = provisioningSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant provisioning request', details: parsed.error.flatten() });
-  try {
-    const key = provisioningIdempotencyKey(req);
-    const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
-      parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key', key,
-      parsed.data.developerDomain);
-    return res.status(created ? 201 : 200).json({
-      tenantId: user.tenantId, administrator: { id: user.id, email: user.email }, replayed: !created
-    });
-  } catch (error) {
-    return res.status(error instanceof TenantProvisioningStoreError ? 503
-      : error instanceof Error && error.message.startsWith('Idempotency-Key') ? 400 : 409)
-      .json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
-  }
-});
-
-
-const passwordRecoverySettingsSchema = z.object({
-  smtpCredentialId: z.union([z.literal(''), z.string().uuid()]),
-  fromEmail: z.union([z.literal(''), z.string().email()]),
-  policy: z.object({
-    method: z.enum(['OTP','LINK']),
-    defaultChannel: z.enum(['email','sms','whatsapp']).default('email'),
-    allowedChannels: z.array(z.enum(['email','sms','whatsapp'])).default(['email']),
-    templates: z.record(z.object({subject:z.string().max(240),body:z.string().max(4000)})).optional()
-  }).optional()
-}).strict();
-const passwordResetRequestSchema = z.object({ email: z.string().trim().email().max(254) }).strict();
-const passwordResetConfirmSchema = z.object({
-  email: z.string().trim().email().max(254),
-  token: z.string().regex(/^(?:[A-Za-z0-9_-]{64}|[0-9]{6})$/),
-  newPassword: z.string().min(12).max(256)
-}).strict();
-const passwordResetRate = new Map<string, { count: number; until: number }>();
-function resetAllowed(key: string, max = 3): boolean {
-  const now = Date.now();
-  if (passwordResetRate.size > 4096) {
-    for (const [id, value] of passwordResetRate) if (value.until < now) passwordResetRate.delete(id);
-    if (passwordResetRate.size > 4096) passwordResetRate.delete(passwordResetRate.keys().next().value!);
-  }
-  const previous = passwordResetRate.get(key);
-  if (previous && previous.until > now && previous.count >= max) return false;
-  passwordResetRate.set(key, {
-    count: previous && previous.until > now ? previous.count + 1 : 1,
-    until: now + 15 * 60_000
-  });
-  return true;
-}
-function configuredRecoveryUrl(): URL | null {
-  const raw = process.env.METADRIVE_PASSWORD_RESET_BASE_URL;
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    const isLocalTest = process.env.NODE_ENV !== 'production'
-      && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
-    if ((url.protocol !== 'https:' && !isLocalTest) || url.username || url.password
-      || url.search || url.hash || url.pathname !== '/' || !webOrigins.has(url.origin)) return null;
-    return url;
-  } catch { return null; }
-}
-app.get('/api/auth/password-recovery/settings', accessAuthentication,
-  requirePermission('security:manage'), (_req: Request, res: Response) => {
-    const tenant = tenantData(getPrincipal(res).tenantId)!;
-    return res.json({ ...tenant.passwordRecovery, policy: normalizeRecoveryPolicy(tenant.passwordRecovery.policy), linkReady: Boolean(configuredRecoveryUrl()) });
-  });
-app.put('/api/auth/password-recovery/settings', accessAuthentication,
-  requirePermission('security:manage'), (req: Request, res: Response) => {
-    const parsed = passwordRecoverySettingsSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid password-recovery settings' });
-    const principal = getPrincipal(res);
-    const tenant = tenantData(principal.tenantId)!;
-    if (parsed.data.smtpCredentialId) {
-      const credential = tenant.namedCredentials.find((item) =>
-        item.id === parsed.data.smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false);
-      if (!credential || !parsed.data.fromEmail)
-        return res.status(400).json({ error: 'Choose an enabled SMTP Named Credential and valid sender email' });
-      if (!configuredRecoveryUrl())
-        return res.status(503).json({ error: 'Trusted password-reset web URL is not configured' });
-    } else if (parsed.data.fromEmail) {
-      return res.status(400).json({ error: 'Sender email requires an SMTP credential' });
-    }
-    persistTenantRecords(principal.tenantId, withSecurityEvent(
-      { ...tenant, passwordRecovery: { ...parsed.data, policy: normalizeRecoveryPolicy(parsed.data.policy) } }, principal.userId,
-      'auth.password-recovery.settings.updated'
-    ));
-    return res.json(parsed.data);
-  });
-function protectedRecoveryStage(tenant: TenantData, stage: RecoveryStage) {
-  const flow = tenant.flows.find((item) => item.apiName === RECOVERY_FLOW_API);
-  // The protected default is available to older tenants even before migration.
-  const published = flow ? activeFlowDefinition(flow) : undefined;
-  if (flow && !published) throw new Error('Protected recovery flow must remain published.');
-  return recoveryFlowActions(published ?? defaultRecoveryFlowDefinition(), stage);
-}
-app.post('/api/auth/password-reset/request', async (req: Request, res: Response) => {
-  const response = { message: 'If this account supports recovery, a verification message will be sent.' };
-  if (jwtService.config.mode !== 'local') return res.status(202).json(response);
-  const parsed = passwordResetRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid email' });
-  const email = parsed.data.email.toLowerCase();
-  const ip = req.ip ?? 'unknown';
-  if (!resetAllowed('ip:' + ip, 12) || !resetAllowed('email:' + hashToken(email)))
-    return res.status(202).json(response);
-  const user = state.users.find((item) => item.email.trim().toLowerCase() === email);
-  const tenant = user && tenantData(user.tenantId);
-  const url = configuredRecoveryUrl();
-  if (!user || user.disabled || !tenant || !url) return res.status(202).json(response);
-  const { smtpCredentialId, fromEmail } = tenant.passwordRecovery;
-  const policy = normalizeRecoveryPolicy(tenant.passwordRecovery.policy);
-  let flowActions: ReturnType<typeof protectedRecoveryStage>;
-  try { flowActions = protectedRecoveryStage(tenant, 'request'); }
-  catch { console.warn('Protected recovery Flow is invalid'); return res.status(202).json(response); }
-  const generateConfig = flowActions[0].config;
-  const sendConfig = flowActions[1].config;
-  if (generateConfig.method === 'OTP' || generateConfig.method === 'LINK') policy.method = generateConfig.method;
-  if (sendConfig.channel !== 'email') return res.status(202).json(response);
-  // A reset channel is available only when its contact is independently verified.
-  // Email is supported now; SMS and WhatsApp must not use unverified numbers.
-  if (policy.defaultChannel !== 'email') return res.status(202).json(response);
-  const token = policy.method === 'OTP'
-    ? String(randomInt(0, 1_000_000)).padStart(6, '0')
-    : randomBytes(48).toString('base64url');
-  const tokenSalt = randomBytes(16).toString('hex');
-  const verifier = policy.method === 'OTP'
-    ? tokenSalt + ':' + scryptSync(token, tokenSalt, 32).toString('hex')
-    : hashToken(token);
-  const resetUrl = new URL(url.toString());
-  if (policy.method === 'LINK') {
-    resetUrl.searchParams.set('resetEmail', email);
-    resetUrl.searchParams.set('resetToken', token);
-  }
-  const template = policy.templates.email;
-  // The tenant's published recovery Flow can override the inherited email template.
-  if (sendConfig.templateSource === 'FLOW') {
-    if (typeof sendConfig.subject === 'string' && sendConfig.subject.length <= 240) template.subject = sendConfig.subject;
-    if (typeof sendConfig.body === 'string' && sendConfig.body.length <= 4000) template.body = sendConfig.body;
-  }
-  const variables = {
-    'Tenant.Id': user.tenantId, 'Tenant.Name': tenantInfoForRecovery(tenant, user.tenantId),
-    'User.Email': email, 'Verification.Value': policy.method === 'OTP' ? token : resetUrl.toString(),
-    'Verification.Method': policy.method, 'Verification.ExpiryMinutes': '15'
-  };
-  const subject = renderRecoveryTemplate(template.subject, variables);
-  const body = renderRecoveryTemplate(template.body, variables);
-  const senders: Array<{ provider: 'tenant'|'platform'|'http'; send:()=>Promise<void> }> = [];
-  if (smtpCredentialId && fromEmail && tenant.namedCredentials.some((item) =>
-    item.id === smtpCredentialId && item.protocol === 'SMTP' && item.enabled !== false)) {
-    senders.push({ provider: 'tenant', send: () =>
-      sendTenantEmail(user.tenantId, tenant, smtpCredentialId, fromEmail, [email], subject, body) });
-  }
-  // The fallback credential is owned by a platform tenant, never copied into customer records.
-  const platformTenantId = process.env.METADRIVE_RECOVERY_PLATFORM_TENANT_ID;
-  const platformCredentialId = process.env.METADRIVE_RECOVERY_PLATFORM_SMTP_CREDENTIAL_ID;
-  const platformFrom = process.env.METADRIVE_RECOVERY_PLATFORM_FROM_EMAIL;
-  const platformTenant = platformTenantId ? tenantData(platformTenantId) : undefined;
-  if (platformTenantId && platformTenant && platformCredentialId && platformFrom
-    && platformTenant.namedCredentials.some((item) => item.id === platformCredentialId
-      && item.protocol === 'SMTP' && item.enabled !== false)) {
-    senders.push({ provider: 'platform', send: () =>
-      sendTenantEmail(platformTenantId, platformTenant, platformCredentialId, platformFrom, [email], subject, body) });
-  }
-  if (!senders.length) return res.status(202).json(response);
-  try {
-    await deliverWithFallback(senders, (provider) => console.warn('Password recovery delivery failed via '+provider));
-    const current = state.users.find((item) => item.id === user.id && item.tenantId === user.tenantId);
-    if (!current || current.disabled || !tenantData(user.tenantId)) return res.status(202).json(response);
-    const nextState: PlatformState = {
-      ...state,
-      users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-        ? { ...item, passwordReset: { tokenHash: verifier, expiresAt: Date.now() + 15 * 60_000 } }
-        : item),
-      tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
-        state.tenants[user.tenantId], user.id, 'auth.password-reset.requested') }
-    };
-    persistState(nextState);
-    state = nextState;
-  } catch {
-    // Generic outward result. Do not log tokens, URLs, recipients, or request bodies.
-    console.warn('Password recovery delivery/persistence unavailable');
-  }
-  return res.status(202).json(response);
-});
-app.post('/api/auth/password-reset/confirm', async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'Password reset is managed by the identity provider' });
-  const parsed = passwordResetConfirmSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid password-reset request' });
-  const email = parsed.data.email.toLowerCase();
-  if (!resetAllowed('redeem:' + (req.ip ?? 'unknown') + ':' + hashToken(email), 8)
-    || !resetAllowed('redeem-email:' + hashToken(email), 8))
-    return res.status(429).json({ error: 'Too many reset attempts' });
-  const user = state.users.find((item) => item.email.toLowerCase() === email);
-  const request = user?.passwordReset;
-  const [salt, digest] = request?.tokenHash.split(':') ?? [];
-  const otpDigest = salt && digest && /^[a-f0-9]{32}$/.test(salt) && /^[a-f0-9]{64}$/.test(digest)
-    ? scryptSync(parsed.data.token, salt, 32) : null;
-  const valid = Boolean(user && !user.disabled && tenantData(user.tenantId)
-    && request && request.expiresAt > Date.now()
-    && (otpDigest
-      ? timingSafeEqual(Buffer.from(digest,'hex'), otpDigest)
-      : parsed.data.token.length===64 && timingSafeEqual(Buffer.from(request.tokenHash), Buffer.from(hashToken(parsed.data.token)))));
-  if (!valid || !user) return res.status(400).json({ error: 'Invalid or expired password-reset code or link' });
-  // The tenant's published Flow cannot bypass verification or omit password/session revocation.
-  protectedRecoveryStage(tenantData(user.tenantId)!, 'confirm');
-  const hashed = await hashPassword(parsed.data.newPassword);
-  const nextState: PlatformState = {
-    ...state,
-    users: state.users.map((item) => {
-      if (item.id !== user.id || item.tenantId !== user.tenantId) return item;
-      const updated: LocalUser = {
-        ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
-        authVersion: (item.authVersion ?? 0) + 1
-      };
-      delete updated.passwordReset;
-      delete updated.lockedUntil;
-      return updated;
-    }),
-    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
-    tenants: {
-      ...state.tenants, [user.tenantId]: withSecurityEvent(
-        state.tenants[user.tenantId], user.id, 'auth.password-reset.completed')
-    }
-  };
-  try { persistState(nextState); state = nextState; }
-  catch { return res.status(503).json({ error: 'Unable to complete password reset' }); }
-  return res.json({ reset: true, signInRequired: true });
-});
-
-app.post('/api/auth/login', async (req: Request, res: Response) => {
-  const loginStartedAt = performance.now();
-  if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Password login is disabled in external OIDC mode' });
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid login request', details: parsed.error.flatten() });
-  const key = req.ip ?? 'unknown';
-  const now = Date.now();
-  const limit = loginAttempts.get(key);
-  if (limit && limit.resetAt > now && limit.count >= 8) return res.status(429).json({ error: 'Too many login attempts; try again later' });
-  const user = state.users.find((item) => item.email.trim().toLowerCase() === parsed.data.email.toLowerCase());
-  const loginHostTenant = tenantForRequestHost(req);
-  if (loginHostTenant && (loginHostTenant.status !== 'VERIFIED' || user?.tenantId !== loginHostTenant.tenantId))
-    return res.status(401).json({ error: 'Invalid email or password' });
-  const passwordStartedAt = performance.now();
-  const valid = user && (!user.lockedUntil || user.lockedUntil <= now)
-    ? await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash) : false;
-  const passwordMs = performance.now() - passwordStartedAt;
-  if (!user || user.disabled || !valid || developerActivationPending.has(user.id) || !tenantIsActive(user.tenantId)) {
-    const attempts = limit && limit.resetAt > now ? limit.count + 1 : 1;
-    loginAttempts.set(key, { count: attempts, resetAt: now + 15 * 60 * 1000 });
-    if (user && !user.disabled && !valid && tenantIsActive(user.tenantId) && (!user.lockedUntil || user.lockedUntil <= now))
-      recordUserLoginFailure(user);
-    return res.status(401).json({ error: 'Invalid email or password' });
-  }
-  loginAttempts.delete(key);
-  userLoginFailures.delete(user.id);
-  const data = tenantData(user.tenantId);
-  if (!data) return res.status(401).json({ error: 'Tenant is unavailable' });
-  if (!requestTenantMatches(req, user.tenantId)) return res.status(403).json({ error: 'This account cannot access the requested tenant hostname.' });
-  if (mfaRequiredForUser(data, user)) {
-    if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts; try later' });
-    if (!mfaCredentialReady()) return res.status(503).json({ error: 'MFA encryption is not configured' });
-    const pendingSecret = user.mfaSecret ? undefined : newTotpSecret();
-    const challengeToken = newMfaToken(mfaLoginChallenges, {
-      tenantId: user.tenantId, userId: user.id, expiresAt: Date.now() + mfaChallengeTtlMs,
-      attempts: 0, authVersion: user.authVersion ?? 0,
-      ...(pendingSecret ? { pendingSecret } : {})
-    });
-    return res.status(202).json({
-      mfa_required: true, challenge_token: challengeToken,
-      enrollment_required: Boolean(pendingSecret),
-      ...(pendingSecret ? { setup_secret: pendingSecret, setup_uri: totpUri(pendingSecret, user.email) } : {})
-    });
-  }
-  return issueLoginResponse(res, user, data, undefined, { startedAt: loginStartedAt, passwordMs }, false, req.query.landing === '1');
-});
-
-
-app.post('/api/auth/mfa/verify', async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'MFA login is managed by the identity provider' });
-  const parsed = z.object({
-    challenge_token: z.string().min(32).max(128),
-    code: z.string().regex(/^\d{6}$/)
-  }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid MFA challenge request' });
-  const key = hashToken(parsed.data.challenge_token);
-  const challenge = mfaLoginChallenges.get(key);
-  const mfaHostTenant = tenantForRequestHost(req);
-  if (mfaHostTenant && (mfaHostTenant.status !== 'VERIFIED' || challenge?.tenantId !== mfaHostTenant.tenantId))
-    return res.status(401).json({ error: 'MFA challenge is no longer valid' });
-  if (!challenge || challenge.expiresAt <= Date.now() || challenge.attempts >= 5) {
-    mfaLoginChallenges.delete(key);
-    return res.status(401).json({ error: 'MFA challenge expired; sign in again' });
-  }
-  const user = state.users.find((item) =>
-    item.id === challenge.userId && item.tenantId === challenge.tenantId && !item.disabled);
-  const tenant = tenantData(challenge.tenantId);
-  if (!user || !tenant || challenge.authVersion !== (user.authVersion ?? 0) || !mfaRequiredForUser(tenant, user)
-    || (Boolean(user.mfaSecret) === Boolean(challenge.pendingSecret))) {
-    mfaLoginChallenges.delete(key);
-    return res.status(401).json({ error: 'MFA challenge is no longer valid' });
-  }
-  if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts; try later' });
-  challenge.attempts += 1;
-  let secret: string;
-  try {
-    secret = challenge.pendingSecret ?? openMfaSecret(user.tenantId, user.id, user.mfaSecret!);
-  } catch {
-    mfaLoginChallenges.delete(key);
-    return res.status(503).json({ error: 'MFA secret cannot be decrypted' });
-  }
-  const step = verifyTotp(secret, parsed.data.code, user.mfaLastUsedStep ?? -1);
-  if (step === null) {
-    recordMfaFailure(user.id);
-    if (challenge.attempts >= 5) mfaLoginChallenges.delete(key);
-    return res.status(401).json({ error: 'Invalid or already used authenticator code' });
-  }
-  mfaLoginChallenges.delete(key);
-  mfaFailures.delete(user.id);
-  let securedUser: LocalUser;
-  try {
-    securedUser = {
-      ...user,
-      ...(challenge.pendingSecret ? { mfaSecret: sealMfaSecret(user.tenantId, user.id, secret) } : {}),
-      mfaLastUsedStep: step,
-      mfaVersion: challenge.pendingSecret ? (user.mfaVersion ?? 0) + 1 : user.mfaVersion
-    };
-    const nextState = {
-      ...state,
-      users: state.users.map((item) => item.id === user.id ? securedUser : item)
-    };
-    persistState(nextState);
-    state = nextState;
-  } catch {
-    return res.status(503).json({ error: 'Unable to persist MFA verification' });
-  }
-  return issueLoginResponse(res, securedUser, tenant, undefined, undefined, true, req.query.landing === '1');
-});
-
-app.get('/api/auth/mfa/status', accessAuthentication, (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const user = principalUser(principal)!;
-  return res.json({ mode: tenant.mfaPolicy.mode, enrolled: Boolean(user.mfaSecret) });
-});
-
-app.get('/api/auth/mfa/policy', accessAuthentication, requirePermission('security:manage'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
-  return res.json(tenant.mfaPolicy);
-});
-
-app.put('/api/auth/mfa/policy', accessAuthentication, requirePermission('security:manage'), (req: Request, res: Response) => {
-  const parsed = z.object({ mode: z.enum(['Off', 'Optional', 'Required']) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid MFA policy' });
-  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'Configure MFA through your external identity provider' });
-  if (parsed.data.mode !== 'Off' && !mfaCredentialReady()) {
-    return res.status(503).json({ error: 'Configure persistent MFA encryption keys before enabling MFA' });
-  }
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  if (tenant.mfaPolicy.mode !== parsed.data.mode) {
-    persistTenantRecords(principal.tenantId, withSecurityEvent(
-      { ...tenant, mfaPolicy: parsed.data },
-      principal.userId, 'auth.mfa.policy.updated',
-      { from: tenant.mfaPolicy.mode, to: parsed.data.mode }
-    ));
-  }
-  return res.json(parsed.data);
-});
-
-app.post('/api/auth/mfa/enroll', accessAuthentication, async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'External identity provider manages MFA' });
-  const parsed = z.object({ password: z.string().min(1).max(256) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Current password is required' });
-  const principal = getPrincipal(res);
-  const user = principalUser(principal)!;
-  const tenant = tenantData(principal.tenantId)!;
-  if (tenant.mfaPolicy.mode === 'Off') return res.status(409).json({ error: 'Enable Optional MFA in tenant settings first' });
-  if (user.mfaSecret) return res.status(409).json({ error: 'MFA is already enrolled' });
-  if (!mfaCredentialReady()) return res.status(503).json({ error: 'MFA encryption is not configured' });
-  if (!await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash)) {
-    return res.status(401).json({ error: 'Invalid current password' });
-  }
-  const secret = newTotpSecret();
-  const enrollmentToken = newMfaToken(mfaEnrollments, {
-    userId: user.id, tenantId: user.tenantId,
-    secret, attempts: 0, expiresAt: Date.now() + mfaChallengeTtlMs, authVersion: user.authVersion ?? 0
-  });
-  return res.json({ enrollment_token: enrollmentToken, setup_secret: secret, setup_uri: totpUri(secret, user.email) });
-});
-
-app.post('/api/auth/mfa/enroll/confirm', accessAuthentication, (req: Request, res: Response) => {
-  const parsed = z.object({ enrollment_token: z.string().min(32).max(128), code: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid enrollment confirmation' });
-  const principal = getPrincipal(res);
-  const user = principalUser(principal)!;
-  const tenant = tenantData(principal.tenantId)!;
-  const key = hashToken(parsed.data.enrollment_token);
-  const enrollment = mfaEnrollments.get(key);
-  if (!enrollment || enrollment.userId !== user.id || enrollment.tenantId !== user.tenantId
-    || enrollment.expiresAt <= Date.now() || enrollment.attempts >= 5
-    || enrollment.authVersion !== (user.authVersion ?? 0) || user.mfaSecret || tenant.mfaPolicy.mode === 'Off') {
-    mfaEnrollments.delete(key);
-    return res.status(401).json({ error: 'Enrollment expired; start again' });
-  }
-  enrollment.attempts += 1;
-  const step = verifyTotp(enrollment.secret, parsed.data.code);
-  if (step === null) {
-    if (enrollment.attempts >= 5) mfaEnrollments.delete(key);
-    return res.status(401).json({ error: 'Invalid authenticator code' });
-  }
-  let encrypted: MfaEncryptedSecret;
-  try { encrypted = sealMfaSecret(user.tenantId, user.id, enrollment.secret); }
-  catch { return res.status(503).json({ error: 'MFA encryption is unavailable' }); }
-  const nextState = {
-    ...state,
-    users: state.users.map((item) => item.id === user.id
-      ? { ...item, mfaSecret: encrypted, mfaLastUsedStep: step, mfaVersion: (item.mfaVersion ?? 0) + 1 }
-      : item),
-    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
-  };
-  persistState(nextState);
-  state = nextState;
-  mfaEnrollments.delete(key);
-  return res.json({ enrolled: true, reauthenticate: true });
-});
-
-app.post('/api/auth/mfa/disable', accessAuthentication, async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(409).json({ error: 'External identity provider manages MFA' });
-  const parsed = z.object({ password: z.string().min(1).max(256), code: z.string().regex(/^\d{6}$/) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Password and authenticator code are required' });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  if (tenant.mfaPolicy.mode === 'Required') return res.status(409).json({ error: 'Tenant policy requires MFA' });
-  const user = principalUser(principal)!;
-  if (!user.mfaSecret) return res.status(409).json({ error: 'MFA is not enrolled' });
-  if (mfaRateLimited(user.id)) return res.status(429).json({ error: 'Too many MFA attempts; try later' });
-  const valid = await verifyPassword(parsed.data.password, user.passwordSalt, user.passwordHash);
-  let step: number | null = null;
-  try {
-    if (valid) step = verifyTotp(openMfaSecret(user.tenantId, user.id, user.mfaSecret), parsed.data.code, user.mfaLastUsedStep ?? -1);
-  } catch { return res.status(503).json({ error: 'MFA secret cannot be decrypted' }); }
-  if (step === null) {
-    recordMfaFailure(user.id);
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-  const nextState = {
-    ...state,
-    users: state.users.map((item) => {
-      if (item.id !== user.id) return item;
-      const updated = { ...item };
-      delete updated.mfaSecret;
-      delete updated.mfaLastUsedStep;
-      updated.mfaVersion = (item.mfaVersion ?? 0) + 1;
-      return updated;
-    }),
-    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId)
-  };
-  persistState(nextState);
-  state = nextState;
-  mfaFailures.delete(user.id);
-  return res.json({ enrolled: false, reauthenticate: true });
-});
-
-app.post('/api/auth/refresh', async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Refresh tokens are managed by the external identity provider' });
-  const rawToken = cookieValue(req, refreshCookieName);
-  if (!rawToken) return res.status(401).json({ error: 'Refresh token required' });
-  const tokenHash = hashToken(rawToken);
-  const session = state.refreshSessions.find((item) => item.tokenHash === tokenHash);
-  const refreshHostTenant = tenantForRequestHost(req);
-  if (refreshHostTenant && (refreshHostTenant.status !== 'VERIFIED' || session?.tenantId !== refreshHostTenant.tenantId)) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Refresh token belongs to a different tenant domain' });
-  }
-  if (!session) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Refresh token is invalid or expired' });
-  }
-  if (!requestTenantMatches(req, session.tenantId)) return res.status(403).json({ error: 'This session cannot access the requested tenant hostname.' });
-  if (session.usedAt !== null || session.revokedAt !== null) {
-    // Grace window: the frontend fires ~13 parallel metadata requests on load and
-    // multiple tabs may refresh concurrently. The first refresh rotates the cookie,
-    // but in-flight siblings still carry the just-used token. Treat reuse within a
-    // few seconds as a race (not theft): re-issue from the family's latest live
-    // session instead of revoking the whole family.
-    const now = Date.now() / 1000;
-    const graceSeconds = 15;
-    if (session.usedAt !== null && now - session.usedAt < graceSeconds) {
-      const latest = state.refreshSessions
-        .filter((item) => item.familyId === session.familyId && item.revokedAt === null && item.usedAt === null && item.expiresAt > now)
-        .sort((a, b) => b.expiresAt - a.expiresAt)[0];
-      const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
-      const data = tenantData(session.tenantId);
-      if (latest && user && data && (!user.lockedUntil || user.lockedUntil <= Date.now()) && tenantIsActive(session.tenantId)
-        && (latest.authVersion ?? 0) === (user.authVersion ?? 0)
-        && (!mfaRequiredForUser(data, user) || latest.mfaVerified)) {
-        // The old cookie has already been consumed by another tab. Return a
-        // fresh cookie as well as an access token, or the next page load will
-        // reuse the stale cookie and lose the authenticated session.
-        const replacement = issueRefreshSession(user, session.familyId, latest.mfaVerified === true);
-        const nextState = {
-          ...state,
-          refreshSessions: [...state.refreshSessions, replacement.session]
-        };
-        persistState(nextState);
-        state = nextState;
-        setRefreshCookie(res, replacement.token);
-        const permissions = effectivePermissions(user, data);
-        const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: latest.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0,
-          authVersion: user.authVersion ?? 0 });
-        return res.json({
-          access_token: issued.accessToken, token_type: 'Bearer',
-          expires_in: jwtService.config.accessTokenTtlSeconds, expires_at: issued.expiresAt,
-          user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions },
-    ...(req.query.landing === '1' ? { landing: authenticatedLandingBootstrap(user, data, permissions) } : {})
-        });
-      }
-    }
-    const revokedNow = Date.now() / 1000;
-    const nextState = {
-      ...state,
-      refreshSessions: state.refreshSessions.map((item) => item.familyId === session.familyId ? { ...item, revokedAt: revokedNow } : item)
-    };
-    persistState(nextState);
-    state = nextState;
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Refresh token reuse detected; token family revoked' });
-  }
-  if (session.expiresAt <= Date.now() / 1000) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Refresh token is expired' });
-  }
-  const user = state.users.find((item) => item.id === session.userId && item.tenantId === session.tenantId && !item.disabled);
-  const data = tenantData(session.tenantId);
-  if (!user || !data || !tenantIsActive(session.tenantId)) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Tenant membership is no longer active' });
-  }
-  if (user.lockedUntil && user.lockedUntil > Date.now()) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Account temporarily locked' });
-  }
-  if ((session.authVersion ?? 0) !== (user.authVersion ?? 0)) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'Authentication state has changed; sign in again' });
-  }
-  if (mfaRequiredForUser(data, user) && !session.mfaVerified) {
-    clearRefreshCookie(res);
-    return res.status(401).json({ error: 'MFA verification is required' });
-  }
-  const now = Date.now() / 1000;
-  const nextRefresh = issueRefreshSession(user, session.familyId, session.mfaVerified === true);
-  const nextState = {
-    ...state,
-    refreshSessions: [...state.refreshSessions.map((item) => item.tokenHash === tokenHash ? { ...item, usedAt: now } : item), nextRefresh.session]
-  };
-  persistState(nextState);
-  state = nextState;
-  const permissions = effectivePermissions(user, data);
-  const issued = await jwtService.issue({ userId: user.id, tenantId: user.tenantId, email: user.email, roles: [user.role], permissions, mfaVerified: session.mfaVerified === true, mfaVersion: user.mfaVersion ?? 0,
-    authVersion: user.authVersion ?? 0 });
-  setRefreshCookie(res, nextRefresh.token);
-  return res.json({
-    access_token: issued.accessToken, token_type: 'Bearer',
-    expires_in: jwtService.config.accessTokenTtlSeconds, expires_at: issued.expiresAt,
-    user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, permissions },
-    ...(req.query.landing === '1' ? { landing: authenticatedLandingBootstrap(user, data, permissions) } : {})
-  });
-});
-
-app.post('/api/auth/logout', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const token = bearerToken(req)!;
-  void jwtService.verify(token).then((claims) => {
-    const revokedAt = Date.now() / 1000;
-    const revokedAccessTokens = { ...state.revokedAccessTokens };
-    if (claims.jti && claims.exp) revokedAccessTokens[claims.jti] = claims.exp;
-    const refreshToken = cookieValue(req, refreshCookieName);
-    const refreshHash = refreshToken ? hashToken(refreshToken) : '';
-    const matchingRefresh = state.refreshSessions.find((session) =>
-      session.tokenHash === refreshHash && session.userId === principal.userId && session.tenantId === principal.tenantId);
-    const refreshSessions = state.refreshSessions.map((session) =>
-      session === matchingRefresh ? { ...session, revokedAt } : session
-    );
-    const nextState = { ...state, revokedAccessTokens, refreshSessions };
-    if (persistenceMode === 'typed') {
-      // One SQL INSERT, acknowledged only after commit. The restart overlay
-      // prevents a stale platform snapshot from resurrecting the session.
-      const previousCommit = latestStateCommit;
-      const revocation = {
-        jti: String(claims.jti), tenantId: principal.tenantId, userId: principal.userId,
-        refreshHash: matchingRefresh?.tokenHash ?? null,
-        accessExpiresAt: Number(claims.exp),
-        refreshExpiresAt: matchingRefresh?.expiresAt ?? null, revokedAt
-      };
-      const durableRevocation = persistAuthLogoutRevocation(revocation).then(() => {
-        durableLogouts.push(revocation);
-        authOverlayRevision++;
-      });
-      latestStateCommit = Promise.all([previousCommit, durableRevocation]);
-      void latestStateCommit.catch((error: unknown) => {
-        console.error('CRITICAL: Durable logout revocation failed', error);
-      });
-    } else {
-      persistState(nextState);
-    }
-    state = nextState;
-    clearRefreshCookie(res);
-    return res.status(204).end();
-  }).catch(() => res.status(401).json({ error: 'Access token is invalid or expired' }));
-});
-
-
-app.get('/api/auth/sessions', accessAuthentication, (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const now = Date.now() / 1000;
-  const active = state.refreshSessions
-    .filter((session) => session.userId === principal.userId && session.tenantId === principal.tenantId
-      && session.revokedAt === null && session.usedAt === null && session.expiresAt > now)
-    .map((session) => ({
-      familyId: session.familyId,
-      expiresAt: session.expiresAt,
-      mfaVerified: session.mfaVerified === true
-    }));
-  // Do not expose raw refresh tokens or their hashes.
-  res.json({ sessions: active });
-});
-
-// Revokes every refresh session AND every bearer token using auth-version
-// invalidation. Requires password proof even when the caller holds a valid JWT.
-app.post('/api/auth/sessions/revoke-all', accessAuthentication, async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') {
-    return res.status(409).json({ error: 'Sessions are managed by the external identity provider' });
-  }
-  const parsed = z.object({ currentPassword: z.string().min(1).max(256) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Current password required' });
-  const principal = getPrincipal(res);
-  const user = principalUser(principal);
-  if (!user || !await verifyPassword(parsed.data.currentPassword, user.passwordSalt, user.passwordHash)) {
-    return res.status(401).json({ error: 'Current password is incorrect' });
-  }
-  const nextState: PlatformState = {
-    ...state,
-    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-      ? { ...item, authVersion: (item.authVersion ?? 0) + 1 }
-      : item),
-    refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
-    tenants: {
-      ...state.tenants,
-      [user.tenantId]: withSecurityEvent(tenantData(user.tenantId)!, user.id, 'auth.sessions.revoked-all')
-    }
-  };
-  try { persistState(nextState); state = nextState; }
-  catch { return res.status(503).json({ error: 'Unable to revoke sessions' }); }
-  clearRefreshCookie(res);
-  return res.json({ revoked: true, signedOut: true });
-});
-
-
-app.get('/api/auth/user-locks', accessAuthentication, requirePermission('security:manage'),
-  (_req: Request, res: Response) => {
-    const principal = getPrincipal(res);
-    const tenant = tenantData(principal.tenantId)!;
-    const now = Date.now();
-    return res.json({
-      users: state.users.filter((user) => user.tenantId === principal.tenantId).map((user) => ({
-        id: user.id, name: user.name, email: user.email, active: !user.disabled,
-        lockedUntil: user.lockedUntil && user.lockedUntil > now ? user.lockedUntil : null,
-        canManageSecurity: effectivePermissions(user, tenant).includes('security:manage')
-      }))
-    });
-  });
-const accountLockSchema = z.object({ durationMinutes: z.number().int().min(1).max(1440).default(60) }).strict();
-app.post('/api/auth/users/:userId/lock', accessAuthentication, requirePermission('security:manage'),
-  (req: Request, res: Response) => {
-    const principal = getPrincipal(res);
-    const targetId = String(req.params.userId);
-    if (targetId === principal.userId) return res.status(409).json({ error: 'Cannot lock your own administrative account' });
-    const parsed = accountLockSchema.safeParse(req.body ?? {});
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid lock duration' });
-    const target = state.users.find((item) => item.id === targetId && item.tenantId === principal.tenantId);
-    const tenant = tenantData(principal.tenantId)!;
-    if (!target) return res.status(404).json({ error: 'Tenant user not found' });
-    const lastAdmin = effectivePermissions(target, tenant).includes('security:manage')
-      && !state.users.some((user) => user.tenantId === principal.tenantId && user.id !== targetId
-        && !user.disabled && (!user.lockedUntil || user.lockedUntil <= Date.now())
-        && effectivePermissions(user, tenant).includes('security:manage'));
-    if (lastAdmin) return res.status(409).json({ error: 'Cannot lock the last active tenant security administrator' });
-    const until = Date.now() + parsed.data.durationMinutes * 60_000;
-    const nextState: PlatformState = {
-      ...state,
-      users: state.users.map((user) => user.id === target.id && user.tenantId === target.tenantId
-        ? { ...user, lockedUntil: until, authVersion: (user.authVersion ?? 0) + 1 }
-        : user),
-      refreshSessions: revokeUserRefreshSessions(target.id, target.tenantId),
-      tenants: { ...state.tenants, [principal.tenantId]: withSecurityEvent(
-        tenant, principal.userId, 'auth.account.locked', undefined, target.id) }
-    };
-    persistState(nextState);
-    state = nextState;
-    return res.json({ userId: target.id, lockedUntil: until });
-  });
-app.post('/api/auth/users/:userId/unlock', accessAuthentication, requirePermission('security:manage'),
-  (req: Request, res: Response) => {
-    const principal = getPrincipal(res);
-    const userId = String(req.params.userId);
-    const target = state.users.find((item) => item.id === userId && item.tenantId === principal.tenantId);
-    if (!target) return res.status(404).json({ error: 'Tenant user not found' });
-    const updated: LocalUser = { ...target, authVersion: (target.authVersion ?? 0) + 1 };
-    delete updated.lockedUntil;
-    const nextState: PlatformState = {
-      ...state,
-      users: state.users.map((item) => item.id === target.id && item.tenantId === target.tenantId ? updated : item),
-      refreshSessions: revokeUserRefreshSessions(target.id, target.tenantId),
-      tenants: { ...state.tenants, [principal.tenantId]: withSecurityEvent(
-        tenantData(principal.tenantId)!, principal.userId, 'auth.account.unlocked', undefined, target.id) }
-    };
-    persistState(nextState);
-    state = nextState;
-    userLoginFailures.delete(target.id);
-    return res.json({ userId: target.id, unlocked: true });
-  });
-
-app.get('/api/auth/security-events', accessAuthentication, requirePermission('security:manage'), (req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
-  const max = Number(req.query.limit ?? 100);
-  if (!Number.isInteger(max) || max < 1 || max > 500)
-    return res.status(400).json({ error: 'limit must be between 1 and 500' });
-  return res.json({ events: tenant.securityAudit.slice(-max).reverse() });
-});
-
-const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1).max(256),
-  newPassword: z.string().min(12).max(256)
-});
-const passwordChangeAttempts = new Map<string, { count: number; resetAt: number }>();
-app.post('/api/auth/change-password', accessAuthentication, async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local') return res.status(501).json({ error: 'Password changes are managed by the identity provider' });
-  const principal = getPrincipal(res);
-  const parsed = changePasswordSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid password request; new password must have at least 12 characters' });
-  if (parsed.data.currentPassword === parsed.data.newPassword) return res.status(400).json({ error: 'Choose a different new password' });
-  const key = principal.userId;
-  const now = Date.now();
-  const attempts = passwordChangeAttempts.get(key);
-  if (attempts && attempts.resetAt > now && attempts.count >= 5) return res.status(429).json({ error: 'Too many attempts; try again later' });
-  const user = principalUser(principal);
-  if (!user) return res.status(401).json({ error: 'User not available' });
-  const verified = await verifyPassword(parsed.data.currentPassword, user.passwordSalt, user.passwordHash);
-  if (!verified) {
-    passwordChangeAttempts.set(key, { count: attempts && attempts.resetAt > now ? attempts.count + 1 : 1, resetAt: now + 15 * 60 * 1000 });
-    return res.status(401).json({ error: 'Current password is incorrect' });
-  }
-  passwordChangeAttempts.delete(key);
-  const hashed = await hashPassword(parsed.data.newPassword);
-  const changedAt = Math.floor(Date.now() / 1000);
-  const nextState: PlatformState = {
-    ...state,
-    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
-      ? (() => {
-        const updated: LocalUser = { ...item, passwordSalt: hashed.salt, passwordHash: hashed.hash,
-          authVersion: (item.authVersion ?? 0) + 1 };
-        delete updated.passwordReset;
-        return updated;
-      })()
-      : item),
-    refreshSessions: state.refreshSessions.map((session) => session.userId === user.id && session.tenantId === user.tenantId
-      ? { ...session, revokedAt: changedAt } : session),
-    tenants: {
-      ...state.tenants,
-      [user.tenantId]: withSecurityEvent(tenantData(user.tenantId)!, user.id, 'auth.password.changed')
-    }
-  };
-  try { persistState(nextState); state = nextState; }
-  catch { return res.status(503).json({ error: 'Could not save new password. Please retry.' }); }
-  clearRefreshCookie(res);
-  return res.status(200).json({ changed: true, signedOut: true });
-});
+const developerActivationPending = new Set<string>();
+export const phase3AuthContext = {
+  app,
+  jwtService,
+  tenantHostRouting,
+  requestTenantMatches,
+  refreshCookieName,
+  webOrigins,
+  tenantInfoForRecovery,
+  activeFlowDefinition,
+  durableLogouts,
+  TenantProvisioningStoreError,
+  createTenant,
+  tenantIsActive,
+  withSecurityEvent,
+  tenantData,
+  getPrincipal,
+  principalUser,
+  effectivePermissions,
+  requirePermission,
+  tenantForRequestHost,
+  accessAuthentication,
+  cookieValue,
+  setRefreshCookie,
+  clearRefreshCookie,
+  issueRefreshSession,
+  authenticatedLandingBootstrap,
+  issueLoginResponse,
+  mfaLoginChallenges,
+  mfaEnrollments,
+  mfaFailures,
+  mfaChallengeTtlMs,
+  mfaRequiredForUser,
+  sealMfaSecret,
+  openMfaSecret,
+  mfaCredentialReady,
+  newMfaToken,
+  mfaRateLimited,
+  recordMfaFailure,
+  revokeUserRefreshSessions,
+  loginAttempts,
+  userLoginFailures,
+  recordUserLoginFailure,
+  loginSchema,
+  provisioningSchema,
+  provisioningIdempotencyKey,
+  persistState,
+  persistTenantRecords,
+  developerActivationPending,
+  hashPassword,
+  verifyPassword,
+  hashToken,
+  randomBytes,
+  timingSafeEqual,
+  performance,
+  newTotpSecret,
+  totpUri,
+  verifyTotp,
+  normalizeRecoveryPolicy,
+  renderRecoveryTemplate,
+  deliverWithFallback,
+  RECOVERY_FLOW_API,
+  recoveryFlowActions,
+  defaultRecoveryFlowDefinition,
+  randomInt,
+  scryptSync,
+  sendTenantEmail,
+  persistAuthLogoutRevocation,
+  persistenceMode,
+  z,
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get latestStateCommit() { return latestStateCommit; },
+  set latestStateCommit(v: Promise<unknown>) { latestStateCommit = v; },
+  get authOverlayRevision() { return authOverlayRevision; },
+  set authOverlayRevision(v: number) { authOverlayRevision = v; }
+};
+registerAuthenticationRoutes(phase3AuthContext);
+registerSessionSecurityRoutes({ app, accessAuthentication, requirePermission, getPrincipal, principalUser,
+  tenantData, jwtService, getState: () => state, setState: (next) => { state = next; },
+  persistState, revokeUserRefreshSessions, withSecurityEvent, effectivePermissions,
+  clearRefreshCookie, userLoginFailures });
 
 // MD-01A: separate, audited platform policies. All lookups use the current in-memory
 // platform state; no additional database read is introduced on guarded requests.
@@ -6539,7 +5737,6 @@ app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdm
 const activateDeveloperSchema = z.object({
   password: z.string().min(12).max(256)
 }).strict();
-const developerActivationPending = new Set<string>();
 app.get('/api/tenant/developer-account', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6984,26 +6181,8 @@ installTenantRecoveryCentre(app, {
   }
 });
 
-app.get('/api/auth/me', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const user = principalUser(principal);
-  if (!user) return res.status(401).json({ error: 'User is not active' });
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(401).json({ error: 'Tenant is unavailable' });
-  const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
-  const profileId = accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles);
-  const fieldAccess = Object.fromEntries(tenant.objects.flatMap((object) => object.fields.map((field) => [
-    `${object.apiName}.${field.apiName}`,
-    {
-      read: hasFieldPermission(principal, tenant, object.apiName, field.apiName, 'read'),
-      edit: hasFieldPermission(principal, tenant, object.apiName, field.apiName, 'edit')
-    }
-  ])));
-  const recordTypeAccess = Object.fromEntries(tenant.objects.flatMap((object) => (object.recordTypes ?? [])
-    .filter((recordType) => recordType.active)
-    .map((recordType) => [`${object.apiName}.${recordType.id}`, hasRecordTypeAccessForUser(user.id, tenant, object.apiName, recordType.id)])));
-  return res.json({ user: { id: user.id, name: user.name, email: user.email, tenantId: user.tenantId, role: user.role, profileId, permissions: effectivePermissions(user, tenant), fieldAccess, recordTypeAccess } });
-});
+registerIdentityProfileRoute({ app, accessAuthentication, getPrincipal, principalUser, tenantData,
+  profileIdForRole, hasFieldPermission, hasRecordTypeAccessForUser, effectivePermissions });
 
 app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -12397,359 +11576,11 @@ app.post('/api/kiosk/devices/reset', accessAuthentication, requirePermission('se
     return res.status(503).json({error:'Unable to persist Kiosk password reset'});
   }
 });
-app.get('/api/metadata/permissions', requirePermission('security:read'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId);
-  res.json(tenant
-    ? { ...tenant.accessControl, sharingSettings: tenant.sharingSettings, tenantId: getPrincipal(res).tenantId }
-    : { profiles: [], permissionSets: [], permissionSetGroups: [], roles: [], publicGroups: [], sharingRules: [], users: [], sharingSettings: {} });
-});
-app.put('/api/metadata/permissions', requirePermission('security:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
-    ? {
-      ...req.body,
-      roles: req.body.roles ?? tenant.accessControl.roles,
-      publicGroups: req.body.publicGroups ?? tenant.accessControl.publicGroups,
-      queues: req.body.queues ?? tenant.accessControl.queues,
-      sharingRules: req.body.sharingRules ?? tenant.accessControl.sharingRules
-    }
-    : req.body;
-  const parsed = accessControlSchema.safeParse(body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid access-control metadata', details: parsed.error.flatten() });
-  const appNames = new Set(tenant.apps.map((app) => app.apiName));
-  const tabNames = new Set(tenant.objects.map((object) => object.apiName));
-  const invalidNavigation = [...parsed.data.profiles, ...parsed.data.permissionSets].some((item) =>
-    Object.keys(item.appPermissions ?? {}).some((name) => !appNames.has(name))
-      || Object.keys(item.tabPermissions ?? {}).some((name) => !tabNames.has(name)))
-    || parsed.data.permissionSetGroups.some((group) =>
-      Object.keys(group.mutedAppPermissions ?? {}).some((name) => !appNames.has(name))
-      || Object.keys(group.mutedTabPermissions ?? {}).some((name) => !tabNames.has(name)));
-  if (invalidNavigation) return res.status(400).json({ error: 'Navigation grants must reference apps and tabs in this tenant' });
-  // Fail closed: tenant RBAC is deliberately not an authority for platform policies.
-  const reservedPermission = (permission: string) =>
-    permission === 'licence:manage' || permission.startsWith('platform:');
-  if (parsed.data.profiles.some((profile) => profile.systemPermissions.some(reservedPermission))
-    || parsed.data.permissionSets.some((set) => set.systemPermissions.some(reservedPermission))
-    || parsed.data.permissionSetGroups.some((group) => group.mutedSystemPermissions.some(reservedPermission))) {
-    return res.status(403).json({ error: 'Platform policies cannot be assigned through tenant RBAC.' });
-  }
-  const unavailableUserCurrency = parsed.data.users.find((user) =>
-    user.currencyIsoCode && !tenant.currencySettings.currencies.some((currency) => currency.currencyIsoCode === user.currencyIsoCode));
-  if (unavailableUserCurrency) {
-    return res.status(400).json({
-      error: `User "${unavailableUserCurrency.username}" must use an active tenant currency`
-    });
-  }
-  if (parsed.data.users.some((user) => !user.roleId)) {
-    return res.status(400).json({ error: 'Every tenant user must be assigned to a role' });
-  }
-  const invalidExternalUser = parsed.data.users.find((member) =>
-    member.userType === 'external' &&
-    (!member.externalAccountId ||
-      !(tenant.records.Account ?? []).some((record) => record.Id === member.externalAccountId)));
-  if (invalidExternalUser)
-    return res.status(400).json({ error: 'External identity requires a tenant-local account boundary' });
-  const identitiesByEmail = new Map(state.users
-    .filter((user) => user.tenantId === principal.tenantId)
-    .map((user) => [user.email.trim().toLowerCase(), user.id]));
-  if (parsed.data.users.some((user) => identitiesByEmail.get(user.username.trim().toLowerCase()) !== user.id)) {
-    return res.status(400).json({ error: 'Each access-control email must match that user’s tenant identity' });
-  }
-  const requestedSharingSettings = z.record(sharingSettingSchema).safeParse(req.body?.sharingSettings ?? tenant.sharingSettings);
-  if (!requestedSharingSettings.success) {
-    return res.status(400).json({ error: 'Invalid sharing settings', details: requestedSharingSettings.error.flatten() });
-  }
-  const unknownSharingObject = Object.keys(requestedSharingSettings.data)
-    .find((objectName) => !tenant.objects.some((object) => object.apiName === objectName));
-  if (unknownSharingObject) return res.status(400).json({ error: `Sharing settings reference unknown object "${unknownSharingObject}"` });
-  const sharingSettings = Object.fromEntries(tenant.objects.map((object) => [
-    object.apiName,
-    requestedSharingSettings.data[object.apiName] ?? tenant.sharingSettings[object.apiName] ?? {
-      defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
-    }
-  ]));
-  try {
-    for (const [objectName, setting] of Object.entries(sharingSettings)) {
-      const object = tenant.objects.find((entry) => entry.apiName === objectName);
-      if (!object) throw new Error('Sharing references an unknown object');
-      validateAdvancedSharingMetadata({
-        tenantId: principal.tenantId, objectApiName: objectName,
-        rules: setting.restrictionRules ?? []
-      });
-      for (const rule of setting.restrictionRules ?? []) {
-        if (rule.subjectType === 'user' &&
-          !parsed.data.users.some((user) => user.id === rule.subjectId))
-          throw new Error('Restriction references unknown tenant user');
-        if (rule.subjectType === 'role' &&
-          !parsed.data.roles.some((role) => role.id === rule.subjectId))
-          throw new Error('Restriction references unknown tenant role');
-        if (rule.conditions.some((criterion) =>
-          criterion.field !== 'Id' && !object.fields.some((field) => field.apiName === criterion.field)))
-          throw new Error('Restriction references unknown object field');
-      }
-      if (setting.portalEnabled && setting.portalAccountField !== 'Id' &&
-        !object.fields.some((field) =>
-          field.apiName === (setting.portalAccountField ?? 'AccountId')))
-        throw new Error('Portal account boundary must reference an existing object field');
-    }
-  } catch (error) {
-    return res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid advanced sharing metadata' });
-  }
-  const tenantUsers = state.users.filter((user) => user.tenantId === principal.tenantId);
-  const usersById = new Map(tenantUsers.map((user) => [user.id, user]));
-  if (parsed.data.users.some((user) => !usersById.has(user.id))) {
-    return res.status(400).json({ error: 'User membership must be provisioned through the identity service' });
-  }
-  if (parsed.data.users.length !== tenantUsers.length) {
-    return res.status(400).json({ error: 'Access-control updates must include every tenant user' });
-  }
-  const removedSharedGroup = tenant.dashboards.find((dashboard) =>
-    dashboard.sharedPermissionSetGroupIds.some((groupId) =>
-      !parsed.data.permissionSetGroups.some((group) => group.id === groupId)));
-  if (removedSharedGroup) {
-    return res.status(409).json({ error: `Permission set group access is still assigned to dashboard "${removedSharedGroup.label}"` });
-  }
-  const danglingFolderShare = tenant.dashboardFolders.flatMap((folder) =>
-    folder.shares.map((share) => ({ folder, share }))).find(({ share }) =>
-    share.targetType === 'User'
-      ? !parsed.data.users.some((user) => user.id === share.targetId)
-      : share.targetType === 'PublicGroup'
-        ? !parsed.data.publicGroups.some((group) => group.id === share.targetId)
-        : share.targetType === 'PermissionSetGroup'
-          ? !parsed.data.permissionSetGroups.some((group) => group.id === share.targetId)
-          : share.targetType === 'Territory'
-            ? !(tenant.dashboardTerritories ?? []).some((territory) => territory.id === share.targetId)
-            : !parsed.data.roles.some((role) => role.id === share.targetId));
-  if (danglingFolderShare) {
-    return res.status(409).json({
-      error: `Folder "${danglingFolderShare.folder.label}" still grants access to the removed ${danglingFolderShare.share.targetType} "${danglingFolderShare.share.targetId}"`
-    });
-  }
-  const removedPublicGroup = tenant.accessControl.publicGroups.find((group) =>
-    tenant.recordShares.some((share) => share.groupId === group.id && !parsed.data.publicGroups.some((item) => item.id === group.id))
-    || tenant.accessControl.publicGroups.some((item) => item.groupIds.includes(group.id)
-      && !parsed.data.publicGroups.some((candidate) => candidate.id === group.id)));
-  if (removedPublicGroup) {
-    return res.status(409).json({ error: `Public group "${removedPublicGroup.label}" is still referenced by a share or another group` });
-  }
-  const profilesById = new Map(parsed.data.profiles.map((profile) => [profile.id, profile]));
-  const standardProfileIds = tenant.accessControl.profiles.filter((profile) => profile.isStandard).map((profile) => profile.id);
-  if (standardProfileIds.some((id) => !profilesById.has(id))) {
-    return res.status(409).json({ error: 'Standard profiles cannot be deleted' });
-  }
-  if (tenant.accessControl.profiles.some((profile) => profile.isStandard
-    && profilesById.get(profile.id)?.isStandard !== true)) {
-    return res.status(409).json({ error: 'A standard profile cannot be changed into a custom profile' });
-  }
-  const removedAssignedProfile = tenant.objects.find((object) =>
-    object.pageLayoutAssignments?.some((assignment) => assignment.profileId !== '*' && !profilesById.has(assignment.profileId))
-    || object.compactLayoutAssignments?.some((assignment) => assignment.profileId !== '*' && !profilesById.has(assignment.profileId)));
-  if (removedAssignedProfile) {
-    return res.status(409).json({ error: `Page or compact layout assignments must be removed from "${removedAssignedProfile.label}" before deleting a profile` });
-  }
-  const fieldExists = (key: string) => {
-    const [objectName, fieldName, ...extra] = key.split('.');
-    return extra.length === 0 && Boolean(tenant.objects.find((object) => object.apiName === objectName)
-      ?.fields.some((field) => field.apiName === fieldName));
-  };
-  const invalidFieldPermission = [
-    ...parsed.data.profiles.flatMap((profile) => Object.keys(profile.fieldPermissions)),
-    ...parsed.data.permissionSets.flatMap((set) => Object.keys(set.fieldPermissions)),
-    ...parsed.data.permissionSetGroups.flatMap((group) => Object.keys(group.mutedFieldPermissions))
-  ].find((key) => !fieldExists(key));
-  if (invalidFieldPermission) return res.status(400).json({ error: `Field permission references unknown field "${invalidFieldPermission}"` });
-  const invalidObjectPermission = [
-    ...parsed.data.profiles.flatMap((profile) => Object.keys(profile.objectPermissions)),
-    ...parsed.data.permissionSets.flatMap((set) => Object.keys(set.objectPermissions)),
-    ...parsed.data.permissionSetGroups.flatMap((group) => Object.keys(group.mutedObjectPermissions))
-  ].find((name) => !tenant.objects.some((object) => object.apiName === name));
-  if (invalidObjectPermission) return res.status(400).json({ error: `Permission references unknown object "${invalidObjectPermission}"` });
-  const invalidRecordTypePermission = [
-    ...parsed.data.profiles.flatMap((profile) => Object.keys(profile.recordTypePermissions)),
-    ...parsed.data.permissionSets.flatMap((set) => Object.keys(set.recordTypePermissions)),
-    ...parsed.data.permissionSetGroups.flatMap((group) => Object.keys(group.mutedRecordTypePermissions))
-  ].find((key) => {
-    const separator = key.indexOf('.');
-    if (separator < 1) return true;
-    const objectName = key.slice(0, separator);
-    const recordTypeId = key.slice(separator + 1);
-    return !tenant.objects.find((object) => object.apiName === objectName)
-      ?.recordTypes?.some((recordType) => recordType.id === recordTypeId && recordType.active);
-  });
-  if (invalidRecordTypePermission) {
-    return res.status(400).json({ error: `Permission references unknown or inactive record type "${invalidRecordTypePermission}"` });
-  }
-  const tenantUserIds = new Set(tenantUsers.filter((user) => !user.disabled).map((user) => user.id));
-  const invalidPublicGroupUser = parsed.data.publicGroups.find((group) =>
-    group.userIds.some((userId) => !tenantUserIds.has(userId)));
-  if (invalidPublicGroupUser) {
-    return res.status(400).json({ error: `Public group "${invalidPublicGroupUser.label}" can only contain active users in this tenant` });
-  }
-  const invalidQueue = parsed.data.queues.find((queue) =>
-    queue.userIds.some((userId) => !tenantUserIds.has(userId))
-    || queue.supportedObjectApiNames.some((objectApiName) => {
-      const object = tenant.objects.find((item) => item.apiName === objectApiName);
-      return !object || !object.fields.some((field) => field.apiName === 'OwnerId'
-        && field.relationship?.targetObject === 'User');
-    }));
-  if (invalidQueue) {
-    return res.status(400).json({ error: `Queue "${invalidQueue.label}" must reference active tenant users and owner-enabled objects` });
-  }
-  const removedAssignedQueue = tenant.accessControl.queues.find((queue) =>
-    !parsed.data.queues.some((item) => item.id === queue.id)
-    && Object.entries(tenant.records).some(([objectName, records]) =>
-      queue.supportedObjectApiNames.includes(objectName)
-      && records.some((record) => record.OwnerId === queue.id)));
-  if (removedAssignedQueue) {
-    return res.status(409).json({ error: `Queue "${removedAssignedQueue.label}" still owns records` });
-  }
-  const invalidRule = parsed.data.sharingRules.find((rule) => {
-    const object = tenant.objects.find((item) => item.apiName === rule.objectApiName);
-    if (!object) return true;
-    if (rule.type === 'CriteriaBased') {
-      for (const criterion of rule.criteria) {
-        const field = object.fields.find((item) => item.apiName === criterion.fieldApiName);
-        if (!field) return true;
-        const numericField = /^(Number|Currency|Percent)(\(|$)/.test(field.dataType);
-        const textField = /^(Text|Email|Phone|URL|Picklist)(\(|$)/.test(field.dataType);
-        if (['Greater Than', 'Less Than'].includes(criterion.operator) && !numericField) return true;
-        if (['Contains', 'Starts With'].includes(criterion.operator) && !textField) return true;
-      }
-    }
-    if (rule.targetType === 'User' && !tenantUserIds.has(rule.targetId)) return true;
-    return false;
-  });
-  if (invalidRule) {
-    return res.status(400).json({ error: `Sharing rule "${invalidRule.label}" references an unknown object, field, target user, or incompatible field operator` });
-  }
-  for (const user of parsed.data.users) {
-    const profile = user.profileId ? profilesById.get(user.profileId) : undefined;
-    const effectiveProfile = profile ?? profilesById.get(profileIdForRole(user.role, parsed.data.profiles));
-    if (!effectiveProfile) return res.status(400).json({ error: `User "${user.username}" must be assigned a profile` });
-    const assignedSets = parsed.data.permissionSets.filter((set) => user.permissionSetIds.includes(set.id));
-    const assignedGroups = parsed.data.permissionSetGroups.filter((group) => user.permissionSetGroupIds.includes(group.id));
-    const incompatibleSet = assignedSets.find((set) => set.license !== effectiveProfile.license)
-      ?? assignedGroups.flatMap((group) => group.permissionSetIds
-        .map((setId) => parsed.data.permissionSets.find((set) => set.id === setId))
-        .filter((set): set is typeof parsed.data.permissionSets[number] => Boolean(set)))
-        .find((set) => set.license !== effectiveProfile.license);
-    if (incompatibleSet) {
-      return res.status(400).json({ error: `Permission set "${incompatibleSet.label}" is not compatible with ${effectiveProfile.license} profile "${effectiveProfile.label}"` });
-    }
-  }
-  const normalizedAccessControl: AccessControl = {
-    ...parsed.data,
-    permissionSetGroups: parsed.data.permissionSetGroups.map((group) => ({
-      ...group,
-      calculationStatus: 'Updated',
-      lastCalculatedAt: new Date().toISOString()
-    })),
-    users: parsed.data.users.map((user) => ({
-      ...user,
-      role: parsed.data.roles.find((role) => role.id === user.roleId)!.name
-    }))
-  };
-  const userAssignments = new Map(normalizedAccessControl.users.map((user) => [user.id, user]));
-  const updatedUsers = state.users.map((user) => {
-    if (user.tenantId !== principal.tenantId) return user;
-    const assignment = userAssignments.get(user.id);
-    const assignedRole = assignment?.roleId
-      ? parsed.data.roles.find((role) => role.id === assignment.roleId)
-      : undefined;
-    return assignment ? {
-      ...user,
-      ...(assignedRole ? { role: assignedRole.name } : {}),
-      permissionSetIds: assignment.permissionSetIds,
-      permissionSetGroupIds: assignment.permissionSetGroupIds
-    } : user;
-  });
-  const updatedTenant = withSecurityEvent(
-    { ...tenant, accessControl: normalizedAccessControl, sharingSettings },
-    principal.userId, 'rbac.permissions.updated'
-  );
-  const hasActiveSecurityAdministrator = updatedUsers.some((user) =>
-    user.tenantId === principal.tenantId && !user.disabled
-    && effectivePermissions(user, updatedTenant).includes('security:manage'));
-  if (!hasActiveSecurityAdministrator) {
-    return res.status(409).json({ error: 'At least one active tenant user must retain the security:manage permission' });
-  }
-  const nextState = { ...state, users: updatedUsers, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ ...normalizedAccessControl, sharingSettings });
-});
-app.get('/api/metadata/roles', requirePermission('security:read'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
-  return res.json({ roles: tenant.accessControl.roles });
-});
-app.post('/api/metadata/roles', requirePermission('security:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const input = roleSchema.safeParse(req.body);
-  if (!input.success) return res.status(400).json({ error: 'Invalid role metadata', details: input.error.flatten() });
-  const role = {
-    ...input.data,
-    apiName: input.data.apiName ?? roleApiNameForName(input.data.name)
-  };
-  const roles = [...tenant.accessControl.roles, role];
-  const validation = accessControlSchema.safeParse({ ...tenant.accessControl, roles });
-  if (!validation.success) return res.status(400).json({ error: 'Invalid role hierarchy', details: validation.error.flatten() });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant, accessControl: { ...tenant.accessControl, roles }
-  });
-  return res.status(201).json({ role });
-});
-app.put('/api/metadata/roles/:roleId', requirePermission('security:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const roleId = routeParam(req, 'roleId');
-  const existing = tenant.accessControl.roles.find((role) => role.id === roleId);
-  if (!existing) return res.status(404).json({ error: 'Role was not found' });
-  const parsed = roleSchema.safeParse({ ...req.body, id: roleId });
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid role metadata', details: parsed.error.flatten() });
-  const nextRole = {
-    ...parsed.data,
-    apiName: parsed.data.apiName ?? existing.apiName ?? roleApiNameForName(parsed.data.name)
-  };
-  const roles = tenant.accessControl.roles.map((role) => role.id === roleId ? nextRole : role);
-  const validation = accessControlSchema.safeParse({ ...tenant.accessControl, roles });
-  if (!validation.success) return res.status(400).json({ error: 'Invalid role hierarchy', details: validation.error.flatten() });
-  const updatedTenant = { ...tenant, accessControl: { ...tenant.accessControl, roles } };
-  const updatedUsers = state.users.map((user) => user.tenantId === principal.tenantId
-    && tenant.accessControl.users.some((assignment) => assignment.id === user.id && assignment.roleId === roleId)
-    ? { ...user, role: nextRole.name }
-    : user);
-  const nextState = { ...state, users: updatedUsers, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ role: nextRole });
-});
-app.delete('/api/metadata/roles/:roleId', requirePermission('security:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const roleId = routeParam(req, 'roleId');
-  if (!tenant.accessControl.roles.some((role) => role.id === roleId)) return res.status(404).json({ error: 'Role was not found' });
-  if (tenant.accessControl.roles.length <= 1) return res.status(409).json({ error: 'At least one role must remain in the tenant' });
-  if (tenant.accessControl.roles.some((role) => role.parentRoleId === roleId)) {
-    return res.status(409).json({ error: 'A role with child roles cannot be deleted' });
-  }
-  if (tenant.accessControl.users.some((user) => user.roleId === roleId)) {
-    return res.status(409).json({ error: 'A role assigned to a user cannot be deleted' });
-  }
-  if (tenant.accessControl.publicGroups.some((group) =>
-    group.roleIds.includes(roleId) || group.roleAndSubordinateIds.includes(roleId))
-    || tenant.accessControl.sharingRules.some((rule) =>
-      rule.ownerRoleIds.includes(roleId)
-      || (['Role', 'RoleAndSubordinates'].includes(rule.targetType) && rule.targetId === roleId))
-    || tenant.dashboardFolders.some((folder) => folder.shares.some((share) =>
-      ['Role', 'RoleAndSubordinates'].includes(share.targetType) && share.targetId === roleId))) {
-    return res.status(409).json({ error: 'A role referenced by a public group or sharing rule cannot be deleted' });
-  }
-  const roles = tenant.accessControl.roles.filter((role) => role.id !== roleId);
-  const updatedTenant = { ...tenant, accessControl: { ...tenant.accessControl, roles } };
-  persistTenantRecords(principal.tenantId, updatedTenant);
-  return res.status(204).end();
+registerSecurityMetadataRoutes({
+  app, requirePermission, tenantData, getPrincipal, getState: () => state,
+  setState: (next) => { state = next; }, accessControlSchema, roleSchema, sharingSettingSchema,
+  validateAdvancedSharingMetadata, profileIdForRole, withSecurityEvent,
+  effectivePermissions, persistState, persistTenantRecords, roleApiNameForName, routeParam
 });
 app.get('/api/metadata/flow-elements', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   res.json({ elements: [
