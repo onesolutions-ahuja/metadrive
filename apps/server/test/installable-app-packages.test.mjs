@@ -127,3 +127,27 @@ test('editable kiosk canvas installs independent components and preserves legacy
   const rerun=applyInstallableAppPackages(customized,catalog);
   assert.equal(rerun.pages.find(p=>p.apiName===canvas.apiName).label,'Tenant Custom Canvas');
 });
+
+test('package upgrade makes editable canvas discoverable and preserves tenant-owned assignments', () => {
+  const latest=applyInstallableAppPackages(tenant(),catalog);
+  const legacy=latest.pages.find(page=>page.apiName==='UNE_KIOSK');
+  const oldTenant={...latest,
+    pages:[{...legacy,activationAssignments:[
+      {id:'package-kiosk-app-default',scope:'App Default',appId:'KioskApp',profileId:null,recordTypeId:null,formFactors:['Desktop','Phone']},
+      {id:'tenant-custom',scope:'App and Profile',appId:'AnotherApp',profileId:'standard-user',recordTypeId:null,formFactors:['Desktop']}
+    ]}],
+    apps:latest.apps.map(app=>app.apiName==='KioskApp'
+      ? {...app,navigationPageApiNames:[],navigationOrder:[{type:'Object',apiName:'Product'}]}
+      : app)
+  };
+  const upgraded=applyInstallableAppPackages(oldTenant,catalog);
+  const canvas=upgraded.pages.find(page=>page.apiName==='UNE_KIOSK_CANVAS');
+  const old=upgraded.pages.find(page=>page.apiName==='UNE_KIOSK');
+  assert.ok(canvas.activationAssignments.some(a=>a.id==='package-kiosk-app-default'));
+  assert.ok(old.activationAssignments.some(a=>a.id==='tenant-custom'));
+  assert.equal(old.activationAssignments.some(a=>a.id==='package-kiosk-app-default'),false);
+  const app=upgraded.apps.find(x=>x.apiName==='KioskApp');
+  assert.ok(app.navigationPageApiNames.includes(canvas.apiName));
+  assert.ok(app.navigationOrder.some(x=>x.type==='Page'&&x.apiName===canvas.apiName));
+  assert.deepEqual(applyInstallableAppPackages(upgraded,catalog),upgraded);
+});
