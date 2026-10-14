@@ -10,7 +10,7 @@
     "test:canvas": "tsx --test scripts/md10-modern-canvas.test.mjs",
     "dev:web": "npm run dev --workspace apps/web",
     "dev:server": "npm run dev --workspace apps/server",
-    "build": "npm run test:foundation && npm run test:phase2f && npm run test:phase1f && npm run test:phase1g && npm run test:page-routing && npm run test:route-directory && npm run test:flow-binding && npm run test:record-filter && npm run test:visibility && npm run test:component-metadata && npm run test:modern-canvas && npm run test:flow-canvas && npm run test:flow-connectors && npm run test:flow-screen-upload && npm run test:flow-screen-datatable && npm run build --workspace apps/web && npm run build --workspace apps/server",
+    "build": "npm run test:phase2g && npm run test:foundation && npm run test:phase2f && npm run test:phase1f && npm run test:phase1g && npm run test:page-routing && npm run test:route-directory && npm run test:flow-binding && npm run test:record-filter && npm run test:visibility && npm run test:component-metadata && npm run test:modern-canvas && npm run test:flow-canvas && npm run test:flow-connectors && npm run test:flow-screen-upload && npm run test:flow-screen-datatable && npm run build --workspace apps/web && npm run build --workspace apps/server",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
     "test:foundation": "node --test scripts/foundation-contract.test.mjs",
@@ -32,6 +32,7 @@
     "test:component-audit": "node --test scripts/audit-component-registry.test.mjs",
     "test:phase1f": "node --test scripts/phase1f-migration-dependencies.test.mjs",
     "test:phase1g": "node --test scripts/phase1g-acceptance.test.mjs",
-    "test:phase2f": "tsx --test scripts/phase2f-metadata-revision.test.mjs"
+    "test:phase2f": "tsx --test scripts/phase2f-metadata-revision.test.mjs",
+    "test:phase2g": "tsx --test scripts/phase2g-seed-rbac.test.mjs"
   }
 }
