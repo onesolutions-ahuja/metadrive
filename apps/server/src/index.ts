@@ -1,3 +1,4 @@
+import {seedProtectedAdministrationPages,validateProtectedAdministrationPageUpdate} from './modules/metadata/platform-admin-pages.mjs';
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
 import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
 import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
@@ -454,7 +455,6 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
     return res.sendStatus(500); // Meta retries unsuccessful deliveries.
   }
 });
-
 
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
@@ -1543,7 +1543,10 @@ const pageSchema = z.object({
       height: z.number().int().min(1).max(7680)
     }).optional()
   })),
-  activationAssignments: z.array(pageActivationAssignmentSchema).optional()
+  activationAssignments: z.array(pageActivationAssignmentSchema).optional(),
+  scope: z.enum(['tenant','platform-system']).optional(), ownerNamespace: z.string().max(128).optional(),
+  definitionVersion: z.number().int().positive().optional(), overridePolicy: z.enum(['presentation-only','none']).optional(),
+  requiredPermissions: z.array(z.string().min(1)).optional()
 }).superRefine((page, context) => {
   const ids = page.components.map((component) => component.id);
   if (new Set(ids).size !== ids.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['components'], message: 'Component IDs must be unique' });
@@ -3026,7 +3029,6 @@ const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'ServiceApp', label: 'Service', description: 'Manage customer support cases.', navigationItems: ['Account', 'Contact', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#7526a8', utilityItems: ['Notes', 'History'] }
 ].map((app) => lightningAppSchema.parse(app));
 
-
 function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous: RuntimeRecord, updated: RuntimeRecord, userId: string): void {
   if (!object.settings?.trackFieldHistory) return;
   const changedAt = new Date().toISOString();
@@ -3643,7 +3645,6 @@ function whatsappRouterFlow(): FlowMetadata {
   });
 }
 
-
 function whatsappContextFlow(): FlowMetadata {
   return flowSchema.parse({
     apiName: 'WA_CONTEXT', label: 'WhatsApp Conversation Context',
@@ -4213,7 +4214,7 @@ function loadState(sqlState?: unknown): PlatformState {
       ...tenant,
       records,
       autoNumberSequences: migrateAutoNumberSequences(objects, records, tenant.autoNumberSequences),
-      apps: tenant.apps,
+      apps: tenant.apps, pages: seedProtectedAdministrationPages(tenant).pages,
       fieldHistory: tenant.fieldHistory ?? [],
       interviews: tenant.interviews ?? [],
       flowLogs: tenant.flowLogs ?? [],
@@ -5276,7 +5277,6 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
     ...(includeLanding ? { landing: authenticatedLandingBootstrap(user, data, permissions) } : {})
   });
 }
-
 
 type MfaLoginChallenge = {
   userId: string; tenantId: string; expiresAt: number; attempts: number; pendingSecret?: string; authVersion: number;
@@ -11319,6 +11319,8 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const existingPage = tenant.pages.find((page) => page.apiName === previousApiName);
+  const protectedError = validateProtectedAdministrationPageUpdate(existingPage,parsed.data,principal.permissions);
+  if (protectedError) return res.status(403).json({error:protectedError});
   if (tenant.pages.some((page) => page.apiName.toLocaleLowerCase() === parsed.data.apiName.toLocaleLowerCase()
     && page.apiName !== previousApiName)) {
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
@@ -11532,7 +11534,6 @@ function asConfigRows(value: unknown): Array<Record<string, unknown>> {
     ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object' && !Array.isArray(item))
     : [];
 }
-
 
 function isValidFlowTime(value: string): boolean {
   const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value);
@@ -12234,7 +12235,6 @@ function formulaContextForUser(tenant: TenantData, userId: string): {
     ]))
   };
 }
-
 
 
 
