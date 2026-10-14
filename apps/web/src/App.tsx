@@ -8728,7 +8728,7 @@ function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetada
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange }: {
+function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, definitions }: { definitions?: LibraryComponentMetadata['propertyDefinitions'];
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
   apps: LightningAppMetadata[];
@@ -8920,7 +8920,7 @@ function MetadataComponentProperties({ properties, objects, apps, pages, current
           [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
       </div>;
     })}
-    <CustomComponentPropertyEditor properties={properties} onChange={onChange} addOnly />
+    <CustomComponentPropertyEditor properties={properties} onChange={onChange} definitions={definitions} addOnly />
     {false && <><button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);
@@ -10385,7 +10385,7 @@ function PageBuilder({
                   onClick={() => setSelectedId(child.id)}>{child.label}</button>)}
                 {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
               </>}
-              <MetadataComponentProperties
+              <MetadataComponentProperties definitions={libraryComponents.find(component => selected.type === `Custom:${component.apiName}` && component.status !== 'Draft')?.propertyDefinitions}
                 properties={selected.properties}
                 objects={objects}
                 apps={apps}
