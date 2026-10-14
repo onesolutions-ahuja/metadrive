@@ -30,6 +30,7 @@ export default function CommerceNav({title='Order kiosk',subtitle='Choose your f
    <button type="button" className="md-commerce-btn" disabled={!!busy} style={{background:accentColor}} onClick={()=>act('basket')}>Your basket</button>
   </nav>
  </header>
+}
 `;
 const menuSource=`
 export default function CommerceProductGrid({title='Choose your meal',records=[],loading=false,columns=3,
