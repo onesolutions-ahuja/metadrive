@@ -11,6 +11,7 @@ export function findRegisteredComponent(
   if (typeof apiName !== 'string' || !apiName) return undefined;
   return components.find(definition =>
     definition.apiName === apiName &&
+    (definition as ScopedComponentDefinition).scope !== 'platform-system' &&
     definition.status !== 'Draft' &&
     definition.surfaces.includes(surface)
   );
@@ -41,4 +42,29 @@ export function findRegisteredComponentForInstance(
   components:readonly LibraryComponentMetadata[],instance:unknown,surface:ComponentSurface
 ):LibraryComponentMetadata|undefined {
   return findRegisteredComponent(components,componentApiNameFromMetadata(instance,surface),surface);
+}
+
+/**
+ * Phase 2a: additive protected registry metadata. This is the existing component
+ * registry's future system scope, NOT a browser authorisation mechanism.
+ * Legacy definitions without scope continue to belong to the tenant.
+ */
+export type ScopedComponentDefinition = LibraryComponentMetadata & {
+  scope?: 'tenant' | 'platform-system';
+  ownerNamespace?: string;
+  /** Reserved for server-validated, published system definitions. */
+  supportedSurfaces?: ReadonlyArray<ComponentSurface | 'platform'>;
+};
+
+export function componentRegistryScope(definition: ScopedComponentDefinition): 'tenant' | 'platform-system' {
+  return definition.scope === 'platform-system' ? 'platform-system' : 'tenant';
+}
+
+/** Platform rendering remains disabled until server-side publication and RBAC
+ * verification have been integrated; client metadata cannot confer trust. */
+export function findProtectedSystemComponent(
+  _components: readonly ScopedComponentDefinition[],
+  _apiName: unknown
+): undefined {
+  return undefined;
 }
