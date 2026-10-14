@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {isFlowRecordObject,flowRecordWritableFields,validateFlowRecordFields} from '../src/flow-record-metadata.mjs';
+import {isFlowRecordObject,flowRecordWritableFields,validateFlowRecordFields,equivalentFlowCollectionItem,flowRecordCollectionLimitExceeded} from '../src/flow-record-metadata.mjs';
 import {prepareFlowCreateCollection} from '../src/flow-create-collection.mjs';
 import {applyFlowCollectionAssignment} from '../src/flow-collection-assignment.mjs';
 const object={apiName:'Product',fields:[{apiName:'Name'},{apiName:'Price'},{apiName:'Id'}]};
@@ -23,4 +23,15 @@ test('Record Collection assignment accepts only plain records',()=>{
  assert.equal(isFlowRecordObject(new Date(),true),false);
  assert.deepEqual(applyFlowCollectionAssignment([],[{Id:'A'}],'Add','Record Collection'),[{Id:'A'}]);
  assert.throws(()=>applyFlowCollectionAssignment([],[new Date()],'Add','Record Collection'),/invalid value/);
+});
+
+test('metadata-driven collection identity and limits preserve Flow semantics',()=>{
+  assert.equal(equivalentFlowCollectionItem({Id:'A'},{Id:'A'},true),true);
+  assert.equal(equivalentFlowCollectionItem({Id:'A'},{Id:'A'},false),false);
+  assert.equal(equivalentFlowCollectionItem({Name:'A'},{Name:'A'},true),false);
+  const same={Name:'A'};
+  assert.equal(equivalentFlowCollectionItem(same,same,true),true);
+  assert.equal(flowRecordCollectionLimitExceeded(Array(200).fill({})),false);
+  assert.equal(flowRecordCollectionLimitExceeded(Array(201).fill({})),true);
+  assert.deepEqual(applyFlowCollectionAssignment([{Id:'A'},{Id:'B'}],{Id:'A'},'Remove','Record Collection'),[{Id:'B'}]);
 });
