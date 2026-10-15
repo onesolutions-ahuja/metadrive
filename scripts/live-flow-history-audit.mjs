@@ -21,7 +21,7 @@ let childCreated=false,parentCreated=false;
 try{
  const childFlow=definition(child,[{id:1,type:'Start',label:'Start',config:{}},{id:2,type:'End',label:'End',config:{}}],[{id:'start-end',from:1,to:2,kind:'normal',label:''}]);
  await api('/api/metadata/flows/'+child,token,'PUT',childFlow);childCreated=true;
- const parentFlow=definition(parent,[{id:1,type:'Start',label:'Start',config:{}},{id:2,type:'Subflow',label:'Invoke verification child',config:{flowApiName:child,inputValues:[],outputValues:[]}},{id:3,type:'End',label:'End',config:{}}],[{id:'start-child',from:1,to:2,kind:'normal',label:''},{id:'child-end',from:2,to:3,kind:'normal',label:''}]);
+ const parentFlow=definition(parent,[{id:1,type:'Start',label:'Start',config:{}},{id:2,type:'Subflow',label:'Invoke verification child',config:{flowApiName:child,inputValues:'',outputValues:''}},{id:3,type:'End',label:'End',config:{}}],[{id:'start-child',from:1,to:2,kind:'normal',label:''},{id:'child-end',from:2,to:3,kind:'normal',label:''}]);
  await api('/api/metadata/flows/'+parent,token,'PUT',parentFlow);parentCreated=true;
  const result=await api('/api/flows/'+parent+'/execute',token,'POST',{});
  if(!result.outputs||result.interviewId)throw Error('Parent subflow invocation did not finish synchronously');
