@@ -14,7 +14,7 @@ test('Phase 4 seeds six distinct protected Page Builder layouts without modifyin
  assert.ok(seeded.pages.slice(1).every(p=>p.scope==='platform-system'&&p.ownerNamespace==='MetaDrive'
  &&p.definitionVersion===2&&p.overridePolicy==='presentation-only'
  &&p.status==='Active'&&p.pageType==='App Page'));
- assert.ok(seeded.pages.slice(1).every(p=>p.components.length>0&&p.layoutMode==='free-canvas'));
+ assert.ok(seeded.pages.slice(1).every(p=>p.components.length>0&&p.layoutMode==='template'));
  assert.strictEqual(seedProtectedAdministrationPages(seeded),seeded);
 });
 test('a system page cannot be silently overwritten during an upgrade',()=>{
