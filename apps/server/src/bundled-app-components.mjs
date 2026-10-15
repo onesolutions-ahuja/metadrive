@@ -69,6 +69,7 @@ export function ensureBundledAppComponents(library, tenant, catalog, bundledRoot
       apiName:descriptor.apiName, label:descriptor.label,
       description:descriptor.description,
       surfaces:descriptor.surfaces, resize:descriptor.resize,
+      ...(descriptor.propertyDefinitions ? {propertyDefinitions:descriptor.propertyDefinitions} : {}),
       jsxSource, cssSource, compiledJs, scopedCss:cssSource,
       version:bundleVersion, publishedVersion:bundleVersion, status:'Published',
       trustedBundled:true, updatedAt:new Date().toISOString()

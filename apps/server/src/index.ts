@@ -2653,6 +2653,7 @@ const sharingSettingSchema = z.object({
 });
 const currencySettingsSchema = z.object({
   corporateCurrency: z.string().regex(/^[A-Z]{3}$/).default('USD'),
+  standardVatRate: z.number().finite().min(0).max(100).default(20),
   currencies: z.array(z.object({
     currencyIsoCode: z.string().regex(/^[A-Z]{3}$/),
     conversionRate: z.number().finite().positive()
@@ -3190,7 +3191,7 @@ const stateSchema = z.object({
     reports: z.array(reportSchema).default([]),
     accessControl: accessControlSchema,
     sharingSettings: z.record(sharingSettingSchema).default({}),
-    currencySettings: currencySettingsSchema.default({ corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] }),
+    currencySettings: currencySettingsSchema.default({ corporateCurrency: 'USD', standardVatRate: 20, currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] }),
     recordShares: z.array(recordShareSchema).default([]),
     campaignMembers: z.array(campaignMemberSchema).default([]),
     activities: z.array(recordActivitySchema).default([]),
@@ -3815,7 +3816,7 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
   return {
     mfaPolicy: { mode: 'Off' }, passwordRecovery: { smtpCredentialId: '', fromEmail: '' }, securityAudit: [],
     objects, flows: [flow, flowSchema.parse(defaultRecoveryFlowDefinition()), whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
-    currencySettings: { corporateCurrency: 'USD', currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
+    currencySettings: { corporateCurrency: 'USD', standardVatRate: 20, currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
     sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
       defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
     }])),
@@ -9374,7 +9375,11 @@ function flowVariablesForUser(
     CurrentDateTime: now.toISOString(),
     TriggeringUserId: userId,
     InterviewGuid: interviewGuid,
-    InterviewStartTime: interviewStartTime ?? now.toISOString()
+    InterviewStartTime: interviewStartTime ?? now.toISOString(),
+    CompanySettings: {
+      StandardVatRate: tenant.currencySettings.standardVatRate,
+      CorporateCurrency: tenant.currencySettings.corporateCurrency
+    }
   };
 }
 
@@ -9475,6 +9480,7 @@ function resolveFlowValue(value: unknown, context: FlowRuntimeContext): unknown 
     : root === '$Prior' || root === '$Record__Prior' ? context.prior
       : root === '$User' ? context.currentUser ?? { Id: context.currentUserId }
         : root === '$Flow' ? { ...context.flowVariables, ...context.flow }
+          : root === '$CompanySettings' ? context.flowVariables?.CompanySettings
           : resolveFlowResource(root, context);
   for (const segment of segments) {
     if (!result || typeof result !== 'object') return undefined;
@@ -12196,7 +12202,8 @@ function validateFlow(
           validateConditions(field.visibilityConditions, undefined, `visibility rule for "${String(field.label ?? '')}" on "${element.label}"`);
           validateConditionLogic(field.visibilityLogic, `visibility rule for "${String(field.label ?? '')}" on "${element.label}"`, visibilityConditions.length);
           for (const condition of visibilityConditions) {
-            if (typeof condition.field === 'string' && !fieldNames.includes(condition.field)) {
+            if (typeof condition.field === 'string' && !fieldNames.includes(condition.field)
+              && !flow.resources.some((resource) => resource.name === condition.field)) {
               errors.push(`Visibility condition on "${String(field.label ?? '')}" references unknown screen field "${condition.field}".`);
             }
           }
