@@ -20,18 +20,19 @@ const conversation = (input:Record<string,unknown>) => {
     return {account:account.trim(),phone};
   } catch { return null; }
 };
-function secureCredential(credential:Credential, account:string):boolean {
-  if (credential.protocol!=='HTTPS'||credential.enabled===false) return false;
+function secureCredentialPath(credential:Credential, account:string):string|null {
+  if (credential.protocol!=='HTTPS'||credential.enabled===false) return null;
   const config=credential.configuration??{};
   const configured=[config.PhoneNumberId,config.phone_number_id].filter(Boolean);
-  if (configured.length && !configured.every(id=>id===account)) return false;
+  if (configured.length && !configured.every(id=>id===account)) return null;
   try {
     const url=new URL(credential.baseUrl);
     const segments=url.pathname.split('/').filter(Boolean);
-    return url.protocol==='https:'&&url.hostname==='graph.facebook.com'&&!url.username&&!url.password&&!url.search&&!url.hash
-      &&!url.port&&/^v\d+\.\d+$/.test(segments[0]??'')
-      &&segments[1]===account&&(segments.length===2||(segments.length===3&&segments[2]==='messages'));
-  } catch { return false; }
+    if(url.protocol!=='https:'||url.hostname!=='graph.facebook.com'||url.username||url.password||url.search||url.hash||url.port||!/^v\d+\.\d+$/.test(segments[0]??''))return null;
+    if(segments.length===1&&configured.length&&configured.every(id=>id===account))return account+'/messages';
+    if(segments[1]===account&&(segments.length===2||(segments.length===3&&segments[2]==='messages')))return 'messages';
+    return null;
+  } catch { return null; }
 }
 export function authoriseChatterFlow(apiName:string,context:Context):ChatterFlowDecision|null {
   const operation=apiName==='CHATTER_SEND_MESSAGE'?'send'
@@ -67,10 +68,11 @@ export function authoriseChatterFlow(apiName:string,context:Context):ChatterFlow
   if (!body||body.length>4096||body.includes('\0'))return reject(400,'Invalid message body');
   // Meta's API decides template/window eligibility and returns provider status.
   const lastInbound=same.find(row=>val(row.Direction__c).toLowerCase()==='incoming');
-  const candidates=context.credentials.filter(item=>secureCredential(item,key.account));
+  const candidates=context.credentials.map(item=>({credential:item,path:secureCredentialPath(item,key.account)})).filter(item=>item.path);
   if(candidates.length!==1)return reject(409,'Exactly one enabled Meta Named Credential must match this account');
   return {ok:true,input:{...trusted,Body:body,
     SenderPhone:val(lastInbound?.To_Number__c)||val(latest?.From_Number__c)||key.account,
     AssignedUserId:val(latest?.Assigned_User__c)||context.userId,
-    AuthorisedCredentialId:candidates[0].id}};
+    AuthorisedCredentialId:candidates[0].credential.id,
+    AuthorisedMessagePath:candidates[0].path}};
 }
