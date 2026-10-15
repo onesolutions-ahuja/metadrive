@@ -3,6 +3,7 @@
 const base='https://metadrive-production.up.railway.app/api';
 const email=process.env.METADRIVE_TEST_EMAIL, password=process.env.METADRIVE_TEST_PASSWORD;
 if(!email||!password)throw Error('CI production credentials unavailable');
+if(email.trim().toLowerCase()!=='support@unesolutions.co.uk')throw Error('Refusing release verification for unexpected login identity');
 let token='';
 async function api(path,method='GET',body){
  const response=await fetch(base+path,{method,headers:{accept:'application/json',...(body?{'content-type':'application/json'}:{}),...(token?{authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)});
