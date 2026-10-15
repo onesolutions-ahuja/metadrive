@@ -329,11 +329,25 @@ function MetadataBoundPageComponent({
   useEffect(() => {
     if (properties.recordPresenterApiName !== 'CommunicationThread') return;
     let active = true;
-    setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
-    void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>('/chatter/access')
-      .then(value => {if(active) setChannelAccess(value);})
-      .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
-    return () => {active = false;};
+    let requestNumber = 0;
+    const loadAccess = () => {
+      const request = ++requestNumber;
+      void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>('/chatter/access')
+        .then(value => {if (active && request === requestNumber) setChannelAccess(value);})
+        .catch(() => {if (active && request === requestNumber) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
+    };
+    loadAccess();
+    // A channel assignment may be added while the inbox is open. Re-check on
+    // return to this tab without polling or trusting client-supplied grants.
+    const onFocus = () => loadAccess();
+    const onVisibility = () => {if (document.visibilityState === 'visible') loadAccess();};
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [properties.recordPresenterApiName, revision]);
   // Contacts are loaded through the same OneEngine record API and its RBAC checks.
   // The bound object is metadata-owned, never supplied by a browser caller.
