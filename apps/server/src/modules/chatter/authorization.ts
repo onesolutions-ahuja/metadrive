@@ -84,11 +84,15 @@ export function prepareChatterFlowInputs(
   try{
     const url=new URL(credential.baseUrl);
     const segments=url.pathname.split('/').filter(Boolean);
-    if(url.protocol!=='https:'||url.hostname!=='graph.facebook.com'||
-       !/^v\d+\.\d+$/.test(segments[0]??'')||
-       (segments[1]&&segments[1]!==channelAccountId)) return deny('Channel credential is not bound to the verified Meta number');
+    if(url.protocol!=='https:'||url.hostname!=='graph.facebook.com'||url.search||url.hash||
+       !/^v\d+\.\d+$/.test(segments[0]??'')||segments.length>3||
+       (segments[1]&&segments[1]!==channelAccountId)||
+       (segments[2]&&segments[2]!=='messages')) return deny('Channel credential is not bound to the verified Meta number');
   }catch{return deny('Invalid channel credential');}
   return {inputs:{ConversationId:conversationId,ChannelAccountId:channelAccountId,
     RecipientPhone:recipient,Body:body,CredentialId:id,
-    PhoneNumberId:channelAccountId,SenderNumber:text(account.Display_Number__c)}};
+    PhoneNumberId:channelAccountId,SenderNumber:text(account.Display_Number__c),
+    MessagePath:new URL(credential.baseUrl).pathname.split('/').filter(Boolean).length===1
+      ? channelAccountId+'/messages'
+      : new URL(credential.baseUrl).pathname.split('/').filter(Boolean).length===2?'messages':''}};
 }
