@@ -5101,7 +5101,6 @@ function requireAnyPermission(...permissions: string[]) {
     next();
   };
 }
-
 const tenantForRequestHost = (req: Request) => resolveTenantForRequestHost(req, state.tenantRegistry);
 const accessAuthentication = createAccessAuthentication({
   jwtService, getState: () => state, tenantIsActive, requestTenantMatches,
