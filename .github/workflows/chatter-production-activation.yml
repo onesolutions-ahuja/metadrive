@@ -1,7 +1,7 @@
 name: Activate Chatter production
 on:
-  push:
-    branches: [ops/chatter-activate-20261015]
+  pull_request:
+    branches: [main]
     paths:
       - scripts/chatter-production-activation.mjs
       - .github/workflows/chatter-production-activation.yml
