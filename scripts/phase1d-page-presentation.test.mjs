@@ -11,7 +11,7 @@ test('page presentation is metadata-directed, not tied to a named business app',
 });
 
 test('App runtime and builder do not branch on retired component names',()=>{
- const app=readFileSync(new URL('../apps/web/src/App.tsx',import.meta.url),'utf8');
+ const app=readFileSync(new URL('../apps/web/src/setupAppShell.tsx',import.meta.url),'utf8')+readFileSync(new URL('../apps/web/src/pageRuntimeViews.tsx',import.meta.url),'utf8');
  assert.doesNotMatch(app,/Custom:KioskOrderingExperience|Custom:TillSalesWorkspace|Custom:KioskContainer/);
  assert.match(app,/isStandalonePagePresentation\(page\)/);
  assert.match(app,/pageCanvasPresentationStyle\(page\)/);

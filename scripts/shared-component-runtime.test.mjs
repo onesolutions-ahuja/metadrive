@@ -5,7 +5,7 @@ import test from 'node:test';
 const load = (path) => readFileSync(new URL(path,import.meta.url),'utf8');
 const server=load('../apps/server/src/index.ts');
 const runtime=load('../apps/web/src/RegisteredComponent.tsx');
-const page=load('../apps/web/src/App.tsx');
+const page=load('../apps/web/src/pageBuilderView.tsx');
 const flow=load('../apps/web/src/FlowBuilder.tsx');
 const dashboard=load('../apps/web/src/DashboardBuilder.tsx');
 const library=load('../apps/web/src/ComponentLibrary.tsx');

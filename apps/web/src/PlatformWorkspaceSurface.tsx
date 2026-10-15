@@ -3,6 +3,7 @@ import {platformNavigationEntries} from './platformWorkspaceMetadata';
 import type {LightningPageMetadata,LibraryComponentMetadata} from './metadata';
 import {findRegisteredComponent} from './componentRegistryLookup';
 import RegisteredComponent from './RegisteredComponent';
+import {PlatformPageSlotsProvider} from './PlatformPageSlot';
 import {resolvePageComponentStyle} from './pageComponentLayout';
 
 /** Shared, registry-resolved platform presentation wrapper.
@@ -37,8 +38,8 @@ export default function PlatformWorkspaceSurface({
  const definition=resolveSystemWorkspace(workspace);
  if(!definition||!permitted)return <div role="alert">Workspace unavailable</div>;
  const pageName='MetaDrive_Admin_'+workspace.replace(/-/g,'_');
- const page=pages.find(item=>item.apiName===pageName&&item.scope==='platform-system'&&item.status==='Active');
- const registered=page?.components.filter(instance=>instance.visible&&instance.type.startsWith('Custom:'))
+ const page=pages.find(item=>item.apiName===pageName&&item.scope==='platform-system'&&item.ownerNamespace==='MetaDrive'&&item.status==='Active'&&Array.isArray(item.requiredPermissions)&&item.requiredPermissions.length>0);
+ const registered=page?.components.filter(instance=>instance.visible&&!instance.properties.platformSlotKey&&instance.type.startsWith('Custom:'))
   .map(instance=>({
     instance,component:findRegisteredComponent(libraryComponents,instance.type.slice('Custom:'.length),'page')
   })).filter(item=>item.component)??[];
@@ -55,6 +56,6 @@ export default function PlatformWorkspaceSurface({
        </div>)}
      </div>
    </div>}
-   {children}
+   {page?<PlatformPageSlotsProvider page={page}>{children}</PlatformPageSlotsProvider>:children}
  </section>;
 }
