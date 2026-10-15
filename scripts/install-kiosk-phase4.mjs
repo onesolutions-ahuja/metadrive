@@ -1,6 +1,6 @@
 // Repeat-safe Phase 4 installation via MetaDrive's authenticated metadata APIs.
 // Run: METADRIVE_PHASE4_INSTALL_APPROVED=true METADRIVE_API_URL=https://... etc
-import {commerceComponents} from './kiosk-phase4-components.mjs';
+import {commerceComponents as baselineComponents, kioskPresentationComponents as commerceComponents} from './kiosk-phase4-components.mjs';
 import {commerceFlows} from './kiosk-phase4-flows.mjs';
 import {commercePages,commerceApp} from './kiosk-phase4-pages.mjs';
 
@@ -126,7 +126,20 @@ async function installRegisteredComponent(component){
    if(existing.trustedBundled)throw Error('Refusing to overwrite a bundled component: '+component.apiName);
    if(!existing.surfaces?.includes('page'))
     throw Error('Existing component is not available to Page Builder: '+component.apiName);
-   if(existing.status==='Published')return created;
+   if(existing.status==='Published'){
+    const baseline=baselineComponents.find(item=>item.apiName===component.apiName);
+    const matchesBaseline=baseline && existing.jsxSource===baseline.jsxSource
+      && existing.cssSource===baseline.cssSource;
+    const matchesDesired=existing.jsxSource===component.jsxSource
+      && existing.cssSource===component.cssSource;
+    if(matchesDesired)return created;
+    // Do not overwrite independently edited registered components.
+    if(!matchesBaseline)throw Error('Existing component was customised; merge its changes before upgrading: '+component.apiName);
+    await api('/component-library/'+encodeURIComponent(component.apiName),'PUT',{
+      ...component,publicationStatus:'Published'
+    });
+    return created;
+   }
    if(existing.status!=='Draft')
     throw Error('Unexpected component publication state: '+component.apiName);
   }
@@ -189,12 +202,14 @@ for(const page of commercePages){
   const newById=new Map(page.components.map(block=>[block.id,block]));
   const upgrades=existing.components.map(block=>{
    const target=newById.get(block.id);
-   if(!target || !/^Custom:MD_Commerce(?:Navigation|ProductGrid|BasketPanel|Status)$/.test(block.type))
+   if(!target || !/^Custom:MD_Commerce(?:Navigation|ProductGrid|BasketPanel|CheckoutBar|Status)(?:V2)?$/.test(block.type))
     return block;
    return {...block,type:target.type,properties:{...block.properties,
     ...(block.properties?.accentColor==='#103e51'?{accentColor:'#e4002b'}:{}),
     ...(target.properties?.standalonePresentation?{standalonePresentation:true}:{}),
-    ...(block.properties?.title==='Order kiosk'?{title:'ORDER NOW'}:{})}};
+    ...(target.properties?.presentationLayout?{presentationLayout:target.properties.presentationLayout,title:target.properties.title,categories:target.properties.categories}:{}),
+    ...(target.properties?.presentationVariant && block.properties?.presentationVariant === undefined ? {presentationVariant:target.properties.presentationVariant}:{}),
+    ...(block.id==='menu-basket'?{title:'SHOW BASKET',accentColor:'#92b200'}:{})}};
   });
   if(upgrades.some((block,i)=>JSON.stringify(block)!==JSON.stringify(existing.components[i]))){
    await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',{

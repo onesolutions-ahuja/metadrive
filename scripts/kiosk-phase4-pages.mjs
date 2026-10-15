@@ -13,7 +13,7 @@ const actionsNav={
  basket:navigation('MD_Commerce_Basket')
 };
 const nav=(id)=>block(id,'MD_CommerceNavigationV2','Menu and basket navigation','header',{
- title:'ORDER NOW',subtitle:'Made fresh for you',accentColor:'#e4002b',standalonePresentation:true,actionFlows:actionsNav
+ title:'MENU',categories:'RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',accentColor:'#ed002d',standalonePresentation:true,presentationLayout:'rail-checkout',presentationVariant:'portrait',actionFlows:actionsNav
 });
 const basketActions={
  load:flow('MD_Commerce_LoadBasket',{SessionKey:'$session'}),
@@ -25,12 +25,12 @@ export const commercePages=[
  {
   apiName:'MD_Commerce_Menu',label:'Kiosk Menu',targetObject:'Product__c',
   pageType:'App Page',layoutMode:'template',template:'header-main-sidebar',
-  canvasWidth:1920,canvasHeight:1080,status:'Active',devices:['Desktop','Phone'],
+  canvasWidth:1080,canvasHeight:1920,status:'Active',devices:['Desktop','Phone'],
   activationAssignments:[],
   components:[
    nav('menu-nav'),
    block('menu-products','MD_CommerceProductGridV2','Product Cards and Meal Customisation','main',{
-    objectApiName:'Product__c',title:'Choose your favourites',columns:3,currencySymbol:'£',
+    objectApiName:'Product__c',presentationVariant:'portrait',title:'BURGERS',columns:3,currencySymbol:'£',
     priceField:'DefaultPrice',imageField:'ImageUrl',primaryButtonLabel:'CUSTOMISE',
     actionFlows:{
      options:flow('MD_Commerce_ModifierCatalog',{ProductId:'$event.productId'}),
@@ -41,7 +41,7 @@ export const commercePages=[
     }
    }),
    block('menu-basket','MD_CommerceBasketPanelV2','Live Basket Summary','sidebar',{
-    title:'Your basket',objectApiName:'Order__c',actionFlows:basketActions
+    title:'SHOW BASKET',accentColor:'#92b200',presentationVariant:'portrait',objectApiName:'Order__c',actionFlows:{...basketActions,basket:actionsNav.basket}
    })
   ]
  },
