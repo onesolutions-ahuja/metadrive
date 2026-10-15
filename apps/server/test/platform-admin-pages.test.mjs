@@ -50,3 +50,18 @@ test('pristine v2 administration forms gain independent field slots without rese
  const preserved=seedProtectedAdministrationPages({pages:[edited]});
  assert.equal(preserved.pages[0],edited);
 });
+
+test('persisted normalized pristine v2 components upgrade additively without overwriting saved section styles',()=>{
+ const descriptor=protectedWorkspacePageDescriptors.find(item=>item.workspace==='app-manager');
+ const old=protectedAdministrationSlotComponents('app-manager',
+  ['identity','pages','assignments','navigation-items','navigation-order','utility','actions']);
+ const normalized=old.map(item=>({...item,properties:{...item.properties,style:{color:'blue'}},
+  position:{...item.position},responsive:{}}));
+ const page={...protectedAdministrationPage(descriptor),definitionVersion:2,components:normalized};
+ const updated=seedProtectedAdministrationPages({pages:[page]});
+ const upgraded=updated.pages.find(item=>item.apiName===page.apiName);
+ assert.equal(upgraded.definitionVersion,3);
+ assert.equal(upgraded.components.length,11);
+ normalized.forEach((item,index)=>assert.strictEqual(upgraded.components[index],item));
+ assert.equal(seedProtectedAdministrationPages(updated),updated);
+});
