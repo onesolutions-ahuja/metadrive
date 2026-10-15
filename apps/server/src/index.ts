@@ -1,3 +1,4 @@
+import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
 import { registerHealthAndDiscoveryRoutes } from './modules/security/health-routes.js';
 import { defaultRoles, roleApiNameForName, roleIdForName, profileIdForRole } from './modules/security/role-helpers.js';
 import { createScheduledDispatcher } from './scheduler/dispatcher.js';
@@ -5342,58 +5343,9 @@ function savePlatformPolicies(actorId: string, userId: string, policies: Array<'
   persistState(nextState);
   state = nextState;
 }
-// A tightly controlled one-time bootstrap is required for the first platform
-// operator. It cannot be initiated merely with tenant security:manage.
-app.post('/api/platform/policies/bootstrap', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const configuredEmail = process.env.METADRIVE_PLATFORM_BOOTSTRAP_EMAIL?.trim().toLowerCase();
-  const secret = process.env.METADRIVE_PLATFORM_BOOTSTRAP_KEY;
-  if (!configuredEmail || !secret || secret.length < 24)
-    return res.status(503).json({ error: 'Platform policy bootstrap is not configured.' });
-  const user = principalUser(principal);
-  if (!user || user.email.trim().toLowerCase() !== configuredEmail)
-    return res.status(403).json({ error: 'Platform policy bootstrap is not permitted for this user.' });
-  const supplied = req.header('x-platform-bootstrap-key');
-  if (!supplied || supplied.length !== secret.length
-    || !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)))
-    return res.status(403).json({ error: 'Invalid platform policy bootstrap credential.' });
-  if (activePlatformSuperadmins().length)
-    return res.status(409).json({ error: 'A platform administrator already exists.' });
-  try {
-    savePlatformPolicies(user.id, user.id, ['platform:superadmin']);
-    return res.json({ policies: state.platformPolicies[user.id] });
-  } catch {
-    return res.status(503).json({ error: 'Unable to persist platform policy.' });
-  }
-});
-app.get('/api/platform/policies', accessAuthentication, (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  if (!principal.permissions.includes('platform:superadmin'))
-    return res.status(403).json({ error: 'Platform administrator policy required.' });
-  return res.json({ users: state.users.filter((user) => (state.platformPolicies[user.id] ?? []).length)
-    .map((user) => ({ id: user.id, email: user.email, disabled: user.disabled, policies: state.platformPolicies[user.id] })) });
-});
-app.put('/api/platform/policies/:userId', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  if (!principal.permissions.includes('platform:superadmin'))
-    return res.status(403).json({ error: 'Platform administrator policy required.' });
-  const parsed = platformPolicySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid platform policies.' });
-  const userId = routeParam(req, 'userId');
-  const target = state.users.find((user) => user.id === userId && !user.disabled);
-  if (!target) return res.status(404).json({ error: 'Active platform user not found.' });
-  const requested = [...new Set(parsed.data.policies)];
-  if ((state.platformPolicies[userId] ?? []).includes('platform:superadmin')
-    && !requested.includes('platform:superadmin')
-    && activePlatformSuperadmins().every((id) => id === userId)) {
-    return res.status(409).json({ error: 'The last active platform administrator cannot be removed.' });
-  }
-  try {
-    savePlatformPolicies(principal.userId, userId, requested);
-    return res.json({ userId, policies: requested });
-  } catch {
-    return res.status(503).json({ error: 'Unable to persist platform policies.' });
-  }
+registerPlatformPolicyRoutes(app, {
+  accessAuthentication, getPrincipal, principalUser, activePlatformSuperadmins,
+  savePlatformPolicies, getState: () => state, parsePolicies: (v) => platformPolicySchema.safeParse(v), routeParam
 });
 // MD-03.1: platform-only tenant directory and lifecycle. Tenant-editable
 // profiles/permission sets never confer this policy; no impersonation or secrets.
