@@ -1,3 +1,4 @@
+import { canAccessChatterConversation } from './chatter-access-policy.js';
 import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage, type ChatterGrantSource } from './chatter-authorisation.js';
 
 type Credential = { id:string; protocol:string; enabled?:boolean; baseUrl:string;
@@ -45,11 +46,15 @@ export function authoriseChatterFlow(apiName:string,context:Context):ChatterFlow
       ? val(row.From_Number__c)===key.phone : val(row.To_Number__c)===key.phone;
   }).sort((a,b)=>val(b.Occurred_At__c||b.CreatedDate).localeCompare(val(a.Occurred_At__c||a.CreatedDate)));
   const latest=same[0];
-  if (!latest || !canAccessChatterRecord(context.tenantId,context.userId,context.tenant,latest,operation)) {
-    return reject(403,'Conversation or channel permission denied');
-  }
+  const scope = chatterScopeForUser(context.tenantId,context.userId,context.tenant);
+  const permitted = latest
+    ? canAccessChatterRecord(context.tenantId,context.userId,context.tenant,latest,operation)
+    : operation === 'send' && canAccessChatterConversation(scope, {
+      tenantId:context.tenantId,channelAccountId:key.account,assignedUserId:null
+    }, 'send');
+  if (!permitted) return reject(403,'Conversation or channel permission denied');
   const trusted={...context.input,ChannelAccountId:key.account,RecipientPhone:key.phone,
-    TargetRecordId:val(latest.Id)};
+    TargetRecordId:val(latest?.Id)};
   if (operation==='assign') {
     const assignee=val(context.input.AssigneeId);
     const user=context.users.find(item=>item.id===assignee&&item.tenantId===context.tenantId&&!item.disabled);
@@ -60,15 +65,12 @@ export function authoriseChatterFlow(apiName:string,context:Context):ChatterFlow
   }
   const body=val(context.input.Body);
   if (!body||body.length>4096||body.includes('\0'))return reject(400,'Invalid message body');
+  // Meta's API decides template/window eligibility and returns provider status.
   const lastInbound=same.find(row=>val(row.Direction__c).toLowerCase()==='incoming');
-  const lastAt=Date.parse(val(lastInbound?.Occurred_At__c||lastInbound?.CreatedDate));
-  if (!Number.isFinite(lastAt)||lastAt>Date.now()+60000||Date.now()-lastAt>=24*60*60*1000) {
-    return reject(422,'Outside the 24-hour WhatsApp service window; use an approved template');
-  }
   const candidates=context.credentials.filter(item=>secureCredential(item,key.account));
   if(candidates.length!==1)return reject(409,'Exactly one enabled Meta Named Credential must match this account');
   return {ok:true,input:{...trusted,Body:body,
-    SenderPhone:val(lastInbound?.To_Number__c)||val(latest.From_Number__c),
-    AssignedUserId:val(latest.Assigned_User__c)||context.userId,
+    SenderPhone:val(lastInbound?.To_Number__c)||val(latest?.From_Number__c)||key.account,
+    AssignedUserId:val(latest?.Assigned_User__c)||context.userId,
     AuthorisedCredentialId:candidates[0].id}};
 }
