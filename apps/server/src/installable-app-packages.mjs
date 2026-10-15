@@ -1,4 +1,5 @@
 import {upgradePackagedPageComponents,upgradePackagedFlow} from './package-page-migrations.mjs';
+import {seedCredentialGrants} from './credential-grant-seeder.mjs';
 
 /**
  * Install declarative business-app metadata through the shared AppExchange lifecycle.
@@ -123,7 +124,7 @@ export function applyInstallableAppPackages(tenant, catalog) {
         const objectPermissions = {...(administrator.objectPermissions ?? {})};
         const fieldPermissions = {...(administrator.fieldPermissions ?? {})};
         let repaired = false;
-        const required = pkg.profile?.objectPermissions ?? {};
+        const required = pkg.installation?.administratorObjectPermissions ?? pkg.profile?.objectPermissions ?? {};
         for (const [objectApiName, templateRights] of Object.entries(required)) {
           const object = objects.find(candidate => candidate.apiName === objectApiName);
           if (!object) continue;
@@ -208,6 +209,12 @@ export function applyInstallableAppPackages(tenant, catalog) {
         records = { ...records, [objectName]: [...repaired, ...additions] };
         changed = true;
       }
+    }
+    const provisioned = seedCredentialGrants(
+      {...next,objects,records,accessControl}, pkg.installation?.credentialGrantSeeds);
+    if (provisioned.records !== records) {
+      records = provisioned.records;
+      changed = true;
     }
     if (changed) next = {...next,objects,flows,apps,pages,records,accessControl};
   }

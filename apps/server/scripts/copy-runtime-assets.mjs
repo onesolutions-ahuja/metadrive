@@ -39,6 +39,7 @@ for(const name of [
   'tenant-usage.mjs',
   'package-page-migrations.mjs',
   'installable-app-packages.mjs',
+  'credential-grant-seeder.mjs',
   'bundled-app-components.mjs',
   'bundled-component-migration.mjs'
 ]) {

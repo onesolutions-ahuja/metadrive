@@ -2,7 +2,7 @@
 import type { Request, Response } from 'express';
 import type { RecordRoutesDependencies, TenantData, RuntimeRecord, LocalUser, PlatformState } from '../../index.js';
 import type { Principal } from '../../auth.js';
-
+import { protectedChatterRecordWrite } from '../../chatter-record-write-policy.js';
 export function registerRecordRoutes(deps: RecordRoutesDependencies): void {
   const { app, accessAuthentication, accessControlSchema, recordShareSchema, recordActivitySchema, chatterCommentSchema, chatterPostSchema, appendFieldHistory, profileIdForRole, persistState, getState, setState, tenantIsActive, withSecurityEvent, tenantData, getPrincipal, principalUser, effectivePermissions, disableOnConnectorUninstall, assertConnectorLifecycleAccess, canOpenApp, hasObjectPermission, hasObjectWidePermission, queueContainsUser, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions, profileIdForPrincipal, resolveActiveLightningRecordPage, hasRecordTypeAccessForUser, applyRecordDefaults, persistTenantRecords, deleteRecordCascade, routeParam, formulaContextForUser, validateRuntimeRecord, runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows, calculateFormulaFields, sanitizeRecordValues, withCaseClosedDate, recordUnmodified, stampRecordAuditFields, recordActionEnabled, normalizeFlowRecordAssignments, validateRelationshipReparenting, waitForPersistedState, randomUUID, applyConnectorLifecycle, z, hashPassword } = deps;
 function canManageRecordShares(principal: Principal, tenant: TenantData, objectName: string, record: RuntimeRecord): boolean {
@@ -10,7 +10,6 @@ function canManageRecordShares(principal: Principal, tenant: TenantData, objectN
     || hasObjectWidePermission(principal, tenant, objectName, 'modifyAll')
     || principal.permissions.includes('security:manage');
 }
-
 app.get('/api/records/:objectName/:recordId/shares', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -32,7 +31,6 @@ app.get('/api/records/:objectName/:recordId/shares', accessAuthentication, (req:
     }));
   return res.json({ shares });
 });
-
 app.post('/api/records/:objectName/:recordId/shares', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -73,7 +71,6 @@ app.post('/api/records/:objectName/:recordId/shares', accessAuthentication, (req
   persistTenantRecords(principal.tenantId, { ...tenant, recordShares });
   return res.status(201).json({ share });
 });
-
 app.delete('/api/records/:objectName/:recordId/shares/:userId', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -95,7 +92,6 @@ app.delete('/api/records/:objectName/:recordId/shares/:userId', accessAuthentica
   });
   return res.status(204).end();
 });
-
 app.delete('/api/records/:objectName/:recordId/shares/groups/:groupId', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -117,7 +113,6 @@ app.delete('/api/records/:objectName/:recordId/shares/groups/:groupId', accessAu
   });
   return res.status(204).end();
 });
-
 app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -466,7 +461,6 @@ app.post('/api/campaigns/:campaignId/members', accessAuthentication, (req: Reque
   persistTenantRecords(principal.tenantId, { ...tenant, campaignMembers: [...tenant.campaignMembers, ...newMembers] });
   return res.status(201).json({ addedCount: newMembers.length, alreadyMemberCount: contactIds.length - newMembers.length });
 });
-
 /**
  * User is a security identity backed by getState().users and accessControl.users,
  * not an ordinary tenant record. Keep these identities in sync and never
@@ -656,6 +650,7 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
   if (!hasObjectPermission(principal, tenant, objectName, 'create')) return res.status(403).json({ error: `Missing create permission for object "${objectName}"` });
   const parsed = z.record(z.unknown()).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Record values must be an object' });
+  if (protectedChatterRecordWrite(objectName,parsed.data)) return res.status(403).json({error:'WhatsApp message writes require an authorised Flow'});
   if (req.get('X-MetaDrive-Offline-Sync') === '1') {
     const knownFields = new Set(object.fields.map(field => field.apiName));
     if (Object.keys(parsed.data).some(key => key !== 'RecordTypeId' && !knownFields.has(key)))
@@ -668,6 +663,7 @@ app.post('/api/records/:objectName', accessAuthentication, async (req: Request, 
   const cloneSource = typeof requestedCloneId === 'string'
     ? (tenant.records[objectName] ?? []).find((record) => record.Id === requestedCloneId)
     : undefined;
+  if (cloneSource && protectedChatterRecordWrite(objectName, {}, cloneSource)) return res.status(403).json({error:'Cannot clone a WhatsApp message'});
   if (typeof requestedCloneId === 'string'
     && (!cloneSource || !hasRecordAccess(principal, tenant, objectName, cloneSource, 'Read'))) {
     return res.status(404).json({ error: 'Clone source record was not found' });
@@ -741,6 +737,7 @@ app.post('/api/records/:objectName/import', accessAuthentication, async (req: Re
   if (!object.listViewButtons?.includes('Import')) return res.status(403).json({ error: 'Import is not enabled for this object' });
   const parsed = z.object({ records: z.array(z.record(z.unknown())).min(1) }).strict().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Import requires at least one record row', details: parsed.error.flatten() });
+  if (protectedChatterRecordWrite(objectName,parsed.data.records)) return res.status(403).json({error:'WhatsApp messages cannot be imported through record APIs'});
   const working = structuredClone(tenant);
   const created: RuntimeRecord[] = [];
   try {
@@ -798,6 +795,7 @@ app.put('/api/records/:objectName/:recordId/owner', accessAuthentication, async 
     return res.status(403).json({ error: 'Change Owner is not enabled for this object’s list views' });
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (existing && protectedChatterRecordWrite(objectName, req.body, existing)) return res.status(403).json({error:'WhatsApp message changes require an authorised Flow'});
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (!recordActionEnabled(object, 'Edit', typeof existing.RecordTypeId === 'string' ? existing.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
@@ -853,6 +851,7 @@ app.put('/api/records/:objectName/:recordId', accessAuthentication, async (req: 
       return res.status(412).json({error:'Record schema changed while offline. Review your draft before retrying.'});
   }
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === routeParam(req, 'recordId'));
+  if (existing && protectedChatterRecordWrite(objectName, req.body, existing)) return res.status(403).json({error:'WhatsApp message changes require an authorised Flow'});
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit')) return res.status(404).json({ error: 'Record was not found' });
   if (!recordUnmodified(req.get('If-Unmodified-Since'), existing)) return res.status(412).json({ error: 'Record changed since it was opened. Refresh and retry.' });
   if (Object.hasOwn(parsed.data, 'OwnerId')) {
@@ -922,6 +921,7 @@ app.post('/api/records/:objectName/:recordId/transfer-owner', accessAuthenticati
     || ['User', 'Connector_App__c', 'ConnectorProvider__c', 'IntegrationConnection__c'].includes(objectName))
     return res.status(404).json({ error: 'Object does not support ownership transfer' });
   const existing = (tenant.records[objectName] ?? []).find((item) => item.Id === recordId);
+  if (existing && protectedChatterRecordWrite(objectName, req.body, existing)) return res.status(403).json({error:'WhatsApp message changes require an authorised Flow'});
   if (!existing || !hasRecordAccess(principal, tenant, objectName, existing, 'Edit'))
     return res.status(404).json({ error: 'Record was not found' });
   const currentQueueMember = tenant.accessControl.queues.some((queue) =>

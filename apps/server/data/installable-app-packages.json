@@ -4,66 +4,56 @@
       "appKey": "whatsapp",
       "installation": {
         "allowInstalledMetadataWithoutLicence": true,
-        "repairMissingAdministratorPermissions": true
+        "repairMissingAdministratorPermissions": true,
+        "administratorObjectPermissions": {
+          "Communication_Records__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Chatter_Channel_Grant__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          }
+        },
+        "credentialGrantSeeds": [
+          {
+            "objectApiName": "Chatter_Channel_Grant__c",
+            "profileId": "system-administrator",
+            "credentialHost": "graph.facebook.com",
+            "accountPathPattern": "^/v\\d+\\.\\d+/([A-Za-z0-9_-]{5,120})(?:/messages)?/?$",
+            "accountConfigField": "PhoneNumberId",
+            "uniqueBy": [
+              "User_Id__c",
+              "Channel_Account__c"
+            ],
+            "fields": {
+              "Name": "@credential.name",
+              "User_Id__c": "@user.id",
+              "Channel_Account__c": "@credential.accountId",
+              "Can_Read__c": true,
+              "Can_Send__c": true,
+              "Can_Assign__c": true,
+              "View_All__c": true,
+              "Active__c": true
+            }
+          }
+        ]
       },
       "objects": [
-        {
-          "apiName": "Chatter_Channel_Account__c",
-          "label": "Chatter Channel Account",
-          "pluralLabel": "Chatter Channel Accounts",
-          "kind": "Custom Object",
-          "description": "Tenant WhatsApp phone number and its server-held Named Credential binding.",
-          "fields": [
-            {
-              "apiName": "Name",
-              "label": "Channel Name",
-              "dataType": "Text(255)",
-              "required": true,
-              "unique": false
-            },
-            {
-              "apiName": "Phone_Number_Id__c",
-              "label": "Meta Phone Number ID",
-              "dataType": "Text(40)",
-              "required": true,
-              "unique": true
-            },
-            {
-              "apiName": "Named_Credential_Id__c",
-              "label": "Named Credential ID",
-              "dataType": "Text(40)",
-              "required": true,
-              "unique": false
-            },
-            {
-              "apiName": "Display_Number__c",
-              "label": "Display Phone",
-              "dataType": "Phone",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Active__c",
-              "label": "Active",
-              "dataType": "Checkbox",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "OwnerId",
-              "label": "Owner",
-              "dataType": "Text(80)",
-              "required": false,
-              "unique": false
-            }
-          ]
-        },
         {
           "apiName": "Chatter_Channel_Grant__c",
           "label": "Chatter Channel Grant",
           "pluralLabel": "Chatter Channel Grants",
           "kind": "Custom Object",
-          "description": "Per-agent per-channel Read, Send, Assign and View All permissions.",
+          "description": "Administratively assigned per-user WhatsApp channel permissions. Never trust client grants.",
           "fields": [
             {
               "apiName": "Name",
@@ -75,41 +65,48 @@
             {
               "apiName": "User_Id__c",
               "label": "User ID",
-              "dataType": "Text(80)",
+              "dataType": "Lookup",
               "required": true,
-              "unique": false
+              "unique": false,
+              "relationship": {
+                "type": "Lookup",
+                "targetObject": "User",
+                "relationshipName": "AssignedUser",
+                "childRelationshipName": "ChatterChannelGrants",
+                "deleteBehavior": "Restrict"
+              }
             },
             {
               "apiName": "Channel_Account__c",
               "label": "Meta Phone Number ID",
-              "dataType": "Text(40)",
+              "dataType": "Text(120)",
               "required": true,
               "unique": false
             },
             {
               "apiName": "Can_Read__c",
-              "label": "Read",
+              "label": "Can Read",
               "dataType": "Checkbox",
               "required": false,
               "unique": false
             },
             {
               "apiName": "Can_Send__c",
-              "label": "Send",
+              "label": "Can Send",
               "dataType": "Checkbox",
               "required": false,
               "unique": false
             },
             {
               "apiName": "Can_Assign__c",
-              "label": "Assign",
+              "label": "Can Assign",
               "dataType": "Checkbox",
               "required": false,
               "unique": false
             },
             {
               "apiName": "View_All__c",
-              "label": "View All Conversations",
+              "label": "View All",
               "dataType": "Checkbox",
               "required": false,
               "unique": false
@@ -120,15 +117,17 @@
               "dataType": "Checkbox",
               "required": false,
               "unique": false
-            },
-            {
-              "apiName": "OwnerId",
-              "label": "Owner",
-              "dataType": "Text(80)",
-              "required": false,
-              "unique": false
             }
-          ]
+          ],
+          "settings": {
+            "allowReports": false,
+            "allowActivities": false,
+            "trackFieldHistory": true,
+            "allowInChatter": false,
+            "deploymentStatus": "Deployed",
+            "recordNameType": "Text",
+            "recordNameFormat": ""
+          }
         }
       ],
       "extendObjects": [
@@ -136,100 +135,23 @@
           "apiName": "Communication_Records__c",
           "fields": [
             {
-              "apiName": "Event_Type__c",
-              "label": "Event Type",
-              "dataType": "Text(60)",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Communication_Mode__c",
-              "label": "Communication Mode",
-              "dataType": "Text(60)",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Source__c",
-              "label": "Source",
-              "dataType": "Text(60)",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Direction__c",
-              "label": "Direction",
-              "dataType": "Text(30)",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "From_Number__c",
-              "label": "From Number",
-              "dataType": "Phone",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "To_Number__c",
-              "label": "To Number",
-              "dataType": "Phone",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Message_Body__c",
-              "label": "Message",
-              "dataType": "Long Text Area",
-              "required": false,
-              "unique": false
-            },
-            {
               "apiName": "Channel_Account__c",
-              "label": "Verified Meta Phone Number ID",
-              "dataType": "Text(40)",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Chatter_Conversation_Id__c",
-              "label": "Chatter Conversation ID",
+              "label": "Channel Account",
               "dataType": "Text(255)",
               "required": false,
               "unique": false
             },
             {
               "apiName": "Assigned_User__c",
-              "label": "Assigned User ID",
-              "dataType": "Text(80)",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Provider_Message_Id__c",
-              "label": "Provider Message ID",
+              "label": "Assigned User",
               "dataType": "Text(255)",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Occurred_At__c",
-              "label": "Occurred At",
-              "dataType": "DateTime",
-              "required": false,
-              "unique": false
-            },
-            {
-              "apiName": "Status__c",
-              "label": "Delivery Status",
-              "dataType": "Text(50)",
               "required": false,
               "unique": false
             },
             {
               "apiName": "Read_At__c",
               "label": "Read At",
-              "dataType": "DateTime",
+              "dataType": "Date/Time",
               "required": false,
               "unique": false
             },
@@ -239,37 +161,33 @@
               "dataType": "Text(255)",
               "required": false,
               "unique": false
+            },
+            {
+              "apiName": "Media_URL__c",
+              "label": "Media URL",
+              "dataType": "URL",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Media_Name__c",
+              "label": "Media Name",
+              "dataType": "Text(255)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Media_Type__c",
+              "label": "Media Type",
+              "dataType": "Text(255)",
+              "required": false,
+              "unique": false
             }
           ],
           "label": "Communication Record",
           "pluralLabel": "Communication Records",
           "kind": "Custom Object",
-          "description": "Shared communication history with Chatter channel metadata"
-        }
-      ],
-      "apps": [
-        {
-          "apiName": "Communication",
-          "label": "Communication",
-          "description": "Secure business messaging and communication records",
-          "navigationItems": [
-            "Communication_Records__c"
-          ],
-          "navigationPageApiNames": [
-            "UNE_CHATTER"
-          ],
-          "navigationOrder": [
-            {
-              "type": "Object",
-              "apiName": "Communication_Records__c"
-            },
-            {
-              "type": "App Page",
-              "apiName": "UNE_CHATTER"
-            }
-          ],
-          "brandColor": "#168657",
-          "utilityItems": []
+          "description": "Extend existing communication records with secure Chatter metadata"
         }
       ],
       "pages": [
@@ -277,11 +195,11 @@
           "apiName": "UNE_CHATTER",
           "label": "Chatter",
           "targetObject": "Communication_Records__c",
-          "pageType": "App Page",
-          "layoutMode": "template",
+          "pageType": "Record Page",
+          "layoutMode": "free-canvas",
           "canvasWidth": 1200,
           "canvasHeight": 800,
-          "status": "Draft",
+          "status": "Active",
           "devices": [
             "Desktop",
             "Phone"
@@ -293,6 +211,12 @@
               "label": "Chatter Inbox",
               "region": "main",
               "visible": true,
+              "position": {
+                "x": 0,
+                "y": 0,
+                "width": 1200,
+                "height": 800
+              },
               "properties": {
                 "libraryComponentId": "ChatterInbox",
                 "title": "Chatter",
@@ -300,7 +224,7 @@
                 "conversationsObjectApiName": "Communication_Records__c",
                 "messagesObjectApiName": "Communication_Records__c",
                 "channelAccountObjectApiName": "Connector_App__c",
-                "restrictToAssigned": false,
+                "restrictToAssigned": true,
                 "enableAssignment": true,
                 "actionFlows": {
                   "send": {
@@ -316,28 +240,42 @@
                     "flowApiName": "CHATTER_ASSIGN_CONVERSATION",
                     "inputs": {
                       "ConversationId": "$event.conversationId",
-                      "ChannelAccountId": "$event.channelAccountId"
+                      "ChannelAccountId": "$event.channelAccountId",
+                      "AssigneeId": "$event.assigneeId"
                     }
                   }
                 },
                 "objectApiName": "Communication_Records__c",
-                "recordViewAdapter": "Chatter"
+                "recordPresenterApiName": "CommunicationThread",
+                "canSend": false,
+                "canAssign": false
               }
             }
           ],
-          "activationAssignments": [],
-          "template": "one-region"
+          "activationAssignments": [
+            {
+              "id": "chatter-communication-org-default",
+              "scope": "Org Default",
+              "appId": null,
+              "profileId": null,
+              "recordTypeId": null,
+              "formFactors": [
+                "Desktop",
+                "Phone"
+              ]
+            }
+          ]
         }
       ],
       "flows": [
         {
           "apiName": "CHATTER_SEND_MESSAGE",
           "label": "Chatter Send WhatsApp Message",
-          "description": "Editable metadata-driven Chatter Flow. Server channel grant and credential binding enforced before execution.",
+          "description": "Admin-controlled trusted WhatsApp account credential, HTTP Callout and outgoing Communication record; credentials supplied only after server channel authorisation",
           "flowType": "Autolaunched Flow",
-          "status": "Draft",
+          "status": "Active",
           "versionNumber": 1,
-          "activeVersion": null,
+          "activeVersion": 1,
           "triggerObject": null,
           "startConfig": {},
           "elements": [
@@ -350,11 +288,11 @@
             {
               "id": 2,
               "type": "HTTP Callout",
-              "label": "WhatsApp Cloud Send",
+              "label": "Send via authorised WhatsApp account",
               "config": {
-                "namedCredentialResource": "{!CredentialId}",
+                "namedCredentialResource": "{!AuthorisedCredentialId}",
                 "method": "POST",
-                "path": "{!MessagePath}",
+                "path": "messages",
                 "headers": "Content-Type: application/json",
                 "body": "{\"messaging_product\":\"whatsapp\",\"to\":\"{!RecipientPhone}\",\"type\":\"text\",\"text\":{\"body\":\"{!Body}\"}}",
                 "deliveryMode": "SYNC",
@@ -365,14 +303,10 @@
             {
               "id": 3,
               "type": "Create Records",
-              "label": "Record Sent Message",
+              "label": "Log outgoing message",
               "config": {
                 "object": "Communication_Records__c",
                 "fieldValues": [
-                  {
-                    "field": "Name",
-                    "value": "Chatter outgoing"
-                  },
                   {
                     "field": "Event_Type__c",
                     "value": "Message"
@@ -390,20 +324,20 @@
                     "value": "Outgoing"
                   },
                   {
+                    "field": "Channel_Account__c",
+                    "value": "{!ChannelAccountId}"
+                  },
+                  {
                     "field": "From_Number__c",
-                    "value": "{!SenderNumber}"
+                    "value": "{!SenderPhone}"
                   },
                   {
                     "field": "To_Number__c",
                     "value": "{!RecipientPhone}"
                   },
                   {
-                    "field": "Channel_Account__c",
-                    "value": "{!ChannelAccountId}"
-                  },
-                  {
-                    "field": "Chatter_Conversation_Id__c",
-                    "value": "{!ConversationId}"
+                    "field": "Assigned_User__c",
+                    "value": "{!AssignedUserId}"
                   },
                   {
                     "field": "Message_Body__c",
@@ -411,43 +345,26 @@
                   },
                   {
                     "field": "Status__c",
-                    "value": "Completed"
-                  },
-                  {
-                    "field": "Occurred_At__c",
-                    "value": "{!$Flow.CurrentDateTime}"
+                    "value": "Sent"
                   }
                 ]
               }
-            },
-            {
-              "id": 4,
-              "type": "End",
-              "label": "End",
-              "config": {}
             }
           ],
           "connectors": [
             {
-              "id": "chatter-1",
+              "id": "start_send",
               "from": 1,
               "to": 2,
-              "label": "",
-              "kind": "normal"
+              "kind": "normal",
+              "label": ""
             },
             {
-              "id": "chatter-2",
+              "id": "send_log",
               "from": 2,
               "to": 3,
-              "label": "",
-              "kind": "normal"
-            },
-            {
-              "id": "chatter-3",
-              "from": 3,
-              "to": 4,
-              "label": "",
-              "kind": "normal"
+              "kind": "normal",
+              "label": ""
             }
           ],
           "resources": [
@@ -458,7 +375,8 @@
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
             },
             {
               "name": "ChannelAccountId",
@@ -467,7 +385,8 @@
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
             },
             {
               "name": "RecipientPhone",
@@ -476,7 +395,28 @@
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "SenderPhone",
+              "label": "SenderPhone",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "AssignedUserId",
+              "label": "AssignedUserId",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
             },
             {
               "name": "Body",
@@ -485,53 +425,28 @@
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
             },
             {
-              "name": "CredentialId",
-              "label": "CredentialId",
+              "name": "AuthorisedCredentialId",
+              "label": "AuthorisedCredentialId",
               "type": "Variable",
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
-            },
-            {
-              "name": "PhoneNumberId",
-              "label": "PhoneNumberId",
-              "type": "Variable",
-              "dataType": "Text",
-              "isCollection": false,
-              "availableForInput": true,
-              "availableForOutput": false
-            },
-            {
-              "name": "SenderNumber",
-              "label": "SenderNumber",
-              "type": "Variable",
-              "dataType": "Text",
-              "isCollection": false,
-              "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
             },
             {
               "name": "ProviderStatus",
-              "label": "Provider HTTP status",
+              "label": "ProviderStatus",
               "type": "Variable",
               "dataType": "Number",
               "isCollection": false,
               "availableForInput": false,
               "availableForOutput": true,
               "value": 0
-            },
-            {
-              "name": "MessagePath",
-              "label": "Provider operation path",
-              "type": "Variable",
-              "dataType": "Text",
-              "isCollection": false,
-              "availableForInput": true,
-              "availableForOutput": false
             }
           ],
           "versions": []
@@ -539,11 +454,11 @@
         {
           "apiName": "CHATTER_ASSIGN_CONVERSATION",
           "label": "Chatter Assign Conversation",
-          "description": "Editable metadata-driven Chatter Flow. Server channel grant and credential binding enforced before execution.",
+          "description": "Updates trusted latest conversation record using a server-authorised target and assignee",
           "flowType": "Autolaunched Flow",
-          "status": "Draft",
+          "status": "Active",
           "versionNumber": 1,
-          "activeVersion": null,
+          "activeVersion": 1,
           "triggerObject": null,
           "startConfig": {},
           "elements": [
@@ -556,45 +471,32 @@
             {
               "id": 2,
               "type": "Update Records",
-              "label": "Assign Authorized Conversation",
+              "label": "Assign authorised conversation",
               "config": {
                 "object": "Communication_Records__c",
                 "conditions": [
                   {
-                    "field": "Chatter_Conversation_Id__c",
+                    "field": "Id",
                     "operator": "Equals",
-                    "value": "{!ConversationId}"
+                    "value": "{!TargetRecordId}"
                   }
                 ],
                 "fieldValues": [
                   {
                     "field": "Assigned_User__c",
-                    "value": "{!TargetUserId}"
+                    "value": "{!AssigneeId}"
                   }
                 ]
               }
-            },
-            {
-              "id": 3,
-              "type": "End",
-              "label": "End",
-              "config": {}
             }
           ],
           "connectors": [
             {
-              "id": "chatter-1",
+              "id": "start_assign",
               "from": 1,
               "to": 2,
-              "label": "",
-              "kind": "normal"
-            },
-            {
-              "id": "chatter-2",
-              "from": 2,
-              "to": 3,
-              "label": "",
-              "kind": "normal"
+              "kind": "normal",
+              "label": ""
             }
           ],
           "resources": [
@@ -605,7 +507,8 @@
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
             },
             {
               "name": "ChannelAccountId",
@@ -614,16 +517,28 @@
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
             },
             {
-              "name": "TargetUserId",
-              "label": "TargetUserId",
+              "name": "TargetRecordId",
+              "label": "TargetRecordId",
               "type": "Variable",
               "dataType": "Text",
               "isCollection": false,
               "availableForInput": true,
-              "availableForOutput": false
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "AssigneeId",
+              "label": "AssigneeId",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
             }
           ],
           "versions": []
@@ -631,37 +546,25 @@
       ],
       "profile": {
         "id": "chatter-agent",
-        "apiName": "Chatter_Agent",
         "label": "Chatter Agent",
+        "apiName": "Chatter_Agent",
         "systemPermissions": [
-          "metadata:read",
-          "flows:run",
-          "callouts:execute"
+          "flows:run"
         ],
         "objectPermissions": {
           "Communication_Records__c": {
             "read": true,
             "create": true,
             "edit": true,
-            "delete": false
-          },
-          "Chatter_Channel_Account__c": {
-            "read": true,
-            "create": false,
-            "edit": false,
-            "delete": false
-          },
-          "Chatter_Channel_Grant__c": {
-            "read": false,
-            "create": false,
-            "edit": false,
-            "delete": false
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
           }
         },
-        "navigationDefaultAccess": "Deny",
         "tabPermissions": {
           "Communication_Records__c": true
-        }
+        },
+        "navigationDefaultAccess": "Deny"
       }
     }
   ],

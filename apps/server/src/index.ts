@@ -12,9 +12,6 @@ import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
 import { registerRecordRoutes } from './modules/records/routes.js';
-import { getPrincipal } from './modules/security/get-principal.js';
-import { chatterIncomingIdentityFields } from './modules/chatter/webhook-identity.js';
-import { chatterRecordVisible, prepareChatterFlowInputs } from './modules/chatter/authorization.js';
 import { applyRecordDefaults as applyMetadataRecordDefaults } from './modules/records/record-defaults.js';
 import { validateRuntimeRecord as validateMetadataRecord } from './modules/records/runtime-validation.js';
 import { matchesRelatedLookupFilter, validateGeolocationValue } from './modules/records/record-constraints.js';
@@ -50,6 +47,8 @@ import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorizatio
 import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
+import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from './chatter-authorisation.js';
+import { authoriseChatterFlow } from './chatter-flow-authorisation.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
@@ -227,7 +226,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   });
   next();
 });
-
 // Meta webhook transport is a platform primitive; routing and replies remain in editable Flows.
 // Configure these four values on Render before enabling the callback.
 app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
@@ -243,7 +241,6 @@ app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
   if (typeof challenge !== 'string' || !/^\d+$/.test(challenge)) return res.sendStatus(400);
   return res.status(200).type('text/plain').send(challenge);
 });
-
 app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const reject = (status: number, reason: string) => { console.warn('[WhatsApp webhook] rejected', { status, reason }); return res.sendStatus(status); };
   console.info('[WhatsApp webhook] delivery received');
@@ -256,7 +253,6 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
   const supplied = Buffer.from(signature.toLowerCase());
   const expected = Buffer.from(digest);
   if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return reject(403, 'signature_mismatch');
-
   const payload = req.body as { object?: unknown; entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string; display_phone_number?: string }; messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }> } }> }> };
   if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) { console.info('[WhatsApp webhook] ignored unsupported payload'); return res.sendStatus(200); }
   const phoneIds = [...new Set(payload.entry.flatMap(entry => (entry.changes ?? []).filter(change => (change.value?.messages?.length ?? 0) > 0).map(change => change.value?.metadata?.phone_number_id?.trim()).filter((id): id is string => Boolean(id))))];
@@ -386,7 +382,9 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           const nowForIncoming = new Date().toISOString();
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
             Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
-            ...chatterIncomingIdentityFields(object, message.from, value?.metadata?.display_phone_number, phoneId),
+            Direction__c: 'Incoming', From_Number__c: message.from,
+            Channel_Account__c: phoneId,
+            To_Number__c: value?.metadata?.display_phone_number ?? '',
             Message_Body__c: body, Conversation_Key__c: conversationKey,
             Conversation_Context__c: currentContext,
             Status__c: fresh ? 'Received' : 'Expired', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
@@ -454,7 +452,6 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
     return res.sendStatus(500); // Meta retries unsuccessful deliveries.
   }
 });
-
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
 let hydratingPersistedMetadata = false;
@@ -1083,7 +1080,6 @@ function isTestLoopbackSmtpUrl(url: URL): boolean {
   return process.env.METADRIVE_SMTP_TEST_MODE === 'true'
     && (host === 'localhost' || host === '::1' || (isIP(host) === 4 && host.startsWith('127.')));
 }
-
 const namedCredentialSchema = z.object({
   id: z.string().uuid(),
   name: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
@@ -2043,7 +2039,6 @@ const dashboardTerritorySchema = z.object({
   }
 });
 type DashboardTerritory = z.infer<typeof dashboardTerritorySchema>;
-
 const dashboardSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
@@ -2460,7 +2455,6 @@ const accessControlSchema = z.object({
     }
   }
 });
-
 export type ObjectMetadata = z.infer<typeof objectSchema>;
 function isNumericField(field: { dataType: string; formula?: { returnType: string } } | undefined): boolean {
   const numericTypes = /^(Number|Currency|Percent)(\(|$)/;
@@ -2546,7 +2540,6 @@ function reportFilterValueError(
   return null;
 }
 export type FlowMetadata = z.infer<typeof flowSchema>;
-
 /** The draft in Flow Builder is not necessarily the published executable version. */
 function activeFlowDefinition(candidate: FlowMetadata | undefined): FlowMetadata | undefined {
   if (!candidate || candidate.activeVersion === null) return undefined;
@@ -2562,7 +2555,6 @@ function activeFlowDefinition(candidate: FlowMetadata | undefined): FlowMetadata
     versions: candidate.versions
   };
 }
-
 function flowVersionSnapshot(flow: FlowMetadata, savedAt: string): FlowMetadata['versions'][number] {
   return {
     versionNumber: flow.versionNumber,
@@ -2579,7 +2571,6 @@ function flowVersionSnapshot(flow: FlowMetadata, savedAt: string): FlowMetadata[
     tests: flow.tests
   };
 }
-
 function uniqueFlowHistory(flow: FlowMetadata | undefined, savedAt: string): FlowMetadata['versions'] {
   if (!flow) return [];
   const snapshots = new Map<number, FlowMetadata['versions'][number]>();
@@ -3027,7 +3018,6 @@ const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'SalesApp', label: 'Sales', description: 'Manage sales accounts and opportunities.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
   { apiName: 'ServiceApp', label: 'Service', description: 'Manage customer support cases.', navigationItems: ['Account', 'Contact', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#7526a8', utilityItems: ['Notes', 'History'] }
 ].map((app) => lightningAppSchema.parse(app));
-
 function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous: RuntimeRecord, updated: RuntimeRecord, userId: string): void {
   if (!object.settings?.trackFieldHistory) return;
   const changedAt = new Date().toISOString();
@@ -3044,7 +3034,6 @@ function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous
     }));
   if (entries.length) tenant.fieldHistory.push(...entries);
 }
-
 export type MfaEncryptedSecret = { keyId: string; iv: string; authTag: string; ciphertext: string };
 export type LocalUser = {
   id: string;
@@ -3260,7 +3249,6 @@ const systemAdminPermissions = [
 ];
 const salesPermissions = ['metadata:read'];
 const supportPermissions = ['metadata:read', 'namedCredentials:manage'];
-
 const connectorAppCatalog = z.object({
   object: objectSchema,
   packages: z.array(z.record(z.unknown())),
@@ -3295,7 +3283,6 @@ function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId
   }
   return existing;
 }
-
 const baseObjects: ObjectMetadata[] = [
   connectorAppCatalog.object,
   { apiName: 'User', label: 'User', pluralLabel: 'Users', kind: 'Standard Object', description: 'Platform users who belong to this tenant.', fields: [
@@ -3399,6 +3386,13 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'From_Number__c', label: 'From Number', dataType: 'Phone', required: false, unique: false },
     { apiName: 'To_Number__c', label: 'To Number', dataType: 'Phone', required: false, unique: false },
     { apiName: 'Conversation_Key__c', label: 'Conversation Key', dataType: 'Text(120)', required: false, unique: false },
+    { apiName: 'Channel_Account__c', label: 'WhatsApp Channel Account', dataType: 'Text(120)', required: false, unique: false },
+    { apiName: 'Assigned_User__c', label: 'Assigned User', dataType: 'Text(120)', required: false, unique: false },
+    { apiName: 'Contact_Name__c', label: 'Contact Name', dataType: 'Text(255)', required: false, unique: false },
+    { apiName: 'Read_At__c', label: 'Read At', dataType: 'Date/Time', required: false, unique: false },
+    { apiName: 'Media_URL__c', label: 'Media URL', dataType: 'URL', required: false, unique: false },
+    { apiName: 'Media_Name__c', label: 'Media Name', dataType: 'Text(255)', required: false, unique: false },
+    { apiName: 'Media_Type__c', label: 'Media Type', dataType: 'Text(80)', required: false, unique: false },
     { apiName: 'Conversation_Context__c', label: 'Conversation Context', dataType: 'Text(80)', required: false, unique: false },
     { apiName: 'Status__c', label: 'Processing Status', dataType: 'Picklist', required: false, unique: false, picklistValues: ['Received', 'Pending', 'Processing', 'Sent', 'Completed', 'Failed', 'Expired'], picklistRestricted: true },
     { apiName: 'Provider_Message_Id__c', label: 'Provider Message ID', dataType: 'Text(255)', required: false, unique: false },
@@ -3439,7 +3433,6 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'Configuration__c', label: 'Configuration Values', dataType: 'Long Text Area', required: false, unique: false, description: 'Connector configuration values stored as JSON metadata.' }
   ] }
 ];
-
 function buildDefaultProfiles(objects: ObjectMetadata[], permissionSets: AccessControl['permissionSets']): AccessProfile[] {
   const allAccess = Object.fromEntries(objects.map((object) => [object.apiName, { ...fullObjectPermissions }]));
   const adminSet = permissionSets.find((set) => set.id === 'system-administrator');
@@ -3468,7 +3461,6 @@ function buildDefaultProfiles(objects: ObjectMetadata[], permissionSets: AccessC
     }] : [])
   ].map((profile) => ({ ...profile, navigationDefaultAccess: 'Allow' as const }));
 }
-
 function defaultRoles(): AccessRole[] {
   return [
     { id: 'role-executive', name: 'Executive', apiName: 'Executive', parentRoleId: null },
@@ -3479,12 +3471,10 @@ function defaultRoles(): AccessRole[] {
     { id: 'role-standard-user', name: 'Standard User', apiName: 'Standard_User', parentRoleId: 'role-executive' }
   ];
 }
-
 function roleApiNameForName(name: string): string {
   const apiName = name.trim().replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
   return /^[A-Za-z]/.test(apiName) ? apiName : `Role_${apiName}`;
 }
-
 function roleIdForName(name: string, roles: AccessRole[]): string {
   const normalized = name.trim().toLowerCase();
   const knownId = normalized === 'system administrator' || normalized === 'executive' ? 'role-executive'
@@ -3500,7 +3490,6 @@ function roleIdForName(name: string, roles: AccessRole[]): string {
     ?? roles[0]?.id
     ?? '';
 }
-
 function profileIdForRole(role: string, profiles: AccessProfile[]): string {
   const roleKey = role.trim().toLowerCase();
   const knownId = roleKey === 'system administrator' ? 'system-administrator'
@@ -3513,7 +3502,6 @@ function profileIdForRole(role: string, profiles: AccessProfile[]): string {
     ?? profiles[0]?.id
     ?? '';
 }
-
 function connectorRecords(settings: ConnectorSettings[], ownerId: string): RuntimeRecord[] {
   const now = new Date().toISOString();
   return settings.map((setting) => stampRecordAuditFields({
@@ -3528,7 +3516,6 @@ function connectorRecords(settings: ConnectorSettings[], ownerId: string): Runti
     LastModifiedDate: now
   }, ownerId, now));
 }
-
 function connectorDefinitionRecords(definitions: ConnectorDefinition[], ownerId: string): RuntimeRecord[] {
   const now = new Date().toISOString();
   return definitions.map((definition) => stampRecordAuditFields({
@@ -3550,7 +3537,6 @@ function connectorDefinitionRecords(definitions: ConnectorDefinition[], ownerId:
     LastModifiedDate: now
   }, ownerId, now));
 }
-
 function integrationConnectionRecord(connection: IntegrationConnection, ownerId: string): RuntimeRecord {
   return stampRecordAuditFields({
     Id: connection.id,
@@ -3566,9 +3552,7 @@ function integrationConnectionRecord(connection: IntegrationConnection, ownerId:
     LastModifiedDate: connection.updatedAt
   }, ownerId, connection.updatedAt);
 }
-
 const whatsappDummyCredentialId = '11111111-1111-4111-8111-111111111111';
-
 function whatsappRouterFlow(): FlowMetadata {
   return flowSchema.parse({
     apiName: 'WA_ROUTER', label: 'WhatsApp Router',
@@ -3643,7 +3627,6 @@ function whatsappRouterFlow(): FlowMetadata {
     ], versions: []
   });
 }
-
 function whatsappContextFlow(): FlowMetadata {
   return flowSchema.parse({
     apiName: 'WA_CONTEXT', label: 'WhatsApp Conversation Context',
@@ -3690,7 +3673,6 @@ function whatsappContextFlow(): FlowMetadata {
     resources: [], versions: []
   });
 }
-
 // One-time, idempotent migration from legacy UNE connector records to the Flow credential store.
 // No legacy record is deleted until runtime dependencies have been migrated and tested.
 function migrateUneConnectorCredentials(
@@ -3747,7 +3729,6 @@ function migrateUneConnectorCredentials(
   }
   return result;
 }
-
 function seedWhatsappDummyCredential(tenantId: string, current: StoredNamedCredential[]): StoredNamedCredential[] {
   if (current.some((credential) => credential.id === whatsappDummyCredentialId || credential.name === 'WhatsApp_Dummy')) return current;
   if (!process.env.METADRIVE_CREDENTIAL_KEYS || !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID) return current;
@@ -3758,7 +3739,6 @@ function seedWhatsappDummyCredential(tenantId: string, current: StoredNamedCrede
     ...sealCredentialPayload(tenantId, whatsappDummyCredentialId, {}), createdAt: now, updatedAt: now
   })];
 }
-
 function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 'email' | 'role' | 'permissionSetIds'>): TenantData {
   const unified = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
     && Boolean(process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID);
@@ -3845,12 +3825,10 @@ function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 
     integrationConnections: []
   };
 }
-
 function relationshipApiName(label: string): string {
   const normalized = label.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
   return /^[A-Za-z]/.test(normalized) ? normalized : `Related_${normalized}`;
 }
-
 function withObjectDefaults(object: ObjectMetadata): ObjectMetadata {
   const fieldsWithOwner = object.apiName !== 'User' && !object.fields.some((field) => field.apiName === 'OwnerId')
     ? [...object.fields, fieldSchema.parse({
@@ -3863,11 +3841,9 @@ function withObjectDefaults(object: ObjectMetadata): ObjectMetadata {
           type: 'Lookup',
           targetObject: 'User',
           relationshipName: 'Owner',
-
 childRelationshipName: relationshipApiName(
   `Owned${object.pluralLabel.replace(/[^a-zA-Z0-9_]/g, '')}`
 )
-
         }
       })]
     : object.fields;
@@ -3953,7 +3929,6 @@ childRelationshipName: relationshipApiName(
     }
   };
 }
-
 function ensureCommunicationFields(object: ObjectMetadata): ObjectMetadata {
   if (object.apiName !== 'Communication_Records__c') return object;
   const defaults = baseObjects.find((item) => item.apiName === object.apiName)!;
@@ -3980,7 +3955,6 @@ function ensureCommunicationFields(object: ObjectMetadata): ObjectMetadata {
     } : layout)
   };
 }
-
 function ensureLeadStreetField(object: ObjectMetadata): ObjectMetadata {
   if (object.apiName !== 'Lead' || object.fields.some((field) => field.apiName === 'Street')) return object;
   const streetField = baseObjects.find((item) => item.apiName === 'Lead')
@@ -3988,7 +3962,6 @@ function ensureLeadStreetField(object: ObjectMetadata): ObjectMetadata {
   if (!streetField) throw new Error('Standard Lead Street field metadata is missing');
   return { ...object, fields: [...object.fields, streetField] };
 }
-
 const initialState: PlatformState = {
   platformPolicies: {}, platformPolicyAudit: [], tenantRegistry: {}, tenantManagementAudit: [], tenants: {}, libraryComponents: [],
   users: [], refreshSessions: [], revokedAccessTokens: {}
@@ -4434,8 +4407,10 @@ if (!maintenanceMode) {
   let repaired = 0;
   for (const [tenantId, tenant] of Object.entries(state.tenants)) {
     if (!(tenant.records?.Connector_App__c ?? []).some(row =>
-      row.Installed__c === true && ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)) &&
-      installableAppCatalog.packages.some((pkg: { appKey: string }) => pkg.appKey === row.AppKey__c))) continue;
+      row.Installed__c === true &&
+      installableAppCatalog.packages.some((pkg: { appKey: string; installation?: { allowInstalledMetadataWithoutLicence?: boolean } }) =>
+        pkg.appKey === row.AppKey__c && (pkg.installation?.allowInstalledMetadataWithoutLicence === true
+          || ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)))))) continue;
     try {
       const installed = applyInstallableAppPackages(tenant, installableAppCatalog) as TenantData;
       if (JSON.stringify(installed) !== JSON.stringify(tenant)) {
@@ -4487,9 +4462,7 @@ try {
     : 'invalid environment configuration';
   console.warn('Named Credentials encryption readiness: ' + status);
 }
-
 if (!maintenanceMode) await persistToPostgres(state);
-
 function credentialKeyRing(): CredentialKeyRing {
   const serializedKeys = process.env.METADRIVE_CREDENTIAL_KEYS;
   const activeKeyId = process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID;
@@ -4519,11 +4492,9 @@ function credentialKeyRing(): CredentialKeyRing {
   if (!keys.has(activeKeyId)) throw new Error('METADRIVE_CREDENTIAL_ACTIVE_KEY_ID must identify a configured encryption key');
   return { activeKeyId, keys };
 }
-
 function credentialAad(tenantId: string, credentialId: string): Buffer {
   return Buffer.from(`metadrive:named-credential:v1:${tenantId}:${credentialId}`, 'utf8');
 }
-
 function sealCredentialPayload(tenantId: string, credentialId: string, payload: NamedCredentialPayload, ring = credentialKeyRing()) {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', ring.keys.get(ring.activeKeyId)!, iv);
@@ -4536,7 +4507,6 @@ function sealCredentialPayload(tenantId: string, credentialId: string, payload: 
     ciphertext: ciphertext.toString('base64')
   };
 }
-
 function openCredentialPayload(tenantId: string, credential: StoredNamedCredential, ring = credentialKeyRing()): NamedCredentialPayload {
   const key = ring.keys.get(credential.keyId);
   if (!key) throw new Error(`Credential encryption key "${credential.keyId}" is unavailable; configure it before using or rotating Named Credentials.`);
@@ -4555,7 +4525,6 @@ function openCredentialPayload(tenantId: string, credential: StoredNamedCredenti
     throw new Error(`Named Credential "${credential.name}" could not be decrypted; verify the encryption key configuration.`);
   }
 }
-
 function sealIntegrationCredentials(tenantId: string, connectionId: string, credentials: Record<string, string>, ring = credentialKeyRing()) {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', ring.keys.get(ring.activeKeyId)!, iv);
@@ -4568,7 +4537,6 @@ function sealIntegrationCredentials(tenantId: string, connectionId: string, cred
     credentialsCiphertext: ciphertext.toString('base64')
   };
 }
-
 function openIntegrationCredentials(tenantId: string, connection: IntegrationConnection, ring = credentialKeyRing()): Record<string, string> {
   if (!connection.credentialKeyId || !connection.credentialIv || !connection.credentialAuthTag || !connection.credentialsCiphertext) return {};
   const key = ring.keys.get(connection.credentialKeyId);
@@ -4589,7 +4557,6 @@ function openIntegrationCredentials(tenantId: string, connection: IntegrationCon
     throw new Error(`Integration Connection "${connection.name}" could not be decrypted; verify the encryption key configuration.`);
   }
 }
-
 function publicIntegrationConnection(connection: IntegrationConnection, definition: ConnectorDefinition, credentials: Record<string, string>) {
   return {
     id: connection.id,
@@ -4612,7 +4579,6 @@ function publicIntegrationConnection(connection: IntegrationConnection, definiti
     updatedAt: connection.updatedAt
   };
 }
-
 function publicNamedCredential(credential: StoredNamedCredential) {
   return {
     id: credential.id,
@@ -4629,7 +4595,6 @@ function publicNamedCredential(credential: StoredNamedCredential) {
     updatedAt: credential.updatedAt
   };
 }
-
 // No schema/tenant is visible to a new tenant until its first durable commit.
 // Serialize provisioning within an instance; SQL modes also use optimistic
 // revisions to reject cross-instance stale writers rather than lose data.
@@ -4790,7 +4755,6 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     release();
   }
 }
-
 async function bootstrapTenant(): Promise<void> {
   const tenantId = process.env.METADRIVE_BOOTSTRAP_TENANT_ID;
   const tenantName = process.env.METADRIVE_BOOTSTRAP_TENANT_NAME;
@@ -4808,7 +4772,6 @@ async function bootstrapTenant(): Promise<void> {
     await createTenant(tenantId, tenantName, adminName, email, password);
     return;
   }
-
   // Bootstrap credentials are only for first-time provisioning. Never reset an
   // existing administrator's password on application startup or redeployment.
   const credentials = existingUser ? null : await hashPassword(password);
@@ -4821,7 +4784,6 @@ async function bootstrapTenant(): Promise<void> {
         permissionSetGroupIds: [],
         disabled: false, createdAt: new Date().toISOString()
       };
-
   if (existingUser && existingUser.tenantId !== tenantId) {
     throw new Error('Bootstrap administrator email already belongs to another tenant');
   }
@@ -4879,6 +4841,11 @@ function withSecurityEvent(
 }
 function tenantData(tenantId: string): TenantData | undefined {
   return tenantIsActive(tenantId) ? state.tenants[tenantId] : undefined;
+}
+function getPrincipal(res: Response): Principal {
+  const principal = res.locals.principal as Principal | undefined;
+  if (!principal) throw new Error('Authenticated principal was not established');
+  return principal;
 }
 function principalUser(principal: Principal): LocalUser | undefined {
   return state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
@@ -7691,8 +7658,11 @@ function hasRecordAccess(
   if (visited.has(recordKey)) return false;
   visited.add(recordKey);
   const objectAction = accessLevel === 'Read' ? 'read' : accessLevel === 'Edit' ? 'edit' : 'delete';
+  // WhatsApp channel permission is independent of object-wide grants, ownership and sharing.
+  // Other Communication Records (API audit, email, SMS) keep existing RBAC semantics.
+  if (objectName === communicationObjectApiName && isWhatsAppMessage(record) &&
+      !canAccessChatterRecord(principal.tenantId, principal.userId, tenant, record, 'read')) return false;
   if (!hasObjectPermission(principal, tenant, objectName, objectAction)) return false;
-  if (objectName === communicationObjectApiName && !chatterRecordVisible(tenant, principal, record, accessLevel)) return false;
   const advancedSettings = tenant.sharingSettings[objectName];
   const advancedUser = tenant.accessControl.users.find((user) => user.id === principal.userId);
   const advancedRules = advancedSettings?.restrictionRules ?? [];
@@ -7717,6 +7687,13 @@ function hasRecordAccess(
       ordinaryAuthorized: true, rules: advancedRules
     });
     if (!decision.allowed) return false;
+  }
+  // Channel grants are a centrally enforced form of record sharing; they do not
+  // override object permission checks or higher-priority restriction rules.
+  if (objectName === communicationObjectApiName && isWhatsAppMessage(record)) {
+    if (accessLevel === 'Delete') return false;
+    return canAccessChatterRecord(principal.tenantId, principal.userId, tenant, record,
+      accessLevel === 'Edit' ? 'assign' : 'read');
   }
   if (accessLevel === 'Read' && hasObjectWidePermission(principal, tenant, objectName, 'viewAll')) return true;
   if ((accessLevel === 'Edit' || accessLevel === 'Delete')
@@ -8102,6 +8079,30 @@ function routeParam(req: Request, name: string): string {
 const recordRoutesDependencies = { app, accessAuthentication, accessControlSchema, recordShareSchema, recordActivitySchema, chatterCommentSchema, chatterPostSchema, appendFieldHistory, profileIdForRole, persistState, getState: () => state, setState: (next: PlatformState) => { state = next; }, tenantIsActive, withSecurityEvent, tenantData, getPrincipal, principalUser, effectivePermissions, disableOnConnectorUninstall, assertConnectorLifecycleAccess, canOpenApp, hasObjectPermission, hasObjectWidePermission, queueContainsUser, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions, profileIdForPrincipal, resolveActiveLightningRecordPage, hasRecordTypeAccessForUser, applyRecordDefaults, persistTenantRecords, deleteRecordCascade, routeParam, formulaContextForUser, validateRuntimeRecord, runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows, calculateFormulaFields, sanitizeRecordValues, withCaseClosedDate, recordUnmodified, stampRecordAuditFields, recordActionEnabled, normalizeFlowRecordAssignments, validateRelationshipReparenting, waitForPersistedState, randomUUID, applyConnectorLifecycle, z, hashPassword };
 export type RecordRoutesDependencies = typeof recordRoutesDependencies;
 registerRecordRoutes(recordRoutesDependencies);
+// Data-source-neutral Chatter channel grants come from server-owned tenant records.
+// Never accept account grants, user IDs, or view-all flags from browser properties.
+app.get('/api/chatter/access', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId);
+  if (!tenant || !hasObjectPermission(principal, tenant, communicationObjectApiName, 'read')) {
+    return res.status(403).json({error:'Communication access denied'});
+  }
+  const scope = chatterScopeForUser(principal.tenantId, principal.userId, tenant);
+  res.setHeader('Cache-Control','private, no-store');
+  const eligibleAssignees = scope.grants.filter(grant => grant.canAssign).flatMap(grant =>
+    state.users.filter(user => user.tenantId === principal.tenantId && !user.disabled
+      && chatterScopeForUser(principal.tenantId, user.id, tenant).grants.some(candidate =>
+        candidate.channelAccountId === grant.channelAccountId && candidate.canRead))
+      .map(user => ({id:user.id,name:user.name,channelAccountId:grant.channelAccountId})));
+  return res.json({
+    userId: principal.userId, viewAll: scope.viewAllConversations,
+    eligibleAssignees,
+    grants: scope.grants.filter(grant => grant.canRead).map(grant => ({
+      channelAccountId:grant.channelAccountId,canRead:grant.canRead,
+      canSend:grant.canSend,canAssign:grant.canAssign,viewAll:grant.viewAll === true
+    }))
+  });
+});
 function validateFlowInputValues(flow: FlowMetadata, values: Record<string, unknown>): string | undefined {
   const inputResources = flow.resources.filter((resource) => resource.availableForInput);
   for (const [name, value] of Object.entries(values)) {
@@ -8147,9 +8148,13 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
-  const safe = prepareChatterFlowInputs(tenant, principal, apiName, input.data, state.users);
-  if (safe.error) return res.status(403).json({ error: safe.error });
-  const inputError = validateFlowInputValues(flow, safe.inputs);
+  const guard = authoriseChatterFlow(apiName, {
+    tenantId: principal.tenantId, userId: principal.userId,
+    tenant, input: input.data, credentials: tenant.namedCredentials, users: state.users
+  });
+  if (guard && !guard.ok) return res.status(guard.status).json({error:guard.error});
+  const authorisedInput = guard?.ok ? guard.input : input.data;
+  const inputError = validateFlowInputValues(flow, authorisedInput);
   if (inputError) return res.status(400).json({ error: inputError });
   const validation = validateFlow(
     flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
@@ -8159,7 +8164,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
   try {
     const working = structuredClone(tenant);
-    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, safe.inputs, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
+    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, authorisedInput, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
     if (result.status === 'waiting') {
       const interview = createFlowInterview(flow, principal.userId, result);
       working.interviews = [...working.interviews, interview];
@@ -12236,8 +12241,6 @@ function formulaContextForUser(tenant: TenantData, userId: string): {
   };
 }
 
-
-
 function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, current?: RuntimeRecord): void {
   validateMetadataRecord(tenantId, tenant, object, values, current, state.users);
 }
@@ -15604,7 +15607,6 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
     dashboardSubscriptionDispatches.delete(key);
   }
 }
-
 let scheduledDispatchRunning = false;
 async function dispatchDueIntegrationJobs(): Promise<void> {
   if (persistenceMode === 'jsonb') return;
@@ -15654,7 +15656,6 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
     });
   }
 }
-
 async function dispatchScheduledFlows(): Promise<void> {
   if (maintenanceMode) return;
   if (scheduledDispatchRunning) return;
@@ -15699,7 +15700,6 @@ async function dispatchScheduledFlows(): Promise<void> {
     scheduledDispatchRunning = false;
   }
 }
-
 // Serve the production React SPA from the same origin as the API.
 const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
 if (existsSync(resolve(frontendDist, 'index.html'))) {
@@ -15712,12 +15712,10 @@ if (existsSync(resolve(frontendDist, 'index.html'))) {
     return res.sendFile(resolve(frontendDist, 'index.html'));
   });
 }
-
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Platform API request failed', error);
   return res.status(500).json({ error: 'Platform API request failed' });
 });
-
 app.listen(port, () => {
   console.log(`MetaDrive API listening on http://localhost:${port} (JWT issuer: ${jwtService.config.issuer})`);
   void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));

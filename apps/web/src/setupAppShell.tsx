@@ -196,7 +196,6 @@ import {
   type WorkspaceId
 } from './metadata';
 
-
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
@@ -206,7 +205,6 @@ type NewFieldLookupFilterDraft = {
   valueFieldApiName: string;
   required: boolean;
 };
-
 
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -220,7 +218,6 @@ type LandingBootstrap = {
   };
 };
 type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
-
 
 export function createSetupApp(deps: {
 apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -2635,7 +2632,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         )}
 
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
-          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
+          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} apps={apps} pages={pages}
+            availableFlows={flows.filter(item => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
+              .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
+            onLaunchFlow={(apiName: string, inputs?: Record<string, unknown>) => void runFlow(apiName, inputs)}
+            reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={recordSearch} onNavigate={navigateRoute} />}
           {route.kind === 'route-alias' && <section className="setup-card" role="status">
             {routeAliasError ? <p role="alert">{routeAliasError}</p> : <p>Resolving route alias…</p>}
@@ -3364,7 +3365,5 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     </div>
   );
 }
-
-
 return SetupApp;
 }

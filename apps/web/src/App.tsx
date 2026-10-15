@@ -412,7 +412,7 @@ function PageHeading({ eyebrow, title, description, actions }: { eyebrow?: strin
 
 const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
 
-const { RecordWorkspace, RecordFormDialog } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart);
+const { RecordWorkspace, RecordFormDialog } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
 
 const SetupHome = createSetupHome(PageHeading);
 

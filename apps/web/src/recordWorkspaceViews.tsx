@@ -196,7 +196,6 @@ import {
   type WorkspaceId
 } from './metadata';
 
-
 type RecordActivity = {
   id: string;
   objectApiName: string;
@@ -222,11 +221,14 @@ type ChatterPost = {
   comments: ChatterComment[];
 };
 
-
-export function createRecordWorkspaceViews(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>, usePageLayoutDevice: () => LayoutDevice, ApiRequestError: new (...args: any[]) => Error & { status: number }, getAccessToken: () => string | undefined, RuntimeReportChart: React.ComponentType<any>) {
+export function createRecordWorkspaceViews(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>, usePageLayoutDevice: () => LayoutDevice, ApiRequestError: new (...args: any[]) => Error & { status: number }, getAccessToken: () => string | undefined, RuntimeReportChart: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
 function RecordWorkspace({
   route,
   objects,
+  apps,
+  pages,
+  availableFlows,
+  onLaunchFlow,
   reports,
   metadataLoaded,
   profileId,
@@ -240,6 +242,10 @@ function RecordWorkspace({
 }: {
   route: Extract<AppRoute, { kind: 'record-list' | 'record-detail' }>;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   reports: ReportMetadata[];
   metadataLoaded: boolean;
   profileId: string;
@@ -469,7 +475,6 @@ function RecordWorkspace({
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [search]);
-
   useEffect(() => {
     setListOffset(0);
     setSelectedRecordIds([]);
@@ -478,7 +483,6 @@ function RecordWorkspace({
   // Selection belongs to the visible authorised page, never an earlier
   // offset or sort order after a list navigation.
   useEffect(() => { setSelectedRecordIds([]); }, [listOffset, listSort?.field, listSort?.direction]);
-
   useEffect(() => {
     setSelectedFieldSetApiName(object?.fieldSets?.[0]?.apiName ?? '');
   }, [object?.apiName]);
@@ -486,7 +490,6 @@ function RecordWorkspace({
     setSelectedRecordIds([]);
     setListNotice('');
   }, [object?.apiName]);
-
   useEffect(() => {
     const media = window.matchMedia('(max-width: 600px)');
     const updateFormFactor = () => setFormFactor(media.matches ? 'Phone' : 'Desktop');
@@ -494,7 +497,6 @@ function RecordWorkspace({
     media.addEventListener('change', updateFormFactor);
     return () => media.removeEventListener('change', updateFormFactor);
   }, []);
-
   useEffect(() => {
     let active = true;
     const loadRecords = async () => {
@@ -549,7 +551,6 @@ function RecordWorkspace({
     void loadRecords();
     return () => { active = false; };
   }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', route.kind === 'record-detail' ? route.appId : '', formFactor, refreshKey, listOffset, debouncedSearch, listSort?.field, listSort?.direction]);
-
   useEffect(() => {
     if (route.kind !== 'record-detail' || !object || !record || record.Id !== route.recordId) {
       setRelatedRecords({});
@@ -595,7 +596,6 @@ function RecordWorkspace({
     void loadRelatedRecords();
     return () => { active = false; };
   }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', object?.apiName, objects, record?.Id, record?.RecordTypeId, activeLightningPage, refreshKey, relatedOffsets]);
-
   useEffect(() => {
     const pageComponents = activeLightningPage?.components ?? [];
     const needsActivities = pageComponents.some((component) => component.visible && component.type === 'Activities');
@@ -636,7 +636,6 @@ function RecordWorkspace({
     void loadInteractions();
     return () => { active = false; };
   }, [route.kind, route.objectApiName, route.kind === 'record-detail' ? route.recordId : '', record?.Id, activeLightningPage, refreshKey]);
-
   useEffect(() => {
     if (!object) return;
     let active = true;
@@ -669,7 +668,6 @@ function RecordWorkspace({
     void loadLookups();
     return () => { active = false; };
   }, [formOpen, object?.apiName]);
-
   useEffect(() => {
     if (!ownerDialogRecord && !bulkOwnerDialogOpen) return;
     let active = true;
@@ -685,7 +683,6 @@ function RecordWorkspace({
     void loadOwners();
     return () => { active = false; };
   }, [ownerDialogRecord?.Id, bulkOwnerDialogOpen]);
-
   const navigateLink = (event: React.MouseEvent<HTMLAnchorElement>, nextRoute: AppRoute) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -1169,10 +1166,8 @@ function RecordWorkspace({
       setCampaignSaving(false);
     }
   };
-
   if (!object && !metadataLoaded) return <div className="records-loading">Loading object metadata…</div>;
   if (!object) return <div className="records-page"><div className="records-message" role="alert">Object “{route.objectApiName}” was not found.</div></div>;
-
   if (route.kind === 'record-detail') {
     if (!record) return <div className="records-page">
       {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
@@ -1238,11 +1233,17 @@ function RecordWorkspace({
         return definition
           ? <div key={component.id} data-layout-component-id={component.id}
               style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>
-              <RegisteredComponent definition={definition} props={{
-                ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
-                label: component.label, properties: component.properties,
-                record, recordId: record.Id, object, formFactor, children
-              }} />
+              {!isLayoutContainer(component) && needsMetadataComponentRuntime(component.properties)
+                ? <MetadataBoundPageComponent definition={definition} component={component}
+                    objects={objects} apps={apps} pages={pages} currentAppId="Records"
+                    pageSessionKey={'record:' + object.apiName + ':' + String(record.Id)}
+                    reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+                    onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
+                : <RegisteredComponent definition={definition} props={{
+                    ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
+                    label: component.label, properties: component.properties,
+                    record, recordId: record.Id, object, formFactor, children
+                  }} />}
             </div>
           : <div className="records-message" role="status" key={component.id}>Component “{component.type.slice('Custom:'.length)}” is not available in the component library.</div>;
       }
@@ -1503,7 +1504,6 @@ function RecordWorkspace({
         onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />}
     </div>;
   }
-
   const readableFields = object.fields.filter((field) => fieldAccess[`${object.apiName}.${field.apiName}`]?.read);
   const hasConfiguredSearchResults = object.searchLayouts?.searchResults !== undefined;
   const visibleRecords = records; // Search and pagination are applied by the API.
@@ -1734,6 +1734,5 @@ function RecordWorkspace({
       onClose={() => setFormOpen(false)} onSubmit={(event) => void saveRecord(event)} />}
   </div>;
 }
-
 return { RecordWorkspace, RecordFormDialog };
 }

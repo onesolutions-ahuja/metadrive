@@ -1,0 +1,42 @@
+name: Chatter - authenticated production installation and security checks
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/server/data/installable-app-packages.json'
+      - 'apps/server/src/chatter-*.ts'
+      - 'apps/server/src/installable-app-packages.mjs'
+      - 'apps/server/src/credential-grant-seeder.mjs'
+      - 'apps/web/src/page-presets/chatter.editable.json'
+      - 'scripts/install-chatter-live.mjs'
+      - '.github/workflows/chatter-live-install.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: metadrive-chatter-live-install
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate installer syntax
+        run: node --check scripts/install-chatter-live.mjs
+      - name: Wait for Railway to publish the merged app, install through OneEngine, and test
+        env:
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/install-chatter-live.mjs
+      - name: Preserve machine-readable installation and denial-test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chatter-live-install-result
+          path: chatter-live-install-result.json
