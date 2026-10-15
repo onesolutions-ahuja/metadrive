@@ -11,6 +11,7 @@ import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
 import { registerRecordRoutes } from './modules/records/routes.js';
+import { chatterIncomingIdentityFields } from './modules/chatter/webhook-identity.mjs';
 import { applyRecordDefaults as applyMetadataRecordDefaults } from './modules/records/record-defaults.js';
 import { validateRuntimeRecord as validateMetadataRecord } from './modules/records/runtime-validation.js';
 import { matchesRelatedLookupFilter, validateGeolocationValue } from './modules/records/record-constraints.js';
@@ -385,11 +386,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           const nowForIncoming = new Date().toISOString();
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
             Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
-            Direction__c: 'Incoming', From_Number__c: message.from,
-            To_Number__c: value?.metadata?.display_phone_number ?? '',
-            // Channel identity is established from the signed webhook phone ID, never client input.
-            ...(object.fields.some(field => field.apiName === 'Channel_Account__c')
-              ? { Channel_Account__c: phoneId } : {}),
+            ...chatterIncomingIdentityFields(object, message.from, value?.metadata?.display_phone_number, phoneId),
             Message_Body__c: body, Conversation_Key__c: conversationKey,
             Conversation_Context__c: currentContext,
             Status__c: fresh ? 'Received' : 'Expired', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
