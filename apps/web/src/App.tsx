@@ -12607,7 +12607,6 @@ function Permissions({
           </div>
           <h3 className="permission-section-heading">System Permissions</h3>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedSet.systemPermissions.includes(key)} onChange={() => patchSet(selectedSet.id, { systemPermissions: toggleString(selectedSet.systemPermissions, key) })} />{label}</label>)}</div>
-          
           <h3 className="permission-section-heading">Application Access</h3>
           <p className="permission-help">Navigation access does not grant underlying data permissions.</p>
           <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
@@ -12651,7 +12650,6 @@ function Permissions({
           <h3 className="permission-section-heading">Muted System Permissions</h3>
           <p className="permission-help">Muted permissions remove grants contributed by this group; direct permission-set assignments remain in effect.</p>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedGroup.mutedSystemPermissions.includes(key)} onChange={() => patchGroup(selectedGroup.id, { mutedSystemPermissions: toggleString(selectedGroup.mutedSystemPermissions, key) })} />{label}</label>)}</div>
-          
           <h3 className="permission-section-heading">Muted Application Access</h3>
           <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
             <input type="checkbox" checked={Boolean(selectedGroup.mutedAppPermissions?.[app.apiName])}
@@ -12702,5 +12700,4 @@ function Permissions({
     <div className="permission-info"><ShieldCheck size={17} /><span>Tenant-scoped grants are evaluated by the API. Permission-set groups combine their member grants and can mute group-contributed system and object permissions; direct assignments are unaffected by group muting.</span></div>
   </div>;
 }
-
 export default App;
