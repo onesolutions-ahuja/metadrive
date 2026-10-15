@@ -1,3 +1,4 @@
+import { reconcileNavigationOrder } from './appNavigation';
 import { createObjectManager } from './objectManagerView';
 import { createSetupHome } from './setupHomeView';
 import { createSettingsViews } from './settingsWorkspaceViews';
@@ -1322,7 +1323,7 @@ function PageBuilder({
                         pageSessionKey={(builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName}
                         reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
-                        onNavigate={() => {}} onLaunchFlow={(flowApiName, inputs) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
+                        onNavigate={() => {}} onLaunchFlow={(flowApiName: string, inputs: Record<string, unknown>) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
@@ -1600,7 +1601,7 @@ function PageBuilder({
             {inspectorTab !== 'Data & Actions' && <PageComponentVisualEditor value={selected.properties.visualStyle} onChange={(visualStyle) => updateComponent(selected.id, { properties: { ...selected.properties, visualStyle } })} />}
             {selected.parentId && <button type="button" className="btn btn-small" onClick={() => updateComponent(selected.id, { parentId: undefined })}>Move out of container</button>}
             {inspectorTab !== 'Data & Actions' && <PageComponentStyleEditor properties={selected.properties}
-              onChange={(properties) => updateComponent(selected.id, { properties })} />}
+              onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })} />}
             {inspectorTab !== 'Design' && selectedCustomDefinition && <>
               <div className="properties-section-title">Component properties</div>
               <div className="properties-section-title">Container hierarchy</div>
