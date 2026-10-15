@@ -1550,8 +1550,7 @@ const pageSchema = z.object({
   definitionVersion: z.number().int().positive().optional(), overridePolicy: z.enum(['presentation-only','none']).optional(),
   requiredPermissions: z.array(z.string().min(1)).optional()
 }).superRefine((page, context) => {
-  if (page.pageType === 'Record Page' && !page.targetObject.trim()) context.addIssue({code:z.ZodIssueCode.custom,path:['targetObject'],message:'Record Pages require a target object'});
-  const ids = page.components.map((component) => component.id);
+  const ids = page.components.map((component) => component.id); if (page.pageType === 'Record Page' && !page.targetObject.trim()) context.addIssue({ code: z.ZodIssueCode.custom, path: ['targetObject'], message: 'Record Pages require a target object' });
   if (new Set(ids).size !== ids.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['components'], message: 'Component IDs must be unique' });
   page.components.forEach((component, index) => {
     if (page.layoutMode === 'template' && !pageTemplateRegions[page.template].includes(component.region)) {
