@@ -12,9 +12,11 @@ const fail=(step,result)=>{throw Error(step+' HTTP '+result.status+' '+JSON.stri
 const l=await api('/auth/login','POST',{email:user,password:pass},false);
 if(l.status!==200||!l.data.access_token||l.data.user?.tenantId!=='unesolutions-dev')fail('tenant login',l);
 token=l.data.access_token;report.authenticated=true;
-const [p,f,c]=await Promise.all([api('/metadata/pages'),api('/metadata/flows'),api('/chatter/access')]);
-if(p.status!==200||f.status!==200||c.status!==200)throw Error('Metadata endpoint statuses: '+JSON.stringify({pages:p.status,flows:f.status,chatterAccess:c.status}));
+const [p,f,c,apps]=await Promise.all([api('/metadata/pages'),api('/metadata/flows'),api('/chatter/access'),api('/metadata/apps')]);
+if(p.status!==200||f.status!==200||c.status!==200||apps.status!==200)throw Error('Metadata endpoint statuses: '+JSON.stringify({pages:p.status,flows:f.status,chatterAccess:c.status}));
 const page=p.data.pages.find(x=>x.apiName==='UNE_CHATTER');
+const communication=apps.data.apps?.find(x=>x.apiName==='Communication');
+console.log('CHATTER_NAVIGATION_CHECK '+JSON.stringify({communicationExists:!!communication,linked:communication?.navigationPageApiNames?.includes('UNE_CHATTER')===true,navCount:communication?.navigationPageApiNames?.length??0}));
 if(!page)throw Error('Chatter page missing');
 const grantCount=(c.data.grants||[]).filter(x=>x.canRead&&x.canSend).length;
 report.rbac=grantCount?'verified':'missing_grant';
