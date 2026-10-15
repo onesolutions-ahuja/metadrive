@@ -1,3 +1,14 @@
+/** Presentation-only slots for the existing protected OneEngine Page Builder. */
+export const protectedWorkspacePageSlots=Object.freeze({"company-settings":["company-info","domains","developer-accounts","usage","recovery","mfa","email-recovery","locks","sessions","audit"],"object-manager":["object-workspace","object-list","object-heading","object-subnav","object-setting"],"app-manager":["identity","pages","assignments","navigation-items","navigation-order","utility","actions"],"app-exchange":["marketplace-search","marketplace-filters","marketplace-catalog","marketplace-details"],"rbac":["permissions","rbac-tabs","rbac-list","rbac-editor","rbac-help"],"tenant-management":["directory","tenant-details","tenant-domains","tenant-usage","tenant-recovery"]});
+export function protectedAdministrationSlotComponents(workspace){
+ const keys=protectedWorkspacePageSlots[workspace]??[];
+ return keys.map((key,index)=>({
+  id:'md-admin-'+workspace+'-'+key,type:'Custom:SystemPanel',
+  label:key.replace(/-/g,' '),visible:true,region:'main',
+  properties:{platformSlotKey:key,systemWorkspaceId:workspace},
+  position:{x:0,y:32+index*80,width:1280,height:72}
+ }));
+}
 /** Versioned additive seed for protected administration Page Builder layouts.
  * These are existing Lightning App Pages, never a second page renderer/store.
  * Control actions remain in the established OneEngine admin modules and RBAC.
@@ -20,9 +31,9 @@ export function protectedAdministrationPage(descriptor){
  return {
   apiName,label:descriptor.label,updatedAt:'2026-10-14T00:00:00.000Z',
   targetObject:'Account',pageType:'App Page',layoutMode:'template',template:'one-region',
-  canvasWidth:1440,canvasHeight:900,status:'Active',devices:['Desktop','Phone'],
-  components:[],activationAssignments:[],
-  scope:'platform-system',ownerNamespace:'MetaDrive',definitionVersion:1,
+  canvasWidth:1440,canvasHeight:Math.max(900,120+(protectedWorkspacePageSlots[descriptor.workspace]?.length??0)*80),status:'Active',devices:['Desktop','Phone'],
+  components:protectedAdministrationSlotComponents(descriptor.workspace),activationAssignments:[],
+  scope:'platform-system',ownerNamespace:'MetaDrive',definitionVersion:2,
   overridePolicy:'presentation-only',requiredPermissions:[descriptor.permission]
  };
 }
@@ -33,7 +44,20 @@ export function seedProtectedAdministrationPages(tenant){
  const additions=protectedWorkspacePageDescriptors
   .filter(item=>!existing.has(protectedPageApiName(item.workspace)))
   .map(protectedAdministrationPage);
- return additions.length?{...tenant,pages:[...pages,...additions]}:tenant;
+ // Upgrade untouched v1 seed only. Any tenant edits retain their saved layout.
+ const migrated=pages.map(page=>{
+  const d=protectedWorkspacePageDescriptors.find(item=>protectedPageApiName(item.workspace)===page.apiName);
+  if(!d||page.ownerNamespace!=='MetaDrive'||page.scope!=='platform-system'
+   ||page.definitionVersion!==1||page.updatedAt!=='2026-10-14T00:00:00.000Z'
+   ||page.status!=='Active'||page.layoutMode!=='template'
+   ||!Array.isArray(page.components)||page.components.length!==0
+   ||JSON.stringify(page.requiredPermissions)!==JSON.stringify([d.permission]))return page;
+  const next=protectedAdministrationPage(d);
+  return {...page,definitionVersion:next.definitionVersion,layoutMode:next.layoutMode,
+   canvasHeight:next.canvasHeight,components:next.components};
+ });
+ return additions.length||migrated.some((page,i)=>page!==pages[i])
+  ?{...tenant,pages:[...migrated,...additions]}:tenant;
 }
 export function validateProtectedAdministrationPageUpdate(existing,proposed,permissions){
  if(!isProtectedAdministrationPage(existing)&&!isProtectedAdministrationPage(proposed))return null;

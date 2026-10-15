@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, BadgeCheck, ChevronRight, Download, LockKeyhole, PackageCheck, Puzzle, Search, ShieldCheck, X } from 'lucide-react';
 import ConnectorAppWorkspace, { appLicensed, type ConnectorApp, type ConnectorFlowSummary, type CommunicationPage, type CredentialInput } from './ConnectorAppWorkspace';
 import type { NamedCredentialMetadata } from './metadata';
+import {PlatformPageSlot} from './PlatformPageSlot';
 
 type Props = {
   credentials: NamedCredentialMetadata[];
@@ -91,7 +92,7 @@ export default function AppExchange(props: Props) {
       <div className="exchange-breadcrumb"><span>Setup</span><ChevronRight size={13}/><strong>AppExchange</strong></div>
       <span className="exchange-preview-label"><BadgeCheck size={13}/> Tenant-scoped metadata</span>
     </div>
-    <section className="exchange-hero">
+    <PlatformPageSlot slotKey="marketplace-search"><section className="exchange-hero">
       <div className="exchange-hero-copy">
         <div className="exchange-eyebrow"><Puzzle size={13}/> CONNECTOR APP MARKETPLACE</div>
         <h1>Connect your business apps</h1>
@@ -101,10 +102,10 @@ export default function AppExchange(props: Props) {
           {query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={14}/></button>}
         </label>
       </div>
-    </section>
+    </section></PlatformPageSlot>
     <div className="exchange-content">
       {error && <div className="records-message" role="alert">{error}</div>}
-      <div className="exchange-tabs" role="tablist" aria-label="Marketplace views">
+      <PlatformPageSlot slotKey="marketplace-filters"><div className="exchange-tabs" role="tablist" aria-label="Marketplace views">
         <button role="tab" aria-selected={view === 'discover'} className={view === 'discover' ? 'active' : ''} onClick={() => setView('discover')}>Discover apps</button>
         <button role="tab" aria-selected={view === 'installed'} className={view === 'installed' ? 'active' : ''} onClick={() => setView('installed')}>Installed apps <span>{installed}</span></button>
       </div>
@@ -115,8 +116,9 @@ export default function AppExchange(props: Props) {
       <div className="exchange-category-row" aria-label="Filter by category">
         {categories.map((name) => <button key={name} className={category === name ? 'active' : ''} onClick={() => setCategory(name)}>{name}</button>)}
       </div>
+      </PlatformPageSlot>
       {loading && <div className="records-loading">Loading connector app metadata…</div>}
-      <div className="exchange-app-grid">
+      <PlatformPageSlot slotKey="marketplace-catalog"><div className="exchange-app-grid">
         {visible.map((app) => <article className="exchange-app-card" key={app.AppKey__c}>
           <div className="exchange-card-top">
             <span className="exchange-app-mark teal"><Puzzle size={23}/></span>
@@ -136,11 +138,12 @@ export default function AppExchange(props: Props) {
           </div>
         </article>)}
       </div>
+      </PlatformPageSlot>
       {!loading && !visible.length && <div className="exchange-empty"><strong>No matching connector apps.</strong>
         <p>Check metadata permissions or adjust search filters.</p></div>}
       <div className="exchange-safe-note"><LockKeyhole size={15}/> Uninstall disables callouts but preserves saved credentials and app records.</div>
     </div>
-    {details && <div className="exchange-backdrop" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setSelected(null);}}>
+    {details && <PlatformPageSlot slotKey="marketplace-details"><div className="exchange-backdrop" role="presentation" onMouseDown={(event) => {if (event.target === event.currentTarget) setSelected(null);}}>
       <section className="exchange-detail" role="dialog" aria-modal="true" aria-labelledby="app-detail-title">
         <button className="exchange-close" aria-label="Close" onClick={() => setSelected(null)}><X size={18}/></button>
         <div className="exchange-detail-head"><span className="exchange-app-mark green"><Puzzle size={25}/></span>
@@ -162,6 +165,6 @@ export default function AppExchange(props: Props) {
                 {busy ? 'Installing…' : 'Confirm install'} <ArrowRight size={14}/></button>}
         </div>
       </section>
-    </div>}
+    </div></PlatformPageSlot>}
   </div>;
 }
