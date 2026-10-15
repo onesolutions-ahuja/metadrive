@@ -150,7 +150,7 @@ export async function readPersistedState(): Promise<unknown | null> {
   // SQL owns refresh sessions even while the metadata snapshot is JSONB.
   await ensureLegacySqlSessions();
   const sessions = await pool.query('SELECT token_hash,family_id,user_id,tenant_id,expires_at,used_at,revoked_at,extra FROM metadrive_rel_refresh_sessions ORDER BY position ASC');
-  const refreshSessions = sessions.rows.map(row => ({
+  const refreshSessions = sessions.rows.map((row: Record<string, any>) => ({
     ...row.extra, tokenHash: row.token_hash, familyId: row.family_id,
     userId: row.user_id, tenantId: row.tenant_id, expiresAt: row.expires_at,
     usedAt: row.used_at, revokedAt: row.revoked_at
