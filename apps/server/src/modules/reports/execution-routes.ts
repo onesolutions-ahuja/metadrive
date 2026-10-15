@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import type { DashboardMetadata, ReportMetadata } from '../../index.js';
+import type { DashboardMetadata, DashboardFilterMetadata, ReportMetadata, RuntimeRecord } from '../../index.js';
 import type { Dependencies } from './routes.js';
 
 /** Registers report preview and execution independently from report editing routes. */
