@@ -139,8 +139,8 @@ try {
     const runtimeFrame=page.locator('iframe[sandbox="allow-scripts"]').first();
     await runtimeFrame.waitFor({state:'attached'});
     await runtimeFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
-    const oneFrame=page.locator('iframe[sandbox="allow-scripts"]').last();
-    await oneFrame.contentFrame().getByText('One Core Page proof',{exact:false}).waitFor();
+    // Trusted Core components execute in the host React tree, not the tenant JSX iframe.
+    await page.locator('.metadrive-component-onetext').getByText('One Core Page proof',{exact:false}).waitFor();
   }
   await page.setViewportSize({width:1440,height:900});
   // Prove actual custom component rendering on dashboards; advertising a surface is insufficient.
@@ -178,7 +178,7 @@ try {
   const flowFrame=page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]');
   await flowFrame.waitFor({state:'attached'});
   await flowFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
-  await page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]').last().contentFrame()
+  await page.locator('.flow-screen-custom-component .metadrive-component-onetext')
     .getByText('One Core Flow proof',{exact:false}).waitFor();
   await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
   // Prove sandbox user events reach metadata-configured Flow and navigation,
