@@ -6734,7 +6734,9 @@ app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePer
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const key = routeParam(req, 'appKey');
-  const previous = (tenant.records.Connector_App__c ?? []).find((row) => row.AppKey__c === key);
+  const matches = (tenant.records.Connector_App__c ?? []).filter((row) => row.AppKey__c === key);
+  if (matches.length > 1) return res.status(409).json({ error: 'Conflicting AppExchange installation records.' });
+  const previous = matches[0];
   if (!previous) return res.status(404).json({ error: 'Connector not found' });
   if (previous.Installed__c !== true) return res.status(409).json({ error: 'Install the connector before granting a licence.' });
   const days = Number(previous.LicenceTermDays__c ?? 30);
@@ -7854,7 +7856,9 @@ function persistTenantRecords(tenantId: string, tenant: TenantData): void {
   for (const [key, sequence] of Object.entries(currentSequences)) {
     autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
   }
-  const updatedTenant = applyInstallableAppPackages({ ...tenant, autoNumberSequences }, installableAppCatalog) as TenantData;
+  const updatedTenant = reconcileInstalledAppSeeds(
+    { ...tenant, autoNumberSequences }, installableAppCatalog, tenantId
+  ) as TenantData;
   const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
     updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
   const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
