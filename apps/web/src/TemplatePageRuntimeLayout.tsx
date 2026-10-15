@@ -36,7 +36,7 @@ export default function TemplatePageRuntimeLayout({
     </div>}
     {!rail && header}
     <div className={hasSidebar ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}
-      style={rail ? {flex:1,minHeight:0,minWidth:0,display:'grid',gridTemplateColumns:phone?'132px minmax(0,1fr)':'224px minmax(0,1fr)',gridTemplateRows:'minmax(0,1fr) 84px',gap:0,width:'100%',margin:0,padding:0,overflow:'hidden'} : fullscreen ? {flex:1,minHeight:0,minWidth:0,display:'grid',
+      style={rail ? {flex:1,minHeight:0,minWidth:0,display:'grid',gridTemplateColumns:phone?'132px minmax(0,1fr)':'224px minmax(0,1fr)',gridTemplateRows:'minmax(0,1fr) 84px',alignItems:'stretch',alignContent:'stretch',gap:0,width:'100%',margin:0,padding:0,overflow:'hidden'} : fullscreen ? {flex:1,minHeight:0,minWidth:0,display:'grid',
         gridTemplateColumns:hasSidebar && !phone ? 'minmax(0,1fr) minmax(300px,30%)' : 'minmax(0,1fr)',
         gap:0,margin:0,padding:0,width:'100%',overflow:'hidden'} : undefined}>
       {rail && <aside style={{gridColumn:1,gridRow:1,minHeight:0,display:'flex',flexDirection:'column',overflowY:'auto',background:'#fff',borderRight:'1px solid #eee'}} >{fill(header)}</aside>}
