@@ -20,7 +20,7 @@
     "test:record-filter": "node --experimental-strip-types --test scripts/md09-record-filter-metadata.test.mjs",
     "test:visibility": "tsx --test scripts/md09-component-visibility.test.mjs",
     "test:route-directory": "tsx --test scripts/md09-route-directory.test.mjs",
-    "test:component-metadata": "tsx --test scripts/md10-universal-component-metadata.test.mjs scripts/phase1d-component-reuse.test.mjs scripts/phase1e-metadata-reference.test.mjs scripts/phase1e-schema-contract.test.mjs && node --test apps/server/test/component-registry-iterator.test.mjs",
+    "test:component-metadata": "tsx --test scripts/md10-universal-component-metadata.test.mjs scripts/phase1d-component-reuse.test.mjs scripts/phase1e-metadata-reference.test.mjs scripts/phase1e-schema-contract.test.mjs && node --test apps/server/test/component-registry-iterator.test.mjs apps/server/test/one-components.catalog.test.mjs",
     "test:flow-canvas": "node --test scripts/md10-freeform-canvas.test.mjs",
     "test:flow-connectors": "node --test scripts/md10-flow-connector-insertion.test.mjs apps/web/test/flow-insert-element.test.mjs",
     "test:flow-screen-upload": "node --test scripts/md10-flow-screen-upload.test.mjs",
