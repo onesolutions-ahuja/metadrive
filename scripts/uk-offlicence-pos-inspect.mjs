@@ -1,5 +1,5 @@
 // Inspect installed POS metadata through the existing authenticated API.
-// No Object, component, page, Flow or permission metadata is written.
+// Uses standard metadata GET APIs; the platform may reconcile its existing bundled registry on read.
 import {createHash} from 'node:crypto';
 const origin = process.env.METADRIVE_API_URL;
 const expectedTenant = process.env.METADRIVE_EXPECTED_TENANT_ID;
@@ -26,6 +26,16 @@ const login = await api('/auth/login', {email, password});
 if (login.user?.tenantId !== expectedTenant) throw Error('Unexpected tenant; no metadata inspected');
 token = login.access_token;
 if (typeof token !== 'string' || !token) throw Error('No authenticated access token');
+const componentData = await api('/component-library');
+if (!Array.isArray(componentData.components)) throw Error('Unexpected component registry response');
+const registeredComponents = componentData.components
+  .filter(component => ['RecordCatalogCart', 'CustomerBasketDisplay'].includes(component.apiName))
+  .map(component => ({
+    apiName: component.apiName, status: component.status, version: component.version,
+    surfaces: component.surfaces,
+    propertyDefinitions: component.propertyDefinitions,
+    sourceFingerprint: createHash('sha256').update(component.jsxSource ?? '').digest('hex')
+  }));
 const keys = value => Object.keys(value ?? {}).sort();
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const [objectData, pageData, flowData] = await Promise.all([
@@ -84,7 +94,7 @@ const packageStatus = installedPackage ? {
   licenceStatus: installedPackage.LicenceStatus__c
 } : {found: false};
 console.log('POS_TENANT_METADATA ' + JSON.stringify({
-  inspectedAt: new Date().toISOString(), tenantMatched: true, packageStatus, objects, pages, flows,
+  inspectedAt: new Date().toISOString(), tenantMatched: true, packageStatus, registeredComponents, objects, pages, flows,
   commerceCandidates: objectData.objects.filter(object =>
     /product|invoice|till|session|stock|refund|receipt|payment|discount|shift/i.test(object.apiName)
   ).map(object => ({apiName: object.apiName, fields: (object.fields ?? []).map(field =>
