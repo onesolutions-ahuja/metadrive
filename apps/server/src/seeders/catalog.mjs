@@ -10,9 +10,16 @@ export function loadAppSeedCatalog() {
   if (!Array.isArray(catalog?.packages)) throw Error('Invalid AppExchange seed catalog');
   // Core component definitions are bootstrap metadata for the existing SQL-backed
   // published registry. They are not an app package and require no app licence.
-  const coreComponents = JSON.parse(readFileSync(
+  const coreCatalog = JSON.parse(readFileSync(
     new URL('../../../web/src/custom-components/one/manifest.json', import.meta.url),'utf8'
   ));
+  if (coreCatalog.schemaVersion !== 1 || !Array.isArray(coreCatalog.commonProperties))
+    throw Error('Invalid One component catalog version');
+  const coreComponents = coreCatalog.components?.map(component => ({
+    ...component,
+    propertyDefinitions: [component.propertyDefinitions?.[0],
+      ...coreCatalog.commonProperties, ...(component.propertyDefinitions ?? []).slice(1)]
+  }));
   if (!Array.isArray(coreComponents) || coreComponents.length !== 40)
     throw Error('Invalid One component catalog');
   const names = new Set();
