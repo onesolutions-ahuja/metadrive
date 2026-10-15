@@ -9,7 +9,7 @@ export default function RecordCatalogCart(props) {
   const [vatRate, setVatRate] = React.useState(Number(p.vatRate ?? 20));
   const [settingsReady, setSettingsReady] = React.useState(typeof p.loadCompanySettings !== 'function');
   const stateChannel = p.stateChannel;
-  const sessionReady = !stateChannel || (stateChannel.ready && stateChannel.exists);
+  const sessionReady = stateChannel ? (stateChannel.ready && stateChannel.exists && !stateChannel.error) : p.stateSyncEnabled !== true;
   const locked = busy || paymentStatus === 'pending' || paymentStatus === 'complete';
   const checkoutRequest = React.useRef('');
   let operations = [];
@@ -46,7 +46,7 @@ export default function RecordCatalogCart(props) {
       stateChannel.publish({cart: nextCart, paymentStatus: status, display: snapshot});
       return;
     }
-    if (!displaySession || typeof BroadcastChannel === 'undefined') return;
+    if (p.stateSyncEnabled === true || !displaySession || typeof BroadcastChannel === 'undefined') return;
     const channel = new BroadcastChannel(channelName(displaySession));
     channel.postMessage({type:'snapshot', payload:snapshot});
     channel.close();
@@ -96,7 +96,7 @@ export default function RecordCatalogCart(props) {
     publish(next);
   };
   React.useEffect(() => {
-    if (stateChannel || !displaySession || typeof BroadcastChannel === 'undefined') return undefined;
+    if (stateChannel || p.stateSyncEnabled === true || !displaySession || typeof BroadcastChannel === 'undefined') return undefined;
     const channel = new BroadcastChannel(channelName(displaySession));
     channel.onmessage = event => {
       if (event.data?.type === 'ready') publish(cart);
@@ -227,6 +227,10 @@ export default function RecordCatalogCart(props) {
     updateCart(next);
   };
   const openCustomerDisplay = () => {
+    if (p.stateSyncEnabled === true && (!stateChannel || !sessionReady)) {
+      setError('Secure till synchronisation is unavailable. Reconnect the session before opening the display.');
+      return;
+    }
     const urlValue = String(p.customerDisplayUrl || '');
     if (!urlValue) {
       setError('Configure the customer display page URL in component properties.');
