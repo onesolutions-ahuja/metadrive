@@ -4607,7 +4607,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     const developer: LocalUser = {
       id: randomUUID(), tenantId, name: 'Developer', email: developerEmail,
       passwordSalt: developerCredentials.salt, passwordHash: developerCredentials.hash,
-      role: 'System Administrator', permissionSetIds: ['system-administrator'],
+      role: 'System Administrator', permissionSetIds: ['system-administrator','oneengine-tenant-developer'],
       permissionSetGroupIds: [], disabled: true, createdAt
     };
     const tenantSeed = initializeTenantCore(defaultTenantData(admin), {authorizedUserIds:[admin.id], trustedProvisioningDefaults:true});
