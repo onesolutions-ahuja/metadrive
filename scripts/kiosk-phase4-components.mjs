@@ -336,15 +336,36 @@ const productSource=grid.jsxSource
  .replace("  {!loading&&!active.length&&<p>No available products.</p>}",
    "  {!loading&&!visible.length&&<p>No products in this category.</p>}");
 
-const portraitCss=cardCss.replace(/(^|\n)(\.[^{\n]+)\{/g, '$1.md-kiosk-reference $2{');
+const portraitCss=cardCss.replace(/(^|\n)(\.[^{\n]+)\{/g, '$1.md-kiosk-reference $2{')+`
+.md-kiosk-reference .md-commerce-grid{grid-template-columns:repeat(var(--commerce-columns,3),minmax(0,1fr));gap:13px}
+.md-kiosk-reference .md-commerce-card{position:relative;border-radius:5px;box-shadow:none;min-width:0}
+.md-kiosk-reference .md-kiosk-featured{grid-column:span 2}
+.md-kiosk-reference .md-kiosk-ribbon{position:absolute;top:0;left:0;color:#fff;font-weight:900;font-size:13px;padding:9px 15px;z-index:2}
+.md-kiosk-reference .md-commerce-card img{object-fit:contain}
+.md-kiosk-reference .md-commerce-btn{background:#e4002b}
+@media(max-width:760px){.md-kiosk-reference .md-commerce-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){.md-kiosk-reference .md-commerce-grid{grid-template-columns:repeat(1,minmax(0,1fr))}.md-kiosk-reference .md-kiosk-featured{grid-column:span 1}}
+`;
 const wrapProduct=grid.jsxSource.replace('export default function CommerceProductGrid','function OriginalCommerceProductGrid')
  +'\n'+productSource.replace('export default function CommerceProductGrid','function PortraitCommerceProductGrid')
  +'\nexport default function CommerceProductGrid(props){return props.presentationVariant==="portrait" ? <div className="md-kiosk-reference"><PortraitCommerceProductGrid {...props}/></div> : <OriginalCommerceProductGrid {...props}/>;}';
 export const kioskPresentationComponents=[
  {...nav,jsxSource:composeVariant(nav.jsxSource,railSource,'CommerceNav','CategoryRail'),cssSource:nav.cssSource+railCss,
-  propertyDefinitions:[...nav.propertyDefinitions,variantSetting,setting('categories','Categories','TEXT','RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',100)]},
- {...grid,jsxSource:wrapProduct,cssSource:grid.cssSource+portraitCss,propertyDefinitions:[...grid.propertyDefinitions,variantSetting]},
+  propertyDefinitions:[...nav.propertyDefinitions,variantSetting,
+  setting('nameField','Category name field','OBJECT_FIELD','Name',100),
+  setting('imageField','Category image field','OBJECT_FIELD','ImageUrl',101),
+  setting('brandLogoUrl','Brand logo URL','TEXT','',102),
+  setting('brandLabel','Brand label','TEXT','YOUR BRAND',103),
+  setting('backgroundColor','Rail background','COLOR','#ffffff',104)]},
+ {...grid,jsxSource:wrapProduct,cssSource:grid.cssSource+portraitCss,propertyDefinitions:[...grid.propertyDefinitions,variantSetting,
+  setting('categoryField','Product category reference','OBJECT_FIELD','CategoryId',100),
+  setting('filterField','Product subcategory field','OBJECT_FIELD','Subcategory',101),
+  setting('bestsellerField','Bestseller flag field','OBJECT_FIELD','IsBestseller',102),
+  setting('imageHeight','Product image height','NUMBER',168,103),
+  setting('featuredBorderColor','Featured product border','COLOR','#92b000',104),
+  setting('chipColor','Filter highlight colour','COLOR','#ed002d',105)]},
  {...basket,jsxSource:composeVariant(basket.jsxSource,footerSource,'CommerceBasketPanel','CheckoutBar'),cssSource:basket.cssSource,
-  propertyDefinitions:[...basket.propertyDefinitions,variantSetting]},
+  propertyDefinitions:[...basket.propertyDefinitions,variantSetting,
+  setting('iframeMinHeight','Embed minimum height','NUMBER',84,100)]},
  status
 ];
