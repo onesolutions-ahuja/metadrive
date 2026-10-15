@@ -137,8 +137,17 @@ try{
  const beforeOrder=(await request('/records/Order__c')).records||[];
  const beforeLines=(await request('/records/OrderLine__c')).records||[];
  console.log('Kiosk basket diagnosis',JSON.stringify({orders:beforeOrder.map(x=>({Id:x.Id,Status:x.Status,BasketSessionKey:x.BasketSessionKey,Total:x.Total})),lines:beforeLines.map(x=>({Id:x.Id,OrderId:x.OrderId,Quantity:x.Quantity,LineTotal:x.LineTotal})),footer:await checkout.locator('body').innerText()}));
+ const basketButton=checkout.getByRole('button',{name:/SHOW BASKET/i});
+ await basketButton.click();
+ const dialog=checkout.getByRole('dialog',{name:'Your basket'});
+ await dialog.waitFor({state:'visible'});
+ await dialog.getByText(/Demo Classic Burger/).waitFor();
+ await page.screenshot({path:join(evidence,'kiosk-basket-open.png'),fullPage:true});
+ await dialog.getByRole('button',{name:'Close basket'}).click();
+ await dialog.waitFor({state:'hidden'});
  await submit.click({timeout:30000});
  await page.waitForURL('**/une/apps/MD_Commerce_Kiosk/pages/MD_Commerce_Confirmation',{timeout:30000});
+ await page.screenshot({path:join(evidence,'kiosk-confirmation.png'),fullPage:true});
  const orders=(await request('/records/Order__c')).records||[];
  assert.ok(orders.some(o=>o.Status==='Submitted'),'Checkout must persist a Submitted order through Flow/Object APIs');
  assert.deepEqual(errors,[]);
