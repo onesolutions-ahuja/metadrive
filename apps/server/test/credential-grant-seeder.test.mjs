@@ -30,7 +30,8 @@ test('explicit tenant-matched approved user receives all trusted credential gran
   ]},records:{Chatter_Channel_Grant__c:[]},namedCredentials:[
     {id:'a',name:'Channel A',protocol:'HTTPS',enabled:true,baseUrl:'https://graph.facebook.com/v22.0/',configuration:{PhoneNumberId:'1234567890'}},
     {id:'b',name:'Channel B',protocol:'HTTPS',enabled:true,baseUrl:'https://graph.facebook.com/v22.0/',configuration:{PhoneNumberId:'9876543210'}},
-    {id:'bad',name:'Other provider',protocol:'HTTPS',enabled:true,baseUrl:'https://untrusted.example/v22.0/',configuration:{PhoneNumberId:'1234567890'}}
+    {id:'bad',name:'Other provider',protocol:'HTTPS',enabled:true,baseUrl:'https://untrusted.example/v22.0/',configuration:{PhoneNumberId:'1234567890'}},
+    {id:'wrong-path',name:'Other Graph endpoint',protocol:'HTTPS',enabled:true,baseUrl:'https://graph.facebook.com/v22.0/unrelated/endpoint',configuration:{PhoneNumberId:'1111111111'}}
   ]};
   const mismatched=seedCredentialGrants(tenant,directive,'other-tenant');
   assert.strictEqual(mismatched,tenant);
