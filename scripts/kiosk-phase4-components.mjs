@@ -281,10 +281,28 @@ const composeVariant=(baseline,alternative,baseName,alternativeName)=>{
 const [nav,grid,basket,status]=commerceComponents;
 const variantSetting=setting('presentationVariant','Presentation variant','TEXT','standard',99);
 const productSource=grid.jsxSource
- .replace("return <section style={{padding:0,maxWidth:'none'}}>","return <section style={{padding:0,maxWidth:'none',fontFamily:'Arial,sans-serif'}}>")
- .replace("fontSize:32,fontWeight:900","fontSize:30,fontWeight:900")
- .replace("height:215,objectFit:'cover'","height:170,objectFit:'contain'")
- .replace("fontSize:19,color:'#171717'","fontSize:15,color:'#171717'");
+ .replace("imageField='ImageUrl',\n primaryButtonLabel", "imageField='ImageUrl',pageState={},categoryField='CategoryId',filterField='Subcategory',\n bestsellerField='IsBestseller',featuredBorderColor='#92b000',chipColor='#ed002d',imageHeight=168,\n primaryButtonLabel")
+ .replace(" const active=(records||[]).filter(p=>p.IsActive!==false);",
+   " const categoryId=pageState?.selectedCategoryId;\n const [filter,setFilter]=React.useState('ALL');\n const active=(records||[]).filter(p=>p.IsActive!==false && (!categoryId || String(p[categoryField])===String(categoryId)));\n const filters=['ALL',...new Set(active.map(p=>p[filterField]).filter(Boolean).map(String))];\n const visible=active.filter(p=>filter==='ALL'||String(p[filterField])===filter);")
+ .replace(" return <section style={{padding:0,maxWidth:'none'}}>",
+   " return <section className='md-kiosk-products' style={{padding:0,maxWidth:'none',fontFamily:'Arial,sans-serif'}}>") 
+ .replace("  <h2 style={{color:'#171717',fontSize:32,fontWeight:900,letterSpacing:'-.025em',margin:'0 0 20px'}}>{title}</h2>",
+   "  <div style={{display:'flex',alignItems:'start',justifyContent:'space-between',marginBottom:10}}><h2 style={{color:'#171717',fontSize:38,fontFamily:'Impact,Arial Narrow,sans-serif',fontWeight:900,textTransform:'uppercase',letterSpacing:'-.025em',margin:0}}>{pageState?.selectedCategoryName||title}</h2><div aria-hidden='true' style={{display:'flex',gap:10,marginTop:-20}}>{[0,1,2].map(i=><span key={i} style={{width:22,height:55,background:chipColor}}/>)}</div></div>\n  <div role='group' aria-label='Product filters' style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>{filters.map(name=><button type='button' key={name} onClick={()=>setFilter(name)} style={{border:'1px solid '+(filter===name?chipColor:'#e5e5e5'),background:'#fff',color:filter===name?chipColor:'#161616',borderRadius:5,padding:'10px 19px',fontSize:12,fontWeight:800,cursor:'pointer'}}>{name.toUpperCase()}</button>)}</div>")
+ .replace("{active.map(p=><article className=\"md-commerce-card\" key={p.Id}>",
+   "{visible.map(p=><article className={'md-commerce-card'+(p[bestsellerField]===true?' md-kiosk-featured':'')} key={p.Id} style={p[bestsellerField]===true?{border:'2px solid '+featuredBorderColor}:undefined}>")
+ .replace("    {p[imageField]&&<img src={String(p[imageField])} referrerPolicy=\"no-referrer\" alt=\"\" style={{width:'100%',height:215,objectFit:'cover'}}/>}",
+   "    {p[bestsellerField]===true&&<div className='md-kiosk-ribbon' style={{background:featuredBorderColor}}>BESTSELLER</div>}\n    {p[imageField]?<img src={String(p[imageField])} referrerPolicy='no-referrer' alt='' style={{width:'100%',height:imageHeight,objectFit:'contain',padding:10,boxSizing:'border-box'}}/>:<div role='img' aria-label='Product image unavailable' style={{height:imageHeight,background:'#fff',display:'grid',placeItems:'center',color:'#aaa',fontSize:12}}>PRODUCT IMAGE</div>}")
+ .replace("     <strong style={{display:'block',fontSize:19,color:'#171717'}}>",
+   "     <strong style={{display:'block',fontSize:15,color:'#171717',minHeight:32}}>")
+ .replace("     <p className=\"md-commerce-small\">{p.Description||''}</p>",
+   "     {p.Description&&<p className='md-commerce-small' style={{fontSize:11}}>{p.Description}</p>}")
+ .replace("     <p className=\"md-commerce-price\">{money(readField(p,priceField))}</p>",
+   "     <p className='md-commerce-price' style={{fontSize:16,margin:'6px 0'}}>{money(readField(p,priceField))}</p>")
+ .replace("style={{background:accentColor,width:'100%'}}",
+   "style={{background:accentColor,width:'100%',borderRadius:3,fontSize:12,padding:9}}")
+ .replace("  {!loading&&!active.length&&<p>No available products.</p>}",
+   "  {!loading&&!visible.length&&<p>No products in this category.</p>}");
+
 const portraitCss=cardCss.replace(/(^|\n)(\.[^{\n]+)\{/g, '$1.md-kiosk-reference $2{');
 const wrapProduct=grid.jsxSource.replace('export default function CommerceProductGrid','function OriginalCommerceProductGrid')
  +'\n'+productSource.replace('export default function CommerceProductGrid','function PortraitCommerceProductGrid')
