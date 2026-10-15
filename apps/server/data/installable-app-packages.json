@@ -445,6 +445,16 @@
               "value": ""
             },
             {
+              "name": "AuthorisedMessagePath",
+              "label": "AuthorisedMessagePath",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
               "name": "ProviderStatus",
               "label": "ProviderStatus",
               "type": "Variable",
