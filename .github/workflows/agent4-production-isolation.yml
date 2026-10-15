@@ -1,0 +1,25 @@
+name: Agent 4 Production Optional-Module Isolation
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'scripts/agent4-production-isolation.mjs'
+      - '.github/workflows/agent4-production-isolation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  production-isolation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build production web artifacts with TypeScript
+        run: npm run build --workspace apps/web
+      - name: Assert optional Builders outside eager bundles
+        run: node scripts/agent4-production-isolation.mjs
