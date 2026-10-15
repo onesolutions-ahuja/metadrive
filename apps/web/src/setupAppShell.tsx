@@ -196,7 +196,6 @@ import {
   type WorkspaceId
 } from './metadata';
 
-
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
@@ -206,7 +205,6 @@ type NewFieldLookupFilterDraft = {
   valueFieldApiName: string;
   required: boolean;
 };
-
 
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -220,7 +218,6 @@ type LandingBootstrap = {
   };
 };
 type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
-
 
 export function createSetupApp(deps: {
 apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -3368,7 +3365,5 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     </div>
   );
 }
-
-
 return SetupApp;
 }
