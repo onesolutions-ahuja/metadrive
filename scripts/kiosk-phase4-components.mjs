@@ -288,7 +288,7 @@ export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',c
     {error&&<p role='alert' style={{color:'#b11'}}>{error}</p>}
    </section>
   </div>}
-  <footer style={{position:'absolute',bottom:0,left:0,right:0,height:83,boxSizing:'border-box',
+  <footer style={{position:'fixed',bottom:0,left:0,right:0,height:83,boxSizing:'border-box',
    display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'8px 18px',
    borderTop:'1px solid #e5e5e5',background:'#fff'}}>
    <button type='button' onClick={()=>onAction({event:opened?'closeBasket':'openBasket',value:{}})}
