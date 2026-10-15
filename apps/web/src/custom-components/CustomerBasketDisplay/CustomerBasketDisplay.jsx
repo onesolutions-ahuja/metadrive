@@ -39,6 +39,7 @@ export default function CustomerBasketDisplay(props) {
   }, [session]);
 
   const statusText = p.stateChannel?.error ? p.reconnectingText || 'Reconnecting to the till…'
+    : snapshot.status === 'staff-approval-required' ? p.staffApprovalText || 'Staff approval required'
     : snapshot.status === 'payment-pending' ? p.paymentPendingText || 'Payment in progress'
     : snapshot.status === 'complete' ? p.thankYouText || 'Thank you'
       : snapshot.status === 'declined' ? p.paymentDeclinedText || 'Payment declined'
