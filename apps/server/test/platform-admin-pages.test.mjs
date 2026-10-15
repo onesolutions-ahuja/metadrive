@@ -75,3 +75,21 @@ test('persisted pristine Object Manager page upgrades to independent editor fiel
  assert.equal(upgraded.definitionVersion,3);
  assert.ok(upgraded.components.some(c=>c.properties.platformSlotKey==='field-object-01'));
 });
+
+
+test('system App Pages have no unrelated object mapping and pristine legacy defaults are repaired',()=>{
+ const descriptor=protectedWorkspacePageDescriptors.find(item=>item.workspace==='rbac');
+ const seed=protectedAdministrationPage(descriptor);
+ assert.equal(seed.targetObject,'');
+ const legacy={...seed,targetObject:'Account'};
+ const repaired=seedProtectedAdministrationPages({pages:[legacy]}).pages[0];
+ assert.equal(repaired.targetObject,'');
+ assert.equal(repaired.apiName,legacy.apiName);
+ assert.equal(repaired.components,legacy.components);
+ assert.strictEqual(seedProtectedAdministrationPages({pages:[repaired]}).pages[0],repaired);
+ const edited={...legacy,updatedAt:'2026-10-15T08:00:00.000Z'};
+ const editedRepaired=seedProtectedAdministrationPages({pages:[edited]}).pages[0];
+ assert.equal(editedRepaired.targetObject,'');
+ assert.equal(editedRepaired.updatedAt,edited.updatedAt);
+ assert.strictEqual(editedRepaired.components,edited.components);
+});

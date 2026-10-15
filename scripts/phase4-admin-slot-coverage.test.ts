@@ -118,3 +118,37 @@ test('protected admin field presentation binds registered Page Builder metadata 
  assert.ok(control.includes('validateComponentSetting(definition,value)'));
  assert.ok(control.includes('onChange(event.target.value)'));
 });
+
+test('all registered administration field slots expose independently editable accessible presentation metadata',()=>{
+ const slot=read('PlatformPageSlot.tsx');
+ const control=read('AdminPropertyControl.tsx');
+ for(const key of ['controlLabel','controlPlaceholder','controlHelpText','controlDescription']){
+  assert.ok(slot.includes(key),'Missing protected slot presentation property '+key);
+ }
+ assert.ok(control.includes('presentation.description'));
+ assert.ok(control.includes('presentation.helpText'));
+ assert.ok(slot.includes('aria-label={typeof instance.properties.controlLabel'));
+ assert.ok(control.includes("usePlatformSlotPresentation('field-'+definition.propertyKey)"));
+});
+
+test('Page Builder exposes protected administrative presentation properties before they have values',()=>{
+ const editor=read('componentPropertiesView.tsx');
+ assert.ok(editor.includes("typeof properties.platformSlotKey === 'string'"));
+ for(const key of ['controlLabel','controlPlaceholder','controlHelpText','controlDescription'])
+  assert.ok(editor.includes("'"+key+"'"),key);
+ assert.ok(editor.includes('onChange={(event)=>update(key,event.target.value)}'));
+});
+
+test('admin field uses a reusable published registered control while retaining legacy-safe fallback',()=>{
+ const manifest=JSON.parse(readFileSync(new URL('../apps/web/src/custom-components/manifest.json',import.meta.url),'utf8'));
+ const definition=manifest.find((item:any)=>item.apiName==='AdminField');
+ assert.ok(definition);
+ assert.ok(definition.surfaces.includes('platform'));
+ const slot=read('PlatformPageSlot.tsx');
+ assert.ok(slot.includes("findRegisteredComponent(state.libraryComponents,'AdminField','page')"));
+ assert.ok(slot.includes("definition?.trustedBundled===true"));
+ const control=read('AdminPropertyControl.tsx');
+ assert.ok(control.includes('<RegisteredComponent definition={registered} props={fieldProps}/>'));
+ assert.ok(control.includes('onChange(event.target.value)'));
+ assert.ok(control.includes('validateComponentSetting(definition,value)'));
+});

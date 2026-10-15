@@ -44,7 +44,7 @@ export function protectedAdministrationPage(descriptor){
  const apiName=protectedPageApiName(descriptor.workspace);
  return {
   apiName,label:descriptor.label,updatedAt:'2026-10-14T00:00:00.000Z',
-  targetObject:'Account',pageType:'App Page',layoutMode:'template',template:'one-region',
+  targetObject:'',pageType:'App Page',layoutMode:'template',template:'one-region',
   canvasWidth:1440,canvasHeight:Math.max(900,120+(protectedWorkspacePageSlots[descriptor.workspace]?.length??0)*80),status:'Active',devices:['Desktop','Phone'],
   components:protectedAdministrationSlotComponents(descriptor.workspace),activationAssignments:[],
   scope:'platform-system',ownerNamespace:'MetaDrive',definitionVersion:Object.hasOwn(legacyControlSlots,descriptor.workspace)?3:2,
@@ -61,14 +61,22 @@ export function seedProtectedAdministrationPages(tenant){
  // Upgrade only known pristine system seeds; preserve any edited layout or security policy.
  const migrated=pages.map(page=>{
   const d=protectedWorkspacePageDescriptors.find(item=>protectedPageApiName(item.workspace)===page.apiName);
+  // Correct the old Account default independently of layout migration timestamps.
+  // Persisted system pages can have newer updatedAt after normalization or editing.
+  const scoped= d&&page.ownerNamespace==='MetaDrive'&&page.scope==='platform-system'
+    &&page.pageType==='App Page'&&page.targetObject==='Account'
+    ? {...page,targetObject:''} : page;
   if(!d||page.ownerNamespace!=='MetaDrive'||page.scope!=='platform-system'
    ||page.updatedAt!=='2026-10-14T00:00:00.000Z'||page.status!=='Active'
    ||page.layoutMode!=='template'||page.overridePolicy!=='presentation-only'
    ||!Array.isArray(page.components)
-   ||JSON.stringify(page.requiredPermissions)!==JSON.stringify([d.permission]))return page;
+   ||JSON.stringify(page.requiredPermissions)!==JSON.stringify([d.permission]))return scoped;
   const next=protectedAdministrationPage(d);
+  // System App Pages are not Record Pages. Repair only known pristine Account
+  // defaults; keep tenant-edited and object-specific pages untouched.
+  const repaired=scoped;
   if(page.definitionVersion===1&&page.components.length===0)
-   return {...page,definitionVersion:next.definitionVersion,canvasHeight:next.canvasHeight,components:next.components};
+   return {...repaired,definitionVersion:next.definitionVersion,canvasHeight:next.canvasHeight,components:next.components};
   const original=legacyControlSlots[d.workspace];
   if(page.definitionVersion===2&&original){
    // The persisted page registry normalises optional component defaults. Compare
@@ -82,12 +90,12 @@ export function seedProtectedAdministrationPages(tenant){
    });
    if(originalSlotsMatch){
     const newSlots=next.components.filter(slot=>!original.includes(slot.properties.platformSlotKey));
-    return {...page,definitionVersion:next.definitionVersion,
+    return {...repaired,definitionVersion:next.definitionVersion,
      canvasHeight:Math.max(page.canvasHeight??0,next.canvasHeight),
      components:[...page.components,...newSlots]};
    }
   }
-  return page;
+  return repaired;
  });
  return additions.length||migrated.some((page,i)=>page!==pages[i])
   ?{...tenant,pages:[...migrated,...additions]}:tenant;

@@ -37,8 +37,15 @@ export function usePlatformSlotPresentation(slotKey:string){
  return {
   label:typeof properties.controlLabel==='string' ? properties.controlLabel : undefined,
   placeholder:typeof properties.controlPlaceholder==='string' ? properties.controlPlaceholder : undefined,
-  helpText:typeof properties.controlHelpText==='string' ? properties.controlHelpText : undefined
+  helpText:typeof properties.controlHelpText==='string' ? properties.controlHelpText : undefined,
+  description:typeof properties.controlDescription==='string' ? properties.controlDescription : undefined
  };
+}
+/** Use a published trusted registry component only: no tenant-authored code receives privileged event handlers. */
+export function useRegisteredAdminField(){
+ const state=useContext(context);
+ const definition=state?findRegisteredComponent(state.libraryComponents,'AdminField','page'):undefined;
+ return definition?.trustedBundled===true&&definition.status!=='Draft'?definition:undefined;
 }
 export function PlatformPageSlot({slotKey,children}:{
  slotKey:string;children:ReactNode;
@@ -57,5 +64,5 @@ export function PlatformPageSlot({slotKey,children}:{
  const content=panel?.trustedBundled===true
   ?<RegisteredComponent definition={panel} props={{...instance.properties,children}} layoutTransparent/>:children;
  return <div data-page-instance={instance.id} data-platform-slot={slotKey}
-  aria-label={instance.label} style={style}>{content}</div>;
+  aria-label={typeof instance.properties.controlLabel==='string' && instance.properties.controlLabel ? instance.properties.controlLabel : instance.label} style={style}>{content}</div>;
 }
