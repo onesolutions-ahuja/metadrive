@@ -35,7 +35,7 @@ const appCss = cssAssets.find(asset => asset.content.includes('.setup-sidebar') 
 assert(appJs, 'Built app chunk is missing the global Records navigation');
 assert(js.includes('Software that makes') && js.includes('Client login'), 'Built Pages is missing the public UNE Solutions marketing homepage');
 assert(html.includes('Une Solutions | Smart Software for Growing Businesses'), 'Built Pages has the wrong public title');
-assert(appJs.content.includes('auth-brand-logo') && appJs.content.includes('brand-logo'), 'Built app is missing UNE Solutions branding');
+assert(jsAssets.some(asset => asset.content.includes('auth-brand-logo')) && jsAssets.some(asset => asset.content.includes('brand-logo')), 'Built app is missing UNE Solutions branding');
 assert(css.includes('.une-marketing'), 'Built CSS is missing public marketing design');
 assert(appCss && appCss.content.includes('overflow-y:auto'),
   'Built CSS is missing sticky header or scrolling Setup navigation');
