@@ -38,7 +38,7 @@
     },
     "jsx": "ChatterInbox/ChatterInbox.jsx",
     "css": "ChatterInbox/ChatterInbox.css",
-    "version": 3,
+    "version": 4,
     "resize": {
       "defaultWidth": 900,
       "defaultHeight": 650,
