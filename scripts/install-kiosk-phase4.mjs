@@ -1,6 +1,6 @@
 // Repeat-safe Phase 4 installation via MetaDrive's authenticated metadata APIs.
 // Run: METADRIVE_PHASE4_INSTALL_APPROVED=true METADRIVE_API_URL=https://... etc
-import {commerceComponents} from './kiosk-phase4-components.mjs';
+import {referenceComponents as commerceComponents} from './kiosk-reference-components.mjs';
 import {commerceFlows} from './kiosk-phase4-flows.mjs';
 import {commercePages,commerceApp} from './kiosk-phase4-pages.mjs';
 
@@ -189,12 +189,13 @@ for(const page of commercePages){
   const newById=new Map(page.components.map(block=>[block.id,block]));
   const upgrades=existing.components.map(block=>{
    const target=newById.get(block.id);
-   if(!target || !/^Custom:MD_Commerce(?:Navigation|ProductGrid|BasketPanel|Status)$/.test(block.type))
+   if(!target || !/^Custom:MD_Commerce(?:Navigation|ProductGrid|BasketPanel|CheckoutBar|Status)(?:V2)?$/.test(block.type))
     return block;
    return {...block,type:target.type,properties:{...block.properties,
     ...(block.properties?.accentColor==='#103e51'?{accentColor:'#e4002b'}:{}),
     ...(target.properties?.standalonePresentation?{standalonePresentation:true}:{}),
-    ...(block.properties?.title==='Order kiosk'?{title:'ORDER NOW'}:{})}};
+    ...(target.properties?.presentationLayout?{presentationLayout:target.properties.presentationLayout,title:target.properties.title,categories:target.properties.categories}:{}),
+    ...(target.type.includes('CheckoutBar')?{title:'SHOW BASKET',accentColor:'#92b200'}:{})}};
   });
   if(upgrades.some((block,i)=>JSON.stringify(block)!==JSON.stringify(existing.components[i]))){
    await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',{
