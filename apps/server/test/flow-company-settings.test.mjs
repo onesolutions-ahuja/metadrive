@@ -152,6 +152,63 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
     assert.equal(checkoutValidation.status, 200, JSON.stringify(checkoutValidation.data));
     assert.equal(checkoutValidation.data.valid, true, JSON.stringify(checkoutValidation.data.errors));
 
+    // Owned, versioned display sessions use the normal Object and Flow engines.
+    const stateKey = '11111111-1111-4111-8111-111111111111';
+    for (const name of ['UK_OFFLICENCE_SESSION_START','UK_OFFLICENCE_SESSION_READ','UK_OFFLICENCE_SESSION_WRITE']) {
+      const definition = flowList.data.flows.find(item => item.apiName === name);
+      assert(definition, name);
+      const validation = await send('/metadata/flows/' + name + '/validate', token, 'POST', definition);
+      assert.equal(validation.data.valid, true, JSON.stringify(validation.data.errors));
+    }
+    const directSession = await send('/records/TillSession__c', token, 'POST', {
+      Name:'Bypass', SessionKey:'forged', CashierId:login.data.user.id, Status:'Open'
+    });
+    assert.equal(directSession.status,403,'Direct Object API cannot bypass session operations');
+    const readSession = () => send('/flows/UK_OFFLICENCE_SESSION_READ/execute', token, 'POST', {Key:stateKey});
+    const missingSession = await readSession();
+    assert.equal(missingSession.status,200,JSON.stringify(missingSession.data));
+    assert.equal(missingSession.data.outputs.RecordId,'');
+    const opened = await send('/flows/UK_OFFLICENCE_SESSION_START/execute', token, 'POST', {Key:stateKey});
+    assert.equal(opened.status,202,JSON.stringify(opened.data));
+    const openComplete = await send('/flow-interviews/' + opened.data.interviewId + '/next', token, 'POST', {
+      values:{TillLabel:'Integration till', OpeningFloat:100},outcome:'Open shift'
+    });
+    assert.equal(openComplete.status,200,JSON.stringify(openComplete.data));
+    const firstRead = await readSession();
+    assert.equal(firstRead.data.outputs.Version,1,JSON.stringify(firstRead.data));
+    const sessionId = firstRead.data.outputs.RecordId;
+    assert(sessionId);
+    assert.deepEqual(JSON.parse(firstRead.data.outputs.Value).cart,[]);
+    const stateValue = JSON.stringify({cart:[{productId:'display-only',name:'Display product',
+      quantity:1,unitPriceMinor:123}],paymentStatus:'basket',
+      display:{status:'basket',items:[{name:'Display product',quantity:1,lineTotalMinor:123}],
+        totalMinor:123,changeDueMinor:0}});
+    const requestId = '22222222-2222-4222-8222-222222222222';
+    const stateWrite = body => send('/flows/UK_OFFLICENCE_SESSION_WRITE/execute', token, 'POST',body);
+    const updated = await stateWrite({Key:stateKey, Value:stateValue, RequestId:requestId, ExpectedVersion:1});
+    assert.equal(updated.status,200,JSON.stringify(updated.data));
+    assert.equal(updated.data.outputs.Status,'Updated');
+    assert.equal(updated.data.outputs.Version,2);
+    const duplicate = await stateWrite({Key:stateKey, Value:'{"forged":true}', RequestId:requestId, ExpectedVersion:1});
+    assert.equal(duplicate.data.outputs.Status,'Unchanged',JSON.stringify(duplicate.data));
+    assert.equal(duplicate.data.outputs.Value,stateValue,'A retry must not replace an acknowledged snapshot');
+    assert.equal(duplicate.data.outputs.Version,2);
+    const conflict = await stateWrite({Key:stateKey, Value:'{}',
+      RequestId:'33333333-3333-4333-8333-333333333333', ExpectedVersion:1});
+    assert.equal(conflict.data.outputs.Status,'Conflict',JSON.stringify(conflict.data));
+    assert.equal(conflict.data.outputs.Value,stateValue);
+    const rawState = await send('/records/TillSession__c/' + sessionId,token);
+    assert.equal(rawState.status,200,JSON.stringify(rawState.data));
+    assert.equal(rawState.data.record.StateJSON,stateValue);
+    const directUpdate = await send('/records/TillSession__c/' + sessionId,token,'PUT',{StateJSON:'{}'});
+    assert.equal(directUpdate.status,403,'Paired state can only change through its approved Flow');
+    const recovered = await readSession();
+    assert.equal(recovered.data.outputs.Value,stateValue,'Reconnect reads the durable snapshot');
+    const otherKey = await send('/flows/UK_OFFLICENCE_SESSION_READ/execute',token,'POST',{Key:'other-session'});
+    assert.equal(otherKey.data.outputs.RecordId,'');
+    const deniedWrite = await stateWrite({Key:'other-session',Value:'{}',RequestId:requestId,ExpectedVersion:0});
+    assert.equal(deniedWrite.data.outputs.Status,'Denied',JSON.stringify(deniedWrite.data));
+
     const createdProduct = await send('/records/Product', token, 'POST', {
       Name: 'POS Integration Product', DefaultPrice: 1.2, AgeRestricted: true, VATApplicable: true
     });

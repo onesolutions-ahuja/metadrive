@@ -8,6 +8,14 @@ export default function RecordCatalogCart(props) {
   const [paymentStatus, setPaymentStatus] = React.useState('');
   const [vatRate, setVatRate] = React.useState(Number(p.vatRate ?? 20));
   const [settingsReady, setSettingsReady] = React.useState(typeof p.loadCompanySettings !== 'function');
+  const stateChannel = p.stateChannel;
+  const sessionReady = !stateChannel || (stateChannel.ready && stateChannel.exists);
+  const locked = busy || paymentStatus === 'pending' || paymentStatus === 'complete';
+  const checkoutRequest = React.useRef('');
+  let operations = [];
+  try { operations = JSON.parse(String(p.operationEvents || '[]')); } catch { /* Invalid metadata is shown by the builder. */ }
+  if (!Array.isArray(operations)) operations = [];
+  operations = operations.filter(item => item && typeof item.event === 'string' && typeof item.label === 'string');
   const products = Array.isArray(p.records) ? p.records : [];
   const money = value => (Number(value || 0) / 100).toLocaleString(undefined, {
     style: 'currency', currency: p.currencyCode || 'GBP'
@@ -24,11 +32,7 @@ export default function RecordCatalogCart(props) {
   const hasAgeRestricted = cart.some(item => item.ageRestricted);
 
   const publish = (nextCart, status = 'basket', changeDueMinor = 0) => {
-    if (!displaySession || typeof BroadcastChannel === 'undefined') return;
-    const channel = new BroadcastChannel(channelName(displaySession));
-    channel.postMessage({
-      type: 'snapshot',
-      payload: {
+    const snapshot = {
         status,
         items: nextCart.map(item => ({
           name: item.name,
@@ -37,10 +41,28 @@ export default function RecordCatalogCart(props) {
         })),
         totalMinor: nextCart.reduce((sum, item) => sum + item.unitPriceMinor * item.quantity, 0),
         changeDueMinor
-      }
-    });
+      };
+    if (stateChannel) {
+      stateChannel.publish({cart: nextCart, paymentStatus: status, display: snapshot});
+      return;
+    }
+    if (!displaySession || typeof BroadcastChannel === 'undefined') return;
+    const channel = new BroadcastChannel(channelName(displaySession));
+    channel.postMessage({type:'snapshot', payload:snapshot});
     channel.close();
   };
+  React.useEffect(() => { if (stateChannel) {setCart([]);setPaymentStatus('');} }, [stateChannel?.key]);
+  React.useEffect(() => {
+    const value = stateChannel?.value;
+    if (!value || !Array.isArray(value.cart)) return;
+    const restored = value.cart.filter(item => item && typeof item.productId === 'string'
+      && typeof item.name === 'string' && Number.isSafeInteger(item.quantity) && item.quantity > 0
+      && Number.isSafeInteger(item.unitPriceMinor) && item.unitPriceMinor >= 0);
+    setCart(restored);
+    const status = value.paymentStatus === 'payment-pending' ? 'pending'
+      : value.paymentStatus === 'complete' ? 'complete' : '';
+    setPaymentStatus(status);
+  }, [stateChannel?.value]);
   const saleValue = items => {
     const grossMinor = items.reduce((sum, item) => sum + item.unitPriceMinor * item.quantity, 0);
     const vatMinor = items.reduce((sum, item) => sum + (item.vatApplicable
@@ -64,13 +86,17 @@ export default function RecordCatalogCart(props) {
       hasAgeRestricted: items.some(item => item.ageRestricted)
     };
   };
+  const checkoutValue = items => {
+    checkoutRequest.current = crypto.randomUUID();
+    return {...saleValue(items),sessionKey:stateChannel?.key || p.sessionId,requestId:checkoutRequest.current};
+  };
   const updateCart = next => {
     setCart(next);
     setPaymentStatus('');
     publish(next);
   };
   React.useEffect(() => {
-    if (!displaySession || typeof BroadcastChannel === 'undefined') return undefined;
+    if (stateChannel || !displaySession || typeof BroadcastChannel === 'undefined') return undefined;
     const channel = new BroadcastChannel(channelName(displaySession));
     channel.onmessage = event => {
       if (event.data?.type === 'ready') publish(cart);
@@ -106,6 +132,8 @@ export default function RecordCatalogCart(props) {
       const detail = event.detail;
       if (!detail || detail.flowApiName !== configuredFlow) return;
       const outputs = detail.outputs && typeof detail.outputs === 'object' ? detail.outputs : {};
+      const expectsRequest = p.actionFlows?.checkout?.inputs?.CheckoutRequestKey;
+      if (expectsRequest && outputs.CheckoutRequestKey !== checkoutRequest.current) return;
       const status = outputs.CheckoutStatus;
       if (status === 'InvalidSale' || status === 'InvalidPayment') {
         setBusy(false);
@@ -126,7 +154,7 @@ export default function RecordCatalogCart(props) {
           setBusy(false);
           return;
         }
-        Promise.resolve(p.onAction({ event: 'checkout', value: saleValue(eligible) }))
+        Promise.resolve(p.onAction({ event: 'checkout', value: checkoutValue(eligible) }))
           .then(result => {
             if (result === false || result?.error) throw Error(String(result?.error || 'Checkout was not started.'));
             setPaymentStatus('pending');
@@ -167,6 +195,7 @@ export default function RecordCatalogCart(props) {
     };
   }, [cart, displaySession, vatRate, p.actionFlows, p.onAction]);
   const add = product => {
+    if (locked || !sessionReady) return;
     const id = String(product.Id || '');
     const name = productName(product);
     const price = productPrice(product);
@@ -191,6 +220,7 @@ export default function RecordCatalogCart(props) {
     updateCart(next);
   };
   const changeQuantity = (id, amount) => {
+    if (locked || !sessionReady) return;
     const next = cart
       .map(item => item.productId === id ? { ...item, quantity: item.quantity + amount } : item)
       .filter(item => item.quantity > 0);
@@ -205,7 +235,7 @@ export default function RecordCatalogCart(props) {
     try {
       const url = new URL(urlValue, window.location.href);
       if (url.origin !== window.location.origin) throw Error('The customer display must use this MetaDrive origin.');
-      const session = crypto.randomUUID();
+      const session = stateChannel?.key || crypto.randomUUID();
       url.searchParams.set('displaySession', session);
       const opened = window.open(url.href, '_blank');
       if (!opened) throw Error('Allow pop-ups to open the customer display.');
@@ -217,7 +247,7 @@ export default function RecordCatalogCart(props) {
     }
   };
   const checkout = async () => {
-    if (!cart.length || busy) return;
+    if (!cart.length || locked || !sessionReady || stateChannel?.error) return;
     if (typeof p.onAction !== 'function') {
       setError('Configure the checkout Flow binding in Page Builder.');
       return;
@@ -225,7 +255,7 @@ export default function RecordCatalogCart(props) {
     setBusy(true);
     setError('');
     try {
-      const result = await p.onAction({ event: 'checkout', value: saleValue(cart) });
+      const result = await p.onAction({ event: 'checkout', value: checkoutValue(cart) });
       if (result === false || result?.error) throw Error(String(result?.error || 'Checkout was not started.'));
       setPaymentStatus('pending');
       publish(cart, 'payment-pending');
@@ -256,6 +286,21 @@ export default function RecordCatalogCart(props) {
       <div><small>{p.eyebrow || 'SALES'}</small><h1>{p.title || 'Till'}</h1></div>
       <button type="button" onClick={openCustomerDisplay}>{p.displayButtonLabel || 'Open customer display'}</button>
     </header>
+    {operations.length > 0 && <nav className="md-record-cart-operations" aria-label={p.operationsLabel || 'Operations'}>
+      {operations.map(operation => <button type="button" key={operation.event}
+        disabled={busy || paymentStatus === 'pending' || (operation.requiresSession === true && !sessionReady) || (operation.requiresNoSession === true && stateChannel?.exists)
+          || (operation.requiresCart === true && !cart.length) || (operation.requiresEmptyBasket === true && cart.length > 0)}
+        onClick={() => {
+          if (typeof p.onAction !== 'function') return;
+          setError('');
+          Promise.resolve(p.onAction({event:operation.event,value:{
+            ...saleValue(cart),sessionKey:stateChannel?.key || p.sessionId
+          }})).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to start operation'));
+        }}>{operation.label}</button>)}
+    </nav>}
+    {stateChannel && !stateChannel.ready && <p role="status">Reconnecting to session…</p>}
+    {stateChannel && stateChannel.ready && !stateChannel.exists && <p role="status">{p.sessionRequiredText || 'Start a session to begin.'}</p>}
+    {stateChannel?.error && <p className="md-record-cart-error" role="alert">{stateChannel.error}</p>}
     <div className="md-record-cart-layout">
       <section className="md-record-cart-products" aria-label={p.productsLabel || 'Products'}>
         <label className="md-record-cart-search">
@@ -269,7 +314,7 @@ export default function RecordCatalogCart(props) {
         {!p.loading && !filtered.length && <p className="md-record-cart-message">{p.emptyProductsText || 'No products found.'}</p>}
         <div className="md-record-cart-grid">
           {filtered.map(product => <button type="button" className="md-record-cart-product"
-            key={product.Id} onClick={() => add(product)}>
+            key={product.Id} disabled={locked || !sessionReady} onClick={() => add(product)}>
             {product[p.imageFieldApiName || 'ImageURL']
               ? <img src={String(product[p.imageFieldApiName || 'ImageURL'])} alt="" loading="lazy" />
               : <span className="md-record-cart-placeholder" aria-hidden="true">{productName(product).slice(0, 1)}</span>}
@@ -285,9 +330,9 @@ export default function RecordCatalogCart(props) {
           {cart.map(item => <div className="md-record-cart-line" key={item.productId}>
             <div><strong>{item.name}</strong><small>{money(item.unitPriceMinor)} each</small></div>
             <div className="md-record-cart-quantity">
-              <button type="button" aria-label={'Remove one ' + item.name} onClick={() => changeQuantity(item.productId, -1)}>−</button>
+              <button type="button" aria-label={'Remove one ' + item.name} disabled={locked || !sessionReady} onClick={() => changeQuantity(item.productId, -1)}>−</button>
               <span>{item.quantity}</span>
-              <button type="button" aria-label={'Add one ' + item.name} onClick={() => changeQuantity(item.productId, 1)}>+</button>
+              <button type="button" aria-label={'Add one ' + item.name} disabled={locked || !sessionReady} onClick={() => changeQuantity(item.productId, 1)}>+</button>
             </div>
             <strong>{money(item.unitPriceMinor * item.quantity)}</strong>
           </div>)}
@@ -307,13 +352,13 @@ export default function RecordCatalogCart(props) {
           {p.insufficientCashText || 'Tendered cash was less than the sale total.'}
         </p>}
         {hasAgeRestricted && <button type="button" className="md-record-cart-clear"
-          disabled={busy} onClick={() => updateCart(cart.filter(item => !item.ageRestricted))}>
+          disabled={locked || !sessionReady} onClick={() => updateCart(cart.filter(item => !item.ageRestricted))}>
           {p.removeRestrictedLabel || 'Remove age-restricted items'}
         </button>}
         {error && <p className="md-record-cart-error" role="alert">{error}</p>}
-        <button type="button" className="md-record-cart-checkout" disabled={!cart.length || busy || !settingsReady || paymentStatus === 'complete'}
+        <button type="button" className="md-record-cart-checkout" disabled={!cart.length || locked || !sessionReady || !settingsReady || Boolean(stateChannel?.error)}
           onClick={() => void checkout()}>{busy ? 'Starting checkout…' : p.checkoutLabel || 'Payment'}</button>
-        <button type="button" className="md-record-cart-clear" disabled={!cart.length || busy}
+        <button type="button" className="md-record-cart-clear" disabled={!cart.length || busy || paymentStatus === 'pending' || !sessionReady}
           onClick={() => updateCart([])}>{p.clearLabel || 'Clear sale'}</button>
       </aside>
     </div>
