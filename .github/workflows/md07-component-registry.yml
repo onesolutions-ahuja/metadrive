@@ -31,6 +31,12 @@ on:
       - '.github/workflows/md07-component-registry.yml'
   workflow_dispatch:
 
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -53,8 +59,4 @@ jobs:
         run: npx tsx --test apps/web/test/pageComponentLayout.test.ts
       - name: Verify sandbox payload protection
         run: npx tsx --test apps/web/test/componentSandboxPolicy.test.ts
-      - name: Run backend regression suite
-        env:
-          NODE_ENV: test
-          METADRIVE_TEST_MODE: 'true'
-        run: npm run test --workspace apps/server
+      # Complete server suite runs once in required Validate MetaDrive deployment.
