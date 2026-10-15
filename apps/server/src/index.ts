@@ -118,7 +118,6 @@ function requestTenantMatches(req: Request, tenantId: string): boolean {
 const refreshCookieName = 'metadrive_refresh';
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtService = await JwtService.create();
-
 // Canonical origins are fixed. A verified customer domain may call its own
 // same-host API over HTTPS without a deployment-time CORS whitelist update.
 // Cross-origin use of a customer's domain is never allowed.
