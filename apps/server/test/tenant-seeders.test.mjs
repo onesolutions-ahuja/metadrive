@@ -8,6 +8,7 @@ test('Core and installed-app seeder definitions remain separate',()=>{
   assert.equal(new Set(registry.apps.map(a=>a.id)).size,registry.apps.length);
   const core=coreSeedDefinitions();
   assert.ok(core.objectDefinitions.length>0);
+  assert.equal(Object.hasOwn(core.accessControlTemplates,'users'),false,'seed cannot clone sample customer users');
   assert.ok(core.sharedComponents.every(c=>c.scope==='platform'));
   for (const item of registry.apps) {
     const pkg=appSeedDefinitions(item.id);
