@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
- protectedWorkspacePageDescriptors,protectedPageApiName,seedProtectedAdministrationPages,
+ protectedWorkspacePageDescriptors,protectedAdministrationPage,protectedAdministrationSlotComponents,protectedPageApiName,seedProtectedAdministrationPages,
  validateProtectedAdministrationPageUpdate,isProtectedAdministrationPage
 } from '../src/modules/metadata/platform-admin-pages.mjs';
 const original={pages:[{apiName:'Tenant_Landing',status:'Active',components:[{id:'custom'}]}]};
@@ -12,7 +12,7 @@ test('Phase 4 seeds all protected Page Builder layouts without modifying tenant 
  assert.equal(protectedWorkspacePageDescriptors.length,10);
  assert.equal(new Set(seeded.pages.map(p=>p.apiName)).size,11);
  assert.ok(seeded.pages.slice(1).every(p=>p.scope==='platform-system'&&p.ownerNamespace==='MetaDrive'
- &&p.definitionVersion===2&&p.overridePolicy==='presentation-only'
+ &&p.definitionVersion>=2&&p.overridePolicy==='presentation-only'
  &&p.status==='Active'&&p.pageType==='App Page'));
  assert.ok(seeded.pages.slice(1).every(p=>p.components.length>0&&p.layoutMode==='template'));
  assert.strictEqual(seedProtectedAdministrationPages(seeded),seeded);
@@ -35,4 +35,18 @@ test('platform ownership and RBAC cannot be forged with ordinary metadata:write 
  assert.match(validateProtectedAdministrationPageUpdate(page,{...page,apiName:'Impostor'},['platform:superadmin']),/renamed/);
  assert.match(validateProtectedAdministrationPageUpdate(page,{...page,requiredPermissions:[]},['platform:superadmin']),/(?:security metadata|required permission)/);
  assert.equal(validateProtectedAdministrationPageUpdate(null,{apiName:'Normal_Page'},['metadata:write']),null);
+});
+
+test('pristine v2 administration forms gain independent field slots without resetting edits',()=>{
+ const d=protectedWorkspacePageDescriptors.find(item=>item.workspace==='app-manager');
+ const pristine={...protectedAdministrationPage(d),definitionVersion:2,
+  components:protectedAdministrationSlotComponents('app-manager',
+   ['identity','pages','assignments','navigation-items','navigation-order','utility','actions'])};
+ const upgraded=seedProtectedAdministrationPages({pages:[pristine]});
+ const page=upgraded.pages.find(p=>p.apiName===pristine.apiName);
+ assert.equal(page.definitionVersion,3);
+ assert.ok(page.components.some(item=>item.properties.platformSlotKey==='field-brandColor'));
+ const edited={...pristine,updatedAt:'2026-10-15T08:00:00.000Z'};
+ const preserved=seedProtectedAdministrationPages({pages:[edited]});
+ assert.equal(preserved.pages[0],edited);
 });

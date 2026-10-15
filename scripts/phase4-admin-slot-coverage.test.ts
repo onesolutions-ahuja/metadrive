@@ -59,7 +59,7 @@ test('RBAC screen renders through all seeded protected page slots',()=>{
 
 test('tenant management has independently editable detail, domain, usage and recovery slots',()=>{
  const source=read('TenantManagement.tsx');
- for(const slot of protectedWorkspacePageSlots['tenant-management'])
+ for(const slot of protectedWorkspacePageSlots['tenant-management'].filter(key=>!key.startsWith('field-')))
   assert.ok(source.includes('slotKey="'+slot+'"'),'Missing tenant management slot '+slot);
 });
 
@@ -73,5 +73,15 @@ test('integrations and automation administration use protected page slots',()=>{
  ]){
   assert.ok(source.includes('workspace="'+workspace+'"'),workspace);
   assert.ok(source.includes('slotKey="'+slot+'"'),slot);
+ }
+});
+
+test('metadata-driven administration fields render as individual registered slots',()=>{
+ const primitive=read('AdminPropertyControl.tsx');
+ assert.ok(primitive.includes("slotKey={'field-'+definition.propertyKey}"));
+ for(const [workspace,file] of [['app-manager','adminAppFieldMetadata.ts'],['tenant-management','adminTenantFieldMetadata.ts']] as const){
+  const source=read(file);
+  for(const slot of protectedWorkspacePageSlots[workspace].filter(key=>key.startsWith('field-')))
+   assert.ok(source.includes("'"+slot.slice(6)+"'"),workspace+' '+slot);
  }
 });
