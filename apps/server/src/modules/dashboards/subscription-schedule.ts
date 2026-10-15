@@ -1,7 +1,7 @@
 import { dashboardLocalParts } from '../../core/local-time.js';
 
 export function nextDashboardSubscriptionRunAt(
-  schedule: { frequency: string; localTime: string; timeZone: string; dayOfWeek?: number },
+  schedule: { frequency: string; localTime: string; timeZone: string; dayOfWeek?: number | null },
   after: Date
 ): string {
   const nowParts = dashboardLocalParts(after, schedule.timeZone);
