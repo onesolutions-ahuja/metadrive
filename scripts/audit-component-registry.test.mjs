@@ -97,7 +97,7 @@ test('full audit is deterministic and ignores repository tenant runtime state', 
       "export default function RegisteredComponent() { if (definition.trustedBundled !== true) return null; }",
     'apps/web/src/ComponentSandbox.tsx': '<iframe sandbox="allow-scripts" />',
     'apps/web/src/componentRegistryLookup.ts': 'function findRegisteredComponent() {}',
-    'apps/web/src/setupShellPresentation.tsx': '<RegisteredComponent /> // findRegisteredComponent Custom:',
+    'apps/web/src/pageRuntimeViews.tsx': '<RegisteredComponent /> // findRegisteredComponent Custom:',
     'apps/web/src/DashboardBuilder.tsx':
       "findRegisteredComponent <RegisteredComponent /> component.type === 'Custom'",
     'apps/web/src/FlowScreenContent.tsx':
