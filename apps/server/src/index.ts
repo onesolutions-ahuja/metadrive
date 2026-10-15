@@ -13386,6 +13386,13 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 app.listen(port, () => {
   console.log(`MetaDrive API listening on http://localhost:${port} (JWT issuer: ${jwtService.config.issuer})`);
+  // Core components are platform metadata, not optional app packages. Reconcile
+  // the trusted SQL library at startup; keep endpoint sync as an idempotent fallback.
+  // During maintenance the database is intentionally read-only.
+  if (!maintenanceMode) {
+    void syncBundledLibraryComponents().catch((error: unknown) =>
+      console.error('Startup Core component registration failed', error));
+  }
   void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
   setInterval(() => {
     void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
