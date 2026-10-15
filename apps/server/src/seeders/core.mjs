@@ -73,9 +73,16 @@ export function initializeTenantCore(template, {authorizedUserIds=[]}={}) {
   // provisioner can enter this fresh tenant. Never copy template/sample users.
   const seed=coreMetadataSeed(template);
   const allowed=new Set(authorizedUserIds);
-  return {...seed,accessControl:{
-    ...seed.accessControl,
-    users:(template.accessControl?.users??[])
-      .filter(user=>allowed.has(user.id)).map(user=>structuredClone(user))
-  }};
+  // New-tenant provisioning supplies fresh, server-constructed defaults with
+  // the authorized administrator. Retain its required state shape; generic
+  // template seeding (no authorized IDs) remains metadata-only.
+  const provisioned=allowed.size>0 ? structuredClone(template) : seed;
+  return {...provisioned,
+    users:[],
+    accessControl:{
+      ...seed.accessControl,
+      users:(template.accessControl?.users??[])
+        .filter(user=>allowed.has(user.id)).map(user=>structuredClone(user))
+    }
+  };
 }
