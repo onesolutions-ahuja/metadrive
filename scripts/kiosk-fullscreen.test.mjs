@@ -31,4 +31,5 @@ test('safe replace-and-retire flow keeps old commerce Flows, Actions and metadat
  assert.match(install,/for\(const name of updates.reverse\(\)\)/);
  assert.match(install,/api\('\/metadata\/pages\/'.*'DELETE'/);
  assert.match(install,/await updateSecurity/);
+ assert.ok(install.indexOf('navigationPageApiNames:expected.pages')<install.indexOf('const obsolete=pages.filter'));
 });
