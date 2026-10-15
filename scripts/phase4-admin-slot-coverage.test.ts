@@ -165,3 +165,17 @@ test('Setup shell forwards metadata and security read grants to protected worksp
  assert.ok(presentation.includes('permitted={canReadMetadata}'));
 
 });
+
+test('all settings workspace render bindings are forwarded by the setup shell',()=>{
+ const presentation=read('setupShellPresentation.tsx');
+ const shell=read('setupAppShell.tsx');
+ const declaration=presentation.match(/const \{([\s\S]*?)\} = ctx;/)?.[1];
+ const invocation=shell.match(/return renderSetupShell\(\{([\s\S]*?)\}\);/)?.[1];
+ assert.ok(declaration && invocation,'setup presentation/context boundary');
+ const names=(value:string)=>value.split(',').map(name=>name.trim()).filter(Boolean);
+ assert.deepEqual(names(declaration).filter(name=>!names(invocation).includes(name)),[]);
+ for (const workspace of ['object-manager','company-settings']) {
+  assert.ok(presentation.includes('workspace="'+workspace+'"'));
+ }
+ assert.ok(presentation.includes('permitted={canReadMetadata}'));
+});
