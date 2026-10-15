@@ -7412,11 +7412,9 @@ function canOpenApp(principal: Principal, tenant: TenantData, appApiName: string
 function canOpenTab(principal: Principal, tenant: TenantData, objectApiName: string): boolean {
   return canNavigate(principal, tenant, 'tab', objectApiName);
 }
-
 function hasObjectPermission(principal: Principal, tenant: TenantData, objectName: string, action: 'read' | 'create' | 'edit' | 'delete'): boolean {
   return grantedObjectPermission(principal, tenant.objects.find(object => object.apiName === objectName), authorizationGrants(principal, tenant), action);
 }
-
 function hasObjectWidePermission(principal: Principal, tenant: TenantData, objectName: string, flag: 'viewAll' | 'modifyAll'): boolean {
   const grants = authorizationGrants(principal, tenant);
   if (!grants) return false;
@@ -7427,7 +7425,6 @@ function hasObjectWidePermission(principal: Principal, tenant: TenantData, objec
   return grants.groups.some(({ group, sets }) => sets.some((set) =>
     hasGrant(set.objectPermissions[objectName], group.mutedObjectPermissions[objectName])));
 }
-
 function hasRoleHierarchyAccess(principal: Principal, tenant: TenantData, ownerId: unknown): boolean {
   if (typeof ownerId !== 'string') return false;
   const viewer = tenant.accessControl.users.find((user) => user.id === principal.userId);
@@ -7443,7 +7440,6 @@ function hasRoleHierarchyAccess(principal: Principal, tenant: TenantData, ownerI
   }
   return false;
 }
-
 function roleIsAtOrBelow(roleId: string, rootRoleId: string, roles: AccessRole[]): boolean {
   let currentRoleId: string | null | undefined = roleId;
   const visited = new Set<string>();
@@ -7454,7 +7450,6 @@ function roleIsAtOrBelow(roleId: string, rootRoleId: string, roles: AccessRole[]
   }
   return false;
 }
-
 function publicGroupContainsUser(groupId: string, userId: string, tenant: TenantData, visited = new Set<string>()): boolean {
   if (visited.has(groupId)) return false;
   const group = tenant.accessControl.publicGroups.find((item) => item.id === groupId);
@@ -7468,7 +7463,6 @@ function publicGroupContainsUser(groupId: string, userId: string, tenant: Tenant
     || group.roleAndSubordinateIds.some((parentId) => roleIsAtOrBelow(roleId, parentId, tenant.accessControl.roles))) return true;
   return group.groupIds.some((nestedId) => publicGroupContainsUser(nestedId, userId, tenant, new Set(visited)));
 }
-
 function queueContainsUser(queue: RecordQueue, userId: string, tenant: TenantData): boolean {
   const member = tenant.accessControl.users.find((item) => item.id === userId);
   if (!member) return false;
@@ -7478,7 +7472,6 @@ function queueContainsUser(queue: RecordQueue, userId: string, tenant: TenantDat
     || queue.roleAndSubordinateIds.some((rootRoleId) => roleIsAtOrBelow(roleId, rootRoleId, tenant.accessControl.roles))
     || queue.publicGroupIds.some((groupId) => publicGroupContainsUser(groupId, userId, tenant));
 }
-
 function sharingRuleMatchesRecord(rule: SharingRule, record: RuntimeRecord): boolean {
   const conditions = rule.criteria.map((criterion) => {
     const value = record[criterion.fieldApiName];
@@ -7495,7 +7488,6 @@ function sharingRuleMatchesRecord(rule: SharingRule, record: RuntimeRecord): boo
   });
   return rule.filterLogic === 'All' ? conditions.every(Boolean) : conditions.some(Boolean);
 }
-
 function sharingRuleGrantsUser(rule: SharingRule, recipientUserId: string, record: RuntimeRecord, tenant: TenantData): boolean {
   if (!rule.active) return false;
   if (rule.type === 'OwnerBased') {
@@ -7513,7 +7505,6 @@ function sharingRuleGrantsUser(rule: SharingRule, recipientUserId: string, recor
   if (rule.targetType === 'Role') return recipientRoleId === rule.targetId;
   return roleIsAtOrBelow(recipientRoleId, rule.targetId, tenant.accessControl.roles);
 }
-
 // Scope and cache record-share lookups by immutable tenant state snapshot.
 // A sharing change replaces TenantData; an old index cannot authorize new data.
 const recordShareIndexes = new WeakMap<TenantData, Map<string, TenantData['recordShares']>>();
@@ -7530,7 +7521,6 @@ function recordShareIndex(tenant: TenantData): Map<string, TenantData['recordSha
   recordShareIndexes.set(tenant, index);
   return index;
 }
-
 function hasRecordAccess(
   principal: Principal,
   tenant: TenantData,
@@ -7631,7 +7621,6 @@ function hasRecordAccess(
   return defaultAccess === 'Public Read/Write'
     || (defaultAccess === 'Public Read Only' && accessLevel === 'Read');
 }
-
 function hasFieldPermission(principal: Principal, tenant: TenantData, objectName: string, fieldName: string, action: 'read' | 'edit'): boolean {
   const grants = authorizationGrants(principal, tenant);
   if (!grants) return false;
@@ -7657,7 +7646,6 @@ function hasFieldPermission(principal: Principal, tenant: TenantData, objectName
     return sets.some((set) => grantsField(set.fieldPermissions, set.objectPermissions, group.mutedObjectPermissions[objectName]));
   });
 }
-
 function sanitizeRecordForRead(principal: Principal, tenant: TenantData, object: ObjectMetadata, record: RuntimeRecord): RuntimeRecord {
   const values: Record<string, unknown> = {};
   const systemFields = new Set(['Id', 'CreatedDate', 'CreatedById', 'LastModifiedDate', 'LastModifiedById', 'SystemModstamp', 'RecordTypeId']);
@@ -7666,7 +7654,6 @@ function sanitizeRecordForRead(principal: Principal, tenant: TenantData, object:
   }
   return values as RuntimeRecord;
 }
-
 function assertFieldEditPermissions(principal: Principal, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>): void {
   assertRecordFieldPermissions(principal, tenant, object, values, hasFieldPermission);
 }
