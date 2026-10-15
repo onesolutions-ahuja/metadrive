@@ -1,4 +1,4 @@
--- Stage-only normalized component property storage. No JSONB columns.
+-- Stage-only hybrid component metadata: fixed common columns plus JSONB extras.
 -- Does not alter the existing source tables; live cutover requires a separate
 -- verified dual-read/write migration with full rollback and RBAC coverage.
 CREATE TABLE IF NOT EXISTS metadrive_component_definitions_sql (
@@ -35,34 +35,27 @@ CREATE TABLE IF NOT EXISTS metadrive_page_component_instances_sql (
   region TEXT NOT NULL DEFAULT 'main',
   position INTEGER NOT NULL CHECK (position >= 0),
   visible BOOLEAN NOT NULL DEFAULT true,
-  width DOUBLE PRECISION,
-  height DOUBLE PRECISION,
-  x DOUBLE PRECISION,
-  y DOUBLE PRECISION,
+  width TEXT,
+  height TEXT,
+  x TEXT,
+  y TEXT,
+  background_color TEXT,
+  text_color TEXT,
+  font_size TEXT,
+  padding TEXT,
+  border_radius TEXT,
+  -- Only specialised and nested settings go here (Flows, actions, bindings).
+  additional_properties JSONB NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(additional_properties)='object'),
   PRIMARY KEY (tenant_id,page_api_name,instance_id),
   UNIQUE (tenant_id,page_api_name,position),
   FOREIGN KEY (tenant_id,component_api_name)
     REFERENCES metadrive_component_definitions_sql(tenant_id,component_api_name)
 );
-CREATE TABLE IF NOT EXISTS metadrive_component_property_values_sql (
-  tenant_id TEXT NOT NULL,
-  page_api_name TEXT NOT NULL,
-  instance_id TEXT NOT NULL,
-  property_key TEXT NOT NULL,
-  value_text TEXT,
-  value_number DOUBLE PRECISION,
-  value_boolean BOOLEAN,
-  -- Bindings are references, not values serialized as JSON.
-  binding_path TEXT,
-  PRIMARY KEY (tenant_id,page_api_name,instance_id,property_key),
-  FOREIGN KEY (tenant_id,page_api_name,instance_id)
-    REFERENCES metadrive_page_component_instances_sql(tenant_id,page_api_name,instance_id)
-    ON DELETE CASCADE,
-  CHECK (num_nonnulls(value_text,value_number,value_boolean,binding_path)=1)
-);
 CREATE INDEX IF NOT EXISTS metadrive_component_instances_lookup_sql
   ON metadrive_page_component_instances_sql(tenant_id,component_api_name);
--- E.g. SELECT width,height FROM metadrive_page_component_instances_sql
+-- E.g. SELECT width,height,additional_properties FROM metadrive_page_component_instances_sql
 -- WHERE tenant_id=$1 AND page_api_name=$2 AND instance_id=$3;
--- Complex nested Flow/Action configurations are intentionally NOT flattened
--- here: a separate typed relational design is required before safe cutover.
+-- Runtime must merge additional_properties with fixed columns through one shared
+-- metadata adapter; reserved common keys cannot be duplicated in JSONB.
+-- No production cutover or data overwrite occurs in this staging SQL.
