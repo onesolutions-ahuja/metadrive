@@ -55,11 +55,22 @@ export function coreMetadataSeed(template) {
 /** Add missing definitions only. Never overwrite tenant customizations. */
 export function mergeCoreMetadata(tenant, seed) {
   const merged = structuredClone(tenant);
+  // Merge additions only. Tenant edits, deletions of individual properties and
+  // administrator-modified permission grants are never replaced by a seed.
   const names = ['objects', 'pages', 'flows'];
   for (const name of names) {
-    const existing = new Set((merged[name] ?? []).map(item => item.apiName));
-    merged[name] = [...(merged[name] ?? []), ...(seed[name] ?? [])
-      .filter(item => !existing.has(item.apiName)).map(item => structuredClone(item))];
+    const current = merged[name] ?? [];
+    const additions = [];
+    const existing = new Set(current.map(item => item.apiName));
+    for (const definition of seed[name] ?? []) {
+      const key = definition?.apiName;
+      if (typeof key !== 'string' || !key.trim())
+        throw Error('Core ' + name + ' seed entry requires a stable apiName');
+      if (existing.has(key)) continue;
+      existing.add(key);
+      additions.push(structuredClone(definition));
+    }
+    merged[name] = [...current, ...additions];
   }
   // RBAC initialization is for NEW tenants only; never alter existing access grants.
   if (!merged.accessControl) merged.accessControl = structuredClone(seed.accessControl);
