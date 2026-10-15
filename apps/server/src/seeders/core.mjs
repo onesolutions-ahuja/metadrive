@@ -10,6 +10,7 @@ export function coreMetadataSeed(template) {
     objects: source.objects ?? [],
     pages: source.pages ?? [],
     flows: source.flows ?? [],
+    libraryComponents: source.libraryComponents ?? [],
     accessControl: source.accessControl ?? {},
     sharingSettings: source.sharingSettings ?? {},
     currencySettings: source.currencySettings ?? {},
