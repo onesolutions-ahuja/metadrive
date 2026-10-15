@@ -213,15 +213,12 @@ function ensureSeedLedger(): Promise<void> {
     const tenantTableExists = Boolean((tenantTable.rows as Array<{name: string | null}>)[0]?.name);
     seedLedgerTenantConstraintPending = !tenantTableExists;
     if (tenantTableExists) {
-      await pool.query(`DO $ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE contype = 'f'
-          AND conrelid = 'md_seed_package_versions'::regclass
-          AND confrelid = 'metadrive_rel_tenants'::regclass) THEN
-          ALTER TABLE md_seed_package_versions
-            ADD CONSTRAINT md_seed_package_versions_tenant_fk
-            FOREIGN KEY (tenant_id) REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT;
-        END IF;
-      END $`);
+      const fk = await pool.query(`SELECT 1 FROM pg_constraint
+        WHERE contype = 'f' AND conrelid = 'md_seed_package_versions'::regclass
+        AND confrelid = 'metadrive_rel_tenants'::regclass LIMIT 1`);
+      if (!fk.rows.length) await pool.query(`ALTER TABLE md_seed_package_versions
+        ADD CONSTRAINT md_seed_package_versions_tenant_fk
+        FOREIGN KEY (tenant_id) REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT`);
     }
   })().catch((error: unknown) => { seedLedgerReady = null; throw error; });
   return seedLedgerReady;
