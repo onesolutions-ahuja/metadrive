@@ -3,6 +3,8 @@ import {platformNavigationEntries} from './platformWorkspaceMetadata';
 import type {LightningPageMetadata,LibraryComponentMetadata} from './metadata';
 import {findRegisteredComponent} from './componentRegistryLookup';
 import RegisteredComponent from './RegisteredComponent';
+import MetadataBoundPageComponent from './MetadataBoundPageComponent';
+import {needsMetadataComponentRuntime} from './pageComponentBindings';
 import {PlatformPageSlotsProvider} from './PlatformPageSlot';
 import {resolvePageComponentStyle} from './pageComponentLayout';
 
@@ -33,11 +35,13 @@ export function resolveSystemWorkspace(id:string){
   requiredPermission:primary.permission,aliases:matches.map(entry=>entry.label)};
 }
 export default function PlatformWorkspaceSurface({
- workspace,children,permitted=false,pages=[],libraryComponents=[],canEditSystemPage=false,onEditSystemPage,device='Desktop'
+ workspace,children,permitted=false,pages=[],libraryComponents=[],canEditSystemPage=false,onEditSystemPage,device='Desktop',componentRuntime
 }:{
  workspace:SystemWorkspaceId;children:ReactNode;permitted:boolean;
  pages?:readonly LightningPageMetadata[];libraryComponents?:readonly LibraryComponentMetadata[];
  canEditSystemPage?:boolean;onEditSystemPage?:(apiName:string)=>void;device?:'Desktop'|'Tablet'|'Phone';
+ componentRuntime?:Pick<React.ComponentProps<typeof MetadataBoundPageComponent>,
+  'apiRequest'|'objects'|'apps'|'pages'|'currentAppId'|'reports'|'availableFlows'|'formFactor'|'onNavigate'|'onLaunchFlow'>;
 }){
  const definition=resolveSystemWorkspace(workspace);
  if(!definition||!permitted)return <div role="alert">Workspace unavailable</div>;
@@ -56,7 +60,12 @@ export default function PlatformWorkspaceSurface({
        {registered.map(({instance,component})=><div key={instance.id}
          style={{...resolvePageComponentStyle(instance.properties,instance.type,device),
            maxWidth:'100%',width:instance.position?.width??'100%'}}>
-         <RegisteredComponent definition={component!} props={instance.properties}/>
+         {needsMetadataComponentRuntime(instance.properties)
+           ?componentRuntime
+             ?<MetadataBoundPageComponent {...componentRuntime} definition={component!}
+               component={instance} pageSessionKey={'platform:'+pageName}/>
+             :<div role="alert">Page action runtime unavailable</div>
+           :<RegisteredComponent definition={component!} props={instance.properties}/>}
        </div>)}
      </div>
    </div>}
