@@ -29,9 +29,9 @@ export function resolveSystemWorkspace(id:string){
   requiredPermission:primary.permission,aliases:matches.map(entry=>entry.label)};
 }
 export default function PlatformWorkspaceSurface({
- workspace,children,permitted=true,pages=[],libraryComponents=[],canEditSystemPage=false,onEditSystemPage,device='Desktop'
+ workspace,children,permitted=false,pages=[],libraryComponents=[],canEditSystemPage=false,onEditSystemPage,device='Desktop'
 }:{
- workspace:SystemWorkspaceId;children:ReactNode;permitted?:boolean;
+ workspace:SystemWorkspaceId;children:ReactNode;permitted:boolean;
  pages?:readonly LightningPageMetadata[];libraryComponents?:readonly LibraryComponentMetadata[];
  canEditSystemPage?:boolean;onEditSystemPage?:(apiName:string)=>void;device?:'Desktop'|'Tablet'|'Phone';
 }){
