@@ -76,8 +76,15 @@ const flows = flowNames.map(apiName => {
     }))
   } : {apiName, missing: true};
 });
+const catalog = await api('/connector-apps/catalog');
+if (!Array.isArray(catalog.records)) throw Error('Unexpected package catalog response');
+const installedPackage = catalog.records.find(record => record.AppKey__c === 'uk-offlicence-pos');
+const packageStatus = installedPackage ? {
+  found: true, installed: installedPackage.Installed__c === true,
+  licenceStatus: installedPackage.LicenceStatus__c
+} : {found: false};
 console.log('POS_TENANT_METADATA ' + JSON.stringify({
-  inspectedAt: new Date().toISOString(), tenantMatched: true, objects, pages, flows,
+  inspectedAt: new Date().toISOString(), tenantMatched: true, packageStatus, objects, pages, flows,
   commerceCandidates: objectData.objects.filter(object =>
     /product|invoice|till|session|stock|refund|receipt|payment|discount|shift/i.test(object.apiName)
   ).map(object => ({apiName: object.apiName, fields: (object.fields ?? []).map(field =>
