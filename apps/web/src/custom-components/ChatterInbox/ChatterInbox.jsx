@@ -64,7 +64,10 @@ export default function ChatterInbox(props) {
           <small className="md-chatter-channel">{accountName(c.channelAccountId)}</small></span>
         <span className="md-chatter-contact-side"><small>{c.lastMessageAt ? new Date(c.lastMessageAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}</small>
         {Number(c.unreadCount)>0 && <b>{c.unreadCount}</b>}</span></button>)}
-      {!filtered.length && <p className="md-chatter-empty">No conversations match your filters.</p>}</div>
+      {!filtered.length && <p className="md-chatter-empty" role="status">{!Array.isArray(p.allowedAccountIds) || !p.allowedAccountIds.length
+        ? 'No WhatsApp channel access is assigned to your user. Ask an authorized administrator to assign a channel grant in OneEngine.'
+        : !conversations.length ? 'No readable WhatsApp conversations were found for your assigned channels.'
+        : 'No conversations match your filters.'}</p>}</div>
     </aside>
     <div className="md-chatter-thread">
       {selected ? <><header className="md-chatter-thread-head">
