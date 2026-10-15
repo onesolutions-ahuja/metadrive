@@ -1,5 +1,6 @@
 import {coreMetadataSeed, mergeCoreMetadata} from './core.mjs';
 import {installedAppSeed, listSeedPackages} from './apps.mjs';
+import {mergeSharedDependency} from './shared.mjs';
 
 /** Shared registry uses existing AppExchange catalog; no duplicate package metadata. */
 export function createTenantSeedRegistry({coreTemplate, appCatalog}) {
@@ -8,6 +9,7 @@ export function createTenantSeedRegistry({coreTemplate, appCatalog}) {
     availableApps: () => listSeedPackages(appCatalog),
     freshCore: () => coreMetadataSeed(coreTemplate),
     initializeCore: tenant => mergeCoreMetadata(tenant, coreMetadataSeed(coreTemplate)),
+    installShared: (tenant, dependency) => mergeSharedDependency(tenant, dependency),
     installApp: (tenant, tenantId, appKey) => installedAppSeed(tenant, appCatalog, tenantId, appKey)
   };
 }
