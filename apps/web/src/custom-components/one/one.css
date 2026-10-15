@@ -9,7 +9,7 @@
 .one-ui--glass .one-surface{backdrop-filter:blur(var(--one-blur));-webkit-backdrop-filter:blur(var(--one-blur))}
 .one-row{display:flex;align-items:center;gap:var(--one-gap);flex-wrap:wrap}
 .one-stack{display:flex;gap:var(--one-gap);min-width:0}
-.one-grid{display:grid;gap:var(--one-gap);min-width:0}
+.one-grid{display:grid;gap:var(--one-gap);min-width:0;grid-template-columns:repeat(var(--one-grid-desktop,3),minmax(0,1fr))}
 .one-heading{font-size:1.05em;font-weight:650;letter-spacing:-.015em;margin:0}
 .one-muted{color:var(--one-fg);opacity:.7;font-size:.88em}
 .one-btn{display:inline-flex;align-items:center;justify-content:center;gap:.45em;padding:.62em .95em;border-radius:calc(var(--one-radius) * .6);border:1px solid var(--one-border);background:var(--one-bg);color:var(--one-fg);cursor:pointer;font:inherit;font-weight:600;min-height:36px;transition:background .15s ease,transform .15s ease,border-color .15s ease}
@@ -50,5 +50,6 @@
 .one-message{max-width:85%;border-radius:12px;padding:10px 12px;background:var(--one-bg);border:1px solid var(--one-border);margin:6px 0;overflow-wrap:anywhere}
 .one-message--me{margin-left:auto;background:color-mix(in srgb,var(--one-accent) 14%,var(--one-bg))}
 .one-file-preview{max-width:100%;max-height:420px;border:1px solid var(--one-border);border-radius:8px}
-@media(max-width:640px){.one-hidden-mobile{display:none!important}.one-ui{width:100%!important}.one-stack[data-phone-stack="true"]{flex-direction:column!important}.one-table th,.one-table td{padding:7px;font-size:.9em}.one-overlay-panel{max-width:100%}}
+@media(max-width:1024px){.one-grid{grid-template-columns:repeat(var(--one-grid-tablet,2),minmax(0,1fr))}}
+@media(max-width:640px){.one-grid{grid-template-columns:repeat(var(--one-grid-mobile,1),minmax(0,1fr))}.one-hidden-mobile{display:none!important}.one-ui{width:100%!important}.one-stack[data-phone-stack="true"]{flex-direction:column!important}.one-table th,.one-table td{padding:7px;font-size:.9em}.one-overlay-panel{max-width:100%}}
 @media(prefers-reduced-motion:reduce){.one-btn{transition:none}.one-ui--glass .one-surface{backdrop-filter:none;-webkit-backdrop-filter:none}}

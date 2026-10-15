@@ -99,7 +99,6 @@ test('one connector store survives migration and restart without duplicate objec
     const state = JSON.parse(await readFile(file, 'utf8')) as Record<string, any>;
     const tenant = state.tenants[tenantId] as Record<string, any>;
     const existing = tenant.records.UneConnector__c as Array<Record<string, any>>;
-    assert.ok(Array.isArray(existing), 'Expected legacy connector fixtures; keys='+Object.keys(tenant.records||{}).join(',')+' availableObjects='+tenant.objects?.map((x:any)=>x.apiName).filter((x:string)=>x.includes('Connector')).join(','));
     assert.equal(existing.length, 5);
     const owner = String(existing[0].OwnerId);
     const whatsapp = existing.find((item) => item.Name === 'WhatsApp');
