@@ -3,7 +3,6 @@ import type {LightningPageMetadata,LibraryComponentMetadata,PageComponentMetadat
 import {systemPageApiName} from './platformSystemPageDrafts';
 import {findRegisteredComponent} from './componentRegistryLookup';
 import RegisteredComponent from './RegisteredComponent';
-import './PlatformSystemPageRenderer.css';
 import {PlatformPageSlotsProvider} from './PlatformPageSlot';
 import {resolvePageComponentStyle} from './pageComponentLayout';
 
