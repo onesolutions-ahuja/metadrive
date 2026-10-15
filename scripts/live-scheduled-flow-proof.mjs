@@ -4,6 +4,16 @@ if(!email||!password)throw Error('Missing CI credentials');
 async function api(path,token,method='GET',body){const response=await fetch(base+path,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)});const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(path+' HTTP '+response.status+' '+JSON.stringify(data).slice(0,500));return data;}
 const token=(await api('/api/auth/login',null,'POST',{email,password})).access_token;
 if(!token)throw Error('Authentication failed');
+if(process.env.METADRIVE_VERIFY_CLEANUP==='true'){
+ const name='MD_Scheduled_Verification_mva3gmsz';
+ const current=(await api('/api/metadata/flows',token)).flows??[];
+ if(!current.some(f=>f.apiName===name))throw Error('Scheduled verification Flow missing before cleanup');
+ await api('/api/metadata/flows/'+name+'/deactivate',token,'POST',{});
+ await api('/api/metadata/flows/'+name,token,'DELETE');
+ if(((await api('/api/metadata/flows',token)).flows??[]).some(f=>f.apiName===name))throw Error('Flow cleanup not persisted');
+ console.log('SCHEDULED FLOW CLEANUP PASSED',name);
+ process.exit(0);
+}
 const objects=(await api('/api/metadata/objects',token)).objects??[];
 const target=objects.find(o=>o.apiName==='Account')??objects.find(o=>!o.apiName.startsWith('Communication_'));
 if(!target)throw Error('No safe object metadata for scheduled no-write verification');
