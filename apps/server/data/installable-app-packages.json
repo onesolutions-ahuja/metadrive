@@ -183,7 +183,11 @@
               "required": false,
               "unique": false
             }
-          ]
+          ],
+          "label": "Communication Record",
+          "pluralLabel": "Communication Records",
+          "kind": "Custom Object",
+          "description": "Extend existing communication records with secure Chatter metadata"
         }
       ],
       "pages": [
