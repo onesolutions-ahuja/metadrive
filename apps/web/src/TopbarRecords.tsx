@@ -40,7 +40,13 @@ export function RecordObjectPicker({
   const available = useMemo(() => Array.from(new Map(objects.map(item => [item.apiName, item])).values())
     .sort((a, b) => a.pluralLabel.localeCompare(b.pluralLabel)), [objects]);
   const counts = useMemo(() => { const n = new Map<string, number>(); for (const item of available) { const key = item.pluralLabel.trim().toLocaleLowerCase(); n.set(key, (n.get(key) ?? 0) + 1); } return n; }, [available]);
-  const displayName = (item: NavigableObject) => counts.get(item.pluralLabel.trim().toLocaleLowerCase())! > 1 ? `${item.pluralLabel} (${item.apiName})` : item.pluralLabel;
+  const displayName = (item: NavigableObject) => {
+    const raw = (item.pluralLabel || item.label || item.apiName).trim();
+    const cleaned = raw === item.apiName || raw.toLowerCase() === (item.label + item.apiName).toLowerCase()
+      ? (item.label || item.apiName).replace(/__c$/i, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ')
+      : raw;
+    return counts.get(raw.toLocaleLowerCase())! > 1 ? `${cleaned} (${item.apiName})` : cleaned;
+  };
   const matches = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return needle ? available.filter(item =>
