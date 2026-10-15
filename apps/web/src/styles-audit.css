@@ -122,3 +122,16 @@
  .welcome-quick { flex:1 1 240px; }
  .home-lower-grid { grid-template-columns:minmax(0,1fr); }
 }
+
+/* Metadata-driven mobile card representation for authenticated record lists. */
+@media(max-width:600px) {
+ .records-responsive-list { max-height:none!important; overflow-x:visible!important; }
+ .records-responsive-list .records-table { display:block; width:100%; min-width:0!important; }
+ .records-responsive-list thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+ .records-responsive-list tbody { display:grid; gap:12px; padding:12px; }
+ .records-responsive-list tbody tr { display:block; min-width:0; padding:12px; border:1px solid var(--border); border-radius:10px; background:#fff; }
+ .records-responsive-list tbody td { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; width:100%; min-width:0; max-width:none; padding:9px 2px; border:0; overflow-wrap:anywhere; }
+ .records-responsive-list tbody td[data-label]::before { content:attr(data-label); flex:0 0 38%; font-weight:600; color:var(--muted); }
+ .records-responsive-list .record-row-actions { display:flex; gap:8px; flex-wrap:wrap; }
+ .records-responsive-list .record-row-actions button { min-height:44px; }
+}
