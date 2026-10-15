@@ -1,7 +1,7 @@
 name: Chatter production metadata audit
 on:
   push:
-    branches: [feature/chatter-secure-completion-20261015]
+    branches: [feature/chatter-secure-completion-20261015, verify/chatter-live-20261015]
     paths:
       - scripts/chatter-live-audit.mjs
       - .github/workflows/chatter-live-audit.yml
