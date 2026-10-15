@@ -1,24 +1,10 @@
 import { normalizeRuntimeValues, type RecordObjectMetadata } from './record-values.js';
+import { assertWritableRecordFields } from './record-write-fields.js';
 type InputObject = RecordObjectMetadata & { apiName: string };
 type RuntimeRecord = Record<string, unknown>;
 export function sanitizeRecordValues(object: InputObject, input: Record<string, unknown>): Record<string, unknown> {
-  const allowedFields = new Set(object.fields.map((field) => field.apiName));
-  const readOnlyFields = new Set([
-    'Id',
-    'CreatedDate',
-    'CreatedById',
-    'LastModifiedDate',
-    'LastModifiedById',
-    'SystemModstamp',
-    ...(object.apiName === 'Opportunity' ? ['Age', 'Fiscal', 'OwnerRole'] : []),
-    ...(object.apiName === 'Case' ? ['Age', 'IsOpen', 'IsClosed'] : [])
-  ]);
-  const values: Record<string, unknown> = {};
-  for (const [fieldName, value] of Object.entries(input)) {
-    if (!allowedFields.has(fieldName) && fieldName !== 'RecordTypeId') throw new Error(`Field "${fieldName}" does not exist on "${object.apiName}".`);
-    if (readOnlyFields.has(fieldName)) throw new Error(`Field "${fieldName}" on "${object.apiName}" is read-only.`);
-    values[fieldName] = value;
-  }
+  assertWritableRecordFields(object, input);
+  const values = { ...input };
   return normalizeRuntimeValues(object, values);
 }
 

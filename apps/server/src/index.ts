@@ -4620,6 +4620,15 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     };
     const data: TenantData = {
       ...tenantSeed,
+      records: {
+        ...tenantSeed.records,
+        Connector_App__c: ensureConnectorAppRecords(tenantSeed.records.Connector_App__c, admin.id),
+        ...(!((process.env.METADRIVE_UNIFIED_CONNECTORS === 'true') &&
+          process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID)
+          ? { UneConnector__c: tenantSeed.records.UneConnector__c?.length
+              ? tenantSeed.records.UneConnector__c : connectorRecords(defaultConnectorSettings, admin.id) }
+          : {})
+      },
       accessControl: {
         ...tenantSeed.accessControl,
         users: [...tenantSeed.accessControl.users, developerAccess]
@@ -5005,13 +5014,11 @@ function requireAnyPermission(...permissions: string[]) {
     next();
   };
 }
-
 const tenantForRequestHost = (req: Request) => resolveTenantForRequestHost(req, state.tenantRegistry);
 const accessAuthentication = createAccessAuthentication({
   jwtService, getState: () => state, tenantIsActive, requestTenantMatches,
   mfaRequiredForUser, effectivePermissions
 });
-
 function cookieValue(req: Request, name: string): string | undefined {
   const header = req.header('cookie');
   if (!header) return undefined;
@@ -5068,7 +5075,6 @@ function authenticatedLandingBootstrap(user: LocalUser, tenant: TenantData, perm
     user: { profileId, permissions, fieldAccess, recordTypeAccess }
   };
 }
-
 async function issueLoginResponse(res: Response, user: LocalUser, data: TenantData, familyId?: string,
   loginTiming?: { startedAt: number; passwordMs: number }, mfaVerified = false, includeLanding = false): Promise<void> {
   // JWT iat is second-granular. When reactivated in the same second as a
@@ -5163,7 +5169,6 @@ const mfaLoginChallenges = new Map<string, MfaLoginChallenge>();
 const mfaEnrollments = new Map<string, MfaEnrollment>();
 const mfaFailures = new Map<string, { count: number; resetAt: number }>();
 const mfaChallengeTtlMs = 5 * 60 * 1000;
-
 function mfaRequiredForUser(tenant: TenantData, user: LocalUser): boolean {
   return tenant.mfaPolicy.mode === 'Required'
     || (tenant.mfaPolicy.mode === 'Optional' && Boolean(user.mfaSecret));
@@ -5223,7 +5228,6 @@ function revokeUserRefreshSessions(userId: string, tenantId: string): RefreshSes
       ? { ...session, revokedAt: now }
       : session);
 }
-
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 const userLoginFailures = new Map<string, { count: number; until: number }>();
 function recordUserLoginFailure(user: LocalUser): void {
@@ -5249,7 +5253,6 @@ function recordUserLoginFailure(user: LocalUser): void {
   persistState(nextState);
   state = nextState;
 }
-
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(256)
@@ -5268,7 +5271,6 @@ function provisioningIdempotencyKey(req: Request): string | undefined {
     throw new Error('Idempotency-Key must be 16–128 ASCII letters, numbers, dashes or underscores');
   return key;
 }
-
 app.get('/health', async (_req, res) => {
   const database = await checkDatabaseConnection();
   return res.json({ ok: true, service: 'metadrive-api', database, authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode, deployedCommit: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RENDER_GIT_COMMIT ?? '' });
@@ -5358,7 +5360,6 @@ registerSessionSecurityRoutes({ app, accessAuthentication, requirePermission, ge
   tenantData, jwtService, getState: () => state, setState: (next) => { state = next; },
   persistState, revokeUserRefreshSessions, withSecurityEvent, effectivePermissions,
   clearRefreshCookie, userLoginFailures });
-
 // MD-01A: separate, audited platform policies. All lookups use the current in-memory
 // platform state; no additional database read is introduced on guarded requests.
 const platformPolicySchema = z.object({
@@ -5434,7 +5435,6 @@ app.put('/api/platform/policies/:userId', accessAuthentication, (req: Request, r
     return res.status(503).json({ error: 'Unable to persist platform policies.' });
   }
 });
-
 // MD-03.1: platform-only tenant directory and lifecycle. Tenant-editable
 // profiles/permission sets never confer this policy; no impersonation or secrets.
 const tenantManagementCreateSchema = provisioningSchema.strict();
@@ -5664,7 +5664,6 @@ app.post('/api/tenant/developer-account/activate', accessAuthentication, async (
     if (!provisioningCommitFailed) developerActivationPending.delete(seed.userId);
   }
 });
-
 app.get('/api/platform/tenants/:tenantId/provisioning', accessAuthentication, requirePlatformTenantAdmin,
   (req: Request, res: Response) => {
     const tenantId = routeParam(req, 'tenantId');
@@ -5848,7 +5847,6 @@ app.post('/api/tenant/domains/:hostname/verify', accessAuthentication, requirePe
   (req, res) => { void verifyTenantDomain(req, res, false); });
 app.delete('/api/tenant/domains/:hostname', accessAuthentication, requirePermission('security:manage'),
   (req, res) => { void removeTenantDomain(req, res, false); });
-
 app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
   const tenantId = routeParam(req, 'tenantId');
   const operation = routeParam(req, 'operation');
@@ -5882,7 +5880,6 @@ app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, req
   commitTenantChange(getPrincipal(res).userId, tenantId, action, next, previous);
   return res.json({ tenant: tenantSummary(tenantId) });
 });
-
 // MD-03.6: Retention controls are metadata only. No background or automatic purge.
 // Retention and legal holds are auditable and platform-scoped, even for archived tenants.
 const tenantRetentionSchema = z.object({
@@ -5908,7 +5905,6 @@ app.patch('/api/platform/tenants/:tenantId/retention', accessAuthentication, req
   });
 // No destructive endpoint: absence is intentional until an independently verified
 // erasure ceremony and physical backup retention policy exist.
-
 app.get('/api/platform/tenants/:tenantId/lifecycle-audit', accessAuthentication, requirePlatformTenantAdmin,
   (req: Request, res: Response) => {
     const tenantId = routeParam(req, 'tenantId');
@@ -5918,7 +5914,6 @@ app.get('/api/platform/tenants/:tenantId/lifecycle-audit', accessAuthentication,
       .slice(-100).reverse().map(({ actorId, action, at }) => ({ actorId, action, at }));
     return res.json({ tenantId, events });
   });
-
 // MD-03.7: An isolated platform-control database contains recovery cases and
 // one-time factors. Never point it at the normal tenant application database.
 // No runtime table migrations, startup grants, or privileged side doors.
