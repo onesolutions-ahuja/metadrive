@@ -1,3 +1,4 @@
+import {seedProtectedAdministrationPages,validateProtectedAdministrationPageUpdate,isProtectedAdministrationPage} from './modules/metadata/platform-admin-pages.mjs';
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
 import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
 import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
@@ -92,7 +93,6 @@ import {
   matchesDashboardFilters,
   type DashboardFolderAccessLevel
 } from './dashboard-access.js';
-
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const schedulePollInterval = Number(process.env.METADRIVE_SCHEDULE_POLL_MS ?? 30_000);
@@ -115,7 +115,6 @@ function requestTenantMatches(req: Request, tenantId: string): boolean {
 const refreshCookieName = 'metadrive_refresh';
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtService = await JwtService.create();
-
 // Canonical origins are fixed. A verified customer domain may call its own
 // same-host API over HTTPS without a deployment-time CORS whitelist update.
 // Cross-origin use of a customer's domain is never allowed.
@@ -143,7 +142,6 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Retry-After', '120');
   return res.status(503).json({ error: 'MetaDrive database maintenance in progress' });
 });
-
 // In all SQL modes, acknowledge API writes only after the database transaction
 // commits. Otherwise a fast API response followed by restart loses records/Flows.
 // Legacy JSONB response semantics remain unchanged.
@@ -454,7 +452,6 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
     return res.sendStatus(500); // Meta retries unsuccessful deliveries.
   }
 });
-
 
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
@@ -1543,7 +1540,10 @@ const pageSchema = z.object({
       height: z.number().int().min(1).max(7680)
     }).optional()
   })),
-  activationAssignments: z.array(pageActivationAssignmentSchema).optional()
+  activationAssignments: z.array(pageActivationAssignmentSchema).optional(),
+  scope: z.enum(['tenant','platform-system']).optional(), ownerNamespace: z.string().max(128).optional(),
+  definitionVersion: z.number().int().positive().optional(), overridePolicy: z.enum(['presentation-only','none']).optional(),
+  requiredPermissions: z.array(z.string().min(1)).optional()
 }).superRefine((page, context) => {
   const ids = page.components.map((component) => component.id);
   if (new Set(ids).size !== ids.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['components'], message: 'Component IDs must be unique' });
@@ -3026,7 +3026,6 @@ const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'ServiceApp', label: 'Service', description: 'Manage customer support cases.', navigationItems: ['Account', 'Contact', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#7526a8', utilityItems: ['Notes', 'History'] }
 ].map((app) => lightningAppSchema.parse(app));
 
-
 function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous: RuntimeRecord, updated: RuntimeRecord, userId: string): void {
   if (!object.settings?.trackFieldHistory) return;
   const changedAt = new Date().toISOString();
@@ -3642,7 +3641,6 @@ function whatsappRouterFlow(): FlowMetadata {
     ], versions: []
   });
 }
-
 
 function whatsappContextFlow(): FlowMetadata {
   return flowSchema.parse({
@@ -4269,7 +4267,7 @@ function loadState(sqlState?: unknown): PlatformState {
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
         ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
       ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
-      pages: tenant.pages.map((page) => ({
+      pages: seedProtectedAdministrationPages(tenant).pages.map((page) => ({
         ...page,
         activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
           { id: `${page.apiName}-default-desktop`, scope: 'Org Default' as const, appId: null, profileId: null, recordTypeId: null, formFactors: ['Desktop' as const] },
@@ -5276,7 +5274,6 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
     ...(includeLanding ? { landing: authenticatedLandingBootstrap(user, data, permissions) } : {})
   });
 }
-
 
 type MfaLoginChallenge = {
   userId: string; tenantId: string; expiresAt: number; attempts: number; pendingSecret?: string; authVersion: number;
@@ -11309,7 +11306,10 @@ app.get('/api/routes/resolve/:appId/:slug', accessAuthentication, async (req: Re
 });
 
 app.get('/api/metadata/pages', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ pages: tenantData(getPrincipal(res).tenantId)?.pages ?? [] });
+  const principal=getPrincipal(res);
+  const pages=tenantData(principal.tenantId)?.pages??[];
+  res.json({pages:pages.filter(page=>!isProtectedAdministrationPage(page)
+    || (page.requiredPermissions??[]).every(permission=>principal.permissions.includes(permission)))});
 });
 app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
   const previousApiName = routeParam(req, 'apiName');
@@ -11319,6 +11319,8 @@ app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', '
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const existingPage = tenant.pages.find((page) => page.apiName === previousApiName);
+  const protectedError = validateProtectedAdministrationPageUpdate(existingPage,parsed.data,principal.permissions);
+  if (protectedError) return res.status(403).json({error:protectedError});
   if (tenant.pages.some((page) => page.apiName.toLocaleLowerCase() === parsed.data.apiName.toLocaleLowerCase()
     && page.apiName !== previousApiName)) {
     return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
@@ -11532,7 +11534,6 @@ function asConfigRows(value: unknown): Array<Record<string, unknown>> {
     ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object' && !Array.isArray(item))
     : [];
 }
-
 
 function isValidFlowTime(value: string): boolean {
   const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value);
@@ -12234,7 +12235,6 @@ function formulaContextForUser(tenant: TenantData, userId: string): {
     ]))
   };
 }
-
 
 
 

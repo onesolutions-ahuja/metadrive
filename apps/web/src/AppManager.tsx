@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
 import { moveNavigationEntry, reconcileNavigationOrder } from './appNavigation';
+import {appManagerFieldDefinitions,validateAppManagerField,type AppManagerFieldKey} from './adminAppFieldMetadata';
+import AdminPropertyControl from './AdminPropertyControl';
 import type { LightningAppMetadata, LightningPageMetadata, ObjectMetadata } from './metadata';
 
 type AppDraft = LightningAppMetadata;
@@ -120,7 +122,11 @@ export default function AppManager({
       const apiName = creating
         ? (draft.apiName.trim() || label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, ''))
         : draft.apiName;
-      if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)) throw new Error('Developer Name must start with a letter and contain only letters, numbers or underscores.');
+      for (const field of appManagerFieldDefinitions) {
+        const key = field.propertyKey as AppManagerFieldKey;
+        const validation = validateAppManagerField(key,key==='apiName'?apiName:key==='label'?label:draft[key]);
+        if (validation) throw new Error(validation);
+      }
       if (!draft.navigationItems.length && !draft.navigationPageApiNames.length) throw new Error('Select at least one object or active App Page.');
       await onSave({ ...draft, apiName, label, navigationOrder }, !creating);
       setCreating(false);
@@ -183,32 +189,26 @@ export default function AppManager({
       </label>}
       <form onSubmit={(event) => void save(event)}>
         <div className="permission-form-grid">
-          <label className="form-label">App Label
-            <input className="form-control" required maxLength={80} value={draft.label} onChange={(event) => {
-              const label = event.target.value;
-              setDraft((current) => ({
-                ...current, label,
-                // Keep generated developer names in sync unless the name was manually edited.
-                apiName: creating && current.apiName === current.label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
-                  ? label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
-                  : current.apiName
-              }));
-              setNotice('');
-            }} />
-          </label>
-          <label className="form-label">Developer Name
-            <input className="form-control" required disabled={!creating} pattern="[A-Za-z][A-Za-z0-9_]*" value={draft.apiName} onChange={(event) => update('apiName', event.target.value)} />
-          </label>
-          <label className="form-label">Brand Color
-            <span className="app-manager-color-control">
-              <input aria-label="Choose brand colour" type="color" value={draft.brandColor} onChange={(event) => update('brandColor', event.target.value)} />
-              <input aria-label="Brand colour HEX" className="form-control" type="text" maxLength={7} pattern="#[0-9a-fA-F]{6}" value={draft.brandColor} onChange={(event) => update('brandColor', event.target.value)} />
-            </span>
-          </label>
+          {appManagerFieldDefinitions.map((definition) => {
+            const field = definition.propertyKey as AppManagerFieldKey;
+            const isDescription = field === 'description';
+            const disabled = field === 'apiName' && !creating;
+            const value = draft[field];
+            const change = (next: string) => {
+              if (field === 'label') {
+                setDraft((current) => ({
+                  ...current,label:next,
+                  apiName:creating && current.apiName === current.label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
+                    ? next.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') : current.apiName
+                }));
+                setError('');
+                setNotice('');
+              } else update(field,next);
+            };
+            return <AdminPropertyControl key={field} definition={definition}
+              value={value} disabled={disabled} onChange={change}/>;
+          })}
         </div>
-        <label className="form-label">Description
-          <textarea className="form-control" rows={2} maxLength={500} value={draft.description} onChange={(event) => update('description', event.target.value)} />
-        </label>
         <label className="form-label">Find navigation items
           <input className="form-control" type="search" aria-label="Search navigation items" placeholder="Find object or active App Page…" value={navigationSearch} onChange={(event) => setNavigationSearch(event.target.value)} />
         </label>

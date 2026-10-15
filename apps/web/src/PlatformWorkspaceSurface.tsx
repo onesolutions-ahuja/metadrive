@@ -1,17 +1,23 @@
 import React,{type ReactNode} from 'react';
 import {platformNavigationEntries} from './platformWorkspaceMetadata';
+import type {LightningPageMetadata,LibraryComponentMetadata} from './metadata';
+import {findRegisteredComponent} from './componentRegistryLookup';
+import RegisteredComponent from './RegisteredComponent';
+import {resolvePageComponentStyle} from './pageComponentLayout';
 
 /** Shared, registry-resolved platform presentation wrapper.
  * The enclosing Setup route and every OneEngine API retain their RBAC gates.
  * A client-side descriptor does not grant permissions or execute actions.
  */
-export type SystemWorkspaceId='app-manager'|'app-exchange'|'tenant-management'|'rbac';
-const supported:ReadonlySet<string>=new Set(['app-manager','app-exchange','tenant-management','rbac']);
+export type SystemWorkspaceId='app-manager'|'app-exchange'|'tenant-management'|'rbac'|'company-settings'|'object-manager';
+const supported:ReadonlySet<string>=new Set(['app-manager','app-exchange','tenant-management','rbac','company-settings','object-manager']);
 const descriptions:Readonly<Record<SystemWorkspaceId,string>>={
  'app-manager':'Configure applications and navigation',
  'app-exchange':'Manage installed applications',
  'tenant-management':'Manage authorised tenant administration',
- 'rbac':'Manage users, profiles and sharing'
+ 'rbac':'Manage users, profiles and sharing',
+ 'company-settings':'Manage company settings',
+ 'object-manager':'Configure object metadata'
 };
 export function resolveSystemWorkspace(id:string){
  if(!supported.has(id))return undefined;
@@ -21,13 +27,34 @@ export function resolveSystemWorkspace(id:string){
  return {id:id as SystemWorkspaceId,label:primary.label,description:descriptions[id as SystemWorkspaceId],
   requiredPermission:primary.permission,aliases:matches.map(entry=>entry.label)};
 }
-export default function PlatformWorkspaceSurface({workspace,children,permitted=true}:{
- workspace:SystemWorkspaceId;children:ReactNode;permitted?:boolean
+export default function PlatformWorkspaceSurface({
+ workspace,children,permitted=true,pages=[],libraryComponents=[],canEditSystemPage=false,onEditSystemPage,device='Desktop'
+}:{
+ workspace:SystemWorkspaceId;children:ReactNode;permitted?:boolean;
+ pages?:readonly LightningPageMetadata[];libraryComponents?:readonly LibraryComponentMetadata[];
+ canEditSystemPage?:boolean;onEditSystemPage?:(apiName:string)=>void;device?:'Desktop'|'Tablet'|'Phone';
 }){
  const definition=resolveSystemWorkspace(workspace);
  if(!definition||!permitted)return <div role="alert">Workspace unavailable</div>;
+ const pageName='MetaDrive_Admin_'+workspace.replace(/-/g,'_');
+ const page=pages.find(item=>item.apiName===pageName&&item.scope==='platform-system'&&item.status==='Active');
+ const registered=page?.components.filter(instance=>instance.visible&&instance.type.startsWith('Custom:'))
+  .map(instance=>({
+    instance,component:findRegisteredComponent(libraryComponents,instance.type.slice('Custom:'.length),'page')
+  })).filter(item=>item.component)??[];
  return <section className="platform-workspace-surface" data-workspace={definition.id}
    aria-label={definition.label} data-metadata-source="platform-workspace-registry">
+   {page&&<div className="platform-system-page" aria-label={page.label}>
+     {canEditSystemPage&&onEditSystemPage&&<button type="button" className="btn btn-small"
+       onClick={()=>onEditSystemPage(page.apiName)}>Edit page layout</button>}
+     <div className="platform-system-page-components" style={{display:'flex',flexWrap:'wrap',gap:12}}>
+       {registered.map(({instance,component})=><div key={instance.id}
+         style={{...resolvePageComponentStyle(instance.properties,instance.type,device),
+           maxWidth:'100%',width:instance.position?.width??'100%'}}>
+         <RegisteredComponent definition={component!} props={instance.properties}/>
+       </div>)}
+     </div>
+   </div>}
    {children}
  </section>;
 }
