@@ -1,5 +1,6 @@
 import {seedProtectedAdministrationPages,validateProtectedAdministrationPageUpdate,isProtectedAdministrationPage} from './modules/metadata/platform-admin-pages.mjs';
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
+import {registerPageDeletionRoute} from './modules/metadata/page-deletion-route.mjs';
 import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
 import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
 import {libraryRevision,nextLibraryRevision,libraryHistory} from './modules/metadata/component-revisions.mjs';
@@ -4787,7 +4788,6 @@ async function bootstrapTenant(): Promise<void> {
   if (existingUser && existingUser.tenantId !== tenantId) {
     throw new Error('Bootstrap administrator email already belongs to another tenant');
   }
-
   const accessUser = {
     id: user.id, name: user.name, username: user.email, role: user.role,
     roleId: roleIdForName(user.role, tenant.accessControl.roles),
@@ -4819,7 +4819,6 @@ async function bootstrapTenant(): Promise<void> {
 // During guarded database maintenance, bootstrap must never mutate persisted state.
 // Existing users and tenants are loaded read-only; bootstrap resumes after maintenance.
 if (!maintenanceMode) await bootstrapTenant();
-
 function tenantIsActive(tenantId: string): boolean {
   return !provisioningPendingTenants.has(tenantId)
     && (state.tenantRegistry[tenantId]?.status ?? 'ACTIVE') === 'ACTIVE';
@@ -11316,6 +11315,7 @@ app.get('/api/metadata/pages', requirePermission('metadata:read'), (_req: Reques
   res.json({pages:pages.filter(page=>!isProtectedAdministrationPage(page)
     || (page.requiredPermissions??[]).every(permission=>principal.permissions.includes(permission)))});
 });
+registerPageDeletionRoute(app,{permission:requireAnyPermission('metadata:write','pages:manage'),getPrincipal,getState:()=>state,isProtected:isProtectedAdministrationPage,commit:async(next:PlatformState)=>{const prior=state;state=next;try{persistState(next);await latestStateCommit}catch(error){state=prior;throw error}}});
 app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
   const previousApiName = routeParam(req, 'apiName');
   const requestedApiName = typeof req.body?.apiName === 'string' ? req.body.apiName : previousApiName;
