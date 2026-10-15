@@ -15,7 +15,6 @@ import { parseAppRoute, appRoutePath } from './appRouting';
 import * as React from 'react';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Building2, BriefcaseBusiness, CalendarDays, Check, ClipboardList, Database, FileText, UsersRound } from 'lucide-react';
 
 
 
@@ -66,15 +65,7 @@ type NewFieldLookupFilterDraft = {
   required: boolean;
 };
 
-const customTabStyles = [
-  { name: 'Blue', color: '#1589ee', icon: Database },
-  { name: 'Green', color: '#2e844a', icon: UsersRound },
-  { name: 'Orange', color: '#fe9339', icon: CalendarDays },
-  { name: 'Purple', color: '#9050e9', icon: BriefcaseBusiness },
-  { name: 'Red', color: '#ea001e', icon: FileText },
-  { name: 'Teal', color: '#0b827c', icon: Building2 },
-  { name: 'Yellow', color: '#dd7a01', icon: ClipboardList }
-] as const;
+
 
 type AuthState = 'loading' | 'anonymous' | 'authenticated' | 'error';
 type LandingBootstrap = {
@@ -245,8 +236,8 @@ async function fetchFlowListPage(page: number, search: string) {
 
 // The full setup workspace is an on-demand route module, never part of the login bundle.
 const LazySetupWorkspace = React.lazy(async () => {
-  const [{ createSetupApp }, { createPageRuntimeViews }, { createRecordWorkspaceViews }, { ProfilePasswordMenu, ConnectionHealthIndicator }] = await Promise.all([
-    import('./setupAppShell'), import('./pageRuntimeViews'), import('./recordWorkspaceViews'), import('./authStatusViews')
+  const [{ createSetupApp }, { createPageRuntimeViews }, { createRecordWorkspaceViews }, { ProfilePasswordMenu, ConnectionHealthIndicator }, { customTabStyles }] = await Promise.all([
+    import('./setupAppShell'), import('./pageRuntimeViews'), import('./recordWorkspaceViews'), import('./authStatusViews'), import('./shell/customTabStyles')
   ]);
   const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
   const { RecordWorkspace } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
