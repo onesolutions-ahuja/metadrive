@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {useState,useEffect,useRef} from 'react';
-import {loadFlowScreenRecords} from './authClient';
+// Load the browser API client only during the mounted effect, not on SSR import.
 import {presentPageRecords,type ChannelGrant} from './recordPresentationAdapters';
 import {filterPageComponentRecords} from './pageComponentBindings';
 import {resolvePageActionRoute} from './pageActionRouting';
@@ -73,7 +73,7 @@ export default function MetadataBoundPageComponent({
     }
     setDataLoading(true);
     // Existing shared Object API enforces tenant, field and record permissions.
-    void loadFlowScreenRecords(objectApiName)
+    void import('./authClient').then(({loadFlowScreenRecords})=>loadFlowScreenRecords(objectApiName))
       .then((rows) => { if (active) setRecords(rows); })
       .catch((reason: unknown) => {
         if (active) setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
