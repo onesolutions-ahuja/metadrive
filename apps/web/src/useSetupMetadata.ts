@@ -23,6 +23,33 @@ export function useSetupMetadata(ctx: any) {
       || components.some((component) => component.type === 'Dashboard');
     const reportNeeded = dashboardNeeded || adminDependencies || (route.kind === 'setup' && workspace === 'report-builder')
       || components.some((component) => component.type === 'Report Chart');
+    // Administration is a separate workspace, not a dependency of a Till-only tenant.
+    const isAdmin = route.kind === 'setup';
+    const needsFlowAdministration = isAdmin && workspace === 'flow-builder';
+    const needsApprovalAdministration = isAdmin && (workspace === 'approval-processes' || needsFlowAdministration);
+    const needsConnectorAdministration = isAdmin && (workspace === 'connector-settings' || needsFlowAdministration);
+    const optionalGroups = [
+      {
+        key: 'flow-admin', enabled: needsFlowAdministration,
+        run: () => Promise.all([apiRequest('/metadata/platform-events'), apiRequest('/metadata/email-alerts')])
+          .then(([events, alerts]) => { setPlatformEvents(events.platformEvents ?? []); setEmailAlerts(alerts.emailAlerts ?? []); })
+      },
+      {
+        key: 'approvals-admin', enabled: needsApprovalAdministration,
+        run: () => apiRequest('/metadata/approval-processes')
+          .then((payload) => setApprovalProcesses(payload.approvalProcesses ?? []))
+      },
+      {
+        key: 'connectors-admin', enabled: needsConnectorAdministration,
+        run: () => Promise.all([apiRequest('/connector-providers'), apiRequest('/integration-connections')])
+          .then(([providers, connections]) => { setConnectorProviders(providers.providers ?? []); setIntegrationConnections(connections.connections ?? []); })
+      }
+    ];
+    for (const group of optionalGroups) {
+      if (!group.enabled || analyticsLoads.current.has(group.key)) continue;
+      analyticsLoads.current.add(group.key);
+      void group.run().catch(() => analyticsLoads.current.delete(group.key));
+    }
     if (reportNeeded && !analyticsLoads.current.has('reports')) {
       analyticsLoads.current.add('reports');
       void Promise.all([
@@ -139,14 +166,14 @@ export function useSetupMetadata(ctx: any) {
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
           recover<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows', { flows: [] }),
-          recover<{ platformEvents: PlatformEventMetadata[] }>('/metadata/platform-events', { platformEvents: [] }),
+          Promise.resolve({ platformEvents: [] as PlatformEventMetadata[] }),
           recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
           recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
-          recover<{ credentials: NamedCredentialMetadata[] }>('/named-credentials', { credentials: [] }),
-          recover<{ emailAlerts: EmailAlertMetadata[] }>('/metadata/email-alerts', { emailAlerts: [] }),
-          recover<{ approvalProcesses: ApprovalProcessMetadata[] }>('/metadata/approval-processes', { approvalProcesses: [] }),
-          recover<{ providers: ConnectorProviderMetadata[] }>('/connector-providers', { providers: [] }),
-          recover<{ connections: IntegrationConnectionMetadata[] }>('/integration-connections', { connections: [] }),
+          Promise.resolve({ credentials: [] as NamedCredentialMetadata[] }),
+          Promise.resolve({ emailAlerts: [] as EmailAlertMetadata[] }),
+          Promise.resolve({ approvalProcesses: [] as ApprovalProcessMetadata[] }),
+          Promise.resolve({ providers: [] as ConnectorProviderMetadata[] }),
+          Promise.resolve({ connections: [] as IntegrationConnectionMetadata[] }),
           recover<{ components: LibraryComponentMetadata[]; canManage: boolean }>('/component-library', { components: [], canManage: false }),
           Promise.resolve({ dashboards: [], userId: '', runningUserIds: [], canCreate: false, canManageAll: false, canSchedule: false }),
           Promise.resolve({ folders: [] as DashboardFolderMetadata[] }),
