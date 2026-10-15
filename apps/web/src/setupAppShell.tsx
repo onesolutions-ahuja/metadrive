@@ -14,7 +14,7 @@ import { isStandalonePagePresentation } from './pageRuntimePresentation';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 
 import { resolveSetupNavigation } from './platformSetupNavigation';
-import { readVerifiedMetadata, saveVerifiedMetadata } from './verifiedMetadataCache';
+import { readVerifiedMetadata, saveVerifiedMetadata, type MetadataPublicationResponse } from './verifiedMetadataCache';
 
 
 import * as React from 'react';
