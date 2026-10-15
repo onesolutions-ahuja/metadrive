@@ -298,7 +298,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   // A failed report/connector/dashboard request must not disable credential management.
   useEffect(() => {
     // Connector administration is optional; never request secrets on unrelated tenant routes.
-    if (route.kind !== 'setup' || !['named-credentials', 'connector-settings', 'app-exchange', 'flow-builder'].includes(workspace)) return;
+    if (!advancedMetadataLoaded || route.kind !== 'setup' || !['named-credentials', 'connector-settings', 'app-exchange', 'flow-builder'].includes(workspace)) return;
     let active = true;
     void apiRequest<{ canManage: boolean; encryptionReady: boolean }>('/named-credentials/readiness')
       .then(({ canManage, encryptionReady }) => {
@@ -321,7 +321,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         // The main metadata loader reports errors; keep this permission check independent.
       });
     return () => { active = false; };
-  }, [route.kind, workspace]);
+  }, [advancedMetadataLoaded, route.kind, workspace]);
 
   useSetupMetadata({ advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, readVerifiedMetadata, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace });
 
