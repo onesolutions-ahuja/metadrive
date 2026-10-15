@@ -27,8 +27,14 @@ for(let attempt=0;attempt<24;attempt++){
   const payload=await api('/metadata/pages',login.access_token);
   visible=Array.isArray(payload.pages)?payload.pages:[];
   const essentials=expected.map(d=>protectedPageApiName(d.workspace));
-  if(essentials.every(name=>visible.some(p=>p.apiName===name))){lastError='';break;}
-  lastError='Protected administration metadata not deployed yet';
+  const ready=expected.every(descriptor=>{
+   const page=visible.find(p=>p.apiName===protectedPageApiName(descriptor.workspace));
+   if(!page)return false;
+   const version=protectedAdministrationPage(descriptor).definitionVersion;
+   return page.updatedAt!=='2026-10-14T00:00:00.000Z'||page.definitionVersion===version;
+  });
+  if(essentials.every(name=>visible.some(p=>p.apiName===name))&&ready){lastError='';break;}
+  lastError='Protected administration metadata deployment or pristine upgrade pending';
  }catch(e){lastError=e instanceof Error?e.message:'Unable to fetch pages';}
  await pause(15000);
 }
