@@ -16,6 +16,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate packaged and runtime Chatter contracts
+        run: node --test scripts/chatter-flow-contract.test.mjs
       - name: Authorised tenant Flow resource repair and verification
         env:
           METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
