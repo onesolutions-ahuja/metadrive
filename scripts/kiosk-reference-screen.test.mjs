@@ -63,3 +63,10 @@ test('fullscreen grid overrides shared has-sidebar align-items start',()=>{
  assert.match(shared,/\.record-runtime-layout\.has-sidebar\s*\{[^}]*align-items:\s*start/);
  assert.match(runtime,/gridTemplateRows:'minmax\(0,1fr\) 84px',alignItems:'stretch',alignContent:'stretch'/);
 });
+
+test('metadata-bound sandbox presenter preserves fillRegion height through intermediate wrapper',()=>{
+ const runtime=readFileSync(new URL('../apps/web/src/pageRuntimeViews.tsx',import.meta.url),'utf8');
+ const presenter=runtime.slice(runtime.indexOf('function MetadataBoundPageComponent'),runtime.indexOf('function usePageLayoutDevice'));
+ assert.match(presenter,/return <div style=\{properties\.fillRegion === true \? \{height:'100%',minHeight:0,minWidth:0,display:'flex',flexDirection:'column'\}/);
+ assert.match(presenter,/RegisteredComponent definition=\{definition\}/);
+});

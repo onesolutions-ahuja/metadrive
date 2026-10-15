@@ -520,7 +520,7 @@ function MetadataBoundPageComponent({
       initializedSessions.current.delete(sessionId);
     });
   }, [sessionId, disableActions]);
-  return <div>
+  return <div style={properties.fillRegion === true ? {height:'100%',minHeight:0,minWidth:0,display:'flex',flexDirection:'column'} : undefined}>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
