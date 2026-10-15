@@ -209,9 +209,10 @@ function ensureSeedLedger(): Promise<void> {
     // Fresh SQL-only tests create tenant tables during their first snapshot write.
     // Add the FK when the authoritative tenant table exists, without assuming
     // bootstrap ordering or removing the constraint from existing installations.
-    const tenantTable = await pool.query<{ name: string | null }>("SELECT to_regclass('metadrive_rel_tenants')::text AS name");
-    seedLedgerTenantConstraintPending = !tenantTable.rows[0]?.name;
-    if (tenantTable.rows[0]?.name) {
+    const tenantTable = await pool.query("SELECT to_regclass('metadrive_rel_tenants')::text AS name");
+    const tenantTableExists = Boolean((tenantTable.rows as Array<{name: string | null}>)[0]?.name);
+    seedLedgerTenantConstraintPending = !tenantTableExists;
+    if (tenantTableExists) {
       await pool.query(`DO $ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE contype = 'f'
           AND conrelid = 'md_seed_package_versions'::regclass
