@@ -152,3 +152,16 @@ test('admin field uses a reusable published registered control while retaining l
  assert.ok(control.includes('onChange(event.target.value)'));
  assert.ok(control.includes('validateComponentSetting(definition,value)'));
 });
+
+test('Setup shell forwards metadata and security read grants to protected workspace presentation',()=>{
+ const shell=read('setupAppShell.tsx');
+ const presentation=read('setupShellPresentation.tsx');
+ const shared='canManageApps, canReadMetadata, canReadSecurity, canManageDashboardTerritories';
+ assert.ok(shell.includes(shared),'setup shell must forward metadata permission values');
+ assert.ok(presentation.includes(shared),'presentation must destructure forwarded permissions');
+ for(const workspace of ['object-manager','app-manager','company-settings']) {
+   assert.ok(presentation.includes('workspace="'+workspace+'"'),'protected workspace '+workspace+' must render');
+ }
+ assert.ok(presentation.includes('permitted={canReadMetadata}'));
+
+});
