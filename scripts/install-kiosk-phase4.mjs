@@ -291,13 +291,17 @@ await updateSecurity(access=>{
  const hasApp=Object.prototype.hasOwnProperty.call(admin.appPermissions??{},commerceApp.apiName);
  const hasTab=Object.prototype.hasOwnProperty.call(admin.tabPermissions??{},'Product__c');
  if(!Object.keys(missingObjects).length&&!Object.keys(missingFields).length&&hasApp&&hasTab)return null;
- return {...access,profiles:(access.profiles??[]).map(profile=>profile.id!==admin.id?profile:{
-  ...profile,
-  objectPermissions:{...profile.objectPermissions,...missingObjects},
-  fieldPermissions:{...profile.fieldPermissions,...missingFields},
-  appPermissions:{...profile.appPermissions,...(!hasApp?{[commerceApp.apiName]:true}:{})},
-  tabPermissions:{...profile.tabPermissions,...(!hasTab?{Product__c:true}:{})}
- })};
+ return {...access,
+  profiles:(access.profiles??[]).map(profile=>scrub(profile.id!==admin.id?profile:{
+   ...profile,
+   objectPermissions:{...profile.objectPermissions,...missingObjects},
+   fieldPermissions:{...profile.fieldPermissions,...missingFields},
+   appPermissions:{...profile.appPermissions,...(!hasApp?{[commerceApp.apiName]:true}:{})},
+   tabPermissions:{...profile.tabPermissions,...(!hasTab?{Product__c:true}:{})}
+  })),
+  permissionSets:(access.permissionSets??[]).map(scrub),
+  permissionSetGroups:(access.permissionSetGroups??[]).map(scrub)
+ };
 });
 // Prepare a limited OneEngine permission set. No user is automatically assigned.
 const readOnly={read:true,create:false,edit:false,delete:false,viewAll:false,modifyAll:false};
