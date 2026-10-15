@@ -45,6 +45,10 @@ for(const name of [
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
+// Independent lazy tenant seeders share the existing metadata catalogs.
+const tenantSeeder='seeders/tenant-seeders.mjs';
+mkdirSync(dirname(resolve(destination,tenantSeeder)),{recursive:true});
+copyFileSync(resolve(serverDir,'src',tenantSeeder),resolve(destination,tenantSeeder));
 // Shared metadata services used by the compiled server's protected registry.
 for(const name of ['offline-publication.mjs','offline-publication-route.mjs','component-revisions.mjs','platform-admin-pages.mjs','page-deletion-route.mjs']){
  const relativePath='modules/metadata/'+name;
