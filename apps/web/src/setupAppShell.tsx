@@ -195,7 +195,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
@@ -205,7 +204,6 @@ type NewFieldLookupFilterDraft = {
   valueFieldApiName: string;
   required: boolean;
 };
-
 type LandingBootstrap = {
   objects: ObjectMetadata[];
   pages: LightningPageMetadata[];
@@ -218,7 +216,6 @@ type LandingBootstrap = {
   };
 };
 type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
-
 export function createSetupApp(deps: {
 apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
 ApiRequestError: new (...args: any[]) => Error & {status:number;responseBody:unknown};
@@ -403,7 +400,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [activeUtility, setActiveUtility] = useState<'History' | null>(null);
   const [recentRoutes, setRecentRoutes] = useState<Array<{ key: string; label: string; route: AppRoute }>>([]);
   const [flowToolTab, setFlowToolTab] = useState<'Elements' | 'Manager'>('Elements');
-
   useEffect(() => {
     const media = window.matchMedia('(max-width: 600px)');
     const updateFormFactor = () => setRuntimeFormFactor(media.matches ? 'Phone' : 'Desktop');
@@ -851,6 +847,10 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   ])].sort((left, right) => left.localeCompare(right));
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
   const currentAppNavigation = resolveCurrentAppNavigation(currentApp);
+  const protectedPageRuntime={apiRequest,objects,apps,pages,reports,currentAppId,
+   availableFlows:flows.map(({apiName,label,flowType,status})=>({apiName,label,flowType,status})),
+   formFactor:runtimeFormFactor,onNavigate:navigateRoute,
+   onLaunchFlow:(apiName:string,inputs?:Record<string,unknown>)=>{void runFlow(apiName,inputs);}};
   // Build the complete navigable object catalogue from tenant metadata, not app tabs.
   // The field map reflects effective RBAC; record APIs check object permissions again.
   const readableRecordObjects = useMemo(() => objects.filter((item) =>
@@ -2650,7 +2650,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
           {route.kind === 'setup' && workspace === 'object-manager' && (
-            <PlatformWorkspaceSurface workspace="object-manager" permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} >
+            <PlatformWorkspaceSurface workspace="object-manager" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} >
             <ObjectManager
               object={object}
               objects={objects}
@@ -2708,7 +2708,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               delete next[pageApiName];
               return next;
             })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName: string) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName: string, inputs: Record<string, unknown>) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} request={apiRequest} canManageRoutes={canManageApps} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
-          {route.kind === 'setup' && workspace === 'app-manager' && <PlatformWorkspaceSurface workspace="app-manager" permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} /></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'app-manager' && <PlatformWorkspaceSurface workspace="app-manager" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
             dashboardFolders={dashboardFolders}
@@ -2751,7 +2751,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onNotify={notify}
           />}
           {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} onPublish={publishLibraryComponent} onRollback={rollbackLibraryComponent} />}
-          {route.kind === 'setup' && workspace === 'approval-processes' && <PlatformWorkspaceSurface workspace="approval-processes" permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="approval-workspace"><ApprovalProcessManager
+          {route.kind === 'setup' && workspace === 'approval-processes' && <PlatformWorkspaceSurface workspace="approval-processes" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="approval-workspace"><ApprovalProcessManager
             processes={approvalProcesses}
             objects={objects}
             users={accessControlError ? [] : accessControl.users}
@@ -2760,7 +2760,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onDelete={deleteApprovalProcess}
             onNotify={notify}
           /></PlatformPageSlot></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'named-credentials' && <PlatformWorkspaceSurface workspace="named-credentials" permitted={canManageNamedCredentials} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="credentials"><NamedCredentials
+          {route.kind === 'setup' && workspace === 'named-credentials' && <PlatformWorkspaceSurface workspace="named-credentials" componentRuntime={protectedPageRuntime} permitted={canManageNamedCredentials} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="credentials"><NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
             encryptionReady={namedCredentialsEncryptionReady}
@@ -2771,7 +2771,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
           /></PlatformPageSlot></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppExchange
+          {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" componentRuntime={protectedPageRuntime} permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppExchange
             credentials={namedCredentials}
             flows={flows.map(({apiName,label,status,elements}) => ({
               apiName, label, status,
@@ -2799,7 +2799,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
             const provider = connectorProviders.find((item) => item.connectorKey === route.resourceApiName) ?? connectorProviders[0];
-            return <PlatformWorkspaceSurface workspace="connector-settings" permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:"setup",workspace:"page-builder",resourceApiName:apiName});}}><PlatformPageSlot slotKey="connector-workspace">{provider ? <ConnectorSettingsWorkspace
+            return <PlatformWorkspaceSurface workspace="connector-settings" componentRuntime={protectedPageRuntime} permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:"setup",workspace:"page-builder",resourceApiName:apiName});}}><PlatformPageSlot slotKey="connector-workspace">{provider ? <ConnectorSettingsWorkspace
               key={provider.connectorKey}
               provider={provider}
               providers={connectorProviders}
@@ -2829,7 +2829,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           {route.kind === 'setup' && workspace === 'flow-logs' && (
             <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
           )}
-          {route.kind === 'setup' && workspace === 'automation-settings' && <PlatformWorkspaceSurface workspace="automation-settings" permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="automation-policy"><AutomationSettingsWorkspace canManage={canManageFlows} /></PlatformPageSlot></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'automation-settings' && <PlatformWorkspaceSurface workspace="automation-settings" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="automation-policy"><AutomationSettingsWorkspace canManage={canManageFlows} /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'flow-builder' && (
             <FlowBuilderWorkspace
               landing={!route.resourceApiName}
@@ -2886,9 +2886,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onNotify={notify}
             />
           )}
-          {route.kind === 'setup' && workspace === 'company-settings' && <PlatformWorkspaceSurface workspace="company-settings" permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} ><><PlatformPageSlot slotKey="company-info"><CompanySettings canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="domains"><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="developer-accounts"><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="usage"><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="recovery"><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="mfa"><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="email-recovery"><TenantEmailRecoverySettings canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="locks"><TenantUserLockSettings /></PlatformPageSlot><PlatformPageSlot slotKey="sessions"><AccountSessionSecurity onReauthenticate={onLogout} /></PlatformPageSlot><PlatformPageSlot slotKey="audit"><TenantSecurityAudit /></PlatformPageSlot></></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac" permitted={canReadSecurity} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><Permissions
+          {route.kind === 'setup' && workspace === 'company-settings' && <PlatformWorkspaceSurface workspace="company-settings" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} ><><PlatformPageSlot slotKey="company-info"><CompanySettings canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="domains"><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="developer-accounts"><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="usage"><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="recovery"><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="mfa"><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="email-recovery"><TenantEmailRecoverySettings canManage={canManageUserIdentities} /></PlatformPageSlot><PlatformPageSlot slotKey="locks"><TenantUserLockSettings /></PlatformPageSlot><PlatformPageSlot slotKey="sessions"><AccountSessionSecurity onReauthenticate={onLogout} /></PlatformPageSlot><PlatformPageSlot slotKey="audit"><TenantSecurityAudit /></PlatformPageSlot></></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'tenant-management' && <PlatformWorkspaceSurface workspace="tenant-management" componentRuntime={protectedPageRuntime} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac" componentRuntime={protectedPageRuntime} permitted={canReadSecurity} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><Permissions
             accessControl={accessControl}
             accessControlError={accessControlError}
             objects={objects}

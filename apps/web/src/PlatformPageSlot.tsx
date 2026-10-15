@@ -1,5 +1,7 @@
 import React,{createContext,useContext,useEffect,useState,type ReactNode} from 'react';
-import type {LightningPageMetadata} from './metadata';
+import type {LightningPageMetadata,LibraryComponentMetadata} from './metadata';
+import {findRegisteredComponent} from './componentRegistryLookup';
+import RegisteredComponent from './RegisteredComponent';
 import {resolvePageComponentStyle} from './pageComponentLayout';
 
 /** A protected administration control may opt into a Page Builder instance.
@@ -7,20 +9,20 @@ import {resolvePageComponentStyle} from './pageComponentLayout';
  * event handlers remain in the owning admin screen.
  */
 type PlatformSlotDevice='Desktop'|'Tablet'|'Phone';
-const context=createContext<{page:LightningPageMetadata;device:PlatformSlotDevice}|null>(null);
+const context=createContext<{page:LightningPageMetadata;device:PlatformSlotDevice;libraryComponents:readonly LibraryComponentMetadata[]}|null>(null);
 function viewportDevice():PlatformSlotDevice{
  if(typeof window==='undefined')return 'Desktop';
  return window.innerWidth<640?'Phone':window.innerWidth<1024?'Tablet':'Desktop';
 }
-export function PlatformPageSlotsProvider({page,children}:{
- page:LightningPageMetadata;children:ReactNode;
+export function PlatformPageSlotsProvider({page,children,libraryComponents=[]}:{
+ page:LightningPageMetadata;children:ReactNode;libraryComponents?:readonly LibraryComponentMetadata[];
 }){
  const [device,setDevice]=useState<PlatformSlotDevice>('Desktop');
  useEffect(()=>{const update=()=>setDevice(viewportDevice());update();
   window.addEventListener('resize',update);
   return ()=>window.removeEventListener('resize',update);
  },[]);
- return <context.Provider value={{page,device}}>{children}</context.Provider>;
+ return <context.Provider value={{page,device,libraryComponents}}>{children}</context.Provider>;
 }
 export function PlatformPageSlot({slotKey,children}:{
  slotKey:string;children:ReactNode;
@@ -32,6 +34,12 @@ export function PlatformPageSlot({slotKey,children}:{
  if(instance.visible===false)return null;
  const computed=resolvePageComponentStyle(instance.properties,instance.type,state.device);
  const style=Object.keys(computed).length?computed:{display:'contents' as const};
+ const panel=instance.type==='Custom:SystemPanel'
+  ?findRegisteredComponent(state.libraryComponents,'SystemPanel','page'):undefined;
+ // Only the trusted bundled, published panel may host live privileged controls.
+ // Existing operations still use the originating OneEngine-authorised handlers.
+ const content=panel?.trustedBundled===true
+  ?<RegisteredComponent definition={panel} props={{...instance.properties,children}} layoutTransparent/>:children;
  return <div data-page-instance={instance.id} data-platform-slot={slotKey}
-  aria-label={instance.label} style={style}>{children}</div>;
+  aria-label={instance.label} style={style}>{content}</div>;
 }

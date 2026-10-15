@@ -65,3 +65,13 @@ test('persisted normalized pristine v2 components upgrade additively without ove
  normalized.forEach((item,index)=>assert.strictEqual(upgraded.components[index],item));
  assert.equal(seedProtectedAdministrationPages(updated),updated);
 });
+
+test('persisted pristine Object Manager page upgrades to independent editor fields',()=>{
+ const descriptor=protectedWorkspacePageDescriptors.find(d=>d.workspace==='object-manager');
+ const page={...protectedAdministrationPage(descriptor),definitionVersion:2,
+  components:protectedAdministrationSlotComponents('object-manager',
+   ['object-workspace','object-list','object-heading','object-subnav','object-setting'])};
+ const upgraded=seedProtectedAdministrationPages({pages:[page]}).pages.find(p=>p.apiName===page.apiName);
+ assert.equal(upgraded.definitionVersion,3);
+ assert.ok(upgraded.components.some(c=>c.properties.platformSlotKey==='field-object-01'));
+});

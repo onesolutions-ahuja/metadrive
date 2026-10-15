@@ -21,6 +21,11 @@ if(process.env.METADRIVE_EXPECTED_TENANT_ID)
 const grants=new Set(Array.isArray(login.user?.permissions)?login.user.permissions:[]);
 const expected=protectedWorkspacePageDescriptors.filter(d=>grants.has(d.permission));
 assert.ok(expected.length>=3,'Production acceptance account lacks administration read permissions');
+const library=await api('/component-library',login.access_token);
+const systemPanel=(Array.isArray(library.components)?library.components:[])
+ .find(component=>component.apiName==='SystemPanel');
+assert.ok(systemPanel?.trustedBundled===true&&systemPanel.status!=='Draft'&&
+ systemPanel.surfaces?.includes('page'),'Protected registered SystemPanel not published');
 let visible=[];let lastError='';
 for(let attempt=0;attempt<24;attempt++){
  try {
@@ -54,6 +59,8 @@ for(const descriptor of expected){
  const actual=page.components.filter(item=>item.properties?.platformSlotKey).map(item=>item.properties.platformSlotKey);
  assert.equal(new Set(actual).size,actual.length,'Duplicate admin slot identity');
  assert.ok(actual.every(key=>slots.includes(key)),'Unknown protected admin slot identity');
+ if(page.updatedAt==='2026-10-14T00:00:00.000Z')
+  assert.deepEqual(actual,slots,'Pristine system page missing protected editable controls');
  count++;
 }
 assert.equal(count,expected.length,'All centrally authorised system pages must be deployed');

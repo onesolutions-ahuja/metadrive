@@ -97,10 +97,10 @@ export default function AppExchange(props: Props) {
         <div className="exchange-eyebrow"><Puzzle size={13}/> CONNECTOR APP MARKETPLACE</div>
         <h1>Connect your business apps</h1>
         <p>Install connector apps, activate your 21-day trial, and configure secure connections. Installation does not start the trial.</p>
-        <label className="exchange-search"><Search size={17}/>
+        <PlatformPageSlot slotKey="field-marketplaceSearch"><label className="exchange-search"><Search size={17}/>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search connector apps" aria-label="Search AppExchange"/>
           {query && <button onClick={() => setQuery('')} aria-label="Clear search"><X size={14}/></button>}
-        </label>
+        </label></PlatformPageSlot>
       </div>
     </section></PlatformPageSlot>
     <div className="exchange-content">

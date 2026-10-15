@@ -38,10 +38,11 @@ test('company and object administration render inside protected page hosts',()=>
  const source=read('setupAppShell.tsx');
  for(const workspace of ['company-settings','object-manager']){
   const prefix="workspace === '"+workspace+"' && (";
-  assert.ok(source.includes('workspace="'+workspace+'" permitted={canReadMetadata}'),workspace);
+  assert.match(source,new RegExp('workspace="'+workspace+'"[^>]*permitted=\\{canReadMetadata\\}'),workspace);
  }
  for(const slot of protectedWorkspacePageSlots['company-settings'])
-  assert.ok(source.includes('slotKey="'+slot+'"'),slot);
+  assert.ok((slot.startsWith('field-')?read('settingsWorkspaceViews.tsx'):source)
+   .includes('slotKey="'+slot+'"'),slot);
  assert.ok(source.includes('<PlatformPageSlot slotKey="audit">'));
 });
 
@@ -83,5 +84,24 @@ test('metadata-driven administration fields render as individual registered slot
   const source=read(file);
   for(const slot of protectedWorkspacePageSlots[workspace].filter(key=>key.startsWith('field-')))
    assert.ok(source.includes("'"+slot.slice(6)+"'"),workspace+' '+slot);
+ }
+});
+
+test('AppExchange marketplace search is a separate protected editable control',()=>{
+ const source=read('AppExchange.tsx');
+ for(const slot of protectedWorkspacePageSlots['app-exchange'])
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing app-exchange slot '+slot);
+ assert.ok(protectedWorkspacePageSlots.rbac.filter(key=>key.startsWith('field-')).length>=30);
+});
+
+test('protected system metadata exposes each credential, approval and automation editor independently',()=>{
+ for(const [workspace,file] of [
+  ['named-credentials','NamedCredentials.tsx'],
+  ['approval-processes','ApprovalProcessManager.tsx'],
+  ['automation-settings','settingsWorkspaceViews.tsx']
+ ] as const){
+  const source=read(file);
+  for(const slot of protectedWorkspacePageSlots[workspace].filter(key=>key.startsWith('field-')))
+   assert.ok(source.includes('slotKey="'+slot+'"'),workspace+' '+slot);
  }
 });
