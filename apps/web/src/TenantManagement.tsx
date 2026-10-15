@@ -245,7 +245,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             <button type="button" className="tenant-button" onClick={() => void saveRetention()} disabled={busy}>Save retention policy</button>
             <p className="tenant-help">Retention metadata is audited. No automatic or manual data deletion is enabled.</p>
           </section>
-        </form><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
+        </form><PlatformPageSlot slotKey="tenant-usage"><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /></PlatformPageSlot><PlatformPageSlot slotKey="tenant-domains"><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot><PlatformPageSlot slotKey="tenant-recovery"><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
       </section></PlatformPageSlot>
     </div>
   </div>;
