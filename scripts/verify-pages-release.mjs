@@ -36,7 +36,7 @@ assert(appJs, 'Built app chunk is missing the global Records navigation');
 // Ensure the shipped frontend contains the list-first Page Builder workspace.
 assert(jsAssets.some(asset => asset.content.includes('page-manager-view') && asset.content.includes('All objects')), 'Built frontend is missing the Page Builder pages list');
 const setupShell = (await readFile(resolve('apps/web/src/setupAppShell.tsx'))).toString('utf8');
-assert(/nextWorkspace === 'page-builder'\\s*\\? \\{ kind: 'setup', workspace: nextWorkspace \\}/.test(setupShell), 'App Builder menu must open the pages list, not a selected page');
+assert(/nextWorkspace === 'page-builder'\s*\? \{ kind: 'setup', workspace: nextWorkspace \}/.test(setupShell), 'App Builder menu must open the pages list, not a selected page');
 assert(js.includes('Software that makes') && js.includes('Client login'), 'Built Pages is missing the public UNE Solutions marketing homepage');
 assert(html.includes('Une Solutions | Smart Software for Growing Businesses'), 'Built Pages has the wrong public title');
 assert(appJs.content.includes('auth-brand-logo') && appJs.content.includes('brand-logo'), 'Built app is missing UNE Solutions branding');
