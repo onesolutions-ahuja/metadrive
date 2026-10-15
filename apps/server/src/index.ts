@@ -4328,7 +4328,7 @@ function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): Platfor
     ...snapshot,
     tenants: Object.fromEntries(Object.entries(snapshot.tenants).map(([tenantId, tenant]) => [
       tenantId,
-      { ...tenant, objects: tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)) }
+      { ...tenant, objects: tenantId === 'unesolutions-dev' ? tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)) : tenant.objects }
     ]))
   };
 }
