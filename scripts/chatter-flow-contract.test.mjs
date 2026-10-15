@@ -31,3 +31,15 @@ test('packaged Send and Assign Flows declare all server-injected resource names'
   for(const match of references)assert.ok(keys.has(match[1]),apiName+' undeclared resource '+match[1]);
  }
 });
+
+test('Chatter inbox refreshes RBAC-bound records and maintains independent scroll areas',()=>{
+ const runtime=readFileSync(new URL('../apps/web/src/pageRuntimeViews.tsx',import.meta.url),'utf8');
+ const css=readFileSync(new URL('../apps/web/src/custom-components/ChatterInbox/ChatterInbox.css',import.meta.url),'utf8');
+ const view=readFileSync(new URL('../apps/web/src/custom-components/ChatterInbox/ChatterInbox.jsx',import.meta.url),'utf8');
+ assert.match(runtime,/const interval = chatter \? window\.setInterval\(onVisible, 5000\)/);
+ assert.match(runtime,/loadFlowScreenRecords\(objectApiName\)/);
+ assert.match(css,/\.md-chatter-scroll\{[^}]*min-height:0;[^}]*flex:1 1 0/);
+ assert.match(css,/\.md-chatter-list\{[^}]*min-height:0/);
+ assert.match(view,/const canSendSelected = newChat \?/);
+ assert.match(view,/event: 'send'/);
+});
