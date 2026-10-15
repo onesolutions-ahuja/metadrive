@@ -22,6 +22,8 @@ jobs:
       METADRIVE_DATABASE_URL: ''
       METADRIVE_DATA_PATH: /tmp/agent5-app-exchange-isolated.json
       CI: 'true'
+      NODE_ENV: test
+      METADRIVE_TEST_MODE: 'true'
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v4
