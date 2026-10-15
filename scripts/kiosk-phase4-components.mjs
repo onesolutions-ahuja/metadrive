@@ -209,13 +209,13 @@ const railSource = `
 export default function CategoryRail({title='MENU',records=[],pageState={},nameField='Name',imageField='ImageUrl',
  brandLogoUrl='',brandLabel='YOUR BRAND',accentColor='#ed002d',backgroundColor='#ffffff',onAction,preview=false}){
  const categories=(records||[]).filter(item=>item.IsActive!==false).slice().sort((a,b)=>Number(a.SortOrder||0)-Number(b.SortOrder||0));
- const selected=pageState.selectedCategoryId||categories[0]?.Id;
+ const selected=pageState.selectedCategory?.id||categories[0]?.Id;
  React.useEffect(()=>{
-  if(!preview && !pageState.selectedCategoryId && categories.length){
+  if(!preview && !pageState.selectedCategory?.id && categories.length){
    const first=categories[0];
-   void onAction({event:'selectCategory',value:{categoryId:first.Id,categoryName:first[nameField]||first.Name}});
+   void onAction({event:'selectCategory',value:{id:first.Id,name:first[nameField]||first.Name}});
   }
- },[categories.length,pageState.selectedCategoryId,preview]);
+ },[categories.length,pageState.selectedCategory?.id,preview]);
  return <nav aria-label="Product categories" style={{height:'100%',minHeight:0,boxSizing:'border-box',background:backgroundColor,fontFamily:'Arial,sans-serif'}}>
   <div style={{height:145,display:'grid',placeItems:'center',borderBottom:'1px solid #f0f0f0',padding:12,boxSizing:'border-box'}}>
    {brandLogoUrl?<img src={brandLogoUrl} referrerPolicy="no-referrer" alt={brandLabel} style={{maxWidth:'82%',maxHeight:118,objectFit:'contain'}}/>
@@ -223,7 +223,7 @@ export default function CategoryRail({title='MENU',records=[],pageState={},nameF
   </div>
   {categories.map((item,index)=><button type="button" key={item.Id||index}
    aria-current={selected===item.Id?'page':undefined}
-   onClick={()=>onAction({event:'selectCategory',value:{categoryId:item.Id,categoryName:item[nameField]||item.Name}})}
+   onClick={()=>onAction({event:'selectCategory',value:{id:item.Id,name:item[nameField]||item.Name}})}
    style={{display:'flex',width:'100%',alignItems:'center',gap:10,padding:'14px 12px',
     minHeight:69,background:selected===item.Id?'#fff0f2':'transparent',border:0,borderBottom:'1px solid #ededed',
     borderLeft:'5px solid '+(selected===item.Id?accentColor:'transparent'),cursor:'pointer',
@@ -316,11 +316,11 @@ const variantSetting=setting('presentationVariant','Presentation variant','TEXT'
 const productSource=grid.jsxSource
  .replace("imageField='ImageUrl',\n primaryButtonLabel", "imageField='ImageUrl',pageState={},categoryField='CategoryId',filterField='Subcategory',\n bestsellerField='IsBestseller',featuredBorderColor='#92b000',chipColor='#ed002d',imageHeight=168,\n primaryButtonLabel")
  .replace(" const active=(records||[]).filter(p=>p.IsActive!==false);",
-   " const categoryId=pageState?.selectedCategoryId;\n const [filter,setFilter]=React.useState('ALL');\n const active=(records||[]).filter(p=>p.IsActive!==false && (!categoryId || String(p[categoryField])===String(categoryId)));\n const filters=['ALL',...new Set(active.map(p=>p[filterField]).filter(Boolean).map(String))];\n const visible=active.filter(p=>filter==='ALL'||String(p[filterField])===filter);")
+   " const categoryId=pageState?.selectedCategory?.id;\n const [filter,setFilter]=React.useState('ALL');\n const active=(records||[]).filter(p=>p.IsActive!==false && (!categoryId || String(p[categoryField])===String(categoryId)));\n const filters=['ALL',...new Set(active.map(p=>p[filterField]).filter(Boolean).map(String))];\n const visible=active.filter(p=>filter==='ALL'||String(p[filterField])===filter);")
  .replace(" return <section style={{padding:0,maxWidth:'none'}}>",
    " return <section className='md-kiosk-products' style={{padding:0,maxWidth:'none',fontFamily:'Arial,sans-serif'}}>") 
  .replace("  <h2 style={{color:'#171717',fontSize:32,fontWeight:900,letterSpacing:'-.025em',margin:'0 0 20px'}}>{title}</h2>",
-   "  <div style={{display:'flex',alignItems:'start',justifyContent:'space-between',marginBottom:10}}><h2 style={{color:'#171717',fontSize:38,fontFamily:'Impact,Arial Narrow,sans-serif',fontWeight:900,textTransform:'uppercase',letterSpacing:'-.025em',margin:0}}>{pageState?.selectedCategoryName||title}</h2><div aria-hidden='true' style={{display:'flex',gap:10,marginTop:-20}}>{[0,1,2].map(i=><span key={i} style={{width:22,height:55,background:chipColor}}/>)}</div></div>\n  <div role='group' aria-label='Product filters' style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>{filters.map(name=><button type='button' key={name} onClick={()=>setFilter(name)} style={{border:'1px solid '+(filter===name?chipColor:'#e5e5e5'),background:'#fff',color:filter===name?chipColor:'#161616',borderRadius:5,padding:'10px 19px',fontSize:12,fontWeight:800,cursor:'pointer'}}>{name.toUpperCase()}</button>)}</div>")
+   "  <div style={{display:'flex',alignItems:'start',justifyContent:'space-between',marginBottom:10}}><h2 style={{color:'#171717',fontSize:38,fontFamily:'Impact,Arial Narrow,sans-serif',fontWeight:900,textTransform:'uppercase',letterSpacing:'-.025em',margin:0}}>{pageState?.selectedCategory?.name||title}</h2><div aria-hidden='true' style={{display:'flex',gap:10,marginTop:-20}}>{[0,1,2].map(i=><span key={i} style={{width:22,height:55,background:chipColor}}/>)}</div></div>\n  <div role='group' aria-label='Product filters' style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>{filters.map(name=><button type='button' key={name} onClick={()=>setFilter(name)} style={{border:'1px solid '+(filter===name?chipColor:'#e5e5e5'),background:'#fff',color:filter===name?chipColor:'#161616',borderRadius:5,padding:'10px 19px',fontSize:12,fontWeight:800,cursor:'pointer'}}>{name.toUpperCase()}</button>)}</div>")
  .replace("{active.map(p=><article className=\"md-commerce-card\" key={p.Id}>",
    "{visible.map(p=><article className={'md-commerce-card'+(p[bestsellerField]===true?' md-kiosk-featured':'')} key={p.Id} style={p[bestsellerField]===true?{border:'2px solid '+featuredBorderColor}:undefined}>")
  .replace("    {p[imageField]&&<img src={String(p[imageField])} referrerPolicy=\"no-referrer\" alt=\"\" style={{width:'100%',height:215,objectFit:'cover'}}/>}",
