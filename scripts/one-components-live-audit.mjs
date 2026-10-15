@@ -47,7 +47,22 @@ const [pages,flows]=await Promise.all([
 ]);
 assert.ok(Array.isArray(pages.pages),'Pages metadata API');
 assert.ok(Array.isArray(flows.flows),'Flow metadata API');
+
+// Inventory saved component bindings by their existing metadata identifiers;
+// never mutate pages or flows as part of a compatibility audit.
+const legacyNames=new Set(legacy.map(x=>x.apiName));
+const pageBindings=(pages.pages??[]).flatMap(page=>
+  (page.components??[]).filter(item=>
+    typeof item.type==='string' && item.type.startsWith('Custom:') &&
+    legacyNames.has(item.type.slice(7)))
+    .map(item=>({page:page.apiName,component:item.type.slice(7)})));
+const flowBindings=(flows.flows??[]).flatMap(flow=>
+  (flow.elements??[]).flatMap(element=>
+    (element.config?.fields??[]).filter(field=>
+      field.type==='Custom Component' && legacyNames.has(field.componentApiName))
+      .map(field=>({flow:flow.apiName,component:field.componentApiName}))));
 console.log(JSON.stringify({result:'PASS',registered:40,published:40,trusted:40,
   surfacesVerified:true,authenticated:true,tenantScoped:true,
   pagesApiVerified:true,flowsApiVerified:true,legacyPreserved:legacy.length,
+  savedPageLegacyInstances:pageBindings.length,savedFlowLegacyInstances:flowBindings.length,
   migrationMode:'read-only-no-automatic-replacement',readOnly:true}));
