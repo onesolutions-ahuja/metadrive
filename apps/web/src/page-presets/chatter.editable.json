@@ -45,7 +45,8 @@
             }
           }
         },
-        "objectApiName": "Communication_Records__c"
+        "objectApiName": "Communication_Records__c",
+        "recordViewAdapter": "Chatter"
       }
     }
   ],
