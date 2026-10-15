@@ -323,22 +323,52 @@ function MetadataBoundPageComponent({
   }, [pageSessionKey, sessionId]);
   useEffect(() => {
     let active = true;
+    let requestId = 0;
+    let pending = false;
     setRecords([]);
     setDataError('');
     if (!objectApiName) {
       setDataLoading(false);
       return () => { active = false; };
     }
+    const refresh = async () => {
+      if (pending || !active) return;
+      pending = true;
+      const request = ++requestId;
+      try {
+        const rows = await loadFlowScreenRecords(objectApiName);
+        if (active && request === requestId) {
+          setRecords(rows);
+          setDataError('');
+        }
+      } catch (reason) {
+        if (active && request === requestId) setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
+      } finally {
+        pending = false;
+        if (active && request === requestId) setDataLoading(false);
+      }
+    };
     setDataLoading(true);
-    // Existing shared Object API enforces tenant, field and record permissions.
-    void loadFlowScreenRecords(objectApiName)
-      .then((rows) => { if (active) setRecords(rows); })
-      .catch((reason: unknown) => {
-        if (active) setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
-      })
-      .finally(() => { if (active) setDataLoading(false); });
-    return () => { active = false; };
-  }, [objectApiName, revision]);
+    void refresh();
+    // The shared Object API remains the RBAC-enforced read source. Poll only
+    // live conversation presenters, and only while the document is visible.
+    const chatter = properties.recordPresenterApiName === 'CommunicationThread' && !disableActions;
+    const onVisible = () => { if (document.visibilityState === 'visible') void refresh(); };
+    if (chatter) {
+      window.addEventListener('focus', onVisible);
+      document.addEventListener('visibilitychange', onVisible);
+    }
+    const interval = chatter ? window.setInterval(onVisible, 5000) : undefined;
+    return () => {
+      active = false;
+      ++requestId;
+      if (interval !== undefined) window.clearInterval(interval);
+      if (chatter) {
+        window.removeEventListener('focus', onVisible);
+        document.removeEventListener('visibilitychange', onVisible);
+      }
+    };
+  }, [objectApiName, revision, properties.recordPresenterApiName, disableActions]);
   useEffect(() => {
     if (properties.recordPresenterApiName !== 'CommunicationThread') return;
     let active = true;
