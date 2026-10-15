@@ -26,7 +26,7 @@ jobs:
           node-version: '22'
       - name: Validate pages, actions and Flow contracts
         id: contracts
-        run: node --test scripts/kiosk-phase4.test.mjs scripts/kiosk-fullscreen.test.mjs scripts/kiosk-oneengine-rbac.test.mjs
+        run: node --test scripts/kiosk-phase4.test.mjs scripts/kiosk-fullscreen.test.mjs scripts/kiosk-oneengine-rbac.test.mjs scripts/kiosk-reference-screen.test.mjs
       - name: Check authorised endpoint and installer credentials
         id: credentials
         env:
