@@ -622,7 +622,8 @@
             { "apiName": "Barcode", "label": "Barcode", "dataType": "Text(64)", "required": false, "unique": false },
             { "apiName": "ImageURL", "label": "Product Image URL", "dataType": "URL", "required": false, "unique": false },
             { "apiName": "AgeRestricted", "label": "Age Restricted", "dataType": "Checkbox", "required": false, "unique": false, "defaultValue": false },
-            { "apiName": "VATApplicable", "label": "VAT Applicable", "dataType": "Checkbox", "required": false, "unique": false, "defaultValue": true }
+            { "apiName": "VATApplicable", "label": "VAT Applicable", "dataType": "Checkbox", "required": false, "unique": false, "defaultValue": true },
+            {"apiName":"MinimumAge","label":"Minimum Customer Age","dataType":"Number(3, 0)","required":false,"unique":false,"defaultValue":18}
           ]
         },
         {
@@ -647,7 +648,9 @@
             { "apiName": "PaymentStatus", "label": "Payment Status", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Pending", "Accepted", "Declined"], "picklistRestricted": true },
             { "apiName": "AmountTendered", "label": "Amount Tendered", "dataType": "Currency(18, 2)", "required": false, "unique": false },
             { "apiName": "ChangeDue", "label": "Change Due", "dataType": "Currency(18, 2)", "required": false, "unique": false },
-            { "apiName": "OrderId", "label": "Order Id", "dataType": "Lookup(Order)", "required": false, "unique": false }
+            { "apiName": "OrderId", "label": "Order Id", "dataType": "Lookup(Order)", "required": false, "unique": false },
+            {"apiName":"MinimumAgeApplied","label":"Minimum Age Applied","dataType":"Number(3, 0)","required":false,"unique":false},
+            {"apiName":"VerifiedCustomerAge","label":"Verified Customer Age","dataType":"Number(3, 0)","required":false,"unique":false}
           ]
         },
         {
@@ -900,22 +903,14 @@
               { "name": "Default", "label": "Not restricted", "conditions": [] }
             ] } },
             { "id": 8, "type": "Assignment", "label": "Mark age-restricted sale", "config": { "variable": "HasAgeRestricted", "operator": "Assign", "value": true } },
-            { "id": 9, "type": "Decision", "label": "Validate sale", "config": { "outcomes": [
-              { "name": "InvalidSale", "label": "Invalid sale", "conditionLogic": "All", "conditions": [{ "field": "{!LineCount}", "operator": "Less Than", "value": 1 }] },
-              { "name": "Default", "label": "Sale is ready", "conditions": [] }
-            ] } },
+            {"id":9,"type":"Decision","label":"Validate sale","config":{"outcomes":[{"name":"InvalidSale","label":"Invalid sale","conditionLogic":"1 OR (2 AND 3) OR 4","conditions":[{"field":"{!LineCount}","operator":"Less Than","value":1},{"field":"{!HasAgeRestricted}","operator":"Equals","value":true},{"field":"{!RequiredAge}","operator":"Less Than","value":1},{"field":"{!RequiredAge}","operator":"Greater Than","value":120}]},{"name":"Default","label":"Sale is ready","conditions":[]}]}},
             { "id": 10, "type": "Assignment", "label": "Set invalid sale status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "InvalidSale" } },
             { "id": 11, "type": "Screen", "label": "Challenge 25 verification", "config": { "layout": "One Column", "fields": [
-              { "type": "Display Text", "label": "Challenge 25", "text": "If the customer appears under 25, ask for accepted proof of age. Do not continue unless age is verified." },
-              { "type": "Picklist", "apiName": "AgeCheckResult", "label": "Age verification result", "required": true, "choices": ["Verified", "Not Verified"], "visibilityConditions": [{ "field": "HasAgeRestricted", "operator": "Equals", "value": true }] }
+              { "type": "Display Text", "label": "Challenge 25", "text": "Challenge {!ChallengeAge}: if the customer appears younger than this threshold, check accepted ID. This basket requires a minimum age of {!RequiredAge}. Record the age verified by the authorised cashier." },
+              { "type": "Picklist", "apiName": "AgeCheckResult", "label": "Age verification result", "required": true, "choices": ["Verified", "Not Verified"], "visibilityConditions": [{ "field": "HasAgeRestricted", "operator": "Equals", "value": true }] },
+              {"type":"Number","apiName":"VerifiedAge","label":"Verified customer age","required":true,"min":0,"max":120,"step":1,"visibilityConditions":[{"field":"HasAgeRestricted","operator":"Equals","value":true},{"field":"AgeCheckResult","operator":"Equals","value":"Verified"}]}
             ], "outcomes": [{ "name": "Continue", "label": "Continue" }] } },
-            { "id": 12, "type": "Decision", "label": "Enforce age verification", "config": { "outcomes": [
-              { "name": "AgeRejected", "label": "Age not verified", "conditionLogic": "All", "conditions": [
-                { "field": "{!HasAgeRestricted}", "operator": "Equals", "value": true },
-                { "field": "{!AgeCheckResult}", "operator": "Not Equals", "value": "Verified" }
-              ] },
-              { "name": "Default", "label": "Age check passed", "conditions": [] }
-            ] } },
+            {"id":12,"type":"Decision","label":"Enforce age verification","config":{"outcomes":[{"name":"AgeRejected","label":"Age not verified","conditionLogic":"1 AND (2 OR 3)","conditions":[{"field":"{!HasAgeRestricted}","operator":"Equals","value":true},{"field":"{!AgeCheckResult}","operator":"Not Equals","value":"Verified"},{"field":"{!VerifiedAge}","operator":"Less Than","value":"{!RequiredAge}"}]},{"name":"Default","label":"Age check passed","conditions":[]}]}},
             { "id": 13, "type": "Assignment", "label": "Set age-rejected status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "AgeRejected" } },
             { "id": 14, "type": "Screen", "label": "Payment", "config": { "layout": "One Column", "fields": [
               { "type": "Display Text", "label": "Payment instructions", "text": "Take cash, or ask whether card payment has been received on the separate terminal. This confirmation records an externally handled payment." },
@@ -957,7 +952,9 @@
               { "field": "PaymentMethod", "value": "{!PaymentMethod}" },
               { "field": "PaymentStatus", "value": "Accepted" },
               { "field": "AmountTendered", "value": "{!StoredAmountTendered}" },
-              { "field": "ChangeDue", "value": "{!ChangeDue}" }
+              { "field": "ChangeDue", "value": "{!ChangeDue}" },
+              {"field":"MinimumAgeApplied","value":"{!RequiredAge}"},
+              {"field":"VerifiedCustomerAge","value":"{!VerifiedAge}"}
             ] } },
             { "id": 20, "type": "Assignment", "label": "Capture invoice ID", "config": { "variable": "InvoiceId", "operator": "Assign", "value": "{!record19.Id}" } },
             { "id": 21, "type": "Loop", "label": "Save invoice items", "config": { "collection": "SaleLines", "loopVariable": "CurrentSaleLine", "direction": "First to last" } },
@@ -974,6 +971,7 @@
               { "field": "LineTotal", "value": "{!CurrentLineTotal}" }
             ] } },
             { "id": 24, "type": "Assignment", "label": "Set accepted status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "Accepted" } },
+            {"id":27,"type":"Assignment","label":"Require highest product age","config":{"variable":"RequiredAge","operator":"Assign","value":"{!CurrentMinimumAge}"}},
             { "id": 25, "type": "End", "label": "End", "config": {} }
           ],
           "connectors": [
@@ -988,7 +986,8 @@
             { "id": "count-age", "from": 6, "to": 7, "label": "", "kind": "normal" },
             { "id": "age-restricted", "from": 7, "to": 8, "label": "Restricted", "kind": "normal" },
             { "id": "age-not-restricted", "from": 7, "to": 2, "label": "Not restricted", "kind": "normal" },
-            { "id": "restricted-repeat", "from": 8, "to": 2, "label": "", "kind": "normal" },
+            {"id":"restricted-repeat","from":8,"to":27,"label":"","kind":"normal"},
+            {"id":"restricted-age-repeat","from":27,"to":2,"label":"","kind":"normal"},
             { "id": "empty-sale", "from": 9, "to": 10, "label": "Invalid sale", "kind": "normal" },
             { "id": "sale-age-check", "from": 9, "to": 11, "label": "Sale is ready", "kind": "normal" },
             { "id": "invalid-end", "from": 10, "to": 25, "label": "", "kind": "normal" },
@@ -1035,6 +1034,11 @@
             { "name": "ChangeDue", "label": "Change Due", "type": "Formula", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "IF({!PaymentDecision} = 'Accepted', IF({!PaymentMethod} = 'Cash', ROUND(MAX({!AmountTendered} - {!Total}, 0), 2), 0), 0)" },
             {"name":"CardReceived","label":"Card Received","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":"No"},
             {"name":"EffectivePaymentDecision","label":"Effective Payment Decision","type":"Formula","dataType":"Text","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":"IF({!PaymentMethod} = 'Card', IF({!CardReceived} = 'Yes', 'Accepted', 'Declined'), {!PaymentDecision})"},
+            {"name":"DefaultMinimumAge","label":"DefaultMinimumAge","type":"Variable","dataType":"Number","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":18},
+            {"name":"ChallengeAge","label":"ChallengeAge","type":"Variable","dataType":"Number","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":25},
+            {"name":"RequiredAge","label":"RequiredAge","type":"Variable","dataType":"Number","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":0},
+            {"name":"VerifiedAge","label":"VerifiedAge","type":"Variable","dataType":"Number","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":null},
+            {"name":"CurrentMinimumAge","label":"CurrentMinimumAge","type":"Formula","dataType":"Number","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":"MAX({!RequiredAge}, IF(ISBLANK({!CurrentProduct.MinimumAge}), {!DefaultMinimumAge}, {!CurrentProduct.MinimumAge}))"},
             { "name": "CheckoutStatus", "label": "Checkout Status", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "" },
             { "name": "InvoiceId", "label": "Invoice ID", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "" }
           ],

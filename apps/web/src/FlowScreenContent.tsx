@@ -1,3 +1,4 @@
+import {resolveScreenText} from './flowScreenRuntimeUtils';
 import {findRegisteredComponentForInstance} from './componentRegistryLookup';
 import { useEffect, useState } from 'react';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
@@ -116,7 +117,7 @@ export default function FlowScreenContent({
         }} />
       </div>;
     }
-    if (type === 'Display Text') return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{String(field.text ?? '')}</p>;
+    if (type === 'Display Text') return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{resolveScreenText(field.text, values)}</p>;
     if (type === 'Display Image') return <figure className="flow-screen-image" key={`image-${index}`}>
       <img src={String(field.imageUrl ?? '')} alt={String(field.imageAltText ?? '')} loading="lazy" />
       {label && <figcaption>{label}</figcaption>}

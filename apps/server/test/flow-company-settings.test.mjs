@@ -175,7 +175,7 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
     assert.equal(startCheckout.data.values.Total, 2.4);
     assert.equal(startCheckout.data.values.VATTotal, 0.36);
     const paymentScreen = await send(`/flow-interviews/${startCheckout.data.interviewId}/next`, token, 'POST', {
-      values: { AgeCheckResult: 'Verified' }, outcome: 'Continue'
+      values: { AgeCheckResult: 'Verified', VerifiedAge: 18 }, outcome: 'Continue'
     });
     assert.equal(paymentScreen.status, 202, JSON.stringify(paymentScreen.data));
     assert.equal(paymentScreen.data.screen.label, 'Payment');
@@ -190,6 +190,8 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
     const invoice = invoices.data.records.find(item => item.Total === 2.4);
     assert(invoice);
     assert.equal(invoice.VATTotal, 0.36);
+    assert.equal(invoice.MinimumAgeApplied, 18);
+    assert.equal(invoice.VerifiedCustomerAge, 18);
     assert.equal(invoice.PaymentStatus, 'Accepted');
     const invoiceItems = await send('/records/InvoiceItem?limit=50', token);
     const invoiceItem = invoiceItems.data.records.find(item => item.InvoiceId === invoice.Id);
@@ -217,7 +219,7 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
       CurrencyCode: 'GBP'
     });
     const insufficientPaymentScreen = await send(`/flow-interviews/${insufficientStart.data.interviewId}/next`, token, 'POST', {
-      values: { AgeCheckResult: 'Verified' }, outcome: 'Continue'
+      values: { AgeCheckResult: 'Verified', VerifiedAge: 18 }, outcome: 'Continue'
     });
     assert.equal(insufficientPaymentScreen.status, 202, JSON.stringify(insufficientPaymentScreen.data));
     const insufficientCash = await send(`/flow-interviews/${insufficientStart.data.interviewId}/next`, token, 'POST', {
@@ -232,7 +234,7 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
       CurrencyCode: 'GBP'
     });
     const declinedPaymentScreen = await send(`/flow-interviews/${declinedStart.data.interviewId}/next`, token, 'POST', {
-      values: { AgeCheckResult: 'Verified' }, outcome: 'Continue'
+      values: { AgeCheckResult: 'Verified', VerifiedAge: 18 }, outcome: 'Continue'
     });
     assert.equal(declinedPaymentScreen.status, 202, JSON.stringify(declinedPaymentScreen.data));
     const declined = await send(`/flow-interviews/${declinedStart.data.interviewId}/next`, token, 'POST', {
@@ -263,6 +265,31 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
     assert.equal(vatExemptCompleted.status, 200, JSON.stringify(vatExemptCompleted.data));
     assert.equal(vatExemptCompleted.data.outputs.CheckoutStatus, 'Accepted');
     assert.equal(vatExemptCompleted.data.outputs.ChangeDue, 0);
+
+    const higherAgeProduct = await send('/records/Product', token, 'POST', {
+      Name: 'Configurable Age Product', DefaultPrice: 1.2, AgeRestricted: true,
+      VATApplicable: true, MinimumAge: 21
+    });
+    assert.equal(higherAgeProduct.status, 201, JSON.stringify(higherAgeProduct.data));
+    const higherAgeStart = await send('/flows/UK_OFFLICENCE_POS_CHECKOUT/execute', token, 'POST', {
+      SaleLines: [
+        { ProductId: createdProduct.data.record.Id, Quantity: 1 },
+        { ProductId: higherAgeProduct.data.record.Id, Quantity: 1 }
+      ], CurrencyCode: 'GBP'
+    });
+    assert.equal(higherAgeStart.status, 202, JSON.stringify(higherAgeStart.data));
+    assert.equal(higherAgeStart.data.values.RequiredAge, 21, 'Basket enforces the highest product minimum age');
+    const higherAgeRejected = await send('/flow-interviews/' + higherAgeStart.data.interviewId + '/next',
+      token, 'POST', {
+        values: { AgeCheckResult: 'Verified', VerifiedAge: 20 }, outcome: 'Continue'
+      });
+    assert.equal(higherAgeRejected.status, 200, JSON.stringify(higherAgeRejected.data));
+    assert.equal(higherAgeRejected.data.outputs.CheckoutStatus, 'AgeRejected');
+    const forgedAge = await send('/flows/UK_OFFLICENCE_POS_CHECKOUT/execute', token, 'POST', {
+      SaleLines: [{ ProductId: higherAgeProduct.data.record.Id, Quantity: 1 }],
+      CurrencyCode: 'GBP', RequiredAge: 0
+    });
+    assert.equal(forgedAge.status, 400, 'Callers cannot lower the required age');
 
     // Card confirmation uses the existing Screen Flow and authoritative record writes.
     const startCardPayment = async () => {

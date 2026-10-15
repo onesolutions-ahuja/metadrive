@@ -42,3 +42,16 @@ export function screenFieldIsVisible(field: Record<string, unknown>, values: Rec
     : checks.every(Boolean);
 }
 
+
+/** Plain-text resource bindings for metadata-authored Screen Flow instructions. */
+export function resolveScreenText(text: unknown, values: Record<string, unknown>): string {
+  return String(text ?? '').replace(/\{!([A-Za-z_][A-Za-z0-9_.]*)\}/g, (_match, path: string) => {
+    let value: unknown = values;
+    for (const key of path.split('.')) {
+      if (['__proto__', 'prototype', 'constructor'].includes(key)
+          || !value || typeof value !== 'object' || !Object.hasOwn(value, key)) return '';
+      value = (value as Record<string, unknown>)[key];
+    }
+    return ['string', 'number', 'boolean'].includes(typeof value) ? String(value) : '';
+  });
+}
