@@ -643,7 +643,7 @@
             { "apiName": "Total", "label": "Total", "dataType": "Currency(18, 2)", "required": false, "unique": false },
             { "apiName": "VATTotal", "label": "VAT Total", "dataType": "Currency(18, 2)", "required": false, "unique": false },
             { "apiName": "CashierId", "label": "Cashier", "dataType": "Lookup(User)", "required": false, "unique": false },
-            { "apiName": "PaymentMethod", "label": "Payment Method", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Cash", "Manual"], "picklistRestricted": true },
+            { "apiName": "PaymentMethod", "label": "Payment Method", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Cash", "Manual", "Card"], "picklistRestricted": true },
             { "apiName": "PaymentStatus", "label": "Payment Status", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Pending", "Accepted", "Declined"], "picklistRestricted": true },
             { "apiName": "AmountTendered", "label": "Amount Tendered", "dataType": "Currency(18, 2)", "required": false, "unique": false },
             { "apiName": "ChangeDue", "label": "Change Due", "dataType": "Currency(18, 2)", "required": false, "unique": false },
@@ -874,11 +874,11 @@
         {
           "apiName": "UK_OFFLICENCE_POS_CHECKOUT",
           "label": "UK Off-Licence POS Checkout",
-          "description": "Server-side product, VAT and age checks; records accepted sales through the shared Flow and Object engines.",
+          "description": "Server-side product, VAT and age checks; cash, manually confirmed card or legacy manual payments through the shared Flow and Object engines.",
           "flowType": "Screen Flow",
           "status": "Active",
-          "versionNumber": 1,
-          "activeVersion": 1,
+          "versionNumber": 2,
+          "activeVersion": 2,
           "triggerObject": null,
           "startConfig": {},
           "elements": [
@@ -918,26 +918,28 @@
             ] } },
             { "id": 13, "type": "Assignment", "label": "Set age-rejected status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "AgeRejected" } },
             { "id": 14, "type": "Screen", "label": "Payment", "config": { "layout": "One Column", "fields": [
-              { "type": "Display Text", "label": "Payment instructions", "text": "Take cash or complete the payment manually, then record whether it was accepted or declined." },
-              { "type": "Picklist", "apiName": "PaymentMethod", "label": "Payment method", "required": true, "defaultValue": "Cash", "choices": ["Cash", "Manual"] },
-              { "type": "Picklist", "apiName": "PaymentDecision", "label": "Payment result", "required": true, "defaultValue": "Declined", "choices": ["Accepted", "Declined"] },
+              { "type": "Display Text", "label": "Payment instructions", "text": "Take cash, or ask whether card payment has been received on the separate terminal. This confirmation records an externally handled payment." },
+              { "type": "Picklist", "apiName": "PaymentMethod", "label": "Payment method", "required": true, "defaultValue": "Cash", "choices": ["Cash", "Manual", "Card"] },
+              {"type":"Picklist","apiName":"PaymentDecision","label":"Payment result","required":true,"defaultValue":"Declined","choices":["Accepted","Declined"],"visibilityConditions":[{"field":"PaymentMethod","operator":"Not Equals","value":"Card"}]},
+              {"type":"Picklist","apiName":"CardReceived","label":"Card received?","required":true,"defaultValue":"No","choices":["Yes","No"],"visibilityConditions":[{"field":"PaymentMethod","operator":"Equals","value":"Card"}]},
               { "type": "Currency", "apiName": "AmountTendered", "label": "Cash received", "required": true, "min": 0, "step": 0.01, "visibilityConditions": [
                 { "field": "PaymentMethod", "operator": "Equals", "value": "Cash" },
                 { "field": "PaymentDecision", "operator": "Equals", "value": "Accepted" }
               ] }
             ], "outcomes": [{ "name": "Continue", "label": "Continue" }] } },
             { "id": 15, "type": "Decision", "label": "Check payment result", "config": { "outcomes": [
-              { "name": "Declined", "label": "Declined", "conditionLogic": "All", "conditions": [{ "field": "{!PaymentDecision}", "operator": "Equals", "value": "Declined" }] },
+              { "name": "Declined", "label": "Declined", "conditionLogic": "All", "conditions": [{ "field": "{!EffectivePaymentDecision}", "operator": "Equals", "value": "Declined" }] },
               { "name": "InsufficientCash", "label": "Insufficient cash", "conditionLogic": "All", "conditions": [
-                { "field": "{!PaymentDecision}", "operator": "Equals", "value": "Accepted" },
+                { "field": "{!EffectivePaymentDecision}", "operator": "Equals", "value": "Accepted" },
                 { "field": "{!PaymentMethod}", "operator": "Equals", "value": "Cash" },
                 { "field": "{!AmountTendered}", "operator": "Less Than", "value": "{!Total}" }
               ] },
-              { "name": "InvalidPayment", "label": "Invalid payment", "conditionLogic": "(1 AND 2) OR (3 AND 4)", "conditions": [
-                { "field": "{!PaymentDecision}", "operator": "Not Equals", "value": "Accepted" },
-                { "field": "{!PaymentDecision}", "operator": "Not Equals", "value": "Declined" },
+              { "name": "InvalidPayment", "label": "Invalid payment", "conditionLogic": "(1 AND 2) OR (3 AND 4 AND 5)", "conditions": [
+                { "field": "{!EffectivePaymentDecision}", "operator": "Not Equals", "value": "Accepted" },
+                { "field": "{!EffectivePaymentDecision}", "operator": "Not Equals", "value": "Declined" },
                 { "field": "{!PaymentMethod}", "operator": "Not Equals", "value": "Cash" },
-                { "field": "{!PaymentMethod}", "operator": "Not Equals", "value": "Manual" }
+                { "field": "{!PaymentMethod}", "operator": "Not Equals", "value": "Manual" },
+                { "field": "{!PaymentMethod}", "operator": "Not Equals", "value": "Card" }
               ] },
               { "name": "Default", "label": "Payment accepted", "conditions": [] }
             ] } },
@@ -1031,6 +1033,8 @@
             { "name": "SaleDate", "label": "Sale Date", "type": "Formula", "dataType": "Date", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "TODAY()" },
             { "name": "StoredAmountTendered", "label": "Stored Amount Tendered", "type": "Formula", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "IF({!PaymentMethod} = 'Cash', {!AmountTendered}, 0)" },
             { "name": "ChangeDue", "label": "Change Due", "type": "Formula", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "IF({!PaymentDecision} = 'Accepted', IF({!PaymentMethod} = 'Cash', ROUND(MAX({!AmountTendered} - {!Total}, 0), 2), 0), 0)" },
+            {"name":"CardReceived","label":"Card Received","type":"Variable","dataType":"Text","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":"No"},
+            {"name":"EffectivePaymentDecision","label":"Effective Payment Decision","type":"Formula","dataType":"Text","isCollection":false,"availableForInput":false,"availableForOutput":false,"value":"IF({!PaymentMethod} = 'Card', IF({!CardReceived} = 'Yes', 'Accepted', 'Declined'), {!PaymentDecision})"},
             { "name": "CheckoutStatus", "label": "Checkout Status", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "" },
             { "name": "InvoiceId", "label": "Invoice ID", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "" }
           ],

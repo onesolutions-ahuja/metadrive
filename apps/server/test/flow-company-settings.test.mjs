@@ -264,10 +264,59 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
     assert.equal(vatExemptCompleted.data.outputs.CheckoutStatus, 'Accepted');
     assert.equal(vatExemptCompleted.data.outputs.ChangeDue, 0);
 
+    // Card confirmation uses the existing Screen Flow and authoritative record writes.
+    const startCardPayment = async () => {
+      const started = await send('/flows/UK_OFFLICENCE_POS_CHECKOUT/execute', token, 'POST', {
+        SaleLines: [{ ProductId: vatExemptProduct.data.record.Id, Quantity: 1 }], CurrencyCode: 'GBP'
+      });
+      assert.equal(started.status, 202, JSON.stringify(started.data));
+      const payment = await send('/flow-interviews/' + started.data.interviewId + '/next', token, 'POST', {
+        values: {}, outcome: 'Continue'
+      });
+      assert.equal(payment.status, 202, JSON.stringify(payment.data));
+      assert.equal(payment.data.screen.label, 'Payment');
+      return started.data.interviewId;
+    };
+    const forbiddenCardInput = await send('/flows/UK_OFFLICENCE_POS_CHECKOUT/execute', token, 'POST', {
+      SaleLines: [{ ProductId: vatExemptProduct.data.record.Id, Quantity: 1 }],
+      CurrencyCode: 'GBP', CardReceived: 'Yes'
+    });
+    assert.equal(forbiddenCardInput.status, 400, 'Card confirmation cannot be supplied as a checkout input');
+
+    const cardNoInterview = await startCardPayment();
+    const cardNo = await send('/flow-interviews/' + cardNoInterview + '/next', token, 'POST', {
+      values: { PaymentMethod: 'Card', CardReceived: 'No', PaymentDecision: 'Accepted' },
+      outcome: 'Continue'
+    });
+    assert.equal(cardNo.status, 200, JSON.stringify(cardNo.data));
+    assert.equal(cardNo.data.outputs.CheckoutStatus, 'Declined',
+      'A stale cash/manual decision must not override a No card confirmation');
+
+    const cardYesInterview = await startCardPayment();
+    const invalidCardAnswer = await send('/flow-interviews/' + cardYesInterview + '/next', token, 'POST', {
+      values: { PaymentMethod: 'Card', CardReceived: 'Maybe' }, outcome: 'Continue'
+    });
+    assert.equal(invalidCardAnswer.status, 400, JSON.stringify(invalidCardAnswer.data));
+    const cardYes = await send('/flow-interviews/' + cardYesInterview + '/next', token, 'POST', {
+      values: { PaymentMethod: 'Card', CardReceived: 'Yes' }, outcome: 'Continue'
+    });
+    assert.equal(cardYes.status, 200, JSON.stringify(cardYes.data));
+    assert.equal(cardYes.data.outputs.CheckoutStatus, 'Accepted');
+    assert.equal(cardYes.data.outputs.ChangeDue, 0);
+    const replay = await send('/flow-interviews/' + cardYesInterview + '/next', token, 'POST', {
+      values: { PaymentMethod: 'Card', CardReceived: 'Yes' }, outcome: 'Continue'
+    });
+    assert.equal(replay.status, 404, 'A completed interview cannot create another invoice');
+
     const finalInvoices = await send('/records/Invoice?limit=50', token);
-    assert.equal(finalInvoices.data.records.filter(item => item.PaymentStatus === 'Accepted').length, 2);
+    assert.equal(finalInvoices.data.records.filter(item => item.PaymentStatus === 'Accepted').length, 3);
     const finalInvoiceItems = await send('/records/InvoiceItem?limit=50', token);
-    assert.equal(finalInvoiceItems.data.records.length, 2);
+    assert.equal(finalInvoiceItems.data.records.length, 3);
+    const cardInvoices = finalInvoices.data.records.filter(item => item.PaymentMethod === 'Card');
+    assert.equal(cardInvoices.length, 1);
+    assert.equal(cardInvoices[0].Total, 3.3);
+    assert.equal(cardInvoices[0].AmountTendered, 0);
+    assert.equal(cardInvoices[0].ChangeDue, 0);
     const vatExemptInvoiceItem = finalInvoiceItems.data.records.find(item =>
       item.ProductId === vatExemptProduct.data.record.Id);
     assert(vatExemptInvoiceItem);
