@@ -21,7 +21,7 @@ jobs:
           node-version: '22'
       - name: Verify authorised production system pages and protected ownership
         env:
-          METADRIVE_API_URL: https://metadrive.onrender.com
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
           METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
           METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
