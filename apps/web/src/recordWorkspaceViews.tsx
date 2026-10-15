@@ -690,9 +690,6 @@ function RecordWorkspace({
   };
   const openList = () => onNavigate({ kind: 'record-list', objectApiName: route.objectApiName });
   const formatFieldValue = (field: FieldMetadata, value: unknown) => {
-    if (field.dataType === 'URL' && typeof value === 'string' && /^https:\/\//i.test(value) && /(?:image|photo|thumbnail|picture)/i.test(field.apiName + ' ' + field.label) && /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)|images\.unsplash\.com\//i.test(value)) {
-      return <img src={value} alt={field.label} loading="lazy" className="record-image-thumbnail" referrerPolicy="no-referrer" />;
-    }
     if (field.relationship && typeof value === 'string') {
       const related = lookupRecords[field.relationship.targetObject]?.find((item) => item.Id === value);
       if (related) return String(related.Name ?? related.Email ?? value);
@@ -1584,9 +1581,9 @@ function RecordWorkspace({
       {listNotice && <div className="records-notice" role="status">{listNotice}</div>}
       {exportError && <div className="records-message" role="alert">{exportError}</div>}
       {error && <div className="records-message" role="alert">{error}</div>}
-      {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty records-empty-action"><strong>No {object.pluralLabel.toLocaleLowerCase()} found.</strong><p>{canCreate ? `Create the first ${object.label.toLocaleLowerCase()} to get started.` : "No accessible records are available."}</p>{canCreate && <button type="button" className="btn btn-brand" onClick={openCreateForm}>New {object.label}</button>}</div>}
+      {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty">No {object.pluralLabel.toLocaleLowerCase()} found.</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
-      {!error && (loading || records.length > 0) && <div className="records-table-wrap records-responsive-list" role="region" aria-label={`${object.pluralLabel} records`} tabIndex={0} style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
+      {!error && (loading || records.length > 0) && <div className="records-table-wrap" style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
         <thead><tr>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
           <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
             onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
@@ -1598,7 +1595,7 @@ function RecordWorkspace({
           const rowAllowsEdit = !rowLayout || rowLayout.actions.includes('Edit');
           const rowAllowsDelete = !rowLayout || rowLayout.actions.includes('Delete');
           const selectable = canAddToCampaign || canMassDelete && rowAllowsDelete || (canBulkUpdate || canChangeOwner) && rowAllowsEdit;
-          return <tr key={item.Id}>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName} data-label={field.label}>
+          return <tr key={item.Id}>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName}>
             {index === 0
               ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })}>{formatFieldValue(field, item[field.apiName] ?? item.Id)}</a>
               : formatFieldValue(field, item[field.apiName])}
