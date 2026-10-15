@@ -5,6 +5,8 @@ on:
     paths:
       - scripts/chatter-live-audit.mjs
       - .github/workflows/chatter-live-audit.yml
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
