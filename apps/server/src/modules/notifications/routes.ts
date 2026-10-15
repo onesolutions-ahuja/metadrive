@@ -1,7 +1,7 @@
 import type { Express, Request, Response, RequestHandler } from 'express';
 
 /** Tenant-scoped notification endpoints with persistence injected by the Core. */
-export function registerNotificationRoutes<N extends { id: string; recipientId: string; createdAt: string; readAt?: string }, T extends { notifications: N[] }, P extends {tenantId: string; userId: string}>(app: Express, deps: {
+export function registerNotificationRoutes<N extends { id: string; recipientId: string; createdAt: string; readAt?: string | null }, T extends { notifications: N[] }, P extends {tenantId: string; userId: string}>(app: Express, deps: {
   accessAuthentication: RequestHandler;
   getPrincipal: (res: Response) => P;
   tenantData: (tenantId: string) => T | undefined;
