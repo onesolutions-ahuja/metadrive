@@ -14,3 +14,21 @@ export function coreSeedDefinitions() {
     sharedComponents: structuredClone(manifest.filter(c=>c.scope==='platform'))
   };
 }
+
+/**
+ * Add only explicitly requested foundation objects to an already-created SQL
+ * tenant. Defaults to no business objects. Does not create users, records,
+ * credentials, optional apps, or permissions, and does not overwrite edits.
+ * The caller commits the resulting metadata via the existing SQL write path.
+ */
+export function seedNewTenantCore(tenant, {objectApiNames=[]}={}) {
+  if(!tenant || !Array.isArray(tenant.objects))throw Error('Core seeding requires an initialized tenant');
+  if(!Array.isArray(objectApiNames))throw Error('Core object selection must be a list');
+  const definitions=new Map(coreSeedDefinitions().objectDefinitions.map(o=>[o.apiName,o]));
+  const objects=[...tenant.objects];
+  for(const apiName of objectApiNames) {
+    if(!definitions.has(apiName))throw Error('Unknown Core object definition');
+    if(!objects.some(o=>o.apiName===apiName))objects.push(structuredClone(definitions.get(apiName)));
+  }
+  return objects.length===tenant.objects.length ? tenant : {...tenant,objects};
+}
