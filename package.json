@@ -46,6 +46,7 @@
     "test:phase2runtime": "tsx --test scripts/phase2-runtime-completion.test.mjs",
     "test:phase2replacements": "node --test apps/server/test/phase2-replacement-definitions.test.mjs",
     "test:phase2sql": "node --test scripts/phase2-sql-activation-preflight.test.mjs",
-    "verify:phase2sql": "node apps/server/scripts/verify-component-registry-activation.mjs"
+    "verify:phase2sql": "node apps/server/scripts/verify-component-registry-activation.mjs",
+    "test:agent5": "tsx --test scripts/agent5-app-exchange-entitlement.test.mjs"
   }
 }
