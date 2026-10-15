@@ -7,11 +7,12 @@ export function validateObjectRelationships(object: ObjectMetadata, knownObjects
   const hierarchicalRelationships = object.fields.filter((field) => field.relationship?.type === 'Hierarchical');
   if (hierarchicalRelationships.length > 1) return 'The User object can have at most one hierarchical relationship';
   if (hierarchicalRelationships.length && object.apiName !== 'User') return 'Hierarchical relationships can only be created on the User object';
+  const knownObjectNames = new Set(knownObjects.map((candidate) => candidate.apiName));
   const relationshipNames = new Set<string>();
   const childRelationshipNames = new Set<string>();
   for (const field of object.fields) {
     if (!field.relationship) continue;
-    if (!knownObjects.some((candidate) => candidate.apiName === field.relationship?.targetObject)) {
+    if (!knownObjectNames.has(field.relationship.targetObject)) {
       return `Relationship target "${field.relationship.targetObject}" does not exist`;
     }
     if (field.relationship.type === 'Hierarchical' && field.relationship.targetObject !== 'User') {
@@ -30,6 +31,15 @@ export function validateObjectRelationships(object: ObjectMetadata, knownObjects
   return null;
 }
 
+export const relationshipFieldCategory = (field: ObjectMetadata['fields'][number]): 'text' | 'number' | 'date' | 'boolean' | 'other' => {
+      const type = field.formula?.returnType ?? field.dataType.replace(/\(.*/, '');
+      if (['Text', 'Long Text Area', 'Email', 'Phone', 'URL', 'Picklist', 'Multi-Select Picklist', 'Name', 'AutoNumber', 'Auto Number'].includes(type)) return 'text';
+      if (['Number', 'Currency', 'Percent'].includes(type)) return 'number';
+      if (['Date', 'Date/Time', 'DateTime'].includes(type)) return 'date';
+      if (type === 'Checkbox') return 'boolean';
+      return 'other';
+};
+
 export function validateRelatedLookupFilters(object: ObjectMetadata, knownObjects: ObjectMetadata[]): string | null {
   for (const filter of object.relatedLookupFilters ?? []) {
     const lookupField = object.fields.find((field) => field.apiName === filter.fieldApiName);
@@ -45,15 +55,7 @@ export function validateRelatedLookupFilters(object: ObjectMetadata, knownObject
       return `Related lookup filter "${filter.id}" references unknown field "${filter.relatedFieldApiName}" on "${filter.relatedObject}"`;
     }
     const relatedField = relatedObject.fields.find((field) => field.apiName === filter.relatedFieldApiName)!;
-    const category = (field: ObjectMetadata['fields'][number]): 'text' | 'number' | 'date' | 'boolean' | 'other' => {
-      const type = field.formula?.returnType ?? field.dataType.replace(/\(.*/, '');
-      if (['Text', 'Long Text Area', 'Email', 'Phone', 'URL', 'Picklist', 'Multi-Select Picklist', 'Name', 'AutoNumber', 'Auto Number'].includes(type)) return 'text';
-      if (['Number', 'Currency', 'Percent'].includes(type)) return 'number';
-      if (['Date', 'Date/Time', 'DateTime'].includes(type)) return 'date';
-      if (type === 'Checkbox') return 'boolean';
-      return 'other';
-    };
-    const relatedCategory = category(relatedField);
+    const relatedCategory = relationshipFieldCategory(relatedField);
     if (['Contains', 'Starts With'].includes(filter.operator) && relatedCategory !== 'text') {
       return `Related lookup filter "${filter.id}" uses ${filter.operator} with a non-text field`;
     }
@@ -65,7 +67,7 @@ export function validateRelatedLookupFilters(object: ObjectMetadata, knownObject
       if (!sourceField) {
         return `Related lookup filter "${filter.id}" references unknown field "${filter.valueFieldApiName}" on "${object.apiName}"`;
       }
-      if (category(sourceField) !== relatedCategory) {
+      if (relationshipFieldCategory(sourceField) !== relatedCategory) {
         return `Related lookup filter "${filter.id}" compares incompatible field types`;
       }
     } else if (['Greater Than', 'Less Than'].includes(filter.operator)) {
