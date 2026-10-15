@@ -228,6 +228,7 @@
                 "conversationsObjectApiName": "Communication_Records__c",
                 "messagesObjectApiName": "Communication_Records__c",
                 "channelAccountObjectApiName": "Connector_App__c",
+        "contactsObjectApiName": "Contact",
                 "restrictToAssigned": true,
                 "enableAssignment": true,
                 "actionFlows": {
