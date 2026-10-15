@@ -1,3 +1,4 @@
+import { relatedListRelationships } from './builders/relatedListRelationships';
 import { createSetupHome } from './setupHomeView';
 import { createSettingsViews } from './settingsWorkspaceViews';
 import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
@@ -527,11 +528,11 @@ function ObjectManager({
   }
   const layouts = draft.pageLayouts ?? [];
   const compactLayouts = draft.compactLayouts ?? [];
-  const relatedListOptions = objects.flatMap((childObject) => childObject.fields.flatMap((field) =>
-    field.relationship?.targetObject === draft.apiName
-      ? [{ value: field.relationship.childRelationshipName, alias: childObject.pluralLabel, label: `${childObject.pluralLabel} (${field.relationship.childRelationshipName})` }]
-      : []
-  )).filter((option, index, options) =>
+  const relatedListOptions = relatedListRelationships(objects, draft.apiName).map((item) => ({
+    value: item.childRelationshipName,
+    alias: item.pluralLabel,
+    label: `${item.pluralLabel} (${item.childRelationshipName})`
+  })).filter((option, index, options) =>
     options.findIndex((candidate) => candidate.value.toLocaleLowerCase() === option.value.toLocaleLowerCase()) === index);
   const normalizeRelatedLists = (selected: string[]) => selected.map((name) =>
     relatedListOptions.find((option) => option.value.toLocaleLowerCase() === name.toLocaleLowerCase()
