@@ -1,3 +1,4 @@
+import { createOneEnginePermissions } from './modules/security/oneengine-permissions.js';
 import { credentialKeyRing, credentialAad, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
 import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
 import { loadAppSeedCatalog } from './seeders/catalog.mjs';
@@ -4764,66 +4765,7 @@ function getPrincipal(res: Response): Principal {
 function principalUser(principal: Principal): LocalUser | undefined {
   return state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
 }
-// In-memory, tenant-reference/versioned authorization cache. No TTL-based stale grants:
-// tenant metadata updates replace the tenant object; identity changes replace the
-// LocalUser object; platform policy changes replace the policy array.
-const effectivePermissionCache = new WeakMap<TenantData, Map<string, {
-  user: LocalUser; platformGrants?: PlatformState['platformPolicies'][string]; permissions: string[];
-}>>();
-function effectivePermissions(user: LocalUser, data: TenantData): string[] {
-  const platformGrants = state.platformPolicies[user.id];
-  let tenantCache = effectivePermissionCache.get(data);
-  if (!tenantCache) {
-    tenantCache = new Map();
-    effectivePermissionCache.set(data, tenantCache);
-  }
-  const cached = tenantCache.get(user.id);
-  if (cached && cached.user === user && cached.platformGrants === platformGrants) {
-    return cached.permissions;
-  }
-  const accessUser = data.accessControl.users.find((item) => item.id === user.id);
-  const profile = data.accessControl.profiles.find((item) =>
-    item.id === (accessUser?.profileId ?? profileIdForRole(user.role, data.accessControl.profiles)));
-  // RBAC user assignments are authoritative; the login identity is only a
-  // fallback for legacy tenant data that has not yet been reconciled.
-  const assignedSetIds = accessUser?.permissionSetIds ?? user.permissionSetIds;
-  const assignedGroupIds = accessUser?.permissionSetGroupIds ?? user.permissionSetGroupIds;
-  const assigned = data.accessControl.permissionSets.filter((set) => assignedSetIds.includes(set.id));
-  const permissions = new Set([...(profile?.systemPermissions ?? []), ...assigned.flatMap((set) => set.systemPermissions)]);
-  for (const groupId of assignedGroupIds) {
-    const group = data.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    if (!group) continue;
-    const groupPermissions = new Set(data.accessControl.permissionSets
-      .filter((set) => group.permissionSetIds.includes(set.id))
-      .flatMap((set) => set.systemPermissions));
-    for (const permission of group.mutedSystemPermissions) groupPermissions.delete(permission);
-    for (const permission of groupPermissions) permissions.add(permission);
-  }
-  // Neither a tenant administrator nor a tenant Flow can grant platform authority
-  // through editable profile / permission-set metadata.
-  for (const permission of permissions) {
-    if (permission === 'licence:manage' || permission.startsWith('platform:')) permissions.delete(permission);
-  }
-  const policies = state.platformPolicies[user.id] ?? [];
-  if (policies.includes('platform:superadmin')) {
-    permissions.add('platform:superadmin');
-    permissions.add('licence:manage');
-  } else if (policies.includes('licence:manage')) {
-    permissions.add('licence:manage');
-  }
-  const resolved = [...permissions];
-  tenantCache.set(user.id, { user, platformGrants, permissions: resolved });
-  return resolved;
-}
-function principalForUser(user: LocalUser, tenant: TenantData): Principal {
-  return {
-    userId: user.id,
-    tenantId: user.tenantId,
-    email: user.email,
-    roles: [user.role],
-    permissions: effectivePermissions(user, tenant)
-  };
-}
+const { effectivePermissions, principalForUser } = createOneEnginePermissions(() => state, profileIdForRole);
 function canSelectDashboardRunningUser(viewer: Principal, tenant: TenantData, targetUserId: string): boolean {
   if (targetUserId === viewer.userId
     || viewer.permissions.includes('dashboards:manage')) return true;
@@ -13420,3 +13362,4 @@ export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySc
 export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
 export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
 export type { DashboardMetadata, ReportMetadata };
+export type { LocalUser };
