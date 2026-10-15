@@ -400,7 +400,6 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [activeUtility, setActiveUtility] = useState<'History' | null>(null);
   const [recentRoutes, setRecentRoutes] = useState<Array<{ key: string; label: string; route: AppRoute }>>([]);
   const [flowToolTab, setFlowToolTab] = useState<'Elements' | 'Manager'>('Elements');
-
   useEffect(() => {
     const media = window.matchMedia('(max-width: 600px)');
     const updateFormFactor = () => setRuntimeFormFactor(media.matches ? 'Phone' : 'Desktop');
