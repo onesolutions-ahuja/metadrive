@@ -1409,7 +1409,6 @@ function PageBuilder({
         </div>,
         externalPreviewTarget
       )}
-
       {!editorMode && <section className="page-manager-view" aria-label="Page management">
         <header className="page-manager-header"><div><h1>Page Builder</h1><p>Manage pages and their device layouts by related record or object.</p></div>
           <div className="page-manager-header-actions">
