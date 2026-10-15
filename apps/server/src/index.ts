@@ -11,7 +11,7 @@ import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
 import { registerRecordRoutes } from './modules/records/routes.js';
-import { chatterIncomingIdentityFields } from './modules/chatter/webhook-identity.mjs';
+import { chatterIncomingIdentityFields } from './modules/chatter/webhook-identity.js';
 import { applyRecordDefaults as applyMetadataRecordDefaults } from './modules/records/record-defaults.js';
 import { validateRuntimeRecord as validateMetadataRecord } from './modules/records/runtime-validation.js';
 import { matchesRelatedLookupFilter, validateGeolocationValue } from './modules/records/record-constraints.js';
