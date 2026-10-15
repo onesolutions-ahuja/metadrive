@@ -99,3 +99,14 @@ test('backend routes use tenant-scoped seeder reconciliation and reject duplicat
   assert.match(source, /reconcileInstalledAppSeeds\(\s*\{ \.\.\.tenant, autoNumberSequences \}, installableAppCatalog, tenantId/);
   assert.match(source, /if \(matches\.length > 1\) return res\.status\(409\)/);
 });
+
+test('duplicate package catalog entries never register optional bundles', () => {
+  const tenant={records:{Connector_App__c:[{
+    AppKey__c:'demo',Installed__c:true,LicenceStatus__c:'Licensed'
+  }]}};
+  const packages=[
+    {appKey:'demo',components:[{apiName:'OneDemo'}]},
+    {appKey:'demo',components:[{apiName:'OneConflictingDemo'}]}
+  ];
+  assert.deepEqual([...installedComponentDescriptors(tenant,{packages})],[]);
+});
