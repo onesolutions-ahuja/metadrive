@@ -13,7 +13,7 @@ const actionsNav={
  basket:navigation('MD_Commerce_Basket')
 };
 const nav=(id)=>block(id,'MD_CommerceNavigationV2','Menu and basket navigation','header',{
- title:'MENU',categories:'RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',accentColor:'#ed002d',standalonePresentation:true,presentationLayout:'rail-checkout',actionFlows:actionsNav
+ title:'MENU',categories:'RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',accentColor:'#ed002d',standalonePresentation:true,presentationLayout:'rail-checkout',presentationVariant:'portrait',actionFlows:actionsNav
 });
 const basketActions={
  load:flow('MD_Commerce_LoadBasket',{SessionKey:'$session'}),
@@ -30,7 +30,7 @@ export const commercePages=[
   components:[
    nav('menu-nav'),
    block('menu-products','MD_CommerceProductGridV2','Product Cards and Meal Customisation','main',{
-    objectApiName:'Product__c',title:'BURGERS',columns:3,currencySymbol:'£',
+    objectApiName:'Product__c',presentationVariant:'portrait',title:'BURGERS',columns:3,currencySymbol:'£',
     priceField:'DefaultPrice',imageField:'ImageUrl',primaryButtonLabel:'CUSTOMISE',
     actionFlows:{
      options:flow('MD_Commerce_ModifierCatalog',{ProductId:'$event.productId'}),
@@ -41,7 +41,7 @@ export const commercePages=[
     }
    }),
    block('menu-basket','MD_CommerceBasketPanelV2','Live Basket Summary','sidebar',{
-    title:'SHOW BASKET',accentColor:'#92b200',objectApiName:'Order__c',actionFlows:{...basketActions,basket:actionsNav.basket}
+    title:'SHOW BASKET',accentColor:'#92b200',presentationVariant:'portrait',objectApiName:'Order__c',actionFlows:{...basketActions,basket:actionsNav.basket}
    })
   ]
  },
