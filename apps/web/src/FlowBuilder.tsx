@@ -182,7 +182,7 @@ export default function FlowBuilder({
   const selectedPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
   const toolboxGroups = [...new Set(flowElementMetadata.map((item) => item.group))];
   const freeformLayout = flow.startConfig.canvasLayoutMode === 'Freeform';
-  const { graphPadding, graphWidth, graphHeight, graphPositions, autoGraphPositions } = layoutFlowGraph(flow, freeformLayout, dragPreview);
+  const { graphNodeWidth, graphPadding, graphWidth, graphHeight, graphPositions, autoGraphPositions } = layoutFlowGraph(flow, freeformLayout, dragPreview);
   const setCanvasPosition = (id: number, position: { x: number; y: number }) => {
     onFlowChange({
       ...flow,
