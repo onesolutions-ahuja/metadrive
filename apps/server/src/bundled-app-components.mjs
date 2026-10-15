@@ -12,8 +12,11 @@ export function* installedComponentDescriptors(tenant, catalog) {
     if (installations.has(row.AppKey__c)) ambiguousKeys.add(row.AppKey__c);
     else installations.set(row.AppKey__c, row);
   }
+  const packageCounts = new Map();
+  for (const pkg of catalog?.packages ?? [])
+    packageCounts.set(pkg.appKey, (packageCounts.get(pkg.appKey) ?? 0) + 1);
   for (const pkg of catalog?.packages ?? []) {
-    if (ambiguousKeys.has(pkg.appKey)) continue;
+    if (!pkg.appKey || packageCounts.get(pkg.appKey) !== 1 || ambiguousKeys.has(pkg.appKey)) continue;
     const licence = installations.get(pkg.appKey);
     if (!licence || licence.Installed__c !== true ||
         !['Trial','Licensed'].includes(licence.LicenceStatus__c)) continue;
