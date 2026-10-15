@@ -78,6 +78,28 @@ export function mergeCoreMetadata(tenant, seed) {
   return merged;
 }
 
+/**
+ * Initialise a separately editable tenant-developer OneEngine policy once.
+ * Its initial full tenant metadata grant mirrors the canonical administrator
+ * permission set, not platform/operator privileges. Subsequent reseeds never
+ * replace edited tenant policies.
+ */
+export function seedInitialTenantDeveloperPolicy(accessControl) {
+  const result=structuredClone(accessControl);
+  const sets=result.permissionSets??[];
+  if (sets.some(set=>set.id==='oneengine-tenant-developer')) return result;
+  const admin=sets.find(set=>set.id==='system-administrator');
+  if (!admin) throw Error('Missing canonical administrator permission template');
+  result.permissionSets=[...sets,{
+    ...structuredClone(admin),
+    id:'oneengine-tenant-developer',
+    apiName:'OneEngine_Tenant_Developer',
+    label:'OneEngine Tenant Developer',
+    description:'Initial full tenant administration; no platform scope or RBAC bypass.'
+  }];
+  return result;
+}
+
 /** Reuse the canonical platform Core factory on fresh tenant provisioning. */
 export function initializeTenantCore(template, {authorizedUserIds=[], trustedProvisioningDefaults=false}={}) {
   // Only an identity newly verified and explicitly authorized by the tenant
@@ -132,7 +154,7 @@ export function initializeTenantCore(template, {authorizedUserIds=[], trustedPro
     namedCredentials:placeholders,
     users:[],
     accessControl:{
-      ...seed.accessControl,
+      ...seedInitialTenantDeveloperPolicy(seed.accessControl),
       users:(template.accessControl?.users??[])
         .filter(user=>allowed.has(user.id)).map(user=>structuredClone(user))
     }
