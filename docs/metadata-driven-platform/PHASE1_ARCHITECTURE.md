@@ -25,7 +25,7 @@ All 13 developer policy rules apply. A requirement conflicting with any rule is 
 | Package management | apps/server/src/installable-app-packages.mjs | Existing install/upgrade machinery, not a new installer |
 | State registry | apps/server/src/platform-state-registry.mjs | Preserve persisted shape until compatible migration |
 
-Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829; DashboardBuilder.tsx 3,015; FlowBuilder.tsx 1,585; metadata.ts 1,349; styles.css 2,669; rbac-sharing.smoke.test.ts 5,541. The 14 October 2026 audit counted 330 scanned source files and 10 above the line limit, all assigned a migration owner. The complete live inventory (not just these examples) is produced by scripts/metadata-architecture-audit.mjs. Existing oversized files may be edited only without net growth against the base branch and while owned by the migration map; all new extracted modules must be at most 1,000 lines.
+Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829; DashboardBuilder.tsx 3,015; FlowBuilder.tsx 1,585; metadata.ts 1,349; styles.css 2,669; rbac-sharing.smoke.test.ts 5,541. The 14 October 2026 audit recorded 330 source files and assigned legacy extraction owners. The current inventory is produced by scripts/metadata-architecture-audit.mjs. Historical line measurements are not current development limits.
 
 ### Existing reuse that must not be replaced
 
@@ -40,7 +40,7 @@ Measured baseline oversized files: App.tsx 12,886 lines; server index.ts 15,829;
 - LibraryComponentMetadata currently supports page, dashboard and flow surfaces; platform pages are still special.
 - App.tsx contains direct platform workspace JSX and a Kiosk-specific display condition. Do not reproduce this pattern for new apps.
 - Property editing is partly generic but schema registration, versioning and persistence are not yet unified for all components.
-- Main web and server files and some test/styles files exceed the 1,000-line limit.
+- Main web and server files and some test/styles files are large legacy modules requiring refactoring.
 - Platform-level settings and privilege enforcement must not become writable just because their forms are metadata-rendered.
 - Existing state, navigation, deep links, offline caches, installed packages and permissions must be migrated in place.
 

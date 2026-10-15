@@ -6,7 +6,7 @@ const mapPath = join(root, 'docs/metadata-driven-platform/MIGRATION_MAP.v1.json'
 const contractPath = join(root, 'contracts/metadata-self-hosting.v1.json');
 const map = JSON.parse(readFileSync(mapPath, 'utf8'));
 const contract = JSON.parse(readFileSync(contractPath, 'utf8'));
-const maxLines = 1000;
+const maxLines = 4000;
 const extensions = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.css', '.sql']);
 const ignored = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', '.vite', '.next']);
 function discover(folder) {

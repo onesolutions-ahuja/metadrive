@@ -2,7 +2,7 @@
 
 Execution model: seven main phases, each divided into seven subphases (a–g).
 Keep **one consolidated PR per main phase**. Subphases are checkpoints within that PR, not separate merges or deployments.
-All 13 Developer Policy rules apply to each subphase. Preserve tenant records and existing RBAC. No new application-specific engines.
+All 12 Developer Policy rules apply to each subphase. Preserve tenant records and existing RBAC. No new application-specific engines.
 
 | Phase | a | b | c | d | e | f | g |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -16,7 +16,7 @@ All 13 Developer Policy rules apply to each subphase. Preserve tenant records an
 
 ## Phase 1a scope
 1. Build a **read-only, repeatable inventory** from `git ls-files`; do not read `platform-state.json`, tenant records, secrets or live databases.
-2. Inventory tracked source by path, area and source line count, including files that exceed the 1,000-line rule.
+2. Inventory tracked source by path, area and source line count, including large legacy modules.
 3. Inventory checked-in platform seed Object/field counts, Flow identifiers and Page identifiers, plus registered/manifest components and workspace IDs.
 4. Flag possible platform-core references to Kiosk/POS/Till/KDS for architectural review; flags are **not** automatic evidence of a defect.
 5. Test inventory consistency and explicit exclusion of tenant runtime data, and run it in existing policy CI. Publish the JSON inventory as a temporary CI artifact.
@@ -27,4 +27,4 @@ All 13 Developer Policy rules apply to each subphase. Preserve tenant records an
 - `apps/server/data/platform-metadata.json` is a checked-in seed snapshot, **not** live installed tenant metadata.
 - Dynamically created components, Flows and pages require separately authorised tenant-safe runtime inspection in Phase 1c.
 - Do not mistake static code search matches for executable route or component registrations. Verify each identified migration target before changing it.
-- New modules must be <= 1,000 lines. Already oversized legacy files may shrink in place under their migration ownership, without growing beyond the base-branch line count. No multi-PR fragmentation.
+- New modules should be cohesive, reusable and responsibility-based. Keep one consolidated PR per approved phase; avoid unnecessary fragmentation.

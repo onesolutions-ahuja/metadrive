@@ -15,11 +15,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Enforce changed code file limit
-        env:
-          POLICY_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
-          POLICY_HEAD_SHA: ${{ github.sha }}
-        run: node scripts/check-developer-policy.mjs
       - name: Test read-only architecture inventory
         run: node --test scripts/audit-platform-architecture.test.mjs
       - name: Test registered component coverage

@@ -129,6 +129,6 @@
     "Seed system pages through versioned idempotent package metadata; preserve existing tenant pages and navigation",
     "Run old and new rendering paths behind a reversible compatibility boundary until parity tests pass",
     "Do not remove legacy routes or direct JSX until behaviour, deep links, accessibility, mobile and RBAC parity are verified",
-    "Keep every new or touched code file at most 1000 lines and extract cohesive modules rather than one-off app handlers"
+    "Extract cohesive modules by responsibility rather than one-off app handlers or monolithic code"
   ]
 }

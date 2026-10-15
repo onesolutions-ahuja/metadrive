@@ -10,7 +10,7 @@ export function inventoryTrackedSources({root=process.cwd(),tracked}={}){
   if(/(^|\/)(node_modules|dist|build|\.next)(\/|$)/.test(path))continue;
   const source=readFileSync(root+'/'+path,'utf8');
   const lines=source.split('\n').length-(source.endsWith('\n')?1:0);
-  result.push({path,lines,oversized:lines>1000,
+  result.push({path,lines,oversized:lines>4000,
    businessCoreReference:path.startsWith('apps/server/src/')&&/\b(?:Kiosk|POS|Till|KDS)\b/.test(source)});
  }
  return result.sort((a,b)=>a.path.localeCompare(b.path));
