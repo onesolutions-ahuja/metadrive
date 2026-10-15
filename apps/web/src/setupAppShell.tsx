@@ -182,7 +182,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [accessControl, setAccessControl] = useState<AccessControlMetadata>(defaultAccessControl);
   const [accessControlError, setAccessControlError] = useState('');
   const [flowValidation, setFlowValidation] = useState<FlowValidationMetadata | null>(null);
-  const [flowRun, setFlowRun] = useState<{ interviewId: string; screen: FlowElementMetadata; values: Record<string, unknown>; outcomes: Array<{ name: string; label: string }>; canGoBack: boolean } | null>(null);
+  const [flowRun, setFlowRun] = useState<{ interviewId: string; flowApiName: string; screen: FlowElementMetadata; values: Record<string, unknown>; outcomes: Array<{ name: string; label: string }>; canGoBack: boolean } | null>(null);
   const [flowDebug, setFlowDebug] = useState<{
     flow: FlowDefinitionMetadata;
     mode: 'debug' | 'run';
