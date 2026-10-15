@@ -54,7 +54,7 @@ import {
   ListFilter,
   Maximize2,
   Monitor,
-  MoreHorizontal,
+  History,
   Pencil,
   Plus,
   Puzzle,
@@ -400,8 +400,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
     recordNameFormat: ''
   });
   const [toast, setToast] = useState('');
-  const [activeUtility, setActiveUtility] = useState<'Notes' | 'History' | null>(null);
-  const [utilityNotes, setUtilityNotes] = useState<Record<string, string>>({});
+  const [activeUtility, setActiveUtility] = useState<'History' | null>(null);
   const [recentRoutes, setRecentRoutes] = useState<Array<{ key: string; label: string; route: AppRoute }>>([]);
   const [flowToolTab, setFlowToolTab] = useState<'Elements' | 'Manager'>('Elements');
 
@@ -2501,7 +2500,15 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} />
           </label>}
         </div>
-        <div className="header-tools">
+        <div className="header-tools" ref={appUtilityRef}>
+          <button type="button" className="icon-button header-history-button" title="History" aria-label="History" aria-expanded={activeUtility === 'History'}
+            onClick={() => setActiveUtility((current) => current === 'History' ? null : 'History')}><History size={17} /></button>
+          {activeUtility === 'History' && <section className="app-utility-popover" aria-label="History utility">
+            <div className="app-utility-heading"><strong>History</strong><button className="icon-button" aria-label="Close History" onClick={() => setActiveUtility(null)}><X size={14} /></button></div>
+            <div className="app-utility-history">{recentRoutes.length
+              ? recentRoutes.map((item) => <button key={item.key} onClick={() => { navigateRoute(item.route); setActiveUtility(null); }}>{item.label}</button>)
+              : <p>No recent items.</p>}</div>
+          </section>}
           <NavigationLoadTime routeKey={routeTiming.routeKey} startedAt={routeTiming.startedAt}
             ready={metadataLoaded && (route.kind !== 'setup' || route.workspace === 'home' || advancedMetadataLoaded)}
             kind={routeTiming.kind} authMs={routeTiming.authMs} />
@@ -2541,7 +2548,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         </div>
       </header>
 
-      {route.kind !== 'setup' && <div className="app-strip" ref={appUtilityRef} style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
+      {route.kind !== 'setup' && currentAppNavigation.some((entry) => entry.type === 'App Page' && pages.some((page) => page.apiName === entry.apiName && page.pageType === 'App Page' && page.status === 'Active')) && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         {currentApp?.apiName !== 'Records' && <div className="app-title">
           <span className="app-icon"><Database size={18} /></span>
           {apps.length > 1
@@ -2561,19 +2568,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           })}
 
         </nav>
-        {currentApp?.utilityItems.map((utility) => <button className="app-utility-button" key={utility}
-          aria-expanded={activeUtility === utility} onClick={() => setActiveUtility((current) => current === utility ? null : utility)}>{utility}</button>)}
-        {canManageApps && <button className="app-strip-menu" type="button" title="Open App Manager" aria-label="Open App Manager"
-          onClick={() => openSetupWorkspace('app-manager')}><MoreHorizontal size={19} /></button>}
-        {activeUtility && <section className="app-utility-popover" aria-label={`${activeUtility} utility`}>
-          <div className="app-utility-heading"><strong>{activeUtility}</strong><button className="icon-button" aria-label={`Close ${activeUtility}`} onClick={() => setActiveUtility(null)}><X size={14} /></button></div>
-          {activeUtility === 'Notes'
-            ? <textarea aria-label="App notes" placeholder="Write a note for this app session…" value={utilityNotes[currentApp?.apiName ?? ''] ?? ''}
-              onChange={(event) => setUtilityNotes((current) => ({ ...current, [currentApp?.apiName ?? '']: event.target.value }))} />
-            : <div className="app-utility-history">{recentRoutes.length
-              ? recentRoutes.map((item) => <button key={item.key} onClick={() => { navigateRoute(item.route); setActiveUtility(null); }}>{item.label}</button>)
-              : <p>No recent items.</p>}</div>}
-        </section>}
+
       </div>
 
       }
