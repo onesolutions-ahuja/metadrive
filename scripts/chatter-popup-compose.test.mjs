@@ -21,5 +21,5 @@ test('send remains independently controlled by server-authorized channel grants'
   assert.match(inbox, /disabled=\{!draft\.trim\(\) \|\| busy \|\| !canSendSelected\}/);
   const chatter = preset.components.find(c => c.type === 'Custom:ChatterInbox');
   assert.ok(chatter);
-  assert.equal(Object.hasOwn(chatter.properties, 'canSend'), false);
+  assert.equal(chatter.properties.canSend, false);
 });
