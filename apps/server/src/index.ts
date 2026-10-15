@@ -1,3 +1,4 @@
+import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
 import { registerReportRoutes } from './modules/reports/routes.js';
 import { registerDashboardRoutes } from './modules/dashboards/routes.js';
 import { registerDashboardSnapshotRoutes } from './modules/dashboards/snapshot-routes.js';
@@ -4319,10 +4320,11 @@ function persistState(next: PlatformState): void {
   assertTenantIdentityIsolation(next);
   // Typed SQL mode must never persist an unencrypted local JSON state copy.
   const serialized = JSON.stringify(persistenceMode === 'jsonb' ? { ...next, refreshSessions: [] } : next);
+  const localSerialized = JSON.stringify(localStateWithoutSqlObjectDefinitions({ ...next, refreshSessions: [] }));
   if (persistenceMode !== 'typed') {
     mkdirSync(dirname(dataPath), { recursive: true });
     const temporaryPath = `${dataPath}.tmp`;
-    writeFileSync(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
+    writeFileSync(temporaryPath, localSerialized, { encoding: 'utf8', mode: 0o600 });
     renameSync(temporaryPath, dataPath);
   }
   latestStateCommit = persistToPostgres(next, serialized);
@@ -4337,7 +4339,7 @@ if (persistenceMode === 'typed' && existingPostgresState === null)
   throw new Error('Typed SQL runtime requires a verified database snapshot; cannot seed from JSON files');
 if (existingPostgresState !== null && persistenceMode !== 'typed') {
   mkdirSync(dirname(dataPath), { recursive: true });
-  writeFileSync(dataPath, JSON.stringify(existingPostgresState), { encoding: 'utf8', mode: 0o600 });
+  writeFileSync(dataPath, JSON.stringify(localStateWithoutSqlObjectDefinitions(existingPostgresState as PlatformState)), { encoding: 'utf8', mode: 0o600 });
 } else if (existingPostgresState === null) {
   // Never replace an existing database state with a new empty seed.
   console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
@@ -13503,10 +13505,7 @@ app.listen(port, () => {
 
 export { app, libraryComponentInputSchema, persistState, tenantData, getPrincipal, requirePermission, canOpenApp, canOpenTab, routeParam, findLibraryComponentUsages, ownedComponentIndex, componentNameTaken, usageBlockerDetails, syncBundledLibraryComponents };
 export type { LibraryComponent, LibraryComponentRevision };
-
 export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardTimeZoneSchema, dashboardSubscriptionSchema, isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText, principalUser, effectivePermissions, dashboardRunningUserChoices, dashboardRunningPrincipal, dashboardRunningUserSelectionError, folderAccessLevelForUser, folderForUser, dashboardForUser, validateDashboardFolderReferences, requireAnyPermission, hasObjectPermission, hasRecordAccess, sanitizeRecordForRead, persistTenantRecords, formulaContextForUser, dashboardRelationshipPaths, dispatchDashboardSubscription, nextDashboardSubscriptionRunAt, calculateFormulaFields, libraryComponentVisible, randomUUID, canAccessDashboard, canEditDashboard, dashboardFilterSchema, reportFilterMatches, dashboardSnapshotSchema, reportFolderAccessLevelForUser, hasFieldPermission, resolveDashboardCrossFilters, pickDashboardSnapshotProperties, sanitizeHtml, matchesDashboardFilters };
 export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
-
 export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
-
 export type { DashboardMetadata, ReportMetadata };
