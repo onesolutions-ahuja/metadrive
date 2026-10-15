@@ -1,6 +1,7 @@
 /** Record API handlers. All platform services are injected, preserving tenant/RBAC checks. */
 import type { Request, Response } from 'express';
 import { filterAuthorisedRecords, orderAuthorisedRecords, pageAuthorisedRecords } from './query-page.js';
+import { recordPageRequest } from './record-page-query.js';
 import type { RecordRoutesDependencies, TenantData, RuntimeRecord, LocalUser, PlatformState } from '../../index.js';
 import type { Principal } from '../../auth.js';
 import { protectedChatterRecordWrite } from '../../chatter-record-write-policy.js';
@@ -121,11 +122,8 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
   if (!tenant.objects.some((object) => object.apiName === objectName)) return res.status(404).json({ error: `Object "${objectName}" was not found` });
   if (!hasObjectPermission(principal, tenant, objectName, 'read')) return res.status(403).json({ error: `Missing read permission for object "${objectName}"` });
   const object = tenant.objects.find((item) => item.apiName === objectName)!;
-  const paginated = req.query.limit !== undefined || req.query.offset !== undefined || req.query.search !== undefined || req.query.filterField !== undefined || req.query.sortField !== undefined;
-  const rawLimit = Number(req.query.limit ?? 50);
-  const rawOffset = Number(req.query.offset ?? 0);
-  if (paginated && (!Number.isSafeInteger(rawLimit) || rawLimit < 1 || rawLimit > 200
-    || !Number.isSafeInteger(rawOffset) || rawOffset < 0)) {
+  const { paginated, limit: rawLimit, offset: rawOffset, valid: validPagination } = recordPageRequest(req.query);
+  if (!validPagination) {
     return res.status(400).json({ error: 'Invalid pagination: limit must be 1–200 and offset must be non-negative' });
   }
   const relatedField = req.query.relatedField;
