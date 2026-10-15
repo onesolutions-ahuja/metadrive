@@ -13,7 +13,7 @@ export function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): 
     ...snapshot,
     tenants: Object.fromEntries(Object.entries(snapshot.tenants).map(([tenantId, tenant]) => [
       tenantId,
-      { ...tenant, objects: tenantId === 'unesolutions-dev' ? tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)) : tenant.objects }
+      { ...tenant, ...(tenantId === 'unesolutions-dev' ? { objects: tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)), accessControl: { ...tenant.accessControl, profiles: [], permissionSets: [], permissionSetGroups: [], roles: [], publicGroups: [], queues: [], sharingRules: [], users: [] }, sharingSettings: {} } : {}) }
     ]))
   };
 }
