@@ -9,6 +9,7 @@ registerUniversalShell();
 // out of the initial public marketing bundle.
 const Workspace = lazy(async () => {
   await import('./styles.css');
+  await import('./styles-part2.css');
   await import('./styles-audit.css');
   return import('./App');
 });

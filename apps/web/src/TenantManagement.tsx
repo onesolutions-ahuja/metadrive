@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Building2, ChevronLeft, ChevronRight, CircleAlert, Plus, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import './TenantManagement.css';
+import {tenantCreateFieldDefinitions} from './adminTenantFieldMetadata';
+import AdminPropertyControl from './AdminPropertyControl';
 import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
 import TenantUsagePanel from './TenantUsagePanel';
@@ -216,12 +218,10 @@ export default function TenantManagement({ request, permitted }: { request: Requ
       <section className="tenant-panel tenant-detail" aria-label={showCreate ? 'Create tenant' : 'Tenant details'}>
         {showCreate ? <form onSubmit={(event) => void createTenant(event)}>
           <div className="tenant-detail-heading"><h2>New tenant</h2><button type="button" className="tenant-button" onClick={() => { setShowCreate(false); setCreate(emptyCreate); setCreateKey(crypto.randomUUID()); }}>Cancel</button></div>
-          <label>Tenant ID<input required minLength={2} maxLength={63} pattern="[A-Za-z0-9][A-Za-z0-9_-]{1,62}" autoComplete="off" value={create.tenantId} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, tenantId: event.target.value })); }} /></label>
-          <label>Organisation name<input required maxLength={120} value={create.tenantName} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, tenantName: event.target.value })); }} /></label>
-          <label>Initial administrator name<input required maxLength={120} value={create.adminName} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, adminName: event.target.value })); }} /></label>
-          <label>Initial administrator email<input type="email" required maxLength={254} autoComplete="off" value={create.email} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, email: event.target.value })); }} /></label>
-          <label>Initial administrator password<input type="password" required minLength={12} maxLength={256} autoComplete="new-password" value={create.password} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, password: event.target.value })); }} /></label>
-          <label>Developer domain (optional)<input type="text" maxLength={253} placeholder="tenant-domain.com" value={create.developerDomain ?? ''} onChange={(event) => { setCreateKey(crypto.randomUUID()); setCreate((old) => ({ ...old, developerDomain: event.target.value })); }} /></label>
+          {tenantCreateFieldDefinitions.map(field=><AdminPropertyControl
+            key={field.key} definition={{...field,propertyKey:field.key,kind:'TEXT'}}
+            value={create[field.key]??''}
+            onChange={value=>{setCreateKey(crypto.randomUUID());setCreate(old=>({...old,[field.key]:value}));}}/>)}
           <p className="tenant-help">Creates an initial administrator and a disabled developer account with full starting tenant permissions. For <strong>developer@tenant-domain.com</strong>, enter tenant-domain.com. The tenant administrator activates the developer account from Company Settings; no password is shared with platform operators.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
         </form> : selected ? <><form onSubmit={(event) => void saveTenant(event)}>
