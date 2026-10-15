@@ -7,14 +7,7 @@ export type FlowPackage = {
   flows?: readonly { apiName: string }[];
   installation?: { allowInstalledMetadataWithoutLicence?: boolean };
 };
-export type FlowInstallation = {
-  AppKey__c?: unknown;
-  Installed__c?: unknown;
-  LicenceStatus__c?: unknown;
-  LicenceExpiresAt__c?: unknown;
-  TrialExpiresAt__c?: unknown;
-  TrialUsed__c?: unknown;
-};
+export type FlowInstallation = Record<string, unknown>;
 export function flowPackageAdmission(
   flowApiName: string,
   packages: readonly FlowPackage[],
