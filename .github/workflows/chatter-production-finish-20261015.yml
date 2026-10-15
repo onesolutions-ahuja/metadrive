@@ -1,0 +1,23 @@
+name: Chatter production finish audit
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/chatter-production-finish-20261015.mjs
+      - .github/workflows/chatter-production-finish-20261015.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate tenant-scoped grants and publish authorized Send Flow
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/chatter-production-finish-20261015.mjs
