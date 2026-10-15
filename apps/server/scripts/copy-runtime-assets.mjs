@@ -52,6 +52,10 @@ for(const name of ['offline-publication.mjs','offline-publication-route.mjs','co
  mkdirSync(dirname(target),{recursive:true});
  copyFileSync(resolve(serverDir,'src',relativePath),target);
 }
+// Typed Chatter Flow contract helper used by the compiled OneEngine API.
+const chatterHelper='modules/flows/chatter-request-input.mjs';
+mkdirSync(dirname(resolve(destination,chatterHelper)),{recursive:true});
+copyFileSync(resolve(serverDir,'src',chatterHelper),resolve(destination,chatterHelper));
 // Catch missing runtime imports in the production build itself, not in Render.
 // TypeScript deliberately leaves .mjs specifiers untouched, and tsc does not
 // copy these files. Scan every emitted module, including nested JS outputs.

@@ -22,9 +22,18 @@ const usable=msg.filter(x=>x.Channel_Account__c&&x.Id&&
  (String(x.Direction__c).toLowerCase()==='incoming'?x.From_Number__c:x.To_Number__c));
 const gr=access.data.grants||[];
 const creds=await get('/named-credentials');
+const flows=await get('/metadata/flows');
+const pages=await get('/metadata/pages');
+const chatPage=(pages.data.pages||[]).find(x=>x.apiName==='UNE_CHATTER');
+const chatComponent=(chatPage?.components||[]).find(x=>x.type==='Custom:ChatterInbox');
+const actions=chatComponent?.properties?.actionFlows||{};
+const sendFlow=(flows.data.flows||[]).find(x=>x.apiName==='CHATTER_SEND_MESSAGE');
+const assignFlow=(flows.data.flows||[]).find(x=>x.apiName==='CHATTER_ASSIGN_CONVERSATION');
 const graph=(creds.data.credentials||[]).filter(c=>{try{return new URL(c.baseUrl).hostname==='graph.facebook.com';}catch{return false}}).map(c=>({protocol:c.protocol,enabled:c.enabled,accountIdConfigured:!!c.configuration?.PhoneNumberId,pathType:(()=>{const p=new URL(c.baseUrl).pathname;return /^\/v\d+\.\d+\/?$/.test(p)?'version-only':/^\/v\d+\.\d+\/[A-Za-z0-9_-]+\/?$/.test(p)?'account-path':'other'})()}));
 console.log('CHATTER_READONLY_DIAGNOSTIC '+JSON.stringify({
  role:login.data.user.role, graphCredentials:graph, credentialsStatus:creds.status,
+ pageActionBindings:{send:actions.send?.inputs,assign:actions.assign?.inputs,componentCanSend:chatComponent?.properties?.canSend},
+ activeFlows:{send:!!sendFlow?.activeVersion,assign:!!assignFlow?.activeVersion,sendInputNames:(sendFlow?.resources||[]).filter(x=>x.availableForInput).map(x=>x.name),assignInputNames:(assignFlow?.resources||[]).filter(x=>x.availableForInput).map(x=>x.name)},
  supportAccount: String(login.data.user.email||email).toLowerCase()==='support@unesolutions.co.uk',
  endpoints:{access:access.status,records:records.status,grantRecords:grants.status,objects:objects.status},
  counts:{visibleRecordPage:list.length,whatsapp:whatsapp.length,whatsappMessages:msg.length,renderableMessages:usable.length,authorizedChannels:gr.filter(x=>x.canRead).length,sendChannels:gr.filter(x=>x.canRead&&x.canSend).length,assignChannels:gr.filter(x=>x.canRead&&x.canAssign).length,accountIdsAvailable:gr.every(x=>typeof x.channelAccountId==='string'&&x.channelAccountId.length>0)},
