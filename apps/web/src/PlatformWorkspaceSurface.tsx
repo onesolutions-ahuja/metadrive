@@ -10,8 +10,8 @@ import {resolvePageComponentStyle} from './pageComponentLayout';
  * The enclosing Setup route and every OneEngine API retain their RBAC gates.
  * A client-side descriptor does not grant permissions or execute actions.
  */
-export type SystemWorkspaceId='app-manager'|'app-exchange'|'tenant-management'|'rbac'|'company-settings'|'object-manager'|'named-credentials'|'approval-processes'|'automation-settings';
-const supported:ReadonlySet<string>=new Set(['app-manager','app-exchange','tenant-management','rbac','company-settings','object-manager','named-credentials','approval-processes','automation-settings']);
+export type SystemWorkspaceId='app-manager'|'app-exchange'|'tenant-management'|'rbac'|'company-settings'|'object-manager'|'named-credentials'|'approval-processes'|'automation-settings'|'connector-settings';
+const supported:ReadonlySet<string>=new Set(['app-manager','app-exchange','tenant-management','rbac','company-settings','object-manager','named-credentials','approval-processes','automation-settings','connector-settings']);
 const descriptions:Readonly<Record<SystemWorkspaceId,string>>={
  'app-manager':'Configure applications and navigation',
  'app-exchange':'Manage installed applications',
@@ -21,7 +21,8 @@ const descriptions:Readonly<Record<SystemWorkspaceId,string>>={
  'object-manager':'Configure object metadata',
  'named-credentials':'Manage named credentials and secrets',
  'approval-processes':'Manage approval definitions',
- 'automation-settings':'Configure process execution policies'
+ 'automation-settings':'Configure process execution policies',
+ 'connector-settings':'Manage connector configuration'
 };
 export function resolveSystemWorkspace(id:string){
  if(!supported.has(id))return undefined;
