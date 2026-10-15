@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { PlatformState } from '../../index.js';
 import type { JwtService, Principal } from '../../auth.js';
 import { bearerToken, tenantForRequestHost } from './request-auth.js';
+import { externalIdentityRouteAllowed } from './external-identity-policy.js';
 
 type User = PlatformState['users'][number];
 type Tenant = PlatformState['tenants'][string];
@@ -77,9 +78,7 @@ export function createAccessAuthentication(deps: AccessAuthenticationDependencie
     const accessMetadataUser = state.tenants[tenantId].accessControl.users
       .find((member) => member.id === user.id);
     if (accessMetadataUser?.userType === 'external') {
-      const portalRecordRead = req.method === 'GET' &&
-        /^\/api\/records\/[A-Za-z0-9_]+(?:\/[A-Za-z0-9_-]+)?$/.test(req.path);
-      if (!(portalRecordRead || (req.method === 'GET' && req.path === '/api/auth/me'))) {
+      if (!externalIdentityRouteAllowed(req.method, req.path)) {
         res.status(403).json({ error: 'External identities cannot use this tenant API' });
         return;
       }
