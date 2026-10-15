@@ -18,7 +18,8 @@ const wanted={
  CHATTER_ASSIGN_CONVERSATION:['TargetRecordId'],
  CHATTER_SEND_MESSAGE:['AuthorisedMessagePath','AuthorisedCredentialId','SenderPhone','AssignedUserId','RecipientPhone']
 };
-// Reconcile persisted tenant Flow resources, not only packaged metadata.\nconst report={};
+// Reconcile persisted tenant Flow resources, not only packaged metadata.
+const report={};
 for(const [name,needed] of Object.entries(wanted)){
  const flow=(catalogue.data.flows||[]).find(f=>f.apiName===name);
  if(!flow||flow.status!=='Active'||!flow.activeVersion)throw Error(name+' must exist and be published before repairing');
