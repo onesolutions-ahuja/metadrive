@@ -134,6 +134,9 @@ try{
   const iframe=[...document.querySelectorAll('iframe[sandbox="allow-scripts"]')].at(-1);
   return iframe!==undefined;
  });
+ const beforeOrder=(await request('/records/Order__c')).records||[];
+ const beforeLines=(await request('/records/OrderLine__c')).records||[];
+ console.log('Kiosk basket diagnosis',JSON.stringify({orders:beforeOrder.map(x=>({Id:x.Id,Status:x.Status,BasketSessionKey:x.BasketSessionKey,Total:x.Total})),lines:beforeLines.map(x=>({Id:x.Id,OrderId:x.OrderId,Quantity:x.Quantity,LineTotal:x.LineTotal})),footer:await checkout.locator('body').innerText()}));
  await submit.click({timeout:30000});
  await page.waitForURL('**/une/apps/MD_Commerce_Kiosk/pages/MD_Commerce_Confirmation',{timeout:30000});
  const orders=(await request('/records/Order__c')).records||[];
