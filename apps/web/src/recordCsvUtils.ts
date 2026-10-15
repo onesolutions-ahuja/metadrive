@@ -2,6 +2,7 @@ import type { ObjectMetadata } from './metadata';
 
 export function formatRecordValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (typeof value === 'object') {
     if (!Array.isArray(value) && value !== null && 'latitude' in value && 'longitude' in value) {
       return `${String(value.latitude)}, ${String(value.longitude)}`;
