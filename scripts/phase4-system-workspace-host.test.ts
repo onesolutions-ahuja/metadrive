@@ -19,7 +19,15 @@ test('system workspace surface fails closed for denied platform access',()=>{
 });
 test('authorised workspace retains existing interactive children',()=>{
  const html=renderToStaticMarkup(React.createElement(PlatformWorkspaceSurface,
-  {workspace:'app-manager'},React.createElement('button',null,'Save')));
+  {workspace:'app-manager',permitted:true},React.createElement('button',null,'Save')));
  assert.match(html,/data-metadata-source="platform-workspace-registry"/);
  assert.match(html,/Save/);
+});
+
+test('omitted permission never renders protected admin controls',()=>{
+ const html=renderToStaticMarkup(React.createElement(PlatformWorkspaceSurface,
+  {workspace:'tenant-management',permitted:undefined as unknown as boolean},
+  React.createElement('button',null,'Suspend tenant')));
+ assert.match(html,/Workspace unavailable/);
+ assert.doesNotMatch(html,/Suspend tenant/);
 });
