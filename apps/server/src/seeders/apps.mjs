@@ -24,3 +24,8 @@ export function listSeedPackages(catalog) {
     components: (pkg.components ?? []).length
   }));
 }
+
+/** Reconciliation keeps all existing AppExchange entitlement and uninstall gates. */
+export function reconcileInstalledAppSeeds(tenant,catalog,tenantId) {
+  return applyInstallableAppPackages(tenant,catalog,tenantId);
+}
