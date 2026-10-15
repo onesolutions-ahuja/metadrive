@@ -11,9 +11,10 @@ const sqlMigratedSeedObjects = new Set([
 export function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): PlatformState {
   return {
     ...snapshot,
+    users: [],
     tenants: Object.fromEntries(Object.entries(snapshot.tenants).map(([tenantId, tenant]) => [
       tenantId,
-      { ...tenant, ...(tenantId === 'unesolutions-dev' ? { objects: tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)), accessControl: { ...tenant.accessControl, profiles: [], permissionSets: [], permissionSetGroups: [], roles: [], publicGroups: [], queues: [], sharingRules: [], users: [] }, sharingSettings: {} } : {}) }
+      { ...tenant, ...(tenantId === 'unesolutions-dev' ? { objects: tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)), accessControl: { ...tenant.accessControl, profiles: [], permissionSets: [], permissionSetGroups: [], roles: [], publicGroups: [], queues: [], sharingRules: [], users: [] }, sharingSettings: {}, records: {}, flows: [], pages: [], apps: [], connectorSettings: [], connectorDefinitions: [], autoNumberSequences: {} } : {}) }
     ]))
   };
 }
