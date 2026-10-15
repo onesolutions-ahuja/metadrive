@@ -60,6 +60,6 @@ export default function PlatformWorkspaceSurface({
        </div>)}
      </div>
    </div>}
-   {page?<PlatformPageSlotsProvider page={page}>{children}</PlatformPageSlotsProvider>:children}
+   {page?<PlatformPageSlotsProvider page={page} libraryComponents={libraryComponents}>{children}</PlatformPageSlotsProvider>:children}
  </section>;
 }
