@@ -6,7 +6,7 @@ import {seedCredentialGrants} from './credential-grant-seeder.mjs';
  * No application-specific execution paths are permitted in the shared installer.
  * Existing tenant definitions and customisations are never overwritten.
  */
-export function applyInstallableAppPackages(tenant, catalog) {
+export function applyInstallableAppPackages(tenant, catalog, tenantId = '') {
   let next = retireUninstalledPackageMetadata(tenant, catalog);
   const packages = Array.isArray(catalog?.packages) ? catalog.packages : [];
   for (const pkg of packages) {
@@ -211,7 +211,7 @@ export function applyInstallableAppPackages(tenant, catalog) {
       }
     }
     const provisioned = seedCredentialGrants(
-      {...next,objects,records,accessControl}, pkg.installation?.credentialGrantSeeds);
+      {...next,objects,records,accessControl}, pkg.installation?.credentialGrantSeeds, tenantId);
     if (provisioned.records !== records) {
       records = provisioned.records;
       changed = true;

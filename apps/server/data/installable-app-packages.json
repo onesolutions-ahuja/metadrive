@@ -43,7 +43,11 @@
               "Can_Assign__c": true,
               "View_All__c": true,
               "Active__c": true
-            }
+            },
+            "tenantId": "unesolutions-dev",
+            "targetUserEmails": [
+              "support@unesolutions.co.uk"
+            ]
           }
         ]
       },
