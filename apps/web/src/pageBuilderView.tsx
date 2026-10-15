@@ -1,3 +1,4 @@
+import { pageTemplates, pageStringList } from './builders/pageEditorMetadata';
 import BuilderTemplatePreviewLayout from './BuilderTemplatePreviewLayout';import { reconcileNavigationOrder } from './appNavigation';
 import { createObjectManager } from './objectManagerView';
 import { createSetupHome } from './setupHomeView';
@@ -229,12 +230,6 @@ function PageBuilder({
   useEffect(() => {
     if (preparedAppId) setBuilderAppApiName(preparedAppId);
   }, [preparedAppId]);
-  const pageTemplates: Array<{ id: LightningPageTemplate; label: string; regions: Array<'header' | 'main' | 'sidebar'> }> = [
-    { id: 'one-region', label: 'One Region', regions: ['main'] },
-    { id: 'header-main', label: 'Header and Main', regions: ['header', 'main'] },
-    { id: 'main-sidebar', label: 'Main with Sidebar', regions: ['main', 'sidebar'] },
-    { id: 'header-main-sidebar', label: 'Header, Main, and Sidebar', regions: ['header', 'main', 'sidebar'] }
-  ];
   const template = pageTemplates.find((item) => item.id === page.template) ?? pageTemplates[0];
   const builderApp = apps.find((app) => app.apiName === builderAppApiName);
   const appPageApiNames = new Set(builderApp?.navigationPageApiNames ?? []);
@@ -264,8 +259,7 @@ function PageBuilder({
     (component !== 'Activities' || targetObject?.settings?.allowActivities)
     && (component !== 'Chatter' || targetObject?.settings?.allowInChatter)
     && (component !== 'Report Chart' || targetObject?.settings?.allowReports));
-  const stringList = (value: unknown, fallback: string[]): string[] =>
-    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : fallback;
+  const stringList = pageStringList;
   const [selectedId, setSelectedId] = useState(page.components[0]?.id ?? '');
   const savedPageApiName = useRef(page.apiName);
   const device: 'Desktop' | 'Tablet' | 'Phone' = page.devices.length === 1 && page.devices[0] === 'Phone' || page.canvasWidth <= 600
