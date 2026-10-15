@@ -690,7 +690,7 @@ function RecordWorkspace({
   };
   const openList = () => onNavigate({ kind: 'record-list', objectApiName: route.objectApiName });
   const formatFieldValue = (field: FieldMetadata, value: unknown) => {
-    if (field.dataType === 'URL' && typeof value === 'string' && /^https:\/\//i.test(value) && /(?:image|photo|thumbnail|picture)/i.test(field.apiName+' '+field.label) && /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)|images\.unsplash\.com\//i.test(value)) return <img className="record-image-thumbnail" src={value} alt={field.label} loading="lazy" referrerPolicy="no-referrer" />; if (field.relationship && typeof value === 'string') {
+    if (typeof value === 'string' && ['URL','Text','Long Text Area'].includes(field.dataType) && /^https:\/\//i.test(value) && /(?:image|photo|thumbnail|picture)/i.test(field.apiName+' '+field.label) && /\.(?:png|jpe?g|webp|gif|avif)(?:[?#]|$)|images\.unsplash\.com\//i.test(value)) return <img className="record-image-thumbnail" src={value} alt={field.label} loading="lazy" referrerPolicy="no-referrer" />; if (field.relationship && typeof value === 'string') {
       const related = lookupRecords[field.relationship.targetObject]?.find((item) => item.Id === value);
       if (related) return String(related.Name ?? related.Email ?? value);
     }
