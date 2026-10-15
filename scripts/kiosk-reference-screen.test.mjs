@@ -47,3 +47,12 @@ test('live kiosk embeds fill all three independently editable template regions',
  const runtime=readFileSync(new URL('../apps/web/src/pageRuntimeViews.tsx',import.meta.url),'utf8');
  assert.match(runtime,/component\.properties\?\.fillRegion===true\s*\?\s*\{height:'100%',minHeight:0\}/);
 });
+
+test('shared fullscreen region layout stretches sandbox embeds instead of intrinsic grid rows',()=>{
+ const runtime=readFileSync(new URL('../apps/web/src/TemplatePageRuntimeLayout.tsx',import.meta.url),'utf8');
+ assert.match(runtime,/display:'flex',flexDirection:'column',gap:0,overflowY:'auto'/);
+ assert.match(runtime,/rail\?fill\(main\):main/);
+ assert.match(runtime,/rail\?fill\(sidebar\):sidebar/);
+ assert.match(runtime,/fill\(header\)/);
+ assert.match(runtime,/flex:'1 1 0',minHeight:0/);
+});
