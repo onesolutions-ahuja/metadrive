@@ -2,7 +2,7 @@
 // Run: METADRIVE_PHASE4_INSTALL_APPROVED=true METADRIVE_API_URL=https://... etc
 import {commerceComponents as baselineComponents, kioskPresentationComponents as commerceComponents} from './kiosk-phase4-components.mjs';
 import {commerceFlows} from './kiosk-phase4-flows.mjs';
-import {commercePages,commerceApp} from './kiosk-phase4-pages.mjs';
+import {commercePages,commerceApp,obsoleteCommercePages} from './kiosk-phase4-pages.mjs';
 
 const approved=process.env.METADRIVE_PHASE4_INSTALL_APPROVED==='true';
 const expectTenant=process.env.METADRIVE_EXPECTED_TENANT_ID;
@@ -134,7 +134,14 @@ async function installRegisteredComponent(component){
       && existing.cssSource===component.cssSource;
     if(matchesDesired)return created;
     // Do not overwrite independently edited registered components.
-    if(!matchesBaseline)throw Error('Existing component was customised; merge its changes before upgrading: '+component.apiName);
+    if(!matchesBaseline){
+      const uses=(await api('/metadata/pages')).pages.filter(page=>
+        page.components?.some(block=>block.type==='Custom:'+component.apiName));
+      const foreign=uses.filter(page=>![...commercePages.map(item=>item.apiName),...obsoleteCommercePages].includes(page.apiName));
+      if(foreign.length)throw Error('Component is also used outside Kiosk, refusing destructive upgrade: '+component.apiName);
+      // The owner explicitly approved rebuilding obsolete Kiosk pages. The
+      // registered library preserves the prior published revision for rollback.
+    }
     await api('/component-library/'+encodeURIComponent(component.apiName),'PUT',{
       ...component,publicationStatus:'Published'
     });
@@ -192,35 +199,42 @@ if(!apps.some(a=>a.apiName===commerceApp.apiName)){
 }
 let pages=(await api('/metadata/pages')).pages;
 let installedPages=0;
-for(const page of commercePages){
- const existing=pages.find(p=>p.apiName===page.apiName);
- if(existing){
-  if(existing.pageType!=='App Page'||existing.status!=='Active')
-   throw Error('Existing commerce Page is not active: '+page.apiName);
-  // Upgrade only our known v1 blocks; preserve editor-adjusted position, bindings,
-  // visibility and styles. Other/custom blocks are never touched.
-  const newById=new Map(page.components.map(block=>[block.id,block]));
-  const upgrades=existing.components.map(block=>{
-   const target=newById.get(block.id);
-   if(!target || !/^Custom:MD_Commerce(?:Navigation|ProductGrid|BasketPanel|CheckoutBar|Status)(?:V2)?$/.test(block.type))
-    return block;
-   return {...block,type:target.type,properties:{...block.properties,
-    ...(block.properties?.accentColor==='#103e51'?{accentColor:'#e4002b'}:{}),
-    ...(target.properties?.standalonePresentation?{standalonePresentation:true}:{}),
-    ...(target.properties?.presentationLayout?{presentationLayout:target.properties.presentationLayout,title:target.properties.title,categories:target.properties.categories}:{}),
-    ...(target.properties?.presentationVariant && block.properties?.presentationVariant === undefined ? {presentationVariant:target.properties.presentationVariant}:{}),
-    ...(block.id==='menu-basket'?{title:'SHOW BASKET',accentColor:'#92b200'}:{})}};
-  });
-  if(upgrades.some((block,i)=>JSON.stringify(block)!==JSON.stringify(existing.components[i]))){
-   await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',{
-    ...existing,components:upgrades,canvasWidth:existing.canvasWidth,canvasHeight:existing.canvasHeight
-   });
-   installedPages++;
-  }
-  continue;
+const previousPages=new Map(pages.map(page=>[page.apiName,page]));
+const updates=[];
+const retiredPages=[];
+try{
+ for(const page of commercePages){
+  const old=previousPages.get(page.apiName);
+  if(old&&(old.pageType!=='App Page'||old.targetObject!==page.targetObject))
+   throw Error('Conflicting Kiosk Page API name: '+page.apiName);
+  if(old&&JSON.stringify(old.components)===JSON.stringify(page.components)
+     && old.canvasWidth===page.canvasWidth&&old.canvasHeight===page.canvasHeight)continue;
+  await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',page);
+  updates.push(page.apiName);
+  installedPages++;
  }
- await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',page);
- installedPages++;
+ // Retirement is reversible; protected generic Page API has no DELETE route.
+ // Do not remove Pages belonging to another tenant or a different application.
+ const obsolete=pages.filter(page=>
+  obsoleteCommercePages.includes(page.apiName)
+  || (page.label==='Kiosk Editable Canvas' && page.pageType==='App Page'));
+ for(const old of obsolete){
+  if(old.status==='Draft')continue;
+  await api('/metadata/pages/'+encodeURIComponent(old.apiName),'PUT',
+    {...old,status:'Draft'});
+  updates.push(old.apiName);retiredPages.push(old.apiName);installedPages++;
+ }
+}catch(error){
+ // Restore previously committed Pages when an individual metadata write fails.
+ const rollbackErrors=[];
+ for(const name of updates.reverse()){
+  const old=previousPages.get(name);
+  if(!old)continue;
+  try{await api('/metadata/pages/'+encodeURIComponent(name),'PUT',old)}
+  catch(cause){rollbackErrors.push(name+': '+String(cause))}
+ }
+ throw Error('Kiosk rebuild failed: '+String(error)
+   +(rollbackErrors.length?'; rollback failures: '+rollbackErrors.join('; '):''));
 }
 pages=(await api('/metadata/pages')).pages;
 for(const expectedPage of commercePages){
@@ -234,11 +248,17 @@ for(const expectedPage of commercePages){
 apps=(await api('/metadata/apps')).apps;
 const currentApp=apps.find(a=>a.apiName===commerceApp.apiName);
 if(!currentApp)throw Error('Kiosk app not readable after creation');
-if(expected.pages.some(x=>!currentApp.navigationPageApiNames?.includes(x))){
+if(JSON.stringify(currentApp.navigationPageApiNames??[])!==JSON.stringify(expected.pages)){
  await api('/metadata/apps/'+commerceApp.apiName,'PUT',{
-  ...currentApp,navigationPageApiNames:[...new Set([...(currentApp.navigationPageApiNames??[]),...expected.pages])],
-  navigationOrder:[],navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
+  ...currentApp,navigationPageApiNames:expected.pages,
+  navigationOrder:commerceApp.navigationOrder,
+  navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
  });
+}
+// Delete obsolete Page metadata only AFTER app navigation stops referencing it.
+// The generic Page endpoint denies cross-tenant, protected and dependent deletes.
+for(const name of retiredPages){
+ await api('/metadata/pages/'+encodeURIComponent(name),'DELETE');
 }
 // Seed the existing OneEngine administrator profile, not a parallel user role.
 // Only fill absent grants: administrator edits to existing grants are retained.

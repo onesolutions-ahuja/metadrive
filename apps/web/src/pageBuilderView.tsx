@@ -1,4 +1,4 @@
-import { reconcileNavigationOrder } from './appNavigation';
+import BuilderTemplatePreviewLayout from './BuilderTemplatePreviewLayout';import { reconcileNavigationOrder } from './appNavigation';
 import { createObjectManager } from './objectManagerView';
 import { createSetupHome } from './setupHomeView';
 import { createSettingsViews } from './settingsWorkspaceViews';
@@ -1237,7 +1237,8 @@ function PageBuilder({
                 height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
               }
           : {}),
-        ...visualStyle
+        ...visualStyle,
+        ...(component.properties?.fillRegion===true && page.layoutMode==='template' ? {height:'100%',minHeight:0}: {})
       } as React.CSSProperties}
       onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
@@ -1399,20 +1400,15 @@ function PageBuilder({
                 ? <div className="free-canvas-stage" style={{ width: page.canvasWidth, height: page.canvasHeight, position: 'relative' }}>
                     {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id), true, true))}
                   </div>
-                : <>
-                    {page.components.filter((component) => (component.region ?? 'main') === 'header').map((component, index) => renderPageComponent(component, index, true, true))}
-                    <div className={page.template === 'main-sidebar' || page.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
-                      <main className="record-runtime-main">{page.components.filter((component) => (component.region ?? 'main') === 'main').map((component, index) => renderPageComponent(component, index, true, true))}</main>
-                      {(page.template === 'main-sidebar' || page.template === 'header-main-sidebar') &&
-                        <aside className="record-runtime-sidebar">{page.components.filter((component) => component.region === 'sidebar').map((component, index) => renderPageComponent(component, index, true, true))}</aside>}
-                    </div>
-                  </>}
+                : <BuilderTemplatePreviewLayout page={page} phone={device==='Phone'}
+                    header={page.components.filter(item=>(item.region??'main')==='header').map((item,index)=>renderPageComponent(item,index,true,true))}
+                    main={page.components.filter(item=>(item.region??'main')==='main').map((item,index)=>renderPageComponent(item,index,true,true))}
+                    sidebar={page.components.filter(item=>item.region==='sidebar').map((item,index)=>renderPageComponent(item,index,true,true))}/>}
             </div>
           </div>
         </div>,
         externalPreviewTarget
       )}
-
       {!editorMode && <section className="page-manager-view" aria-label="Page management">
         <header className="page-manager-header"><div><h1>Page Builder</h1><p>Manage pages and their device layouts by related record or object.</p></div>
           <div className="page-manager-header-actions">
@@ -1570,14 +1566,17 @@ function PageBuilder({
                 </div>
                 {page.components.some((component) => component.type === 'Highlights Panel' && component.visible) && <div className="record-highlight">{fields.slice(0, 5).map((field) => <div key={field.apiName}><small>{field.label}</small><strong>{field.apiName === 'Name' ? `${targetObject?.label ?? 'Sample'} record` : 'Sample value'}</strong></div>)}</div>}
                 {page.components.some((component) => component.type === 'Tabs' && component.visible) && <div className="record-tabs">{stringList(page.components.find((component) => component.type === 'Tabs')?.properties.tabs, ['Related', 'Details', 'News']).map((tab, index) => <button className={index === 0 ? 'active' : ''} key={`${tab}-${index}`}>{tab}</button>)}</div>}
-              </> : page.pageType === 'App Page' ? <div className="app-page-shell-header"><div className="record-object-icon"><Grid2X2 size={17} /></div><div><small>Lightning App</small><strong>{page.label}</strong></div></div> : <div className="home-page-shell-header"><small>HOME</small><strong>{page.label}</strong><span>Your workspace overview</span></div>}
-              <div className={`page-template-regions template-${template.id}`}>
-                {template.regions.includes('header') && renderRegion('header')}
-                <div className="page-template-content">
-                  {renderRegion('main')}
-                  {template.regions.includes('sidebar') && renderRegion('sidebar')}
-                </div>
-              </div>
+              </> : page.pageType === 'App Page' ? (!page.components.some(item=>item.properties?.standalonePresentation===true) && <div className="app-page-shell-header"><div className="record-object-icon"><Grid2X2 size={17} /></div><div><small>Lightning App</small><strong>{page.label}</strong></div></div>) : <div className="home-page-shell-header"><small>HOME</small><strong>{page.label}</strong><span>Your workspace overview</span></div>}
+              {page.components.some(item=>item.properties?.standalonePresentation===true)
+                ? <BuilderTemplatePreviewLayout page={page} phone={device==='Phone'}
+                    header={renderRegion('header')} main={renderRegion('main')} sidebar={renderRegion('sidebar')}/>
+                : <div className={`page-template-regions template-${template.id}`}>
+                    {template.regions.includes('header') && renderRegion('header')}
+                    <div className="page-template-content">
+                      {renderRegion('main')}
+                      {template.regions.includes('sidebar') && renderRegion('sidebar')}
+                    </div>
+                  </div>}
               </>}
             </div>
           </div>

@@ -49,6 +49,6 @@ export default function ComponentSandbox({ definition, props }: { definition: Li
   }, [ready, instance, definition.compiledJs, definition.scopedCss, safeProps]);
   return <iframe ref={ref} title={definition.label} sandbox="allow-scripts"
     referrerPolicy="no-referrer" srcDoc={srcDoc}
-    style={{ display: 'block', width: '100%', height: '100%', minHeight: 160, border: 0 }}
+    style={{ display: 'block', width: '100%', height: '100%', minHeight: typeof props.iframeMinHeight === 'number' && props.iframeMinHeight >= 0 && props.iframeMinHeight <= 2000 ? props.iframeMinHeight : 160, border: 0 }}
     aria-label={definition.label} />;
 }

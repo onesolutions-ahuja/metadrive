@@ -205,22 +205,38 @@ export const commerceComponents=[
 // The same library components remain independently editable; V3 is a versioned
 // publication because existing tenant-owned V2 definitions must not be overwritten.
 const railSource = `
-export default function CategoryRail({title='MENU',categories='RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',accentColor='#ed002d',onAction}){
- const [selected,setSelected]=React.useState('BURGERS & WRAPS');
- const items=String(categories||'').split(',').map(x=>x.trim()).filter(Boolean);
- return <nav aria-label="Product categories" style={{display:'flex',flexDirection:'column',background:'#fff',height:'100%',boxSizing:'border-box',fontFamily:'Arial,sans-serif'}}>
-  <div style={{padding:'27px 16px 30px',fontSize:28,fontWeight:900,textAlign:'center',borderBottom:'1px solid #eee'}}>{title}</div>
-  {items.map((item,i)=><button type="button" key={item} aria-current={selected===item?'page':undefined}
-   onClick={()=>{setSelected(item);void onAction({event:'catalog',value:{category:item}})}}
-   style={{textAlign:'left',display:'flex',alignItems:'center',gap:12,background:selected===item?'#fff0f2':'#fff',
-    border:0,borderBottom:'1px solid #eee',borderLeft:selected===item?'5px solid '+accentColor:'5px solid transparent',
-    color:selected===item?accentColor:'#181818',fontWeight:selected===item?800:650,fontSize:13,
-    padding:'18px 10px',minHeight:61,cursor:'pointer'}}>
-   <span aria-hidden="true" style={{fontSize:22,width:29,textAlign:'center'}}>{['🍗','%','🍗','🍱','🍔','🍗','🍟','🍦','🥬','+'][i%10]}</span>
-   <span>{item}</span>
-  </button>)}
+
+export default function CategoryRail({title='MENU',records=[],pageState={},nameField='Name',imageField='ImageUrl',
+ brandLogoUrl='',brandLabel='YOUR BRAND',accentColor='#ed002d',backgroundColor='#ffffff',onAction,preview=false}){
+ const categories=(records||[]).filter(item=>item.IsActive!==false).slice().sort((a,b)=>Number(a.SortOrder||0)-Number(b.SortOrder||0));
+ const selected=pageState.selectedCategory?.id||categories[0]?.Id;
+ React.useEffect(()=>{
+  if(!preview && !pageState.selectedCategory?.id && categories.length){
+   const first=categories[0];
+   void onAction({event:'selectCategory',value:{id:first.Id,name:first[nameField]||first.Name}});
+  }
+ },[categories.length,pageState.selectedCategory?.id,preview]);
+ return <nav aria-label="Product categories" style={{height:'100%',minHeight:0,boxSizing:'border-box',background:backgroundColor,fontFamily:'Arial,sans-serif'}}>
+  <div style={{height:145,display:'grid',placeItems:'center',borderBottom:'1px solid #f0f0f0',padding:12,boxSizing:'border-box'}}>
+   {brandLogoUrl?<img src={brandLogoUrl} referrerPolicy="no-referrer" alt={brandLabel} style={{maxWidth:'82%',maxHeight:118,objectFit:'contain'}}/>
+    :<strong style={{fontSize:21,fontWeight:900,color:accentColor,textAlign:'center'}}>{brandLabel}</strong>}
+  </div>
+  {categories.map((item,index)=><button type="button" key={item.Id||index}
+   aria-current={selected===item.Id?'page':undefined}
+   onClick={()=>onAction({event:'selectCategory',value:{id:item.Id,name:item[nameField]||item.Name}})}
+   style={{display:'flex',width:'100%',alignItems:'center',gap:10,padding:'14px 12px',
+    minHeight:69,background:selected===item.Id?'#fff0f2':'transparent',border:0,borderBottom:'1px solid #ededed',
+    borderLeft:'5px solid '+(selected===item.Id?accentColor:'transparent'),cursor:'pointer',
+    color:selected===item.Id?accentColor:'#181818',textAlign:'left'}}>
+    {item[imageField]?<img src={String(item[imageField])} alt="" referrerPolicy="no-referrer"
+      style={{height:44,width:44,objectFit:'contain'}}/>
+      :<span aria-hidden="true" style={{height:44,width:44,display:'grid',placeItems:'center',fontSize:25}}>🍗</span>}
+    <span style={{fontWeight:800,textTransform:'uppercase',fontSize:12,lineHeight:1.2}}>{item[nameField]||item.Name}</span>
+   </button>)}
+  {!categories.length&&<p style={{padding:14,fontSize:12}}>No product categories available.</p>}
  </nav>;
 }
+
 `;
 const railCss=`.md-commerce-rail{background:white}`;
 const cardCss=`
@@ -236,25 +252,58 @@ const cardCss=`
 @media(max-width:510px){.md-commerce-grid{grid-template-columns:repeat(1,minmax(0,1fr))}}
 `;
 const footerSource=`
-export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b200',currencySymbol='£',onAction,sessionId}){
- const [basket,setBasket]=React.useState({Lines:[],Basket:null});
- const [busy,setBusy]=React.useState(false),[error,setError]=React.useState('');
- const refresh=async()=>{const r=await onAction({event:'load',value:{}});setBasket({Lines:r?.outputs?.Lines||[],Basket:r?.outputs?.Basket||null})};
- React.useEffect(()=>{void refresh().catch(e=>setError(String(e)))},[sessionId]);
- const lines=basket.Lines||[];const total=Number(basket.Basket?.Total||lines.reduce((v,l)=>v+Number(l.LineTotal||0),0));
- const checkout=async()=>{if(busy||!lines.length)return;setBusy(true);setError('');
- try{const r=await onAction({event:'submit',value:{}});if(!r?.outputs?.Submitted)throw Error('Order could not be submitted');
- await onAction({event:'confirmation',value:{}})}
- catch(e){setError(e?.message||String(e))}finally{setBusy(false)}};
- return <footer style={{height:'100%',boxSizing:'border-box',background:'#fff',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'10px 20px',fontFamily:'Arial,sans-serif'}}>
-  <button type="button" onClick={()=>onAction({event:'basket',value:{}})} style={{background:'#fff',color:'#171717',border:0,fontSize:17,fontWeight:800,cursor:'pointer'}}>{title} ({lines.length}) ▲</button>
-  {error&&<span role="alert" style={{color:'#b11',fontSize:12}}>{error}</span>}
-  <button type="button" disabled={!lines.length||busy} onClick={checkout}
-   style={{background:accentColor,color:'#fff',border:0,borderRadius:8,fontSize:18,fontWeight:900,padding:'16px 28px',minWidth:220,cursor:'pointer'}}>
-   {busy?'SUBMITTING…':'PLACE ORDER'}　{currencySymbol}{total.toFixed(2)}
-  </button>
- </footer>;
+
+export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',currencySymbol='£',
+ pageState={},refreshToken=0,emptyText='Your basket is empty',onAction,sessionId}){
+ const [data,setData]=React.useState({Basket:null,Lines:[]}),[busy,setBusy]=React.useState(''),[error,setError]=React.useState('');
+ const opened=pageState.basketOpen===true;
+ const load=async()=>{const response=await onAction({event:'load',value:{}});setData({Basket:response?.outputs?.Basket||null,Lines:response?.outputs?.Lines||[]})};
+ React.useEffect(()=>{let current=true;(async()=>{try{const r=await onAction({event:'load',value:{}});if(current)setData({Basket:r?.outputs?.Basket||null,Lines:r?.outputs?.Lines||[]})}catch(e){if(current)setError(String(e))}})();return()=>{current=false}},[sessionId,refreshToken]);
+ const lines=data.Lines||[];
+ const total=Number(data.Basket?.Total||lines.reduce((sum,item)=>sum+Number(item.LineTotal||0),0));
+ const act=async(event,value={})=>{if(busy)return;setBusy(event);setError('');
+  try{const response=await onAction({event,value});
+   if(event==='submit'){if(!response?.outputs?.Submitted)throw Error('Order could not be submitted');await onAction({event:'confirmation',value:{}})}
+   else await load()
+  }catch(e){setError(e?.message||String(e))}finally{setBusy('')}
+ };
+ return <div style={{width:'100%',height:'100%',position:'relative',fontFamily:'Arial,sans-serif'}}>
+  {opened&&<div style={{position:'absolute',inset:'0 0 83px 0',background:'rgba(0,0,0,.55)',display:'flex',alignItems:'end',justifyContent:'center',boxSizing:'border-box'}}>
+   <section role='dialog' aria-modal='true' aria-label='Your basket'
+    style={{background:'#fff',padding:22,width:'min(740px,100%)',maxHeight:'90%',overflowY:'auto',boxSizing:'border-box',borderRadius:'14px 14px 0 0'}}>
+    <header style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+     <h2 style={{margin:'0 0 15px',fontSize:27}}>YOUR BASKET</h2>
+     <button type='button' onClick={()=>onAction({event:'closeBasket',value:{}})} aria-label='Close basket'
+      style={{border:0,background:'none',fontSize:28,cursor:'pointer'}}>×</button>
+    </header>
+    {lines.length===0&&<p>{emptyText}</p>}
+    {lines.map(item=><div key={item.Id} style={{display:'flex',gap:14,justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #eee',padding:'12px 0'}}>
+      <div><strong>{item.Name}</strong><div style={{fontSize:13,color:'#555'}}>{item.Quantity||1} × {currencySymbol}{Number(item.UnitPrice||0).toFixed(2)}</div></div>
+      <div><strong>{currencySymbol}{Number(item.LineTotal||0).toFixed(2)}</strong>
+       <button disabled={!!busy} type='button' onClick={()=>act('remove',{lineId:item.Id})}
+        style={{display:'block',border:0,background:'none',color:'#ca0029',cursor:'pointer'}}>Remove</button>
+      </div>
+     </div>)}
+    <p style={{textAlign:'right',fontWeight:800,fontSize:23}}>TOTAL {currencySymbol}{total.toFixed(2)}</p>
+    {error&&<p role='alert' style={{color:'#b11'}}>{error}</p>}
+   </section>
+  </div>}
+  <footer style={{position:'absolute',bottom:0,left:0,right:0,height:83,boxSizing:'border-box',
+   display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'8px 18px',
+   borderTop:'1px solid #e5e5e5',background:'#fff'}}>
+   <button type='button' onClick={()=>onAction({event:opened?'closeBasket':'openBasket',value:{}})}
+    style={{background:'#fff',color:'#171717',border:0,fontSize:16,fontWeight:900,cursor:'pointer'}}>
+     🧺 {title} <span style={{fontSize:12,color:'#df002e'}}>{lines.length}</span> {opened?'⌄':'⌃'}
+   </button>
+   {error&&!opened&&<span role='alert' style={{fontSize:11,color:'#b11'}}>{error}</span>}
+   <button type='button' disabled={!!busy||!lines.length} onClick={()=>act('submit')}
+    style={{background:accentColor,color:'#fff',border:0,borderRadius:7,fontSize:17,fontWeight:900,padding:'17px 24px',minWidth:200,cursor:'pointer'}}>
+    {busy==='submit'?'SUBMITTING…':'PLACE ORDER'}　{currencySymbol}{total.toFixed(2)}
+   </button>
+  </footer>
+ </div>;
 }
+
 `;
 
 const composeVariant=(baseline,alternative,baseName,alternativeName)=>{
@@ -265,19 +314,58 @@ const composeVariant=(baseline,alternative,baseName,alternativeName)=>{
 const [nav,grid,basket,status]=commerceComponents;
 const variantSetting=setting('presentationVariant','Presentation variant','TEXT','standard',99);
 const productSource=grid.jsxSource
- .replace("return <section style={{padding:0,maxWidth:'none'}}>","return <section style={{padding:0,maxWidth:'none',fontFamily:'Arial,sans-serif'}}>")
- .replace("fontSize:32,fontWeight:900","fontSize:30,fontWeight:900")
- .replace("height:215,objectFit:'cover'","height:170,objectFit:'contain'")
- .replace("fontSize:19,color:'#171717'","fontSize:15,color:'#171717'");
-const portraitCss=cardCss.replace(/(^|\n)(\.[^{\n]+)\{/g, '$1.md-kiosk-reference $2{');
+ .replace("imageField='ImageUrl',\n primaryButtonLabel", "imageField='ImageUrl',pageState={},categoryField='CategoryId',filterField='Subcategory',\n bestsellerField='IsBestseller',featuredBorderColor='#92b000',chipColor='#ed002d',imageHeight=168,\n primaryButtonLabel")
+ .replace(" const active=(records||[]).filter(p=>p.IsActive!==false);",
+   " const categoryId=pageState?.selectedCategory?.id;\n const [filter,setFilter]=React.useState('ALL');\n const active=(records||[]).filter(p=>p.IsActive!==false && (!categoryId || String(p[categoryField])===String(categoryId)));\n const filters=['ALL',...new Set(active.map(p=>p[filterField]).filter(Boolean).map(String))];\n const visible=active.filter(p=>filter==='ALL'||String(p[filterField])===filter);")
+ .replace(" return <section style={{padding:0,maxWidth:'none'}}>",
+   " return <section className='md-kiosk-products' style={{padding:0,maxWidth:'none',fontFamily:'Arial,sans-serif'}}>") 
+ .replace("  <h2 style={{color:'#171717',fontSize:32,fontWeight:900,letterSpacing:'-.025em',margin:'0 0 20px'}}>{title}</h2>",
+   "  <div style={{display:'flex',alignItems:'start',justifyContent:'space-between',marginBottom:10}}><h2 style={{color:'#171717',fontSize:38,fontFamily:'Impact,Arial Narrow,sans-serif',fontWeight:900,textTransform:'uppercase',letterSpacing:'-.025em',margin:0}}>{pageState?.selectedCategory?.name||title}</h2><div aria-hidden='true' style={{display:'flex',gap:10,marginTop:-20}}>{[0,1,2].map(i=><span key={i} style={{width:22,height:55,background:chipColor}}/>)}</div></div>\n  <div role='group' aria-label='Product filters' style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:18}}>{filters.map(name=><button type='button' key={name} onClick={()=>setFilter(name)} style={{border:'1px solid '+(filter===name?chipColor:'#e5e5e5'),background:'#fff',color:filter===name?chipColor:'#161616',borderRadius:5,padding:'10px 19px',fontSize:12,fontWeight:800,cursor:'pointer'}}>{name.toUpperCase()}</button>)}</div>")
+ .replace("{active.map(p=><article className=\"md-commerce-card\" key={p.Id}>",
+   "{visible.map(p=><article className={'md-commerce-card'+(p[bestsellerField]===true?' md-kiosk-featured':'')} key={p.Id} style={p[bestsellerField]===true?{border:'2px solid '+featuredBorderColor}:undefined}>")
+ .replace("    {p[imageField]&&<img src={String(p[imageField])} referrerPolicy=\"no-referrer\" alt=\"\" style={{width:'100%',height:215,objectFit:'cover'}}/>}",
+   "    {p[bestsellerField]===true&&<div className='md-kiosk-ribbon' style={{background:featuredBorderColor}}>BESTSELLER</div>}\n    {p[imageField]?<img src={String(p[imageField])} referrerPolicy='no-referrer' alt='' style={{width:'100%',height:imageHeight,objectFit:'contain',padding:10,boxSizing:'border-box'}}/>:<div role='img' aria-label='Product image unavailable' style={{height:imageHeight,background:'#fff',display:'grid',placeItems:'center',color:'#aaa',fontSize:12}}>PRODUCT IMAGE</div>}")
+ .replace("     <strong style={{display:'block',fontSize:19,color:'#171717'}}>",
+   "     <strong style={{display:'block',fontSize:15,color:'#171717',minHeight:32}}>")
+ .replace("     <p className=\"md-commerce-small\">{p.Description||''}</p>",
+   "     {p.Description&&<p className='md-commerce-small' style={{fontSize:11}}>{p.Description}</p>}")
+ .replace("     <p className=\"md-commerce-price\">{money(readField(p,priceField))}</p>",
+   "     <p className='md-commerce-price' style={{fontSize:16,margin:'6px 0'}}>{money(readField(p,priceField))}</p>")
+ .replace("style={{background:accentColor,width:'100%'}}",
+   "style={{background:accentColor,width:'100%',borderRadius:3,fontSize:12,padding:9}}")
+ .replace("  {!loading&&!active.length&&<p>No available products.</p>}",
+   "  {!loading&&!visible.length&&<p>No products in this category.</p>}");
+
+const portraitCss=cardCss.replace(/(^|\n)(\.[^{\n]+)\{/g, '$1.md-kiosk-reference $2{')+`
+.md-kiosk-reference .md-commerce-grid{grid-template-columns:repeat(var(--commerce-columns,3),minmax(0,1fr));gap:13px}
+.md-kiosk-reference .md-commerce-card{position:relative;border-radius:5px;box-shadow:none;min-width:0}
+.md-kiosk-reference .md-kiosk-featured{grid-column:span 2}
+.md-kiosk-reference .md-kiosk-ribbon{position:absolute;top:0;left:0;color:#fff;font-weight:900;font-size:13px;padding:9px 15px;z-index:2}
+.md-kiosk-reference .md-commerce-card img{object-fit:contain}
+.md-kiosk-reference .md-commerce-btn{background:#e4002b}
+@media(max-width:760px){.md-kiosk-reference .md-commerce-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:420px){.md-kiosk-reference .md-commerce-grid{grid-template-columns:repeat(1,minmax(0,1fr))}.md-kiosk-reference .md-kiosk-featured{grid-column:span 1}}
+`;
 const wrapProduct=grid.jsxSource.replace('export default function CommerceProductGrid','function OriginalCommerceProductGrid')
  +'\n'+productSource.replace('export default function CommerceProductGrid','function PortraitCommerceProductGrid')
  +'\nexport default function CommerceProductGrid(props){return props.presentationVariant==="portrait" ? <div className="md-kiosk-reference"><PortraitCommerceProductGrid {...props}/></div> : <OriginalCommerceProductGrid {...props}/>;}';
 export const kioskPresentationComponents=[
  {...nav,jsxSource:composeVariant(nav.jsxSource,railSource,'CommerceNav','CategoryRail'),cssSource:nav.cssSource+railCss,
-  propertyDefinitions:[...nav.propertyDefinitions,variantSetting,setting('categories','Categories','TEXT','RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',100)]},
- {...grid,jsxSource:wrapProduct,cssSource:grid.cssSource+portraitCss,propertyDefinitions:[...grid.propertyDefinitions,variantSetting]},
+  propertyDefinitions:[...nav.propertyDefinitions,variantSetting,
+  setting('nameField','Category name field','OBJECT_FIELD','Name',100),
+  setting('imageField','Category image field','OBJECT_FIELD','ImageUrl',101),
+  setting('brandLogoUrl','Brand logo URL','TEXT','',102),
+  setting('brandLabel','Brand label','TEXT','YOUR BRAND',103),
+  setting('backgroundColor','Rail background','COLOR','#ffffff',104)]},
+ {...grid,jsxSource:wrapProduct,cssSource:grid.cssSource+portraitCss,propertyDefinitions:[...grid.propertyDefinitions,variantSetting,
+  setting('categoryField','Product category reference','OBJECT_FIELD','CategoryId',100),
+  setting('filterField','Product subcategory field','OBJECT_FIELD','Subcategory',101),
+  setting('bestsellerField','Bestseller flag field','OBJECT_FIELD','IsBestseller',102),
+  setting('imageHeight','Product image height','NUMBER',168,103),
+  setting('featuredBorderColor','Featured product border','COLOR','#92b000',104),
+  setting('chipColor','Filter highlight colour','COLOR','#ed002d',105)]},
  {...basket,jsxSource:composeVariant(basket.jsxSource,footerSource,'CommerceBasketPanel','CheckoutBar'),cssSource:basket.cssSource,
-  propertyDefinitions:[...basket.propertyDefinitions,variantSetting]},
+  propertyDefinitions:[...basket.propertyDefinitions,variantSetting,
+  setting('iframeMinHeight','Embed minimum height','NUMBER',84,100)]},
  status
 ];
