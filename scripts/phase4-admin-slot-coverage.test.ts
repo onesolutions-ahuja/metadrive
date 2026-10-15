@@ -44,3 +44,9 @@ test('company and object administration render inside protected page hosts',()=>
   assert.ok(source.includes('slotKey="'+slot+'"'),slot);
  assert.ok(source.includes('<PlatformPageSlot slotKey="audit">'));
 });
+
+test('Object Manager uses every seeded independent page slot',()=>{
+ const source=read('objectManagerView.tsx');
+ for(const slot of protectedWorkspacePageSlots['object-manager'])
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing editable object slot '+slot);
+});
