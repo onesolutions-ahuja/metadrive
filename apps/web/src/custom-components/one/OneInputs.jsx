@@ -15,7 +15,7 @@ export default function OneInputs(p){
  if(kind==='Slider')return wrap(<div className="one-row"><input style={{flex:1,accentColor:'var(--one-accent)'}} type="range" min={p.min??0} max={p.max??100} step={p.step??1} value={Number(current)||0} disabled={p.disabled===true} onChange={e=>set(Number(e.target.value))}/><output>{String(current??0)}</output></div>);
  if(kind==='Choice'){
   const mode=p.mode||'select',chosen=Array.isArray(current)?current.map(String):current==null?'':String(current);
-  const toggle=v=>set(Array.isArray(chosen)?chosen.includes(v)?chosen.filter(x=>x!==v):[...chosen,v]:v);
+  const toggle=v=>{if(mode==='checkbox'||Array.isArray(chosen)){const values=Array.isArray(chosen)?chosen:[];set(values.includes(v)?values.filter(x=>x!==v):[...values,v]);}else set(v);};
   if(mode==='multiple')return wrap(<select className="one-control" multiple value={Array.isArray(chosen)?chosen:[]} onChange={e=>set(Array.from(e.target.selectedOptions,x=>x.value))}>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>);
   if(mode==='select')return wrap(<select className="one-control" value={typeof chosen==='string'?chosen:''} onChange={e=>set(e.target.value)}><option value="">Select</option>{options.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>);
   return <fieldset {...root} style={{...root.style,border:0,padding:0}}><legend>{label}</legend><div className="one-row">{options.map(o=><label className={mode==='segmented'?'one-btn':'one-row'} key={o.value}><input type={mode==='checkbox'?'checkbox':'radio'} name={p.name||label} value={o.value} checked={Array.isArray(chosen)?chosen.includes(o.value):chosen===o.value} onChange={()=>toggle(o.value)}/>{o.label}</label>)}</div></fieldset>;

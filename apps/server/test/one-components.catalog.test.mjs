@@ -5,6 +5,8 @@ import {readFileSync} from 'node:fs';
 import {resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {transformSync} from 'esbuild';
+import * as React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
 import {loadAppSeedCatalog} from '../src/seeders/catalog.mjs';
 import {ensureBundledAppComponents} from '../src/bundled-app-components.mjs';
 
@@ -60,4 +62,27 @@ test('Registry never overwrites tenant-owned One component identity',()=>{
   const owned={apiName:'OneCard',tenantId:'tenant-a',status:'Published',compiledJs:'custom',version:5,trustedBundled:false};
   const registered=ensureBundledAppComponents([owned],{records:{Connector_App__c:[]}},catalog,root);
   assert.strictEqual(registered.find(x=>x.apiName==='OneCard'),owned);
+});
+
+test('all 40 components render safely using their metadata defaults',()=>{
+  const compiledCache=new Map();
+  for(const definition of catalog.coreComponents){
+    const jsPath=resolve(root,definition.jsxFile);
+    let component=compiledCache.get(jsPath);
+    if(!component){
+      const code=transformSync(readFileSync(jsPath,'utf8'),{
+        loader:'jsx',format:'cjs',jsx:'transform',target:'es2020'
+      }).code;
+      const mod={exports:{}};
+      new Function('React','module','exports',code)(React,mod,mod.exports);
+      component=mod.exports.default;
+      assert.equal(typeof component,'function',jsPath);
+      compiledCache.set(jsPath,component);
+    }
+    const props=Object.fromEntries(definition.propertyDefinitions
+      .filter(prop=>prop.defaultValue!==undefined)
+      .map(prop=>[prop.propertyKey,prop.defaultValue]));
+    const output=renderToStaticMarkup(React.createElement(component,props));
+    assert.match(output,/one-ui/,definition.apiName);
+  }
 });
