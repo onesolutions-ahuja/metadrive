@@ -1,3 +1,4 @@
+import { registerHealthAndDiscoveryRoutes } from './modules/security/health-routes.js';
 import { defaultRoles, roleApiNameForName, roleIdForName, profileIdForRole } from './modules/security/role-helpers.js';
 import { createScheduledDispatcher } from './scheduler/dispatcher.js';
 import { startPlatformServer } from './bootstrap/startup.js';
@@ -5236,13 +5237,7 @@ function provisioningIdempotencyKey(req: Request): string | undefined {
     throw new Error('Idempotency-Key must be 16–128 ASCII letters, numbers, dashes or underscores');
   return key;
 }
-app.get('/health', async (_req, res) => {
-  const database = await checkDatabaseConnection();
-  return res.json({ ok: true, service: 'metadrive-api', database, authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode, deployedCommit: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RENDER_GIT_COMMIT ?? '' });
-});
-app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
-app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
-app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
+registerHealthAndDiscoveryRoutes(app, { checkDatabaseConnection, jwtService, maintenanceMode, persistenceMode });
 const developerActivationPending = new Set<string>();
 export const phase3AuthContext = {
   app,
