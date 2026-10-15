@@ -525,7 +525,7 @@ function MetadataBoundPageComponent({
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows, pageState,
-      device: formFactor, onNavigate, onLaunchFlow, onAction, actionError, refreshToken: revision,
+      device: formFactor, onNavigate, onLaunchFlow, onAction, actionError, viewRevision: revision,
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
