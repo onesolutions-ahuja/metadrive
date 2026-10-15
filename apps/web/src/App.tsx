@@ -1,4 +1,5 @@
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
+import TemplatePageRuntimeLayout from './TemplatePageRuntimeLayout';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
 import {resolveSetupNavigation} from './platformSetupNavigation';
@@ -4862,18 +4863,10 @@ function LightningAppRuntime({
         ? <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{content}</div>
         : content;
     });
-  return <div className="records-page lightning-app-page" data-lightning-page={page.apiName}>
-    <div className="record-detail-heading surface">
-      <div className="record-object-icon"><Grid2X2 size={18} /></div>
-      <div><div className="eyebrow">{page.pageType}</div><h1>{page.label}</h1></div>
-    </div>
-    {renderRegion('header')}
-    <div className={page.template === 'main-sidebar' || page.template === 'header-main-sidebar' ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}>
-      <main className="record-runtime-main">{renderRegion('main')}</main>
-      {(page.template === 'main-sidebar' || page.template === 'header-main-sidebar')
-        && <aside className="record-runtime-sidebar">{renderRegion('sidebar')}</aside>}
-    </div>
-  </div>;
+  return <TemplatePageRuntimeLayout apiName={page.apiName} label={page.label}
+    pageType={page.pageType} template={page.template}
+    fullscreen={isStandaloneRuntime && page.layoutMode === 'template'} phone={formFactor === 'Phone'}
+    header={renderRegion('header')} main={renderRegion('main')} sidebar={renderRegion('sidebar')} />;
 }
 
 function RecordWorkspace({

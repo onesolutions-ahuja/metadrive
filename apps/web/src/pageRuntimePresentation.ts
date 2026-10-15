@@ -3,7 +3,7 @@ import type { LightningPageMetadata, PageComponentMetadata } from './metadata';
 /** Presentation derives from saved page metadata, never a component or app name. */
 export function isStandalonePagePresentation(page: Pick<LightningPageMetadata,'layoutMode'|'components'> | null | undefined): boolean {
   if (!page) return false;
-  return page.layoutMode === 'free-canvas' && page.components.some((component: PageComponentMetadata) =>
+  return page.components.some((component: PageComponentMetadata) =>
     component.properties?.standalonePresentation === true);
 }
 
