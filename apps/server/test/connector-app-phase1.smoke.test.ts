@@ -113,7 +113,8 @@ test('AppExchange installation and trial run using stored metadata flows', async
     const before=await list();
     assert.equal(before.status,200,JSON.stringify(before.data));
     const records=before.data.records as Array<Record<string,any>>;
-    assert.ok(records.length >= 5, 'The connector catalog must retain its supported packages as new installable apps are registered');
+    const expectedCatalog = JSON.parse(readFileSync(new URL('../data/connector-apps.json',import.meta.url),'utf8'));
+    assert.equal(records.length, expectedCatalog.packages.length, 'Seeded AppExchange entries must match the canonical connector catalog');
     const catalog=JSON.parse(readFileSync(new URL('../data/installable-app-packages.json',import.meta.url),'utf8'));
     const retiredKeys=new Set((catalog.retiredPackages??[]).map((pkg:{appKey:string})=>pkg.appKey));
     assert.equal(records.some(row=>retiredKeys.has(row.AppKey__c)),false,
