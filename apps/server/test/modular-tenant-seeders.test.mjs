@@ -57,4 +57,9 @@ test('Fresh tenant Core bootstrap strips nested ACL identities and arbitrary sou
   assert.equal('customerRecords' in initial,false);
   assert.equal('refreshSessions' in initial,false);
   assert.equal('revokedAccessTokens' in initial,false);
+  const authorized=initializeTenantCore(template,{authorizedUserIds:['sample-login']});
+  assert.deepEqual(authorized.accessControl.users,[{id:'sample-login'}]);
+  assert.deepEqual(authorized.users,[]);
+  assert.deepEqual(authorized.records,{});
+
 });
