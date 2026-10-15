@@ -520,8 +520,9 @@ function MetadataBoundPageComponent({
       initializedSessions.current.delete(sessionId);
     });
   }, [sessionId, disableActions]);
-  return <div>
+  return <div style={properties.fillRegion === true ? {height:'100%',minHeight:0,minWidth:0,display:'flex',flexDirection:'column'} : undefined}>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
+    <div style={properties.fillRegion === true ? {flex:'1 1 0',minHeight:0,minWidth:0} : undefined}>
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows, pageState,
@@ -534,6 +535,7 @@ function MetadataBoundPageComponent({
       ...presented,
       contactChoices
     }} />
+    </div>
   </div>;
 }
 
