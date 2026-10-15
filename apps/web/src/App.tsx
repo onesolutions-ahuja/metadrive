@@ -1,10 +1,6 @@
 import { createLoginView } from './loginView';
 import { ProfilePasswordMenu, ConnectionHealthIndicator } from './authStatusViews';
 import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, isAuthErrorMessage, withAuthRefreshLock, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords } from './authClient';
-import { ConnectorSettingsWorkspace } from './connectorSettingsView';
-import { MetadataComponentProperties } from './componentPropertiesView';
-import { createPageRuntimeViews } from './pageRuntimeViews';
-import { createRecordWorkspaceViews } from './recordWorkspaceViews';
 
 
 
@@ -250,7 +246,17 @@ async function fetchFlowListPage(page: number, search: string) {
 
 // The full setup workspace is an on-demand route module, never part of the login bundle.
 const LazySetupWorkspace = React.lazy(async () => {
-  const { createSetupApp } = await import('./setupAppShell');
+  const [{ createSetupApp }, { createPageRuntimeViews }, { createRecordWorkspaceViews }] = await Promise.all([
+    import('./setupAppShell'), import('./pageRuntimeViews'), import('./recordWorkspaceViews')
+  ]);
+  const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
+  const { RecordWorkspace } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
+  const PageBuilder = React.lazy(async () => {
+    const [{ createPageBuilder }, { MetadataComponentProperties }] = await Promise.all([
+      import('./pageBuilderView'), import('./componentPropertiesView')
+    ]);
+    return { default: createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent) };
+  });
   return { default: createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings}) };
 });
 function SetupApp(props: {onLogout: () => void; entryTiming: EntryTiming | null}) {
@@ -270,14 +276,10 @@ function PageHeading({ eyebrow, title, description, actions }: { eyebrow?: strin
   );
 }
 
-const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
-
-const { RecordWorkspace, RecordFormDialog } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
-
 // Builders and advanced settings are separate on-demand chunks, not login dependencies.
+const ConnectorSettingsWorkspace = React.lazy(async () => ({ default: (await import('./connectorSettingsView')).ConnectorSettingsWorkspace }));
 const SetupHome = React.lazy(async () => ({ default: (await import('./setupHomeView')).createSetupHome(PageHeading) }));
 const ObjectManager = React.lazy(async () => ({ default: (await import('./objectManagerView')).createObjectManager(apiRequest) }));
-const PageBuilder = React.lazy(async () => ({ default: (await import('./pageBuilderView')).createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent) }));
 const ReportBuilder = React.lazy(async () => ({ default: (await import('./reportBuilderView')).ReportBuilder }));
 const Permissions = React.lazy(async () => ({ default: (await import('./permissionsView')).createPermissions(apiRequest, PageHeading) }));
 const settingsViewModules = () => import('./settingsWorkspaceViews').then(module => module.createSettingsViews(apiRequest, PageHeading));
