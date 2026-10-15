@@ -29,7 +29,7 @@ export default function CustomerBasketDisplay(props) {
     if (p.stateChannel?.value?.display) applySnapshot(p.stateChannel.value.display);
   }, [p.stateChannel?.value]);
   React.useEffect(() => {
-    if (p.stateChannel || !session || typeof BroadcastChannel === 'undefined') return undefined;
+    if (p.stateChannel || p.stateSyncEnabled === true || !session || typeof BroadcastChannel === 'undefined') return undefined;
     const channel = new BroadcastChannel('metadrive:paired-display:' + session);
     channel.onmessage = event => {
       if (event.data?.type === 'snapshot') applySnapshot(event.data.payload);
