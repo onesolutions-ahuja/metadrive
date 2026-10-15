@@ -45,12 +45,12 @@ for(const name of [
 ]) {
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
-// Core and independently installable app seeders are runtime dependencies.
+// Pack the modular Core and AppExchange seeder runtime.
 for (const name of ['core.mjs', 'apps.mjs', 'catalog.mjs', 'registry.mjs']) {
-  const relativePath = 'seeders/' + name;
-  const target = resolve(destination, relativePath);
-  mkdirSync(dirname(target), {recursive: true});
-  copyFileSync(resolve(serverDir, 'src', relativePath), target);
+  const path = 'seeders/' + name;
+  const target = resolve(destination, path);
+  mkdirSync(dirname(target), {recursive:true});
+  copyFileSync(resolve(serverDir, 'src', path), target);
 }
 // Shared metadata services used by the compiled server's protected registry.
 for(const name of ['offline-publication.mjs','offline-publication-route.mjs','component-revisions.mjs','platform-admin-pages.mjs','page-deletion-route.mjs']){

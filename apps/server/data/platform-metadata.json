@@ -354,6 +354,36 @@
           "dataType": "Currency(18, 2)",
           "required": false,
           "unique": false
+        },
+        {
+          "apiName": "Barcode",
+          "label": "Barcode",
+          "dataType": "Text(64)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ImageURL",
+          "label": "Product Image URL",
+          "dataType": "URL",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "AgeRestricted",
+          "label": "Age Restricted",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false,
+          "defaultValue": false
+        },
+        {
+          "apiName": "VATApplicable",
+          "label": "VAT Applicable",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false,
+          "defaultValue": true
         }
       ]
     },
@@ -719,6 +749,59 @@
         {
           "apiName": "Total",
           "label": "Total",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATTotal",
+          "label": "VAT Total",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CashierId",
+          "label": "Cashier",
+          "dataType": "Lookup(User)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "PaymentMethod",
+          "label": "Payment Method",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false,
+          "picklistValues": [
+            "Cash",
+            "Manual"
+          ],
+          "picklistRestricted": true
+        },
+        {
+          "apiName": "PaymentStatus",
+          "label": "Payment Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false,
+          "picklistValues": [
+            "Pending",
+            "Accepted",
+            "Declined"
+          ],
+          "picklistRestricted": true
+        },
+        {
+          "apiName": "AmountTendered",
+          "label": "Amount Tendered",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ChangeDue",
+          "label": "Change Due",
           "dataType": "Currency(18, 2)",
           "required": false,
           "unique": false
@@ -1614,6 +1697,34 @@
           "apiName": "TaxId",
           "label": "Tax Id",
           "dataType": "Lookup(Tax)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATApplicable",
+          "label": "VAT Applicable At Sale",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATRate",
+          "label": "VAT Rate At Sale",
+          "dataType": "Percent(8, 4)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATAmount",
+          "label": "VAT Amount At Sale",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LineTotal",
+          "label": "Line Total",
+          "dataType": "Currency(18, 2)",
           "required": false,
           "unique": false
         }

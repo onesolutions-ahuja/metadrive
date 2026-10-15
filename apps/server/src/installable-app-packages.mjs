@@ -134,7 +134,7 @@ export function applyInstallableAppPackages(tenant, catalog, tenantId = '') {
             objectPermissions[objectApiName] = {
               read: Boolean(templateRights.read), create: Boolean(templateRights.create),
               edit: Boolean(templateRights.edit), delete: Boolean(templateRights.delete),
-              viewAll: false, modifyAll: false
+              viewAll: Boolean(templateRights.viewAll), modifyAll: Boolean(templateRights.modifyAll)
             };
             repaired = true;
           }

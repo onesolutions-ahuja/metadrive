@@ -496,6 +496,7 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
 function CompanySettings({ canManage }: { canManage: boolean }) {
   const [draft, setDraft] = useState<CurrencySettingsMetadata>({
     corporateCurrency: 'USD',
+    standardVatRate: 20,
     currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }]
   });
   const [corporateCode, setCorporateCode] = useState('USD');
@@ -571,9 +572,14 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
       setError('Corporate currency must be a three-letter ISO 4217 code.');
       return;
     }
+    if (!Number.isFinite(draft.standardVatRate) || draft.standardVatRate < 0 || draft.standardVatRate > 100) {
+      setError('Standard VAT rate must be between 0 and 100 percent.');
+      return;
+    }
     const hasCorporateCurrency = draft.currencies.some((currency) => currency.currencyIsoCode === normalizedCorporateCode);
     const settings: CurrencySettingsMetadata = {
       corporateCurrency: normalizedCorporateCode,
+      standardVatRate: draft.standardVatRate,
       currencies: hasCorporateCurrency
         ? draft.currencies.map((currency) => currency.currencyIsoCode === normalizedCorporateCode
           ? { ...currency, conversionRate: 1 } : currency)
@@ -627,6 +633,20 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
               </div>
             : <SettingsViewRow label="Corporate Currency (ISO 4217)" value={draft.corporateCurrency}
                 canEdit={canManage && !editingRow} onEdit={() => beginEdit('corporate')} />}
+        </div>
+        <div className="settings-read-first-section">
+          {editingRow === 'standard-vat-rate'
+            ? <div className="settings-edit-row">
+                <PlatformPageSlot slotKey="field-settings-17"><label className="form-label">Standard VAT rate (%)
+                  <input autoFocus className="form-control" type="number" min="0" max="100" step="0.01"
+                    value={draft.standardVatRate}
+                    onChange={(event) => setDraft((current) => ({
+                      ...current, standardVatRate: Number(event.target.value)
+                    }))} />
+                </label></PlatformPageSlot>
+              </div>
+            : <SettingsViewRow label="Standard VAT rate" value={`${draft.standardVatRate}%`}
+                canEdit={canManage && !editingRow} onEdit={() => beginEdit('standard-vat-rate')} />}
         </div>
         <h3 className="permission-section-heading">Active Currencies</h3>
         <div className="settings-read-first-section">

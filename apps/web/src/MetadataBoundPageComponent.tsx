@@ -186,6 +186,7 @@ export default function MetadataBoundPageComponent({
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
+      loadCompanySettings: () => apiRequest('/metadata/currencies'),
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
@@ -195,4 +196,3 @@ export default function MetadataBoundPageComponent({
     }} />
   </div>;
 }
-
