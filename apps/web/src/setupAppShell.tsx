@@ -2756,7 +2756,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onNotify={notify}
           />}
           {route.kind === 'setup' && workspace === 'component-library' && <ComponentLibrary components={libraryComponents} canManage={canManageLibrary} onSave={saveLibraryComponent} onDelete={deleteLibraryComponent} onPublish={publishLibraryComponent} onRollback={rollbackLibraryComponent} />}
-          {route.kind === 'setup' && workspace === 'approval-processes' && <ApprovalProcessManager
+          {route.kind === 'setup' && workspace === 'approval-processes' && <PlatformWorkspaceSurface workspace="approval-processes" permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="approval-workspace"><ApprovalProcessManager
             processes={approvalProcesses}
             objects={objects}
             users={accessControlError ? [] : accessControl.users}
@@ -2764,8 +2764,8 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onSave={saveApprovalProcess}
             onDelete={deleteApprovalProcess}
             onNotify={notify}
-          />}
-          {route.kind === 'setup' && workspace === 'named-credentials' && <NamedCredentials
+          /></PlatformPageSlot></PlatformWorkspaceSurface>}
+          {route.kind === 'setup' && workspace === 'named-credentials' && <PlatformWorkspaceSurface workspace="named-credentials" permitted={canManageNamedCredentials} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="credentials"><NamedCredentials
             credentials={namedCredentials}
             canManage={canManageNamedCredentials}
             encryptionReady={namedCredentialsEncryptionReady}
@@ -2775,7 +2775,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             onTest={testNamedCredential}
             onOAuthAuthorize={authorizeNamedCredential}
             onToggleEnabled={toggleNamedCredentialEnabled}
-          />}
+          /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'app-exchange' && <PlatformWorkspaceSurface workspace="app-exchange" permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><AppExchange
             credentials={namedCredentials}
             flows={flows.map(({apiName,label,status,elements}) => ({
@@ -2834,7 +2834,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           {route.kind === 'setup' && workspace === 'flow-logs' && (
             <FlowLogs logs={flowLogs} loading={flowLogsLoading} onOpenFlow={selectFlow} />
           )}
-          {route.kind === 'setup' && workspace === 'automation-settings' && <AutomationSettingsWorkspace canManage={canManageFlows} />}
+          {route.kind === 'setup' && workspace === 'automation-settings' && <PlatformWorkspaceSurface workspace="automation-settings" permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><PlatformPageSlot slotKey="automation-policy"><AutomationSettingsWorkspace canManage={canManageFlows} /></PlatformPageSlot></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'flow-builder' && (
             <FlowBuilderWorkspace
               landing={!route.resourceApiName}
