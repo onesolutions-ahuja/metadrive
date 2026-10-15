@@ -10,6 +10,7 @@ registerUniversalShell();
 const Workspace = lazy(async () => {
   await import('./styles.css');
   await import('./styles-audit.css');
+  await import('./PlatformSystemPageRenderer.css');
   return import('./App');
 });
 
