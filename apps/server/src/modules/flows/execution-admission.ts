@@ -56,15 +56,10 @@ export function assertFlowRuntimeAdmission(input: {
   licensed: boolean;
   activated: boolean;
 }): void {
-  assertExecutionAdmission({
-    tenantId: input.tenantId,
-    principalTenantId: input.principalTenantId,
-    principalId: input.principalId,
-    grants: new Set(['runtime:dispatch']),
-    requiredPermission: 'runtime:dispatch',
-    installed: input.installed,
-    licensed: input.licensed,
-    activated: input.activated,
-    published: input.status === 'Active' || (input.allowDraftExecution && input.status === 'Draft')
-  });
+  if (!input.tenantId || !input.principalId || input.tenantId !== input.principalTenantId)
+    throw Error('Flow execution tenant context denied');
+  if (!input.installed || !input.licensed || !input.activated)
+    throw Error('Flow application is not installed, entitled or active');
+  if (input.status !== 'Active' && !(input.allowDraftExecution && input.status === 'Draft'))
+    throw Error('Flow is not active or an authorised draft preview');
 }
