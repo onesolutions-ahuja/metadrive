@@ -51,6 +51,8 @@ export function prepareChatterFlowInputs(
   if(flowApiName!=='CHATTER_SEND_MESSAGE' && flowApiName!=='CHATTER_ASSIGN_CONVERSATION') return {inputs:supplied};
   const deny=(error:string):{inputs:Inputs;error:string}=>({inputs:{},error});
   if(!tenant.pages.some(page=>page.apiName==='UNE_CHATTER'&&page.status==='Active')) return deny('Chatter is not activated');
+  if(!users.some(user=>user.id===principal.userId&&user.tenantId===principal.tenantId&&!user.disabled))
+    return deny('Authenticated tenant user is unavailable');
   const channelAccountId=text(supplied.ChannelAccountId);
   const conversationId=text(supplied.ConversationId);
   let key:unknown;
