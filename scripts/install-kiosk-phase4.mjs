@@ -208,7 +208,8 @@ for(const page of commercePages){
     ...(block.properties?.accentColor==='#103e51'?{accentColor:'#e4002b'}:{}),
     ...(target.properties?.standalonePresentation?{standalonePresentation:true}:{}),
     ...(target.properties?.presentationLayout?{presentationLayout:target.properties.presentationLayout,title:target.properties.title,categories:target.properties.categories}:{}),
-    ...(target.type.includes('CheckoutBar')?{title:'SHOW BASKET',accentColor:'#92b200'}:{})}};
+    ...(target.properties?.presentationVariant && block.properties?.presentationVariant === undefined ? {presentationVariant:target.properties.presentationVariant}:{}),
+    ...(block.id==='menu-basket'?{title:'SHOW BASKET',accentColor:'#92b200'}:{})}};
   });
   if(upgrades.some((block,i)=>JSON.stringify(block)!==JSON.stringify(existing.components[i]))){
    await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',{
