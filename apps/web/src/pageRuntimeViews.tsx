@@ -1,3 +1,4 @@
+import {useFlowStateChannel} from './useFlowStateChannel';
 import { presentPageRecords, type ChannelGrant } from './recordPresentationAdapters';
 import TemplatePageRuntimeLayout from './TemplatePageRuntimeLayout';
 import { loadFlowScreenRecords } from './authClient';
@@ -300,6 +301,7 @@ function MetadataBoundPageComponent({
     window.addEventListener('metadrive:page-local-state',sync);
     return ()=>window.removeEventListener('metadrive:page-local-state',sync);
   },[pageSessionKey]);
+  const stateChannel = useFlowStateChannel(properties, sessionId, apiRequest, disableActions === true);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [contactRecords, setContactRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
@@ -529,7 +531,7 @@ function MetadataBoundPageComponent({
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
-      loading: dataLoading, sessionId,
+      loading: dataLoading, sessionId, stateChannel,
       ...(objectApiName ? { records: visibleRecords } : {}),
       ...presented,
       contactChoices

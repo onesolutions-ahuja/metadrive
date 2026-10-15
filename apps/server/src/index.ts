@@ -1,4 +1,5 @@
 import { credentialKeyRing, credentialAad, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
+import {recordWritePolicySchema, withFlowRecordWriteContext, grantedObjectPermission, assertRecordFieldPermissions, lockedRecordWriteAllowed, recordWritePolicyMetadataGuard} from './record-write-policy.js';
 import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
 import { loadAppSeedCatalog } from './seeders/catalog.mjs';
 import { initializeTenantCore } from './seeders/core.mjs';
@@ -823,7 +824,8 @@ const objectSchema = z.object({
   listViewButtons: z.array(listViewButtonSchema).optional(),
   actions: z.array(objectActionSchema).optional(),
   customTab: customObjectTabSchema.optional(),
-  settings: objectSettingsSchema.optional()
+  settings: objectSettingsSchema.optional(),
+  recordWritePolicy: recordWritePolicySchema.optional()
 }).superRefine((object, context) => {
   const listViewButtons = object.listViewButtons ?? [];
   if (new Set(listViewButtons).size !== listViewButtons.length) {
@@ -6224,6 +6226,7 @@ app.delete('/api/metadata/platform-events/:apiName', requireAnyPermission('metad
 const metadataVersion = (object: ObjectMetadata | undefined): number => object?.revision ?? 0;
 const objectMetadataRouteDependencies = { app, fieldSchema, relatedLookupFilterSchema, objectSchema, validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies, fullObjectPermissions, withObjectDefaults, tenantData, getPrincipal, requirePermission, requireAnyPermission, metadataVersion, persistTenantRecords, routeParam, formulaContextForUser, validateFieldChange, validateExistingFieldValues, validateObjectLayoutProfileAssignments, evaluateFormula, z };
 export type ObjectMetadataRoutesDependencies = typeof objectMetadataRouteDependencies;
+app.use('/api/metadata/objects', accessAuthentication, recordWritePolicyMetadataGuard(getPrincipal, tenantData));
 registerObjectMetadataRoutes(objectMetadataRouteDependencies);
 app.get('/api/metadata/approval-processes', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId);
@@ -7424,26 +7427,7 @@ function canOpenTab(principal: Principal, tenant: TenantData, objectApiName: str
 }
 
 function hasObjectPermission(principal: Principal, tenant: TenantData, objectName: string, action: 'read' | 'create' | 'edit' | 'delete'): boolean {
-  const object = tenant.objects.find((item) => item.apiName === objectName);
-  if (object?.kind === 'Custom Object' && object.settings?.deploymentStatus === 'In Development'
-    && !principal.permissions.includes('objects:manage')
-    && !principal.permissions.includes('metadata:write')) return false;
-  const grants = authorizationGrants(principal, tenant);
-  if (!grants) return false;
-  const hasGrant = (permission?: ObjectPermission, muted?: Partial<ObjectPermission>): boolean => {
-    if (!permission) return false;
-    if (permission[action] && !muted?.[action] && !muted?.read) return true;
-    if (action === 'read') {
-      return (permission.viewAll && !muted?.viewAll || permission.modifyAll && !muted?.modifyAll)
-        && !muted?.read;
-    }
-    return action !== 'create' && permission.modifyAll && !muted?.modifyAll
-      && !muted?.[action] && !muted?.read;
-  };
-  if (hasGrant(grants.profile?.objectPermissions[objectName])) return true;
-  if (grants.directSets.some((set) => hasGrant(set.objectPermissions[objectName]))) return true;
-  return grants.groups.some(({ group, sets }) => sets.some((set) =>
-    hasGrant(set.objectPermissions[objectName], group.mutedObjectPermissions[objectName])));
+  return grantedObjectPermission(principal, tenant.objects.find(object => object.apiName === objectName), authorizationGrants(principal, tenant), action);
 }
 
 function hasObjectWidePermission(principal: Principal, tenant: TenantData, objectName: string, flag: 'viewAll' | 'modifyAll'): boolean {
@@ -7568,6 +7552,7 @@ function hasRecordAccess(
   accessLevel: 'Read' | 'Edit' | 'Delete',
   visited = new Set<string>()
 ): boolean {
+  if (accessLevel !== 'Read' && !lockedRecordWriteAllowed(principal, tenant.objects.find(object => object.apiName === objectName), record)) return false;
   const recordKey = `${objectName}:${record.Id}:${accessLevel}`;
   if (visited.has(recordKey)) return false;
   visited.add(recordKey);
@@ -7696,12 +7681,7 @@ function sanitizeRecordForRead(principal: Principal, tenant: TenantData, object:
 }
 
 function assertFieldEditPermissions(principal: Principal, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>): void {
-  for (const fieldName of Object.keys(values)) {
-    if (fieldName === 'RecordTypeId') continue;
-    if (!hasFieldPermission(principal, tenant, object.apiName, fieldName, 'edit')) {
-      throw new Error(`Missing edit permission for field "${object.apiName}.${fieldName}".`);
-    }
-  }
+  assertRecordFieldPermissions(principal, tenant, object, values, hasFieldPermission);
 }
 
 function profileIdForPrincipal(principal: Principal, tenant: TenantData): string {
@@ -10348,7 +10328,10 @@ function flowNeedsRollbackSnapshot(
   });
 }
 
-async function executeFlow(
+async function executeFlow(...args: Parameters<typeof executeFlowImplementation>): Promise<FlowExecutionResult> {
+  return withFlowRecordWriteContext(args[0].apiName, args[2], args[3], () => executeFlowImplementation(...args));
+}
+async function executeFlowImplementation(
   flow: FlowMetadata,
   tenant: TenantData,
   tenantId: string,

@@ -31,6 +31,19 @@ export function upgradePackagedPageComponents(page, seeded, migration = {}) {
         repaired = true;
       }
     }
+    for (const key of migration.mergeMissingObjectProperties ?? []) {
+      const source = template.properties?.[key];
+      const target = next[key];
+      if (!source || typeof source !== 'object' || Array.isArray(source)
+          || (target !== undefined && (!target || typeof target !== 'object' || Array.isArray(target)))) continue;
+      const merged = {...(target ?? {})};
+      for (const [name,value] of Object.entries(source)) {
+        if (Object.hasOwn(merged,name)) continue;
+        merged[name] = structuredClone(value);
+        repaired = true;
+      }
+      next[key] = merged;
+    }
     if (!repaired) return component;
     changed = true;
     return {...component,properties:next};

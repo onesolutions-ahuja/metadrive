@@ -6,12 +6,9 @@ export default function CustomerBasketDisplay(props) {
     style: 'currency', currency: p.currencyCode || 'GBP'
   });
 
-  React.useEffect(() => {
-    if (!session || typeof BroadcastChannel === 'undefined') return undefined;
-    const channel = new BroadcastChannel('metadrive:paired-display:' + session);
-    channel.onmessage = event => {
-      if (event.data?.type !== 'snapshot' || !event.data.payload || !Array.isArray(event.data.payload.items)) return;
-      const items = event.data.payload.items.filter(item =>
+  const applySnapshot = payload => {
+      if (!payload || !Array.isArray(payload.items)) return;
+      const items = payload.items.filter(item =>
         item && typeof item.name === 'string' && Number.isSafeInteger(item.quantity)
         && Number.isSafeInteger(item.lineTotalMinor) && item.quantity > 0 && item.lineTotalMinor >= 0
       ).map(item => ({
@@ -19,20 +16,31 @@ export default function CustomerBasketDisplay(props) {
         quantity: item.quantity,
         lineTotalMinor: item.lineTotalMinor
       }));
-      const totalMinor = Number(event.data.payload.totalMinor);
-      const changeDueMinor = Number(event.data.payload.changeDueMinor || 0);
+      const totalMinor = Number(payload.totalMinor);
+      const changeDueMinor = Number(payload.changeDueMinor || 0);
       setSnapshot({
-        status: typeof event.data.payload.status === 'string' ? event.data.payload.status : 'basket',
+        status: typeof payload.status === 'string' ? payload.status : 'basket',
         items,
         totalMinor: Number.isSafeInteger(totalMinor) && totalMinor >= 0 ? totalMinor : 0,
         changeDueMinor: Number.isSafeInteger(changeDueMinor) && changeDueMinor >= 0 ? changeDueMinor : 0
       });
+  };
+  React.useEffect(() => {
+    if (p.stateChannel?.value?.display) applySnapshot(p.stateChannel.value.display);
+  }, [p.stateChannel?.value]);
+  React.useEffect(() => {
+    if (p.stateChannel || p.stateSyncEnabled === true || !session || typeof BroadcastChannel === 'undefined') return undefined;
+    const channel = new BroadcastChannel('metadrive:paired-display:' + session);
+    channel.onmessage = event => {
+      if (event.data?.type === 'snapshot') applySnapshot(event.data.payload);
     };
     channel.postMessage({ type: 'ready' });
     return () => channel.close();
   }, [session]);
 
-  const statusText = snapshot.status === 'payment-pending' ? p.paymentPendingText || 'Payment in progress'
+  const statusText = p.stateChannel?.error ? p.reconnectingText || 'Reconnecting to the till…'
+    : snapshot.status === 'staff-approval-required' ? p.staffApprovalText || 'Staff approval required'
+    : snapshot.status === 'payment-pending' ? p.paymentPendingText || 'Payment in progress'
     : snapshot.status === 'complete' ? p.thankYouText || 'Thank you'
       : snapshot.status === 'declined' ? p.paymentDeclinedText || 'Payment declined'
         : snapshot.status === 'insufficient-cash' ? p.insufficientCashText || 'Please speak to the cashier'

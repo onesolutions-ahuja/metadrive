@@ -24,19 +24,28 @@ export function applyInstallableAppPackages(tenant, catalog, tenantId = '') {
       throw Error('Package default app is not registered: ' + chosenApp);
     }
     const objects = [...next.objects];
+    const introducedObjects = new Set();
+    const introducedFields = new Set();
     let changed = false;
     for (const candidate of [...(pkg.objects ?? []), ...(pkg.extendObjects ?? [])]) {
       const at = objects.findIndex(item => item.apiName === candidate.apiName);
       if (at < 0) {
         if (!candidate.label || !candidate.kind) throw Error('A new package object needs its complete metadata definition');
         objects.push(structuredClone(candidate));
+        introducedObjects.add(candidate.apiName);
+        for (const field of candidate.fields ?? []) introducedFields.add(candidate.apiName+'.'+field.apiName);
         changed = true;
       } else {
         const old = objects[at];
         const additions = (candidate.fields ?? []).filter(field =>
           !(old.fields ?? []).some(existing => existing.apiName === field.apiName));
         if (additions.length) {
-          objects[at] = {...old, fields:[...old.fields,...structuredClone(additions)]};
+          for (const field of additions) introducedFields.add(candidate.apiName+'.'+field.apiName);
+          const initialPolicy = candidate.recordWritePolicy && !old.recordWritePolicy
+            && additions.some(field => !candidate.recordWritePolicy.protectedFieldApiNames
+              || candidate.recordWritePolicy.protectedFieldApiNames.includes(field.apiName));
+          objects[at] = {...old, fields:[...old.fields,...structuredClone(additions)],
+            ...(initialPolicy ? {recordWritePolicy:structuredClone(candidate.recordWritePolicy)} : {})};
           changed = true;
         }
       }
@@ -106,13 +115,49 @@ export function applyInstallableAppPackages(tenant, catalog, tenantId = '') {
         fieldPermissions: Object.fromEntries(objects.flatMap(object=>
           object.fields.map(field=>[object.apiName+'.'+field.apiName,{
             read:Boolean(perms[object.apiName]?.read),
-            edit:Boolean(perms[object.apiName]?.create || perms[object.apiName]?.edit)
+            edit:Boolean(perms[object.apiName]?.create || perms[object.apiName]?.edit),
+            ...(permissionTemplate.fieldPermissions?.[object.apiName+'.'+field.apiName] ?? {})
           }]))),
         appPermissions:Object.fromEntries((pkg.apps ?? []).map(app => [app.apiName,true])),
         tabPermissions:permissionTemplate.tabPermissions ?? {},
         navigationDefaultAccess:permissionTemplate.navigationDefaultAccess ?? 'Allow'
       }]};
       changed = true;
+    }
+    // Only grant initial access to metadata introduced by this installation.
+    // Existing explicit grants and denies remain administrator-owned.
+    if (permissionTemplate) {
+      const index = accessControl.profiles.findIndex(profile => profile.id === permissionTemplate.id);
+      if (index !== -1) {
+        const profile = accessControl.profiles[index];
+        const objectPermissions = {...profile.objectPermissions};
+        const fieldPermissions = {...profile.fieldPermissions};
+        let updated = false;
+        for (const [name, rights] of Object.entries(permissionTemplate.objectPermissions ?? {})) {
+          if (introducedObjects.has(name) && !Object.hasOwn(objectPermissions,name)) {
+            objectPermissions[name] = {read:false,create:false,edit:false,delete:false,viewAll:false,modifyAll:false,...rights};
+            updated = true;
+          }
+        }
+        for (const key of introducedFields) {
+          if (Object.hasOwn(fieldPermissions,key)) continue;
+          const name = key.slice(0,key.indexOf('.'));
+          const rights = objectPermissions[name];
+          if (!rights) continue;
+          fieldPermissions[key] = {
+            read:Boolean(rights.read || rights.viewAll || rights.modifyAll),
+            edit:Boolean(rights.create || rights.edit || rights.modifyAll),
+            ...(permissionTemplate.fieldPermissions?.[key] ?? {})
+          };
+          updated = true;
+        }
+        if (updated) {
+          const profiles = [...accessControl.profiles];
+          profiles[index] = {...profile,objectPermissions,fieldPermissions};
+          accessControl = {...accessControl,profiles};
+          changed = true;
+        }
+      }
     }
     // Package metadata may enable installation of additional object fields
     // after administrator provisioning. Grant only previously absent
