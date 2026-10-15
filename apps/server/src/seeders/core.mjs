@@ -43,3 +43,12 @@ export function mergeCoreMetadata(tenant, seed) {
   if (!merged.sharingSettings) merged.sharingSettings = structuredClone(seed.sharingSettings);
   return merged;
 }
+
+/** Reuse the canonical platform Core factory on fresh tenant provisioning. */
+export function initializeTenantCore(template) {
+  const base = structuredClone(template);
+  const seed = coreMetadataSeed(template);
+  return {...base, objects:seed.objects, pages:seed.pages, flows:seed.flows,
+    accessControl:seed.accessControl, sharingSettings:seed.sharingSettings,
+    currencySettings:seed.currencySettings, automationSettings:seed.automationSettings};
+}
