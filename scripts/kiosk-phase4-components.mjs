@@ -252,25 +252,58 @@ const cardCss=`
 @media(max-width:510px){.md-commerce-grid{grid-template-columns:repeat(1,minmax(0,1fr))}}
 `;
 const footerSource=`
-export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b200',currencySymbol='£',onAction,sessionId}){
- const [basket,setBasket]=React.useState({Lines:[],Basket:null});
- const [busy,setBusy]=React.useState(false),[error,setError]=React.useState('');
- const refresh=async()=>{const r=await onAction({event:'load',value:{}});setBasket({Lines:r?.outputs?.Lines||[],Basket:r?.outputs?.Basket||null})};
- React.useEffect(()=>{void refresh().catch(e=>setError(String(e)))},[sessionId]);
- const lines=basket.Lines||[];const total=Number(basket.Basket?.Total||lines.reduce((v,l)=>v+Number(l.LineTotal||0),0));
- const checkout=async()=>{if(busy||!lines.length)return;setBusy(true);setError('');
- try{const r=await onAction({event:'submit',value:{}});if(!r?.outputs?.Submitted)throw Error('Order could not be submitted');
- await onAction({event:'confirmation',value:{}})}
- catch(e){setError(e?.message||String(e))}finally{setBusy(false)}};
- return <footer style={{height:'100%',boxSizing:'border-box',background:'#fff',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'10px 20px',fontFamily:'Arial,sans-serif'}}>
-  <button type="button" onClick={()=>onAction({event:'basket',value:{}})} style={{background:'#fff',color:'#171717',border:0,fontSize:17,fontWeight:800,cursor:'pointer'}}>{title} ({lines.length}) ▲</button>
-  {error&&<span role="alert" style={{color:'#b11',fontSize:12}}>{error}</span>}
-  <button type="button" disabled={!lines.length||busy} onClick={checkout}
-   style={{background:accentColor,color:'#fff',border:0,borderRadius:8,fontSize:18,fontWeight:900,padding:'16px 28px',minWidth:220,cursor:'pointer'}}>
-   {busy?'SUBMITTING…':'PLACE ORDER'}　{currencySymbol}{total.toFixed(2)}
-  </button>
- </footer>;
+
+export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',currencySymbol='£',
+ pageState={},refreshToken=0,emptyText='Your basket is empty',onAction,sessionId}){
+ const [data,setData]=React.useState({Basket:null,Lines:[]}),[busy,setBusy]=React.useState(''),[error,setError]=React.useState('');
+ const opened=pageState.basketOpen===true;
+ const load=async()=>{const response=await onAction({event:'load',value:{}});setData({Basket:response?.outputs?.Basket||null,Lines:response?.outputs?.Lines||[]})};
+ React.useEffect(()=>{let current=true;(async()=>{try{const r=await onAction({event:'load',value:{}});if(current)setData({Basket:r?.outputs?.Basket||null,Lines:r?.outputs?.Lines||[]})}catch(e){if(current)setError(String(e))}})();return()=>{current=false}},[sessionId,refreshToken]);
+ const lines=data.Lines||[];
+ const total=Number(data.Basket?.Total||lines.reduce((sum,item)=>sum+Number(item.LineTotal||0),0));
+ const act=async(event,value={})=>{if(busy)return;setBusy(event);setError('');
+  try{const response=await onAction({event,value});
+   if(event==='submit'){if(!response?.outputs?.Submitted)throw Error('Order could not be submitted');await onAction({event:'confirmation',value:{}})}
+   else await load()
+  }catch(e){setError(e?.message||String(e))}finally{setBusy('')}
+ };
+ return <div style={{width:'100%',height:'100%',position:'relative',fontFamily:'Arial,sans-serif'}}>
+  {opened&&<div style={{position:'absolute',inset:'0 0 83px 0',background:'rgba(0,0,0,.55)',display:'flex',alignItems:'end',justifyContent:'center',boxSizing:'border-box'}}>
+   <section role='dialog' aria-modal='true' aria-label='Your basket'
+    style={{background:'#fff',padding:22,width:'min(740px,100%)',maxHeight:'90%',overflowY:'auto',boxSizing:'border-box',borderRadius:'14px 14px 0 0'}}>
+    <header style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+     <h2 style={{margin:'0 0 15px',fontSize:27}}>YOUR BASKET</h2>
+     <button type='button' onClick={()=>onAction({event:'closeBasket',value:{}})} aria-label='Close basket'
+      style={{border:0,background:'none',fontSize:28,cursor:'pointer'}}>×</button>
+    </header>
+    {lines.length===0&&<p>{emptyText}</p>}
+    {lines.map(item=><div key={item.Id} style={{display:'flex',gap:14,justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid #eee',padding:'12px 0'}}>
+      <div><strong>{item.Name}</strong><div style={{fontSize:13,color:'#555'}}>{item.Quantity||1} × {currencySymbol}{Number(item.UnitPrice||0).toFixed(2)}</div></div>
+      <div><strong>{currencySymbol}{Number(item.LineTotal||0).toFixed(2)}</strong>
+       <button disabled={!!busy} type='button' onClick={()=>act('remove',{lineId:item.Id})}
+        style={{display:'block',border:0,background:'none',color:'#ca0029',cursor:'pointer'}}>Remove</button>
+      </div>
+     </div>)}
+    <p style={{textAlign:'right',fontWeight:800,fontSize:23}}>TOTAL {currencySymbol}{total.toFixed(2)}</p>
+    {error&&<p role='alert' style={{color:'#b11'}}>{error}</p>}
+   </section>
+  </div>}
+  <footer style={{position:'absolute',bottom:0,left:0,right:0,height:83,boxSizing:'border-box',
+   display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'8px 18px',
+   borderTop:'1px solid #e5e5e5',background:'#fff'}}>
+   <button type='button' onClick={()=>onAction({event:opened?'closeBasket':'openBasket',value:{}})}
+    style={{background:'#fff',color:'#171717',border:0,fontSize:16,fontWeight:900,cursor:'pointer'}}>
+     🧺 {title} <span style={{fontSize:12,color:'#df002e'}}>{lines.length}</span> {opened?'⌄':'⌃'}
+   </button>
+   {error&&!opened&&<span role='alert' style={{fontSize:11,color:'#b11'}}>{error}</span>}
+   <button type='button' disabled={!!busy||!lines.length} onClick={()=>act('submit')}
+    style={{background:accentColor,color:'#fff',border:0,borderRadius:7,fontSize:17,fontWeight:900,padding:'17px 24px',minWidth:200,cursor:'pointer'}}>
+    {busy==='submit'?'SUBMITTING…':'PLACE ORDER'}　{currencySymbol}{total.toFixed(2)}
+   </button>
+  </footer>
+ </div>;
 }
+
 `;
 
 const composeVariant=(baseline,alternative,baseName,alternativeName)=>{
