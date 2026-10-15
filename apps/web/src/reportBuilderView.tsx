@@ -75,7 +75,6 @@ import {
   PanelLeft,
   PanelRight
 } from 'lucide-react';
-import FlowBuilderWorkspace from './FlowBuilder';
 import FlowScreenContent from './FlowScreenContent';
 import FlowLogs from './FlowLogs';
 import FlowInterviews from './FlowInterviews';
