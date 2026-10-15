@@ -1,0 +1,23 @@
+name: Repair Chatter Assign Flow Input
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/chatter-target-recordid-live.mjs
+      - .github/workflows/chatter-target-recordid-live.yml
+permissions:
+  contents: read
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate and publish Assign Flow input through OneEngine
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/chatter-target-recordid-live.mjs
