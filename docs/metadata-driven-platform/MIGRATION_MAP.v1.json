@@ -210,6 +210,31 @@
       "phase": 7,
       "reason": "Split oversized Report Builder regressions while preserving report metadata and permission coverage",
       "baselineLines": 1078
+    },
+    {
+      "path": "apps/web/src/objectManagerView.tsx",
+      "phase": 4,
+      "reason": "Extracted Object Manager legacy view requiring further independent metadata panel subdivision"
+    },
+    {
+      "path": "apps/web/src/pageBuilderView.tsx",
+      "phase": 5,
+      "reason": "Extracted Page Builder legacy view requiring further modular inspector and canvas subdivision"
+    },
+    {
+      "path": "apps/web/src/recordWorkspaceViews.tsx",
+      "phase": 4,
+      "reason": "Extracted record workspace and form legacy view requiring further reusable feature subdivision"
+    },
+    {
+      "path": "apps/web/src/reportBuilderView.tsx",
+      "phase": 5,
+      "reason": "Extracted Report Builder legacy view requiring further report configuration panel subdivision"
+    },
+    {
+      "path": "apps/web/src/setupAppShell.tsx",
+      "phase": 4,
+      "reason": "Extracted Setup shell orchestration requiring navigation and workspace subdivision"
     }
   ],
   "knownRisks": [
