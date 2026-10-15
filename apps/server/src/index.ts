@@ -8647,7 +8647,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       jsx: z.string().min(1),
       css: z.string().min(1),
       version: z.number().int().min(1).default(1)
-    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')));
+    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''))).concat(installableAppCatalog.coreComponents.map((c: any)=>({apiName:c.apiName,label:c.label,description:c.description,surfaces:c.surfaces,resize:c.resize,jsx:c.jsxFile,css:c.cssFile,version:c.version})));
     const imported: LibraryComponent[] = [];
     const trustedUpgrades = new Map<string, LibraryComponent>();
     for (const entry of manifest) {
@@ -8690,7 +8690,7 @@ function syncBundledLibraryComponents(): Promise<void> {
         surfaces: entry.surfaces.filter(surface=>surface!=='platform'),
         resize: entry.resize,
         jsxSource,
-        cssSource
+        cssSource, propertyDefinitions: installableAppCatalog.coreComponents.find((c: {apiName:string}) => c.apiName === entry.apiName)?.propertyDefinitions
       });
       const compiled = await transform(input.jsxSource, {
         loader: 'tsx',
