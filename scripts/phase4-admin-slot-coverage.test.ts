@@ -118,3 +118,15 @@ test('protected admin field presentation binds registered Page Builder metadata 
  assert.ok(control.includes('validateComponentSetting(definition,value)'));
  assert.ok(control.includes('onChange(event.target.value)'));
 });
+
+test('all registered administration field slots expose independently editable accessible presentation metadata',()=>{
+ const slot=read('PlatformPageSlot.tsx');
+ const control=read('AdminPropertyControl.tsx');
+ for(const key of ['controlLabel','controlPlaceholder','controlHelpText','controlDescription']){
+  assert.ok(slot.includes(key),'Missing protected slot presentation property '+key);
+ }
+ assert.ok(control.includes('presentation.description'));
+ assert.ok(control.includes('presentation.helpText'));
+ assert.ok(slot.includes('aria-label={typeof instance.properties.controlLabel'));
+ assert.ok(control.includes("usePlatformSlotPresentation('field-'+definition.propertyKey)"));
+});
