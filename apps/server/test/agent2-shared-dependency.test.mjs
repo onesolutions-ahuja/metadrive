@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mergeSharedDependency} from '../src/seeders/shared.mjs';
+import {mergeSharedDependency} from '../src/seeders/core.mjs';
 import {createTenantSeedRegistry} from '../src/seeders/registry.mjs';
 
 test('agent2: shared seeding preserves customer state, overrides and idempotency',()=>{
