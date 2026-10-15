@@ -510,6 +510,18 @@ function LightningAppRuntime({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
+  const [layoutState,setLayoutState]=useState<Record<string,unknown>>({});
+  useEffect(()=>{
+    setLayoutState({});
+    const listener=(event:Event)=>{
+      const detail=(event as CustomEvent<{pageSessionKey:string;key:string;value:unknown}>).detail;
+      if(detail?.pageSessionKey!==appId+':'+page?.apiName)return;
+      if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(detail.key))return;
+      setLayoutState(prev=>({...prev,[detail.key]:detail.value}));
+    };
+    window.addEventListener('metadrive:page-local-state',listener);
+    return()=>window.removeEventListener('metadrive:page-local-state',listener);
+  },[appId,page?.apiName]);
   useEffect(() => {
     let active = true;
     setPage(null);
@@ -641,6 +653,7 @@ function LightningAppRuntime({
   return <TemplatePageRuntimeLayout apiName={page.apiName} label={page.label}
     pageType={page.pageType} template={page.template}
     fullscreen={isStandaloneRuntime && page.layoutMode === 'template'} phone={formFactor === 'Phone'} layoutVariant={page.components.find(component => component.properties?.standalonePresentation === true)?.properties?.presentationLayout as string | undefined}
+    overlayOpen={layoutState.basketOpen===true}
     header={renderRegion('header')} main={renderRegion('main')} sidebar={renderRegion('sidebar')} />;
 }
 
