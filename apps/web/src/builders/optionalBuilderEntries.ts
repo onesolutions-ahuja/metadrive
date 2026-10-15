@@ -7,6 +7,12 @@
  */
 import { lazy } from 'react';
 
+// Existing view factories are exported as functions, not React components.
+// Keep those contracts unchanged and load their modules on demand.
+export const loadPageBuilderFactory = () => import('../pageBuilderView').then(module => module.createPageBuilder);
+export const loadObjectManagerFactory = () => import('../objectManagerView').then(module => module.createObjectManager);
+export const loadReportBuilder = () => import('../reportBuilderView').then(module => ({ default: module.ReportBuilder }));
+
 export const loadFlowBuilder = () => import('../FlowBuilder');
 export const loadDashboardBuilder = () => import('../DashboardBuilder');
 export const loadComponentLibrary = () => import('../ComponentLibrary');
@@ -20,3 +26,5 @@ export const LazyComponentLibrary = lazy(loadComponentLibrary);
 export const LazyPageComponentStyleEditor = lazy(loadPageComponentStyleEditor);
 export const LazyPageComponentVisualEditor = lazy(loadPageComponentVisualEditor);
 export const LazyCustomComponentPropertyEditor = lazy(loadCustomComponentPropertyEditor);
+
+export const LazyReportBuilder = lazy(loadReportBuilder);
