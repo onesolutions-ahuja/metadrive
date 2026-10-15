@@ -96,7 +96,7 @@ import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pag
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
-import PlatformWorkspaceSurface from './PlatformWorkspaceSurface';
+import PlatformWorkspaceSurface from './PlatformWorkspaceSurface'; import {PlatformPageSlot} from './PlatformPageSlot';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
 import NamedCredentials from './NamedCredentials';
@@ -1203,7 +1203,7 @@ function ObjectManager({
   };
 
   return (
-    <div className="object-manager">
+    <PlatformPageSlot slotKey="object-workspace"><div className="object-manager">
       <div className="object-topline"><div className="object-breadcrumb"><button onClick={() => onSettingSelect('Objects')}>Object Manager</button><ChevronRight size={14} /><span>{object.label}</span></div><button className="icon-button subtle" aria-label="Object actions" aria-expanded={showObjectActionsMenu} onClick={() => setShowObjectActionsMenu((current) => !current)}><MoreHorizontal size={18} /></button>
         {showObjectActionsMenu && <div className="object-manager-menu">
           <button type="button" onClick={() => { setShowObjectActionsMenu(false); refreshObject(); }}>Refresh Metadata</button>
@@ -1212,7 +1212,7 @@ function ObjectManager({
         </div>}
       </div>
       <div className="object-manager-layout">
-        <aside className="object-list-panel">
+        <PlatformPageSlot slotKey="object-list"><aside className="object-list-panel">
           <div className="object-list-header"><h2>Object Manager</h2><button className="icon-button subtle" aria-label="Filter objects" aria-expanded={showObjectFilterMenu} onClick={() => setShowObjectFilterMenu((current) => !current)}><ListFilter size={15} /></button>
             {showObjectFilterMenu && <div className="object-manager-menu">
               {(['All Objects', 'Standard Objects', 'Custom Objects'] as const).map((mode) => <button type="button" key={mode} className={viewMode === mode ? 'selected' : ''} onClick={() => { setViewMode(mode); setShowObjectFilterMenu(false); }}>{mode}</button>)}
@@ -1229,15 +1229,15 @@ function ObjectManager({
             {visibleObjects.length === 0 && <p className="empty-list">No objects found.</p>}
           </div>
           <button className="create-object" onClick={onCreateObject}><Plus size={15} />Create</button>
-        </aside>
+        </aside></PlatformPageSlot>
 
         <div className="object-details">
-          <div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div>
-          <div className="object-subnav">
+          <PlatformPageSlot slotKey="object-heading"><div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div></PlatformPageSlot>
+          <PlatformPageSlot slotKey="object-subnav"><div className="object-subnav">
             {objectSettings.map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
-          </div>
+          </div></PlatformPageSlot>
 
-          {renderSetting()}
+          <PlatformPageSlot slotKey="object-setting">{renderSetting()}</PlatformPageSlot>
         </div>
       </div>
       {editingField && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingField(null); }}>
@@ -1358,7 +1358,7 @@ function ObjectManager({
           }}>Delete Field</button></div>
         </section>
       </div>}
-    </div>
+    </div></PlatformPageSlot>
   );
 }
 
