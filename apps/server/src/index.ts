@@ -4314,15 +4314,34 @@ function loadState(sqlState?: unknown): PlatformState {
     throw new Error(`Cannot load platform state from ${dataPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+// The eleven migrated built-in object definitions are present in PostgreSQL.
+// Keep them in the runtime state (including the database snapshot), but not in
+// the local JSON compatibility cache/seed. Connector objects not yet migrated
+// remain in the seed until their SQL migration is verified.
+const sqlMigratedSeedObjects = new Set([
+  'User', 'Account', 'Contact', 'Opportunity', 'Case', 'Renewal__c',
+  'Sale__c', 'Campaign', 'Tenant__c', 'Global_Settings__c',
+  'Communication_Records__c'
+]);
+function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): PlatformState {
+  return {
+    ...snapshot,
+    tenants: Object.fromEntries(Object.entries(snapshot.tenants).map(([tenantId, tenant]) => [
+      tenantId,
+      { ...tenant, objects: tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)) }
+    ]))
+  };
+}
 function persistState(next: PlatformState): void {
   if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
   assertTenantIdentityIsolation(next);
   // Typed SQL mode must never persist an unencrypted local JSON state copy.
   const serialized = JSON.stringify(persistenceMode === 'jsonb' ? { ...next, refreshSessions: [] } : next);
+  const localSerialized = JSON.stringify(localStateWithoutSqlObjectDefinitions({ ...next, refreshSessions: [] }));
   if (persistenceMode !== 'typed') {
     mkdirSync(dirname(dataPath), { recursive: true });
     const temporaryPath = `${dataPath}.tmp`;
-    writeFileSync(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
+    writeFileSync(temporaryPath, localSerialized, { encoding: 'utf8', mode: 0o600 });
     renameSync(temporaryPath, dataPath);
   }
   latestStateCommit = persistToPostgres(next, serialized);
@@ -4337,7 +4356,7 @@ if (persistenceMode === 'typed' && existingPostgresState === null)
   throw new Error('Typed SQL runtime requires a verified database snapshot; cannot seed from JSON files');
 if (existingPostgresState !== null && persistenceMode !== 'typed') {
   mkdirSync(dirname(dataPath), { recursive: true });
-  writeFileSync(dataPath, JSON.stringify(existingPostgresState), { encoding: 'utf8', mode: 0o600 });
+  writeFileSync(dataPath, JSON.stringify(localStateWithoutSqlObjectDefinitions(existingPostgresState as PlatformState)), { encoding: 'utf8', mode: 0o600 });
 } else if (existingPostgresState === null) {
   // Never replace an existing database state with a new empty seed.
   console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
