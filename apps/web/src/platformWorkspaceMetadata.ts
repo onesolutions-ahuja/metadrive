@@ -7,7 +7,7 @@ import {workspaces,setupNavigation} from './metadata';
 type SetupWorkspace=typeof workspaces[number];
 export type PlatformWorkspaceDescriptor={
  id:string;label:string;group:string;
- permission:'metadata:read'|'metadata:write'|'platform:superadmin';
+ permission:'metadata:read'|'metadata:write'|'security:read'|'platform:superadmin';
 };
 const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission']>>={
  'Tenant Management':'platform:superadmin',
@@ -17,9 +17,9 @@ const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission'
  'Named Credentials':'metadata:write',
  'AppExchange':'metadata:write',
  'App Manager':'metadata:read',
- 'Users':'metadata:read',
- 'Profiles':'metadata:read',
- 'Permission Sets':'metadata:read'
+ 'Users':'security:read',
+ 'Profiles':'security:read',
+ 'Permission Sets':'security:read'
 };
 export function platformWorkspaceDescriptors():PlatformWorkspaceDescriptor[]{
  const byLabel=new Map<string,SetupWorkspace>(workspaces.map(w=>[w.label,w]));
