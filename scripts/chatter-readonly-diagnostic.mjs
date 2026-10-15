@@ -25,6 +25,6 @@ console.log('CHATTER_READONLY_DIAGNOSTIC '+JSON.stringify({
  role:login.data.user.role,
  supportAccount: String(login.data.user.email||email).toLowerCase()==='support@unesolutions.co.uk',
  endpoints:{access:access.status,records:records.status,grantRecords:grants.status,objects:objects.status},
- counts:{visibleRecordPage:list.length,whatsapp:whatsapp.length,whatsappMessages:msg.length,renderableMessages:usable.length,authorizedChannels:gr.filter(x=>x.canRead).length},
+ counts:{visibleRecordPage:list.length,whatsapp:whatsapp.length,whatsappMessages:msg.length,renderableMessages:usable.length,authorizedChannels:gr.filter(x=>x.canRead).length, sendChannels:gr.filter(x=>x.canSend).length, assignChannels:gr.filter(x=>x.canAssign).length},
  grantObjectExists:(objects.data.objects||[]).some(o=>o.apiName==='Chatter_Channel_Grant__c'), credentialStatus:credentials.status, graphCredentialCount:(credentials.data.credentials||[]).filter(x=>{try{return new URL(x.baseUrl).hostname==='graph.facebook.com'&&!!x.configuration?.PhoneNumberId}catch{return false}}).length
 }));
