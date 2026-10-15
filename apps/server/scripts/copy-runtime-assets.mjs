@@ -52,6 +52,11 @@ for (const name of ['core.mjs', 'apps.mjs', 'catalog.mjs', 'registry.mjs']) {
   mkdirSync(dirname(target), {recursive:true});
   copyFileSync(resolve(serverDir, 'src', path), target);
 }
+// Copy independently installable tenant seed entrypoints to the compiled server.
+for(const seeder of ['seeders/tenant-seeders.mjs','seeders/core-seeder.mjs','seeders/app-seeder.mjs']){
+  mkdirSync(dirname(resolve(destination,seeder)),{recursive:true});
+  copyFileSync(resolve(serverDir,'src',seeder),resolve(destination,seeder));
+}
 // Shared metadata services used by the compiled server's protected registry.
 for(const name of ['offline-publication.mjs','offline-publication-route.mjs','component-revisions.mjs','platform-admin-pages.mjs','page-deletion-route.mjs']){
  const relativePath='modules/metadata/'+name;
