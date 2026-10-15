@@ -225,6 +225,28 @@ if(expected.pages.some(x=>!currentApp.navigationPageApiNames?.includes(x))){
   navigationOrder:[],navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
  });
 }
+// Seed the existing OneEngine administrator profile, not a parallel user role.
+// Only fill absent grants: administrator edits to existing grants are retained.
+const fullObject={read:true,create:true,edit:true,delete:true,viewAll:true,modifyAll:true};
+await updateSecurity(access=>{
+ const admin=(access.profiles??[]).find(p=>p.id==='system-administrator');
+ if(!admin)throw Error('Existing OneEngine administrator profile not found');
+ const missingObjects=Object.fromEntries(usedObjects.filter(name=>
+  !Object.prototype.hasOwnProperty.call(admin.objectPermissions??{},name)).map(name=>[name,fullObject]));
+ const missingFields=Object.fromEntries(usedObjects.flatMap(name=>objectMap.get(name).fields.map(f=>name+'.'+f.apiName))
+  .filter(name=>!Object.prototype.hasOwnProperty.call(admin.fieldPermissions??{},name))
+  .map(name=>[name,{read:true,edit:true}]));
+ const hasApp=Object.prototype.hasOwnProperty.call(admin.appPermissions??{},commerceApp.apiName);
+ const hasTab=Object.prototype.hasOwnProperty.call(admin.tabPermissions??{},'Product__c');
+ if(!Object.keys(missingObjects).length&&!Object.keys(missingFields).length&&hasApp&&hasTab)return null;
+ return {...access,profiles:(access.profiles??[]).map(profile=>profile.id!==admin.id?profile:{
+  ...profile,
+  objectPermissions:{...profile.objectPermissions,...missingObjects},
+  fieldPermissions:{...profile.fieldPermissions,...missingFields},
+  appPermissions:{...profile.appPermissions,...(!hasApp?{[commerceApp.apiName]:true}:{})},
+  tabPermissions:{...profile.tabPermissions,...(!hasTab?{Product__c:true}:{})}
+ })};
+});
 // Prepare a limited OneEngine permission set. No user is automatically assigned.
 const readOnly={read:true,create:false,edit:false,delete:false,viewAll:false,modifyAll:false};
 const transaction={read:true,create:true,edit:true,delete:true,viewAll:false,modifyAll:false};
