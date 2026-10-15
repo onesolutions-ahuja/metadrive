@@ -204,7 +204,7 @@ export const commerceComponents=[
 
 // The same library components remain independently editable; V3 is a versioned
 // publication because existing tenant-owned V2 definitions must not be overwritten.
-const railSource = \`
+const railSource = `
 export default function CategoryRail({title='MENU',categories='RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',accentColor='#ed002d',onAction}){
  const [selected,setSelected]=React.useState('BURGERS & WRAPS');
  const items=String(categories||'').split(',').map(x=>x.trim()).filter(Boolean);
@@ -221,9 +221,9 @@ export default function CategoryRail({title='MENU',categories='RECOMMENDS,COUPON
   </button>)}
  </nav>;
 }
-\`;
-const railCss=\`.md-commerce-rail{background:white}\`;
-const cardCss=\`
+`;
+const railCss=`.md-commerce-rail{background:white}`;
+const cardCss=`
 .md-commerce-grid{display:grid;grid-template-columns:repeat(var(--commerce-columns,3),minmax(0,1fr));gap:12px}
 .md-commerce-card{background:#fff;border:1px solid #eee;border-radius:3px;overflow:hidden;box-shadow:none;min-width:0}
 .md-commerce-card img{width:100%;height:170px;object-fit:contain}
@@ -234,8 +234,8 @@ const cardCss=\`
 .md-commerce-error{color:#a62424}
 @media(max-width:780px){.md-commerce-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:510px){.md-commerce-grid{grid-template-columns:repeat(1,minmax(0,1fr))}}
-\`;
-const footerSource=\`
+`;
+const footerSource=`
 export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b200',currencySymbol='£',onAction,sessionId}){
  const [basket,setBasket]=React.useState({Lines:[],Basket:null});
  const [busy,setBusy]=React.useState(false),[error,setError]=React.useState('');
@@ -255,31 +255,29 @@ export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b200',c
   </button>
  </footer>;
 }
-\`;
-const version = (original, apiName, jsxSource, cssSource, settings) => ({
- ...original,apiName,jsxSource,cssSource,
- propertyDefinitions:settings ?? original.propertyDefinitions,
- publicationStatus:'Published'
-});
+`;
+
+const composeVariant=(baseline,alternative,baseName,alternativeName)=>{
+ const original=baseline.replace('export default function '+baseName,'function Original'+baseName);
+ const variant=alternative.replace('export default function '+alternativeName,'function Alternate'+baseName);
+ return original+'\n'+variant+'\nexport default function '+baseName+'(props){return props.presentationVariant==="portrait" ? <Alternate'+baseName+' {...props}/> : <Original'+baseName+' {...props}/>;}';
+};
 const [nav,grid,basket,status]=commerceComponents;
-const define=(key,label,kind,defaultValue,displayOrder)=>({propertyKey:key,label,kind,defaultValue,displayOrder,isBindable:true});
+const variantSetting=setting('presentationVariant','Presentation variant','TEXT','standard',99);
 const productSource=grid.jsxSource
- .replace("return <section style={{padding:0,maxWidth:'none'}}>","return <section style={{padding:0,maxWidth:'none',fontFamily:'Arial,sans-serif'}}>") 
+ .replace("return <section style={{padding:0,maxWidth:'none'}}>","return <section style={{padding:0,maxWidth:'none',fontFamily:'Arial,sans-serif'}}>")
  .replace("fontSize:32,fontWeight:900","fontSize:30,fontWeight:900")
  .replace("height:215,objectFit:'cover'","height:170,objectFit:'contain'")
- .replace("fontSize:19,color:'#171717'","fontSize:15,color:'#171717'")
- .replace("borderRadius:16,boxSizing:'border-box'","borderRadius:8,boxSizing:'border-box'");
+ .replace("fontSize:19,color:'#171717'","fontSize:15,color:'#171717'");
+const portraitCss=cardCss.replace(/(^|\n)(\.[^{\n]+)\{/g, '$1.md-kiosk-reference $2{');
+const wrapProduct=grid.jsxSource.replace('export default function CommerceProductGrid','function OriginalCommerceProductGrid')
+ +'\n'+productSource.replace('export default function CommerceProductGrid','function PortraitCommerceProductGrid')
+ +'\nexport default function CommerceProductGrid(props){return props.presentationVariant==="portrait" ? <div className="md-kiosk-reference"><PortraitCommerceProductGrid {...props}/></div> : <OriginalCommerceProductGrid {...props}/>;}';
 export const kioskPresentationComponents=[
- version(nav,'MD_CommerceNavigationV2',railSource,railCss,[
-  define('title','Category rail title','TEXT','MENU',1),
-  define('categories','Category labels','TEXT','RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',2),
-  define('accentColor','Active category colour','COLOR','#ed002d',3)
- ]),
- version(grid,'MD_CommerceProductGridV2',productSource,cardCss),
- version(basket,'MD_CommerceBasketPanelV2',footerSource,cardCss,[
-  define('title','Basket label','TEXT','SHOW BASKET',1),
-  define('accentColor','Checkout colour','COLOR','#92b200',2),
-  define('currencySymbol','Currency symbol','TEXT','£',3)
- ]),
- version(status,'MD_CommerceStatusV2',status.jsxSource,status.cssSource)
+ {...nav,jsxSource:composeVariant(nav.jsxSource,railSource,'CommerceNav','CategoryRail'),cssSource:nav.cssSource+railCss,
+  propertyDefinitions:[...nav.propertyDefinitions,variantSetting,setting('categories','Categories','TEXT','RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',100)]},
+ {...grid,jsxSource:wrapProduct,cssSource:grid.cssSource+portraitCss,propertyDefinitions:[...grid.propertyDefinitions,variantSetting]},
+ {...basket,jsxSource:composeVariant(basket.jsxSource,footerSource,'CommerceBasketPanel','CheckoutBar'),cssSource:basket.cssSource,
+  propertyDefinitions:[...basket.propertyDefinitions,variantSetting]},
+ status
 ];
