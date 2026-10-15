@@ -55,6 +55,7 @@
         },
         "objectApiName": "Communication_Records__c",
         "recordPresenterApiName": "CommunicationThread",
+        "canSend": false,
         "canAssign": false
       }
     }
