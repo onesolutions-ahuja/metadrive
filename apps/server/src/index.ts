@@ -8138,7 +8138,6 @@ function validateFlowInputValues(flow: FlowMetadata, values: Record<string, unkn
   }
   return undefined;
 }
-
 app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission('flows:run'), async (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
@@ -8148,12 +8147,11 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
-  const callerInput = sanitizeChatterCallerInput(apiName, input.data);
-  const inputError = validateFlowInputValues(flow, callerInput);
+  const inputError = validateFlowInputValues(flow, sanitizeChatterCallerInput(apiName, input.data));
   if (inputError) return res.status(400).json({ error: inputError });
   const guard = authoriseChatterFlow(apiName, {
     tenantId: principal.tenantId, userId: principal.userId,
-    tenant, input: callerInput, credentials: tenant.namedCredentials, users: state.users
+    tenant, input: sanitizeChatterCallerInput(apiName, input.data), credentials: tenant.namedCredentials, users: state.users
   });
   if (guard && !guard.ok) return res.status(guard.status).json({error:guard.error});
   const authorisedInput = guard?.ok ? guard.input : input.data;
