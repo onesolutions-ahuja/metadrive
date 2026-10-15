@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {recordInstalledAppPackageVersions} from '../src/seeders/registry.mjs';
+import {applyDeveloperAppGrants} from '../src/seeders/apps.mjs';
 
 const catalog={packages:[{
   appKey:'crm',version:'1.0.0',
@@ -45,4 +46,27 @@ test('agent2: cross-tenant package versions never mix',async()=>{
  await recordInstalledAppPackageVersions(client,{tenants:{a:baseTenant(),b:baseTenant()}},catalog);
  const insert=statements.filter(x=>x.sql.startsWith('INSERT INTO md_seed_package_versions'));
  assert.deepEqual(insert.map(x=>x.args[0]),['a','b']);
+});
+
+test('agent2: freshly introduced installed app gets initial OneEngine developer metadata grants',()=>{
+ const base=baseTenant();
+ base.objects=[];base.pages=[];base.apps=[];base.flows=[];
+ base.accessControl.permissionSets[0].objectPermissions={};
+ base.accessControl.permissionSets[0].fieldPermissions={};
+ const after=baseTenant();
+ after.objects=[{apiName:'Lead',fields:[{apiName:'Name'}]}];
+ after.accessControl=structuredClone(base.accessControl);
+ const merged=applyDeveloperAppGrants(base,after,catalog.packages);
+ const policy=merged.accessControl.permissionSets[0];
+ assert.equal(policy.objectPermissions.Lead.modifyAll,true);
+ assert.deepEqual(policy.fieldPermissions['Lead.Name'],{read:true,edit:true});
+ assert.equal(policy.appPermissions.CRM,true);
+});
+test('agent2: reinstall does not overwrite edited OneEngine permissions',()=>{
+ const tenant=baseTenant();
+ tenant.objects=[{apiName:'Lead',fields:[{apiName:'Name'}]}];
+ tenant.accessControl.permissionSets[0].objectPermissions.Lead={read:false};
+ tenant.accessControl.permissionSets[0].fieldPermissions={'Lead.Name':{read:false,edit:false}};
+ const merged=applyDeveloperAppGrants(tenant,structuredClone(tenant),catalog.packages);
+ assert.deepEqual(merged,tenant);
 });
