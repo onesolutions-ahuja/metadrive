@@ -50,3 +50,9 @@ test('Object Manager uses every seeded independent page slot',()=>{
  for(const slot of protectedWorkspacePageSlots['object-manager'])
   assert.ok(source.includes('slotKey="'+slot+'"'),'Missing editable object slot '+slot);
 });
+
+test('RBAC screen renders through all seeded protected page slots',()=>{
+ const source=read('permissionsView.tsx');
+ for(const slot of protectedWorkspacePageSlots.rbac)
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing RBAC slot '+slot);
+});
