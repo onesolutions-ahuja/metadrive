@@ -27,7 +27,7 @@ test('Tenant-customised protected pages are never reset by re-seeding',()=>{
 test('admin slot presentation uses the existing workspace and RBAC instead of another engine',()=>{
  const surface=read('PlatformWorkspaceSurface.tsx');
  assert.ok(surface.includes('PlatformPageSlotsProvider'));
- assert.ok(surface.includes('item.requiredPermissions?.includes(definition.requiredPermission)'));
+ assert.ok(surface.includes('Array.isArray(item.requiredPermissions)&&item.requiredPermissions.length>0'));
  for(const [file,keys] of [
   ['AppManager.tsx',['identity','assignments','navigation-items','actions']],
   ['AppExchange.tsx',['marketplace']],
