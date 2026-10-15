@@ -244,9 +244,9 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             <label><input type="checkbox" checked={legalHold} onChange={(event) => setLegalHold(event.target.checked)} /> Legal hold</label>
             <button type="button" className="tenant-button" onClick={() => void saveRetention()} disabled={busy}>Save retention policy</button>
             <p className="tenant-help">Retention metadata is audited. No automatic or manual data deletion is enabled.</p>
-          </section></PlatformPageSlot>
+          </section>
         </form><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
-      </section>
+      </section></PlatformPageSlot>
     </div>
   </div>;
 }
