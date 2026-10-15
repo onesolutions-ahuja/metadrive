@@ -110,3 +110,15 @@
  .records-table-wrap .records-table { min-width:540px; }
  .records-row-actions button,.record-row-actions button { min-height:44px; }
 }
+
+/* Setup quick links: text may wrap without clipping or pushing the card outside its grid. */
+.home-content,.welcome-banner,.welcome-copy,.welcome-quick,.home-lower-grid,.shortcut-grid { min-width:0; }
+.welcome-quick { overflow:visible; }
+.welcome-quick button { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; width:100%; white-space:normal; overflow-wrap:anywhere; text-align:left; }
+.welcome-quick button svg:last-child { flex:0 0 auto; margin-left:auto; }
+@media(max-width:768px) {
+ .welcome-banner { display:flex; flex-wrap:wrap; }
+ .welcome-copy { flex:1 1 260px; }
+ .welcome-quick { flex:1 1 240px; }
+ .home-lower-grid { grid-template-columns:minmax(0,1fr); }
+}
