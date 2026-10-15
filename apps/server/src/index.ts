@@ -1,4 +1,5 @@
 import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
+import { loadAppSeedCatalog } from './seeders/catalog.mjs';
 import { registerReportRoutes } from './modules/reports/routes.js';
 import { registerDashboardRoutes } from './modules/dashboards/routes.js';
 import { registerDashboardSnapshotRoutes } from './modules/dashboards/snapshot-routes.js';
@@ -3264,7 +3265,7 @@ const connectorAppCatalog = z.object({
   packages: z.array(z.record(z.unknown())),
   flows: z.array(flowSchema)
 }).parse(JSON.parse(readFileSync(new URL('../data/connector-apps.json', import.meta.url), 'utf8')));
-const installableAppCatalog = JSON.parse(readFileSync(new URL('../data/installable-app-packages.json', import.meta.url), 'utf8'));
+const installableAppCatalog = loadAppSeedCatalog();
 function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId: string): RuntimeRecord[] {
   const existing = [...(records ?? [])];
   const now = new Date().toISOString();
@@ -12788,7 +12789,6 @@ function validateFlow(
   }
   return { valid: errors.length === 0, errors, warnings };
 }
-
 
 function dashboardEmailFilterMatches(record: RuntimeRecord, filter: DashboardFilterMetadata): boolean {
   return reportFilterMatches(record, filter);
