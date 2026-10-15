@@ -63,9 +63,23 @@ export function seedProtectedAdministrationPages(tenant){
   if(page.definitionVersion===1&&page.components.length===0)
    return {...page,definitionVersion:next.definitionVersion,canvasHeight:next.canvasHeight,components:next.components};
   const original=legacyControlSlots[d.workspace];
-  if(page.definitionVersion===2&&original&&JSON.stringify(page.components)===
-    JSON.stringify(protectedAdministrationSlotComponents(d.workspace,original)))
-   return {...page,definitionVersion:next.definitionVersion,canvasHeight:next.canvasHeight,components:next.components};
+  if(page.definitionVersion===2&&original){
+   // The persisted page registry normalises optional component defaults. Compare
+   // immutable seed identities, not a brittle serialised full component tree.
+   const expected=protectedAdministrationSlotComponents(d.workspace,original);
+   const originalSlotsMatch=page.components.length===expected.length&&expected.every((slot,index)=>{
+    const actual=page.components[index];
+    return actual?.id===slot.id&&actual.type===slot.type&&
+     actual.properties?.platformSlotKey===slot.properties.platformSlotKey&&
+     actual.properties?.systemWorkspaceId===slot.properties.systemWorkspaceId;
+   });
+   if(originalSlotsMatch){
+    const newSlots=next.components.filter(slot=>!original.includes(slot.properties.platformSlotKey));
+    return {...page,definitionVersion:next.definitionVersion,
+     canvasHeight:Math.max(page.canvasHeight??0,next.canvasHeight),
+     components:[...page.components,...newSlots]};
+   }
+  }
   return page;
  });
  return additions.length||migrated.some((page,i)=>page!==pages[i])
