@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { connectorEntitlement } from '../apps/server/src/connector-app-runtime.ts';
+import { connectorEntitlement, applyConnectorLifecycle } from '../apps/server/src/connector-app-runtime.ts';
 import { installedComponentDescriptors } from '../apps/server/src/bundled-app-components.mjs';
 import { applyInstallableAppPackages } from '../apps/server/src/installable-app-packages.mjs';
 
@@ -56,4 +56,28 @@ test('duplicate app installation records cannot seed package metadata', () => {
   }]}]};
   assert.strictEqual(applyInstallableAppPackages(tenant,catalog),tenant);
   assert.equal(tenant.objects.length,0);
+});
+
+test('install, licence and trial lifecycle preserve prior one-time trial and fail closed on uninstall references', () => {
+  const base = {
+    AppKey__c:'demo', Name:'Demo', CredentialName__c:'DEMO',
+    Installed__c:false, TrialRequested__c:false, TrialUsed__c:false,
+    TrialDays__c:21
+  };
+  const installed = applyConnectorLifecycle(base,{...base,Installed__c:true},[],[],now);
+  assert.equal(installed.Installed__c,true);
+  assert.equal(installed.TrialUsed__c,false);
+  const trial = applyConnectorLifecycle(installed,{...installed,TrialRequested__c:true},[],[],now);
+  assert.equal(trial.TrialUsed__c,true);
+  assert.equal(trial.LicenceStatus__c,'Trial');
+  assert.equal(applyConnectorLifecycle(trial,{...trial},[],[],now).TrialExpiresAt__c,trial.TrialExpiresAt__c);
+  assert.throws(() => applyConnectorLifecycle(trial,{...trial,TrialRequested__c:true},[],[],now));
+  const flows = [{apiName:'Dependency',label:'Dependent Flow',status:'Active',elements:[
+    {type:'HTTP Callout',config:{namedCredentialId:'DEMO'}}
+  ]}];
+  assert.throws(() => applyConnectorLifecycle(trial,{...trial,Installed__c:false},[],flows,now),/Dependent Flow/);
+  const uninstalled = applyConnectorLifecycle(trial,{...trial,Installed__c:false},[],[],now);
+  assert.equal(uninstalled.TrialUsed__c,true);
+  assert.equal(uninstalled.LicenceStatus__c,'Not Installed');
+  assert.equal(applyConnectorLifecycle(uninstalled,{...uninstalled,Installed__c:true},[],[],now).TrialUsed__c,true);
 });
