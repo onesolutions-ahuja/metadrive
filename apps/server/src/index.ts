@@ -6735,8 +6735,7 @@ app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePer
   const tenant = tenantData(principal.tenantId)!;
   const key = routeParam(req, 'appKey');
   const matches = (tenant.records.Connector_App__c ?? []).filter((row) => row.AppKey__c === key);
-  if (matches.length > 1) return res.status(409).json({ error: 'Conflicting AppExchange installation records.' });
-  const previous = matches[0];
+  if (matches.length > 1) return res.status(409).json({ error: 'Conflicting AppExchange installation records.' }); const previous = matches[0];
   if (!previous) return res.status(404).json({ error: 'Connector not found' });
   if (previous.Installed__c !== true) return res.status(409).json({ error: 'Install the connector before granting a licence.' });
   const days = Number(previous.LicenceTermDays__c ?? 30);
