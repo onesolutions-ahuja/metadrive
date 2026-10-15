@@ -154,7 +154,8 @@ export function initializeTenantCore(template, {authorizedUserIds=[], trustedPro
     namedCredentials:placeholders,
     users:[],
     accessControl:{
-      ...seedInitialTenantDeveloperPolicy(seed.accessControl),
+      ...(seed.accessControl.permissionSets?.some(set=>set.id==='system-administrator')
+        ? seedInitialTenantDeveloperPolicy(seed.accessControl) : seed.accessControl),
       users:(template.accessControl?.users??[])
         .filter(user=>allowed.has(user.id)).map(user=>structuredClone(user))
     }
