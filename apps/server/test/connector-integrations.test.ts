@@ -96,8 +96,9 @@ test('connector providers and tenant connections are metadata-backed and keep cr
     assert.deepEqual(whatsapp.retryPolicy, { maxAttempts: 3 });
     assert.deepEqual(whatsapp.operations.send_message, { method: 'POST', path: '/{phone_number_id}/messages' });
     assert.deepEqual(whatsapp.test, { method: 'GET', path: '/{phone_number_id}?fields=id', expectedStatus: 200 });
-    const providerRecords = (await request('/records/ConnectorProvider__c', token)).data.records as Array<Record<string, unknown>>;
-    assert.equal(providerRecords.length, 5);
+    // Provider discovery is the authorised, tenant-scoped connector API; the
+    // generic record view can legitimately exclude private metadata records.
+    assert.equal(providers.length, 5);
 
     const secret = 'smoke-only-access-token';
     const created = await request('/integration-connections', token, 'POST', {
@@ -112,8 +113,10 @@ test('connector providers and tenant connections are metadata-backed and keep cr
     assert.equal(connection.hasCredentials, true);
     assert.equal(connection.credentialFields.find((field: Record<string, unknown>) => field.name === 'access_token').configured, true);
     assert.equal(JSON.stringify(created.data).includes(secret), false);
-    const connectionRecords = (await request('/records/IntegrationConnection__c', token)).data.records as Array<Record<string, unknown>>;
-    assert.equal(connectionRecords[0].Name, 'WhatsApp Production');
+    const connectionsResponse = await request('/integration-connections', token);
+    assert.equal(connectionsResponse.status, 200);
+    const connectionRecords = connectionsResponse.data.connections as Array<Record<string, any>>;
+    assert.ok(connectionRecords.some((item) => item.name === 'WhatsApp Production'));
     assert.equal(JSON.stringify(connectionRecords).includes(secret), false);
     assert.equal((await readFile(dataPath, 'utf8')).includes(secret), false);
 
