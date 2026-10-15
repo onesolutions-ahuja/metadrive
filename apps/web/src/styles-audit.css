@@ -83,3 +83,16 @@
   }
   .records-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }
+
+/* Keep the metadata-backed object catalogue usable on narrow viewports. */
+.header-record-picker { min-width: 0; max-width: 100%; }
+.header-record-picker-control { min-width: 0; }
+.header-record-picker-control input { min-width: 0; width: 100%; }
+.header-record-picker-options { max-width: min(380px, calc(100vw - 24px)); max-height: min(60dvh, 420px); overflow-y: auto; }
+.header-record-picker-options [role="option"] { min-height: 44px; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .header-record-picker { width: min(100%, 280px); flex: 1 1 170px; }
+  .header-record-picker-control { min-height: 44px; }
+  .header-record-picker-control input { min-height: 44px; font-size: 16px; }
+  .header-record-picker-options { width: min(340px, calc(100vw - 24px)); }
+}
