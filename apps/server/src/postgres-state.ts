@@ -194,7 +194,7 @@ function ensureSeedLedger(): Promise<void> {
   if (!pool) return Promise.reject(new Error('SQL ledger requires PostgreSQL'));
   if (!seedLedgerReady) seedLedgerReady = (async () => {
     await pool.query(`CREATE TABLE IF NOT EXISTS md_seed_package_versions (
-      tenant_id TEXT NOT NULL REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT,
+      tenant_id TEXT NOT NULL,
       package_kind TEXT NOT NULL CHECK (package_kind IN ('core','shared','app')),
       package_key TEXT NOT NULL CHECK (length(trim(package_key)) BETWEEN 1 AND 160),
       package_version TEXT NOT NULL CHECK (length(trim(package_version)) BETWEEN 1 AND 80),
@@ -205,6 +205,20 @@ function ensureSeedLedger(): Promise<void> {
     )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS md_seed_package_versions_kind_idx
       ON md_seed_package_versions (tenant_id,package_kind,updated_at DESC)`);
+    // Fresh SQL-only tests create tenant tables during their first snapshot write.
+    // Add the FK when the authoritative tenant table exists, without assuming
+    // bootstrap ordering or removing the constraint from existing installations.
+    const tenantTable = await pool.query("SELECT to_regclass('metadrive_rel_tenants') AS name");
+    if (tenantTable.rows[0]?.name) {
+      await pool.query(`DO $ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'md_seed_package_versions_tenant_fk'
+          AND conrelid = 'md_seed_package_versions'::regclass) THEN
+          ALTER TABLE md_seed_package_versions
+            ADD CONSTRAINT md_seed_package_versions_tenant_fk
+            FOREIGN KEY (tenant_id) REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT;
+        END IF;
+      END $`);
+    }
   })().catch((error: unknown) => { seedLedgerReady = null; throw error; });
   return seedLedgerReady;
 }
@@ -255,6 +269,9 @@ async function drainStateWrites(): Promise<void> {
           throw error;
         } finally { client.release(); }
       }
+      // On the first fresh-db snapshot the tenant table now exists. Attach FK.
+      seedLedgerReady = null;
+      await ensureSeedLedger();
       writeFailure = null;
       for (const waiter of batch) waiter.resolve();
     } catch (error) {
