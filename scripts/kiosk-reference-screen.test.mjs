@@ -33,7 +33,7 @@ test('template engine uses metadata for rail-checkout, not app-specific logic',(
 test('installer upgrades versioned components while respecting existing page properties',()=>{
  const installer=readFileSync(new URL('./install-kiosk-phase4.mjs',import.meta.url),'utf8');
  assert.match(installer,/kioskPresentationComponents as commerceComponents/);
- assert.match(installer,/block\.properties/);
+ assert.match(installer,/const previousPages=new Map/);
  assert.match(installer,/component-library.*PUT/);
  assert.match(installer,/matchesBaseline/);
  assert.match(installer,/obsoleteCommercePages/);
