@@ -26,7 +26,7 @@ test('declarative action events reference only installed active flows and pages'
  const flows=new Set(commerceFlows.map(x=>x.apiName));
  const pages=new Set(commercePages.map(x=>x.apiName));
  const blocks=new Set(commerceComponents.map(x=>x.apiName));
- assert.equal(commercePages.length,3);
+ assert.equal(commercePages.length,2);
  for(const page of commercePages){
   assert.equal(page.pageType,'App Page');
   assert.equal(page.status,'Active');
@@ -39,6 +39,9 @@ test('declarative action events reference only installed active flows and pages'
      assert.ok(flows.has(handler.flowApiName),handler.flowApiName);
      for(const val of Object.values(handler.inputs??{}))
       assert.ok(typeof val==='string'&&val.startsWith('$'));
+    }else if(handler.actionType==='PageState'){
+     assert.match(handler.stateKey,/^[A-Za-z][A-Za-z0-9_]*$/);
+     assert.ok(handler.value===true||handler.value===false||handler.value==='$event');
     }else{
      assert.equal(handler.actionType,'Navigate');
      assert.ok(pages.has(handler.navigationPageApiName));
@@ -48,7 +51,7 @@ test('declarative action events reference only installed active flows and pages'
   }
  }
  assert.deepEqual(new Set(commerceApp.navigationPageApiNames),pages);
- assert.equal(commerceApp.navigationOrder.length,commerceApp.navigationItems.length+pages.size);
+ assert.equal(commerceApp.navigationOrder.length,pages.size);
 });
 test('all Flow graphs are valid DAGs apart from supported loops, guard modifiers and execute through core Objects',()=>{
  const names=new Set(commerceFlows.map(f=>f.apiName));
@@ -94,7 +97,7 @@ test('live installer remains dry-run without explicit approval',()=>{
  assert.equal(body.mode,'dry-run');
  assert.equal(body.expected.components.length,4);
  assert.equal(body.expected.flows.length,5);
- assert.equal(body.expected.pages.length,3);
+ assert.equal(body.expected.pages.length,2);
 });
 test('approved demo images are explicitly allowlisted without enabling network fetches',()=>{
  const source=readFileSync(new URL('../apps/web/src/ComponentSandbox.tsx',import.meta.url),'utf8');
