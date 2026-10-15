@@ -90,6 +90,10 @@ try{
   assert.ok(bounds[0].height>height*.45,'Category rail cropped: '+JSON.stringify(bounds));
   assert.ok(bounds[1].height>height*.40,'Products iframe cropped: '+JSON.stringify(bounds));
   assert.ok(bounds[2].height>=80&&bounds[2].height<=height*.3,'Basket bar sized incorrectly: '+JSON.stringify(bounds));
+  const checkout=await frames.nth(2).contentFrame().getByRole('button',{name:/PLACE ORDER/i}).boundingBox();
+  assert.ok(checkout && checkout.width>100 && checkout.height>=35,'Checkout button has no visible size');
+  assert.ok(checkout.y>=bounds[2].y && checkout.y+checkout.height<=bounds[2].y+bounds[2].height+2,
+   'Checkout button is outside its visible iframe viewport: '+JSON.stringify({checkout,footer:bounds[2]}));
   assert.ok(bounds[1].width>100,'Product grid too narrow');
   await page.screenshot({path:join(evidence,'kiosk-'+label+'.png'),fullPage:true});
   console.log('Rendered Kiosk '+label+' '+JSON.stringify(bounds.map(x=>({width:x.width,height:x.height}))));
