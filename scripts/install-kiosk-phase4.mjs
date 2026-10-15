@@ -247,10 +247,11 @@ for(const expectedPage of commercePages){
 apps=(await api('/metadata/apps')).apps;
 const currentApp=apps.find(a=>a.apiName===commerceApp.apiName);
 if(!currentApp)throw Error('Kiosk app not readable after creation');
-if(expected.pages.some(x=>!currentApp.navigationPageApiNames?.includes(x))){
+if(JSON.stringify(currentApp.navigationPageApiNames??[])!==JSON.stringify(expected.pages)){
  await api('/metadata/apps/'+commerceApp.apiName,'PUT',{
-  ...currentApp,navigationPageApiNames:[...new Set([...(currentApp.navigationPageApiNames??[]),...expected.pages])],
-  navigationOrder:[],navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
+  ...currentApp,navigationPageApiNames:expected.pages,
+  navigationOrder:commerceApp.navigationOrder,
+  navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
  });
 }
 // Seed the existing OneEngine administrator profile, not a parallel user role.
