@@ -582,6 +582,474 @@
         },
         "navigationDefaultAccess": "Deny"
       }
+    },
+    {
+      "appKey": "uk-offlicence-pos",
+      "installation": {
+        "allowInstalledMetadataWithoutLicence": true,
+        "repairMissingAdministratorPermissions": true,
+        "defaultAppApiName": "UKOffLicenceApp",
+        "defaultPageApiName": "UK_OFFLICENCE_TILL",
+        "activationAssignments": [
+          {
+            "idSuffix": "till-default",
+            "scope": "App Default",
+            "formFactors": ["Desktop", "Phone"]
+          }
+        ],
+        "administratorObjectPermissions": {
+          "Product": { "read": true, "create": true, "edit": true, "delete": true, "viewAll": true },
+          "Invoice": { "read": true, "create": true, "edit": true, "delete": true, "viewAll": true },
+          "InvoiceItem": { "read": true, "create": true, "edit": true, "delete": true, "viewAll": true }
+        }
+      },
+      "objects": [
+        {
+          "apiName": "Product",
+          "label": "Product",
+          "pluralLabel": "Products",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            { "apiName": "Name", "label": "Name", "dataType": "Text(255)", "required": true, "unique": false },
+            { "apiName": "Type", "label": "Type", "dataType": "Picklist", "required": false, "unique": false },
+            { "apiName": "SKU", "label": "SKU", "dataType": "Text(100)", "required": false, "unique": false },
+            { "apiName": "CategoryId", "label": "Category Id", "dataType": "Lookup(ProductCategory)", "required": false, "unique": false },
+            { "apiName": "UnitId", "label": "Unit Id", "dataType": "Lookup(UnitOfMeasure)", "required": false, "unique": false },
+            { "apiName": "TaxId", "label": "Tax Id", "dataType": "Lookup(Tax)", "required": false, "unique": false },
+            { "apiName": "IsActive", "label": "Is Active", "dataType": "Checkbox", "required": false, "unique": false },
+            { "apiName": "DefaultPrice", "label": "Default Price", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "Barcode", "label": "Barcode", "dataType": "Text(64)", "required": false, "unique": false },
+            { "apiName": "ImageURL", "label": "Product Image URL", "dataType": "URL", "required": false, "unique": false },
+            { "apiName": "AgeRestricted", "label": "Age Restricted", "dataType": "Checkbox", "required": false, "unique": false, "defaultValue": false },
+            { "apiName": "VATApplicable", "label": "VAT Applicable", "dataType": "Checkbox", "required": false, "unique": false, "defaultValue": true }
+          ]
+        },
+        {
+          "apiName": "Invoice",
+          "label": "Invoice",
+          "pluralLabel": "Invoices",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            { "apiName": "InvoiceNumber", "label": "Invoice Number", "dataType": "Auto Number", "required": true, "unique": false },
+            { "apiName": "AccountId", "label": "Account Id", "dataType": "Lookup(Account)", "required": false, "unique": false },
+            { "apiName": "BillingAddressId", "label": "Billing Address Id", "dataType": "Lookup(Address)", "required": false, "unique": false },
+            { "apiName": "InvoiceDate", "label": "Invoice Date", "dataType": "Date", "required": false, "unique": false },
+            { "apiName": "DueDate", "label": "Due Date", "dataType": "Date", "required": false, "unique": false },
+            { "apiName": "Direction", "label": "Direction", "dataType": "Picklist", "required": false, "unique": false },
+            { "apiName": "Status", "label": "Status", "dataType": "Picklist", "required": false, "unique": false },
+            { "apiName": "CurrencyCode", "label": "Currency Code", "dataType": "Text(3)", "required": false, "unique": false },
+            { "apiName": "Total", "label": "Total", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "VATTotal", "label": "VAT Total", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "CashierId", "label": "Cashier", "dataType": "Lookup(User)", "required": false, "unique": false },
+            { "apiName": "PaymentMethod", "label": "Payment Method", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Cash", "Manual"], "picklistRestricted": true },
+            { "apiName": "PaymentStatus", "label": "Payment Status", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Pending", "Accepted", "Declined"], "picklistRestricted": true },
+            { "apiName": "AmountTendered", "label": "Amount Tendered", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "ChangeDue", "label": "Change Due", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "OrderId", "label": "Order Id", "dataType": "Lookup(Order)", "required": false, "unique": false }
+          ]
+        },
+        {
+          "apiName": "InvoiceItem",
+          "label": "Invoice Item",
+          "pluralLabel": "Invoice Items",
+          "kind": "Standard Object",
+          "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+          "fields": [
+            { "apiName": "Name", "label": "Name", "dataType": "Text(255)", "required": true, "unique": false },
+            { "apiName": "InvoiceId", "label": "Invoice Id", "dataType": "Lookup(Invoice)", "required": true, "unique": false },
+            { "apiName": "ProductId", "label": "Product Id", "dataType": "Lookup(Product)", "required": false, "unique": false },
+            { "apiName": "Quantity", "label": "Quantity", "dataType": "Number(18, 4)", "required": false, "unique": false },
+            { "apiName": "UnitPrice", "label": "Unit Price", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "TaxId", "label": "Tax Id", "dataType": "Lookup(Tax)", "required": false, "unique": false },
+            { "apiName": "VATApplicable", "label": "VAT Applicable At Sale", "dataType": "Checkbox", "required": false, "unique": false },
+            { "apiName": "VATRate", "label": "VAT Rate At Sale", "dataType": "Percent(8, 4)", "required": false, "unique": false },
+            { "apiName": "VATAmount", "label": "VAT Amount At Sale", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "LineTotal", "label": "Line Total", "dataType": "Currency(18, 2)", "required": false, "unique": false }
+          ]
+        }
+      ],
+      "components": [
+        {
+          "apiName": "RecordCatalogCart",
+          "label": "Record Catalog Cart",
+          "description": "Configurable product catalog, sale basket and Flow-bound checkout.",
+          "surfaces": ["page"],
+          "resize": { "defaultWidth": 1200, "defaultHeight": 700, "minWidth": 320, "minHeight": 400 },
+          "jsxFile": "RecordCatalogCart/RecordCatalogCart.jsx",
+          "cssFile": "RecordCatalogCart/RecordCatalogCart.css",
+          "version": 2,
+          "propertyDefinitions": [
+            { "propertyKey": "title", "label": "Till title", "kind": "TEXT", "defaultValue": "Till", "displayOrder": 1 },
+            { "propertyKey": "currencyCode", "label": "Currency code", "kind": "CURRENCY", "defaultValue": "GBP", "displayOrder": 2 },
+            { "propertyKey": "eyebrow", "label": "Till eyebrow", "kind": "TEXT", "defaultValue": "SALES", "displayOrder": 3 },
+            { "propertyKey": "nameFieldApiName", "label": "Product name field", "kind": "TEXT", "defaultValue": "Name", "displayOrder": 4 },
+            { "propertyKey": "priceFieldApiName", "label": "Selling price field", "kind": "TEXT", "defaultValue": "DefaultPrice", "displayOrder": 5 },
+            { "propertyKey": "barcodeFieldApiName", "label": "Barcode field", "kind": "TEXT", "defaultValue": "Barcode", "displayOrder": 6 },
+            { "propertyKey": "skuFieldApiName", "label": "SKU field", "kind": "TEXT", "defaultValue": "SKU", "displayOrder": 7 },
+            { "propertyKey": "imageFieldApiName", "label": "Image field", "kind": "TEXT", "defaultValue": "ImageURL", "displayOrder": 8 },
+            { "propertyKey": "ageRestrictedFieldApiName", "label": "Age restriction field", "kind": "TEXT", "defaultValue": "AgeRestricted", "displayOrder": 9 },
+            { "propertyKey": "vatApplicableFieldApiName", "label": "VAT applicability field", "kind": "TEXT", "defaultValue": "VATApplicable", "displayOrder": 10 },
+            { "propertyKey": "customerDisplayUrl", "label": "Customer display page URL", "kind": "TEXT", "defaultValue": "/une/apps/UKOffLicenceApp/pages/UK_OFFLICENCE_CUSTOMER", "displayOrder": 11 },
+            { "propertyKey": "accentColor", "label": "Accent colour", "kind": "COLOR", "defaultValue": "#1677d2", "displayOrder": 12 },
+            { "propertyKey": "showVatTotal", "label": "Show VAT total", "kind": "BOOLEAN", "defaultValue": true, "displayOrder": 13 },
+            { "propertyKey": "displayButtonLabel", "label": "Customer display button", "kind": "TEXT", "defaultValue": "Open customer display", "displayOrder": 14 },
+            { "propertyKey": "productsLabel", "label": "Products section label", "kind": "TEXT", "defaultValue": "Products", "displayOrder": 15 },
+            { "propertyKey": "searchPlaceholder", "label": "Product search placeholder", "kind": "TEXT", "defaultValue": "Search or scan a product", "displayOrder": 16 },
+            { "propertyKey": "emptyProductsText", "label": "No products message", "kind": "TEXT", "defaultValue": "No products found.", "displayOrder": 17 },
+            { "propertyKey": "basketLabel", "label": "Basket accessibility label", "kind": "TEXT", "defaultValue": "Current sale", "displayOrder": 18 },
+            { "propertyKey": "basketTitle", "label": "Basket title", "kind": "TEXT", "defaultValue": "Current sale", "displayOrder": 19 },
+            { "propertyKey": "emptyBasketText", "label": "Empty basket message", "kind": "TEXT", "defaultValue": "Scan or select products to start.", "displayOrder": 20 },
+            { "propertyKey": "totalLabel", "label": "Total label", "kind": "TEXT", "defaultValue": "Total", "displayOrder": 21 },
+            { "propertyKey": "vatLabel", "label": "VAT label", "kind": "TEXT", "defaultValue": "VAT included", "displayOrder": 22 },
+            { "propertyKey": "paymentPendingText", "label": "Payment pending message", "kind": "TEXT", "defaultValue": "Complete the payment step in the Flow screen.", "displayOrder": 23 },
+            { "propertyKey": "paymentCompleteText", "label": "Payment complete message", "kind": "TEXT", "defaultValue": "Payment accepted. Clear the sale when ready.", "displayOrder": 24 },
+            { "propertyKey": "ageCheckFailedText", "label": "Age check message", "kind": "TEXT", "defaultValue": "Restricted products were removed. No eligible items remain.", "displayOrder": 25 },
+            { "propertyKey": "insufficientCashText", "label": "Insufficient cash message", "kind": "TEXT", "defaultValue": "Tendered cash was less than the sale total.", "displayOrder": 26 },
+            { "propertyKey": "removeRestrictedLabel", "label": "Remove restricted products button", "kind": "TEXT", "defaultValue": "Remove age-restricted items", "displayOrder": 27 },
+            { "propertyKey": "checkoutLabel", "label": "Checkout button label", "kind": "TEXT", "defaultValue": "Payment", "displayOrder": 28 },
+            { "propertyKey": "clearLabel", "label": "Clear sale button label", "kind": "TEXT", "defaultValue": "Clear sale", "displayOrder": 29 }
+          ]
+        },
+        {
+          "apiName": "CustomerBasketDisplay",
+          "label": "Customer Basket Display",
+          "description": "Paired customer display for basket lines, total, payment status and cash change.",
+          "surfaces": ["page"],
+          "resize": { "defaultWidth": 1200, "defaultHeight": 700, "minWidth": 320, "minHeight": 400 },
+          "jsxFile": "CustomerBasketDisplay/CustomerBasketDisplay.jsx",
+          "cssFile": "CustomerBasketDisplay/CustomerBasketDisplay.css",
+          "version": 2,
+          "propertyDefinitions": [
+            { "propertyKey": "storeName", "label": "Store name", "kind": "TEXT", "defaultValue": "Welcome", "displayOrder": 1 },
+            { "propertyKey": "title", "label": "Display title", "kind": "TEXT", "defaultValue": "Your order", "displayOrder": 2 },
+            { "propertyKey": "currencyCode", "label": "Currency code", "kind": "CURRENCY", "defaultValue": "GBP", "displayOrder": 3 },
+            { "propertyKey": "totalLabel", "label": "Total label", "kind": "TEXT", "defaultValue": "Total", "displayOrder": 4 },
+            { "propertyKey": "changeDueLabel", "label": "Change due label", "kind": "TEXT", "defaultValue": "Change due", "displayOrder": 5 },
+            { "propertyKey": "waitingText", "label": "Waiting message", "kind": "TEXT", "defaultValue": "Your basket will appear here", "displayOrder": 6 },
+            { "propertyKey": "paymentPendingText", "label": "Payment pending message", "kind": "TEXT", "defaultValue": "Payment in progress", "displayOrder": 7 },
+            { "propertyKey": "thankYouText", "label": "Thank-you message", "kind": "TEXT", "defaultValue": "Thank you", "displayOrder": 8 },
+            { "propertyKey": "paymentDeclinedText", "label": "Declined payment message", "kind": "TEXT", "defaultValue": "Payment declined", "displayOrder": 9 },
+            { "propertyKey": "insufficientCashText", "label": "Insufficient cash message", "kind": "TEXT", "defaultValue": "Please speak to the cashier", "displayOrder": 10 },
+            { "propertyKey": "ageCheckFailedText", "label": "Age check message", "kind": "TEXT", "defaultValue": "Please speak to the cashier", "displayOrder": 11 },
+            { "propertyKey": "paymentCancelledText", "label": "Cancelled payment message", "kind": "TEXT", "defaultValue": "Payment cancelled", "displayOrder": 12 },
+            { "propertyKey": "paymentFailedText", "label": "Failed payment message", "kind": "TEXT", "defaultValue": "Please speak to the cashier", "displayOrder": 13 }
+          ]
+        }
+      ],
+      "extendObjects": [
+        {
+          "apiName": "Product",
+          "fields": [
+            { "apiName": "Barcode", "label": "Barcode", "dataType": "Text(64)", "required": false, "unique": false },
+            { "apiName": "ImageURL", "label": "Product Image URL", "dataType": "URL", "required": false, "unique": false },
+            { "apiName": "AgeRestricted", "label": "Age Restricted", "dataType": "Checkbox", "required": false, "unique": false, "defaultValue": false },
+            { "apiName": "VATApplicable", "label": "VAT Applicable", "dataType": "Checkbox", "required": false, "unique": false, "defaultValue": true }
+          ]
+        },
+        {
+          "apiName": "Invoice",
+          "fields": [
+            { "apiName": "VATTotal", "label": "VAT Total", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "CashierId", "label": "Cashier", "dataType": "Lookup(User)", "required": false, "unique": false },
+            { "apiName": "PaymentMethod", "label": "Payment Method", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Cash", "Manual"], "picklistRestricted": true },
+            { "apiName": "PaymentStatus", "label": "Payment Status", "dataType": "Picklist", "required": false, "unique": false, "picklistValues": ["Pending", "Accepted", "Declined"], "picklistRestricted": true },
+            { "apiName": "AmountTendered", "label": "Amount Tendered", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "ChangeDue", "label": "Change Due", "dataType": "Currency(18, 2)", "required": false, "unique": false }
+          ]
+        },
+        {
+          "apiName": "InvoiceItem",
+          "fields": [
+            { "apiName": "VATApplicable", "label": "VAT Applicable At Sale", "dataType": "Checkbox", "required": false, "unique": false },
+            { "apiName": "VATRate", "label": "VAT Rate At Sale", "dataType": "Percent(8, 4)", "required": false, "unique": false },
+            { "apiName": "VATAmount", "label": "VAT Amount At Sale", "dataType": "Currency(18, 2)", "required": false, "unique": false },
+            { "apiName": "LineTotal", "label": "Line Total", "dataType": "Currency(18, 2)", "required": false, "unique": false }
+          ]
+        }
+      ],
+      "apps": [
+        {
+          "apiName": "UKOffLicenceApp",
+          "label": "UK Off-Licence POS",
+          "description": "Product sales, age verification and checkout.",
+          "navigationItems": ["Product", "Invoice"],
+          "navigationPageApiNames": ["UK_OFFLICENCE_TILL", "UK_OFFLICENCE_CUSTOMER"],
+          "navigationOrder": [
+            { "type": "Object", "apiName": "Product" },
+            { "type": "Object", "apiName": "Invoice" },
+            { "type": "App Page", "apiName": "UK_OFFLICENCE_TILL" },
+            { "type": "App Page", "apiName": "UK_OFFLICENCE_CUSTOMER" }
+          ],
+          "brandColor": "#1677d2",
+          "utilityItems": []
+        }
+      ],
+      "pages": [
+        {
+          "apiName": "UK_OFFLICENCE_TILL",
+          "label": "Till",
+          "targetObject": "Product",
+          "pageType": "App Page",
+          "layoutMode": "template",
+          "template": "one-region",
+          "canvasWidth": 1200,
+          "canvasHeight": 800,
+          "status": "Active",
+          "devices": ["Desktop", "Phone"],
+          "components": [
+            {
+              "id": "uk-offlicence-till",
+              "type": "Custom:RecordCatalogCart",
+              "label": "Till",
+              "region": "main",
+              "visible": true,
+              "properties": {
+                "libraryComponentId": "RecordCatalogCart",
+                "objectApiName": "Product",
+                "nameFieldApiName": "Name",
+                "priceFieldApiName": "DefaultPrice",
+                "barcodeFieldApiName": "Barcode",
+                "skuFieldApiName": "SKU",
+                "imageFieldApiName": "ImageURL",
+                "ageRestrictedFieldApiName": "AgeRestricted",
+                "vatApplicableFieldApiName": "VATApplicable",
+                "customerDisplayUrl": "/une/apps/UKOffLicenceApp/pages/UK_OFFLICENCE_CUSTOMER",
+                "currencyCode": "GBP",
+                "showVatTotal": true,
+                "actionFlows": {
+                  "checkout": {
+                    "flowApiName": "UK_OFFLICENCE_POS_CHECKOUT",
+                    "inputs": {
+                      "SaleLines": "$event.lines",
+                      "CurrencyCode": "GBP"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "apiName": "UK_OFFLICENCE_CUSTOMER",
+          "label": "Customer Display",
+          "targetObject": "Product",
+          "pageType": "App Page",
+          "layoutMode": "template",
+          "template": "one-region",
+          "canvasWidth": 1200,
+          "canvasHeight": 800,
+          "status": "Active",
+          "devices": ["Desktop", "Phone"],
+          "components": [
+            {
+              "id": "uk-offlicence-customer-display",
+              "type": "Custom:CustomerBasketDisplay",
+              "label": "Customer Basket Display",
+              "region": "main",
+              "visible": true,
+              "properties": {
+                "libraryComponentId": "CustomerBasketDisplay",
+                "standalonePresentation": true,
+                "currencyCode": "GBP",
+                "storeName": "Welcome",
+                "title": "Your order"
+              }
+            }
+          ],
+          "activationAssignments": [
+            {
+              "id": "package-uk-offlicence-pos-customer-default",
+              "scope": "App Default",
+              "appId": "UKOffLicenceApp",
+              "profileId": null,
+              "recordTypeId": null,
+              "formFactors": ["Desktop", "Phone"]
+            }
+          ]
+        }
+      ],
+      "flows": [
+        {
+          "apiName": "UK_OFFLICENCE_POS_CHECKOUT",
+          "label": "UK Off-Licence POS Checkout",
+          "description": "Server-side product, VAT and age checks; records accepted sales through the shared Flow and Object engines.",
+          "flowType": "Screen Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": 1,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            { "id": 1, "type": "Start", "label": "Start", "config": {} },
+            { "id": 2, "type": "Loop", "label": "Check sale products", "config": { "collection": "SaleLines", "loopVariable": "CurrentSaleLine", "direction": "First to last" } },
+            { "id": 3, "type": "Get Records", "label": "Load product", "config": { "object": "Product", "conditions": [{ "field": "Id", "operator": "Equals", "value": "{!CurrentSaleLine.ProductId}" }], "fields": "all", "recordLimit": "1", "outputVariable": "CurrentProduct" } },
+            { "id": 26, "type": "Decision", "label": "Validate sale quantity", "config": { "outcomes": [
+              { "name": "InvalidQuantity", "label": "Invalid quantity", "conditionLogic": "1 OR 2", "conditions": [
+                { "field": "{!CurrentSaleLine.Quantity}", "operator": "Is Null", "value": "" },
+                { "field": "{!CurrentSaleLine.Quantity}", "operator": "Less Than", "value": 1 }
+              ] },
+              { "name": "Default", "label": "Valid quantity", "conditions": [] }
+            ] } },
+            { "id": 4, "type": "Assignment", "label": "Add sale line amount", "config": { "variable": "Total", "operator": "Add", "value": "{!CurrentLineTotal}" } },
+            { "id": 5, "type": "Assignment", "label": "Add sale line VAT", "config": { "variable": "VATTotal", "operator": "Add", "value": "{!CurrentLineVAT}" } },
+            { "id": 6, "type": "Assignment", "label": "Count sale lines", "config": { "variable": "LineCount", "operator": "Add", "value": 1 } },
+            { "id": 7, "type": "Decision", "label": "Check product age restriction", "config": { "outcomes": [
+              { "name": "Restricted", "label": "Restricted", "conditionLogic": "All", "conditions": [{ "field": "{!CurrentProduct.AgeRestricted}", "operator": "Equals", "value": true }] },
+              { "name": "Default", "label": "Not restricted", "conditions": [] }
+            ] } },
+            { "id": 8, "type": "Assignment", "label": "Mark age-restricted sale", "config": { "variable": "HasAgeRestricted", "operator": "Assign", "value": true } },
+            { "id": 9, "type": "Decision", "label": "Validate sale", "config": { "outcomes": [
+              { "name": "InvalidSale", "label": "Invalid sale", "conditionLogic": "All", "conditions": [{ "field": "{!LineCount}", "operator": "Less Than", "value": 1 }] },
+              { "name": "Default", "label": "Sale is ready", "conditions": [] }
+            ] } },
+            { "id": 10, "type": "Assignment", "label": "Set invalid sale status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "InvalidSale" } },
+            { "id": 11, "type": "Screen", "label": "Challenge 25 verification", "config": { "layout": "One Column", "fields": [
+              { "type": "Display Text", "label": "Challenge 25", "text": "If the customer appears under 25, ask for accepted proof of age. Do not continue unless age is verified." },
+              { "type": "Picklist", "apiName": "AgeCheckResult", "label": "Age verification result", "required": true, "choices": ["Verified", "Not Verified"], "visibilityConditions": [{ "field": "HasAgeRestricted", "operator": "Equals", "value": true }] }
+            ], "outcomes": [{ "name": "Continue", "label": "Continue" }] } },
+            { "id": 12, "type": "Decision", "label": "Enforce age verification", "config": { "outcomes": [
+              { "name": "AgeRejected", "label": "Age not verified", "conditionLogic": "All", "conditions": [
+                { "field": "{!HasAgeRestricted}", "operator": "Equals", "value": true },
+                { "field": "{!AgeCheckResult}", "operator": "Not Equals", "value": "Verified" }
+              ] },
+              { "name": "Default", "label": "Age check passed", "conditions": [] }
+            ] } },
+            { "id": 13, "type": "Assignment", "label": "Set age-rejected status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "AgeRejected" } },
+            { "id": 14, "type": "Screen", "label": "Payment", "config": { "layout": "One Column", "fields": [
+              { "type": "Display Text", "label": "Payment instructions", "text": "Take cash or complete the payment manually, then record whether it was accepted or declined." },
+              { "type": "Picklist", "apiName": "PaymentMethod", "label": "Payment method", "required": true, "defaultValue": "Cash", "choices": ["Cash", "Manual"] },
+              { "type": "Picklist", "apiName": "PaymentDecision", "label": "Payment result", "required": true, "defaultValue": "Declined", "choices": ["Accepted", "Declined"] },
+              { "type": "Currency", "apiName": "AmountTendered", "label": "Cash received", "required": true, "min": 0, "step": 0.01, "visibilityConditions": [
+                { "field": "PaymentMethod", "operator": "Equals", "value": "Cash" },
+                { "field": "PaymentDecision", "operator": "Equals", "value": "Accepted" }
+              ] }
+            ], "outcomes": [{ "name": "Continue", "label": "Continue" }] } },
+            { "id": 15, "type": "Decision", "label": "Check payment result", "config": { "outcomes": [
+              { "name": "Declined", "label": "Declined", "conditionLogic": "All", "conditions": [{ "field": "{!PaymentDecision}", "operator": "Equals", "value": "Declined" }] },
+              { "name": "InsufficientCash", "label": "Insufficient cash", "conditionLogic": "All", "conditions": [
+                { "field": "{!PaymentDecision}", "operator": "Equals", "value": "Accepted" },
+                { "field": "{!PaymentMethod}", "operator": "Equals", "value": "Cash" },
+                { "field": "{!AmountTendered}", "operator": "Less Than", "value": "{!Total}" }
+              ] },
+              { "name": "InvalidPayment", "label": "Invalid payment", "conditionLogic": "(1 AND 2) OR (3 AND 4)", "conditions": [
+                { "field": "{!PaymentDecision}", "operator": "Not Equals", "value": "Accepted" },
+                { "field": "{!PaymentDecision}", "operator": "Not Equals", "value": "Declined" },
+                { "field": "{!PaymentMethod}", "operator": "Not Equals", "value": "Cash" },
+                { "field": "{!PaymentMethod}", "operator": "Not Equals", "value": "Manual" }
+              ] },
+              { "name": "Default", "label": "Payment accepted", "conditions": [] }
+            ] } },
+            { "id": 16, "type": "Assignment", "label": "Set declined status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "Declined" } },
+            { "id": 17, "type": "Assignment", "label": "Set insufficient cash status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "InsufficientCash" } },
+            { "id": 18, "type": "Assignment", "label": "Set invalid payment status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "InvalidPayment" } },
+            { "id": 19, "type": "Create Records", "label": "Create sale invoice", "config": { "object": "Invoice", "recordSource": "fields", "fieldValues": [
+              { "field": "Direction", "value": "Outgoing" },
+              { "field": "Status", "value": "Paid" },
+              { "field": "InvoiceDate", "value": "{!SaleDate}" },
+              { "field": "CurrencyCode", "value": "{!CurrencyCode}" },
+              { "field": "Total", "value": "{!Total}" },
+              { "field": "VATTotal", "value": "{!VATTotal}" },
+              { "field": "CashierId", "value": "{!$User.Id}" },
+              { "field": "PaymentMethod", "value": "{!PaymentMethod}" },
+              { "field": "PaymentStatus", "value": "Accepted" },
+              { "field": "AmountTendered", "value": "{!StoredAmountTendered}" },
+              { "field": "ChangeDue", "value": "{!ChangeDue}" }
+            ] } },
+            { "id": 20, "type": "Assignment", "label": "Capture invoice ID", "config": { "variable": "InvoiceId", "operator": "Assign", "value": "{!record19.Id}" } },
+            { "id": 21, "type": "Loop", "label": "Save invoice items", "config": { "collection": "SaleLines", "loopVariable": "CurrentSaleLine", "direction": "First to last" } },
+            { "id": 22, "type": "Get Records", "label": "Load invoice item product", "config": { "object": "Product", "conditions": [{ "field": "Id", "operator": "Equals", "value": "{!CurrentSaleLine.ProductId}" }], "fields": "all", "recordLimit": "1", "outputVariable": "CurrentProduct" } },
+            { "id": 23, "type": "Create Records", "label": "Create invoice item", "config": { "object": "InvoiceItem", "recordSource": "fields", "fieldValues": [
+              { "field": "Name", "value": "{!CurrentProduct.Name}" },
+              { "field": "InvoiceId", "value": "{!record19.Id}" },
+              { "field": "ProductId", "value": "{!CurrentProduct.Id}" },
+              { "field": "Quantity", "value": "{!CurrentSaleLine.Quantity}" },
+              { "field": "UnitPrice", "value": "{!CurrentProduct.DefaultPrice}" },
+              { "field": "VATApplicable", "value": "{!IsVATApplicable}" },
+              { "field": "VATRate", "value": "{!LineVATRate}" },
+              { "field": "VATAmount", "value": "{!CurrentLineVAT}" },
+              { "field": "LineTotal", "value": "{!CurrentLineTotal}" }
+            ] } },
+            { "id": 24, "type": "Assignment", "label": "Set accepted status", "config": { "variable": "CheckoutStatus", "operator": "Assign", "value": "Accepted" } },
+            { "id": 25, "type": "End", "label": "End", "config": {} }
+          ],
+          "connectors": [
+            { "id": "start-lines", "from": 1, "to": 2, "label": "", "kind": "normal" },
+            { "id": "lines-product", "from": 2, "to": 3, "label": "For Each", "kind": "normal" },
+            { "id": "lines-check", "from": 2, "to": 9, "label": "After Last", "kind": "normal" },
+            { "id": "product-quantity-check", "from": 3, "to": 26, "label": "", "kind": "normal" },
+            { "id": "invalid-quantity", "from": 26, "to": 10, "label": "Invalid quantity", "kind": "normal" },
+            { "id": "valid-quantity", "from": 26, "to": 4, "label": "Valid quantity", "kind": "normal" },
+            { "id": "total-vat", "from": 4, "to": 5, "label": "", "kind": "normal" },
+            { "id": "vat-count", "from": 5, "to": 6, "label": "", "kind": "normal" },
+            { "id": "count-age", "from": 6, "to": 7, "label": "", "kind": "normal" },
+            { "id": "age-restricted", "from": 7, "to": 8, "label": "Restricted", "kind": "normal" },
+            { "id": "age-not-restricted", "from": 7, "to": 2, "label": "Not restricted", "kind": "normal" },
+            { "id": "restricted-repeat", "from": 8, "to": 2, "label": "", "kind": "normal" },
+            { "id": "empty-sale", "from": 9, "to": 10, "label": "Invalid sale", "kind": "normal" },
+            { "id": "sale-age-check", "from": 9, "to": 11, "label": "Sale is ready", "kind": "normal" },
+            { "id": "invalid-end", "from": 10, "to": 25, "label": "", "kind": "normal" },
+            { "id": "age-screen-decision", "from": 11, "to": 12, "label": "Continue", "kind": "normal" },
+            { "id": "age-rejected", "from": 12, "to": 13, "label": "Age not verified", "kind": "normal" },
+            { "id": "age-passed", "from": 12, "to": 14, "label": "Age check passed", "kind": "normal" },
+            { "id": "age-rejected-end", "from": 13, "to": 25, "label": "", "kind": "normal" },
+            { "id": "payment-screen-decision", "from": 14, "to": 15, "label": "Continue", "kind": "normal" },
+            { "id": "payment-declined", "from": 15, "to": 16, "label": "Declined", "kind": "normal" },
+            { "id": "payment-insufficient", "from": 15, "to": 17, "label": "Insufficient cash", "kind": "normal" },
+            { "id": "payment-invalid", "from": 15, "to": 18, "label": "Invalid payment", "kind": "normal" },
+            { "id": "payment-accepted", "from": 15, "to": 19, "label": "Payment accepted", "kind": "normal" },
+            { "id": "declined-end", "from": 16, "to": 25, "label": "", "kind": "normal" },
+            { "id": "insufficient-end", "from": 17, "to": 25, "label": "", "kind": "normal" },
+            { "id": "invalid-payment-end", "from": 18, "to": 25, "label": "", "kind": "normal" },
+            { "id": "invoice-id-capture", "from": 19, "to": 20, "label": "", "kind": "normal" },
+            { "id": "invoice-items-loop", "from": 20, "to": 21, "label": "", "kind": "normal" },
+            { "id": "item-product", "from": 21, "to": 22, "label": "For Each", "kind": "normal" },
+            { "id": "items-complete", "from": 21, "to": 24, "label": "After Last", "kind": "normal" },
+            { "id": "product-create-item", "from": 22, "to": 23, "label": "", "kind": "normal" },
+            { "id": "item-next", "from": 23, "to": 21, "label": "", "kind": "normal" },
+            { "id": "accepted-end", "from": 24, "to": 25, "label": "", "kind": "normal" }
+          ],
+          "resources": [
+            { "name": "SaleLines", "label": "Sale Lines", "type": "Record Collection", "dataType": "InvoiceItem", "isCollection": true, "availableForInput": true, "availableForOutput": false },
+            { "name": "CurrentSaleLine", "label": "Current Sale Line", "type": "Record", "dataType": "InvoiceItem", "isCollection": false, "availableForInput": false, "availableForOutput": false },
+            { "name": "CurrentProduct", "label": "Current Product", "type": "Record", "dataType": "Product", "isCollection": false, "availableForInput": false, "availableForOutput": false },
+            { "name": "HasAgeRestricted", "label": "Has Age Restricted Products", "type": "Variable", "dataType": "Boolean", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": false },
+            { "name": "AgeCheckResult", "label": "Age Check Result", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": false },
+            { "name": "PaymentMethod", "label": "Payment Method", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": false },
+            { "name": "PaymentDecision", "label": "Payment Decision", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": false },
+            { "name": "AmountTendered", "label": "Amount Tendered", "type": "Variable", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": false },
+            { "name": "StandardVatRate", "label": "Standard VAT Rate", "type": "Formula", "dataType": "Number", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "{!$CompanySettings.StandardVatRate}" },
+            { "name": "CurrencyCode", "label": "Currency Code", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": true, "availableForOutput": false, "value": "GBP" },
+            { "name": "Total", "label": "Sale Total", "type": "Variable", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": 0 },
+            { "name": "VATTotal", "label": "VAT Total", "type": "Variable", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": 0 },
+            { "name": "LineCount", "label": "Sale Line Count", "type": "Variable", "dataType": "Number", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": 0 },
+            { "name": "CurrentLineTotal", "label": "Current Line Total", "type": "Formula", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "ROUND({!CurrentSaleLine.Quantity} * {!CurrentProduct.DefaultPrice}, 2)" },
+            { "name": "IsVATApplicable", "label": "Product VAT Applicable", "type": "Formula", "dataType": "Boolean", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "IF(ISBLANK({!CurrentProduct.VATApplicable}), TRUE(), {!CurrentProduct.VATApplicable})" },
+            { "name": "CurrentLineVAT", "label": "Current Line VAT", "type": "Formula", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "IF({!IsVATApplicable}, ROUND({!CurrentLineTotal} * {!StandardVatRate} / (100 + {!StandardVatRate}), 2), 0)" },
+            { "name": "LineVATRate", "label": "VAT Rate For Line", "type": "Formula", "dataType": "Percent", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "IF({!IsVATApplicable}, {!StandardVatRate}, 0)" },
+            { "name": "SaleDate", "label": "Sale Date", "type": "Formula", "dataType": "Date", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "TODAY()" },
+            { "name": "StoredAmountTendered", "label": "Stored Amount Tendered", "type": "Formula", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": false, "value": "IF({!PaymentMethod} = 'Cash', {!AmountTendered}, 0)" },
+            { "name": "ChangeDue", "label": "Change Due", "type": "Formula", "dataType": "Currency", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "IF({!PaymentDecision} = 'Accepted', IF({!PaymentMethod} = 'Cash', ROUND(MAX({!AmountTendered} - {!Total}, 0), 2), 0), 0)" },
+            { "name": "CheckoutStatus", "label": "Checkout Status", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "" },
+            { "name": "InvoiceId", "label": "Invoice ID", "type": "Variable", "dataType": "Text", "isCollection": false, "availableForInput": false, "availableForOutput": true, "value": "" }
+          ],
+          "versions": []
+        }
+      ],
+      "profile": {
+        "id": "uk-offlicence-cashier",
+        "label": "UK Off-Licence Cashier",
+        "apiName": "UK_Off_Licence_Cashier",
+        "systemPermissions": ["flows:run", "security:read"],
+        "objectPermissions": {
+        "Product": { "read": true, "create": false, "edit": false, "delete": false, "viewAll": true, "modifyAll": false },
+        "Invoice": { "read": true, "create": true, "edit": false, "delete": false, "viewAll": false, "modifyAll": false },
+        "InvoiceItem": { "read": true, "create": true, "edit": false, "delete": false, "viewAll": false, "modifyAll": false }
+        },
+        "tabPermissions": { "Product": true, "Invoice": true },
+        "navigationDefaultAccess": "Deny"
+      }
     }
   ],
   "retiredTrustedComponentPrefixes": [

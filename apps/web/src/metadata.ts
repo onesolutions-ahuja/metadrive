@@ -944,6 +944,7 @@ export type AccessControlMetadata = {
 
 export type CurrencySettingsMetadata = {
   corporateCurrency: string;
+  standardVatRate: number;
   currencies: Array<{ currencyIsoCode: string; conversionRate: number }>;
 };
 

@@ -309,7 +309,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [accessControl, setAccessControl] = useState<AccessControlMetadata>(defaultAccessControl);
   const [accessControlError, setAccessControlError] = useState('');
   const [flowValidation, setFlowValidation] = useState<FlowValidationMetadata | null>(null);
-  const [flowRun, setFlowRun] = useState<{ interviewId: string; screen: FlowElementMetadata; values: Record<string, unknown>; outcomes: Array<{ name: string; label: string }>; canGoBack: boolean } | null>(null);
+  const [flowRun, setFlowRun] = useState<{ interviewId: string; flowApiName: string; screen: FlowElementMetadata; values: Record<string, unknown>; outcomes: Array<{ name: string; label: string }>; canGoBack: boolean } | null>(null);
   const [flowDebug, setFlowDebug] = useState<{
     flow: FlowDefinitionMetadata;
     mode: 'debug' | 'run';
@@ -1726,14 +1726,14 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         const screen = result.screen as FlowElementMetadata | undefined;
         if (interviewId && screen) {
           setFlowRun({
-            interviewId, screen,
+            interviewId, flowApiName: flowDebug.flow.apiName, screen,
             values: { ...initialScreenValues(screen), ...(result.values as Record<string, unknown> | undefined) },
             outcomes: (result.outcomes as Array<{ name: string; label: string }> | undefined)
               ?? [{ name: 'Default', label: 'Next' }],
             canGoBack: false
           });
         } else {
-          notify(`Flow completed${result.outputs && typeof result.outputs === 'object' && Object.keys(result.outputs).length
+          window.dispatchEvent(new CustomEvent('metadrive:flow-completed', { detail: { flowApiName: flowDebug.flow.apiName, outputs: result.outputs ?? {} } })); notify(`Flow completed${result.outputs && typeof result.outputs === 'object' && Object.keys(result.outputs).length
             ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
         }
         if (interviewId && !screen) notify('Flow interview started and is waiting for an asynchronous stage or approval. View it under Pending Work.');
@@ -1831,16 +1831,16 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       });
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
-        setFlowRun({ interviewId: result.interviewId, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) }, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
+        setFlowRun({ interviewId: result.interviewId, flowApiName: selectedFlow.apiName, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) }, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
         return;
       }
       if (result.interviewId) {
         notify('Flow interview started. Approval stages and waiting work are visible in Pending Work.');
         return;
       }
-      notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
+      window.dispatchEvent(new CustomEvent('metadrive:flow-completed', { detail: { flowApiName: selectedFlow.apiName, outputs: result.outputs ?? {} } })); notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Unable to run flow');
+      window.dispatchEvent(new CustomEvent('metadrive:flow-failed', { detail: { flowApiName: selectedFlow.apiName, message: error instanceof Error ? error.message : 'Unable to run flow' } })); notify(error instanceof Error ? error.message : 'Unable to run flow');
     }
   };
 
@@ -1858,7 +1858,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
         setFlowRun({
-          interviewId: result.interviewId,
+          interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
           screen: result.screen,
           values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) },
           outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }],
@@ -1868,9 +1868,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       }
       setFlowRun(null);
       setFlowRunnerError('');
-      notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
+      window.dispatchEvent(new CustomEvent('metadrive:flow-completed', { detail: { flowApiName: flowRun.flowApiName, outputs: result.outputs ?? {} } })); notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
     } catch (error) {
-      setFlowRunnerError(error instanceof Error ? error.message : 'Unable to continue flow');
+      window.dispatchEvent(new CustomEvent('metadrive:flow-failed', { detail: { flowApiName: flowRun.flowApiName, message: error instanceof Error ? error.message : 'Unable to continue flow' } })); setFlowRunnerError(error instanceof Error ? error.message : 'Unable to continue flow');
       notify(error instanceof Error ? error.message : 'Unable to continue flow');
     } finally {
       setFlowRunnerSubmitting(false);
@@ -1886,7 +1886,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         { method: 'POST', body: JSON.stringify({ action: 'back' }) }
       );
       setFlowRun({
-        interviewId: result.interviewId,
+        interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
         screen: result.screen,
         values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) },
         outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }],
@@ -3217,7 +3217,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       {flowRun && (
         <div className="modal-backdrop" role="presentation">
           <form className="modal" role="dialog" aria-modal="true" aria-labelledby="flow-screen-title" onSubmit={submitFlowScreen}>
-            <div className="modal-header"><h2 id="flow-screen-title">{flowRun.screen.label}</h2><button className="icon-button dark" type="button" onClick={() => setFlowRun(null)} aria-label="Close"><X size={18} /></button></div>
+            <div className="modal-header"><h2 id="flow-screen-title">{flowRun.screen.label}</h2><button className="icon-button dark" type="button" onClick={() => { window.dispatchEvent(new CustomEvent('metadrive:flow-cancelled', { detail: { flowApiName: flowRun.flowApiName } })); setFlowRun(null); }} aria-label="Close"><X size={18} /></button></div>
             {flowRunnerError && <div className="flow-screen-error" role="alert" aria-live="assertive">{flowRunnerError}</div>}
             <div className={`flow-screen-grid${flowRun.screen.config.layout === 'Two Columns' ? ' flow-screen-grid-two' : ''}`}>
               <FlowScreenContent
@@ -3234,7 +3234,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
                 isFieldVisible={screenFieldIsVisible}
               />
             </div>
-            <div className="modal-actions"><button className="btn" type="button" onClick={() => setFlowRun(null)}>Cancel</button>{flowRun.canGoBack && <button className="btn" type="button" onClick={() => void goBackFlowScreen()} disabled={flowRunnerSubmitting}>Previous</button>}{flowRun.outcomes.map((outcome) => <button className="btn btn-brand" type="submit" name="outcome" value={outcome.label} key={outcome.name} disabled={flowRunnerSubmitting}>{flowRunnerSubmitting ? 'Continuing…' : outcome.label}</button>)}</div>
+            <div className="modal-actions"><button className="btn" type="button" onClick={() => { window.dispatchEvent(new CustomEvent('metadrive:flow-cancelled', { detail: { flowApiName: flowRun.flowApiName } })); setFlowRun(null); }}>Cancel</button>{flowRun.canGoBack && <button className="btn" type="button" onClick={() => void goBackFlowScreen()} disabled={flowRunnerSubmitting}>Previous</button>}{flowRun.outcomes.map((outcome) => <button className="btn btn-brand" type="submit" name="outcome" value={outcome.label} key={outcome.name} disabled={flowRunnerSubmitting}>{flowRunnerSubmitting ? 'Continuing…' : outcome.label}</button>)}</div>
           </form>
         </div>
       )}

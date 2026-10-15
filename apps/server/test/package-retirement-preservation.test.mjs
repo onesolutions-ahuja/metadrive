@@ -5,6 +5,7 @@ import {
   applyInstallableAppPackages, retireUninstalledPackageMetadata,
   repairHistoricPackageRecordAudits
 } from '../src/installable-app-packages.mjs';
+import {ensureBundledAppComponents} from '../src/bundled-app-components.mjs';
 
 const catalog=JSON.parse(readFileSync(new URL('../data/installable-app-packages.json',import.meta.url),'utf8'));
 const retired=catalog.retiredPackages;
@@ -89,4 +90,40 @@ test('historical audit repair modifies only explicitly listed signed seed IDs',(
   assert.match(raw.tenants.a.records.Product[0].LastModifiedDate,/^\d{4}-/);
   assert.equal(raw.tenants.a.records.Product[1].CreatedDate,undefined);
   assert.equal(repairHistoricPackageRecordAudits(raw,catalog),false);
+});
+
+test('UK off-licence POS installs its shared Flow, component metadata and least-privilege cashier profile',()=>{
+  const metadata=JSON.parse(readFileSync(new URL('../data/platform-metadata.json',import.meta.url),'utf8'));
+  const baseObjects=metadata.objects.filter(object=>['Product','Invoice','InvoiceItem'].includes(object.apiName));
+  const tenant={
+    objects:baseObjects,apps:[],pages:[],flows:[],
+    records:{Connector_App__c:[{AppKey__c:'uk-offlicence-pos',Installed__c:true,LicenceStatus__c:'Trial'}]},
+    accessControl:{profiles:[
+      {id:'standard-user',apiName:'Standard_User',label:'Standard User',systemPermissions:[],objectPermissions:{},fieldPermissions:{},appPermissions:{},tabPermissions:{}},
+      {id:'system-administrator',apiName:'System_Administrator',label:'Administrator',systemPermissions:[],objectPermissions:{},fieldPermissions:{},appPermissions:{},tabPermissions:{}}
+    ],permissionSets:[]}
+  };
+  const installed=applyInstallableAppPackages(tenant,catalog,'tenant-pos-test');
+  const flow=installed.flows.find(item=>item.apiName==='UK_OFFLICENCE_POS_CHECKOUT');
+  const cashier=installed.accessControl.profiles.find(item=>item.id==='uk-offlicence-cashier');
+  assert(flow);
+  assert.equal(flow.status,'Active');
+  assert.equal(flow.resources.find(item=>item.name==='StandardVatRate').availableForInput,false);
+  assert.match(flow.resources.find(item=>item.name==='StandardVatRate').value,/\$CompanySettings\.StandardVatRate/);
+  assert(flow.elements.some(item=>item.label==='Challenge 25 verification'));
+  assert(flow.elements.some(item=>item.label==='Payment'));
+  assert.equal(cashier.objectPermissions.Product.read,true);
+  assert.equal(cashier.objectPermissions.Product.viewAll,true);
+  assert.equal(cashier.objectPermissions.Product.edit,false);
+  assert.equal(cashier.objectPermissions.Invoice.create,true);
+  assert.equal(cashier.objectPermissions.Invoice.delete,false);
+  assert.equal(cashier.objectPermissions.InvoiceItem.create,true);
+  assert.equal(cashier.objectPermissions.InvoiceItem.delete,false);
+  const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
+  const components=ensureBundledAppComponents([],installed,catalog,root);
+  assert.deepEqual(components.map(item=>item.apiName),['RecordCatalogCart','CustomerBasketDisplay']);
+  assert(components.every(item=>item.propertyDefinitions?.length));
+  const manifest=JSON.parse(readFileSync(new URL('../../web/src/custom-components/manifest.json',import.meta.url),'utf8'));
+  assert(!manifest.some(item=>['RecordCatalogCart','CustomerBasketDisplay'].includes(item.apiName)));
+  assert.deepEqual(applyInstallableAppPackages(installed,catalog,'tenant-pos-test'),installed);
 });
