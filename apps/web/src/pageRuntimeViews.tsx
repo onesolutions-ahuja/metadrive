@@ -588,7 +588,7 @@ function LightningAppRuntime({
   }, [page?.layoutMode, onStandaloneModeChange]);
   if (error) return <div className="records-page"><div className="records-message" role="alert">{error}</div></div>;
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
-  if (!page) return <main className="records-page"><section className="records-empty" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home Page not assigned</h1><p>No active Home Page is assigned to this app and profile.</p><p>An administrator can assign a Home Page in Lightning App Builder.</p></section></main>;
+  if (!page) return <main className="records-page"><section className="records-empty records-home-unassigned" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home page is not configured</h1><p>This app has no active Home Page assigned for your current profile and device.</p><p>Ask an administrator to activate and assign a Home Page in the Lightning App Builder. Existing app pages and records remain available from navigation.</p></section></main>;
   const isStandaloneRuntime = isStandalonePagePresentation(page);
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const appVisibilityContext = { formFactor } as const;
