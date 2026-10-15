@@ -288,6 +288,7 @@ function MetadataBoundPageComponent({
     }
   });
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [contactRecords, setContactRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
@@ -334,6 +335,23 @@ function MetadataBoundPageComponent({
       .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
     return () => {active = false;};
   }, [properties.recordPresenterApiName, revision]);
+  // Contacts are loaded through the same OneEngine record API and its RBAC checks.
+  // The bound object is metadata-owned, never supplied by a browser caller.
+  const contactsObjectApiName = typeof properties.contactsObjectApiName === 'string' ? properties.contactsObjectApiName : '';
+  useEffect(() => {
+    let active = true;
+    setContactRecords([]);
+    if (!contactsObjectApiName) return () => { active = false; };
+    void loadFlowScreenRecords(contactsObjectApiName)
+      .then(rows => { if (active) setContactRecords(rows); })
+      .catch(() => { if (active) setContactRecords([]); });
+    return () => { active = false; };
+  }, [contactsObjectApiName, revision]);
+  const contactChoices = contactRecords.map(row => ({
+    id: String(row.Id ?? ''),
+    name: String(row.Name ?? [row.FirstName, row.LastName].filter(Boolean).join(' ') ?? ''),
+    phone: String(row.MobilePhone ?? row.Phone ?? '')
+  })).filter(contact => contact.id && contact.phone);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
@@ -435,7 +453,8 @@ function MetadataBoundPageComponent({
       },
       loading: dataLoading, sessionId,
       ...(objectApiName ? { records: visibleRecords } : {}),
-      ...presented
+      ...presented,
+      contactChoices
     }} />
   </div>;
 }
