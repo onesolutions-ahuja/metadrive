@@ -1238,7 +1238,8 @@ function PageBuilder({
                 height: canvasResizePreview?.id === component.id ? canvasResizePreview.height : component.position?.height ?? customDefinition?.resize?.defaultHeight ?? 180
               }
           : {}),
-        ...visualStyle
+        ...visualStyle,
+        ...(component.properties?.fillRegion===true && page.layoutMode==='template' ? {height:'100%',minHeight:0}: {})
       } as React.CSSProperties}
       onClick={!libraryPreview ? (event) => { event.stopPropagation(); if (!previewMode) { setSelectedId(component.id); setPageSettingsOpen(false); } } : undefined}
       onClickCapture={libraryPreview && !interactivePreview ? (event) => { event.preventDefault(); event.stopPropagation(); } : undefined}
