@@ -6,7 +6,7 @@ export function registerNotificationRoutes<N extends { id: string; recipientId: 
   getPrincipal: (res: Response) => P;
   tenantData: (tenantId: string) => T | undefined;
   routeParam: (req: Request, name: string) => string;
-  persistTenantRecords: (tenantId: string, tenant: T) => unknown;
+  persistTenantRecords: (tenantId: string, tenant: NoInfer<T>) => unknown;
 }): void {
   const {accessAuthentication, getPrincipal, tenantData, routeParam, persistTenantRecords} = deps;
   app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
