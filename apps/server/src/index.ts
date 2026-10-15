@@ -4412,7 +4412,7 @@ if (!maintenanceMode) {
         pkg.appKey === row.AppKey__c && (pkg.installation?.allowInstalledMetadataWithoutLicence === true
           || ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)))))) continue;
     try {
-      const installed = applyInstallableAppPackages(tenant, installableAppCatalog) as TenantData;
+      const installed = applyInstallableAppPackages(tenant, installableAppCatalog, tenantId) as TenantData;
       if (JSON.stringify(installed) !== JSON.stringify(tenant)) {
         nextTenants[tenantId] = installed;
         repaired++;
