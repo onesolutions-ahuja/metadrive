@@ -27,6 +27,21 @@ async function api(path,method='GET',body){
  if(!response.ok)throw Error(method+' '+path+' HTTP '+response.status+': '+JSON.stringify(data).slice(0,1500));
  return data;
 }
+// Page writes can conflict with other SQL metadata writers. On ambiguous 503
+// failures, read back before retrying to avoid needless repeated writes.
+async function savePageVerified(page){
+ const url='/metadata/pages/'+encodeURIComponent(page.apiName);
+ for(let attempt=0;attempt<6;attempt++){
+  try{await api(url,'PUT',page);return;}
+  catch(error){
+   if(!retryableWriterError(error)||attempt===5)throw error;
+   const current=(await api('/metadata/pages')).pages.find(x=>x.apiName===page.apiName);
+   if(current&&JSON.stringify(current.components)===JSON.stringify(page.components)
+     &&current.status===page.status)return;
+   await sleep(Math.min(15000,1000*2**attempt));
+  }
+ }
+}
 const login=await api('/auth/login','POST',{email,password});
 if(login.user?.tenantId!==expectTenant)throw Error('Tenant mismatch, refusing installation');
 token=login.access_token;
@@ -209,7 +224,7 @@ try{
    throw Error('Conflicting Kiosk Page API name: '+page.apiName);
   if(old&&JSON.stringify(old.components)===JSON.stringify(page.components)
      && old.canvasWidth===page.canvasWidth&&old.canvasHeight===page.canvasHeight)continue;
-  await api('/metadata/pages/'+encodeURIComponent(page.apiName),'PUT',page);
+  await savePageVerified(page);
   updates.push(page.apiName);
   installedPages++;
  }
@@ -254,8 +269,7 @@ if(JSON.stringify(currentApp.navigationPageApiNames??[])!==JSON.stringify(expect
   || (page.label==='Kiosk Editable Canvas' && page.pageType==='App Page'));
  for(const old of obsolete){
   if(old.status==='Draft'){retiredPages.push(old.apiName);continue;}
-  await api('/metadata/pages/'+encodeURIComponent(old.apiName),'PUT',
-    {...old,status:'Draft'});
+  await savePageVerified({...old,status:'Draft'});
   updates.push(old.apiName);retiredPages.push(old.apiName);installedPages++;
  }
 // Delete obsolete Page metadata only AFTER app navigation stops referencing it.
