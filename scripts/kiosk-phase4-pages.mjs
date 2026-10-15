@@ -63,7 +63,7 @@ export const commercePages=[
 ];
 // Old basket is replaced by the menu's modal overlay; installer archives it as
 // Draft until dependency-safe removal is supported by the central metadata API.
-export const obsoleteCommercePages=['MD_Commerce_Basket'];
+export const obsoleteCommercePages=['MD_Commerce_Basket','UNE_KIOSK'];
 export const commerceApp={
  apiName:appId,label:'Order Kiosk',
  description:'Editable data-driven portrait self-service ordering interface.',
