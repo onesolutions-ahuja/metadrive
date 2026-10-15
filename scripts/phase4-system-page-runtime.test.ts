@@ -26,3 +26,16 @@ test('system-page registration is not inferred from unprotected tenant metadata'
  assert.doesNotMatch(html,/Edit page layout/);
  assert.match(html,/Safe fallback/);
 });
+
+test('protected page with mismatched permission cannot expose its editor or custom layout',()=>{
+ const html=render({pages:[{...page,requiredPermissions:['metadata:write']}],
+  canEditSystemPage:true,onEditSystemPage:()=>{}});
+ assert.doesNotMatch(html,/Edit page layout/);
+ assert.match(html,/Functional admin action/);
+});
+test('protected page with expanded permissions cannot override the canonical security gate',()=>{
+ const html=render({pages:[{...page,requiredPermissions:['metadata:read','platform:superadmin']}],
+  canEditSystemPage:true,onEditSystemPage:()=>{}});
+ assert.doesNotMatch(html,/Edit page layout/);
+ assert.match(html,/Functional admin action/);
+});
