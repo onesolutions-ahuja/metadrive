@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Save, Trash2, Plus, Lock, Unlock } from 'lucide-react';
 import SettingsViewRow from './SettingsViewRow';
+import {PlatformPageSlot} from './PlatformPageSlot';
 import type { CurrencySettingsMetadata } from './metadata';
 
 type ApiRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -77,11 +78,11 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
         <div className="settings-read-first-section">
           {editingRow === 'autoRetryFailedFlows'
             ? <div className="settings-edit-row">
-                <label className="checkbox-row">
+                <PlatformPageSlot slotKey="field-settings-01"><label className="checkbox-row">
                   <input type="checkbox" checked={draft.autoRetryFailedFlows}
                     onChange={(event) => setDraft((current) => ({ ...current, autoRetryFailedFlows: event.target.checked }))} />
                   Automatically retry failed flow executions
-                </label>
+                </label></PlatformPageSlot>
               </div>
             : <SettingsViewRow label="Automatically retry failed flow executions"
                 value={draft.autoRetryFailedFlows ? 'On' : 'Off'}
@@ -89,11 +90,11 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
           <p className="permission-help">Off by default. Disabled retries are logged; new scheduled occurrences can still run.</p>
           {editingRow === 'maxRetryAttempts'
             ? <div className="settings-edit-row">
-                <label className="form-label">Maximum failed attempts
+                <PlatformPageSlot slotKey="field-settings-02"><label className="form-label">Maximum failed attempts
                   <input className="form-control" type="number" min="1" max="20" step="1"
                     value={draft.maxRetryAttempts} onChange={(event) =>
                       setDraft((current) => ({ ...current, maxRetryAttempts: Number(event.target.value) }))} />
-                </label>
+                </label></PlatformPageSlot>
               </div>
             : <SettingsViewRow label="Maximum failed attempts" value={String(draft.maxRetryAttempts)}
                 canEdit={editable('maxRetryAttempts')} onEdit={() => startEdit('maxRetryAttempts')} />}
@@ -103,11 +104,11 @@ function AutomationSettingsWorkspace({ canManage }: { canManage: boolean }) {
         <div className="settings-read-first-section">
           {editingRow === 'conversationIdleMinutes'
             ? <div className="settings-edit-row">
-                <label className="form-label">Expire inactive conversations after (minutes)
+                <PlatformPageSlot slotKey="field-settings-03"><label className="form-label">Expire inactive conversations after (minutes)
                   <input className="form-control" type="number" min="1" max="1440" step="1"
                     value={draft.conversationIdleMinutes} onChange={(event) =>
                       setDraft((current) => ({ ...current, conversationIdleMinutes: Number(event.target.value) }))} />
-                </label>
+                </label></PlatformPageSlot>
               </div>
             : <SettingsViewRow label="Conversation idle timeout"
                 value={`${draft.conversationIdleMinutes} minutes`}
@@ -199,28 +200,28 @@ function TenantEmailRecoverySettings({ canManage }: { canManage: boolean }) {
     </p>}
     <div className="settings-read-first-section">
       {editing ? <div className="settings-edit-row">
-        <label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential
+        <PlatformPageSlot slotKey="field-settings-04"><label className="form-label" htmlFor="recovery-smtp">SMTP Named Credential
           <select className="form-control" id="recovery-smtp" value={smtpCredentialId}
             onChange={(event) => setSmtpCredentialId(event.target.value)}>
             <option value="">Disabled</option>
             {credentials.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
           </select>
-        </label>
-        <label className="form-label" htmlFor="recovery-method">Verification method
+        </label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-settings-05"><label className="form-label" htmlFor="recovery-method">Verification method
           <select className="form-control" id="recovery-method" value={method} onChange={(event)=>setMethod(event.target.value as 'OTP'|'LINK')}>
             <option value="OTP">6-digit email OTP</option><option value="LINK">Email reset link</option>
           </select>
-        </label>
-        <label className="form-label" htmlFor="recovery-subject">Email subject template
+        </label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-settings-06"><label className="form-label" htmlFor="recovery-subject">Email subject template
           <input className="form-control" id="recovery-subject" value={subject} onChange={(event)=>setSubject(event.target.value)} />
-        </label>
-        <label className="form-label" htmlFor="recovery-body">Email body template
+        </label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-settings-07"><label className="form-label" htmlFor="recovery-body">Email body template
           <textarea className="form-control" id="recovery-body" rows={5} value={body} onChange={(event)=>setBody(event.target.value)} />
-        </label>
-        <label className="form-label" htmlFor="recovery-sender">Sender email
+        </label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-settings-08"><label className="form-label" htmlFor="recovery-sender">Sender email
           <input className="form-control" id="recovery-sender" type="email" value={fromEmail}
             onChange={(event) => setFromEmail(event.target.value)} disabled={!smtpCredentialId} />
-        </label>
+        </label></PlatformPageSlot>
       </div> : <>
         <SettingsViewRow label="SMTP Named Credential"
           value={credentials.find((item) => item.id === smtpCredentialId)?.label ?? (smtpCredentialId ? 'Configured' : 'Disabled')}
@@ -318,11 +319,11 @@ function AccountSessionSecurity({ onReauthenticate }: { onReauthenticate: () => 
     {!confirmingRevoke && <button type="button" className="btn"
       onClick={() => setConfirmingRevoke(true)}>Sign out on all devices</button>}
     {confirmingRevoke && <div className="settings-edit-row">
-      <label className="form-label" htmlFor="sessions-revoke-password">Confirm current password
+      <PlatformPageSlot slotKey="field-settings-09"><label className="form-label" htmlFor="sessions-revoke-password">Confirm current password
         <input className="form-control" id="sessions-revoke-password" type="password"
           autoComplete="current-password" value={password}
           onChange={(event) => setPassword(event.target.value)} />
-      </label>
+      </label></PlatformPageSlot>
       <div className="settings-read-first-toolbar">
         <button type="button" className="btn" disabled={busy}
           onClick={() => { setPassword(''); setConfirmingRevoke(false); }}>Cancel</button>
@@ -429,14 +430,14 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
     <>
       <div className="settings-read-first-section">
         {editingPolicy ? <div className="settings-edit-row">
-          <label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy
+          <PlatformPageSlot slotKey="field-settings-10"><label className="form-label" htmlFor="tenant-mfa-mode">Tenant MFA policy
             <select className="form-control" id="tenant-mfa-mode" value={draftMode}
               onChange={(event) => setDraftMode(event.target.value as TenantMfaMode)}>
               <option value="Off">Off — no MFA challenge</option>
               <option value="Optional">Optional — individual users can enroll</option>
               <option value="Required">Required — every user must enroll and verify</option>
             </select>
-          </label>
+          </label></PlatformPageSlot>
           <p className="settings-view-row-help">Changing the policy may require users to sign in again.</p>
         </div> : <SettingsViewRow label="Tenant MFA policy" value={mode}
           canEdit={canManage && canConfigure} onEdit={() => { setDraftMode(mode); setEditingPolicy(true); }} />}
@@ -455,14 +456,14 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
     {mode === 'Off' && <p>Ask a tenant security administrator to enable Optional MFA before enrolling.</p>}
     {mode !== 'Off' && !enrolled && !authenticatorAction && <button className="btn" type="button" onClick={() => setAuthenticatorAction('enroll')}>Set up authenticator</button>}
     {mode !== 'Off' && !enrolled && authenticatorAction === 'enroll' && <div className="settings-edit-row">
-      <label className="form-label" htmlFor="mfa-current-password">Current password</label>
+      <PlatformPageSlot slotKey="field-settings-11"><label className="form-label" htmlFor="mfa-current-password">Current password</label></PlatformPageSlot>
       <input className="form-control" id="mfa-current-password" type="password" autoComplete="current-password"
         value={password} onChange={(event) => setPassword(event.target.value)} />
       {!pending && <button className="btn" disabled={busy || !password} onClick={() => void startEnrollment()}>Continue setup</button>}
       {pending && <>
         <p>Add this key to your authenticator app, then enter its six-digit code.</p>
         <p><strong>Setup key:</strong> <code style={{ overflowWrap: 'anywhere' }}>{pending.setup_secret}</code></p>
-        <label className="form-label" htmlFor="mfa-setup-code">Authenticator code</label>
+        <PlatformPageSlot slotKey="field-settings-12"><label className="form-label" htmlFor="mfa-setup-code">Authenticator code</label></PlatformPageSlot>
         <input className="form-control" id="mfa-setup-code" type="text" inputMode="numeric"
           pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
           value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
@@ -476,10 +477,10 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
       onClick={() => setAuthenticatorAction('disable')}>Disable authenticator</button>}
     {enrolled && mode !== 'Required' && authenticatorAction === 'disable' && <div className="settings-edit-row">
       <p>To disable your authenticator, confirm your password and a fresh code.</p>
-      <label className="form-label" htmlFor="mfa-disable-password">Current password</label>
+      <PlatformPageSlot slotKey="field-settings-13"><label className="form-label" htmlFor="mfa-disable-password">Current password</label></PlatformPageSlot>
       <input className="form-control" id="mfa-disable-password" type="password" autoComplete="current-password"
         value={password} onChange={(event) => setPassword(event.target.value)} />
-      <label className="form-label" htmlFor="mfa-disable-code">Authenticator code</label>
+      <PlatformPageSlot slotKey="field-settings-14"><label className="form-label" htmlFor="mfa-disable-code">Authenticator code</label></PlatformPageSlot>
       <input className="form-control" id="mfa-disable-code" type="text" inputMode="numeric"
         pattern="[0-9]{6}" maxLength={6} autoComplete="one-time-code"
         value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
@@ -618,11 +619,11 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
         <div className="settings-read-first-section">
           {editingRow === 'corporate'
             ? <div className="settings-edit-row">
-                <label className="form-label">Corporate Currency (ISO 4217)
+                <PlatformPageSlot slotKey="field-settings-15"><label className="form-label">Corporate Currency (ISO 4217)
                   <input autoFocus className="form-control" value={corporateCode} maxLength={3}
                     onChange={(event) => { setCorporateCode(event.target.value.toUpperCase()); setError(''); }}
                     onBlur={setCorporateCurrency} />
-                </label>
+                </label></PlatformPageSlot>
               </div>
             : <SettingsViewRow label="Corporate Currency (ISO 4217)" value={draft.corporateCurrency}
                 canEdit={canManage && !editingRow} onEdit={() => beginEdit('corporate')} />}
@@ -633,7 +634,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
             editingRow === `currency-${index}`
               ? <div className="settings-edit-row" key={`currency-edit-${index}`}>
                   <div className="settings-edit-row-grid">
-                    <label className="form-label">Currency Code
+                    <PlatformPageSlot slotKey="field-settings-16"><label className="form-label">Currency Code
                       <input autoFocus className="form-control" value={currency.currencyIsoCode} maxLength={3}
                         disabled={currency.currencyIsoCode === draft.corporateCurrency}
                         onChange={(event) => {
@@ -643,8 +644,8 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
                               ? { ...item, currencyIsoCode } : item)
                           }));
                         }} />
-                    </label>
-                    <label className="form-label">Conversion Rate
+                    </label></PlatformPageSlot>
+                    <PlatformPageSlot slotKey="field-settings-17"><label className="form-label">Conversion Rate
                       <input className="form-control" type="number" min="0" step="any"
                         value={currency.currencyIsoCode === draft.corporateCurrency ? 1 : currency.conversionRate}
                         disabled={currency.currencyIsoCode === draft.corporateCurrency}
@@ -655,7 +656,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
                               ? { ...item, conversionRate } : item)
                           }));
                         }} />
-                    </label>
+                    </label></PlatformPageSlot>
                   </div>
                   {currency.currencyIsoCode !== draft.corporateCurrency && <div className="settings-read-first-toolbar">
                     <button type="button" className="btn" onClick={() => {
