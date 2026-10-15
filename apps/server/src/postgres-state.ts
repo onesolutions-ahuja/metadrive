@@ -113,6 +113,17 @@ export async function checkDatabaseConnection(): Promise<'healthy' | 'unavailabl
   }
 }
 
+// Serialize scheduled SQL refreshes with local writes. An unlocked refresh could
+// replace normalizedSnapshot between selection of a CAS baseline and COMMIT.
+let stateSqlGate: Promise<void> = Promise.resolve();
+async function withStateSqlGate<T>(run: () => Promise<T>): Promise<T> {
+  const predecessor = stateSqlGate;
+  let release!: () => void;
+  stateSqlGate = new Promise<void>(resolve => { release = resolve; });
+  await predecessor;
+  try { return await run(); } finally { release(); }
+}
+
 export async function readPersistedState(): Promise<unknown | null> {
   if (!pool) return null;
   if (strictSqlOnly) {
@@ -128,11 +139,15 @@ export async function readPersistedState(): Promise<unknown | null> {
     // baseline changed while SQL was being fetched. Never install stale state.
     for (let attempt = 0; attempt < 5; attempt++) {
       await waitForPersistedState();
-      const previousSnapshot = normalizedSnapshot;
-      const refreshed = await readNormalizedState(pool as unknown as Parameters<typeof readNormalizedState>[0],
-        persistenceMode === 'typed' ? verifyTypedRecords : null);
-      if (normalizedSnapshot !== previousSnapshot) continue;
-      normalizedSnapshot = refreshed;
+      const refreshed = await withStateSqlGate(async () => {
+        const previousSnapshot = normalizedSnapshot;
+        const next = await readNormalizedState(pool as unknown as Parameters<typeof readNormalizedState>[0],
+          persistenceMode === 'typed' ? verifyTypedRecords : null);
+        if (normalizedSnapshot !== previousSnapshot) return null;
+        normalizedSnapshot = next;
+        return next;
+      });
+      if (!refreshed) continue;
       return refreshed.state;
     }
     throw new Error('Concurrent SQL write while refreshing scheduled state');
@@ -197,13 +212,13 @@ async function drainStateWrites(): Promise<void> {
       if (!pool) throw new Error('Database pool not available');
       if (persistenceMode === 'normalized' || persistenceMode === 'typed') {
         if (!normalizedSnapshot) throw new Error('Normalized SQL state must be verified before first write');
-        normalizedSnapshot = await writeNormalizedState(
+        normalizedSnapshot = await withStateSqlGate(() => writeNormalizedState(
           pool as unknown as Parameters<typeof writeNormalizedState>[0],
-          JSON.parse(payload), normalizedSnapshot,
+          JSON.parse(payload), normalizedSnapshot!,
           persistenceMode === 'typed' ? synchronizeTypedRecords : null,
           true, // queue has already JSON.parse'd this payload
           commitInstalledAppVersions
-        );
+        ));
       } else if (persistenceMode === 'relational') {
         if (!relationalSnapshot) throw new Error('Relational database must be verified before first write');
         relationalSnapshot = await writeRelationalState(
