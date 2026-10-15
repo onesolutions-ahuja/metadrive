@@ -142,6 +142,11 @@ try{
  const dialog=checkout.getByRole('dialog',{name:'Your basket'});
  await dialog.waitFor({state:'visible'});
  await dialog.getByText(/Demo Classic Burger/).waitFor();
+ const overlayBox=await page.locator('.record-runtime-sidebar').boundingBox();
+ const iframeBox=await page.locator('iframe[sandbox="allow-scripts"]').nth(2).boundingBox();
+ const dialogBox=await dialog.boundingBox();
+ const closeBox=await dialog.getByRole('button',{name:'Close basket'}).boundingBox();
+ console.log('Kiosk overlay geometry',JSON.stringify({overlayBox,iframeBox,dialogBox,closeBox}));
  await page.screenshot({path:join(evidence,'kiosk-basket-open.png'),fullPage:true});
  await dialog.getByRole('button',{name:'Close basket'}).click();
  await dialog.waitFor({state:'hidden'});
