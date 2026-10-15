@@ -63,3 +63,11 @@ test('Fresh tenant Core bootstrap strips nested ACL identities and arbitrary sou
   assert.deepEqual(authorized.records,{});
 
 });
+
+// Run all Agent 2 regression suites in the existing CI seeder test entrypoint.
+import './agent2-core-seeder.test.mjs';
+import './agent2-package-ledger.test.mjs';
+import './agent2-shared-dependency.test.mjs';
+import './agent2-trusted-bootstrap.test.mjs';
+import './agent2-versioned-registry.test.mjs';
+import './agent2-developer-policy.test.mjs';
