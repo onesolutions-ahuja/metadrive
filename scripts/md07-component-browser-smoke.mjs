@@ -99,6 +99,14 @@ try {
   await page.reload();
   await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.locator('iframe[sandbox="allow-scripts"]').first().contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  const coreRegistry=await request('/component-library',token);
+  const core=coreRegistry.components.filter(item=>/^One[A-Za-z]+$/.test(item.apiName));
+  if(core.length!==40 || new Set(core.map(item=>item.apiName)).size!==40 ||
+    core.some(item=>item.status!=='Published'||item.trustedBundled!==true||
+      !['page','dashboard','flow'].every(surface=>item.surfaces.includes(surface))))
+    throw Error('One Core registered-component contract failed in authenticated tenant');
+  const oneText=core.find(item=>item.apiName==='OneText');
+  if(!oneText?.compiledJs)throw Error('OneText has no compiled runtime');
   const componentRow=await request('/component-library',token);
   const published=componentRow.components.find((item)=>item.apiName==='MD07_Browser_Widget');
   if(!published?.surfaces.includes('dashboard')||!published?.surfaces.includes('flow'))
@@ -114,7 +122,10 @@ try {
       label:'MD07 Browser Widget',properties:{libraryComponentId:'MD07_Browser_Widget',objectApiName:'Account',
         actionFlows:{open:{actionType:'RunFlow',flowApiName:'MD07_Browser_Flow',inputs:{}},
           browse:{actionType:'Navigate',navigationObjectApiName:'Account'}}},
-      visible:true,region:'main'}]
+      visible:true,region:'main'},
+      {id:'md07-one-text',type:'Custom:OneText',label:'One-Text',
+        properties:{libraryComponentId:'OneText',kind:'Text',text:'One Core Page proof'},
+        visible:true,region:'main'}]
   });
   const runtimeApp='MD07_Browser_Runtime_App';
   await request('/metadata/apps',token,'POST',{
@@ -128,6 +139,8 @@ try {
     const runtimeFrame=page.locator('iframe[sandbox="allow-scripts"]').first();
     await runtimeFrame.waitFor({state:'attached'});
     await runtimeFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+    const oneFrame=page.locator('iframe[sandbox="allow-scripts"]').last();
+    await oneFrame.contentFrame().getByText('One Core Page proof',{exact:false}).waitFor();
   }
   await page.setViewportSize({width:1440,height:900});
   // Prove actual custom component rendering on dashboards; advertising a surface is insufficient.
@@ -154,7 +167,9 @@ try {
     elements:[{id:1,type:'Start',label:'Start',config:{}},
       {id:2,type:'Screen',label:'Custom Component Screen',config:{fields:[
         {type:'Custom Component',apiName:'MD07_Custom_Field',label:'MD07 Browser Widget',
-          componentApiName:'MD07_Browser_Widget',componentPropsJson:'{}',required:false}
+          componentApiName:'MD07_Browser_Widget',componentPropsJson:'{}',required:false},
+        {type:'Custom Component',apiName:'MD07_OneText_Field',label:'One-Text',
+          componentApiName:'OneText',componentPropsJson:JSON.stringify({kind:'Text',text:'One Core Flow proof'}),required:false}
       ]}}],
     connectors:[{id:'start-screen',from:1,to:2,label:'',kind:'normal'}],resources:[],versions:[]
   });
@@ -163,6 +178,8 @@ try {
   const flowFrame=page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]');
   await flowFrame.waitFor({state:'attached'});
   await flowFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
+  await page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]').last().contentFrame()
+    .getByText('One Core Flow proof',{exact:false}).waitFor();
   await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
   // Prove sandbox user events reach metadata-configured Flow and navigation,
   // without exposing privileged callbacks to the uploaded JSX.
