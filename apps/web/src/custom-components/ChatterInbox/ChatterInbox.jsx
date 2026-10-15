@@ -61,7 +61,7 @@ export default function ChatterInbox(props) {
     catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); }
     finally { setBusy(false); }
   };
-  return <section className={'md-chatter ' + (selected ? 'md-chatter-open' : '')}
+  return <section className={'md-chatter ' + ((selected || newChat) ? 'md-chatter-open' : '')}
     style={{'--chatter-accent': p.accentColor || '#168657', '--chatter-background': p.backgroundColor || '#f7f8f7'}}>
     <aside className="md-chatter-list">
       <header><div className="md-chatter-heading"><h2>{p.title || 'Chatter'}</h2><span>{scoped.length} chats</span></div>
