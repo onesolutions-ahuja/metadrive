@@ -4,7 +4,6 @@ import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, i
 import { ConnectorSettingsWorkspace } from './connectorSettingsView';
 import { MetadataComponentProperties } from './componentPropertiesView';
 import { createPageRuntimeViews } from './pageRuntimeViews';
-import { createSetupApp } from './setupAppShell';
 import { createRecordWorkspaceViews } from './recordWorkspaceViews';
 import { createPageBuilder } from './pageBuilderView';
 import { ReportBuilder } from './reportBuilderView';
@@ -390,11 +389,13 @@ async function fetchFlowListPage(page: number, search: string) {
 }
 
 
-let setupAppImplementation: React.ComponentType<any> | undefined;
+// The full setup workspace is an on-demand route module, never part of the login bundle.
+const LazySetupWorkspace = React.lazy(async () => {
+  const { createSetupApp } = await import('./setupAppWorkspace');
+  return { default: createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings}) };
+});
 function SetupApp(props: {onLogout: () => void; entryTiming: EntryTiming | null}) {
-  if (!setupAppImplementation) setupAppImplementation = createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings});
-  const Component = setupAppImplementation;
-  return <Component {...props} />;
+  return <React.Suspense fallback={<div className="auth-loading">Loading workspace…</div>}><LazySetupWorkspace {...props} /></React.Suspense>;
 }
 
 function PageHeading({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: ReactNode }) {
