@@ -117,8 +117,29 @@ try{
   await page.screenshot({path:join(evidence,'kiosk-'+label+'.png'),fullPage:true});
   console.log('Rendered Kiosk '+label+' '+JSON.stringify(bounds.map(x=>({width:x.width,height:x.height}))));
  }
+ await page.setViewportSize({width:1649,height:764});
+ await page.goto(site+'/une/apps/MD_Commerce_Kiosk/pages/MD_Commerce_Menu');
+ const grid=page.locator('iframe[sandbox="allow-scripts"]').nth(1).contentFrame();
+ await grid.getByText('Demo Classic Burger').waitFor();
+ await grid.getByRole('button',{name:'CUSTOMISE'}).first().click();
+ const editor=grid.getByRole('dialog',{name:/Customise Demo Classic Burger/});
+ await editor.waitFor();
+ await editor.getByLabel(/Demo Regular/).check();
+ await editor.getByRole('button',{name:'Add to basket'}).click();
+ await editor.waitFor({state:'hidden',timeout:30000});
+ const checkout=page.locator('iframe[sandbox="allow-scripts"]').nth(2).contentFrame();
+ const submit=checkout.getByRole('button',{name:/PLACE ORDER/i});
+ await submit.waitFor({state:'visible'});
+ await page.waitForFunction(()=>{
+  const iframe=[...document.querySelectorAll('iframe[sandbox="allow-scripts"]')].at(-1);
+  return iframe!==undefined;
+ });
+ await submit.click({timeout:30000});
+ await page.waitForURL('**/une/apps/MD_Commerce_Kiosk/pages/MD_Commerce_Confirmation',{timeout:30000});
+ const orders=(await request('/records/Order__c')).records||[];
+ assert.ok(orders.some(o=>o.Status==='Submitted'),'Checkout must persist a Submitted order through Flow/Object APIs');
  assert.deepEqual(errors,[]);
- console.log('PASS: isolated real registered Kiosk, demo products, responsive viewport, and checkout rendered');
+ console.log('PASS: real Kiosk desktop and phone screenshot, modifier selection, add-to-basket, submitted order');
 }finally{
  if(browser)await browser.close();
  for(const c of services)if(c.exitCode===null)c.kill('SIGTERM');
