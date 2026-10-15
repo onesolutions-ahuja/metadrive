@@ -224,14 +224,14 @@ type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticated
 
 export function createSetupApp(deps: {
 apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>;
-ApiRequestError: new (...args: any[]) => Error & {status:number};
+ApiRequestError: new (...args: any[]) => Error & {status:number;responseBody:unknown};
 fetchFlowListPage: (page:number, search:string) => Promise<any>;
 isAuthErrorMessage: (message: string) => boolean;
 loadAppCommunicationHistory: (objectName: string, field: string, source: string, offset: number, search: string) => Promise<any>;
 loadConnectorMarketplaceApps: () => Promise<any>;
 executeConnectorAppLifecycleFlow: (apiName: string, appKey: string) => Promise<void>;
 loadFlowScreenRecords: (objectApiName: string) => Promise<Record<string, unknown>[]>;
-customTabStyles: ReadonlyArray<{name:string;color:string;icon:React.ComponentType<any>}>;
+customTabStyles: ReadonlyArray<{name:'Blue' | 'Green' | 'Orange' | 'Purple' | 'Red' | 'Teal' | 'Yellow';color:string;icon:React.ComponentType<any>}>;
 uneSolutionsLogoUrl: string;
 ProfilePasswordMenu: React.ComponentType<any>,
 ConnectionHealthIndicator: React.ComponentType<any>,
@@ -2644,12 +2644,12 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
+            onLaunchFlow={(apiName: string, inputs: Record<string, unknown>) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'app-page' && <LightningAppRuntime appId={route.appId} pageApiName={route.pageApiName} objects={objects} apps={apps} pages={pages} reports={reports}
             libraryComponents={libraryComponents} availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             formFactor={runtimeFormFactor} onNavigate={navigateRoute}
-            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
+            onLaunchFlow={(apiName: string, inputs: Record<string, unknown>) => void runFlow(apiName, inputs)} onStandaloneModeChange={setStandalonePageMode} />}
           {route.kind === 'setup' && workspace === 'home' && (
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
@@ -2666,9 +2666,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               selectedSetting={objectSetting}
               search={objectSearch}
               onSearch={setObjectSearch}
-              onObjectSelect={(nextObject) => navigateRoute({ kind: 'setup', workspace: 'object-manager', objectApiName: nextObject.apiName, setting: 'Fields & Relationships' })}
-              onSettingSelect={(setting) => navigateRoute({ kind: 'setup', workspace: 'object-manager', objectApiName: object.apiName, setting: setting === 'Objects' ? 'Details' : setting })}
-              onOpenDependency={(target) => {
+              onObjectSelect={(nextObject: ObjectMetadata) => navigateRoute({ kind: 'setup', workspace: 'object-manager', objectApiName: nextObject.apiName, setting: 'Fields & Relationships' })}
+              onSettingSelect={(setting: string) => navigateRoute({ kind: 'setup', workspace: 'object-manager', objectApiName: object.apiName, setting: setting === 'Objects' ? 'Details' : setting })}
+              onOpenDependency={(target: { setting?: string; objectApiName?: string; workspace?: 'flow-builder' | 'page-builder' | 'report-builder' | 'dashboard-builder'; resourceApiName?: string }) => {
                 if (target.workspace === 'page-builder' && target.resourceApiName) {
                   const selectedPage = pages.find((candidate) => candidate.apiName === target.resourceApiName);
                   if (selectedPage) setPage(selectedPage);
@@ -2702,14 +2702,14 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           {route.kind === 'setup' && workspace === 'page-builder' && (!route.resourceApiName || (advancedMetadataLoaded && pages.some((item) => item.apiName === route.resourceApiName))) && <PageBuilder key={route.resourceApiName ?? 'page-list'} editorMode={Boolean(route.resourceApiName)} onBackToPages={() => { setPage(pages.find(item => item.apiName === page.apiName) ?? page); navigateRoute({ kind: 'setup', workspace: 'page-builder' }); }} page={page} pages={pages}
             preparedAppId={pageCreationAppContext[page.apiName] ?? ''}
             dashboards={dashboards}
-            onPrepareApp={(pageApiName, appId) => setPageCreationAppContext(current => ({
+            onPrepareApp={(pageApiName: string, appId: string) => setPageCreationAppContext(current => ({
               ...current, [pageApiName]: appId
             }))}
-            onAppLinked={pageApiName => setPageCreationAppContext(current => {
+            onAppLinked={(pageApiName: string) => setPageCreationAppContext(current => {
               const next = { ...current };
               delete next[pageApiName];
               return next;
-            })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} request={apiRequest} canManageRoutes={canManageApps} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
+            })} objects={objects} apps={apps} profiles={accessControl.profiles} reports={reports} libraryComponents={libraryComponents} flows={flows} onChange={changePage} onSelectPage={(apiName: string) => { const selected = pages.find((item) => item.apiName === apiName); if (selected) { setPage(selected); navigateRoute({ kind: 'setup', workspace: 'page-builder', resourceApiName: selected.apiName }); } }} onTargetObjectChange={openPageForObject} onLaunchFlow={(apiName: string, inputs: Record<string, unknown>) => void runFlow(apiName, inputs)} onSave={savePageFromBuilder} onSaveApp={saveApp} onDeleteApp={deleteApp} request={apiRequest} canManageRoutes={canManageApps} onExit={() => { setPage(pages.find((item) => item.apiName === route.resourceApiName) ?? pages[0] ?? defaultLightningPage); pageRouteApiName.current = ''; navigateRoute({ kind: 'setup', workspace: 'home' }); }} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'app-manager' && <PlatformWorkspaceSurface workspace="app-manager"><AppManager apps={apps} objects={objects} pages={pages} onSave={saveApp} onDelete={deleteApp} /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'dashboard-builder' && <DashboardBuilder
             dashboards={dashboards}
@@ -2806,7 +2806,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               provider={provider}
               providers={connectorProviders}
               integrationConnections={integrationConnections}
-              onSelect={(connectorKey) => navigateRoute({ kind: 'setup', workspace: 'connector-settings', resourceApiName: connectorKey })}
+              onSelect={(connectorKey: string) => navigateRoute({ kind: 'setup', workspace: 'connector-settings', resourceApiName: connectorKey })}
               onSaveProvider={saveConnectorProvider}
               onSaveIntegrationConnection={saveIntegrationConnection}
               onTestIntegrationConnection={testIntegrationConnection}
@@ -2896,7 +2896,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
             objects={objects}
             routeResourceApiName={route.resourceApiName}
             routeResourceId={route.resourceId}
-            onRouteResourceChange={(resourceApiName, resourceId) => navigateRoute({
+            onRouteResourceChange={(resourceApiName: string, resourceId: string) => navigateRoute({
               kind: 'setup', workspace: 'rbac', resourceApiName, ...(resourceId ? { resourceId } : {})
             })}
             onSave={saveAccessControl}
