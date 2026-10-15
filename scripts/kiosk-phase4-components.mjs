@@ -268,7 +268,7 @@ export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',c
   }catch(e){setError(e?.message||String(e))}finally{setBusy('')}
  };
  return <div style={{width:'100%',height:'100%',position:'relative',fontFamily:'Arial,sans-serif'}}>
-  {opened&&<div style={{position:'absolute',inset:'0 0 83px 0',background:'rgba(0,0,0,.55)',display:'flex',alignItems:'end',justifyContent:'center',boxSizing:'border-box'}}>
+  {opened&&<div style={{position:'fixed',inset:'0 0 83px 0',background:'rgba(0,0,0,.55)',display:'flex',alignItems:'end',justifyContent:'center',boxSizing:'border-box'}}>
    <section role='dialog' aria-modal='true' aria-label='Your basket'
     style={{background:'#fff',padding:22,width:'min(740px,100%)',maxHeight:'90%',overflowY:'auto',boxSizing:'border-box',borderRadius:'14px 14px 0 0'}}>
     <header style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
