@@ -15,7 +15,7 @@ function tenant() {
       {apiName:'Name',label:'Name',dataType:'Text',required:true}
     ]}],
     records:{Connector_App__c:[
-      {Id:'app-license-unrelated',AppKey__c:'whatsapp',Installed__c:true,LicenceStatus__c:'Licensed'}
+      {Id:'app-license-unrelated',AppKey__c:'whatsapp',Installed__c:false,LicenceStatus__c:'Licensed'}
     ]},
     flows:[],pages:[],apps:[],
     accessControl:{profiles:[
@@ -26,6 +26,7 @@ function tenant() {
 }
 test('Phase 7: app installation, component registry, state snapshot and restore remain lossless',()=>{
   const original=tenant();
+  // Uninstalled connector must not re-create its app pages on hydration.
   const installed=applyInstallableAppPackages(original,catalog);
   assert.equal(original.pages.length,0,'installer never mutates input');
   assert.equal(installed.objects.find(item=>item.apiName==='Product').label,'Tenant product');

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../apps/web/src/App.tsx', import.meta.url), 'utf8');
+const authClient = readFileSync(new URL('../apps/web/src/authClient.ts', import.meta.url), 'utf8');
 
 test('session refresh aborts while waiting on another browser tab lock', () => {
-  assert.match(source, /function withAuthRefreshLock\(refresh: \(\) => Promise<Response>, signal\?: AbortSignal\)/);
-  assert.match(source, /navigator\.locks\.request\('metadrive-auth-refresh', \{ signal \}, refresh\)\.then/);
+  assert.match(authClient, /function withAuthRefreshLock\(refresh: \(\) => Promise<Response>, signal\?: AbortSignal\)/);
+  assert.match(authClient, /navigator\.locks\.request\('metadrive-auth-refresh', \{ signal \}, refresh\)\.then/);
   assert.match(source, /\}\), controller\.signal\s*\)/);
 });
 
@@ -18,6 +19,7 @@ test('startup failure is bounded and exposes retry instead of an indefinite load
 });
 
 test('refresh failure does not bypass authentication', () => {
-  assert.match(source, /if \(response\.status === 401\) \{\s*accessToken = undefined;\s*setAuthError\(''\);\s*setAuthState\('anonymous'\)/);
-  assert.match(source, /accessToken = session\.access_token/);
+  assert.match(source, /if \(response\.status === 401\) \{\s*setAccessToken\(undefined\);\s*setAuthError\(''\);\s*setAuthState\('anonymous'\)/);
+  assert.match(source, /setAccessToken\(session\.access_token\)/);
+  assert.match(authClient, /export function setAccessToken/);
 });

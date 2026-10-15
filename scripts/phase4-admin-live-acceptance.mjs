@@ -37,7 +37,7 @@ for(const descriptor of protectedWorkspacePageDescriptors){
  assert.equal(page.scope,'platform-system');
  assert.equal(page.ownerNamespace,'MetaDrive');
  assert.equal(page.status,'Active');
- assert.equal(page.definitionVersion,1);
+ assert.equal(page.definitionVersion,2);
  assert.deepEqual(page.requiredPermissions,[descriptor.permission]);
  count++;
 }

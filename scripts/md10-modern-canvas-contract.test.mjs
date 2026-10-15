@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { canvasBoundPosition } from '../apps/web/src/pageCanvas.ts';
 
-const src = readFileSync('apps/web/src/App.tsx', 'utf8');
+const src = readFileSync('apps/web/src/pageBuilderView.tsx', 'utf8');
 
 test('phase 2 canvas preserves the existing Page Builder, filters, conditions and actions', () => {
   for (const token of ['PageComponentVisualEditor', 'PageComponentStyleEditor',

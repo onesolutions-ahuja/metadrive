@@ -2,8 +2,8 @@
   "apiName": "UNE_CHATTER",
   "label": "Chatter",
   "targetObject": "Communication_Records__c",
-  "pageType": "Record Page",
-  "layoutMode": "free-canvas",
+  "pageType": "App Page",
+  "layoutMode": "template",
   "canvasWidth": 1200,
   "canvasHeight": 800,
   "status": "Draft",
@@ -18,12 +18,6 @@
       "label": "Chatter Inbox",
       "region": "main",
       "visible": true,
-      "position": {
-        "x": 0,
-        "y": 0,
-        "width": 1200,
-        "height": 800
-      },
       "properties": {
         "libraryComponentId": "ChatterInbox",
         "title": "Chatter",
@@ -50,21 +44,12 @@
               "ChannelAccountId": "$event.channelAccountId"
             }
           }
-        }
+        },
+        "objectApiName": "Communication_Records__c",
+        "recordViewAdapter": "Chatter"
       }
     }
   ],
-  "activationAssignments": [
-    {
-      "id": "chatter-communication-org-default",
-      "scope": "Org Default",
-      "appId": null,
-      "profileId": null,
-      "recordTypeId": null,
-      "formFactors": [
-        "Desktop",
-        "Phone"
-      ]
-    }
-  ]
+  "activationAssignments": [],
+  "template": "one-region"
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
 import { moveNavigationEntry, reconcileNavigationOrder } from './appNavigation';
+import {PlatformPageSlot} from './PlatformPageSlot';
 import {appManagerFieldDefinitions,validateAppManagerField,type AppManagerFieldKey} from './adminAppFieldMetadata';
 import AdminPropertyControl from './AdminPropertyControl';
 import type { LightningAppMetadata, LightningPageMetadata, ObjectMetadata } from './metadata';
@@ -188,7 +189,7 @@ export default function AppManager({
         </select>
       </label>}
       <form onSubmit={(event) => void save(event)}>
-        <div className="permission-form-grid">
+        <PlatformPageSlot slotKey="identity"><div className="permission-form-grid">
           {appManagerFieldDefinitions.map((definition) => {
             const field = definition.propertyKey as AppManagerFieldKey;
             const isDescription = field === 'description';
@@ -208,11 +209,11 @@ export default function AppManager({
             return <AdminPropertyControl key={field} definition={definition}
               value={value} disabled={disabled} onChange={change}/>;
           })}
-        </div>
+        </div></PlatformPageSlot>
         <label className="form-label">Find navigation items
           <input className="form-control" type="search" aria-label="Search navigation items" placeholder="Find object or active App Page…" value={navigationSearch} onChange={(event) => setNavigationSearch(event.target.value)} />
         </label>
-        <fieldset className="app-manager-fieldset">
+        <PlatformPageSlot slotKey="pages"><fieldset className="app-manager-fieldset">
           <legend>Lightning Pages</legend>
           <p>Active App Pages are available as navigation tabs in this app.</p>
           <div className="app-manager-checks">
@@ -224,8 +225,8 @@ export default function AppManager({
             </label>)}
             {!pages.some((page) => page.pageType === 'App Page' && page.status === 'Active') && <span className="permission-help">Activate an App Page in Lightning App Builder to add it here.</span>}
           </div>
-        </fieldset>
-        <fieldset className="app-manager-fieldset">
+        </fieldset></PlatformPageSlot>
+        <PlatformPageSlot slotKey="assignments"><fieldset className="app-manager-fieldset">
           <legend>Activated Pages for This App</legend>
           <p>Active Home and Record Pages assigned to the selected app.</p>
           <div className="app-manager-assigned-pages">
@@ -238,8 +239,8 @@ export default function AppManager({
             </div>)}
             {!assignedPages.length && <span className="permission-help">No active Home or Record Pages are assigned to this app.</span>}
           </div>
-        </fieldset>
-        <fieldset className="app-manager-fieldset">
+        </fieldset></PlatformPageSlot>
+        <PlatformPageSlot slotKey="navigation-items"><fieldset className="app-manager-fieldset">
           <legend>Navigation Items</legend>
           <p>Select the objects available in this app's Records dropdown.</p>
           <div className="app-manager-checks">
@@ -249,8 +250,8 @@ export default function AppManager({
               {object.pluralLabel}
             </label>)}
           </div>
-        </fieldset>
-        <fieldset className="app-manager-fieldset">
+        </fieldset></PlatformPageSlot>
+        <PlatformPageSlot slotKey="navigation-order"><fieldset className="app-manager-fieldset">
           <legend>Navigation Order</legend>
           <p>Set the order of selected object tabs and App Pages. Objects appear in the Records selector; pages appear as workspace tabs.</p>
           <ol className="app-manager-navigation-order">
@@ -272,8 +273,8 @@ export default function AppManager({
             })}
           </ol>
           {!navigationOrder.length && <span className="permission-help">Select at least one object or App Page above.</span>}
-        </fieldset>
-        <fieldset className="app-manager-fieldset">
+        </fieldset></PlatformPageSlot>
+        <PlatformPageSlot slotKey="utility"><fieldset className="app-manager-fieldset">
           <legend>Utility Bar</legend>
           <div className="app-manager-checks">
             {(['Notes', 'History'] as const).map((item) => <label key={item}>
@@ -286,17 +287,17 @@ export default function AppManager({
               {item}
             </label>)}
           </div>
-        </fieldset>
+        </fieldset></PlatformPageSlot>
         {error && <p className="form-error" role="alert">{error}</p>}
         {notice && <p className="form-success" role="status">{notice}</p>}
-        <div className="app-manager-actions">
+        <PlatformPageSlot slotKey="actions"><div className="app-manager-actions">
           <button className="btn btn-brand" type="submit" disabled={busy || (!draft.navigationItems.length && !draft.navigationPageApiNames.length)}><Save size={14} />{busy ? 'Saving…' : 'Save'}</button>
           {creating && <button className="btn" type="button" disabled={busy} onClick={() => {
             setCreating(false); const first = apps[0]; setSelectedApiName(first?.apiName ?? '');
             setDraft(first ? appDraftFromMetadata(first) : emptyApp()); setError(''); setNotice('');
           }}>Cancel</button>}
           {!creating && <button className="btn" type="button" disabled={busy || apps.length <= 1} onClick={() => void remove()}><Trash2 size={14} />Delete App</button>}
-        </div>
+        </div></PlatformPageSlot>
       </form>
     </section>
   </div>;

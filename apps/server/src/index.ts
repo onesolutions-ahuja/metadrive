@@ -12,6 +12,9 @@ import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
 import { registerRecordRoutes } from './modules/records/routes.js';
+import { getPrincipal } from './modules/security/get-principal.js';
+import { chatterIncomingIdentityFields } from './modules/chatter/webhook-identity.js';
+import { chatterRecordVisible, prepareChatterFlowInputs } from './modules/chatter/authorization.js';
 import { applyRecordDefaults as applyMetadataRecordDefaults } from './modules/records/record-defaults.js';
 import { validateRuntimeRecord as validateMetadataRecord } from './modules/records/runtime-validation.js';
 import { matchesRelatedLookupFilter, validateGeolocationValue } from './modules/records/record-constraints.js';
@@ -383,8 +386,7 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
           const nowForIncoming = new Date().toISOString();
           const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
             Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
-            Direction__c: 'Incoming', From_Number__c: message.from,
-            To_Number__c: value?.metadata?.display_phone_number ?? '',
+            ...chatterIncomingIdentityFields(object, message.from, value?.metadata?.display_phone_number, phoneId),
             Message_Body__c: body, Conversation_Key__c: conversationKey,
             Conversation_Context__c: currentContext,
             Status__c: fresh ? 'Received' : 'Expired', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
@@ -4878,11 +4880,6 @@ function withSecurityEvent(
 function tenantData(tenantId: string): TenantData | undefined {
   return tenantIsActive(tenantId) ? state.tenants[tenantId] : undefined;
 }
-function getPrincipal(res: Response): Principal {
-  const principal = res.locals.principal as Principal | undefined;
-  if (!principal) throw new Error('Authenticated principal was not established');
-  return principal;
-}
 function principalUser(principal: Principal): LocalUser | undefined {
   return state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
 }
@@ -7695,6 +7692,7 @@ function hasRecordAccess(
   visited.add(recordKey);
   const objectAction = accessLevel === 'Read' ? 'read' : accessLevel === 'Edit' ? 'edit' : 'delete';
   if (!hasObjectPermission(principal, tenant, objectName, objectAction)) return false;
+  if (objectName === communicationObjectApiName && !chatterRecordVisible(tenant, principal, record, accessLevel)) return false;
   const advancedSettings = tenant.sharingSettings[objectName];
   const advancedUser = tenant.accessControl.users.find((user) => user.id === principal.userId);
   const advancedRules = advancedSettings?.restrictionRules ?? [];
@@ -8149,7 +8147,9 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
-  const inputError = validateFlowInputValues(flow, input.data);
+  const safe = prepareChatterFlowInputs(tenant, principal, apiName, input.data, state.users);
+  if (safe.error) return res.status(403).json({ error: safe.error });
+  const inputError = validateFlowInputValues(flow, safe.inputs);
   if (inputError) return res.status(400).json({ error: inputError });
   const validation = validateFlow(
     flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
@@ -8159,7 +8159,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
   try {
     const working = structuredClone(tenant);
-    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, input.data, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
+    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, safe.inputs, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
     if (result.status === 'waiting') {
       const interview = createFlowInterview(flow, principal.userId, result);
       working.interviews = [...working.interviews, interview];
