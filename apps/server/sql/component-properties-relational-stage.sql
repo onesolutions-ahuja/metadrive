@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS metadrive_component_property_definitions_sql (
 );
 CREATE TABLE IF NOT EXISTS metadrive_page_component_instances_sql (
   tenant_id TEXT NOT NULL,
+  surface TEXT NOT NULL CHECK (surface IN ('pages','dashboards','flows')),
   page_api_name TEXT NOT NULL,
   instance_id TEXT NOT NULL,
   component_api_name TEXT NOT NULL,
@@ -51,8 +52,8 @@ CREATE TABLE IF NOT EXISTS metadrive_page_component_instances_sql (
     'width','height','x','y','backgroundColor','textColor',
     'fontSize','padding','borderRadius','visible','region','position'
   ])),
-  PRIMARY KEY (tenant_id,page_api_name,instance_id),
-  UNIQUE (tenant_id,page_api_name,position),
+  PRIMARY KEY (tenant_id,surface,page_api_name,instance_id),
+  UNIQUE (tenant_id,surface,page_api_name,position),
   FOREIGN KEY (tenant_id,component_api_name)
     REFERENCES metadrive_component_definitions_sql(tenant_id,component_api_name)
 );
