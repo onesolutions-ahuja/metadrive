@@ -59,8 +59,9 @@ export function applyDeveloperAppGrants(before, after, packages) {
         changed=true;
       }
       const oldFields=new Set((oldObjects.get(object.apiName)?.fields??[]).map(field=>field.apiName));
-      for(const field of object.fields??[]) {
-        if(oldFields.has(field.apiName))continue;
+      for(const field of definition.fields??[]) {
+        if(oldFields.has(field.apiName) ||
+          !(object.fields??[]).some(item=>item.apiName===field.apiName))continue;
         const key=object.apiName+'.'+field.apiName;
         if(Object.hasOwn(fieldPermissions,key))continue;
         fieldPermissions[key]={read:true,edit:true};
