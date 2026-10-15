@@ -98,9 +98,23 @@ test('one connector store survives migration and restart without duplicate objec
     active = undefined;
     const state = JSON.parse(await readFile(file, 'utf8')) as Record<string, any>;
     const tenant = state.tenants[tenantId] as Record<string, any>;
-    const existing = tenant.records.UneConnector__c as Array<Record<string, any>>;
+    // New tenants no longer seed the retired UneConnector object. Construct a
+    // genuine pre-consolidation snapshot from the legacy configuration metadata
+    // to exercise the migration without reintroducing deprecated startup seeds.
+    const owner = String(state.users.find((item: Record<string, any>) => item.tenantId === tenantId)?.id ?? 'system');
+    const existing = (tenant.connectorSettings as Array<{ apiName: string; label: string; fields: Array<{ apiName: string; value: string }> }>).map((setting) => ({
+      Id: randomUUID(),
+      Name: setting.label,
+      ConnectorType__c: setting.apiName,
+      Status__c: 'Not Configured',
+      Configuration__c: JSON.stringify(Object.fromEntries(setting.fields.map((field) => [field.apiName, field.value]))),
+      OwnerId: owner,
+      RecordTypeId: 'master',
+      CreatedDate: new Date().toISOString(),
+      LastModifiedDate: new Date().toISOString()
+    }));
     assert.equal(existing.length, 5);
-    const owner = String(existing[0].OwnerId);
+    tenant.records.UneConnector__c = existing;
     const whatsapp = existing.find((item) => item.Name === 'WhatsApp');
     assert.ok(whatsapp);
     whatsapp.Configuration__c = JSON.stringify({ PhoneNumberId: '123456789', NamedCredential: 'WhatsApp_Dummy' });
