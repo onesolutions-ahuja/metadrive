@@ -20,7 +20,7 @@ jobs:
       POSTGRES_URL: ''
       PGHOST: ''
       METADRIVE_DATABASE_URL: ''
-      METADRIVE_DATA_PATH: ${{ runner.temp }}/agent5-app-exchange-isolated.json
+      METADRIVE_DATA_PATH: /tmp/agent5-app-exchange-isolated.json
       CI: 'true'
     steps:
       - name: Checkout selected revision
