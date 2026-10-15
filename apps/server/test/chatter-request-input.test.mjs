@@ -1,6 +1,6 @@
 import {strict as assert} from 'node:assert';
 import test from 'node:test';
-import {sanitizeChatterCallerInput} from '../src/modules/flows/chatter-request-input.mjs';
+import {sanitizeChatterCallerInput, trustedChatterExecutionFlow} from '../src/modules/flows/chatter-request-input.mjs';
 
 test('legacy untrusted Chatter target record cannot override server-derived target',()=>{
  const submitted={ConversationId:'account-contact',TargetRecordId:'forged',Body:'hi'};
@@ -12,4 +12,18 @@ test('legacy untrusted Chatter target record cannot override server-derived targ
 test('non-Chatter Flow inputs are unchanged',()=>{
  const values={TargetRecordId:'own-input'};
  assert.strictEqual(sanitizeChatterCallerInput('ANOTHER_FLOW',values),values);
+});
+
+test('trusted protected Flow variables remain private in published metadata',()=>{
+ const published={apiName:'CHATTER_SEND_MESSAGE',resources:[
+  {name:'Body',availableForInput:true},
+  {name:'AuthorisedCredentialId',availableForInput:false},
+  {name:'AuthorisedMessagePath',availableForInput:false}
+ ]};
+ const trusted=trustedChatterExecutionFlow(published,{Body:'hello',AuthorisedCredentialId:'server-derived',AuthorisedMessagePath:'messages'});
+ assert.equal(published.resources[1].availableForInput,false);
+ assert.equal(trusted.resources[1].availableForInput,true);
+ assert.equal(trusted.resources[2].availableForInput,true);
+ const noOverride=trustedChatterExecutionFlow(published,{Body:'hello'});
+ assert.equal(noOverride.resources[1].availableForInput,false);
 });
