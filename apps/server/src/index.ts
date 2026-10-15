@@ -4607,7 +4607,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     const developer: LocalUser = {
       id: randomUUID(), tenantId, name: 'Developer', email: developerEmail,
       passwordSalt: developerCredentials.salt, passwordHash: developerCredentials.hash,
-      role: 'System Administrator', permissionSetIds: ['system-administrator'],
+      role: 'System Administrator', permissionSetIds: ['system-administrator','oneengine-tenant-developer'],
       permissionSetGroupIds: [], disabled: true, createdAt
     };
     const tenantSeed = initializeTenantCore(defaultTenantData(admin), {authorizedUserIds:[admin.id], trustedProvisioningDefaults:true});
@@ -7856,9 +7856,7 @@ function persistTenantRecords(tenantId: string, tenant: TenantData): void {
   for (const [key, sequence] of Object.entries(currentSequences)) {
     autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
   }
-  const updatedTenant = reconcileInstalledAppSeeds(
-    { ...tenant, autoNumberSequences }, installableAppCatalog, tenantId
-  ) as TenantData;
+  const updatedTenant = reconcileInstalledAppSeeds({ ...tenant, autoNumberSequences }, installableAppCatalog, tenantId) as TenantData;
   const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
     updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
   const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
@@ -8646,7 +8644,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       jsx: z.string().min(1),
       css: z.string().min(1),
       version: z.number().int().min(1).default(1)
-    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')));
+    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''))).concat(installableAppCatalog.coreComponents.map((c: any)=>({apiName:c.apiName,label:c.label,description:c.description,surfaces:c.surfaces,resize:c.resize,jsx:c.jsxFile,css:c.cssFile,version:c.version})));
     const imported: LibraryComponent[] = [];
     const trustedUpgrades = new Map<string, LibraryComponent>();
     for (const entry of manifest) {
@@ -8689,7 +8687,7 @@ function syncBundledLibraryComponents(): Promise<void> {
         surfaces: entry.surfaces.filter(surface=>surface!=='platform'),
         resize: entry.resize,
         jsxSource,
-        cssSource
+        cssSource, propertyDefinitions: installableAppCatalog.coreComponents.find((c: {apiName:string}) => c.apiName === entry.apiName)?.propertyDefinitions
       });
       const compiled = await transform(input.jsxSource, {
         loader: 'tsx',

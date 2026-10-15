@@ -1,9 +1,15 @@
 import pg from 'pg';
+import {loadAppSeedCatalog} from './seeders/catalog.mjs';
+import {recordInstalledAppPackageVersions} from './seeders/registry.mjs';
+import type {SeedSqlClient} from './seeders/registry.mjs';
 import { readRelationalState, writeRelationalState, type RelationalSnapshot } from './relational-runtime.mjs';
 import { readNormalizedState, writeNormalizedState, type NormalizedSnapshot } from './normalized-state-runtime.mjs';
 import {synchronizeTypedRecords,verifyTypedRecords} from './normalized-typed-records.mjs';
 
 const { Pool } = pg;
+const sqlAppSeedCatalog=loadAppSeedCatalog();
+const commitInstalledAppVersions=(client: SeedSqlClient, state: unknown) =>
+  recordInstalledAppPackageVersions(client, state, sqlAppSeedCatalog);
 // Explicit typed mode: SQL-only canonical metadata + transactional typed physical records.
 // Current production remains unchanged until verified offline cutover.
 export const persistenceMode = process.env.METADRIVE_PERSISTENCE_MODE ?? 'jsonb';
@@ -195,12 +201,14 @@ async function drainStateWrites(): Promise<void> {
           pool as unknown as Parameters<typeof writeNormalizedState>[0],
           JSON.parse(payload), normalizedSnapshot,
           persistenceMode === 'typed' ? synchronizeTypedRecords : null,
-          true // queue has already JSON.parse'd this payload
+          true, // queue has already JSON.parse'd this payload
+          commitInstalledAppVersions
         );
       } else if (persistenceMode === 'relational') {
         if (!relationalSnapshot) throw new Error('Relational database must be verified before first write');
         relationalSnapshot = await writeRelationalState(
-          pool as unknown as Parameters<typeof writeRelationalState>[0], JSON.parse(payload), relationalSnapshot
+          pool as unknown as Parameters<typeof writeRelationalState>[0], JSON.parse(payload), relationalSnapshot,
+          commitInstalledAppVersions
         );
       } else {
         await ensureLegacySqlSessions();
@@ -218,6 +226,7 @@ async function drainStateWrites(): Promise<void> {
                 'expiresAt' - 'usedAt' - 'revokedAt'
             FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS rows(item,ordinality)`,
             [JSON.stringify(newestSessionsForCommit)]);
+          await commitInstalledAppVersions(client,JSON.parse(payload));
           await client.query('COMMIT');
         } catch (error) {
           await client.query('ROLLBACK');

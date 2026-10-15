@@ -5,7 +5,7 @@ Migration owner: Codex, existing UK Off Licence POS completion (PR #451).
 The server entrypoint started at 13,515 lines for this work. The object and field
 permission evaluators are extracted into `record-write-policy.ts`; the entrypoint
 shrinks while retaining its existing dependency injection contracts. New modules
-remain responsibility-based.
+remain below 1,000 lines.
 
 The policy is generic SQL-backed Object metadata. It adds restrictions to the
 central object/field/record checks and never grants permissions. Only server-created

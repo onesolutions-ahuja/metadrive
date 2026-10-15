@@ -250,6 +250,10 @@ export function useSetupMetadata(ctx: any) {
         setCanManageFlows(sessionPayload.user.permissions.includes('flows:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
         setCanManageApps(sessionPayload.user.permissions.includes('metadata:write'));
+        // Direct Builder/Admin URLs also require live read grants. Do not rely on
+        // the fast-entry bootstrap, which only runs for ordinary landing routes.
+        setCanReadMetadata(sessionPayload.user.permissions.includes('metadata:read') || sessionPayload.user.permissions.includes('metadata:write'));
+        setCanReadSecurity(sessionPayload.user.permissions.includes('security:read') || sessionPayload.user.permissions.includes('security:manage'));
         setCurrentFieldAccess(sessionPayload.user.fieldAccess);
         setCurrentRecordTypeAccess(sessionPayload.user.recordTypeAccess);
         setCanCreateDashboards(dashboardPayload.canCreate);

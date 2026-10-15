@@ -32,7 +32,7 @@ test('agent2: app entrypoint never installs or licenses packages automatically',
  const registry=createTenantSeedRegistry({coreTemplate,appCatalog});
  let applied=false;
  const {client}=fakeTransaction();
- await assert.rejects(registry.versionedApp(client,{
+ await assert.rejects(async()=>registry.versionedApp(client,{
   tenantId:'t',appKey:'unknown',version:'1',apply:async()=>{applied=true;}
  }),/not registered/);
  assert.equal(applied,false);

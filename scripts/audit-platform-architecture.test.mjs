@@ -8,7 +8,7 @@ import {
   sourceReferences, buildInventory
 } from './audit-platform-architecture.mjs';
 
-test('line count inventory includes final newline', () => {
+test('line count matches policy guard including final newline', () => {
   assert.equal(countLines(''), 0);
   assert.equal(countLines('one'), 1);
   assert.equal(countLines('one\n'), 1);
@@ -67,7 +67,7 @@ test('inventory is deterministic and does not read checked-in tenant state', () 
       objects: [{ apiName: 'Account', fields: [] }], pages: [], flows: []
     }),
     'apps/server/data/platform-state.json': 'not even valid JSON; must not parse',
-    'apps/server/src/index.ts': 'line\n'.repeat(4001)
+    'apps/server/src/index.ts': 'line\n'.repeat(1001)
   };
   try {
     for (const [path, content] of Object.entries(entries)) {
@@ -78,7 +78,7 @@ test('inventory is deterministic and does not read checked-in tenant state', () 
     const result = buildInventory({ root, paths });
     assert.equal(result.sourceFileCount, 5);
     assert.equal(result.oversized.length, 1);
-    assert.equal(result.oversized[0].lines, 4001);
+    assert.equal(result.oversized[0].lines, 1001);
     assert.equal(result.systemWorkspaces.length, 2);
     assert.deepEqual(result.seedMetadata.objects, ['Account']);
     assert.equal(result.platformCoreBusinessReferences.length, 1);

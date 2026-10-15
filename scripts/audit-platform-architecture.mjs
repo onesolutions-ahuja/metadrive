@@ -6,7 +6,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const MAX_LINES = 4000;
+export const MAX_LINES = 1000;
 const SOURCE_EXTENSION = /\.(?:[cm]?[jt]sx?|css|scss|less|vue|svelte|py|go|rs|java|kt|swift|cs|c|cc|cpp|h|hpp|php|rb|sh|sql)$/i;
 const APP_SOURCE = /^apps\/web\/src\/custom-components\//;
 const CORE_SOURCE = /^apps\/(?:web|server)\/src\//;

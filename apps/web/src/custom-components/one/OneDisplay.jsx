@@ -1,0 +1,17 @@
+
+function css(p){const s={'--one-accent':p.accentColor||'#3176cc','--one-radius':Math.max(0,Number(p.radius??16))+'px','--one-pad':Math.max(0,Number(p.padding??16))+'px','--one-gap':Math.max(0,Number(p.gap??12))+'px','--one-blur':Math.min(20,Math.max(0,Number(p.glassBlur??8)))+'px',width:p.width||'100%',opacity:Math.max(0,Math.min(100,Number(p.opacity??100)))/100}; if(p.backgroundColor)s['--one-bg']=p.backgroundColor;if(p.textColor)s['--one-fg']=p.textColor;if(p.borderColor)s['--one-border']=p.borderColor;if(p.height&&p.height!=='auto')s.height=p.height;if(p.shadow==='none')s['--one-shadow']='none';return {className:'one-ui one-ui--'+(p.theme||'glass')+' one-ui--'+(p.size||'medium')+(p.hideOnPhone?' one-hidden-mobile':''),style:s};}
+const text=v=>v==null?'':typeof v==='object'?JSON.stringify(v):String(v);
+export default function OneDisplay(p){
+ const kind=p.kind||'Text',root=css(p);
+ const textContent=p.text??p.value??p.label??'';
+ if(kind==='Text')return <div {...root} style={{...root.style,fontSize:Math.max(10,Number(p.fontSize)||16),whiteSpace:'pre-wrap'}}>{text(textContent)||'Text'}</div>;
+ if(kind==='Image'){const src=p.src||p.imageUrl;const safe=typeof src==='string'&&/^https:\/\//i.test(src);return <figure {...root} style={{...root.style,margin:0}}>{safe?<img src={src} alt={p.alt||p.label||''} loading="lazy" className="one-file-preview" style={{width:'100%',objectFit:p.fit||'contain'}}/>:<div className="one-item one-empty">Image not configured</div>}{p.caption&&<figcaption className="one-muted">{p.caption}</figcaption>}</figure>;}
+ if(kind==='Icon')return <span {...root} role="img" aria-label={p.label||'Icon'} style={{...root.style,display:'inline-block',width:'auto',fontSize:p.fontSize||22}}>{p.icon||'★'}</span>;
+ if(kind==='Avatar'){const name=text(p.name||p.label||'User');const safe=typeof p.src==='string'&&/^https:\/\//i.test(p.src);return <div {...root} style={{...root.style,width:'auto',display:'inline-flex',alignItems:'center',gap:8}}><span className="one-item" style={{display:'inline-grid',placeItems:'center',width:44,height:44,borderRadius:'50%',overflow:'hidden',padding:0}}>{safe?<img src={p.src} alt={name} width="44" height="44" style={{objectFit:'cover'}}/>:name.slice(0,2).toUpperCase()}</span><span>{name}</span></div>}
+ if(kind==='Badge')return <span {...root} style={{...root.style,width:'auto',display:'inline-flex'}}><span className="one-badge" role="status">{text(p.text||p.label||p.value||'Status')}</span></span>;
+ if(kind==='Divider')return <div {...root} role="separator"><hr style={{border:0,borderTop:'1px solid var(--one-border)',margin:'8px 0'}}/></div>;
+ if(kind==='Alert')return <aside {...root} role={p.tone==='danger'?'alert':'status'}><div className="one-surface one-alert"><strong>{p.title||'Notice'}</strong><div>{text(p.message||p.description||'')}</div></div></aside>;
+ if(kind==='Progress'){const max=Math.max(1,Number(p.max)||100),value=Math.min(max,Math.max(0,Number(p.value)||0));return <div {...root}><div className="one-row" style={{justifyContent:'space-between'}}><span>{p.label||'Progress'}</span><span>{Math.round(100*value/max)}%</span></div><progress className="one-progress" max={max} value={value} aria-label={p.label||'Progress'} /></div>}
+ if(kind==='Metric')return <div {...root}><div className="one-surface"><div className="one-muted">{p.label||'Total'}</div><div className="one-metric">{text(p.value??'0')}</div>{p.subtitle&&<div className="one-muted">{p.subtitle}</div>}</div></div>;
+ return null;
+}

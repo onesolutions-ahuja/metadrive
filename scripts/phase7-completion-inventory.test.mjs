@@ -21,7 +21,7 @@ test('phase 7 flags oversized legacy files instead of silently excluding them',(
  const dir=mkdtempSync(join(tmpdir(),'metadrive-phase7-'));
  try{
   mkdirSync(join(dir,'apps/server/src'),{recursive:true});
-  writeFileSync(join(dir,'apps/server/src/legacy.ts'),'const name="Kiosk";\n'.repeat(4001));
+  writeFileSync(join(dir,'apps/server/src/legacy.ts'),'const name="Kiosk";\n'.repeat(1001));
   const rows=inventoryTrackedSources({root:dir,tracked:['apps/server/src/legacy.ts']});
   assert.equal(rows[0].oversized,true);
   assert.equal(summarizeCompletionInventory(rows).platformBusinessReferences.length,1);

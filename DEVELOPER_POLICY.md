@@ -38,6 +38,8 @@ Use reusable schemas and property controls for style, layout, responsiveness, vi
 ## 12. Mandatory architecture and test verification
 Before completion or merge, inspect implementation for reuse, metadata usage, central RBAC, seeders/migrations, dependency safety, and regressions. Run applicable tests and CI, report actual results, and do not declare work complete when required verification is missing. Review the full requested scope; do not silently leave partial work.
 
+## 13. Maximum 1,000 lines per code file
+Every newly added code file and every existing code file originally at most 1,000 lines must remain **at most 1,000 lines**. Existing oversized legacy files may be edited during the agreed phased extraction **only without increasing their base-branch line count**, with a documented migration owner and progressive reduction. New extracted modules must respect the limit. CI rejects newly oversized files and growth of legacy files. This is an explicit, temporary owner-approved transition, not a permanent exemption.
 
 ## Mandatory implementation sequence
 1. Inspect architecture, registered metadata, security controls, and existing reusable utilities.
@@ -45,10 +47,11 @@ Before completion or merge, inspect implementation for reuse, metadata usage, ce
 3. Configure metadata-driven Objects, Actions, Flows, Components, navigation and properties.
 4. Add versioned idempotent seeders, including initial OneEngine RBAC grants.
 5. Enforce centralised server-side RBAC and tenant isolation.
-6. Organise code into cohesive modules with clear responsibilities.
+6. Keep code files at or below 1,000 lines, splitting by responsibility.
 7. Run relevant tests and CI; verify complete scope and report actual status.
 
 ## Enforcement
 - `AGENTS.md` directs coding agents to this full policy.
-- `.github/workflows/developer-policy.yml` runs architecture and metadata consistency tests.
-- Architecture inventory informs modularisation review, not a fixed per-file line limit. Reviewers and agents must verify rules 1–12.
+- `.github/workflows/developer-policy.yml` runs the changed-code-file size guard on PRs and pushes.
+- The line guard can detect file length, but cannot prove architectural correctness. Reviewers and development agents MUST verify rules 1–12. Do not claim CI automatically validates metadata-driven architecture or RBAC semantics.
+- Historic oversized files are tracked migration debt. During phased extraction CI permits edits only without net growth beyond the base-branch size and with an assigned migration owner.
