@@ -54,7 +54,10 @@ export default function RegisteredComponent({ definition, props, layoutTranspare
   const primitiveCheck = primitive ? validatePrimitiveMetadata(primitive) : null;
   if (primitiveCheck && !primitiveCheck.valid) return <div className="registered-component-error" role="alert">Invalid primitive metadata: {primitiveCheck.errors.join('; ')}</div>;
   const accessibility = primitive ? primitiveAccessibilityProps(primitive) : {};
-  if (definition.trustedBundled !== true) return <div {...accessibility}><ComponentSandbox definition={definition} props={effectiveProps} /></div>;
+  if (definition.trustedBundled !== true) return <div {...accessibility}
+    style={effectiveProps.fillRegion === true ? {height:'100%',minHeight:0,minWidth:0} : undefined}>
+    <ComponentSandbox definition={definition} props={effectiveProps} />
+  </div>;
   return <div {...accessibility} style={layoutTransparent?{display:'contents'}:undefined}><ComponentRenderBoundary key={`${definition.apiName}-${definition.version}`}>
     <RegisteredComponentBody definition={definition} props={effectiveProps} layoutTransparent={layoutTransparent} />
   </ComponentRenderBoundary></div>;

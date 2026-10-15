@@ -1,0 +1,44 @@
+name: Kiosk Actual Chromium Visual Acceptance
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/RegisteredComponent.tsx'
+      - 'apps/web/src/ComponentSandbox.tsx'
+      - 'apps/web/src/pageRuntimeViews.tsx'
+      - 'apps/web/src/TemplatePageRuntimeLayout.tsx'
+      - 'scripts/kiosk-real-browser-acceptance.mjs'
+      - 'scripts/kiosk-phase4-components.mjs'
+      - 'scripts/kiosk-phase4-pages.mjs'
+      - '.github/workflows/kiosk-real-browser.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  kiosk-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install isolated Chromium
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Render real editable commerce components with demo products
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+          KIOSK_EVIDENCE_DIR: ${{ github.workspace }}/kiosk-evidence
+        run: node scripts/kiosk-real-browser-acceptance.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kiosk-chromium-screenshots
+          path: kiosk-evidence/
+          if-no-files-found: warn

@@ -254,11 +254,11 @@ const cardCss=`
 const footerSource=`
 
 export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',currencySymbol='£',
- pageState={},refreshToken=0,emptyText='Your basket is empty',onAction,sessionId}){
+ pageState={},viewRevision=0,emptyText='Your basket is empty',onAction,sessionId}){
  const [data,setData]=React.useState({Basket:null,Lines:[]}),[busy,setBusy]=React.useState(''),[error,setError]=React.useState('');
  const opened=pageState.basketOpen===true;
  const load=async()=>{const response=await onAction({event:'load',value:{}});setData({Basket:response?.outputs?.Basket||null,Lines:response?.outputs?.Lines||[]})};
- React.useEffect(()=>{let current=true;(async()=>{try{const r=await onAction({event:'load',value:{}});if(current)setData({Basket:r?.outputs?.Basket||null,Lines:r?.outputs?.Lines||[]})}catch(e){if(current)setError(String(e))}})();return()=>{current=false}},[sessionId,refreshToken]);
+ React.useEffect(()=>{let current=true;(async()=>{try{const r=await onAction({event:'load',value:{}});if(current)setData({Basket:r?.outputs?.Basket||null,Lines:r?.outputs?.Lines||[]})}catch(e){if(current)setError(String(e))}})();return()=>{current=false}},[sessionId,viewRevision]);
  const lines=data.Lines||[];
  const total=Number(data.Basket?.Total||lines.reduce((sum,item)=>sum+Number(item.LineTotal||0),0));
  const act=async(event,value={})=>{if(busy)return;setBusy(event);setError('');
@@ -268,7 +268,7 @@ export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',c
   }catch(e){setError(e?.message||String(e))}finally{setBusy('')}
  };
  return <div style={{width:'100%',height:'100%',position:'relative',fontFamily:'Arial,sans-serif'}}>
-  {opened&&<div style={{position:'absolute',inset:'0 0 83px 0',background:'rgba(0,0,0,.55)',display:'flex',alignItems:'end',justifyContent:'center',boxSizing:'border-box'}}>
+  {opened&&<div style={{position:'fixed',inset:'0 0 83px 0',background:'rgba(0,0,0,.55)',display:'flex',alignItems:'end',justifyContent:'center',boxSizing:'border-box'}}>
    <section role='dialog' aria-modal='true' aria-label='Your basket'
     style={{background:'#fff',padding:22,width:'min(740px,100%)',maxHeight:'90%',overflowY:'auto',boxSizing:'border-box',borderRadius:'14px 14px 0 0'}}>
     <header style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -288,7 +288,7 @@ export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',c
     {error&&<p role='alert' style={{color:'#b11'}}>{error}</p>}
    </section>
   </div>}
-  <footer style={{position:'absolute',bottom:0,left:0,right:0,height:83,boxSizing:'border-box',
+  <footer style={{position:'fixed',bottom:0,left:0,right:0,height:83,boxSizing:'border-box',
    display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'8px 18px',
    borderTop:'1px solid #e5e5e5',background:'#fff'}}>
    <button type='button' onClick={()=>onAction({event:opened?'closeBasket':'openBasket',value:{}})}
