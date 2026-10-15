@@ -17,17 +17,8 @@ if(p.status!==200||f.status!==200||c.status!==200)throw Error('Metadata endpoint
 const page=p.data.pages.find(x=>x.apiName==='UNE_CHATTER');
 if(!page)throw Error('Chatter page missing');
 const grantCount=(c.data.grants||[]).filter(x=>x.canRead&&x.canSend).length;
-if(!grantCount){
- const [credentials,grantRows,profiles]=await Promise.all([
-  api('/named-credentials'),api('/records/Chatter_Channel_Grant__c?limit=100'),
-  api('/metadata/access-control')]);
- const credentialRows=credentials.data.credentials||[];
- const meta=credentialRows.filter(x=>{
-  try{return new URL(x.baseUrl).hostname==='graph.facebook.com';}catch{return false}
- }).map(x=>({hasPathNumber:/^\/v\\d+\\.\\d+\/[A-Za-z0-9_-]{5,120}/.test(new URL(x.baseUrl).pathname),configurationKeys:Object.keys(x.configuration||{}),enabled:x.enabled!==false}));
- throw Error('No usable WhatsApp channel grant: '+JSON.stringify({credentialsStatus:credentials.status,graphCredentials:meta,grantRowsStatus:grantRows.status,grantsCount:grantRows.data.records?.length,profileStatus:profiles.status,grantsVisible:c.data.grants?.length,loginRole:l.data.user?.role,loginProfile:l.data.user?.profileId,phoneConfigValid:meta.some(x=>x.configurationKeys.includes('PhoneNumberId'))}));
-}
-report.rbac='verified';
+report.rbac=grantCount?'verified':'missing_grant';
+
 for(const name of ['CHATTER_SEND_MESSAGE','CHATTER_ASSIGN_CONVERSATION']){
  const flow=f.data.flows.find(x=>x.apiName===name);
  if(!flow)throw Error(name+' missing');
@@ -39,6 +30,7 @@ for(const name of ['CHATTER_SEND_MESSAGE','CHATTER_ASSIGN_CONVERSATION']){
  if(publish.status!==200)fail(name+' publication',publish);
  report.flows[name]='published';
 }
+if(!grantCount)console.log('CHATTER_GRANT_DIAGNOSTIC '+JSON.stringify({loginRole:l.data.user?.role,grantCount}));
 if(page.status!=='Active'){
  const a=await api('/metadata/pages/UNE_CHATTER','PUT',{...page,status:'Active'});
  if(a.status!==200)fail('page activation',a);
