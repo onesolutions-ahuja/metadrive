@@ -32,8 +32,10 @@ export default function RecordCatalogCart(props) {
   const hasAgeRestricted = cart.some(item => item.ageRestricted);
 
   const publish = (nextCart, status = 'basket', changeDueMinor = 0) => {
+    const displayStatus = status === 'basket' && nextCart.some(item => item.ageRestricted)
+      ? 'staff-approval-required' : status;
     const snapshot = {
-        status,
+        status: displayStatus,
         items: nextCart.map(item => ({
           name: item.name,
           quantity: item.quantity,
