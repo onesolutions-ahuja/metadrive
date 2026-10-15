@@ -8,7 +8,7 @@ import {transformSync} from 'esbuild';
 import {loadAppSeedCatalog} from '../src/seeders/catalog.mjs';
 import {ensureBundledAppComponents} from '../src/bundled-app-components.mjs';
 
-const root=fileURLToPath(new URL('../../web/src/custom-components/',import.meta.url));
+const root=resolve(fileURLToPath(new URL('../../web/src/custom-components/',import.meta.url)));
 const catalog=loadAppSeedCatalog();
 const expected={
   Layout:8,Display:9,Inputs:7,Actions:5,Data:11
