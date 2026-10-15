@@ -89,7 +89,14 @@ export function initializeTenantCore(template, {authorizedUserIds=[]}={}) {
   const provisioned=allowed.size>0 ? Object.fromEntries(initialKeys
     .filter(key=>Object.hasOwn(template,key))
     .map(key=>[key,structuredClone(template[key])])) : seed;
+  // Preserve only the server-generated, secret-free WhatsApp placeholder for
+  // freshly provisioned tenants; never inherit real tenant credentials.
+  const placeholders=allowed.size>0 ? (template.namedCredentials??[])
+    .filter(item=>item.name==='WhatsApp_Dummy' && item.authType==='None'
+      && /^https:\/\/graph\.facebook\.com\/v\d+\.\d+\/000000000000000\/?$/.test(item.baseUrl??''))
+    .map(item=>structuredClone(item)) : [];
   return {...seed,...provisioned,
+    namedCredentials:placeholders,
     users:[],
     accessControl:{
       ...seed.accessControl,
