@@ -32,9 +32,14 @@ export function chatterRecordVisible(tenant:Tenant,principal:Principal,record:Ro
   if(!account) return false;
   const scope = accountGrants(tenant,principal);
   const operation:ChatterOperation = access==='Read'?'read':'assign';
+  const contact=text(record.Direction__c==='Incoming'?record.From_Number__c:record.To_Number__c);
+  if (!contact) return false;
+  const latestAssigned=(tenant.records.Communication_Records__c??[])
+    .filter(row=>linked(row,account,contact)&&text(row.Assigned_User__c))
+    .sort((a,b)=>text(b.Occurred_At__c).localeCompare(text(a.Occurred_At__c)))[0];
   return canAccessChatterConversation(scope,{
     tenantId:principal.tenantId,channelAccountId:account,
-    assignedUserId:text(record.Assigned_User__c) || null
+    assignedUserId:text(latestAssigned?.Assigned_User__c) || null
   },operation);
 }
 
