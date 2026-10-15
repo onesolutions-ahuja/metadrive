@@ -93,3 +93,15 @@ test('AppExchange marketplace search is a separate protected editable control',(
   assert.ok(source.includes('slotKey="'+slot+'"'),'Missing app-exchange slot '+slot);
  assert.ok(protectedWorkspacePageSlots.rbac.filter(key=>key.startsWith('field-')).length>=30);
 });
+
+test('protected system metadata exposes each credential, approval and automation editor independently',()=>{
+ for(const [workspace,file] of [
+  ['named-credentials','NamedCredentials.tsx'],
+  ['approval-processes','ApprovalProcessManager.tsx'],
+  ['automation-settings','settingsWorkspaceViews.tsx']
+ ] as const){
+  const source=read(file);
+  for(const slot of protectedWorkspacePageSlots[workspace].filter(key=>key.startsWith('field-')))
+   assert.ok(source.includes('slotKey="'+slot+'"'),workspace+' '+slot);
+ }
+});

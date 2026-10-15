@@ -1,3 +1,4 @@
+import {PlatformPageSlot} from './PlatformPageSlot';
 import { useEffect, useState } from 'react';
 import { Plus, Save, Trash2 } from 'lucide-react';
 import type {
@@ -102,15 +103,15 @@ export default function ApprovalProcessManager({
       </section>
       <section className="surface approval-process-editor" aria-label="Approval process details">
         <div className="section-heading"><h2>{isNew ? 'New Approval Process' : 'Process Details'}</h2>{!isNew && canManage && <button className="row-menu" type="button" aria-label="Delete approval process" onClick={() => void remove()}><Trash2 size={15} /></button>}</div>
-        <label className="form-label">Process Label<input className="form-control" value={label} disabled={!canManage || saving} onChange={(event) => {
+        <PlatformPageSlot slotKey="field-approval-01"><label className="form-label">Process Label<input className="form-control" value={label} disabled={!canManage || saving} onChange={(event) => {
           const nextLabel = event.target.value;
           setLabel(nextLabel);
           if (isNew) setApiName(apiNameFromLabel(nextLabel));
-        }} /></label>
-        <label className="form-label">Process API Name<input className="form-control" value={apiName} disabled={!canManage || saving || !isNew} onChange={(event) => setApiName(event.target.value)} /></label>
-        <label className="form-label">Object<select className="form-control" value={objectApiName} disabled={!canManage || saving} onChange={(event) => setObjectApiName(event.target.value)}><option value="">Select an object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label>
-        <label className="form-label">Approver Users<select className="form-control" multiple size={Math.min(7, Math.max(3, users.length))} value={approverUserIds} disabled={!canManage || saving} onChange={(event) => setApproverUserIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.username}</option>)}</select></label>
-        <label className="checkbox-row"><input type="checkbox" checked={active} disabled={!canManage || saving} onChange={(event) => setActive(event.target.checked)} />Active</label>
+        }} /></label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-approval-02"><label className="form-label">Process API Name<input className="form-control" value={apiName} disabled={!canManage || saving || !isNew} onChange={(event) => setApiName(event.target.value)} /></label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-approval-03"><label className="form-label">Object<select className="form-control" value={objectApiName} disabled={!canManage || saving} onChange={(event) => setObjectApiName(event.target.value)}><option value="">Select an object</option>{objects.filter((object) => object.apiName !== 'User').map((object) => <option key={object.apiName} value={object.apiName}>{object.label}</option>)}</select></label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-approval-04"><label className="form-label">Approver Users<select className="form-control" multiple size={Math.min(7, Math.max(3, users.length))} value={approverUserIds} disabled={!canManage || saving} onChange={(event) => setApproverUserIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}>{users.map((user) => <option key={user.id} value={user.id}>{user.name} · {user.username}</option>)}</select></label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-approval-05"><label className="checkbox-row"><input type="checkbox" checked={active} disabled={!canManage || saving} onChange={(event) => setActive(event.target.checked)} />Active</label></PlatformPageSlot>
         <p className="settings-panel-copy">The first assigned approver to approve or reject resolves the submission. Flow runtime verifies the submitter can edit the record and every approver can read it.</p>
         <button className="btn btn-brand" type="button" disabled={!canManage || saving} onClick={() => void save()}><Save size={14} />{saving ? 'Saving…' : 'Save Approval Process'}</button>
       </section>
