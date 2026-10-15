@@ -30,7 +30,7 @@ test('admin slot presentation uses the existing workspace and RBAC instead of an
  assert.ok(surface.includes('Array.isArray(item.requiredPermissions)&&item.requiredPermissions.length>0'));
  for(const [file,keys] of [
   ['AppManager.tsx',['identity','assignments','navigation-items','actions']],
-  ['AppExchange.tsx',['marketplace']],
+  ['AppExchange.tsx',['marketplace-search','marketplace-catalog']],
   ['TenantManagement.tsx',['directory','tenant-details']]
  ] as const)for(const key of keys)assert.ok(read(file).includes('slotKey="'+key+'"'),file+' '+key);
 });
