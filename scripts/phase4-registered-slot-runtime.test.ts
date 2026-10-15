@@ -23,6 +23,7 @@ const render=(components=[])=>renderToStaticMarkup(React.createElement(PlatformP
 test('approved system slots host interactive children through trusted published component',()=>{
  const html=render([definition]);
  assert.match(html,/data-hosted-by="registered-component"/);
+ assert.ok((html.match(/display:contents/g)||[]).length>=2,'Registered host must not add grid/flex wrappers');
  assert.match(html,/Save configuration/);
  assert.match(html,/data-platform-slot="identity"/);
 });
