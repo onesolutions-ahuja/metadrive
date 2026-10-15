@@ -2,6 +2,18 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 const email=process.env.METADRIVE_TEST_EMAIL,password=process.env.METADRIVE_TEST_PASSWORD;
 if(!email||!password)throw Error('CI credentials required');
+const base='https://metadrive-production.up.railway.app/api';
+const signed=await fetch(base+'/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password})});
+const identity=await signed.json();
+assert.equal(signed.status,200);
+const headers={authorization:'Bearer '+identity.access_token};
+const pagesResult=await fetch(base+'/metadata/pages',{headers});
+const pages=await pagesResult.json();
+const chatter=(pages.pages||[]).find(p=>p.apiName==='UNE_CHATTER');
+const c=(chatter?.components||[]).find(c=>c.type==='Custom:ChatterInbox');
+const accessResult=await fetch(base+'/chatter/access',{headers});
+const access=await accessResult.json();
+console.log('CHATTER_BINDING_DIAGNOSTIC '+JSON.stringify({pageStatus:chatter?.status,pageType:chatter?.pageType,hasComponent:!!c,componentPresenter:c?.properties?.recordPresenterApiName,componentObject:c?.properties?.objectApiName,componentCanSend:c?.properties?.canSend,accessStatus:accessResult.status,grants:(access.grants||[]).length,sendGrants:(access.grants||[]).filter(g=>g.canSend).length}));
 const browser=await chromium.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:900}});
 try{
@@ -14,6 +26,7 @@ try{
  await page.locator('#login-email').waitFor({state:'hidden',timeout:60000});
  await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
  await page.locator('.md-chatter').waitFor({state:'visible',timeout:60000});
+ console.log('CHATTER_UI_DIAGNOSTIC '+JSON.stringify({newChatDisabled:await page.locator('.md-chatter-new').isDisabled(),accountOptions:await page.getByRole('combobox',{name:'WhatsApp account'}).locator('option').count(),noAccessText:await page.getByText('No WhatsApp channel access',{exact:false}).count()}));
  await page.waitForFunction(()=>{const button=document.querySelector('.md-chatter-new');return button&&!button.disabled;},undefined,{timeout:80000});
  const account=page.getByRole('combobox',{name:'WhatsApp account'});
  const count=await account.locator('option').count();
