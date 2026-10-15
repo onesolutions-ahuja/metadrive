@@ -197,6 +197,14 @@ import {
 
 
 
+/** Respect administrator-provided labels; humanise only unconfigured API-name fallbacks. */
+function displayFieldLabel(field: FieldMetadata): string {
+  const label = field.label?.trim();
+  if (label && label !== field.apiName) return label;
+  const source = (label || field.apiName).replace(/__c$/i, '');
+  return source.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z])([A-Z][a-z])/g, '$1 $2').replace(/_/g, ' ').trim();
+}
+
 export function RecordFormDialog({
   object,
   objects,
@@ -325,7 +333,7 @@ export function RecordFormDialog({
     if (dataType === 'checkbox') return <div key={field.apiName}>
       <label className="record-checkbox">
         <input {...common} type="checkbox" checked={Boolean(rawValue ?? false)} onChange={(event) => changeFieldValue(field.apiName, event.target.checked)} />
-        <span>{field.label}{field.required && <b aria-hidden="true"> *</b>}</span>
+        <span>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}</span>
       </label>
       {helpText}
     </div>;
@@ -341,18 +349,18 @@ export function RecordFormDialog({
         onChange(field.apiName, next.latitude == null && next.longitude == null ? null : next);
       };
       return <fieldset className="form-label" key={field.apiName}>
-        <legend>{field.label}{field.required && <b aria-hidden="true"> *</b>}</legend>
+        <legend>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}</legend>
         <div className="form-options">
           <label className="form-label">Latitude
             <input className="form-control" type="number" min="-90" max="90" step="any"
-              aria-label={`${field.label} latitude`} required={field.required}
+              aria-label={`${displayFieldLabel(field)} latitude`} required={field.required}
               disabled={saving || !fieldAccess[`${object.apiName}.${field.apiName}`]?.edit}
               value={coordinates.latitude == null ? '' : String(coordinates.latitude)}
               onChange={(event) => updateCoordinate('latitude', event.target.value)} />
           </label>
           <label className="form-label">Longitude
             <input className="form-control" type="number" min="-180" max="180" step="any"
-              aria-label={`${field.label} longitude`} required={field.required}
+              aria-label={`${displayFieldLabel(field)} longitude`} required={field.required}
               disabled={saving || !fieldAccess[`${object.apiName}.${field.apiName}`]?.edit}
               value={coordinates.longitude == null ? '' : String(coordinates.longitude)}
               onChange={(event) => updateCoordinate('longitude', event.target.value)} />
@@ -370,19 +378,19 @@ export function RecordFormDialog({
       const selectedRecord = options.find((item) => item.Id === value);
       const selectedMatchesFilters = filteredOptions.some((item) => item.Id === value);
       const selectedCompactFields = lookupCompactFields(field);
-      return <div className="form-label" key={field.apiName}><span>{field.label}{field.required && <b aria-hidden="true"> *</b>}</span>
+      return <div className="form-label" key={field.apiName}><span>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}</span>
         <div className="lookup-picker-control">
-          <input className="form-control" id={common.id} name={common.name} aria-label={field.label}
+          <input className="form-control" id={common.id} name={common.name} aria-label={displayFieldLabel(field)}
             value={selectedRecord ? lookupRecordLabel(field, selectedRecord) : ''}
             placeholder={targetObject ? `Search ${targetObject.label}…` : 'Related object unavailable'}
             readOnly aria-readonly="true" required={field.required && !value} disabled={common.disabled}
             onClick={() => { if (!common.disabled && targetObject) openLookupDialog(field); }} />
           <button type="button" className="btn lookup-picker-button" disabled={common.disabled || !targetObject}
-            aria-label={`Search ${targetObject?.label ?? 'related records'} for ${field.label}`}
+            aria-label={`Search ${targetObject?.label ?? 'related records'} for ${displayFieldLabel(field)}`}
             onClick={() => { if (targetObject) openLookupDialog(field); }}>
             <Search size={14} />Search
           </button>
-          {value && !common.disabled && <button type="button" className="btn lookup-picker-clear" aria-label={`Clear ${field.label}`}
+          {value && !common.disabled && <button type="button" className="btn lookup-picker-clear" aria-label={`Clear ${displayFieldLabel(field)}`}
             disabled={field.required} onClick={() => onChange(field.apiName, null)}><X size={14} /></button>}
         </div>
         {selectedRecord && selectedCompactFields.length > 0 && <div className="lookup-selected-card" aria-label={`${targetObject?.label ?? 'Related record'} compact details`}>
@@ -396,7 +404,7 @@ export function RecordFormDialog({
       <select className="form-control" value={value} required disabled={common.disabled} onChange={(event) => onChange('UserRoleId',event.target.value)}>
         <option value="">Select role…</option>{userRoles.map((role) => <option key={role.id} value={role.name}>{role.name}</option>)}
       </select></label>;
-    if (dataType === 'picklist') return <label className="form-label" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
+    if (dataType === 'picklist') return <label className="form-label" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
       <select className="form-control" {...common} value={value} onChange={(event) => changeFieldValue(field.apiName, event.target.value)}>
         <option value="" disabled={field.required}>{field.required ? 'Select a value…' : '— None —'}</option>
         {(() => {
@@ -409,7 +417,7 @@ export function RecordFormDialog({
       </select>
       {helpText}
     </label>;
-    if (dataType === 'multi-select picklist') return <label className="form-label" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
+    if (dataType === 'multi-select picklist') return <label className="form-label" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
       <select className="form-control" {...common} multiple value={value.split(';').filter(Boolean)} onChange={(event) => changeFieldValue(field.apiName, Array.from(event.currentTarget.selectedOptions, (option) => option.value).join(';'))}>
         {allowedPicklistValues(field).map((item) => <option key={item} value={item}>{item}</option>)}
       </select>
@@ -434,7 +442,7 @@ export function RecordFormDialog({
         onChange(field.apiName, JSON.stringify({ ...configuration, [key]: nextValue }));
       };
       return <fieldset className="connector-config-fields record-form-wide" key={field.apiName} disabled={common.disabled}>
-        <legend>{field.label}</legend>
+        <legend>{displayFieldLabel(field)}</legend>
         {entries.length ? entries.map(([key, fieldValue]) => {
           const label = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
           return <label className="connector-config-row" key={key}>
@@ -446,7 +454,7 @@ export function RecordFormDialog({
         {helpText}
       </fieldset>;
     }
-    if (dataType.includes('text area') || dataType.includes('long text')) return <label className="form-label record-form-wide" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
+    if (dataType.includes('text area') || dataType.includes('long text')) return <label className="form-label record-form-wide" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
       <textarea className="form-control" {...common} maxLength={dataType === 'long text area' ? 131072 : undefined} value={value} onChange={(event) => onChange(field.apiName, event.target.value)} />
       {helpText}
     </label>;
@@ -462,7 +470,7 @@ export function RecordFormDialog({
       ? 10 ** (Number(numericFormat[1]) - Number(numericFormat[2])) - 10 ** -Number(numericFormat[2])
       : undefined;
     const textMaximum = field.dataType.match(/^Text\((\d+)\)$/)?.[1];
-    return <label className="form-label" htmlFor={common.id} key={field.apiName}>{field.label}{field.required && <b aria-hidden="true"> *</b>}
+    return <label className="form-label" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
       <input className="form-control" {...common} type={type}
         min={numericMaximum === undefined ? undefined : -numericMaximum}
         max={numericMaximum}
@@ -568,7 +576,7 @@ export function RecordFormDialog({
                 onChange(lookupDialogField.apiName, item.Id);
                 setLookupDialogField(null);
               }}>
-              {searchableFields.map((field) => <span key={field.apiName}><small>{field.label}</small>{formatRecordValue(item[field.apiName])}</span>)}
+              {searchableFields.map((field) => <span key={field.apiName}><small>{displayFieldLabel(field)}</small>{formatRecordValue(item[field.apiName])}</span>)}
               {!searchableFields.length && <span>{String(item.Name ?? item.Email ?? item.Id)}</span>}
             </button>)}
           </div> : <div className="records-empty">{options.length ? 'No matching records satisfy the search and required lookup filters.' : 'No records are available for this lookup.'}</div>}
