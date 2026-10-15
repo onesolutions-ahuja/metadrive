@@ -4,6 +4,7 @@ export default function ChatterInbox(props) {
   const [selectedId, select] = React.useState(null);
   const [search, setSearch] = React.useState('');
   const [tab, setTab] = React.useState('all');
+  const [selectedAccount, setSelectedAccount] = React.useState('');
   const [draft, setDraft] = React.useState('');
   const [assigneeId, setAssigneeId] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -11,7 +12,9 @@ export default function ChatterInbox(props) {
   const conversations = Array.isArray(p.conversations) ? p.conversations : [];
   const messages = Array.isArray(p.messages) ? p.messages : [];
   const accounts = Array.isArray(p.channelAccounts) ? p.channelAccounts : [];
+  const assignedAccounts = accounts.filter(a => Array.isArray(p.allowedAccountIds) && p.allowedAccountIds.includes(a.id));
   const scoped = conversations.filter(c => {
+    if (selectedAccount && String(c.channelAccountId) !== selectedAccount) return false;
     if (!p.canViewAll && p.restrictToAssigned && c.assignedUserId && c.assignedUserId !== p.currentUserId) return false;
     if (p.allowedAccountIds && Array.isArray(p.allowedAccountIds) && !p.allowedAccountIds.includes(c.channelAccountId)) return false;
     return true;
@@ -53,6 +56,10 @@ export default function ChatterInbox(props) {
     style={{'--chatter-accent': p.accentColor || '#168657', '--chatter-background': p.backgroundColor || '#f7f8f7'}}>
     <aside className="md-chatter-list">
       <header><div className="md-chatter-heading"><h2>{p.title || 'Chatter'}</h2><span>{scoped.length} chats</span></div>
+      <label className="md-chatter-account-picker">Account <select aria-label="WhatsApp account" value={selectedAccount} onChange={e=>{setSelectedAccount(e.target.value);select(null);setAssigneeId('');}} disabled={!assignedAccounts.length}>
+        <option value="">All assigned accounts</option>
+        {assignedAccounts.map(a=><option key={a.id} value={String(a.id)}>{a.name || a.id}</option>)}
+      </select></label>
       <label className="md-chatter-search"><span aria-hidden="true">⌕</span><input aria-label="Search chats" value={search} onChange={e=>setSearch(e.target.value)} placeholder={p.searchPlaceholder || 'Search name or number'} /></label>
       <nav aria-label="Chat filters">{[['all','All'],['unread','Unread'],['mine','Assigned to me']].map(([id,label]) =>
         <button key={id} type="button" aria-pressed={tab===id} onClick={()=>setTab(id)}>{label}</button>)}</nav></header>
