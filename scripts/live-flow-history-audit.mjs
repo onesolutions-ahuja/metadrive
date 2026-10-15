@@ -4,7 +4,7 @@ const email=process.env.METADRIVE_TEST_EMAIL,password=process.env.METADRIVE_TEST
 if(!email||!password)throw Error('Missing CI authentication secrets');
 async function api(path,token,method='GET',body){
  const r=await fetch(base+path,{method,headers:{'content-type':'application/json',...(token?{authorization:'Bearer '+token}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
- const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(path+' HTTP '+r.status);return data;
+ const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(path+' HTTP '+r.status+' '+JSON.stringify(data).slice(0,1800));return data;
 }
 const token=(await api('/api/auth/login',null,'POST',{email,password})).access_token;
 if(!token)throw Error('Auth token absent');
