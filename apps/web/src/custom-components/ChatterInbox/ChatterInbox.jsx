@@ -107,8 +107,8 @@ export default function ChatterInbox(props) {
           <small>{m.sentAt ? new Date(m.sentAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''} {m.status || ''}</small>
         </div>)}</div>
         {error && <p role="alert" className="md-chatter-error">{error}</p>}
-        <form onSubmit={send} className="md-chatter-compose"><input aria-label="Message" value={draft}
-          onInput={e=>setDraft(e.currentTarget.value)} onChange={e=>setDraft(e.currentTarget.value)}
+        <form onSubmit={send} className="md-chatter-compose"><input aria-label="Message" value={draft} onChange={e=>setDraft(e.currentTarget.value)}
+          onInput={e=>setDraft(e.currentTarget.value)}
           disabled={busy} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
           <button type="submit" disabled={!draft.trim() || busy || !canSendSelected}>Send</button></form>
         {!canSendSelected
