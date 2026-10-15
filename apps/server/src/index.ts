@@ -8147,7 +8147,6 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
-  // Validate public inputs before adding trusted server-derived Chatter values.
   const inputError = validateFlowInputValues(flow, input.data);
   if (inputError) return res.status(400).json({ error: inputError });
   const guard = authoriseChatterFlow(apiName, {
