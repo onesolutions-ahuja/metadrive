@@ -1,5 +1,4 @@
-import BuilderTemplatePreviewLayout from './BuilderTemplatePreviewLayout';
-import { reconcileNavigationOrder } from './appNavigation';
+import BuilderTemplatePreviewLayout from './BuilderTemplatePreviewLayout';import { reconcileNavigationOrder } from './appNavigation';
 import { createObjectManager } from './objectManagerView';
 import { createSetupHome } from './setupHomeView';
 import { createSettingsViews } from './settingsWorkspaceViews';
