@@ -198,8 +198,16 @@ function ensureSeedLedger(): Promise<void> {
       package_kind TEXT NOT NULL CHECK (package_kind IN ('core','shared','app')),
       package_key TEXT NOT NULL CHECK (length(trim(package_key)) BETWEEN 1 AND 160),
       package_version TEXT NOT NULL CHECK (length(trim(package_version)) BETWEEN 1 AND 80),
-      definition_checksum CHAR(64) NOT NULL CHECK (definition_checksum ~ '^[a-f0-9]{64}
-
+      definition_checksum CHAR(64) NOT NULL CHECK (length(definition_checksum) = 64),
+      installed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (tenant_id,package_kind,package_key)
+    )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS md_seed_package_versions_kind_idx
+      ON md_seed_package_versions (tenant_id,package_kind,updated_at DESC)`);
+  })().catch((error: unknown) => { seedLedgerReady = null; throw error; });
+  return seedLedgerReady;
+}
 async function drainStateWrites(): Promise<void> {
   while (newestPayload !== null) {
     const payload = newestPayload;
