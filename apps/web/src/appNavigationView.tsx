@@ -60,7 +60,9 @@ export function NavigationLoadTime({ routeKey, startedAt, ready, kind, authMs }:
   const label = kind === 'login' ? 'Login → Landing' : kind === 'restore' ? 'Session → Landing' : 'Page navigation';
   const completed = result?.routeKey === routeKey;
   const requestSeconds = authMs === null ? null : (authMs / 1000).toFixed(2);
-  if (!import.meta.env.DEV || import.meta.env.VITE_SHOW_NAV_TIMINGS !== 'true') return null;
+  // Retain the existing opt-out for environments that explicitly disable diagnostics.
+  // Production should display the same useful screen and authentication timing as development.
+  if (import.meta.env.VITE_SHOW_NAV_TIMINGS === 'false') return null;
   return <span className="navigation-load-time" role="status" aria-label="Screen load time"
     title={isEntry
       ? `From ${kind === 'login' ? 'Sign in click' : 'session restoration'} until landing content is ready. API authentication: ${requestSeconds ?? 'unknown'}s.`
