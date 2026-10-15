@@ -1,5 +1,4 @@
 import { createLoginView } from './loginView';
-import { ProfilePasswordMenu, ConnectionHealthIndicator } from './authStatusViews';
 import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, isAuthErrorMessage, withAuthRefreshLock, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords } from './authClient';
 
 
@@ -246,8 +245,8 @@ async function fetchFlowListPage(page: number, search: string) {
 
 // The full setup workspace is an on-demand route module, never part of the login bundle.
 const LazySetupWorkspace = React.lazy(async () => {
-  const [{ createSetupApp }, { createPageRuntimeViews }, { createRecordWorkspaceViews }] = await Promise.all([
-    import('./setupAppShell'), import('./pageRuntimeViews'), import('./recordWorkspaceViews')
+  const [{ createSetupApp }, { createPageRuntimeViews }, { createRecordWorkspaceViews }, { ProfilePasswordMenu, ConnectionHealthIndicator }] = await Promise.all([
+    import('./setupAppShell'), import('./pageRuntimeViews'), import('./recordWorkspaceViews'), import('./authStatusViews')
   ]);
   const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
   const { RecordWorkspace } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
