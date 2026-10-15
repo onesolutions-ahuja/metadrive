@@ -138,3 +138,17 @@ test('Page Builder exposes protected administrative presentation properties befo
   assert.ok(editor.includes("'"+key+"'"),key);
  assert.ok(editor.includes('onChange={(event)=>update(key,event.target.value)}'));
 });
+
+test('admin field uses a reusable published registered control while retaining legacy-safe fallback',()=>{
+ const manifest=JSON.parse(readFileSync(new URL('../apps/web/src/custom-components/manifest.json',import.meta.url),'utf8'));
+ const definition=manifest.find((item:any)=>item.apiName==='AdminField');
+ assert.ok(definition);
+ assert.ok(definition.surfaces.includes('platform'));
+ const slot=read('PlatformPageSlot.tsx');
+ assert.ok(slot.includes("findRegisteredComponent(state.libraryComponents,'AdminField','page')"));
+ assert.ok(slot.includes("definition?.trustedBundled===true"));
+ const control=read('AdminPropertyControl.tsx');
+ assert.ok(control.includes('<RegisteredComponent definition={registered} props={fieldProps}/>'));
+ assert.ok(control.includes('onChange(event.target.value)'));
+ assert.ok(control.includes('validateComponentSetting(definition,value)'));
+});
