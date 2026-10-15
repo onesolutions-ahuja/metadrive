@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Shared metadata-driven field creation wizard. View-only; actions remain in the object engine.
 import type { RelatedLookupFilterMetadata } from './metadata';
+import { Plus } from 'lucide-react';
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
