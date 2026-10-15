@@ -48,4 +48,4 @@ for (const file of optional) {
 }
 console.log('Agent 4 production static-import isolation PASS');
 console.log(`Landing eager graph: ${landing.size} chunks; authenticated shell eager graph: ${workspace.size} chunks`);
-console.log('Verified optional chunks:', optional.map(basename).join(', '));
+console.log('Verified optional chunks:', optional.map(file => basename(file)).join(', '));
