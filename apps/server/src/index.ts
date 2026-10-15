@@ -5106,7 +5106,6 @@ const accessAuthentication = createAccessAuthentication({
   jwtService, getState: () => state, tenantIsActive, requestTenantMatches,
   mfaRequiredForUser, effectivePermissions
 });
-
 function cookieValue(req: Request, name: string): string | undefined {
   const header = req.header('cookie');
   if (!header) return undefined;
