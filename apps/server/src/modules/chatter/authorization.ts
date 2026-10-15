@@ -50,6 +50,7 @@ export function prepareChatterFlowInputs(
 ): {inputs:Inputs;error?:string} {
   if(flowApiName!=='CHATTER_SEND_MESSAGE' && flowApiName!=='CHATTER_ASSIGN_CONVERSATION') return {inputs:supplied};
   const deny=(error:string):{inputs:Inputs;error:string}=>({inputs:{},error});
+  if(!tenant.pages.some(page=>page.apiName==='UNE_CHATTER'&&page.status==='Active')) return deny('Chatter is not activated');
   const channelAccountId=text(supplied.ChannelAccountId);
   const conversationId=text(supplied.ConversationId);
   let key:unknown;
