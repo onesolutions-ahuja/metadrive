@@ -30,7 +30,7 @@ export function protectedAdministrationPage(descriptor){
  const apiName=protectedPageApiName(descriptor.workspace);
  return {
   apiName,label:descriptor.label,updatedAt:'2026-10-14T00:00:00.000Z',
-  targetObject:'Account',pageType:'App Page',layoutMode:'free-canvas',template:'one-region',
+  targetObject:'Account',pageType:'App Page',layoutMode:'template',template:'one-region',
   canvasWidth:1440,canvasHeight:Math.max(900,120+(protectedWorkspacePageSlots[descriptor.workspace]?.length??0)*80),status:'Active',devices:['Desktop','Phone'],
   components:protectedAdministrationSlotComponents(descriptor.workspace),activationAssignments:[],
   scope:'platform-system',ownerNamespace:'MetaDrive',definitionVersion:2,
