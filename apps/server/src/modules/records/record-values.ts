@@ -105,9 +105,10 @@ export function isValidFlowDateTime(value: string): boolean {
 
 export function normalizeRuntimeValues(object: RecordObjectMetadata, values: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...values };
+  const fieldsByName = new Map(object.fields.map((field) => [field.apiName, field]));
   for (const [fieldName, value] of Object.entries(normalized)) {
     if (value === undefined || value === null) continue;
-    const field = object.fields.find((candidate) => candidate.apiName === fieldName);
+    const field = fieldsByName.get(fieldName);
     if (!field) continue;
     if (/^(Number|Currency|Percent)(\(|$)/.test(field.dataType)) {
       const numeric = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN;

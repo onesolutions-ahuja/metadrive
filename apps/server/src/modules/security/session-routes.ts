@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { activeSessionSummaries } from './active-sessions.js';
 import { hashPassword, verifyPassword, type JwtService, type Principal } from '../../auth.js';
 import type { Express, Request, Response, RequestHandler } from 'express';
 import type { LocalUser, TenantData, PlatformState } from '../../index.js';
@@ -26,14 +27,8 @@ export function registerSessionSecurityRoutes(deps: {
 app.get('/api/auth/sessions', accessAuthentication, (_req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const now = Date.now() / 1000;
-  const active = deps.getState().refreshSessions
-    .filter((session) => session.userId === principal.userId && session.tenantId === principal.tenantId
-      && session.revokedAt === null && session.usedAt === null && session.expiresAt > now)
-    .map((session) => ({
-      familyId: session.familyId,
-      expiresAt: session.expiresAt,
-      mfaVerified: session.mfaVerified === true
-    }));
+  const active = activeSessionSummaries(deps.getState().refreshSessions,
+    principal.userId, principal.tenantId, now);
   // Do not expose raw refresh tokens or their hashes.
   res.json({ sessions: active });
 });

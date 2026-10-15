@@ -40,6 +40,8 @@ import { resolvePageAssignment } from './modules/pages/page-assignment.js';
 import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-properties.js';
 import { evaluateFormula, formulaLocalDate, isSafeFlowRegex } from './modules/flows/formula-evaluator.js';
 import { evaluateCustomConditionLogic } from './modules/flows/condition-logic.js';
+import { authoriseManualCoreFlow, assertFlowRuntimeAdmission } from './modules/flows/execution-admission.js';
+import { flowPackageAdmission } from './modules/flows/package-admission.js';
 import { dashboardLocalParts, flowLocalDateTimeToInstant } from './core/local-time.js';
 import cors from 'cors';
 import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
@@ -6030,7 +6032,6 @@ installTenantRecoveryCentre(app, {
 
 registerIdentityProfileRoute({ app, accessAuthentication, getPrincipal, principalUser, tenantData,
   profileIdForRole, hasFieldPermission, hasRecordTypeAccessForUser, effectivePermissions });
-
 app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6040,7 +6041,6 @@ app.get('/api/notifications', accessAuthentication, (req: Request, res: Response
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   return res.json({ notifications, unreadCount: notifications.filter((notification) => !notification.readAt).length });
 });
-
 app.post('/api/notifications/:id/read', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6055,7 +6055,6 @@ app.post('/api/notifications/:id/read', accessAuthentication, (req: Request, res
   });
   return res.json({ notification: updated });
 });
-
 app.get('/api/approvals/inbox', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6083,7 +6082,6 @@ app.get('/api/approvals/inbox', accessAuthentication, (req: Request, res: Respon
     });
   return res.json({ requests });
 });
-
 app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6161,14 +6159,12 @@ app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res
   persistTenantRecords(principal.tenantId, { ...tenant, approvalRequests: requests, notifications, interviews });
   return res.json({ request: decided });
 });
-
 app.use('/api/metadata', accessAuthentication);
 app.use('/api/connector-settings', accessAuthentication);
 app.use('/api/connector-providers', accessAuthentication);
 app.use('/api/integration-connections', accessAuthentication);
 app.use('/api/named-credentials', accessAuthentication);
 app.use('/api/component-library', accessAuthentication);
-
 app.get('/api/metadata/objects', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   res.json({ objects: tenantData(getPrincipal(res).tenantId)?.objects ?? [] });
 });
@@ -6774,7 +6770,6 @@ app.patch('/api/connector-apps/:appKey/credential-enabled', accessAuthentication
   });
   return res.json({ credential: publicNamedCredential(updated) });
 });
-
 // Operator-controlled activation: connectorApps:edit grants configuration access, not activation.
 app.patch('/api/named-credentials/:id/enabled', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
   const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
@@ -6791,7 +6786,6 @@ app.patch('/api/named-credentials/:id/enabled', requirePermission('namedCredenti
   persistTenantRecords(principal.tenantId, { ...tenant, namedCredentials: tenant.namedCredentials.map((row) => row.id === credential.id ? updated : row) });
   return res.json({ credential: publicNamedCredential(updated) });
 });
-
 // Report credential readiness without exposing encryption keys or other tenants' data.
 app.get('/api/named-credentials/readiness', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -6891,7 +6885,6 @@ app.get('/api/oauth/callback',async(req:Request,res:Response)=>{
     return res.status(400).type('text/plain').send('OAuth authorization failed or expired. Start authorization again from Named Credentials.');
   }
 });
-
 app.post('/api/named-credentials', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
@@ -7400,7 +7393,6 @@ function authorizationGrants(principal: Principal, tenant: TenantData): AuthGran
   tenantCache.set(tenant, resolved);
   return resolved;
 }
-
 // Profile defaults preserve legacy tenant navigation. Explicit false hides an app/tab.
 // Permission set grants are additive; group muting masks only that group's grant.
 function canNavigate(principal: Principal, tenant: TenantData, type: 'app' | 'tab', key: string): boolean {
@@ -7420,11 +7412,9 @@ function canOpenApp(principal: Principal, tenant: TenantData, appApiName: string
 function canOpenTab(principal: Principal, tenant: TenantData, objectApiName: string): boolean {
   return canNavigate(principal, tenant, 'tab', objectApiName);
 }
-
 function hasObjectPermission(principal: Principal, tenant: TenantData, objectName: string, action: 'read' | 'create' | 'edit' | 'delete'): boolean {
   return grantedObjectPermission(principal, tenant.objects.find(object => object.apiName === objectName), authorizationGrants(principal, tenant), action);
 }
-
 function hasObjectWidePermission(principal: Principal, tenant: TenantData, objectName: string, flag: 'viewAll' | 'modifyAll'): boolean {
   const grants = authorizationGrants(principal, tenant);
   if (!grants) return false;
@@ -7435,7 +7425,6 @@ function hasObjectWidePermission(principal: Principal, tenant: TenantData, objec
   return grants.groups.some(({ group, sets }) => sets.some((set) =>
     hasGrant(set.objectPermissions[objectName], group.mutedObjectPermissions[objectName])));
 }
-
 function hasRoleHierarchyAccess(principal: Principal, tenant: TenantData, ownerId: unknown): boolean {
   if (typeof ownerId !== 'string') return false;
   const viewer = tenant.accessControl.users.find((user) => user.id === principal.userId);
@@ -7451,7 +7440,6 @@ function hasRoleHierarchyAccess(principal: Principal, tenant: TenantData, ownerI
   }
   return false;
 }
-
 function roleIsAtOrBelow(roleId: string, rootRoleId: string, roles: AccessRole[]): boolean {
   let currentRoleId: string | null | undefined = roleId;
   const visited = new Set<string>();
@@ -7462,7 +7450,6 @@ function roleIsAtOrBelow(roleId: string, rootRoleId: string, roles: AccessRole[]
   }
   return false;
 }
-
 function publicGroupContainsUser(groupId: string, userId: string, tenant: TenantData, visited = new Set<string>()): boolean {
   if (visited.has(groupId)) return false;
   const group = tenant.accessControl.publicGroups.find((item) => item.id === groupId);
@@ -7476,7 +7463,6 @@ function publicGroupContainsUser(groupId: string, userId: string, tenant: Tenant
     || group.roleAndSubordinateIds.some((parentId) => roleIsAtOrBelow(roleId, parentId, tenant.accessControl.roles))) return true;
   return group.groupIds.some((nestedId) => publicGroupContainsUser(nestedId, userId, tenant, new Set(visited)));
 }
-
 function queueContainsUser(queue: RecordQueue, userId: string, tenant: TenantData): boolean {
   const member = tenant.accessControl.users.find((item) => item.id === userId);
   if (!member) return false;
@@ -7486,7 +7472,6 @@ function queueContainsUser(queue: RecordQueue, userId: string, tenant: TenantDat
     || queue.roleAndSubordinateIds.some((rootRoleId) => roleIsAtOrBelow(roleId, rootRoleId, tenant.accessControl.roles))
     || queue.publicGroupIds.some((groupId) => publicGroupContainsUser(groupId, userId, tenant));
 }
-
 function sharingRuleMatchesRecord(rule: SharingRule, record: RuntimeRecord): boolean {
   const conditions = rule.criteria.map((criterion) => {
     const value = record[criterion.fieldApiName];
@@ -7503,7 +7488,6 @@ function sharingRuleMatchesRecord(rule: SharingRule, record: RuntimeRecord): boo
   });
   return rule.filterLogic === 'All' ? conditions.every(Boolean) : conditions.some(Boolean);
 }
-
 function sharingRuleGrantsUser(rule: SharingRule, recipientUserId: string, record: RuntimeRecord, tenant: TenantData): boolean {
   if (!rule.active) return false;
   if (rule.type === 'OwnerBased') {
@@ -7521,7 +7505,6 @@ function sharingRuleGrantsUser(rule: SharingRule, recipientUserId: string, recor
   if (rule.targetType === 'Role') return recipientRoleId === rule.targetId;
   return roleIsAtOrBelow(recipientRoleId, rule.targetId, tenant.accessControl.roles);
 }
-
 // Scope and cache record-share lookups by immutable tenant state snapshot.
 // A sharing change replaces TenantData; an old index cannot authorize new data.
 const recordShareIndexes = new WeakMap<TenantData, Map<string, TenantData['recordShares']>>();
@@ -7538,7 +7521,6 @@ function recordShareIndex(tenant: TenantData): Map<string, TenantData['recordSha
   recordShareIndexes.set(tenant, index);
   return index;
 }
-
 function hasRecordAccess(
   principal: Principal,
   tenant: TenantData,
@@ -7639,7 +7621,6 @@ function hasRecordAccess(
   return defaultAccess === 'Public Read/Write'
     || (defaultAccess === 'Public Read Only' && accessLevel === 'Read');
 }
-
 function hasFieldPermission(principal: Principal, tenant: TenantData, objectName: string, fieldName: string, action: 'read' | 'edit'): boolean {
   const grants = authorizationGrants(principal, tenant);
   if (!grants) return false;
@@ -7665,7 +7646,6 @@ function hasFieldPermission(principal: Principal, tenant: TenantData, objectName
     return sets.some((set) => grantsField(set.fieldPermissions, set.objectPermissions, group.mutedObjectPermissions[objectName]));
   });
 }
-
 function sanitizeRecordForRead(principal: Principal, tenant: TenantData, object: ObjectMetadata, record: RuntimeRecord): RuntimeRecord {
   const values: Record<string, unknown> = {};
   const systemFields = new Set(['Id', 'CreatedDate', 'CreatedById', 'LastModifiedDate', 'LastModifiedById', 'SystemModstamp', 'RecordTypeId']);
@@ -7674,7 +7654,6 @@ function sanitizeRecordForRead(principal: Principal, tenant: TenantData, object:
   }
   return values as RuntimeRecord;
 }
-
 function assertFieldEditPermissions(principal: Principal, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>): void {
   assertRecordFieldPermissions(principal, tenant, object, values, hasFieldPermission);
 }
@@ -8034,6 +8013,12 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   const flow = tenant.flows.find((item) => item.apiName === apiName);
   if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
+  try {
+    authoriseManualCoreFlow(principal.tenantId, principal.tenantId,
+      principal.userId, principal.permissions, flow.status);
+  } catch (error) {
+    return res.status(403).json({ error: error instanceof Error ? error.message : 'Flow execution denied' });
+  }
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
   const inputError = validateFlowInputValues(flow, sanitizeChatterCallerInput(apiName, input.data));
@@ -10354,6 +10339,19 @@ async function executeFlowImplementation(
     && user.tenantId === tenantId && !user.disabled);
   if (!runningUser) throw new Error('The Flow running user is not available in this tenant.');
   const runningPrincipal = principalForUser(runningUser, tenant);
+  // All dispatchers converge here: manual, scheduled, trigger, subflow and resume.
+  // The running identity must already be a live tenant member (checked above).
+  // Action/record permissions continue to be checked by OneEngine at each step.
+  const appAdmission = flowPackageAdmission(
+    flow.apiName, installableAppCatalog.packages,
+    tenant.records.Connector_App__c ?? []
+  );
+  assertFlowRuntimeAdmission({
+    tenantId, principalTenantId: runningPrincipal.tenantId,
+    principalId: runningPrincipal.userId,
+    status: flow.status, allowDraftExecution,
+    ...appAdmission
+  });
   const interviewGuid = resume?.interviewGuid ?? parentInterview?.interviewGuid ?? randomUUID();
   const interviewStartTime = resume?.interviewStartTime ?? parentInterview?.interviewStartTime ?? new Date().toISOString();
   const context: FlowRuntimeContext = {

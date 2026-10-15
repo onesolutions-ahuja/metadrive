@@ -1,6 +1,6 @@
-import { hasDefaultComponentExport, scopeLibraryCss } from './component-source.js';
+import { scopeLibraryCss } from './component-source.js';
+import { compileLibraryComponent } from './component-compiler.js';
 import type { Request, Response } from 'express';
-import { transform } from 'esbuild';
 import { z } from 'zod';
 import { libraryRevision, nextLibraryRevision, libraryHistory } from '../metadata/component-revisions.mjs';
 import { registerMetadataPublicationRoute } from '../metadata/offline-publication-route.mjs';
@@ -49,20 +49,8 @@ app.post('/api/component-library', requirePermission('components:manage'), async
     return res.status(409).json({ error: `A library component named "${parsed.data.apiName}" already exists` });
   }
   try {
-    const compiled = await transform(parsed.data.jsxSource, {
-      loader: 'tsx',
-      format: 'cjs',
-      target: 'es2020',
-      jsxFactory: 'React.createElement',
-      jsxFragment: 'React.Fragment',
-      sourcefile: `${parsed.data.apiName}.tsx`
-    });
-    if (!hasDefaultComponentExport(compiled.code)) {
-      return res.status(400).json({ error: 'The JSX file must export a default React component' });
-    }
-    if (/\brequire\s*\(/.test(compiled.code)) {
-      return res.status(400).json({ error: 'Custom components must be self-contained and cannot import external modules' });
-    }
+    const compiled = await compileLibraryComponent(parsed.data.jsxSource, parsed.data.apiName);
+    if ('error' in compiled) return res.status(400).json({ error: compiled.error });
     const scopedCss = scopeLibraryCss(parsed.data.cssSource, parsed.data.apiName);
     const component: LibraryComponent = {
       ...parsed.data,
@@ -107,20 +95,8 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
     });
   }
   try {
-    const compiled = await transform(parsed.data.jsxSource, {
-      loader: 'tsx',
-      format: 'cjs',
-      target: 'es2020',
-      jsxFactory: 'React.createElement',
-      jsxFragment: 'React.Fragment',
-      sourcefile: `${apiName}.tsx`
-    });
-    if (!hasDefaultComponentExport(compiled.code)) {
-      return res.status(400).json({ error: 'The JSX file must export a default React component' });
-    }
-    if (/\brequire\s*\(/.test(compiled.code)) {
-      return res.status(400).json({ error: 'Custom components must be self-contained and cannot import external modules' });
-    }
+    const compiled = await compileLibraryComponent(parsed.data.jsxSource, apiName);
+    if ('error' in compiled) return res.status(400).json({ error: compiled.error });
     const compiledRevision: LibraryComponentRevision = {
       version: nextLibraryRevision(existing), label: parsed.data.label, description: parsed.data.description,
       surfaces: parsed.data.surfaces, resize: parsed.data.resize, propertyDefinitions: parsed.data.propertyDefinitions ?? existing.propertyDefinitions,
