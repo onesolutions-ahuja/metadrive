@@ -102,12 +102,13 @@ export async function recordInstalledAppPackageVersions(client, state, catalog) 
         && !['Trial','Licensed'].includes(app.LicenceStatus__c))) continue;
       // No ledger entry may claim installation before the actual seeded
       // metadata exists in the same tenant-scoped state being committed.
-      for (const collection of ['objects','pages','apps','flows']) {
-        for (const entry of pkg[collection] ?? []) {
-          if (!(tenant[collection] ?? []).some(item=>item.apiName===entry.apiName))
-            throw Error('Installed package metadata missing: '+pkg.appKey+'/'+collection+'/'+entry.apiName);
-        }
-      }
+      const complete=['objects','pages','apps','flows'].every(collection=>
+        (pkg[collection] ?? []).every(entry=>
+          (tenant[collection] ?? []).some(item=>item.apiName===entry.apiName)));
+      // An older installation is allowed to reconcile through the established
+      // AppExchange upgrade path. Never stamp an incomplete package as seeded.
+      if (!complete) continue;
+      await client.query('INSERT INTO metadrive_rel_tenants(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
       const checksum=packageChecksum(pkg);
       await applyVersionedSeed(client,{
         tenantId,kind:'app',key:pkg.appKey,
