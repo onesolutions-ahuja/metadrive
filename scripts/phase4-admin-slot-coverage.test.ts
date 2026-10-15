@@ -56,3 +56,9 @@ test('RBAC screen renders through all seeded protected page slots',()=>{
  for(const slot of protectedWorkspacePageSlots.rbac)
   assert.ok(source.includes('slotKey="'+slot+'"'),'Missing RBAC slot '+slot);
 });
+
+test('tenant management has independently editable detail, domain, usage and recovery slots',()=>{
+ const source=read('TenantManagement.tsx');
+ for(const slot of protectedWorkspacePageSlots['tenant-management'])
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing tenant management slot '+slot);
+});
