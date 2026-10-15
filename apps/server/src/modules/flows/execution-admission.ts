@@ -23,3 +23,20 @@ export function assertExecutionAdmission(input: ExecutionAdmission): void {
   if (!input.activated) throw Error('Application is not activated for this tenant');
   if (!input.published) throw Error('Flow or Action is not published');
 }
+
+/** Live API entry gate for independently authorized, core-owned manual Flows.
+ * Draft preview remains allowed by the existing API contract; Obsolete is not runnable.
+ * App-owned Flows require the independent installation/licensing gate supplied
+ * by their app lifecycle before dispatch.
+ */
+export function authoriseManualCoreFlow(
+  tenantId: string, principalTenantId: string, principalId: string,
+  permissions: readonly string[], status: string
+): void {
+  assertExecutionAdmission({
+    tenantId, principalTenantId, principalId,
+    grants: new Set(permissions), requiredPermission: 'flows:run',
+    installed: true, licensed: true, activated: true,
+    published: status === 'Active' || status === 'Draft'
+  });
+}
