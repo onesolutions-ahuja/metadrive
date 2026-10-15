@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateAuthorisedFlowDecision } from '../src/modules/flows/decision-runtime.js';
+import { authoriseManualCoreFlow } from '../src/modules/flows/execution-admission.js';
 
 const valid = {
   tenantId:'tenant-a',principalTenantId:'tenant-a',principalId:'user-a',
@@ -15,4 +16,12 @@ test('agent1: generic Flow decision requires tenant, RBAC and independent lifecy
   for (const property of ['installed','licensed','activated','published'] as const) {
     assert.throws(() => evaluateAuthorisedFlowDecision({...valid,[property]:false},'1',[true]));
   }
+});
+
+test('agent1: live manual Flow route adapter preserves authorized Draft preview', () => {
+  assert.doesNotThrow(() => authoriseManualCoreFlow('tenant-a','tenant-a','user-a',['flows:run'],'Active'));
+  assert.doesNotThrow(() => authoriseManualCoreFlow('tenant-a','tenant-a','user-a',['flows:run'],'Draft'));
+  assert.throws(() => authoriseManualCoreFlow('tenant-a','tenant-b','user-a',['flows:run'],'Active'), /Cross-tenant/);
+  assert.throws(() => authoriseManualCoreFlow('tenant-a','tenant-a','user-a',[],'Active'), /permission denied/);
+  assert.throws(() => authoriseManualCoreFlow('tenant-a','tenant-a','user-a',['flows:run'],'Obsolete'), /not published/);
 });
