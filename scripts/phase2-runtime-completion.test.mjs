@@ -31,7 +31,7 @@ test('Phase 2a/g: platform components are only seeded by trusted bundled code',(
  assert.ok(!restricted.includes("publicationStatus: z.enum(['Draft','Published']).default('Published'),\n  scope:"));
 });
 test('Phase 2f: verified metadata cache is wired into the production loader',()=>{
- const app=read('apps/web/src/setupAppShell.tsx');
+ const app=read('apps/web/src/useSetupMetadata.ts');
  assert.ok(app.includes("readVerifiedMetadata("));
  assert.ok(app.includes("saveVerifiedMetadata("));
  assert.ok(!app.includes("readOfflineMetadata("));

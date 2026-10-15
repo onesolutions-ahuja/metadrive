@@ -88,5 +88,8 @@ test('system App Pages have no unrelated object mapping and pristine legacy defa
  assert.equal(repaired.components,legacy.components);
  assert.strictEqual(seedProtectedAdministrationPages({pages:[repaired]}).pages[0],repaired);
  const edited={...legacy,updatedAt:'2026-10-15T08:00:00.000Z'};
- assert.strictEqual(seedProtectedAdministrationPages({pages:[edited]}).pages[0],edited);
+ const editedRepaired=seedProtectedAdministrationPages({pages:[edited]}).pages[0];
+ assert.equal(editedRepaired.targetObject,'');
+ assert.equal(editedRepaired.updatedAt,edited.updatedAt);
+ assert.strictEqual(editedRepaired.components,edited.components);
 });

@@ -61,15 +61,20 @@ export function seedProtectedAdministrationPages(tenant){
  // Upgrade only known pristine system seeds; preserve any edited layout or security policy.
  const migrated=pages.map(page=>{
   const d=protectedWorkspacePageDescriptors.find(item=>protectedPageApiName(item.workspace)===page.apiName);
+  // Correct the old Account default independently of layout migration timestamps.
+  // Persisted system pages can have newer updatedAt after normalization or editing.
+  const scoped= d&&page.ownerNamespace==='MetaDrive'&&page.scope==='platform-system'
+    &&page.pageType==='App Page'&&page.targetObject==='Account'
+    ? {...page,targetObject:''} : page;
   if(!d||page.ownerNamespace!=='MetaDrive'||page.scope!=='platform-system'
    ||page.updatedAt!=='2026-10-14T00:00:00.000Z'||page.status!=='Active'
    ||page.layoutMode!=='template'||page.overridePolicy!=='presentation-only'
    ||!Array.isArray(page.components)
-   ||JSON.stringify(page.requiredPermissions)!==JSON.stringify([d.permission]))return page;
+   ||JSON.stringify(page.requiredPermissions)!==JSON.stringify([d.permission]))return scoped;
   const next=protectedAdministrationPage(d);
   // System App Pages are not Record Pages. Repair only known pristine Account
   // defaults; keep tenant-edited and object-specific pages untouched.
-  const repaired=page.targetObject==='Account' ? {...page,targetObject:''} : page;
+  const repaired=scoped;
   if(page.definitionVersion===1&&page.components.length===0)
    return {...repaired,definitionVersion:next.definitionVersion,canvasHeight:next.canvasHeight,components:next.components};
   const original=legacyControlSlots[d.workspace];

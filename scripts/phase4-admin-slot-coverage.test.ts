@@ -35,7 +35,7 @@ test('admin slot presentation uses the existing workspace and RBAC instead of an
  ] as const)for(const key of keys)assert.ok(read(file).includes('slotKey="'+key+'"'),file+' '+key);
 });
 test('company and object administration render inside protected page hosts',()=>{
- const source=read('setupAppShell.tsx');
+ const source=read('setupShellPresentation.tsx');
  for(const workspace of ['company-settings','object-manager']){
   const prefix="workspace === '"+workspace+"' && (";
   assert.match(source,new RegExp('workspace="'+workspace+'"[^>]*permitted=\\{canReadMetadata\\}'),workspace);
@@ -65,7 +65,7 @@ test('tenant management has independently editable detail, domain, usage and rec
 });
 
 test('integrations and automation administration use protected page slots',()=>{
- const source=read('setupAppShell.tsx');
+ const source=read('setupShellPresentation.tsx');
  for(const [workspace,slot] of [
   ['named-credentials','credentials'],
   ['connector-settings','connector-workspace'],
