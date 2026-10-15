@@ -97,8 +97,17 @@ export function initializeTenantCore(template, {authorizedUserIds=[], trustedPro
     'fieldHistory','interviews','flowLogs','scheduleRuns','scheduleRetries',
     'automationSettings','emailAlerts','connectorSettings','connectorDefinitions'
   ];
+  // Trusted defaults may provide metadata and configuration, but cannot
+  // reintroduce example transactions or private user/security events.
+  const excludedProvisionedKeys = new Set([
+    'records','recordShares','approvalRequests','platformEventMessages',
+    'dashboardSnapshots','dashboardSubscriptions','campaignMembers',
+    'activities','chatterPosts','notifications','fieldHistory',
+    'interviews','flowLogs','scheduleRuns','scheduleRetries',
+    'autoNumberSequences','securityAudit'
+  ]);
   const provisioned=allowed.size>0 && trustedProvisioningDefaults ? Object.fromEntries(initialKeys
-    .filter(key=>Object.hasOwn(template,key))
+    .filter(key=>!excludedProvisionedKeys.has(key) && Object.hasOwn(template,key))
     .map(key=>[key,structuredClone(template[key])])) : seed;
   // Preserve only the server-generated, secret-free WhatsApp placeholder for
   // freshly provisioned tenants; never inherit real tenant credentials.
