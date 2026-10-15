@@ -1,23 +1,22 @@
-import { createRecordWorkspaceViews } from './recordWorkspaceViews';
-import { createPageBuilder } from './pageBuilderView';
+
+
 import { ReportBuilder } from './reportBuilderView';
-import { createPermissions } from './permissionsView';
-import { createObjectManager } from './objectManagerView';
-import { createSetupHome } from './setupHomeView';
-import { createSettingsViews } from './settingsWorkspaceViews';
-import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
-import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
-import { initialScreenValues, screenFieldIsVisible } from './flowScreenRuntimeUtils';
+
+
+
+
+import { relatedLookupFilterOperators } from './recordMetadataUtils';
+
+
 import { objectSettings, parseAppRoute, appRoutePath, type AppRoute } from './appRouting';
 import { NavigationLoadTime, resolveCurrentAppNavigation } from './appNavigationView';
-import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
+import { isStandalonePagePresentation } from './pageRuntimePresentation';
 import { insertFlowElementAtPath } from './flowInsertElement.mjs';
-import AdvancedSharingSettings from './AdvancedSharingSettings';
-import {resolveSetupNavigation} from './platformSetupNavigation';
-import {readVerifiedMetadata,saveVerifiedMetadata,type MetadataPublicationResponse} from './verifiedMetadataCache';
-import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
-  synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
-import SchemaBuilder from './SchemaBuilder';
+
+import { resolveSetupNavigation } from './platformSetupNavigation';
+import { readVerifiedMetadata, saveVerifiedMetadata } from './verifiedMetadataCache';
+
+
 import * as React from 'react';
 import { renderSetupShell } from './setupShellPresentation';
 import { createSetupNotificationActions } from './setupNotificationActions';
@@ -27,66 +26,9 @@ import { createSetupFlowActions } from './setupFlowActions';
 import { useSetupMetadata } from './useSetupMetadata';
 const SetupObjectDialogs = React.lazy(() => import('./setupObjectDialogs'));
 const FieldWizardModal = React.lazy(() => import('./setupFieldWizard'));
-import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import {
-  Activity,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Bell,
-  Building2,
-  BriefcaseBusiness,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleHelp,
-  ClipboardList,
-  ClipboardPaste,
-  Command,
-  Copy,
-  Database,
-  Ellipsis,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  Lock,
-  Unlock,
-  FileText,
-  Filter,
-  GripVertical,
-  Grid2X2,
-  ListFilter,
-  Maximize2,
-  Monitor,
-  History,
-  Pencil,
-  Plus,
-  Puzzle,
-  Smartphone,
-  RefreshCw,
-  Save,
-  Search,
-  ShieldCheck,
-  Scissors,
-  Settings2,
-  SlidersHorizontal,
-  Star,
-  Undo2,
-  Redo2,
-  Trash2,
-  Tablet,
-  UsersRound,
-  X,
-  Workflow,
-  Wifi,
-  WifiOff,
-  PanelLeft,
-  PanelRight
-} from 'lucide-react';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bell, Check, ChevronLeft, ChevronRight, CircleHelp, Database, Monitor, History, Search, X } from 'lucide-react';
 import FlowBuilderWorkspace from './FlowBuilder';
 const SetupFlowDialogs = React.lazy(() => import('./setupFlowDialogs'));
 const FlowLogs = React.lazy(() => import('./FlowLogs'));
@@ -94,115 +36,38 @@ const FlowInterviews = React.lazy(() => import('./FlowInterviews'));
 const ScheduledFlows = React.lazy(() => import('./ScheduledFlows'));
 import DashboardBuilder from './DashboardBuilder';
 const ComponentLibrary = React.lazy(() => import('./ComponentLibrary'));
-import RegisteredComponent from './RegisteredComponent';
-import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
-import FlowInputBindingEditor from './FlowInputBindingEditor';
-import RecordFilterEditor from './RecordFilterEditor';
-import ComponentVisibilityEditor from './ComponentVisibilityEditor';
-import PageRouteDirectory from './PageRouteDirectory';
-import { isComponentVisible } from './componentVisibility';
-import PageComponentVisualEditor from './PageComponentVisualEditor';
-import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
-import PageComponentStyleEditor from './PageComponentStyleEditor';
-import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
-import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
-import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
+
+
+
+
+
+
+
+
+
+
+
+
+
 const AppExchange = React.lazy(() => import('./AppExchange'));
 const AppManager = React.lazy(() => import('./AppManager'));
-import PlatformWorkspaceSurface from './PlatformWorkspaceSurface'; import {PlatformPageSlot} from './PlatformPageSlot';
+import PlatformWorkspaceSurface from './PlatformWorkspaceSurface'; import { PlatformPageSlot } from './PlatformPageSlot';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
-import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
+
 const NamedCredentials = React.lazy(() => import('./NamedCredentials'));
 import TenantManagement from './TenantManagement';
 import TenantDomains from './TenantDomains';
 import TenantRecoveryPanel from './TenantRecoveryPanel';
 import TenantUsagePanel from './TenantUsagePanel';
 import DeveloperAccountSettings from './DeveloperAccountSettings';
-import SettingsViewRow from './SettingsViewRow';
+
 import ApprovalProcessManager from './ApprovalProcessManager';
-import { standardPageComponents } from './componentCatalog';
+
 const EmbeddedDashboard = React.lazy(() => import('./EmbeddedDashboard'));
-import { inspectPageDependencies } from './pageDependencies';
-import {
-  canvasDimensionsForOrientation,
-  canvasBoundPosition,
-  canvasOrientation,
-  canvasScaleToFitWidth,
-  canvasUnitsFromScreenDelta
-} from './pageCanvas';
-import {
-  createComponentPreviewProps,
-  getPageBuilderComponentCategories,
-  pageBuilderPaletteCategories
-} from './pageBuilderPalette';
-import {
-  defaultFlow,
-  defaultLightningPage,
-  defaultAccessControl,
-  objectMetadata,
-  setupShortcuts,
-  workspaces,
-  type ObjectMetadata,
-  type FieldMetadata,
-  type FieldSetMetadata,
-  type PageLayoutMetadata,
-  type PageLayoutCustomLinkMetadata,
-  type CompactLayoutMetadata,
-  type RecordTypeMetadata,
-  type RelatedLookupFilterMetadata,
-  type ObjectActionMetadata,
-  type ObjectSettingsMetadata,
-  type ProfileMetadata,
-  type PageActivationAssignmentMetadata,
-  type FlowDefinitionMetadata,
-  type FlowExecutionLogMetadata,
-  type FlowInterviewMetadata,
-  type FlowElementMetadata,
-  type FlowResourceMetadata,
-  type FlowValidationMetadata,
-  type PlatformEventMetadata,
-  type LightningPageTemplate,
-  type NamedCredentialMetadata,
-  type EmailAlertMetadata,
-  type CustomNotificationMetadata,
-  type ApprovalRequestMetadata,
-  type ApprovalProcessMetadata,
-  type ApprovalProcessInput,
-  type ConnectorProviderMetadata,
-  type IntegrationConnectionMetadata,
-  type LightningPageMetadata,
-  type PageComponentMetadata,
-  type LibraryComponentMetadata,
-  type DashboardFilterMetadata,
-  type DashboardMetadata,
-  type DashboardFolderMetadata,
-  type DashboardFolderInput,
-  type DashboardTerritoryMetadata,
-  type DashboardSubscription,
-  type DashboardSubscriptionInput,
-  type DashboardSnapshot,
-  type ReportMetadata,
-  type ReportBucketMetadata,
-  type ReportFolderMetadata,
-  type ReportFolderInput,
-  type ReportRunMetadata,
-  type ReportStandardFiltersMetadata,
-  type ReportFilterMetadata,
-  type ReportDateRange,
-  type ReportDateGrouping,
-  type ReportSummaryOperation,
-  type ReportCrossFilterMetadata,
-  type AccessControlMetadata,
-  type CurrencySettingsMetadata,
-  type LightningAppMetadata,
-  type PermissionSetMetadata,
-  type PermissionSetGroupMetadata,
-  type PublicGroupMetadata,
-  type QueueMetadata,
-  type SharingRuleMetadata,
-  type UserMetadata,
-  type WorkspaceId
-} from './metadata';
+
+
+
+import { defaultFlow, defaultLightningPage, defaultAccessControl, objectMetadata, workspaces, type ObjectMetadata, type RelatedLookupFilterMetadata, type ObjectSettingsMetadata, type FlowDefinitionMetadata, type FlowExecutionLogMetadata, type FlowInterviewMetadata, type FlowElementMetadata, type FlowValidationMetadata, type PlatformEventMetadata, type NamedCredentialMetadata, type EmailAlertMetadata, type CustomNotificationMetadata, type ApprovalRequestMetadata, type ApprovalProcessMetadata, type ConnectorProviderMetadata, type IntegrationConnectionMetadata, type LightningPageMetadata, type LibraryComponentMetadata, type DashboardMetadata, type DashboardFolderMetadata, type DashboardTerritoryMetadata, type ReportMetadata, type ReportFolderMetadata, type AccessControlMetadata, type LightningAppMetadata, type WorkspaceId } from './metadata';
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
