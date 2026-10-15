@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { chatterIncomingIdentityFields } from '../apps/server/src/modules/chatter/webhook-identity.mjs';
+import { chatterIncomingIdentityFields } from '../apps/server/src/modules/chatter/webhook-identity.ts';
 
 const withChannel = { fields: [{ apiName: 'Channel_Account__c' }] };
 const legacy = { fields: [{ apiName: 'Message_Body__c' }] };
