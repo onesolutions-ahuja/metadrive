@@ -201,6 +201,7 @@ let pages=(await api('/metadata/pages')).pages;
 let installedPages=0;
 const previousPages=new Map(pages.map(page=>[page.apiName,page]));
 const updates=[];
+const retiredPages=[];
 try{
  for(const page of commercePages){
   const old=previousPages.get(page.apiName);
@@ -221,7 +222,7 @@ try{
   if(old.status==='Draft')continue;
   await api('/metadata/pages/'+encodeURIComponent(old.apiName),'PUT',
     {...old,status:'Draft'});
-  updates.push(old.apiName);installedPages++;
+  updates.push(old.apiName);retiredPages.push(old.apiName);installedPages++;
  }
 }catch(error){
  // Restore previously committed Pages when an individual metadata write fails.
@@ -253,6 +254,11 @@ if(JSON.stringify(currentApp.navigationPageApiNames??[])!==JSON.stringify(expect
   navigationOrder:commerceApp.navigationOrder,
   navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
  });
+}
+// Delete obsolete Page metadata only AFTER app navigation stops referencing it.
+// The generic Page endpoint denies cross-tenant, protected and dependent deletes.
+for(const name of retiredPages){
+ await api('/metadata/pages/'+encodeURIComponent(name),'DELETE');
 }
 // Seed the existing OneEngine administrator profile, not a parallel user role.
 // Only fill absent grants: administrator edits to existing grants are retained.
