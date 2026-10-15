@@ -50,6 +50,7 @@ import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from './chatter-authorisation.js';
 import { authoriseChatterFlow } from './chatter-flow-authorisation.js';
+import { sanitizeChatterCallerInput } from './modules/flows/chatter-request-input.mjs';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
@@ -8147,12 +8148,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
   const input = z.record(z.unknown()).safeParse(req.body);
   if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
-  // TargetRecordId belongs to the trusted Chatter assignment guard, not to a
-  // caller-controlled Flow input. Older page metadata may still submit it.
-  // Discard it before public input validation; the guard derives the record ID.
-  const callerInput = (apiName === 'CHATTER_ASSIGN_CONVERSATION' || apiName === 'CHATTER_SEND_MESSAGE')
-    ? Object.fromEntries(Object.entries(input.data).filter(([name]) => name !== 'TargetRecordId'))
-    : input.data;
+  const callerInput = sanitizeChatterCallerInput(apiName, input.data);
   const inputError = validateFlowInputValues(flow, callerInput);
   if (inputError) return res.status(400).json({ error: inputError });
   const guard = authoriseChatterFlow(apiName, {
