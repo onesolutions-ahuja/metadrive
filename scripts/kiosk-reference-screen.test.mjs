@@ -56,3 +56,10 @@ test('shared fullscreen region layout stretches sandbox embeds instead of intrin
  assert.match(runtime,/fill\(header\)/);
  assert.match(runtime,/flex:'1 1 0',minHeight:0/);
 });
+
+test('fullscreen grid overrides shared has-sidebar align-items start',()=>{
+ const runtime=readFileSync(new URL('../apps/web/src/TemplatePageRuntimeLayout.tsx',import.meta.url),'utf8');
+ const shared=readFileSync(new URL('../apps/web/src/styles.css',import.meta.url),'utf8');
+ assert.match(shared,/\.record-runtime-layout\.has-sidebar\s*\{[^}]*align-items:\s*start/);
+ assert.match(runtime,/gridTemplateRows:'minmax\(0,1fr\) 84px',alignItems:'stretch',alignContent:'stretch'/);
+});
