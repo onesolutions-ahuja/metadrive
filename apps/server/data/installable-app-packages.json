@@ -296,7 +296,7 @@
               "config": {
                 "namedCredentialResource": "{!AuthorisedCredentialId}",
                 "method": "POST",
-                "path": "messages",
+                "path": "{!AuthorisedMessagePath}",
                 "headers": "Content-Type: application/json",
                 "body": "{\"messaging_product\":\"whatsapp\",\"to\":\"{!RecipientPhone}\",\"type\":\"text\",\"text\":{\"body\":\"{!Body}\"}}",
                 "deliveryMode": "SYNC",
