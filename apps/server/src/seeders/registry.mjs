@@ -86,3 +86,34 @@ export async function applyVersionedSeed(client,{tenantId,kind,key,version,defin
     [tenantId,kind,key,version,checksum]);
   return {changed:true,version,checksum};
 }
+
+/**
+ * Called only from the SQL state writer's active transaction, AFTER the
+ * existing AppExchange runtime has resolved installation/activation and
+ * merged package metadata into the tenant snapshot. Never installs packages.
+ * The ledger commit rolls back together with the state on any failure.
+ */
+export async function recordInstalledAppPackageVersions(client, state, catalog) {
+  for (const [tenantId, tenant] of Object.entries(state?.tenants ?? {})) {
+    for (const pkg of catalog?.packages ?? []) {
+      const app = (tenant.records?.Connector_App__c ?? []).find(
+        item=>item.AppKey__c===pkg.appKey && item.Installed__c===true);
+      if (!app || (!pkg.installation?.allowInstalledMetadataWithoutLicence
+        && !['Trial','Licensed'].includes(app.LicenceStatus__c))) continue;
+      // No ledger entry may claim installation before the actual seeded
+      // metadata exists in the same tenant-scoped state being committed.
+      for (const collection of ['objects','pages','apps','flows']) {
+        for (const entry of pkg[collection] ?? []) {
+          if (!(tenant[collection] ?? []).some(item=>item.apiName===entry.apiName))
+            throw Error('Installed package metadata missing: '+pkg.appKey+'/'+collection+'/'+entry.apiName);
+        }
+      }
+      const checksum=packageChecksum(pkg);
+      await applyVersionedSeed(client,{
+        tenantId,kind:'app',key:pkg.appKey,
+        version:String(pkg.version ?? 'sha-'+checksum.slice(0,24)),
+        definition:pkg,apply:async()=>{}
+      });
+    }
+  }
+}
