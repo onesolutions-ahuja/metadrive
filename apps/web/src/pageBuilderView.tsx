@@ -1213,7 +1213,7 @@ function PageBuilder({
       object: page.pageType === 'Record Page' ? targetObject : undefined,
       device,
       preview: true,
-      disabled: true,
+      disabled: !interactivePreview,
       onAction: previewProperties.onAction,
       onChange: previewProperties.onChange,
       onNavigate: previewProperties.onNavigate,
