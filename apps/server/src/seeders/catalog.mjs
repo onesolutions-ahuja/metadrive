@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {assertMetadataOnlySeed} from './metadata-only.mjs';
 
 /**
  * Single canonical AppExchange package source. Installation packages contain
@@ -39,8 +40,7 @@ export function loadAppSeedCatalog() {
       throw Error('Missing or duplicate AppExchange seed key');
     seen.add(pkg.appKey);
     // A package can declare record Objects but never tenant customer rows.
-    if (pkg.records || pkg.users || pkg.refreshSessions || pkg.namedCredentials)
-      throw Error('Application seeder must not contain tenant business data or secrets');
+    assertMetadataOnlySeed(pkg, 'AppExchange package ' + pkg.appKey);
   }
   return catalog;
 }

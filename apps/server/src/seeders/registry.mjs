@@ -1,6 +1,7 @@
 import {coreMetadataSeed, mergeCoreMetadata, mergeSharedDependency} from './core.mjs';
 import {installedAppSeed, listSeedPackages} from './apps.mjs';
 import {createHash} from 'node:crypto';
+import {assertMetadataOnlySeed} from './metadata-only.mjs';
 
 /**
  * Metadata seeder interface. AppExchange owns all installation/licence/RBAC
@@ -62,6 +63,8 @@ export async function applyVersionedSeed(client,{tenantId,kind,key,version,defin
   assertSeedIdentity({tenantId,kind,key,version});
   if (!client?.query || typeof apply !== 'function') throw Error('Transactional SQL client and apply callback required');
   if (definition === undefined) throw Error('Package definition required');
+  if (kind === 'app' || kind === 'shared')
+    assertMetadataOnlySeed(definition, kind + '/' + key);
   const checksum = packageChecksum(definition);
   const lockKey = [tenantId,kind,key].join(':');
   // An advisory transaction lock serialises concurrent attempts to seed

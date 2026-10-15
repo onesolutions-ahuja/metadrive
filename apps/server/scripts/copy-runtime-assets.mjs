@@ -46,7 +46,7 @@ for(const name of [
   copyFileSync(resolve(serverDir,'src',name),resolve(destination,name));
 }
 // Pack the modular Core and AppExchange seeder runtime.
-for (const name of ['core.mjs', 'apps.mjs', 'catalog.mjs', 'registry.mjs']) {
+for (const name of ['core.mjs', 'apps.mjs', 'catalog.mjs', 'registry.mjs', 'metadata-only.mjs']) {
   const path = 'seeders/' + name;
   const target = resolve(destination, path);
   mkdirSync(dirname(target), {recursive:true});
