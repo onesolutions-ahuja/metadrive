@@ -68,7 +68,7 @@ export function mergeCoreMetadata(tenant, seed) {
 }
 
 /** Reuse the canonical platform Core factory on fresh tenant provisioning. */
-export function initializeTenantCore(template, {authorizedUserIds=[]}={}) {
+export function initializeTenantCore(template, {authorizedUserIds=[], trustedProvisioningDefaults=false}={}) {
   // Only an identity newly verified and explicitly authorized by the tenant
   // provisioner can enter this fresh tenant. Never copy template/sample users.
   const seed=coreMetadataSeed(template);
@@ -86,12 +86,12 @@ export function initializeTenantCore(template, {authorizedUserIds=[]}={}) {
     'fieldHistory','interviews','flowLogs','scheduleRuns','scheduleRetries',
     'automationSettings','emailAlerts','connectorSettings','connectorDefinitions'
   ];
-  const provisioned=allowed.size>0 ? Object.fromEntries(initialKeys
+  const provisioned=allowed.size>0 && trustedProvisioningDefaults ? Object.fromEntries(initialKeys
     .filter(key=>Object.hasOwn(template,key))
     .map(key=>[key,structuredClone(template[key])])) : seed;
   // Preserve only the server-generated, secret-free WhatsApp placeholder for
   // freshly provisioned tenants; never inherit real tenant credentials.
-  const placeholders=allowed.size>0 ? (template.namedCredentials??[])
+  const placeholders=allowed.size>0 && trustedProvisioningDefaults ? (template.namedCredentials??[])
     .filter(item=>item.name==='WhatsApp_Dummy' && item.authType==='None'
       && /^https:\/\/graph\.facebook\.com\/v\d+\.\d+\/000000000000000\/?$/.test(item.baseUrl??''))
     .map(item=>structuredClone(item)) : [];
