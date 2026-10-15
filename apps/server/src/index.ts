@@ -1,3 +1,4 @@
+import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
 import { registerHealthAndDiscoveryRoutes } from './modules/security/health-routes.js';
 import { defaultRoles, roleApiNameForName, roleIdForName, profileIdForRole } from './modules/security/role-helpers.js';
@@ -5942,29 +5943,7 @@ installTenantRecoveryCentre(app, {
 
 registerIdentityProfileRoute({ app, accessAuthentication, getPrincipal, principalUser, tenantData,
   profileIdForRole, hasFieldPermission, hasRecordTypeAccessForUser, effectivePermissions });
-app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const notifications = tenant.notifications
-    .filter((notification) => notification.recipientId === principal.userId)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  return res.json({ notifications, unreadCount: notifications.filter((notification) => !notification.readAt).length });
-});
-app.post('/api/notifications/:id/read', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const notification = tenant.notifications.find((item) =>
-    item.id === routeParam(req, 'id') && item.recipientId === principal.userId);
-  if (!notification) return res.status(404).json({ error: 'Notification was not found' });
-  const updated = { ...notification, readAt: notification.readAt ?? new Date().toISOString() };
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    notifications: tenant.notifications.map((item) => item.id === updated.id ? updated : item)
-  });
-  return res.json({ notification: updated });
-});
+registerNotificationRoutes(app, { accessAuthentication, getPrincipal, tenantData, routeParam, persistTenantRecords });
 app.get('/api/approvals/inbox', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
