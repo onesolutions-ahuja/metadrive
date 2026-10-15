@@ -2501,7 +2501,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           </label>}
         </div>
         <div className="header-tools" ref={appUtilityRef}>
-          <button type="button" className="icon-button" title="History" aria-label="History" aria-expanded={activeUtility === 'History'}
+          <button type="button" className="icon-button header-history-button" title="History" aria-label="History" aria-expanded={activeUtility === 'History'}
             onClick={() => setActiveUtility((current) => current === 'History' ? null : 'History')}><History size={17} /></button>
           {activeUtility === 'History' && <section className="app-utility-popover" aria-label="History utility">
             <div className="app-utility-heading"><strong>History</strong><button className="icon-button" aria-label="Close History" onClick={() => setActiveUtility(null)}><X size={14} /></button></div>
