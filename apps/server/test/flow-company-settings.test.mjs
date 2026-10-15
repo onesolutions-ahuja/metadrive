@@ -75,6 +75,7 @@ test('Flow formula reads tenant VAT settings and rejects caller-supplied overrid
     const root = `http://127.0.0.1:${port}/api`;
     const send = async (pathName, token, method = 'GET', body) => {
       const response = await fetch(`${root}${pathName}`, {
+        signal: AbortSignal.timeout(20000),
         method,
         headers: {
           ...(token ? { authorization: `Bearer ${token}` } : {}),
