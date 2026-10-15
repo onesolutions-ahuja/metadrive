@@ -1,3 +1,4 @@
+import { loadPageBuilderFactory, loadObjectManagerFactory, LazyReportBuilder } from './builders/optionalBuilderEntries';
 import { createLoginView } from './loginView';
 import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, isAuthErrorMessage, withAuthRefreshLock, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords } from './authClient';
 
@@ -242,8 +243,8 @@ const LazySetupWorkspace = React.lazy(async () => {
   const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
   const { RecordWorkspace } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
   const PageBuilder = React.lazy(async () => {
-    const [{ createPageBuilder }, { MetadataComponentProperties }] = await Promise.all([
-      import('./pageBuilderView'), import('./componentPropertiesView')
+    const [createPageBuilder, { MetadataComponentProperties }] = await Promise.all([
+      loadPageBuilderFactory(), import('./componentPropertiesView')
     ]);
     return { default: createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent) };
   });
@@ -269,8 +270,8 @@ function PageHeading({ eyebrow, title, description, actions }: { eyebrow?: strin
 // Builders and advanced settings are separate on-demand chunks, not login dependencies.
 const ConnectorSettingsWorkspace = React.lazy(async () => ({ default: (await import('./connectorSettingsView')).ConnectorSettingsWorkspace }));
 const SetupHome = React.lazy(async () => ({ default: (await import('./setupHomeView')).createSetupHome(PageHeading) }));
-const ObjectManager = React.lazy(async () => ({ default: (await import('./objectManagerView')).createObjectManager(apiRequest) }));
-const ReportBuilder = React.lazy(async () => ({ default: (await import('./reportBuilderView')).ReportBuilder }));
+const ObjectManager = React.lazy(async () => ({ default: (await loadObjectManagerFactory())(apiRequest) }));
+const ReportBuilder = LazyReportBuilder;
 const Permissions = React.lazy(async () => ({ default: (await import('./permissionsView')).createPermissions(apiRequest, PageHeading) }));
 const settingsViewModules = () => import('./settingsWorkspaceViews').then(module => module.createSettingsViews(apiRequest, PageHeading));
 const AutomationSettingsWorkspace = React.lazy(async () => ({ default: (await settingsViewModules()).AutomationSettingsWorkspace }));
