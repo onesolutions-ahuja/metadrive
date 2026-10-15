@@ -4620,6 +4620,15 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     };
     const data: TenantData = {
       ...tenantSeed,
+      records: {
+        ...tenantSeed.records,
+        Connector_App__c: ensureConnectorAppRecords(tenantSeed.records.Connector_App__c, admin.id),
+        ...(!((process.env.METADRIVE_UNIFIED_CONNECTORS === 'true') &&
+          process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID)
+          ? { UneConnector__c: tenantSeed.records.UneConnector__c?.length
+              ? tenantSeed.records.UneConnector__c : connectorRecords(defaultConnectorSettings, admin.id) }
+          : {})
+      },
       accessControl: {
         ...tenantSeed.accessControl,
         users: [...tenantSeed.accessControl.users, developerAccess]
