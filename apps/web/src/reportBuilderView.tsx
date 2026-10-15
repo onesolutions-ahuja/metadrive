@@ -13,7 +13,6 @@ import {resolveSetupNavigation} from './platformSetupNavigation';
 import {readVerifiedMetadata,saveVerifiedMetadata,type MetadataPublicationResponse} from './verifiedMetadataCache';
 import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
-import SchemaBuilder from './SchemaBuilder';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -75,23 +74,12 @@ import {
   PanelLeft,
   PanelRight
 } from 'lucide-react';
-import FlowBuilderWorkspace from './FlowBuilder';
-import FlowScreenContent from './FlowScreenContent';
-import FlowLogs from './FlowLogs';
-import FlowInterviews from './FlowInterviews';
-import ScheduledFlows from './ScheduledFlows';
-import DashboardBuilder from './DashboardBuilder';
-import ComponentLibrary from './ComponentLibrary';
-import RegisteredComponent from './RegisteredComponent';
-import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import FlowInputBindingEditor from './FlowInputBindingEditor';
 import RecordFilterEditor from './RecordFilterEditor';
 import ComponentVisibilityEditor from './ComponentVisibilityEditor';
 import PageRouteDirectory from './PageRouteDirectory';
 import { isComponentVisible } from './componentVisibility';
-import PageComponentVisualEditor from './PageComponentVisualEditor';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
-import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';

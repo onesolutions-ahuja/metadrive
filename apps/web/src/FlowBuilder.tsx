@@ -1,3 +1,6 @@
+import { layoutFlowGraph } from './builders/flowGraphLayout';
+import { flowTypeOptions, formulaFunctions, formulaOperators } from './builders/flowEditorCatalog';
+import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './builders/flowEditorData';
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
 import { flowCanvasBounds, moveFlowPosition, storedFlowPosition } from './flowCanvasLayout.mjs';
 import FlowTestsPanel from './FlowTestsPanel';
@@ -103,35 +106,6 @@ type FlowBuilderProps = {
   onDeletePlatformEvent: (apiName: string) => Promise<void>;
 };
 
-type ConfigRow = Record<string, unknown>;
-type DecisionOutcome = { name: string; label: string; conditionLogic: string; conditions: ConfigRow[] };
-
-function rowsFrom(value: unknown): ConfigRow[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is ConfigRow => typeof item === 'object' && item !== null && !Array.isArray(item))
-    : [];
-}
-function outcomesFrom(value: unknown): DecisionOutcome[] {
-  return rowsFrom(value).map((item, index) => ({
-    name: typeof item.name === 'string' ? item.name : `Outcome_${index + 1}`,
-    label: typeof item.label === 'string' ? item.label : `Outcome ${index + 1}`,
-    conditionLogic: typeof item.conditionLogic === 'string' ? item.conditionLogic : displayValue(rowsFrom(item.conditions)[0]?.logic) || 'All',
-    conditions: rowsFrom(item.conditions)
-  }));
-}
-
-function screenOutcomesFrom(value: unknown): Array<{ name: string; label: string }> {
-  const outcomes = rowsFrom(value).map((item, index) => ({
-    name: typeof item.name === 'string' ? item.name : `Outcome_${index + 1}`,
-    label: typeof item.label === 'string' ? item.label : `Outcome ${index + 1}`
-  }));
-  return outcomes.length ? outcomes : [{ name: 'Default', label: 'Next' }];
-}
-
-function displayValue(value: unknown): string {
-  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
-}
-
 export default function FlowBuilder({
   landing = false, flow, flows, onListFlows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
@@ -162,27 +136,6 @@ export default function FlowBuilder({
   const flowPageCount = Math.max(1, Math.ceil(totalFlowCount / 50));
   const safeFlowPage = Math.min(existingFlowPage, flowPageCount);
   const displayedFlows: FlowListRow[] = remoteFlowResults ? remoteFlowResults.flows : matchingFlows.slice((safeFlowPage - 1) * 50, safeFlowPage * 50);
-  const flowTypeOptions: Array<{ type: FlowDefinitionMetadata['flowType']; description: string }> = [
-    { type: 'Screen Flow', description: 'Guide a user through screens and actions.' },
-    { type: 'Record-Triggered Flow', description: 'Run when a record is created or updated.' },
-    { type: 'Autolaunched Flow', description: 'Run in the background or from another flow.' },
-    { type: 'Flow Orchestration', description: 'Coordinate durable approval stages and human work items.' },
-    { type: 'Schedule-Triggered Flow', description: 'Run records on a scheduled basis.' },
-    { type: 'Platform Event-Triggered Flow', description: 'Run when a platform event is published.' }
-  ];
-  const formulaFunctions = [
-    'TRUE', 'FALSE', 'IF', 'CASE', 'AND', 'OR', 'NOT', 'XOR', 'ISNEW', 'ISCLONE', 'ISCHANGED', 'PRIORVALUE', 'ISBLANK', 'ISNULL', 'BLANKVALUE', 'NULLVALUE', 'EXACT',
-    'ISNUMBER', 'LEN', 'ASCII', 'LOWER', 'UPPER', 'TRIM', 'PROPER', 'LEFT', 'RIGHT', 'MID', 'FIND',
-    'SUBSTITUTE', 'CONCATENATE', 'CONTAINS', 'BEGINS', 'ISPICKVAL', 'INCLUDES', 'VALUE', 'TEXT', 'DATE',
-    'DATEVALUE', 'DATETIMEVALUE', 'TIME', 'TIMEVALUE', 'TODAY', 'NOW', 'TIMENOW', 'YEAR', 'MONTH', 'DAY',
-    'WEEKDAY', 'WEEKNUM', 'HOUR', 'MINUTE', 'SECOND', 'MILLISECOND', 'ADDDAYS', 'DAYS', 'ADDMONTHS',
-    'TZOFFSET', 'ABS', 'SQRT', 'POWER', 'EXP', 'LN', 'LOG', 'PI', 'DEGREES', 'RADIANS', 'SIN', 'COS',
-    'TAN', 'ASIN', 'ACOS', 'ATAN', 'ATAN2', 'SINH', 'COSH', 'TANH', 'COT', 'SIGN', 'CEILING', 'MCEILING',
-    'FLOOR', 'MFLOOR', 'MIN', 'MAX', 'MOD', 'ROUND', 'ROUNDUP', 'ROUNDDOWN', 'TRUNC', 'REGEX', 'GEOLOCATION',
-    'DISTANCE', 'CURRENCYRATE', 'CONVERTCURRENCY', 'CASESAFEID', 'HYPERLINK', 'IMAGE', 'URLENCODE',
-    'ENCODEURL', 'URLDECODE', 'HTMLENCODE', 'JSENCODE', 'REPT', 'REVERSE', 'LPAD', 'RPAD', 'BR'
-  ];
-  const formulaOperators = ['+', '-', '*', '/', '^', '&', '=', '<>', '!=', '<', '<=', '>', '>=', 'AND', 'OR'];
   const isElementAvailable = (type: string) =>
     (type !== 'Screen' || flow.flowType === 'Screen Flow')
     && (type !== 'Roll Back Records' || ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType));
@@ -229,59 +182,7 @@ export default function FlowBuilder({
   const selectedPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
   const toolboxGroups = [...new Set(flowElementMetadata.map((item) => item.group))];
   const freeformLayout = flow.startConfig.canvasLayoutMode === 'Freeform';
-  const graphNodeWidth = 320;
-  const graphColumnGap = 115;
-  const graphRowGap = 155;
-  const graphPadding = 56;
-  const graphLayers = new Map<number, number>();
-  const start = flow.elements.find((element) => element.type === 'Start');
-  const pending = start ? [start.id] : [];
-  if (start) graphLayers.set(start.id, 0);
-  while (pending.length) {
-    const from = pending.shift();
-    if (from === undefined) continue;
-    for (const connector of flow.connectors.filter((item) => item.from === from)) {
-      if (!graphLayers.has(connector.to)) {
-        graphLayers.set(connector.to, (graphLayers.get(from) ?? 0) + 1);
-        pending.push(connector.to);
-      }
-    }
-  }
-  const lastGraphLayer = Math.max(-1, ...graphLayers.values()) + 1;
-  flow.elements.filter((element) => !graphLayers.has(element.id)).forEach((element, index) => {
-    graphLayers.set(element.id, lastGraphLayer + index);
-  });
-  const elementsByLayer = new Map<number, FlowDefinitionMetadata['elements']>();
-  flow.elements.forEach((element) => {
-    const layer = graphLayers.get(element.id) ?? 0;
-    elementsByLayer.set(layer, [...(elementsByLayer.get(layer) ?? []), element]);
-  });
-  const graphColumns = Math.max(1, ...Array.from(elementsByLayer.values(), (elements) => elements.length));
-  const graphRows = Math.max(1, elementsByLayer.size);
-  let graphWidth = graphPadding * 2 + graphColumns * graphNodeWidth + (graphColumns - 1) * graphColumnGap;
-  let graphHeight = graphPadding * 2 + graphRows * graphRowGap;
-  const autoGraphPositions = new Map<number, { x: number; y: number }>();
-  elementsByLayer.forEach((elements, layer) => {
-    const layerWidth = elements.length * graphNodeWidth + (elements.length - 1) * graphColumnGap;
-    const offset = (graphWidth - layerWidth) / 2;
-    elements.forEach((element, index) => autoGraphPositions.set(element.id, {
-      x: offset + index * (graphNodeWidth + graphColumnGap),
-      y: graphPadding + layer * graphRowGap
-    }));
-  });
-  const graphPositions = new Map<number, { x: number; y: number }>();
-  flow.elements.forEach((element) => {
-    const automatic = autoGraphPositions.get(element.id) ?? { x: graphPadding, y: graphPadding };
-    graphPositions.set(element.id, freeformLayout ? storedFlowPosition(element, automatic) : automatic);
-  });
-  if (dragPreview && freeformLayout && graphPositions.has(dragPreview.id)) {
-    graphPositions.set(dragPreview.id, { x: dragPreview.x, y: dragPreview.y });
-  }
-  if (freeformLayout) {
-    const bounds = flowCanvasBounds(graphPositions, graphWidth, graphHeight);
-    graphWidth = bounds.width;
-    graphHeight = bounds.height;
-  }
+  const { graphNodeWidth, graphPadding, graphWidth, graphHeight, graphPositions, autoGraphPositions } = layoutFlowGraph(flow, freeformLayout, dragPreview);
   const setCanvasPosition = (id: number, position: { x: number; y: number }) => {
     onFlowChange({
       ...flow,
