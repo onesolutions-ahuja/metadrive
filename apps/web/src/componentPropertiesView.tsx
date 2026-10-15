@@ -354,6 +354,19 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
         {flows.map((flow) => <option key={flow.apiName} value={flow.apiName}>{flow.label}</option>)}
       </select>
     </label>}
+    {typeof properties.platformSlotKey === 'string' && properties.platformSlotKey && <>
+      <div className="properties-section-title">Administration control presentation</div>
+      <p className="properties-help">Configure this existing protected control without changing its OneEngine action, validation or permissions.</p>
+      {([
+        ['controlLabel','Control label'],
+        ['controlPlaceholder','Placeholder'],
+        ['controlHelpText','Help text'],
+        ['controlDescription','Description']
+      ] as const).map(([key,label])=><label key={key} className="form-label">{label}
+        <input className="form-control" type="text" value={String(properties[key] ?? '')}
+          onChange={(event)=>update(key,event.target.value)} />
+      </label>)}
+    </>}
     <div className="properties-section-title">Appearance and Settings</div>
     {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && !isObjectBinding(key) && !isField(key) && !isFilter(key)).map(([key, value]) => {
       if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
