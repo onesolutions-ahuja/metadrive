@@ -9,7 +9,7 @@ const catalog={packages:[{
   apps:[{apiName:'CRM'}],flows:[{apiName:'CRM_Activate'}]
 }]};
 const baseTenant=()=>({
-  objects:[{apiName:'Lead'}],pages:[{apiName:'CRM_Home'}],
+  objects:[{apiName:'Lead',fields:[{apiName:'Name'}]}],pages:[{apiName:'CRM_Home'}],
   apps:[{apiName:'CRM'}],flows:[{apiName:'CRM_Activate'}],
   records:{Connector_App__c:[{AppKey__c:'crm',Installed__c:true,LicenceStatus__c:'Licensed'}],
     Lead:[{Id:'customer-record'}]},
@@ -33,7 +33,8 @@ test('agent2: an uninstalled, unlicensed or incomplete app does not enter the le
  for(const change of [
   t=>{t.records.Connector_App__c[0].Installed__c=false;},
   t=>{t.records.Connector_App__c[0].LicenceStatus__c='Expired';},
-  t=>{t.pages=[];}
+  t=>{t.pages=[];},
+  t=>{t.objects[0].fields=[];}
  ]){
   const tenant=baseTenant();change(tenant);
   const {client,statements}=fake();
