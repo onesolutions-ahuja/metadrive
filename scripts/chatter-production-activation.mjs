@@ -39,4 +39,15 @@ if(page.status!=='Active'){
 const [pages,flows,grants]=await Promise.all([api('/metadata/pages'),api('/metadata/flows'),api('/chatter/access')]);
 const p2=pages.data.pages?.find(x=>x.apiName==='UNE_CHATTER');
 if(p2?.status!=='Active'||!['CHATTER_SEND_MESSAGE','CHATTER_ASSIGN_CONVERSATION'].every(n=>flows.data.flows?.some(x=>x.apiName===n&&x.status==='Active'&&x.activeVersion))||grants.status!==200)throw Error('Post-activation state mismatch');
+const unauth=await api('/chatter/access','GET',undefined,false);
+if(unauth.status!==401)throw Error('Chatter unauthorized read was not rejected: '+unauth.status);
+const unsigned=await api('/whatsapp/webhook','POST',{object:'whatsapp_business_account',entry:[]},false);
+if(unsigned.status!==403)throw Error('Unsigned webhook was not rejected: '+unsigned.status);
+const forbidden={ConversationId:JSON.stringify(['ungranted-account','447700900000']),
+ ChannelAccountId:'ungranted-account',RecipientPhone:'447700900000',Body:'Chatter security test'};
+for(const flow of ['CHATTER_SEND_MESSAGE','CHATTER_ASSIGN_CONVERSATION']){
+ const result=await api('/flows/'+flow+'/execute','POST',forbidden);
+ if(result.status!==400&&result.status!==403)throw Error(flow+' ungranted test was not denied: '+result.status);
+}
+report.denialTests='passed';
 console.log('CHATTER_ACTIVATION_RESULT '+JSON.stringify(report));
