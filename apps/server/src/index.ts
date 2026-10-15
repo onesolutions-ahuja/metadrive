@@ -6031,7 +6031,6 @@ installTenantRecoveryCentre(app, {
 
 registerIdentityProfileRoute({ app, accessAuthentication, getPrincipal, principalUser, tenantData,
   profileIdForRole, hasFieldPermission, hasRecordTypeAccessForUser, effectivePermissions });
-
 app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6041,7 +6040,6 @@ app.get('/api/notifications', accessAuthentication, (req: Request, res: Response
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   return res.json({ notifications, unreadCount: notifications.filter((notification) => !notification.readAt).length });
 });
-
 app.post('/api/notifications/:id/read', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6056,7 +6054,6 @@ app.post('/api/notifications/:id/read', accessAuthentication, (req: Request, res
   });
   return res.json({ notification: updated });
 });
-
 app.get('/api/approvals/inbox', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6084,7 +6081,6 @@ app.get('/api/approvals/inbox', accessAuthentication, (req: Request, res: Respon
     });
   return res.json({ requests });
 });
-
 app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -6162,14 +6158,12 @@ app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res
   persistTenantRecords(principal.tenantId, { ...tenant, approvalRequests: requests, notifications, interviews });
   return res.json({ request: decided });
 });
-
 app.use('/api/metadata', accessAuthentication);
 app.use('/api/connector-settings', accessAuthentication);
 app.use('/api/connector-providers', accessAuthentication);
 app.use('/api/integration-connections', accessAuthentication);
 app.use('/api/named-credentials', accessAuthentication);
 app.use('/api/component-library', accessAuthentication);
-
 app.get('/api/metadata/objects', requirePermission('metadata:read'), (_req: Request, res: Response) => {
   res.json({ objects: tenantData(getPrincipal(res).tenantId)?.objects ?? [] });
 });
@@ -6775,7 +6769,6 @@ app.patch('/api/connector-apps/:appKey/credential-enabled', accessAuthentication
   });
   return res.json({ credential: publicNamedCredential(updated) });
 });
-
 // Operator-controlled activation: connectorApps:edit grants configuration access, not activation.
 app.patch('/api/named-credentials/:id/enabled', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
   const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
@@ -6792,7 +6785,6 @@ app.patch('/api/named-credentials/:id/enabled', requirePermission('namedCredenti
   persistTenantRecords(principal.tenantId, { ...tenant, namedCredentials: tenant.namedCredentials.map((row) => row.id === credential.id ? updated : row) });
   return res.json({ credential: publicNamedCredential(updated) });
 });
-
 // Report credential readiness without exposing encryption keys or other tenants' data.
 app.get('/api/named-credentials/readiness', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
@@ -6892,7 +6884,6 @@ app.get('/api/oauth/callback',async(req:Request,res:Response)=>{
     return res.status(400).type('text/plain').send('OAuth authorization failed or expired. Start authorization again from Named Credentials.');
   }
 });
-
 app.post('/api/named-credentials', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
   const parsed = namedCredentialRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
@@ -7401,7 +7392,6 @@ function authorizationGrants(principal: Principal, tenant: TenantData): AuthGran
   tenantCache.set(tenant, resolved);
   return resolved;
 }
-
 // Profile defaults preserve legacy tenant navigation. Explicit false hides an app/tab.
 // Permission set grants are additive; group muting masks only that group's grant.
 function canNavigate(principal: Principal, tenant: TenantData, type: 'app' | 'tab', key: string): boolean {
