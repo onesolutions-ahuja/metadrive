@@ -1,3 +1,4 @@
+import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
 import { registerReportRoutes } from './modules/reports/routes.js';
 import { registerDashboardRoutes } from './modules/dashboards/routes.js';
 import { registerDashboardSnapshotRoutes } from './modules/dashboards/snapshot-routes.js';
@@ -4313,24 +4314,6 @@ function loadState(sqlState?: unknown): PlatformState {
     }
     throw new Error(`Cannot load platform state from ${dataPath}: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-// The eleven migrated built-in object definitions are present in PostgreSQL.
-// Keep them in the runtime state (including the database snapshot), but not in
-// the local JSON compatibility cache/seed. Connector objects not yet migrated
-// remain in the seed until their SQL migration is verified.
-const sqlMigratedSeedObjects = new Set([
-  'User', 'Account', 'Contact', 'Opportunity', 'Case', 'Renewal__c',
-  'Sale__c', 'Campaign', 'Tenant__c', 'Global_Settings__c',
-  'Communication_Records__c'
-]);
-function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): PlatformState {
-  return {
-    ...snapshot,
-    tenants: Object.fromEntries(Object.entries(snapshot.tenants).map(([tenantId, tenant]) => [
-      tenantId,
-      { ...tenant, objects: tenantId === 'unesolutions-dev' ? tenant.objects.filter(object => !sqlMigratedSeedObjects.has(object.apiName)) : tenant.objects }
-    ]))
-  };
 }
 function persistState(next: PlatformState): void {
   if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
