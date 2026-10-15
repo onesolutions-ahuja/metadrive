@@ -1,3 +1,4 @@
+// Retry write admission after SQL refresh serialization fix on Railway.
 const base=process.env.METADRIVE_API_BASE??'https://metadrive-production.up.railway.app';
 const email=process.env.METADRIVE_TEST_EMAIL,password=process.env.METADRIVE_TEST_PASSWORD;
 if(!email||!password)throw Error('Missing CI authentication secrets');
