@@ -15,8 +15,8 @@ export function registerPageDeletionRoute(app:{
  delete:(path:string,...handlers:any[])=>unknown;
 },deps:{
  permission:unknown;
- getPrincipal:(res:unknown)=>{tenantId:string};
+ getPrincipal:(res:any)=>{tenantId:string};
  getState:()=>{tenants:Record<string,PageDeletionTenant>};
  isProtected:(page:PageDeletionMetadata)=>boolean;
- commit:(next:unknown)=>Promise<void>;
+ commit:(next:any)=>Promise<void>;
 }):void;
