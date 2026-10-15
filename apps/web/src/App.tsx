@@ -244,11 +244,17 @@ async function fetchFlowListPage(page: number, search: string) {
 
 // The full setup workspace is an on-demand route module, never part of the login bundle.
 const LazySetupWorkspace = React.lazy(async () => {
-  const [{ createSetupApp }, { createPageRuntimeViews }, { createRecordWorkspaceViews }, { ProfilePasswordMenu, ConnectionHealthIndicator }, { customTabStyles }] = await Promise.all([
-    import('./setupAppShell'), import('./pageRuntimeViews'), import('./recordWorkspaceViews'), import('./authStatusViews'), import('./shell/customTabStyles')
+  const [{ createSetupApp }, { createPageRuntimeViews }, { ProfilePasswordMenu, ConnectionHealthIndicator }, { customTabStyles }] = await Promise.all([
+    import('./setupAppShell'), import('./pageRuntimeViews'), import('./authStatusViews'), import('./shell/customTabStyles')
   ]);
   const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
-  const { RecordWorkspace } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
+  // Record CRUD is an optional workspace, not a dependency of App Pages,
+  // dashboards, Flows or tenant setup. Load it only on record navigation.
+  const RecordWorkspace = React.lazy(async () => {
+    const { createRecordWorkspaceViews } = await import('./recordWorkspaceViews');
+    return { default: createRecordWorkspaceViews(apiRequest, usePageLayoutDevice,
+      ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent).RecordWorkspace };
+  });
   const PageBuilder = React.lazy(async () => {
     const [{ createPageBuilder }, { MetadataComponentProperties }] = await Promise.all([
       import('./pageBuilderView'), import('./componentPropertiesView')
