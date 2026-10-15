@@ -10,9 +10,9 @@ async function get(path,method='GET',body){
 const login=await get('/auth/login','POST',{email,password});
 if(login.status!==200||login.data.user?.tenantId!=='unesolutions-dev')throw Error('Refusing unexpected tenant');
 token=login.data.access_token;
-const [access,records,grants,objects]=await Promise.all([
+const [access,records,grants,objects,credentials]=await Promise.all([
  get('/chatter/access'),get('/records/Communication_Records__c?limit=200'),
- get('/records/Chatter_Channel_Grant__c?limit=100'),get('/metadata/objects')
+ get('/records/Chatter_Channel_Grant__c?limit=100'),get('/metadata/objects'),get('/named-credentials')
 ]);
 const list=records.data.records||[];
 const whatsapp=list.filter(x=>String(x.Communication_Mode__c||'').toLowerCase()==='whatsapp');
@@ -26,5 +26,5 @@ console.log('CHATTER_READONLY_DIAGNOSTIC '+JSON.stringify({
  supportAccount: String(login.data.user.email||email).toLowerCase()==='support@unesolutions.co.uk',
  endpoints:{access:access.status,records:records.status,grantRecords:grants.status,objects:objects.status},
  counts:{visibleRecordPage:list.length,whatsapp:whatsapp.length,whatsappMessages:msg.length,renderableMessages:usable.length,authorizedChannels:gr.filter(x=>x.canRead).length},
- grantObjectExists:(objects.data.objects||[]).some(o=>o.apiName==='Chatter_Channel_Grant__c')
+ grantObjectExists:(objects.data.objects||[]).some(o=>o.apiName==='Chatter_Channel_Grant__c'), credentialStatus:credentials.status, graphCredentialCount:(credentials.data.credentials||[]).filter(x=>{try{return new URL(x.baseUrl).hostname==='graph.facebook.com'&&!!x.configuration?.PhoneNumberId}catch{return false}}).length
 }));
