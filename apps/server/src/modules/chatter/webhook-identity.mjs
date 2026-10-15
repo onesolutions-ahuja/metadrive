@@ -3,7 +3,7 @@
  * Never accept channel identity from a page prop, Flow input, or user-supplied header.
  */
 export function chatterIncomingIdentityFields(object, sender, displayPhone, phoneId) {
-  if (typeof phoneId !== 'string' || !/^\\d{8,}$/.test(phoneId)) {
+  if (typeof phoneId !== 'string' || !/^\d{8,}$/.test(phoneId)) {
     throw new Error('Signed WhatsApp webhook did not contain a valid Phone Number ID');
   }
   return {
