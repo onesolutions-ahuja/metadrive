@@ -12,7 +12,7 @@ test('OneEngine protected pages expose editable component-instance slots',()=>{
   assert.equal(page.scope,'platform-system');
   assert.equal(page.ownerNamespace,'MetaDrive');
   assert.deepEqual(page.requiredPermissions,[d.permission]);
-  assert.equal(page.layoutMode,'free-canvas');
+  assert.equal(page.layoutMode,'template');
   assert.deepEqual(page.components.map((c:any)=>c.properties.platformSlotKey),protectedWorkspacePageSlots[d.workspace]);
   assert.equal(new Set(page.components.map((c:any)=>c.id)).size,page.components.length);
  }
