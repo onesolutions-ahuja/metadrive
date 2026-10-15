@@ -51,7 +51,7 @@ test('declarative action events reference only installed active flows and pages'
   }
  }
  assert.deepEqual(new Set(commerceApp.navigationPageApiNames),pages);
- assert.equal(commerceApp.navigationOrder.length,pages.size);
+ assert.equal(commerceApp.navigationOrder.length,pages.size+commerceApp.navigationItems.length);
 });
 test('all Flow graphs are valid DAGs apart from supported loops, guard modifiers and execute through core Objects',()=>{
  const names=new Set(commerceFlows.map(f=>f.apiName));
