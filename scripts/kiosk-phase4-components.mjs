@@ -205,22 +205,38 @@ export const commerceComponents=[
 // The same library components remain independently editable; V3 is a versioned
 // publication because existing tenant-owned V2 definitions must not be overwritten.
 const railSource = `
-export default function CategoryRail({title='MENU',categories='RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',accentColor='#ed002d',onAction}){
- const [selected,setSelected]=React.useState('BURGERS & WRAPS');
- const items=String(categories||'').split(',').map(x=>x.trim()).filter(Boolean);
- return <nav aria-label="Product categories" style={{display:'flex',flexDirection:'column',background:'#fff',height:'100%',boxSizing:'border-box',fontFamily:'Arial,sans-serif'}}>
-  <div style={{padding:'27px 16px 30px',fontSize:28,fontWeight:900,textAlign:'center',borderBottom:'1px solid #eee'}}>{title}</div>
-  {items.map((item,i)=><button type="button" key={item} aria-current={selected===item?'page':undefined}
-   onClick={()=>{setSelected(item);void onAction({event:'catalog',value:{category:item}})}}
-   style={{textAlign:'left',display:'flex',alignItems:'center',gap:12,background:selected===item?'#fff0f2':'#fff',
-    border:0,borderBottom:'1px solid #eee',borderLeft:selected===item?'5px solid '+accentColor:'5px solid transparent',
-    color:selected===item?accentColor:'#181818',fontWeight:selected===item?800:650,fontSize:13,
-    padding:'18px 10px',minHeight:61,cursor:'pointer'}}>
-   <span aria-hidden="true" style={{fontSize:22,width:29,textAlign:'center'}}>{['🍗','%','🍗','🍱','🍔','🍗','🍟','🍦','🥬','+'][i%10]}</span>
-   <span>{item}</span>
-  </button>)}
+
+export default function CategoryRail({title='MENU',records=[],pageState={},nameField='Name',imageField='ImageUrl',
+ brandLogoUrl='',brandLabel='YOUR BRAND',accentColor='#ed002d',backgroundColor='#ffffff',onAction,preview=false}){
+ const categories=(records||[]).filter(item=>item.IsActive!==false).slice().sort((a,b)=>Number(a.SortOrder||0)-Number(b.SortOrder||0));
+ const selected=pageState.selectedCategoryId||categories[0]?.Id;
+ React.useEffect(()=>{
+  if(!preview && !pageState.selectedCategoryId && categories.length){
+   const first=categories[0];
+   void onAction({event:'selectCategory',value:{categoryId:first.Id,categoryName:first[nameField]||first.Name}});
+  }
+ },[categories.length,pageState.selectedCategoryId,preview]);
+ return <nav aria-label="Product categories" style={{height:'100%',minHeight:0,boxSizing:'border-box',background:backgroundColor,fontFamily:'Arial,sans-serif'}}>
+  <div style={{height:145,display:'grid',placeItems:'center',borderBottom:'1px solid #f0f0f0',padding:12,boxSizing:'border-box'}}>
+   {brandLogoUrl?<img src={brandLogoUrl} referrerPolicy="no-referrer" alt={brandLabel} style={{maxWidth:'82%',maxHeight:118,objectFit:'contain'}}/>
+    :<strong style={{fontSize:21,fontWeight:900,color:accentColor,textAlign:'center'}}>{brandLabel}</strong>}
+  </div>
+  {categories.map((item,index)=><button type="button" key={item.Id||index}
+   aria-current={selected===item.Id?'page':undefined}
+   onClick={()=>onAction({event:'selectCategory',value:{categoryId:item.Id,categoryName:item[nameField]||item.Name}})}
+   style={{display:'flex',width:'100%',alignItems:'center',gap:10,padding:'14px 12px',
+    minHeight:69,background:selected===item.Id?'#fff0f2':'transparent',border:0,borderBottom:'1px solid #ededed',
+    borderLeft:'5px solid '+(selected===item.Id?accentColor:'transparent'),cursor:'pointer',
+    color:selected===item.Id?accentColor:'#181818',textAlign:'left'}}>
+    {item[imageField]?<img src={String(item[imageField])} alt="" referrerPolicy="no-referrer"
+      style={{height:44,width:44,objectFit:'contain'}}/>
+      :<span aria-hidden="true" style={{height:44,width:44,display:'grid',placeItems:'center',fontSize:25}}>🍗</span>}
+    <span style={{fontWeight:800,textTransform:'uppercase',fontSize:12,lineHeight:1.2}}>{item[nameField]||item.Name}</span>
+   </button>)}
+  {!categories.length&&<p style={{padding:14,fontSize:12}}>No product categories available.</p>}
  </nav>;
 }
+
 `;
 const railCss=`.md-commerce-rail{background:white}`;
 const cardCss=`
