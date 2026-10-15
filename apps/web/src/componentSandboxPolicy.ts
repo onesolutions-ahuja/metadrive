@@ -3,7 +3,7 @@
 const forbiddenKey = /(?:password|secret|credential|authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|private[_-]?key|bearer[_-]?token|session[_-]?cookie|session[_-]?secret)/i;
 const sensitiveKeys = new Set(['token','clientSecret','passwordHash','passwordSalt','bearerToken','apiKey','secretKey','authHeader']);
 export const SAFE_COMPONENT_PROP_KEYS = ['label','title','subtitle','value','device','properties','records',
-  'products','categories','cartLines','customers','loading','preview','disabled','sessionId','object','flows','actionError'] as const;
+  'products','categories','cartLines','customers','loading','preview','disabled','sessionId','object','flows','actionError','pageState','refreshToken'] as const;
 export function sandboxSafeValue(input: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
   if (input === null || typeof input === 'boolean') return input;
   if (typeof input === 'number') return Number.isFinite(input) ? input : null;
