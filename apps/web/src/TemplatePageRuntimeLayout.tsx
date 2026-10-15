@@ -8,6 +8,7 @@ type TemplatePageRuntimeLayoutProps = {
   template?: string;
   fullscreen: boolean;
   phone: boolean;
+  layoutVariant?: string;
   header: ReactNode;
   main: ReactNode;
   sidebar: ReactNode;
@@ -15,8 +16,9 @@ type TemplatePageRuntimeLayoutProps = {
 
 /** Shared, metadata-selected runtime layout. No app-specific paths or names. */
 export default function TemplatePageRuntimeLayout({
-  apiName, label, pageType, template, fullscreen, phone, header, main, sidebar
+  apiName, label, pageType, template, fullscreen, phone, layoutVariant, header, main, sidebar
 }: TemplatePageRuntimeLayoutProps) {
+  const rail = fullscreen && layoutVariant === 'rail-checkout';
   const hasSidebar = template === 'main-sidebar' || template === 'header-main-sidebar';
   return <div className="records-page lightning-app-page" data-lightning-page={apiName}
     data-standalone-presentation={fullscreen ? 'true' : undefined}
@@ -27,16 +29,17 @@ export default function TemplatePageRuntimeLayout({
       <div className="record-object-icon"><Grid2X2 size={18}/></div>
       <div><div className="eyebrow">{pageType}</div><h1>{label}</h1></div>
     </div>}
-    {header}
+    {!rail && header}
     <div className={hasSidebar ? 'record-runtime-layout has-sidebar' : 'record-runtime-layout'}
-      style={fullscreen ? {flex:1,minHeight:0,minWidth:0,display:'grid',
+      style={rail ? {flex:1,minHeight:0,minWidth:0,display:'grid',gridTemplateColumns:phone?'132px minmax(0,1fr)':'224px minmax(0,1fr)',gridTemplateRows:'minmax(0,1fr) 84px',gap:0,width:'100%',margin:0,padding:0,overflow:'hidden'} : fullscreen ? {flex:1,minHeight:0,minWidth:0,display:'grid',
         gridTemplateColumns:hasSidebar && !phone ? 'minmax(0,1fr) minmax(300px,30%)' : 'minmax(0,1fr)',
         gap:0,margin:0,padding:0,width:'100%',overflow:'hidden'} : undefined}>
+      {rail && <aside style={{gridColumn:1,gridRow:1,minHeight:0,overflowY:'auto',background:'#fff',borderRight:'1px solid #eee'}}>{header}</aside>}
       <main className="record-runtime-main"
-        style={fullscreen ? {minWidth:0,minHeight:0,overflowY:'auto',padding:phone?12:20,
+        style={rail ? {gridColumn:2,gridRow:1,minWidth:0,minHeight:0,overflowY:'auto',padding:phone?10:24,boxSizing:'border-box',background:'#f8f8f8'} : fullscreen ? {minWidth:0,minHeight:0,overflowY:'auto',padding:phone?12:20,
           boxSizing:'border-box',background:'#f7f7f7'} : undefined}>{main}</main>
       {hasSidebar && <aside className="record-runtime-sidebar"
-        style={fullscreen ? {minWidth:0,minHeight:0,overflowY:'auto',padding:0,
+        style={rail ? {gridColumn:'1 / -1',gridRow:2,minWidth:0,minHeight:0,overflow:'hidden',padding:0,background:'#fff',borderTop:'1px solid #e9e9e9'} : fullscreen ? {minWidth:0,minHeight:0,overflowY:'auto',padding:0,
           borderLeft:phone?'none':'1px solid #e8e8e8',background:'#fff'} : undefined}>{sidebar}</aside>}
     </div>
   </div>;
