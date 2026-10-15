@@ -1,3 +1,4 @@
+import { registerProductionFrontend, registerPlatformErrorHandler } from './bootstrap/frontend.js';
 import { credentialKeyRing, credentialAad, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
 import {recordWritePolicySchema, withFlowRecordWriteContext, grantedObjectPermission, assertRecordFieldPermissions, lockedRecordWriteAllowed, recordWritePolicyMetadataGuard} from './record-write-policy.js';
 import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
@@ -13366,22 +13367,10 @@ async function dispatchScheduledFlows(): Promise<void> {
     scheduledDispatchRunning = false;
   }
 }
-// Serve the production React SPA from the same origin as the API.
+// Register static frontend and final error handling after API routes.
 const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
-if (existsSync(resolve(frontendDist, 'index.html'))) {
-  app.use(express.static(frontendDist));
-  app.get('*', (req: Request, res: Response, next: NextFunction) => {
-    if (req.path === '/api' || req.path.startsWith('/api/')) {
-      return res.status(404).json({ error: 'API route not found' });
-    }
-    if (!req.accepts('html')) return next();
-    return res.sendFile(resolve(frontendDist, 'index.html'));
-  });
-}
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Platform API request failed', error);
-  return res.status(500).json({ error: 'Platform API request failed' });
-});
+registerProductionFrontend(app, frontendDist);
+registerPlatformErrorHandler(app);
 app.listen(port, () => {
   console.log(`MetaDrive API listening on http://localhost:${port} (JWT issuer: ${jwtService.config.issuer})`);
   if (!maintenanceMode) void syncBundledLibraryComponents().catch((error: unknown) => console.error('Startup Core component registration failed', error)); void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
