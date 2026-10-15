@@ -19,18 +19,17 @@ for(const [name,result] of Object.entries({flows,access,pages,apps,credentials})
 }
 const send=flows.data.flows?.find(x=>x.apiName==='CHATTER_SEND_MESSAGE');
 if(!send)throw Error('Published Chatter Send Flow missing');
-const callout=send.elements?.find(e=>e.type==='HTTP Callout'&&e.config?.namedCredentialResource==='{!AuthorisedCredentialId}');
+const callouts=(send.elements||[]).filter(e=>e.type==='HTTP Callout'&&e.config?.method==='POST'&&String(e.config?.body||'').includes('messaging_product'));
+const callout=callouts.length===1?callouts[0]:undefined;
 if(!callout)throw Error('Send Flow callout mismatch '+JSON.stringify((send.elements||[]).map(e=>({type:e.type,configKeys:Object.keys(e.config||{}),path:e.config?.path,resourceBinding:/^\\{![A-Za-z_][A-Za-z0-9_]*\\}$/.test(e.config?.namedCredentialResource||'')?e.config.namedCredentialResource:'non-template'}))).slice(0,900));
 let flowStatus='already_current';
-if(callout.config.path==='messages'){
- const updated={...send,elements:send.elements.map(e=>e.id===callout.id?{...e,config:{...e.config,path:'{!AuthorisedMessagePath}'}}:e),status:'Active'};
+if(callout.config.path!=='{!AuthorisedMessagePath}'||callout.config.namedCredentialResource!=='{!AuthorisedCredentialId}'){
+ const updated={...send,elements:send.elements.map(e=>e.id===callout.id?{...e,config:{...e.config,path:'{!AuthorisedMessagePath}',namedCredentialResource:'{!AuthorisedCredentialId}'}}:e),status:'Active'};
  const validation=await api('/metadata/flows/CHATTER_SEND_MESSAGE/validate','POST',updated);
  if(validation.status!==200||validation.data.errors?.length)throw Error('Flow validation failure '+JSON.stringify({status:validation.status,errors:validation.data.errors,details:validation.data.details}).slice(0,650));
  const publish=await api('/metadata/flows/CHATTER_SEND_MESSAGE','PUT',updated);
  if(publish.status!==200)throw Error('Flow publication rejected '+JSON.stringify({status:publish.status,error:publish.data.error,details:publish.data.details}).slice(0,650));
  flowStatus='published';
-}else if(callout.config.path!=='{!AuthorisedMessagePath}'){
- throw Error('Refusing to overwrite customized Meta callout path');
 }
 const verify=await api('/metadata/flows');
 const active=verify.data.flows?.find(x=>x.apiName==='CHATTER_SEND_MESSAGE');
