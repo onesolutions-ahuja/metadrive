@@ -37,8 +37,9 @@ export function RecordObjectPicker({
   const [activeIndex, setActiveIndex] = useState(0);
   const wrap = useRef<HTMLDivElement>(null);
   useDismissOnOutside(wrap, open, () => { setOpen(false); setQuery(''); });
-  const available = useMemo(() => [...objects].sort((a, b) => a.pluralLabel.localeCompare(b.pluralLabel)), [objects]);
-  const counts = useMemo(() => { const n = new Map<string, number>(); for (const item of objects) { const key = item.pluralLabel.trim().toLocaleLowerCase(); n.set(key, (n.get(key) ?? 0) + 1); } return n; }, [objects]);
+  const available = useMemo(() => Array.from(new Map(objects.map(item => [item.apiName, item])).values())
+    .sort((a, b) => a.pluralLabel.localeCompare(b.pluralLabel)), [objects]);
+  const counts = useMemo(() => { const n = new Map<string, number>(); for (const item of available) { const key = item.pluralLabel.trim().toLocaleLowerCase(); n.set(key, (n.get(key) ?? 0) + 1); } return n; }, [available]);
   const displayName = (item: NavigableObject) => counts.get(item.pluralLabel.trim().toLocaleLowerCase())! > 1 ? `${item.pluralLabel} (${item.apiName})` : item.pluralLabel;
   const matches = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -48,12 +49,13 @@ export function RecordObjectPicker({
   const select = (apiName: string) => {
     setOpen(false); setQuery(''); setActiveIndex(0); onSelect(apiName);
   };
-  const selectedObject = objects.find(item => item.apiName === selected);
+  const selectedObject = available.find(item => item.apiName === selected);
   const selectedLabel = selectedObject ? displayName(selectedObject) : undefined;
   return <div className="header-record-picker" ref={wrap}>
     <div className="header-record-picker-control">
       <input role="combobox" aria-label="Find record object" aria-haspopup="listbox"
         aria-autocomplete="list" aria-expanded={open} aria-controls="header-record-object-options"
+        aria-activedescendant={open && matches.length ? `header-record-object-${activeIndex}` : undefined}
         value={open ? query : selectedLabel ?? ''} placeholder="Find records…"
         onFocus={() => { setOpen(true); setQuery(''); setActiveIndex(0); }}
         onClick={() => { setOpen(true); setQuery(''); setActiveIndex(0); }}
@@ -67,7 +69,7 @@ export function RecordObjectPicker({
       <ChevronDown size={15} aria-hidden="true" />
     </div>
     {open && <div id="header-record-object-options" className="header-record-picker-options" role="listbox" aria-label="Record objects">
-      {matches.map((item, index) => <button key={item.apiName} role="option" type="button"
+      {matches.map((item, index) => <button id={`header-record-object-${index}`} key={item.apiName} role="option" type="button"
         aria-selected={item.apiName === selected} className={index === activeIndex ? 'selected' : ''}
         onMouseEnter={() => setActiveIndex(index)} onClick={() => select(item.apiName)}>
         <span>{displayName(item)}</span><small>{item.apiName}</small>
