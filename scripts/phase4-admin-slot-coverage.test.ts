@@ -105,3 +105,16 @@ test('protected system metadata exposes each credential, approval and automation
    assert.ok(source.includes('slotKey="'+slot+'"'),workspace+' '+slot);
  }
 });
+
+test('protected admin field presentation binds registered Page Builder metadata without replacing validation or actions',()=>{
+ const slot=read('PlatformPageSlot.tsx');
+ const control=read('AdminPropertyControl.tsx');
+ for(const property of ['controlLabel','controlPlaceholder','controlHelpText'])
+  assert.ok(slot.includes(property),'Missing metadata presentation property '+property);
+ assert.ok(control.includes("usePlatformSlotPresentation('field-'+definition.propertyKey)"));
+ assert.ok(control.includes('presentation.placeholder??definition.placeholder'));
+ assert.ok(control.includes('presentation.label??definition.label'));
+ assert.ok(control.includes('presentation.helpText'));
+ assert.ok(control.includes('validateComponentSetting(definition,value)'));
+ assert.ok(control.includes('onChange(event.target.value)'));
+});

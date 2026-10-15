@@ -281,7 +281,7 @@ function PageBuilder({
   const [propertiesPanelVisible, setPropertiesPanelVisible] = useState(true);
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(310);
   const propertiesResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
-  const [pageListObject, setPageListObject] = useState(page.targetObject || objects[0]?.apiName || '');
+  const [pageListObject, setPageListObject] = useState('');
   const [pageListSearch, setPageListSearch] = useState('');
   const paletteResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
@@ -1213,7 +1213,7 @@ function PageBuilder({
       object: page.pageType === 'Record Page' ? targetObject : undefined,
       device,
       preview: true,
-      disabled: true,
+      disabled: !interactivePreview,
       onAction: previewProperties.onAction,
       onChange: previewProperties.onChange,
       onNavigate: previewProperties.onNavigate,
@@ -1420,15 +1420,15 @@ function PageBuilder({
           <label className="form-label">Related Record / Object<select className="form-control" value={pageListObject} aria-label="Related Record or Object" onChange={event=>setPageListObject(event.target.value)}><option value="">All objects</option>{objects.map(item=><option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label>
           <label className="form-label">Search pages<input className="form-control" type="search" value={pageListSearch} onChange={event=>setPageListSearch(event.target.value)} placeholder="Search page name…"/></label>
         </div>
-        <div className="page-manager-table-scroll"><table className="records-table page-manager-table"><thead><tr><th>Page name</th><th>Type</th><th>Device</th><th>Dimensions</th><th>Orientation</th><th>Last modified</th><th>Status</th><th>Actions</th></tr></thead>
+        <div className="page-manager-table-scroll"><table className="records-table page-manager-table"><thead><tr><th>Page name</th><th>Type</th><th>Related object</th><th>Device</th><th>Dimensions</th><th>Orientation</th><th>Last modified</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>{visiblePages.map(item=><tr key={item.apiName}>
           <td><button type="button" className="page-manager-page-link" onClick={()=>selectSavedPage(item.apiName)}>{item.label}</button><small>{item.apiName}</small></td>
-          <td>{item.pageType}</td><td>{pageDeviceLabel(item)}</td><td>{item.canvasWidth} × {item.canvasHeight} px</td><td>{canvasOrientation(item.canvasWidth,item.canvasHeight)}</td>
+          <td>{item.pageType}</td><td>{item.targetObject ? objects.find(object=>object.apiName===item.targetObject)?.label ?? item.targetObject : 'Not object-specific'}</td><td>{pageDeviceLabel(item)}</td><td>{item.canvasWidth} × {item.canvasHeight} px</td><td>{canvasOrientation(item.canvasWidth,item.canvasHeight)}</td>
           <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleDateString() : '—'}</td>
           <td><span className={item.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{item.status}</span></td>
           <td className="page-manager-actions"><button className="btn btn-small" type="button" aria-label={'Edit '+item.label} onClick={()=>selectSavedPage(item.apiName)}><Pencil size={14}/> Edit</button>
           <button className="btn btn-small" type="button" disabled={saving} aria-label={(item.status==='Active'?'Deactivate ':'Activate ')+item.label} onClick={()=>void savePage(item.status==='Active'?'Draft':'Active',item,true)}>{item.status==='Active'?'Deactivate':'Activate'}</button></td>
-        </tr>)}</tbody></table>{!visiblePages.length && <div className="records-empty">No pages found for this object. Create a new page to begin.</div>}</div>
+        </tr>)}</tbody></table>{!visiblePages.length && <div className="records-empty">No pages match the selected filter. Create a new page to begin.</div>}</div>
       </section>}
       {editorMode && <>
       <div className="builder-titlebar builder-compact-toolbar">
