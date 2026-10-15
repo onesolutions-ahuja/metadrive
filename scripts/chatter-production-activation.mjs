@@ -25,7 +25,7 @@ if(!grantCount){
  const meta=credentialRows.filter(x=>{
   try{return new URL(x.baseUrl).hostname==='graph.facebook.com';}catch{return false}
  }).map(x=>({hasPathNumber:/^\/v\\d+\\.\\d+\/[A-Za-z0-9_-]{5,120}/.test(new URL(x.baseUrl).pathname),configurationKeys:Object.keys(x.configuration||{}),enabled:x.enabled!==false}));
- throw Error('No usable WhatsApp channel grant: '+JSON.stringify({credentialsStatus:credentials.status,graphCredentials:meta,grantRowsStatus:grantRows.status,grantsCount:grantRows.data.records?.length,profileStatus:profiles.status,grantsVisible:c.data.grants?.length}));
+ throw Error('No usable WhatsApp channel grant: '+JSON.stringify({credentialsStatus:credentials.status,graphCredentials:meta,grantRowsStatus:grantRows.status,grantsCount:grantRows.data.records?.length,profileStatus:profiles.status,grantsVisible:c.data.grants?.length,loginRole:l.data.user?.role,loginProfile:l.data.user?.profileId,phoneConfigValid:meta.some(x=>x.configurationKeys.includes('PhoneNumberId'))}));
 }
 report.rbac='verified';
 for(const name of ['CHATTER_SEND_MESSAGE','CHATTER_ASSIGN_CONVERSATION']){
