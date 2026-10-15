@@ -287,6 +287,19 @@ function MetadataBoundPageComponent({
       return crypto.randomUUID();
     }
   });
+  // Generic, page-scoped visual state for metadata-configured local actions.
+  // Never grants data permissions or persists cross-tenant information.
+  const [pageState, setPageState] = useState<Record<string, unknown>>({});
+  useEffect(() => {
+    setPageState({});
+    const sync = (event: Event) => {
+      const detail=(event as CustomEvent<{pageSessionKey:string;key:string;value:unknown}>).detail;
+      if(detail?.pageSessionKey !== pageSessionKey || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(detail.key))return;
+      setPageState(previous=>({...previous,[detail.key]:detail.value}));
+    };
+    window.addEventListener('metadrive:page-local-state',sync);
+    return ()=>window.removeEventListener('metadrive:page-local-state',sync);
+  },[pageSessionKey]);
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
@@ -361,6 +374,18 @@ function MetadataBoundPageComponent({
       throw new Error('No metadata event action is configured for "' + action.event + '".');
     }
     const binding = config as Record<string, unknown>;
+    if (binding.actionType === 'PageState') {
+      const key=String(binding.stateKey??'');
+      if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))
+        throw new Error('Page state action requires a valid metadata state key');
+      const payload=action.value && typeof action.value==='object' && !Array.isArray(action.value)
+        ? action.value as Record<string,unknown> : {value:action.value};
+      const value=resolveInput(binding.value,payload);
+      window.dispatchEvent(new CustomEvent('metadrive:page-local-state',{
+        detail:{pageSessionKey,key,value}
+      }));
+      return {updated:true};
+    }
     if (binding.actionType === 'Navigate') {
       const target = resolvePageActionRoute(binding, {
         objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
@@ -428,7 +453,7 @@ function MetadataBoundPageComponent({
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
-      label: component.label, properties, objects, reports, flows: availableFlows,
+      label: component.label, properties, objects, reports, flows: availableFlows, pageState,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
