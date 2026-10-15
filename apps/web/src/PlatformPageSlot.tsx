@@ -24,6 +24,22 @@ export function PlatformPageSlotsProvider({page,children,libraryComponents=[]}:{
  },[]);
  return <context.Provider value={{page,device,libraryComponents}}>{children}</context.Provider>;
 }
+/** Resolve editable presentation properties from the already-authorized active system page.
+ * Only non-executable presentation values are exposed; validation, writes and RBAC
+ * remain owned by the original control and OneEngine API.
+ */
+export function usePlatformSlotPresentation(slotKey:string){
+ const state=useContext(context);
+ const instance=state?.page.components.find(item=>
+  item.properties.platformSlotKey===slotKey && item.visible!==false);
+ if(!instance)return {};
+ const properties=instance.properties as Record<string,unknown>;
+ return {
+  label:typeof properties.controlLabel==='string' ? properties.controlLabel : undefined,
+  placeholder:typeof properties.controlPlaceholder==='string' ? properties.controlPlaceholder : undefined,
+  helpText:typeof properties.controlHelpText==='string' ? properties.controlHelpText : undefined
+ };
+}
 export function PlatformPageSlot({slotKey,children}:{
  slotKey:string;children:ReactNode;
 }){
