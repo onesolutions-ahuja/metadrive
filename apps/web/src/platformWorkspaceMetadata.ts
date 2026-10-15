@@ -55,8 +55,8 @@ export function validatePlatformEditorBinding(
  if(!workspace)return ['Unknown platform workspace'];
  if(!granted.has(workspace.permission))return ['Workspace permission denied'];
  if(!['view','edit'].includes(binding.mode))return ['Invalid editor mode'];
- if(binding.mode==='edit'&&!granted.has('metadata:write'))
-  return ['Metadata write permission denied'];
+ if(binding.mode==='edit'&&!granted.has(workspace.permission==='security:read'?'security:manage':workspace.permission==='platform:superadmin'?'platform:superadmin':'metadata:write'))
+  return ['Workspace edit permission denied'];
  if(binding.workspaceId==='object-manager'&&
    (typeof binding.objectApiName!=='string'||!availableObjectApiNames.has(binding.objectApiName)))
   return ['Object metadata unavailable'];
@@ -87,6 +87,6 @@ export function authorizePlatformNavigation(
 ):PlatformWorkspaceDescriptor|undefined{
  const descriptor=platformNavigationEntries().find(item=>item.label===label);
  if(!descriptor||!grants.has(descriptor.permission))return undefined;
- if(mode==='edit'&&!grants.has('metadata:write'))return undefined;
+ if(mode==='edit'&&!grants.has(descriptor.permission==='security:read'?'security:manage':descriptor.permission==='platform:superadmin'?'platform:superadmin':'metadata:write'))return undefined;
  return descriptor;
 }
