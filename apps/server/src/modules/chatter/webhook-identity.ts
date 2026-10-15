@@ -15,6 +15,8 @@ export function chatterIncomingIdentityFields(
     From_Number__c: sender,
     To_Number__c: displayPhone ?? '',
     ...(object.fields.some(field => field.apiName === 'Channel_Account__c')
-      ? {Channel_Account__c: phoneId} : {})
+      ? {Channel_Account__c: phoneId} : {}),
+    ...(object.fields.some(field => field.apiName === 'Chatter_Conversation_Id__c')
+      ? {Chatter_Conversation_Id__c: JSON.stringify([phoneId, sender])} : {})
   };
 }
