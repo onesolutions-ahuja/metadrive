@@ -37,7 +37,8 @@ test('Phase 2f: verified metadata cache is wired into the production loader',()=
  assert.ok(!app.includes("readOfflineMetadata("));
  assert.ok(!app.includes("saveOfflineMetadata("));
  const server=read('apps/server/src/index.ts');
- assert.ok(server.includes("registerMetadataPublicationRoute(app,requirePermission('metadata:read')"));
+ assert.ok(server.includes("registerComponentLibraryRoutes("));
+ assert.ok(read("apps/server/src/modules/components/routes.ts").includes("registerMetadataPublicationRoute(app,requirePermission('metadata:read')"));
  assert.ok(read('apps/server/src/modules/metadata/offline-publication-route.mjs').includes("context.canOpenApp(principal,tenant,item.apiName)"));
  assert.ok(read('apps/server/src/modules/metadata/offline-publication-route.mjs').includes("context.visible(item,principal.tenantId,Object.keys(state.tenants))"));
 });
