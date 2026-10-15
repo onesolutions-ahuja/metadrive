@@ -10697,6 +10697,15 @@ async function executeFlowImplementation(
         if (!hasObjectPermission(runningPrincipal, tenant, objectName, objectAction)) {
           throw new Error(`The running user does not have ${objectAction} access to "${objectName}" for "${element.label}".`);
         }
+        // Connector_App__c is a metadata catalogue: a fresh tenant's Core seed
+        // intentionally contains no business records. Materialise only this
+        // tenant's catalogue before a Flow operates on it, so standard RBAC,
+        // ownership, lifecycle guards and transaction persistence still apply.
+        if (objectName === 'Connector_App__c') {
+          tenant.records.Connector_App__c = ensureConnectorAppRecords(
+            tenant.records.Connector_App__c, currentUserId
+          );
+        }
         const records = tenant.records[objectName] ?? [];
         const conditions = asConfigRows(config.conditions);
         const requestedFields = [
