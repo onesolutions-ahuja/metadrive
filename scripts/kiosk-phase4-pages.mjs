@@ -12,8 +12,8 @@ const actionsNav={
  catalog:navigation('MD_Commerce_Menu'),
  basket:navigation('MD_Commerce_Basket')
 };
-const nav=(id)=>block(id,'MD_CommerceNavigationV2','Menu and basket navigation','header',{
- title:'ORDER NOW',subtitle:'Made fresh for you',accentColor:'#e4002b',standalonePresentation:true,actionFlows:actionsNav
+const nav=(id)=>block(id,'MD_CommerceNavigationV3','Menu and basket navigation','header',{
+ title:'MENU',categories:'RECOMMENDS,COUPONS,BUCKETS,BOX MEALS,BURGERS & WRAPS,JUST CHICKEN,KIDS MEALS,DESSERTS,VEGE,EXTRAS',accentColor:'#ed002d',standalonePresentation:true,presentationLayout:'rail-checkout',actionFlows:actionsNav
 });
 const basketActions={
  load:flow('MD_Commerce_LoadBasket',{SessionKey:'$session'}),
@@ -25,12 +25,12 @@ export const commercePages=[
  {
   apiName:'MD_Commerce_Menu',label:'Kiosk Menu',targetObject:'Product__c',
   pageType:'App Page',layoutMode:'template',template:'header-main-sidebar',
-  canvasWidth:1920,canvasHeight:1080,status:'Active',devices:['Desktop','Phone'],
+  canvasWidth:1080,canvasHeight:1920,status:'Active',devices:['Desktop','Phone'],
   activationAssignments:[],
   components:[
    nav('menu-nav'),
-   block('menu-products','MD_CommerceProductGridV2','Product Cards and Meal Customisation','main',{
-    objectApiName:'Product__c',title:'Choose your favourites',columns:3,currencySymbol:'£',
+   block('menu-products','MD_CommerceProductGridV3','Product Cards and Meal Customisation','main',{
+    objectApiName:'Product__c',title:'BURGERS',columns:3,currencySymbol:'£',
     priceField:'DefaultPrice',imageField:'ImageUrl',primaryButtonLabel:'CUSTOMISE',
     actionFlows:{
      options:flow('MD_Commerce_ModifierCatalog',{ProductId:'$event.productId'}),
@@ -40,8 +40,8 @@ export const commercePages=[
      })
     }
    }),
-   block('menu-basket','MD_CommerceBasketPanelV2','Live Basket Summary','sidebar',{
-    title:'Your basket',objectApiName:'Order__c',actionFlows:basketActions
+   block('menu-basket','MD_CommerceCheckoutBarV3','Live Basket Summary','sidebar',{
+    title:'SHOW BASKET',accentColor:'#92b200',objectApiName:'Order__c',actionFlows:{...basketActions,basket:actionsNav.basket}
    })
   ]
  },
@@ -52,7 +52,7 @@ export const commercePages=[
   activationAssignments:[],
   components:[
    nav('basket-nav'),
-   block('basket-lines','MD_CommerceBasketPanelV2','Review Basket and Place Order','main',{
+   block('basket-lines','MD_CommerceCheckoutBarV3','Review Basket and Place Order','main',{
     title:'Review your order',objectApiName:'Order__c',actionFlows:basketActions
    })
   ]
@@ -63,7 +63,7 @@ export const commercePages=[
   canvasWidth:900,canvasHeight:650,status:'Active',devices:['Desktop','Phone'],
   activationAssignments:[],
   components:[
-   block('order-confirmation','MD_CommerceStatusV2','Order Placed','main',{
+   block('order-confirmation','MD_CommerceStatusV3','Order Placed','main',{
     title:'Order received',message:'Your order was submitted. Payment is handled separately.',
     actionFlows:{catalog:actionsNav.catalog}
    })
