@@ -7854,7 +7854,7 @@ function persistTenantRecords(tenantId: string, tenant: TenantData): void {
   for (const [key, sequence] of Object.entries(currentSequences)) {
     autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
   }
-  const updatedTenant = applyInstallableAppPackages({ ...tenant, autoNumberSequences }, installableAppCatalog) as TenantData;
+  const updatedTenant = reconcileInstalledAppSeeds({ ...tenant, autoNumberSequences }, installableAppCatalog, tenantId) as TenantData;
   const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
     updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
   const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
