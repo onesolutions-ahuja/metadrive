@@ -41,6 +41,12 @@ export function usePlatformSlotPresentation(slotKey:string){
   description:typeof properties.controlDescription==='string' ? properties.controlDescription : undefined
  };
 }
+/** Use a published trusted registry component only: no tenant-authored code receives privileged event handlers. */
+export function useRegisteredAdminField(){
+ const state=useContext(context);
+ const definition=state?findRegisteredComponent(state.libraryComponents,'AdminField','page'):undefined;
+ return definition?.trustedBundled===true&&definition.status!=='Draft'?definition:undefined;
+}
 export function PlatformPageSlot({slotKey,children}:{
  slotKey:string;children:ReactNode;
 }){
