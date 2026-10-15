@@ -38,6 +38,12 @@ on:
     branches: [migration/relational-staging-20261011, md06-record-integrity-20261012]
   workflow_dispatch:
 
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -151,9 +157,4 @@ jobs:
           npx playwright install --with-deps chromium
           node scripts/md06-records-browser-smoke.mjs
           node scripts/md07-component-browser-smoke.mjs
-      - name: Run existing backend tests in independently isolated PostgreSQL schemas
-        env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-          METADRIVE_TEST_ISOLATION: 'true'
-          NODE_OPTIONS: '--import=${{ github.workspace }}/apps/server/test/isolated-postgres-preload.mjs'
-        run: npm test --workspace apps/server
+      # Full backend suite runs in deployment validation, not again in SQL proof.

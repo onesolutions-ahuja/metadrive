@@ -7,6 +7,12 @@ on:
     branches: [feature-aiven-persistent-state]
   workflow_dispatch:
 
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
