@@ -20,7 +20,7 @@ for(const [name,result] of Object.entries({flows,access,pages,apps,credentials})
 const send=flows.data.flows?.find(x=>x.apiName==='CHATTER_SEND_MESSAGE');
 if(!send)throw Error('Published Chatter Send Flow missing');
 const callout=send.elements?.find(e=>e.type==='HTTP Callout'&&e.config?.namedCredentialResource==='{!AuthorisedCredentialId}');
-if(!callout)throw Error('Chatter Send Flow is not using trusted Named Credential binding');
+if(!callout)throw Error('Send Flow callout mismatch '+JSON.stringify((send.elements||[]).map(e=>({type:e.type,configKeys:Object.keys(e.config||{}),path:e.config?.path,resourceBinding:e.config?.namedCredentialResource===' {!AuthorisedCredentialId}'?'unexpected_space':e.config?.namedCredentialResource==='{!AuthorisedCredentialId}'?'expected':'other'}))).slice(0,900));
 let flowStatus='already_current';
 if(callout.config.path==='messages'){
  const updated={...send,elements:send.elements.map(e=>e.id===callout.id?{...e,config:{...e.config,path:'{!AuthorisedMessagePath}'}}:e),status:'Active'};
