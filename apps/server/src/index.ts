@@ -1,3 +1,4 @@
+import { startPlatformServer } from './bootstrap/startup.js';
 import { registerProductionFrontend, registerPlatformErrorHandler } from './bootstrap/frontend.js';
 import { credentialKeyRing, credentialAad, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
 import {recordWritePolicySchema, withFlowRecordWriteContext, grantedObjectPermission, assertRecordFieldPermissions, lockedRecordWriteAllowed, recordWritePolicyMetadataGuard} from './record-write-policy.js';
@@ -13371,14 +13372,10 @@ async function dispatchScheduledFlows(): Promise<void> {
 const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
 registerProductionFrontend(app, frontendDist);
 registerPlatformErrorHandler(app);
-app.listen(port, () => {
-  console.log(`MetaDrive API listening on http://localhost:${port} (JWT issuer: ${jwtService.config.issuer})`);
-  if (!maintenanceMode) void syncBundledLibraryComponents().catch((error: unknown) => console.error('Startup Core component registration failed', error)); void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
-  setInterval(() => {
-    void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
-  }, schedulePollInterval);
+startPlatformServer({
+  app, port, issuer: jwtService.config.issuer, maintenanceMode, schedulePollInterval,
+  hooks: { syncComponents: syncBundledLibraryComponents, dispatchScheduledFlows }
 });
-
 export { app, libraryComponentInputSchema, persistState, tenantData, getPrincipal, requirePermission, canOpenApp, canOpenTab, routeParam, findLibraryComponentUsages, ownedComponentIndex, componentNameTaken, usageBlockerDetails, syncBundledLibraryComponents };
 export type { LibraryComponent, LibraryComponentRevision };
 export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardTimeZoneSchema, dashboardSubscriptionSchema, isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText, principalUser, effectivePermissions, dashboardRunningUserChoices, dashboardRunningPrincipal, dashboardRunningUserSelectionError, folderAccessLevelForUser, folderForUser, dashboardForUser, validateDashboardFolderReferences, requireAnyPermission, hasObjectPermission, hasRecordAccess, sanitizeRecordForRead, persistTenantRecords, formulaContextForUser, dashboardRelationshipPaths, dispatchDashboardSubscription, nextDashboardSubscriptionRunAt, calculateFormulaFields, libraryComponentVisible, randomUUID, canAccessDashboard, canEditDashboard, dashboardFilterSchema, reportFilterMatches, dashboardSnapshotSchema, reportFolderAccessLevelForUser, hasFieldPermission, resolveDashboardCrossFilters, pickDashboardSnapshotProperties, sanitizeHtml, matchesDashboardFilters };
