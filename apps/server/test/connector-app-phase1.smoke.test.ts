@@ -109,7 +109,8 @@ test('AppExchange installation and trial run using stored metadata flows', async
       'WhatsApp must be discoverable in AppExchange independently of record sharing');
     assert.equal((await api(portNumber, '/connector-apps/catalog')).status, 401,
       'Unauthenticated visitors must not enumerate tenant connectors');
-    const list=()=>api(portNumber,'/records/Connector_App__c?limit=50',token);
+    // AppExchange is a tenant-scoped catalogue, not a privately shared record list.
+    const list=()=>api(portNumber,'/connector-apps/catalog',token);
     const before=await list();
     assert.equal(before.status,200,JSON.stringify(before.data));
     const records=before.data.records as Array<Record<string,any>>;
