@@ -1,0 +1,20 @@
+name: Live scheduled Flow execution evidence
+on:
+  push:
+    branches: [validation/scheduled-live-proof-20261015]
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Publish no-write one-time scheduled verification Flow
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/live-scheduled-flow-proof.mjs
