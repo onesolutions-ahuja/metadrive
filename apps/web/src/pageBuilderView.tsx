@@ -1645,7 +1645,7 @@ function PageBuilder({
                 pages={pages}
                 currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
                 flows={flows}
-                onChange={(properties) => updateComponent(selected.id, { properties })}
+                onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })}
               />
             </>}
             {inspectorTab !== 'Design' && selected.type === 'Related List' && <>
