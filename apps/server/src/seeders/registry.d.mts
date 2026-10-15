@@ -1,7 +1,7 @@
 /** Public seeder registry contracts for the SQL persistence integration. */
 export type SeedSqlClient = { query(sql: string, params?: unknown[]): Promise<{rows?: unknown[]}> };
 export function recordInstalledAppPackageVersions(
-  client: SeedSqlClient, state: {tenants?: Record<string, unknown>},
+  client: SeedSqlClient, state: unknown,
   catalog: {packages?: Array<{appKey:string;[key:string]:unknown}>}
 ): Promise<void>;
 export function packageChecksum(definition: unknown): string;
