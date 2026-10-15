@@ -11,7 +11,7 @@ export function coreMetadataSeed(template) {
     pages: source.pages ?? [],
     flows: source.flows ?? [],
     libraryComponents: source.libraryComponents ?? [],
-    accessControl: source.accessControl ?? {},
+    accessControl: {...(source.accessControl ?? {}), users: []},
     sharingSettings: source.sharingSettings ?? {},
     currencySettings: source.currencySettings ?? {},
     automationSettings: source.automationSettings ?? {},
@@ -46,9 +46,7 @@ export function mergeCoreMetadata(tenant, seed) {
 
 /** Reuse the canonical platform Core factory on fresh tenant provisioning. */
 export function initializeTenantCore(template) {
-  const base = structuredClone(template);
-  const seed = coreMetadataSeed(template);
-  return {...base, objects:seed.objects, pages:seed.pages, flows:seed.flows,
-    accessControl:seed.accessControl, sharingSettings:seed.sharingSettings,
-    currencySettings:seed.currencySettings, automationSettings:seed.automationSettings};
+  // A new tenant must never inherit arbitrary keys from a source snapshot.
+  // Return only the metadata allowlist assembled by coreMetadataSeed.
+  return coreMetadataSeed(template);
 }
