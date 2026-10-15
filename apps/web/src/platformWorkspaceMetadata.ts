@@ -19,7 +19,12 @@ const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission'
  'App Manager':'metadata:read',
  'Users':'security:read',
  'Profiles':'security:read',
- 'Permission Sets':'security:read'
+ 'Permission Sets':'security:read',
+ 'Roles':'security:read',
+ 'Public Groups':'security:read',
+ 'Permission Set Groups':'security:read',
+ 'Sharing Settings':'security:read',
+ 'Sharing Rules':'security:read'
 };
 export function platformWorkspaceDescriptors():PlatformWorkspaceDescriptor[]{
  const byLabel=new Map<string,SetupWorkspace>(workspaces.map(w=>[w.label,w]));
