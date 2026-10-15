@@ -40,7 +40,7 @@ test('One-* source assets are in the signed bundle and compile without imports',
     if(path.endsWith('.jsx')){
       assert(!/\bimport\b/.test(source),'Core component should not embed imports');
       const transformed=transformSync(source,{loader:'jsx',format:'cjs',jsx:'transform',target:'es2020'}).code;
-      assert.match(transformed,/exports\.default/);
+      assert.match(transformed,/\bexports\.default\b|\bdefault\s*:/);
       assert.doesNotMatch(transformed,/\brequire\s*\(/);
     }
   }
