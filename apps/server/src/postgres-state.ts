@@ -202,6 +202,42 @@ let idleWaiters: Array<() => void> = [];
 const upsertStateSql = `INSERT INTO metadrive_platform_state (id, payload) VALUES (1, $1::jsonb)
   ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()`;
 
+// Initialise the canonical versioned seeder ledger in the SAME database and
+// schema used by the runtime; a table on another service cannot protect writes.
+let seedLedgerReady: Promise<void> | null = null;
+let seedLedgerTenantConstraintPending = false;
+function ensureSeedLedger(): Promise<void> {
+  if (!pool) return Promise.reject(new Error('SQL ledger requires PostgreSQL'));
+  if (!seedLedgerReady) seedLedgerReady = (async () => {
+    await pool.query(`CREATE TABLE IF NOT EXISTS md_seed_package_versions (
+      tenant_id TEXT NOT NULL,
+      package_kind TEXT NOT NULL CHECK (package_kind IN ('core','shared','app')),
+      package_key TEXT NOT NULL CHECK (length(trim(package_key)) BETWEEN 1 AND 160),
+      package_version TEXT NOT NULL CHECK (length(trim(package_version)) BETWEEN 1 AND 80),
+      definition_checksum CHAR(64) NOT NULL CHECK (length(definition_checksum) = 64),
+      installed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (tenant_id,package_kind,package_key)
+    )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS md_seed_package_versions_kind_idx
+      ON md_seed_package_versions (tenant_id,package_kind,updated_at DESC)`);
+    // Fresh SQL-only tests create tenant tables during their first snapshot write.
+    // Add the FK when the authoritative tenant table exists, without assuming
+    // bootstrap ordering or removing the constraint from existing installations.
+    const tenantTable = await pool.query("SELECT to_regclass('metadrive_rel_tenants')::text AS name");
+    const tenantTableExists = Boolean((tenantTable.rows as Array<{name: string | null}>)[0]?.name);
+    seedLedgerTenantConstraintPending = !tenantTableExists;
+    if (tenantTableExists) {
+      const fk = await pool.query(`SELECT 1 FROM pg_constraint
+        WHERE contype = 'f' AND conrelid = 'md_seed_package_versions'::regclass
+        AND confrelid = 'metadrive_rel_tenants'::regclass LIMIT 1`);
+      if (!fk.rows.length) await pool.query(`ALTER TABLE md_seed_package_versions
+        ADD CONSTRAINT md_seed_package_versions_tenant_fk
+        FOREIGN KEY (tenant_id) REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT`);
+    }
+  })().catch((error: unknown) => { seedLedgerReady = null; throw error; });
+  return seedLedgerReady;
+}
 async function drainStateWrites(): Promise<void> {
   while (newestPayload !== null) {
     const payload = newestPayload;
@@ -210,6 +246,7 @@ async function drainStateWrites(): Promise<void> {
     const batch = waiting.splice(0);
     try {
       if (!pool) throw new Error('Database pool not available');
+      await ensureSeedLedger();
       if (persistenceMode === 'normalized' || persistenceMode === 'typed') {
         if (!normalizedSnapshot) throw new Error('Normalized SQL state must be verified before first write');
         normalizedSnapshot = await withStateSqlGate(() => writeNormalizedState(
@@ -248,6 +285,8 @@ async function drainStateWrites(): Promise<void> {
           throw error;
         } finally { client.release(); }
       }
+      // On the first fresh-db snapshot the tenant table now exists. Attach FK.
+      if (seedLedgerTenantConstraintPending) { seedLedgerReady = null; await ensureSeedLedger(); }
       writeFailure = null;
       for (const waiter of batch) waiter.resolve();
     } catch (error) {
