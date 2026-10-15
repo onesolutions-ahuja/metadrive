@@ -241,7 +241,8 @@ if(!currentApp)throw Error('Kiosk app not readable after creation');
 if(JSON.stringify(currentApp.navigationPageApiNames??[])!==JSON.stringify(expected.pages)){
  await api('/metadata/apps/'+commerceApp.apiName,'PUT',{
   ...currentApp,navigationPageApiNames:expected.pages,
-  navigationOrder:commerceApp.navigationOrder,
+  navigationOrder:[...expected.pages.map(apiName=>({type:'App Page',apiName})),
+   ...[...new Set([...(currentApp.navigationItems??[]),'Product__c'])].map(apiName=>({type:'Object',apiName}))],
   navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
  });
 }
