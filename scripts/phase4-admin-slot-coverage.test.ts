@@ -67,6 +67,7 @@ test('integrations and automation administration use protected page slots',()=>{
  const source=read('setupAppShell.tsx');
  for(const [workspace,slot] of [
   ['named-credentials','credentials'],
+  ['connector-settings','connector-workspace'],
   ['approval-processes','approval-workspace'],
   ['automation-settings','automation-policy']
  ]){
