@@ -11,6 +11,7 @@ import { removeObjectMetadata } from './modules/objects/remove-object.js';
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
 import { registerRecordRoutes } from './modules/records/routes.js';
+import { getPrincipal } from './modules/security/get-principal.js';
 import { chatterIncomingIdentityFields } from './modules/chatter/webhook-identity.js';
 import { chatterRecordVisible, prepareChatterFlowInputs } from './modules/chatter/authorization.js';
 import { applyRecordDefaults as applyMetadataRecordDefaults } from './modules/records/record-defaults.js';
@@ -4880,11 +4881,6 @@ function withSecurityEvent(
 }
 function tenantData(tenantId: string): TenantData | undefined {
   return tenantIsActive(tenantId) ? state.tenants[tenantId] : undefined;
-}
-function getPrincipal(res: Response): Principal {
-  const principal = res.locals.principal as Principal | undefined;
-  if (!principal) throw new Error('Authenticated principal was not established');
-  return principal;
 }
 function principalUser(principal: Principal): LocalUser | undefined {
   return state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
