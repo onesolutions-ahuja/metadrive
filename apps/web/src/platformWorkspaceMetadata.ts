@@ -15,6 +15,7 @@ const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission'
  'Company Information':'metadata:read',
  'Currencies':'metadata:read',
  'Named Credentials':'metadata:write',
+ 'Connector Settings':'metadata:write',
  'AppExchange':'metadata:write',
  'App Manager':'metadata:read',
  'Users':'security:read',
