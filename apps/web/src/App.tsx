@@ -5,12 +5,6 @@ import { ConnectorSettingsWorkspace } from './connectorSettingsView';
 import { MetadataComponentProperties } from './componentPropertiesView';
 import { createPageRuntimeViews } from './pageRuntimeViews';
 import { createRecordWorkspaceViews } from './recordWorkspaceViews';
-import { createPageBuilder } from './pageBuilderView';
-import { ReportBuilder } from './reportBuilderView';
-import { createPermissions } from './permissionsView';
-import { createObjectManager } from './objectManagerView';
-import { createSetupHome } from './setupHomeView';
-import { createSettingsViews } from './settingsWorkspaceViews';
 
 
 
@@ -280,14 +274,19 @@ const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, Lig
 
 const { RecordWorkspace, RecordFormDialog } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
 
-const SetupHome = createSetupHome(PageHeading);
-
-const { AutomationSettingsWorkspace, TenantEmailRecoverySettings, TenantUserLockSettings, AccountSessionSecurity, TenantSecurityAudit, TenantMfaSettings, CompanySettings } = createSettingsViews(apiRequest, PageHeading);
-
-const ObjectManager = createObjectManager(apiRequest);
-
-const PageBuilder = createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent);
-
-const Permissions = createPermissions(apiRequest, PageHeading);
+// Builders and advanced settings are separate on-demand chunks, not login dependencies.
+const SetupHome = React.lazy(async () => ({ default: (await import('./setupHomeView')).createSetupHome(PageHeading) }));
+const ObjectManager = React.lazy(async () => ({ default: (await import('./objectManagerView')).createObjectManager(apiRequest) }));
+const PageBuilder = React.lazy(async () => ({ default: (await import('./pageBuilderView')).createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent) }));
+const ReportBuilder = React.lazy(async () => ({ default: (await import('./reportBuilderView')).ReportBuilder }));
+const Permissions = React.lazy(async () => ({ default: (await import('./permissionsView')).createPermissions(apiRequest, PageHeading) }));
+const settingsViewModules = () => import('./settingsWorkspaceViews').then(module => module.createSettingsViews(apiRequest, PageHeading));
+const AutomationSettingsWorkspace = React.lazy(async () => ({ default: (await settingsViewModules()).AutomationSettingsWorkspace }));
+const TenantEmailRecoverySettings = React.lazy(async () => ({ default: (await settingsViewModules()).TenantEmailRecoverySettings }));
+const TenantUserLockSettings = React.lazy(async () => ({ default: (await settingsViewModules()).TenantUserLockSettings }));
+const AccountSessionSecurity = React.lazy(async () => ({ default: (await settingsViewModules()).AccountSessionSecurity }));
+const TenantSecurityAudit = React.lazy(async () => ({ default: (await settingsViewModules()).TenantSecurityAudit }));
+const TenantMfaSettings = React.lazy(async () => ({ default: (await settingsViewModules()).TenantMfaSettings }));
+const CompanySettings = React.lazy(async () => ({ default: (await settingsViewModules()).CompanySettings }));
 
 export default App;
