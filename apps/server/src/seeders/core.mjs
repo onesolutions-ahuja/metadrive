@@ -76,7 +76,19 @@ export function initializeTenantCore(template, {authorizedUserIds=[]}={}) {
   // New-tenant provisioning supplies fresh, server-constructed defaults with
   // the authorized administrator. Retain its required state shape; generic
   // template seeding (no authorized IDs) remains metadata-only.
-  const provisioned=allowed.size>0 ? structuredClone(template) : seed;
+  const initialKeys=[
+    'mfaPolicy','passwordRecovery','securityAudit','objects','flows',
+    'platformEvents','platformEventMessages','pages','apps','dashboards',
+    'dashboardFolders','reportFolders','dashboardTerritories','dashboardSnapshots',
+    'dashboardSubscriptions','reports','currencySettings','sharingSettings',
+    'recordShares','campaignMembers','activities','chatterPosts','notifications',
+    'approvalRequests','approvalProcesses','records','autoNumberSequences',
+    'fieldHistory','interviews','flowLogs','scheduleRuns','scheduleRetries',
+    'automationSettings','emailAlerts','connectorSettings','connectorDefinitions'
+  ];
+  const provisioned=allowed.size>0 ? Object.fromEntries(initialKeys
+    .filter(key=>Object.hasOwn(template,key))
+    .map(key=>[key,structuredClone(template[key])])) : seed;
   return {...provisioned,
     users:[],
     accessControl:{
