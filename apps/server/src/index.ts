@@ -6734,8 +6734,8 @@ app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePer
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const key = routeParam(req, 'appKey');
-  const previous = (tenant.records.Connector_App__c ?? []).find((row) => row.AppKey__c === key);
-  if (!previous) return res.status(404).json({ error: 'Connector not found' });
+  const matches = (tenant.records.Connector_App__c ?? []).filter((row) => row.AppKey__c === key);
+  if (matches.length > 1) return res.status(409).json({ error: 'Conflicting AppExchange installation records.' }); const previous = matches[0]; if (!previous) return res.status(404).json({ error: 'Connector not found' });
   if (previous.Installed__c !== true) return res.status(409).json({ error: 'Install the connector before granting a licence.' });
   const days = Number(previous.LicenceTermDays__c ?? 30);
   if (!Number.isInteger(days) || days < 1 || days > 365) return res.status(422).json({ error: 'Invalid licence term metadata.' });

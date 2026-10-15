@@ -31,7 +31,13 @@ export function activeConnectorFlowReferences(
 export function connectorEntitlement(
   apps: ConnectorAppRecord[], credential: CredentialIdentity, now = new Date()
 ): { allowed: boolean; message: string; managed: boolean } {
-  const app = apps.find((item) => text(item.CredentialName__c) === credential.name);
+  const matches = apps.filter((item) => text(item.CredentialName__c) !== '' &&
+    text(item.CredentialName__c) === credential.name);
+  // An ambiguous credential owner must never be authorised based on array order.
+  if (matches.length > 1) return {
+    allowed: false, message: 'Multiple AppExchange installations claim this credential.', managed: true
+  };
+  const app = matches[0];
   if (!app) return { allowed: true, message: '', managed: false };
   const name = appName(app);
   if (app.Installed__c !== true) return { allowed: false, message: name + ' must be installed in AppExchange.', managed: true };
