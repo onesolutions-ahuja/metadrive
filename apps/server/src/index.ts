@@ -1,3 +1,11 @@
+import { registerFlowElementRoutes } from './modules/flows/element-routes.js';
+import { registerNotificationRoutes } from './modules/notifications/routes.js';
+import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
+import { registerHealthAndDiscoveryRoutes } from './modules/security/health-routes.js';
+import { defaultRoles, roleApiNameForName, roleIdForName, profileIdForRole } from './modules/security/role-helpers.js';
+import { createScheduledDispatcher } from './scheduler/dispatcher.js';
+import { startPlatformServer } from './bootstrap/startup.js';
+import { registerProductionFrontend, registerPlatformErrorHandler } from './bootstrap/frontend.js';
 import { credentialKeyRing, credentialAad, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
 import {recordWritePolicySchema, withFlowRecordWriteContext, grantedObjectPermission, assertRecordFieldPermissions, lockedRecordWriteAllowed, recordWritePolicyMetadataGuard} from './record-write-policy.js';
 import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
@@ -3474,47 +3482,6 @@ function buildDefaultProfiles(objects: ObjectMetadata[], permissionSets: AccessC
     }] : [])
   ].map((profile) => ({ ...profile, navigationDefaultAccess: 'Allow' as const }));
 }
-function defaultRoles(): AccessRole[] {
-  return [
-    { id: 'role-executive', name: 'Executive', apiName: 'Executive', parentRoleId: null },
-    { id: 'role-sales-manager', name: 'Sales Manager', apiName: 'Sales_Manager', parentRoleId: 'role-executive' },
-    { id: 'role-sales-representative', name: 'Sales Representative', apiName: 'Sales_Representative', parentRoleId: 'role-sales-manager' },
-    { id: 'role-support-manager', name: 'Support Manager', apiName: 'Support_Manager', parentRoleId: 'role-executive' },
-    { id: 'role-support-agent', name: 'Support Agent', apiName: 'Support_Agent', parentRoleId: 'role-support-manager' },
-    { id: 'role-standard-user', name: 'Standard User', apiName: 'Standard_User', parentRoleId: 'role-executive' }
-  ];
-}
-function roleApiNameForName(name: string): string {
-  const apiName = name.trim().replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
-  return /^[A-Za-z]/.test(apiName) ? apiName : `Role_${apiName}`;
-}
-function roleIdForName(name: string, roles: AccessRole[]): string {
-  const normalized = name.trim().toLowerCase();
-  const knownId = normalized === 'system administrator' || normalized === 'executive' ? 'role-executive'
-    : normalized === 'sales manager' ? 'role-sales-manager'
-      : normalized === 'sales representative' || normalized === 'sales user' ? 'role-sales-representative'
-        : normalized === 'support manager' ? 'role-support-manager'
-          : normalized === 'support agent' ? 'role-support-agent'
-            : normalized === 'standard user' ? 'role-standard-user'
-              : '';
-  return roles.find((role) => role.id === knownId)?.id
-    ?? roles.find((role) => role.name.toLowerCase() === normalized)?.id
-    ?? roles.find((role) => role.id === 'role-standard-user')?.id
-    ?? roles[0]?.id
-    ?? '';
-}
-function profileIdForRole(role: string, profiles: AccessProfile[]): string {
-  const roleKey = role.trim().toLowerCase();
-  const knownId = roleKey === 'system administrator' ? 'system-administrator'
-    : roleKey === 'sales manager' ? 'sales-manager'
-      : roleKey === 'support agent' ? 'support-agent'
-        : '';
-  return profiles.find((profile) => profile.id === knownId)?.id
-    ?? profiles.find((profile) => profile.label.toLowerCase() === roleKey)?.id
-    ?? profiles.find((profile) => profile.id === 'standard-user')?.id
-    ?? profiles[0]?.id
-    ?? '';
-}
 function connectorRecords(settings: ConnectorSettings[], ownerId: string): RuntimeRecord[] {
   const now = new Date().toISOString();
   return settings.map((setting) => stampRecordAuditFields({
@@ -5273,13 +5240,7 @@ function provisioningIdempotencyKey(req: Request): string | undefined {
     throw new Error('Idempotency-Key must be 16–128 ASCII letters, numbers, dashes or underscores');
   return key;
 }
-app.get('/health', async (_req, res) => {
-  const database = await checkDatabaseConnection();
-  return res.json({ ok: true, service: 'metadrive-api', database, authMode: jwtService.config.mode, maintenance: maintenanceMode, persistenceMode, deployedCommit: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.RENDER_GIT_COMMIT ?? '' });
-});
-app.get('/.well-known/openid-configuration', (_req, res) => res.json(jwtService.discovery()));
-app.get('/.well-known/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
-app.get('/jwks.json', (_req, res) => { void jwtService.jwks().then((body) => res.json(body)); });
+registerHealthAndDiscoveryRoutes(app, { checkDatabaseConnection, jwtService, maintenanceMode, persistenceMode });
 const developerActivationPending = new Set<string>();
 export const phase3AuthContext = {
   app,
@@ -5384,58 +5345,9 @@ function savePlatformPolicies(actorId: string, userId: string, policies: Array<'
   persistState(nextState);
   state = nextState;
 }
-// A tightly controlled one-time bootstrap is required for the first platform
-// operator. It cannot be initiated merely with tenant security:manage.
-app.post('/api/platform/policies/bootstrap', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const configuredEmail = process.env.METADRIVE_PLATFORM_BOOTSTRAP_EMAIL?.trim().toLowerCase();
-  const secret = process.env.METADRIVE_PLATFORM_BOOTSTRAP_KEY;
-  if (!configuredEmail || !secret || secret.length < 24)
-    return res.status(503).json({ error: 'Platform policy bootstrap is not configured.' });
-  const user = principalUser(principal);
-  if (!user || user.email.trim().toLowerCase() !== configuredEmail)
-    return res.status(403).json({ error: 'Platform policy bootstrap is not permitted for this user.' });
-  const supplied = req.header('x-platform-bootstrap-key');
-  if (!supplied || supplied.length !== secret.length
-    || !timingSafeEqual(Buffer.from(supplied), Buffer.from(secret)))
-    return res.status(403).json({ error: 'Invalid platform policy bootstrap credential.' });
-  if (activePlatformSuperadmins().length)
-    return res.status(409).json({ error: 'A platform administrator already exists.' });
-  try {
-    savePlatformPolicies(user.id, user.id, ['platform:superadmin']);
-    return res.json({ policies: state.platformPolicies[user.id] });
-  } catch {
-    return res.status(503).json({ error: 'Unable to persist platform policy.' });
-  }
-});
-app.get('/api/platform/policies', accessAuthentication, (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  if (!principal.permissions.includes('platform:superadmin'))
-    return res.status(403).json({ error: 'Platform administrator policy required.' });
-  return res.json({ users: state.users.filter((user) => (state.platformPolicies[user.id] ?? []).length)
-    .map((user) => ({ id: user.id, email: user.email, disabled: user.disabled, policies: state.platformPolicies[user.id] })) });
-});
-app.put('/api/platform/policies/:userId', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  if (!principal.permissions.includes('platform:superadmin'))
-    return res.status(403).json({ error: 'Platform administrator policy required.' });
-  const parsed = platformPolicySchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid platform policies.' });
-  const userId = routeParam(req, 'userId');
-  const target = state.users.find((user) => user.id === userId && !user.disabled);
-  if (!target) return res.status(404).json({ error: 'Active platform user not found.' });
-  const requested = [...new Set(parsed.data.policies)];
-  if ((state.platformPolicies[userId] ?? []).includes('platform:superadmin')
-    && !requested.includes('platform:superadmin')
-    && activePlatformSuperadmins().every((id) => id === userId)) {
-    return res.status(409).json({ error: 'The last active platform administrator cannot be removed.' });
-  }
-  try {
-    savePlatformPolicies(principal.userId, userId, requested);
-    return res.json({ userId, policies: requested });
-  } catch {
-    return res.status(503).json({ error: 'Unable to persist platform policies.' });
-  }
+registerPlatformPolicyRoutes(app, {
+  accessAuthentication, getPrincipal, principalUser, activePlatformSuperadmins,
+  savePlatformPolicies, getState: () => state, parsePolicies: (v) => platformPolicySchema.safeParse(v), routeParam
 });
 // MD-03.1: platform-only tenant directory and lifecycle. Tenant-editable
 // profiles/permission sets never confer this policy; no impersonation or secrets.
@@ -6032,29 +5944,7 @@ installTenantRecoveryCentre(app, {
 
 registerIdentityProfileRoute({ app, accessAuthentication, getPrincipal, principalUser, tenantData,
   profileIdForRole, hasFieldPermission, hasRecordTypeAccessForUser, effectivePermissions });
-app.get('/api/notifications', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const notifications = tenant.notifications
-    .filter((notification) => notification.recipientId === principal.userId)
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  return res.json({ notifications, unreadCount: notifications.filter((notification) => !notification.readAt).length });
-});
-app.post('/api/notifications/:id/read', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const notification = tenant.notifications.find((item) =>
-    item.id === routeParam(req, 'id') && item.recipientId === principal.userId);
-  if (!notification) return res.status(404).json({ error: 'Notification was not found' });
-  const updated = { ...notification, readAt: notification.readAt ?? new Date().toISOString() };
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    notifications: tenant.notifications.map((item) => item.id === updated.id ? updated : item)
-  });
-  return res.json({ notification: updated });
-});
+registerNotificationRoutes(app, { accessAuthentication, getPrincipal, tenantData, routeParam, persistTenantRecords });
 app.get('/api/approvals/inbox', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId);
@@ -9169,20 +9059,7 @@ registerSecurityMetadataRoutes({
   validateAdvancedSharingMetadata, profileIdForRole, withSecurityEvent,
   effectivePermissions, persistState, persistTenantRecords, roleApiNameForName, routeParam
 });
-app.get('/api/metadata/flow-elements', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ elements: [
-    { type: 'Screen', group: 'Interaction', allowedFlowTypes: ['Screen Flow'] },
-    { type: 'Decision', group: 'Logic' }, { type: 'Assignment', group: 'Logic' },
-    { type: 'Loop', group: 'Logic' }, { type: 'Wait', group: 'Logic' },
-    { type: 'Collection Filter', group: 'Logic' }, { type: 'Collection Sort', group: 'Logic' },
-    { type: 'Transform', group: 'Data' }, { type: 'Roll Back Records', group: 'Data', allowedFlowTypes: ['Screen Flow', 'Autolaunched Flow'] },
-    { type: 'Publish Platform Event', group: 'Data' }, { type: 'Get Records', group: 'Data' },
-    { type: 'Orchestration Stage', group: 'Interaction' },
-    { type: 'Create Records', group: 'Data' }, { type: 'Update Records', group: 'Data' },
-    { type: 'Delete Records', group: 'Data' }, { type: 'Action', group: 'Interaction' },
-    { type: 'HTTP Callout', group: 'Interaction' }, { type: 'Subflow', group: 'Interaction' }
-  ] });
-});
+registerFlowElementRoutes(app, requirePermission);
 
 type FlowRuntimeContext = {
   record?: RuntimeRecord;
@@ -13273,7 +13150,6 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
     dashboardSubscriptionDispatches.delete(key);
   }
 }
-let scheduledDispatchRunning = false;
 async function dispatchDueIntegrationJobs(): Promise<void> {
   if (persistenceMode === 'jsonb') return;
   const pool = getRouteAliasPool();
@@ -13322,74 +13198,43 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
     });
   }
 }
-async function dispatchScheduledFlows(): Promise<void> {
-  if (maintenanceMode) return;
-  if (scheduledDispatchRunning) return;
-  scheduledDispatchRunning = true;
-  try {
-    await withSchedulerLease(async () => {
-      // SQL commit is the durable completion boundary. Do not release the
-      // database advisory lock while scheduled mutations are still in flight.
+const dispatchScheduledFlows = createScheduledDispatcher({
+  maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
+  refresh: async () => {
+    if (persistenceMode === 'jsonb') return true;
+    const snapshotCommit = latestStateCommit;
+    const snapshotAuthRevision = authOverlayRevision;
+    const committed = await readPersistedState();
+    if (latestStateCommit !== snapshotCommit || authOverlayRevision !== snapshotAuthRevision) {
       await waitForPersistedState();
-      // A PostgreSQL advisory lease alone does not refresh this process's
-      // in-memory replica. SQL revision/CAS guards prevent stale overwrites,
-      // but every new dispatcher must start from the committed database head.
-      if (persistenceMode !== 'jsonb') {
-        // Requests can persist state while the scheduler is reading SQL.
-        // Do not replace a newer local request mutation with an older read.
-        const snapshotCommit = latestStateCommit;
-        const snapshotAuthRevision = authOverlayRevision;
-        const committed = await readPersistedState();
-        if (latestStateCommit !== snapshotCommit || authOverlayRevision !== snapshotAuthRevision) {
-          await waitForPersistedState();
-          return; // retry on the next interval with a fresh committed snapshot
-        }
-        if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
-        const restored = restoreDurableAuthOverlay(parsePersistedPlatformState(committed));
-        assertTenantIdentityIsolation(restored);
-        state = restored;
-      }
-      await deliverPendingPlatformEvents();
-      await executeDueScheduledFlows();
-      await dispatchDueIntegrationJobs();
-      const now = Date.now();
-      const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
-        tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
-          subscription.active && Date.parse(subscription.nextRunAt) <= now)
-          .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
-      for (const due of dueSubscriptions) {
-        await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
-      }
-      await waitForPersistedState();
-    });
-  } finally {
-    scheduledDispatchRunning = false;
-  }
-}
-// Serve the production React SPA from the same origin as the API.
-const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
-if (existsSync(resolve(frontendDist, 'index.html'))) {
-  app.use(express.static(frontendDist));
-  app.get('*', (req: Request, res: Response, next: NextFunction) => {
-    if (req.path === '/api' || req.path.startsWith('/api/')) {
-      return res.status(404).json({ error: 'API route not found' });
+      return false;
     }
-    if (!req.accepts('html')) return next();
-    return res.sendFile(resolve(frontendDist, 'index.html'));
-  });
-}
-app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Platform API request failed', error);
-  return res.status(500).json({ error: 'Platform API request failed' });
+    if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
+    const restored = restoreDurableAuthOverlay(parsePersistedPlatformState(committed));
+    assertTenantIdentityIsolation(restored);
+    state = restored;
+    return true;
+  },
+  events: () => deliverPendingPlatformEvents(),
+  flows: () => executeDueScheduledFlows(),
+  integrations: () => dispatchDueIntegrationJobs(),
+  subscriptions: async () => {
+    const now = Date.now();
+    const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
+      tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
+        subscription.active && Date.parse(subscription.nextRunAt) <= now)
+        .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
+    for (const due of dueSubscriptions) await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
+  }
 });
-app.listen(port, () => {
-  console.log(`MetaDrive API listening on http://localhost:${port} (JWT issuer: ${jwtService.config.issuer})`);
-  if (!maintenanceMode) void syncBundledLibraryComponents().catch((error: unknown) => console.error('Startup Core component registration failed', error)); void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
-  setInterval(() => {
-    void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
-  }, schedulePollInterval);
+// Register static frontend and final error handling after API routes.
+const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
+registerProductionFrontend(app, frontendDist);
+registerPlatformErrorHandler(app);
+startPlatformServer({
+  app, port, issuer: jwtService.config.issuer, maintenanceMode, schedulePollInterval,
+  hooks: { syncComponents: syncBundledLibraryComponents, dispatchScheduledFlows }
 });
-
 export { app, libraryComponentInputSchema, persistState, tenantData, getPrincipal, requirePermission, canOpenApp, canOpenTab, routeParam, findLibraryComponentUsages, ownedComponentIndex, componentNameTaken, usageBlockerDetails, syncBundledLibraryComponents };
 export type { LibraryComponent, LibraryComponentRevision };
 export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardTimeZoneSchema, dashboardSubscriptionSchema, isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText, principalUser, effectivePermissions, dashboardRunningUserChoices, dashboardRunningPrincipal, dashboardRunningUserSelectionError, folderAccessLevelForUser, folderForUser, dashboardForUser, validateDashboardFolderReferences, requireAnyPermission, hasObjectPermission, hasRecordAccess, sanitizeRecordForRead, persistTenantRecords, formulaContextForUser, dashboardRelationshipPaths, dispatchDashboardSubscription, nextDashboardSubscriptionRunAt, calculateFormulaFields, libraryComponentVisible, randomUUID, canAccessDashboard, canEditDashboard, dashboardFilterSchema, reportFilterMatches, dashboardSnapshotSchema, reportFolderAccessLevelForUser, hasFieldPermission, resolveDashboardCrossFilters, pickDashboardSnapshotProperties, sanitizeHtml, matchesDashboardFilters };
