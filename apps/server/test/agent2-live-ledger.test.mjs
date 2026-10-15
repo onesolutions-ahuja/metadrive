@@ -5,7 +5,7 @@ import {applyDeveloperAppGrants} from '../src/seeders/apps.mjs';
 
 const catalog={packages:[{
   appKey:'crm',version:'1.0.0',
-  objects:[{apiName:'Lead'}],pages:[{apiName:'CRM_Home'}],
+  objects:[{apiName:'Lead',fields:[{apiName:'Name'}]}],pages:[{apiName:'CRM_Home'}],
   apps:[{apiName:'CRM'}],flows:[{apiName:'CRM_Activate'}]
 }]};
 const baseTenant=()=>({
