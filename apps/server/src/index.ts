@@ -12241,8 +12241,6 @@ function formulaContextForUser(tenant: TenantData, userId: string): {
   };
 }
 
-
-
 function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, current?: RuntimeRecord): void {
   validateMetadataRecord(tenantId, tenant, object, values, current, state.users);
 }
@@ -15609,7 +15607,6 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
     dashboardSubscriptionDispatches.delete(key);
   }
 }
-
 let scheduledDispatchRunning = false;
 async function dispatchDueIntegrationJobs(): Promise<void> {
   if (persistenceMode === 'jsonb') return;
@@ -15659,7 +15656,6 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
     });
   }
 }
-
 async function dispatchScheduledFlows(): Promise<void> {
   if (maintenanceMode) return;
   if (scheduledDispatchRunning) return;
@@ -15704,7 +15700,6 @@ async function dispatchScheduledFlows(): Promise<void> {
     scheduledDispatchRunning = false;
   }
 }
-
 // Serve the production React SPA from the same origin as the API.
 const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
 if (existsSync(resolve(frontendDist, 'index.html'))) {
@@ -15717,12 +15712,10 @@ if (existsSync(resolve(frontendDist, 'index.html'))) {
     return res.sendFile(resolve(frontendDist, 'index.html'));
   });
 }
-
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Platform API request failed', error);
   return res.status(500).json({ error: 'Platform API request failed' });
 });
-
 app.listen(port, () => {
   console.log(`MetaDrive API listening on http://localhost:${port} (JWT issuer: ${jwtService.config.issuer})`);
   void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
