@@ -112,8 +112,11 @@ function App() {
   const [authError, setAuthError] = useState('');
   const [entryTiming, setEntryTiming] = useState<EntryTiming | null>(null);
   const sessionRestoreStarted = useRef(false);
+  // Discard any in-flight refresh response after logout or another auth transition.
+  const sessionGeneration = useRef(0);
   useEffect(() => {
     const expireSession = () => {
+      sessionGeneration.current += 1;
       setAccessToken(undefined);
       setAuthState('anonymous');
     };
@@ -122,6 +125,8 @@ function App() {
   }, []);
 
   const restoreSession = async () => {
+    const generation = ++sessionGeneration.current;
+    const stillCurrent = () => generation === sessionGeneration.current;
     const restoreStartedAt = performance.now();
     const retryableStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
     // Do not hold the login screen for more than ~20 seconds when the free API is waking.
@@ -140,6 +145,7 @@ function App() {
           }), controller.signal
         );
 
+        if (!stillCurrent()) return;
         if (response.status === 401) {
           setAccessToken(undefined);
           setAuthError('');
@@ -160,6 +166,7 @@ function App() {
           throw new Error(`Session restore failed (${response.status})`);
         }
       } catch (error) {
+        if (!stillCurrent()) return;
         const retryableNetworkFailure =
           error instanceof DOMException && error.name === 'AbortError'
           || error instanceof TypeError;
@@ -176,6 +183,7 @@ function App() {
       }
 
       await new Promise((resolve) => window.setTimeout(resolve, retryDelaysMs[attempt]));
+      if (!stillCurrent()) return;
     }
   };
 
@@ -216,10 +224,10 @@ function App() {
   }, [authState,entryTiming]);
 
   if (authState === 'loading') return <div className="auth-loading">Loading your workspace…</div>;
-  const loginSuccess = (timing: EntryTiming) => { setEntryTiming(timing); setAuthState('authenticated'); };
+  const loginSuccess = (timing: EntryTiming) => { sessionGeneration.current += 1; setEntryTiming(timing); setAuthState('authenticated'); };
   if (authState === 'anonymous') return <Login onSuccess={loginSuccess} />;
   if (authState === 'error') return <Login error={authError} onSuccess={loginSuccess} onRetry={() => { setAuthState('loading'); void restoreSession(); }} />;
-  return <SetupApp entryTiming={entryTiming} onLogout={() => { setAccessToken(undefined); setAuthState('anonymous'); }} />;
+  return <SetupApp entryTiming={entryTiming} onLogout={() => { sessionGeneration.current += 1; setEntryTiming(null); setAccessToken(undefined); setAuthState('anonymous'); }} />;
 }
 
 const uneSolutionsLogoUrl = `${import.meta.env.BASE_URL}une-solutions-logo.webp`;
