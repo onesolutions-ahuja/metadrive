@@ -98,7 +98,7 @@ export async function recordInstalledAppPackageVersions(client, state, catalog) 
   // Initialise only the ledger inside the caller's existing transaction;
   // never touch tenant records or stamp any package as installed.
   await client.query(`CREATE TABLE IF NOT EXISTS md_seed_package_versions (
-    tenant_id TEXT NOT NULL REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT,
+    tenant_id TEXT NOT NULL,
     package_kind TEXT NOT NULL CHECK (package_kind IN ('core', 'shared', 'app')),
     package_key TEXT NOT NULL CHECK (length(trim(package_key)) BETWEEN 1 AND 160),
     package_version TEXT NOT NULL CHECK (length(trim(package_version)) BETWEEN 1 AND 80),
@@ -126,7 +126,6 @@ export async function recordInstalledAppPackageVersions(client, state, catalog) 
       // An older installation is allowed to reconcile through the established
       // AppExchange upgrade path. Never stamp an incomplete package as seeded.
       if (!complete) continue;
-      await client.query('INSERT INTO metadrive_rel_tenants(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
       const checksum=packageChecksum(pkg);
       await applyVersionedSeed(client,{
         tenantId,kind:'app',key:pkg.appKey,
