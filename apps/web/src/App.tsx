@@ -87,6 +87,7 @@ import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, i
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
+import { presentPageRecords, type ChannelGrant } from './recordPresentationAdapters';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
@@ -203,7 +204,6 @@ const customTabStyles = [
   { name: 'Teal', color: '#0b827c', icon: Building2 },
   { name: 'Yellow', color: '#dd7a01', icon: ClipboardList }
 ] as const;
-
 // Same-origin API in deployed builds and Vite (which proxies /api in development).
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? `${window.location.origin}/api`;
 let accessToken: string | undefined;
@@ -258,7 +258,6 @@ function ProfilePasswordMenu({ onLogout, onPasswordChanged }: { onLogout: () => 
     </div>}
   </div>;
 }
-
 function ConnectionHealthIndicator() {
   const [health, setHealth] = useState<{ status: 'checking' | 'healthy' | 'slow' | 'offline'; database: string; latency: number | null; checked: string }>({ status: 'checking', database: 'checking', latency: null, checked: '' });
   const [expanded, setExpanded] = useState(false);
@@ -304,7 +303,6 @@ function ConnectionHealthIndicator() {
     </div>}
   </div>;
 }
-
 function isAuthErrorMessage(message: string): boolean {
   const text = message.toLowerCase();
   return text.includes('401')
@@ -315,14 +313,12 @@ function isAuthErrorMessage(message: string): boolean {
     || text.includes('session-expired')
     || text.includes('unable to refresh the login session');
 }
-
 function withAuthRefreshLock(refresh: () => Promise<Response>, signal?: AbortSignal): Promise<Response> {
   if (typeof navigator === 'undefined' || !navigator.locks) return refresh();
   // A request can wait behind another tab's Web Lock before fetch even starts.
   // Applying the abort signal to the lock itself bounds that wait as well.
   return navigator.locks.request('metadrive-auth-refresh', { signal }, refresh).then(async (response) => await response);
 }
-
 function refreshAccessToken() {
   if (!refreshInFlight) {
     const startedToken = accessToken;
@@ -356,7 +352,6 @@ function refreshAccessToken() {
   }
   return refreshInFlight;
 }
-
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const send = (token: string | undefined) => fetch(`${apiBase}${path}`, {
     ...init,
@@ -398,14 +393,12 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return payload;
 }
-
 class ApiRequestError extends Error {
   constructor(message: string, readonly responseBody: unknown, readonly status: number) {
     super(message);
     this.name = 'ApiRequestError';
   }
 }
-
 async function loadAppCommunicationHistory(objectName: string, field: string, source: string, offset: number, search: string) {
   const params = new URLSearchParams({
     limit: '50', offset: String(offset), ...(field ? {filterField:field, filterValue:source} : {}),
@@ -414,7 +407,6 @@ async function loadAppCommunicationHistory(objectName: string, field: string, so
   return apiRequest<{ records: Array<{ Id: string; [key: string]: unknown }>; total: number }>(
     `/records/${encodeURIComponent(objectName)}?${params.toString()}`);
 }
-
 async function loadConnectorMarketplaceApps() {
   const result = await apiRequest<{records: import('./ConnectorAppWorkspace').ConnectorApp[]}>(`/connector-apps/catalog`);
   return result.records;
@@ -428,7 +420,6 @@ async function loadFlowScreenRecords(objectApiName: string): Promise<Record<stri
   const result = await apiRequest<{ records: Record<string, unknown>[] }>(`/records/${encodeURIComponent(objectApiName)}`);
   return result.records;
 }
-
 const objectSettings = [
   'Details',
   'Schema Builder',
@@ -445,7 +436,6 @@ const objectSettings = [
   'Search Layouts',
   'List View Button Layout'
 ];
-
 const settingRouteNames: Record<string, string> = {
   'Schema Builder': 'SchemaBuilder',
   'Fields & Relationships': 'FieldsAndRelationships',
@@ -461,16 +451,13 @@ const settingRouteNames: Record<string, string> = {
   'Search Layouts': 'SearchLayouts',
   'List View Button Layout': 'ListViewButtonLayout'
 };
-
 function settingFromRoute(value: string): string {
   return Object.entries(settingRouteNames).find(([, routeName]) => routeName === value)?.[0]
     ?? (objectSettings.includes(value) ? value : 'Details');
 }
-
 function settingToRoute(value: string): string {
   return settingRouteNames[value] ?? value.replace(/[^A-Za-z0-9]/g, '');
 }
-
 type AuthState = 'loading' | 'anonymous' | 'authenticated' | 'error';
 type LandingBootstrap = {
   objects: ObjectMetadata[];
@@ -484,7 +471,6 @@ type LandingBootstrap = {
   };
 };
 type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticatedAt: number; landing?: LandingBootstrap };
-
 type AppRoute =
   | { kind: 'setup'; workspace: WorkspaceId; objectApiName?: string; setting?: string; resourceApiName?: string; resourceId?: string; dashboardView?: boolean }
   | { kind: 'app-home'; appId: string }
@@ -492,7 +478,6 @@ type AppRoute =
   | { kind: 'route-alias'; appId: string; slug: string }
   | { kind: 'record-list'; objectApiName: string; appId?: string }
   | { kind: 'record-detail'; objectApiName: string; recordId: string; appId?: string };
-
 type RecordData = { Id: string; [fieldApiName: string]: unknown };
 type RecordActivity = {
   id: string;
@@ -518,14 +503,12 @@ type ChatterPost = {
   createdAt: string;
   comments: ChatterComment[];
 };
-
 function pageLayoutForRecord(object: ObjectMetadata, recordTypeId: string, profileId: string): PageLayoutMetadata | undefined {
   const assignments = object.pageLayoutAssignments ?? [];
   const assignment = assignments.find((item) => item.profileId === profileId && item.recordTypeId === recordTypeId)
     ?? assignments.find((item) => item.profileId === '*' && item.recordTypeId === recordTypeId);
   return object.pageLayouts?.find((layout) => layout.id === assignment?.pageLayoutId) ?? object.pageLayouts?.[0];
 }
-
 function compactLayoutForRecord(object: ObjectMetadata, recordTypeId: string, profileId: string) {
   const layouts = object.compactLayouts ?? [];
   const assignments = object.compactLayoutAssignments ?? [];
@@ -535,11 +518,9 @@ function compactLayoutForRecord(object: ObjectMetadata, recordTypeId: string, pr
     ?? layouts[0]
     ?? (object.compactLayout ? { id: `${object.apiName}-legacy-compact`, ...object.compactLayout } : undefined);
 }
-
 const relatedLookupFilterOperators: RelatedLookupFilterMetadata['operator'][] = [
   'Equals', 'Not Equal To', 'Contains', 'Starts With', 'Greater Than', 'Less Than', 'Is Null', 'Is Not Null'
 ];
-
 function matchesLookupFilter(record: RecordData, filter: RelatedLookupFilterMetadata, sourceRecord: Record<string, unknown>): boolean {
   const rawValue = record[filter.relatedFieldApiName];
   const actual = rawValue === undefined || rawValue === null ? '' : String(rawValue);
@@ -560,7 +541,6 @@ function matchesLookupFilter(record: RecordData, filter: RelatedLookupFilterMeta
     ? actual.localeCompare(expected) > 0
     : actual.localeCompare(expected) < 0;
 }
-
 function matchesLookupFilterGroup(
   record: RecordData,
   filters: RelatedLookupFilterMetadata[],
@@ -571,7 +551,6 @@ function matchesLookupFilterGroup(
   const results = filters.map((filter) => matchesLookupFilter(record, filter, sourceRecord));
   return logic === 'Any' ? results.some(Boolean) : results.every(Boolean);
 }
-
 function parseAppRoute(pathname: string, search = ''): AppRoute {
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
   if (basePath && pathname.startsWith(basePath + '/')) pathname = pathname.slice(basePath.length);
@@ -629,13 +608,11 @@ function parseAppRoute(pathname: string, search = ''): AppRoute {
   }
   return { kind: 'setup', workspace: 'home' };
 }
-
 function appRoutePath(route: AppRoute): string {
   const path = appRoutePathWithoutBase(route);
   const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
   return basePath + path;
 }
-
 function appRoutePathWithoutBase(route: AppRoute): string {
   if (route.kind === 'setup') {
     if (route.dashboardView && route.resourceApiName) {
@@ -665,7 +642,6 @@ function appRoutePathWithoutBase(route: AppRoute): string {
   }
   return '/une/setup/home';
 }
-
 function ConnectorSettingsWorkspace({
   provider,
   providers,
@@ -710,7 +686,6 @@ function ConnectorSettingsWorkspace({
   const [providerTimeout, setProviderTimeout] = useState('30000');
   const [providerRetries, setProviderRetries] = useState('1');
   const [providerStatus, setProviderStatus] = useState<ConnectorProviderMetadata['status']>('ACTIVE');
-
   useEffect(() => {
     const existing = providerConnections[0];
     setSelectedConnectionId(existing?.id ?? '');
@@ -720,7 +695,6 @@ function ConnectorSettingsWorkspace({
     setConnectionCredentials({});
     setEditingConnection(false);
   }, [provider.connectorKey]);
-
   useEffect(() => {
     setProviderName(provider.name);
     setProviderAuthType(provider.authType);
@@ -735,7 +709,6 @@ function ConnectorSettingsWorkspace({
     setProviderStatus(provider.status);
     setEditingProvider(false);
   }, [provider]);
-
   const saveProvider = async () => {
     if (!canManage) return;
     setSavingProvider(true);
@@ -762,7 +735,6 @@ function ConnectorSettingsWorkspace({
       setSavingProvider(false);
     }
   };
-
   const selectConnection = (id: string) => {
     const selected = providerConnections.find((item) => item.id === id);
     setSelectedConnectionId(id);
@@ -824,7 +796,6 @@ function ConnectorSettingsWorkspace({
       setTestingConnection(false);
     }
   };
-
   return <div className="connector-settings-page">
     <div className="page-heading">
       <div><div className="eyebrow">SETUP / UNE CONNECTORS / CONNECTOR PROVIDERS</div><h1>Une Connectors</h1><p>Provider definitions and tenant connections from connector metadata.</p></div>
@@ -954,7 +925,6 @@ function ConnectorSettingsWorkspace({
     </div>
   </div>;
 }
-
 function initialScreenValues(screen: FlowElementMetadata): Record<string, unknown> {
   const fields = Array.isArray(screen.config.fields)
     ? screen.config.fields.filter((field): field is Record<string, unknown> =>
@@ -971,7 +941,6 @@ function initialScreenValues(screen: FlowElementMetadata): Record<string, unknow
     return [];
   }));
 }
-
 function screenFieldIsVisible(field: Record<string, unknown>, values: Record<string, unknown>): boolean {
   const conditions = Array.isArray(field.visibilityConditions)
     ? field.visibilityConditions.filter((condition): condition is Record<string, unknown> =>
@@ -996,7 +965,6 @@ function screenFieldIsVisible(field: Record<string, unknown>, values: Record<str
     ? checks.some(Boolean)
     : checks.every(Boolean);
 }
-
 function App() {
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [authError, setAuthError] = useState('');
@@ -3725,7 +3693,11 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         )}
 
         <section className={`workspace ${route.kind !== 'setup' ? 'workspace-records' : ''} ${workspace === 'flow-builder' ? 'workspace-flow' : ''}`}>
-          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
+          {(route.kind === 'record-list' || route.kind === 'record-detail') && <RecordWorkspace route={route} objects={objects} apps={apps} pages={pages}
+            availableFlows={flows.filter((item) => ['Screen Flow', 'Autolaunched Flow'].includes(item.flowType))
+              .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
+            onLaunchFlow={(apiName, inputs) => void runFlow(apiName, inputs)}
+            reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
             fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={recordSearch} onNavigate={navigateRoute} />}
           {route.kind === 'route-alias' && <section className="setup-card" role="status">
             {routeAliasError ? <p role="alert">{routeAliasError}</p> : <p>Resolving route alias…</p>}
@@ -4558,6 +4530,9 @@ function MetadataBoundPageComponent({
   const [actionError, setActionError] = useState('');
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [channelAccess, setChannelAccess] = useState<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>({
+    userId:'',viewAll:false,grants:[],eligibleAssignees:[]
+  });
   const initializedSessions = useRef<Set<string>>(new Set());
   // Any Flow mutation invalidates all components sharing this page session.
   useEffect(() => {
@@ -4588,8 +4563,18 @@ function MetadataBoundPageComponent({
       .finally(() => { if (active) setDataLoading(false); });
     return () => { active = false; };
   }, [objectApiName, revision]);
+  useEffect(() => {
+    if (properties.recordPresenterApiName !== 'CommunicationThread') return;
+    let active = true;
+    setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});
+    void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>('/chatter/access')
+      .then(value => {if(active) setChannelAccess(value);})
+      .catch(() => {if(active) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
+    return () => {active = false;};
+  }, [properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
     ? rawActions as Record<string, unknown> : {};
@@ -4687,7 +4672,8 @@ function MetadataBoundPageComponent({
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
       loading: dataLoading, sessionId,
-      ...(objectApiName ? { records: visibleRecords } : {})
+      ...(objectApiName ? { records: visibleRecords } : {}),
+      ...presented
     }} />
   </div>;
 }
@@ -4872,6 +4858,10 @@ function LightningAppRuntime({
 function RecordWorkspace({
   route,
   objects,
+  apps,
+  pages,
+  availableFlows,
+  onLaunchFlow,
   reports,
   metadataLoaded,
   profileId,
@@ -4885,6 +4875,10 @@ function RecordWorkspace({
 }: {
   route: Extract<AppRoute, { kind: 'record-list' | 'record-detail' }>;
   objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   reports: ReportMetadata[];
   metadataLoaded: boolean;
   profileId: string;
@@ -5883,11 +5877,17 @@ function RecordWorkspace({
         return definition
           ? <div key={component.id} data-layout-component-id={component.id}
               style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>
-              <RegisteredComponent definition={definition} props={{
-                ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
-                label: component.label, properties: component.properties,
-                record, recordId: record.Id, object, formFactor, children
-              }} />
+              {!isLayoutContainer(component) && needsMetadataComponentRuntime(component.properties)
+                ? <MetadataBoundPageComponent definition={definition} component={component}
+                    objects={objects} apps={apps} pages={pages} currentAppId="Records"
+                    pageSessionKey={'record:' + object.apiName + ':' + String(record.Id)}
+                    reports={reports} availableFlows={availableFlows} formFactor={formFactor}
+                    onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
+                : <RegisteredComponent definition={definition} props={{
+                    ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
+                    label: component.label, properties: component.properties,
+                    record, recordId: record.Id, object, formFactor, children
+                  }} />}
             </div>
           : <div className="records-message" role="status" key={component.id}>Component “{component.type.slice('Custom:'.length)}” is not available in the component library.</div>;
       }
