@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {readFileSync} from 'node:fs';
 import { connectorEntitlement, applyConnectorLifecycle } from '../apps/server/src/connector-app-runtime.ts';
 import { installedComponentDescriptors } from '../apps/server/src/bundled-app-components.mjs';
 import { applyInstallableAppPackages } from '../apps/server/src/installable-app-packages.mjs';
@@ -91,4 +92,10 @@ test('duplicate package definitions never install conflicting metadata', () => {
   const duplicate = {...entry,objects:[{...entry.objects[0],label:'Conflicting'}]};
   assert.strictEqual(applyInstallableAppPackages(tenant,{packages:[entry,duplicate]}),tenant);
   assert.equal(tenant.objects.length,0);
+});
+
+test('backend routes use tenant-scoped seeder reconciliation and reject duplicate licence records', () => {
+  const source = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url),'utf8');
+  assert.match(source, /reconcileInstalledAppSeeds\(\s*\{ \.\.\.tenant, autoNumberSequences \}, installableAppCatalog, tenantId/);
+  assert.match(source, /if \(matches\.length > 1\) return res\.status\(409\)/);
 });
