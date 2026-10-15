@@ -24,7 +24,7 @@ const INPUT = Object.freeze({
   host: 'apps/web/src/RegisteredComponent.tsx',
   sandbox: 'apps/web/src/ComponentSandbox.tsx',
   lookup: 'apps/web/src/componentRegistryLookup.ts',
-  page: 'apps/web/src/setupShellPresentation.tsx',
+  page: 'apps/web/src/pageRuntimeViews.tsx',
   dashboard: 'apps/web/src/DashboardBuilder.tsx',
   flow: 'apps/web/src/FlowScreenContent.tsx',
   flowBuilder: 'apps/web/src/FlowBuilder.tsx',
