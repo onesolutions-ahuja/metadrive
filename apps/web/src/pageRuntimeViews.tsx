@@ -356,8 +356,15 @@ function MetadataBoundPageComponent({
     const onVisibility = () => {if (document.visibilityState === 'visible') loadAccess();};
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onVisibility);
+    // Keep an already-open inbox in sync when an administrator assigns a
+    // channel while the browser tab remains focused. The authenticated API
+    // is the sole source of grants; polling never escalates permissions.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadAccess();
+    }, 20000);
     return () => {
       active = false;
+      window.clearInterval(interval);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onVisibility);
     };
