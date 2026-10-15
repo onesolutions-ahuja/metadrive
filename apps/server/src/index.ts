@@ -1528,7 +1528,7 @@ const pageSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
   updatedAt: z.string().datetime().optional(),
-  targetObject: z.string().min(1),
+  targetObject: z.string(),
   pageType: z.enum(['Record Page', 'App Page', 'Home Page']),
   layoutMode: z.enum(['template', 'free-canvas']).default('template'),
   template: pageTemplateSchema.default('one-region'),
@@ -1550,6 +1550,7 @@ const pageSchema = z.object({
   definitionVersion: z.number().int().positive().optional(), overridePolicy: z.enum(['presentation-only','none']).optional(),
   requiredPermissions: z.array(z.string().min(1)).optional()
 }).superRefine((page, context) => {
+  if (page.pageType === 'Record Page' && !page.targetObject.trim()) context.addIssue({code:z.ZodIssueCode.custom,path:['targetObject'],message:'Record Pages require a target object'});
   const ids = page.components.map((component) => component.id);
   if (new Set(ids).size !== ids.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ['components'], message: 'Component IDs must be unique' });
   page.components.forEach((component, index) => {
