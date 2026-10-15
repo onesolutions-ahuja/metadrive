@@ -3,6 +3,8 @@ import test from 'node:test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
+import {createHmac} from 'node:crypto';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -39,7 +41,8 @@ test('one WhatsApp number can switch legal and beauty context without extra mess
         METADRIVE_BOOTSTRAP_ADMIN_EMAIL: email,
         METADRIVE_BOOTSTRAP_ADMIN_PASSWORD: password,
         METADRIVE_CREDENTIAL_KEYS: JSON.stringify({ 'test-key': Buffer.alloc(32, 11).toString('base64') }),
-        METADRIVE_CREDENTIAL_ACTIVE_KEY_ID: 'test-key'
+        METADRIVE_CREDENTIAL_ACTIVE_KEY_ID: 'test-key',
+        WHATSAPP_APP_SECRET: 'whatsapp-context-test-signing-secret'
       },
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -71,15 +74,38 @@ test('one WhatsApp number can switch legal and beauty context without extra mess
     assert.equal(flows.status, 200, JSON.stringify(flows.result));
     const contextFlow = flows.result.flows.find((flow: Record<string, any>) => flow.apiName === 'WA_CONTEXT');
     assert.equal(contextFlow?.status, 'Active');
-    const common = { Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
-      Direction__c: 'Incoming', From_Number__c: '447000000001' };
-    for (const [message, expected] of [['LAWYER', 'Legal'], ['BEAUTY', 'Beauty'], ['BARBER', 'Beauty'], ['LAWYER', 'Legal']] as const) {
-      const created = await send('/records/Communication_Records__c', 'POST', token, {
-        ...common, Message_Body__c: message
+    const incoming = async (message:string,index:number) => {
+      const payload = JSON.stringify({
+        object:'whatsapp_business_account',
+        entry:[{changes:[{value:{
+          metadata:{phone_number_id:'000000000000000',display_phone_number:'447700900999'},
+          messages:[{id:'signed-context-'+index,from:'447000000001',
+            timestamp:String(Math.floor(Date.now()/1000)),type:'text',text:{body:message}}]
+        }}]}]
       });
-      assert.equal(created.status, 201, JSON.stringify(created.result));
-      assert.equal(created.result.record.Conversation_Context__c, expected, JSON.stringify(created.result));
+      const signature = createHmac('sha256','whatsapp-context-test-signing-secret')
+        .update(payload).digest('hex');
+      const response=await fetch(root+'/api/whatsapp/webhook',{
+        method:'POST',headers:{'content-type':'application/json',
+          'x-hub-signature-256':'sha256='+signature},body:payload
+      });
+      assert.equal(response.status,200,await response.text());
+      const snapshot=JSON.parse(readFileSync(path.join(dir,'state.json'),'utf8'));
+      const records=snapshot.tenants['context-test'].records.Communication_Records__c;
+      return records.find((row:Record<string,unknown>)=>row.Provider_Message_Id__c==='signed-context-'+index);
+    };
+    for (const [index,[message, expected]] of
+      [['LAWYER', 'Legal'], ['BEAUTY', 'Beauty'], ['BARBER', 'Beauty'], ['LAWYER', 'Legal']].entries()) {
+      const created=await incoming(message,index);
+      assert(created,'Verified signed webhook must persist an inbound message');
+      assert.equal(created.Conversation_Context__c,expected,JSON.stringify(created));
+      assert.equal(created.Channel_Account__c,'000000000000000');
     }
+    const forged = await send('/records/Communication_Records__c','POST',token,{
+      Event_Type__c:'Message',Communication_Mode__c:'WhatsApp',Source__c:'Webhook',
+      Direction__c:'Incoming',From_Number__c:'447000000001',Message_Body__c:'FORGED'
+    });
+    assert.equal(forged.status,403,'Browser record API must not impersonate Meta webhooks');
     const audit = await send('/records/Communication_Records__c', 'POST', token, {
       Event_Type__c: 'API Call', Communication_Mode__c: 'API', Source__c: 'API',
       Direction__c: 'Incoming', From_Number__c: '447000000001'
