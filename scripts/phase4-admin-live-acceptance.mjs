@@ -47,4 +47,4 @@ for(const descriptor of protectedWorkspacePageDescriptors){
 }
 assert.ok(count>=3,'Expected centrally permission-filtered system pages');
 assert.equal(new Set(visible.map(page=>page.apiName)).size,visible.length,'Duplicate page registration');
-console.log(JSON.stringify({result:'PASS',readOnly:true,tenantVerified:true,protectedPagesAccessible:count,totalProtectedDefinitions:6,rbacFiltered:true}));
+console.log(JSON.stringify({result:'PASS',readOnly:true,tenantVerified:true,protectedPagesAccessible:count,totalProtectedDefinitions:protectedWorkspacePageDescriptors.length,rbacFiltered:true}));
