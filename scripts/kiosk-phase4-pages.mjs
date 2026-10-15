@@ -69,6 +69,6 @@ export const commerceApp={
  description:'Editable data-driven portrait self-service ordering interface.',
  navigationItems:['Product__c'],
  navigationPageApiNames:commercePages.map(page=>page.apiName),
- navigationOrder:commercePages.map(page=>({type:'App Page',apiName:page.apiName})),
+ navigationOrder:[...commercePages.map(page=>({type:'App Page',apiName:page.apiName})),{type:'Object',apiName:'Product__c'}],
  brandColor:'#ed002d',utilityItems:[]
 };
