@@ -30,6 +30,17 @@ for(const component of definitions){
   assert.ok(['page','dashboard','flow'].every(s=>component.surfaces?.includes(s)),component.apiName);
   assert.ok(typeof component.compiledJs==='string'&&component.compiledJs.length>0,component.apiName+' compiled source');
 }
+// Preserve all pre-migration legacy bundles, including their original source,
+ // versions, identities and published state. A replacement is not authorised
+ // without per-instance property/event/binding compatibility evidence.
+const legacy=(registry.components??[]).filter(item=>/^RecoveredShared/.test(item.apiName));
+assert.equal(legacy.length,39,'Legacy component definitions must remain installed');
+assert.equal(new Set(legacy.map(item=>item.apiName)).size,39,'Legacy names must remain unique');
+for(const component of legacy) {
+  assert.equal(component.status,'Published',component.apiName);
+  assert.ok(typeof component.compiledJs==='string'&&component.compiledJs.length>0,
+    component.apiName+' must retain original compiled source');
+}
 const [pages,flows]=await Promise.all([
   api('/metadata/pages',login.access_token),
   api('/metadata/flows',login.access_token)
@@ -38,4 +49,5 @@ assert.ok(Array.isArray(pages.pages),'Pages metadata API');
 assert.ok(Array.isArray(flows.flows),'Flow metadata API');
 console.log(JSON.stringify({result:'PASS',registered:40,published:40,trusted:40,
   surfacesVerified:true,authenticated:true,tenantScoped:true,
-  pagesApiVerified:true,flowsApiVerified:true,readOnly:true}));
+  pagesApiVerified:true,flowsApiVerified:true,legacyPreserved:legacy.length,
+  migrationMode:'read-only-no-automatic-replacement',readOnly:true}));
