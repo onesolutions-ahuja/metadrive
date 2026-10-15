@@ -6,7 +6,7 @@
     "apps/*"
   ],
   "scripts": {
-    "prebuild": "npm run test:canvas",
+    "prebuild": "npm run test:canvas && npm run test:agent5",
     "test:canvas": "tsx --test scripts/md10-modern-canvas.test.mjs",
     "dev:web": "npm run dev --workspace apps/web",
     "dev:server": "npm run dev --workspace apps/server",
