@@ -1,3 +1,4 @@
+import type { ActiveDashboardCrossFilter } from '../dashboardFilters';
 import type { DashboardComponentMetadata, DashboardFilterMetadata, DashboardMetadata, FieldMetadata, ObjectMetadata } from '../metadata';
 export type RecordData = Record<string, unknown>;
 export type Aggregation = DashboardComponentMetadata['aggregation'];
