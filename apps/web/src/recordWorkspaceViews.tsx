@@ -1243,7 +1243,7 @@ function RecordWorkspace({
                     ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
                     label: component.label, properties: component.properties,
                     record, recordId: record.Id, object, formFactor, children
-                  }} />
+                  }} />}
             </div>
           : <div className="records-message" role="status" key={component.id}>Component “{component.type.slice('Custom:'.length)}” is not available in the component library.</div>;
       }
