@@ -73,6 +73,7 @@ export default function ChatterInbox(props) {
       <label className="md-chatter-search"><span aria-hidden="true">⌕</span><input aria-label="Search chats" value={search} onChange={e=>setSearch(e.target.value)} placeholder={p.searchPlaceholder || 'Search name or number'} /></label>
       <nav aria-label="Chat filters">{[['all','All'],['unread','Unread'],['mine','Assigned to me']].map(([id,label]) =>
         <button key={id} type="button" aria-pressed={tab===id} onClick={()=>setTab(id)}>{label}</button>)}</nav></header>
+      {p.accessError && <p className="md-chatter-error" role="alert">{p.accessError}</p>}
       <div className="md-chatter-scroll">{filtered.map(c => <button key={c.id} type="button"
         className={'md-chatter-contact ' + (selected?.id===c.id ? 'active' : '')} onClick={()=>{select(c.id);setNewChat(false);setSentNotice('');setAssigneeId('');}}>
         <span className="md-chatter-avatar" aria-hidden="true">{String(c.contactName || c.phoneNumber || '?').slice(0,1).toUpperCase()}</span>
@@ -107,9 +108,11 @@ export default function ChatterInbox(props) {
         </div>)}</div>
         {error && <p role="alert" className="md-chatter-error">{error}</p>}
         <form onSubmit={send} className="md-chatter-compose"><input aria-label="Message" value={draft} onChange={e=>setDraft(e.target.value)}
-          disabled={busy || !canSendSelected} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
+          disabled={busy} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
           <button type="submit" disabled={!draft.trim() || busy || !canSendSelected}>Send</button></form>
-        {p.composerHelpText && <p className="md-chatter-help">{p.composerHelpText}</p>}
+        {!canSendSelected
+          ? <p className="md-chatter-help" role="status">You can type a message, but you do not have permission to send from this account.</p>
+          : p.composerHelpText && <p className="md-chatter-help">{p.composerHelpText}</p>}
       </> : <div className="md-chatter-welcome"><strong>{p.emptyTitle || 'Select a conversation'}</strong><p>Choose a customer to see their messages.</p></div>}
     </div>
   </section>;
