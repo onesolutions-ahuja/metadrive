@@ -54,15 +54,14 @@ export function authoriseChatterFlow(apiName:string,context:Context):ChatterFlow
       tenantId:context.tenantId,channelAccountId:key.account,assignedUserId:null
     }, 'send');
   if (!permitted) return reject(403,'Conversation or channel permission denied');
-  const trusted={...context.input,ChannelAccountId:key.account,RecipientPhone:key.phone,
-    TargetRecordId:val(latest?.Id)};
+  const trusted={...context.input,ChannelAccountId:key.account,RecipientPhone:key.phone};
   if (operation==='assign') {
     const assignee=val(context.input.AssigneeId);
     const user=context.users.find(item=>item.id===assignee&&item.tenantId===context.tenantId&&!item.disabled);
     const grant=user?chatterScopeForUser(context.tenantId,assignee,context.tenant).grants.find(item=>
       item.channelAccountId===key.account&&item.canRead):undefined;
     if (!user||!grant) return reject(403,'Assignee must have channel read permission');
-    return {ok:true,input:{...trusted,AssigneeId:assignee}};
+    return {ok:true,input:{...trusted,TargetRecordId:val(latest?.Id),AssigneeId:assignee}};
   }
   const body=val(context.input.Body);
   if (!body||body.length>4096||body.includes('\0'))return reject(400,'Invalid message body');
