@@ -5,7 +5,7 @@ type TemplatePageRuntimeLayoutProps = {
   apiName: string;
   label: string;
   pageType: string;
-  template: string;
+  template?: string;
   fullscreen: boolean;
   phone: boolean;
   header: ReactNode;
