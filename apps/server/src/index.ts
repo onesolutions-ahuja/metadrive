@@ -1,3 +1,4 @@
+import { createScheduledDispatcher } from './scheduler/dispatcher.js';
 import { startPlatformServer } from './bootstrap/startup.js';
 import { registerProductionFrontend, registerPlatformErrorHandler } from './bootstrap/frontend.js';
 import { credentialKeyRing, credentialAad, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
@@ -13275,7 +13276,6 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
     dashboardSubscriptionDispatches.delete(key);
   }
 }
-let scheduledDispatchRunning = false;
 async function dispatchDueIntegrationJobs(): Promise<void> {
   if (persistenceMode === 'jsonb') return;
   const pool = getRouteAliasPool();
@@ -13324,50 +13324,35 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
     });
   }
 }
-async function dispatchScheduledFlows(): Promise<void> {
-  if (maintenanceMode) return;
-  if (scheduledDispatchRunning) return;
-  scheduledDispatchRunning = true;
-  try {
-    await withSchedulerLease(async () => {
-      // SQL commit is the durable completion boundary. Do not release the
-      // database advisory lock while scheduled mutations are still in flight.
+const dispatchScheduledFlows = createScheduledDispatcher({
+  maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
+  refresh: async () => {
+    if (persistenceMode === 'jsonb') return true;
+    const snapshotCommit = latestStateCommit;
+    const snapshotAuthRevision = authOverlayRevision;
+    const committed = await readPersistedState();
+    if (latestStateCommit !== snapshotCommit || authOverlayRevision !== snapshotAuthRevision) {
       await waitForPersistedState();
-      // A PostgreSQL advisory lease alone does not refresh this process's
-      // in-memory replica. SQL revision/CAS guards prevent stale overwrites,
-      // but every new dispatcher must start from the committed database head.
-      if (persistenceMode !== 'jsonb') {
-        // Requests can persist state while the scheduler is reading SQL.
-        // Do not replace a newer local request mutation with an older read.
-        const snapshotCommit = latestStateCommit;
-        const snapshotAuthRevision = authOverlayRevision;
-        const committed = await readPersistedState();
-        if (latestStateCommit !== snapshotCommit || authOverlayRevision !== snapshotAuthRevision) {
-          await waitForPersistedState();
-          return; // retry on the next interval with a fresh committed snapshot
-        }
-        if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
-        const restored = restoreDurableAuthOverlay(parsePersistedPlatformState(committed));
-        assertTenantIdentityIsolation(restored);
-        state = restored;
-      }
-      await deliverPendingPlatformEvents();
-      await executeDueScheduledFlows();
-      await dispatchDueIntegrationJobs();
-      const now = Date.now();
-      const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
-        tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
-          subscription.active && Date.parse(subscription.nextRunAt) <= now)
-          .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
-      for (const due of dueSubscriptions) {
-        await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
-      }
-      await waitForPersistedState();
-    });
-  } finally {
-    scheduledDispatchRunning = false;
+      return false;
+    }
+    if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
+    const restored = restoreDurableAuthOverlay(parsePersistedPlatformState(committed));
+    assertTenantIdentityIsolation(restored);
+    state = restored;
+    return true;
+  },
+  events: () => deliverPendingPlatformEvents(),
+  flows: () => executeDueScheduledFlows(),
+  integrations: () => dispatchDueIntegrationJobs(),
+  subscriptions: async () => {
+    const now = Date.now();
+    const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
+      tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
+        subscription.active && Date.parse(subscription.nextRunAt) <= now)
+        .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
+    for (const due of dueSubscriptions) await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
   }
-}
+});
 // Register static frontend and final error handling after API routes.
 const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
 registerProductionFrontend(app, frontendDist);
