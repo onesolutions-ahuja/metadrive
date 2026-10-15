@@ -736,10 +736,10 @@ function ObjectManager({
     <section className="surface object-setting-surface">
       <div className="section-toolbar"><div><h2>Details</h2><p>Manage the object’s labels and description.</p></div><div className="toolbar-actions">{draft.kind === 'Custom Object' && <button className="btn" onClick={() => setShowDeleteObjectConfirmation(true)}><Trash2 size={14} />Delete</button>}<button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div></div>
       <div className="object-edit-form">
-        <label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} /></label>
-        <label className="form-label">Plural Label<input className="form-control" value={draft.pluralLabel} onChange={(event) => updateDraft({ pluralLabel: event.target.value })} /></label>
-        <label className="form-label">Object Name<div className="form-display">{draft.apiName}</div></label>
-        <label className="form-label">Description<textarea className="form-control" rows={4} value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} /></label>
+        <PlatformPageSlot slotKey="field-object-01"><label className="form-label">Label<input className="form-control" value={draft.label} onChange={(event) => updateDraft({ label: event.target.value })} /></label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-object-02"><label className="form-label">Plural Label<input className="form-control" value={draft.pluralLabel} onChange={(event) => updateDraft({ pluralLabel: event.target.value })} /></label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-object-03"><label className="form-label">Object Name<div className="form-display">{draft.apiName}</div></label></PlatformPageSlot>
+        <PlatformPageSlot slotKey="field-object-04"><label className="form-label">Description<textarea className="form-control" rows={4} value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} /></label></PlatformPageSlot>
         <div className="form-display">Object Type: {draft.kind}</div>
         <div className="metadata-card"><h3>Object Features</h3>{([
           ['allowReports', 'Allow Reports'],
@@ -747,7 +747,7 @@ function ObjectManager({
           ['trackFieldHistory', 'Track Field History'],
           ['allowInChatter', 'Allow in Chatter']
         ] as const).map(([key, label]) => <label className="metadata-row" key={key}><span>{label}</span><input type="checkbox" checked={draft.settings?.[key] ?? false} onChange={(event) => updateObjectSettings({ [key]: event.target.checked })} /></label>)}
-          <label className="form-label">Deployment Status<select className="form-control" value={draft.settings?.deploymentStatus ?? 'Deployed'} onChange={(event) => updateObjectSettings({ deploymentStatus: event.target.value as ObjectSettingsMetadata['deploymentStatus'] })}><option>In Development</option><option>Deployed</option></select></label>
+          <PlatformPageSlot slotKey="field-object-05"><label className="form-label">Deployment Status<select className="form-control" value={draft.settings?.deploymentStatus ?? 'Deployed'} onChange={(event) => updateObjectSettings({ deploymentStatus: event.target.value as ObjectSettingsMetadata['deploymentStatus'] })}><option>In Development</option><option>Deployed</option></select></label></PlatformPageSlot>
           <div className="info-callout">Record name: {draft.fields.find((field) => field.apiName === 'Name')?.label ?? 'Name'} · {draft.settings?.recordNameType ?? 'Text'}{draft.settings?.recordNameFormat ? ` · ${draft.settings.recordNameFormat}` : ''}</div>
         </div>
       </div>
@@ -785,9 +785,9 @@ function ObjectManager({
       <div className="section-toolbar"><div><h2>Page Layouts</h2><p>Arrange fields, related lists, and actions. Layout assignment is separate from Lightning page device activation.</p></div><div className="toolbar-actions"><button className="btn" onClick={addLayout}><Plus size={14} />New Layout</button><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div></div>
       <div className="object-editor-grid">
         <div className="object-editor-main">
-          <label className="form-label">Page Layout<select className="form-control" value={selectedLayout?.id ?? ''} onChange={(event) => setSelectedLayoutId(event.target.value)}>{layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.label}</option>)}</select></label>
+          <PlatformPageSlot slotKey="field-object-06"><label className="form-label">Page Layout<select className="form-control" value={selectedLayout?.id ?? ''} onChange={(event) => setSelectedLayoutId(event.target.value)}>{layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.label}</option>)}</select></label></PlatformPageSlot>
           {selectedLayout && <>
-            <div className="metadata-card-header"><label className="form-label">Layout Label<input className="form-control" value={selectedLayout.label} onChange={(event) => updateLayout(selectedLayout.id, { label: event.target.value })} /></label><button className="btn" onClick={() => removeLayout(selectedLayout.id)}><X size={14} />Delete Layout</button></div>
+            <div className="metadata-card-header"><PlatformPageSlot slotKey="field-object-07"><label className="form-label">Layout Label<input className="form-control" value={selectedLayout.label} onChange={(event) => updateLayout(selectedLayout.id, { label: event.target.value })} /></label></PlatformPageSlot><button className="btn" onClick={() => removeLayout(selectedLayout.id)}><X size={14} />Delete Layout</button></div>
             {selectedLayout.sections.map((section) => <div className="metadata-card" key={section.id}>
               <div className="metadata-card-header"><input className="form-control" aria-label="Section name" value={section.label} onChange={(event) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map((item) => item.id === section.id ? { ...item, label: event.target.value } : item) })} /><select className="form-control compact-select" aria-label="Section columns" value={section.columns} onChange={(event) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map((item) => item.id === section.id ? { ...item, columns: Number(event.target.value) as 1 | 2 } : item) })}><option value={1}>1 column</option><option value={2}>2 columns</option></select><button className="row-menu" aria-label={`Remove ${section.label} section`} disabled={selectedLayout.sections.length <= 1} onClick={() => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.filter((item) => item.id !== section.id) })}><X size={14} /></button></div>
               <FieldSelectorList fields={draft.fields} selected={section.fieldApiNames} onToggle={(apiName) => updateLayout(selectedLayout.id, { sections: selectedLayout.sections.map((item) => item.id === section.id ? { ...item, fieldApiNames: toggleField(item.fieldApiNames, apiName) } : item) })} />
@@ -805,14 +805,14 @@ function ObjectManager({
               <h3>Custom Links</h3>
               {(selectedLayout.customLinks ?? []).map((link) => <div className="metadata-card" key={link.id}>
                 <div className="metadata-card-header">
-                  <label className="form-label">Link Label<input className="form-control" value={link.label} onChange={(event) => updateCustomLink(selectedLayout, link.id, { label: event.target.value })} /></label>
+                  <PlatformPageSlot slotKey="field-object-08"><label className="form-label">Link Label<input className="form-control" value={link.label} onChange={(event) => updateCustomLink(selectedLayout, link.id, { label: event.target.value })} /></label></PlatformPageSlot>
                   <button type="button" className="row-menu" aria-label={`Remove ${link.label} custom link`} onClick={() => updateLayout(selectedLayout.id, { customLinks: (selectedLayout.customLinks ?? []).filter((item) => item.id !== link.id) })}><X size={14} /></button>
                 </div>
-                <label className="form-label">URL<input className="form-control" value={link.url} onChange={(event) => updateCustomLink(selectedLayout, link.id, { url: event.target.value })} placeholder="https://example.com/{!Record.Id}" /></label>
+                <PlatformPageSlot slotKey="field-object-09"><label className="form-label">URL<input className="form-control" value={link.url} onChange={(event) => updateCustomLink(selectedLayout, link.id, { url: event.target.value })} placeholder="https://example.com/{!Record.Id}" /></label></PlatformPageSlot>
                 <label className="checkbox-row"><input type="checkbox" checked={link.openInNewWindow} onChange={(event) => updateCustomLink(selectedLayout, link.id, { openInNewWindow: event.target.checked })} />Open in new window</label>
               </div>)}
-              <label className="form-label">New Link Label<input className="form-control" value={customLinkLabel} onChange={(event) => setCustomLinkLabel(event.target.value)} /></label>
-              <label className="form-label">URL<input className="form-control" value={customLinkUrl} onChange={(event) => setCustomLinkUrl(event.target.value)} placeholder="https://example.com/{!Record.Id}" /></label>
+              <PlatformPageSlot slotKey="field-object-10"><label className="form-label">New Link Label<input className="form-control" value={customLinkLabel} onChange={(event) => setCustomLinkLabel(event.target.value)} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-object-11"><label className="form-label">URL<input className="form-control" value={customLinkUrl} onChange={(event) => setCustomLinkUrl(event.target.value)} placeholder="https://example.com/{!Record.Id}" /></label></PlatformPageSlot>
               <label className="checkbox-row"><input type="checkbox" checked={customLinkNewWindow} onChange={(event) => setCustomLinkNewWindow(event.target.checked)} />Open in new window</label>
               <button type="button" className="btn" onClick={() => addCustomLink(selectedLayout)} disabled={!customLinkLabel.trim() || !customLinkUrl.trim()}><Plus size={14} />Add Custom Link</button>
               <p className="permission-help">Use <code>{'{!Record.Id}'}</code> or <code>{'{!Record.FieldApiName}'}</code> to include record values in a link.</p>
@@ -821,12 +821,12 @@ function ObjectManager({
         </div>
         <div className="object-editor-side">
           <h3>Page Layout Assignment</h3><p>Assignments resolve by profile and record type.</p>
-          <label className="form-label">Record Type<select className="form-control" value={selectedRecordTypeId} onChange={(event) => setSelectedRecordTypeId(event.target.value)}>{recordTypes.map((recordType) => <option key={recordType.id} value={recordType.id}>{recordType.label}</option>)}</select></label>
-          <label className="form-label">Profile<select className="form-control" aria-label="Profile for page layout assignment" value={layoutProfileId} onChange={(event) => setLayoutProfileId(event.target.value)}>
+          <PlatformPageSlot slotKey="field-object-12"><label className="form-label">Record Type<select className="form-control" value={selectedRecordTypeId} onChange={(event) => setSelectedRecordTypeId(event.target.value)}>{recordTypes.map((recordType) => <option key={recordType.id} value={recordType.id}>{recordType.label}</option>)}</select></label></PlatformPageSlot>
+          <PlatformPageSlot slotKey="field-object-13"><label className="form-label">Profile<select className="form-control" aria-label="Profile for page layout assignment" value={layoutProfileId} onChange={(event) => setLayoutProfileId(event.target.value)}>
             <option value="*">All Profiles</option>
             {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}
-          </select></label>
-          <label className="form-label">Assigned Layout<select className="form-control" value={assignedLayoutId} onChange={(event) => setAssignedLayoutId(event.target.value)}>{layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.label}</option>)}</select></label>
+          </select></label></PlatformPageSlot>
+          <PlatformPageSlot slotKey="field-object-14"><label className="form-label">Assigned Layout<select className="form-control" value={assignedLayoutId} onChange={(event) => setAssignedLayoutId(event.target.value)}>{layouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.label}</option>)}</select></label></PlatformPageSlot>
           <button className="btn" onClick={saveLayoutAssignment} disabled={!selectedRecordTypeId || !assignedLayoutId}><Plus size={14} />Add / Update Assignment</button>
           <div className="assignment-list">{(draft.pageLayoutAssignments ?? []).map((assignment) => <div className="metadata-row" key={`${assignment.profileId}-${assignment.recordTypeId}`}><span><strong>{assignment.profileId === '*' ? 'All Profiles' : profiles.find((profile) => profile.id === assignment.profileId)?.label ?? assignment.profileId}</strong><small>{recordTypes.find((recordType) => recordType.id === assignment.recordTypeId)?.label ?? assignment.recordTypeId} · {layouts.find((layout) => layout.id === assignment.pageLayoutId)?.label ?? assignment.pageLayoutId}</small></span><button className="row-menu" aria-label="Remove page layout assignment" onClick={() => updateDraft({ pageLayoutAssignments: (draft.pageLayoutAssignments ?? []).filter((item) => item !== assignment) })}><X size={14} /></button></div>)}</div>
           <div className="info-callout">Phone and desktop Lightning Record Page activation is managed separately in Lightning App Builder. Tablet uses responsive page rendering.</div>
@@ -842,16 +842,16 @@ function ObjectManager({
         if (!window.confirm(`Delete record type "${recordType.label}"? Existing records, permission assignments, and page assignments must be removed first.`)) return;
         removeRecordType(recordType.id);
       }}><X size={14} /></button></td></tr>)}</tbody></table>
-      {recordTypes.map((recordType) => <label className="form-label" key={`${recordType.id}-description`}>{recordType.label} Description
+      {recordTypes.map((recordType) => <PlatformPageSlot slotKey="field-object-15"><label className="form-label" key={`${recordType.id}-description`}>{recordType.label} Description
         <textarea className="form-control" rows={2} maxLength={1000} value={recordType.description ?? ''}
           onChange={(event) => updateDraft({ recordTypes: recordTypes.map((item) => item.id === recordType.id ? { ...item, description: event.target.value } : item) })} />
-      </label>)}
+      </label></PlatformPageSlot>)}
       <p className="permission-help">Picklist values below act as the available process options for each record type. Defaults must be included in every applicable record type.</p>
       {recordTypes.map((recordType) => <details className="permission-field-group" key={`${recordType.id}-picklists`}>
         <summary>{recordType.label} picklist values</summary>
         {draft.fields.filter((field) => field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist').map((field) => {
           const key = `${recordType.id}.${field.apiName}`;
-          return <label className="form-label" key={key}>{field.label}
+          return <PlatformPageSlot slotKey="field-object-16"><label className="form-label" key={key}>{field.label}
             <textarea className="form-control" rows={3} aria-label={`${recordType.label} ${field.label} values`}
               value={recordTypePicklistDrafts[key] ?? ''}
               placeholder={(field.picklistValues ?? []).join('\n')}
@@ -864,7 +864,7 @@ function ObjectManager({
                 } : item) });
               }} />
             <small>Enter one allowed value per line. Leave blank to allow no values for this record type.</small>
-          </label>;
+          </label></PlatformPageSlot>;
         })}
         {!draft.fields.some((field) => field.dataType === 'Picklist' || field.dataType === 'Multi-Select Picklist') && <p className="permission-help">Add a picklist field to configure record-type-specific values.</p>}
       </details>)}
@@ -875,12 +875,12 @@ function ObjectManager({
       <div className="section-toolbar"><div><h2>Compact Layouts</h2><p>Choose highlights fields and assign a compact layout by profile and record type.</p></div><div className="toolbar-actions"><button className="btn" onClick={addCompactLayout}><Plus size={14} />New Compact Layout</button><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div></div>
       <div className="object-editor-grid">
         <div className="object-editor-main">
-          <label className="form-label">Compact Layout<select className="form-control" value={selectedCompactLayoutId} onChange={(event) => setSelectedCompactLayoutId(event.target.value)}>
+          <PlatformPageSlot slotKey="field-object-17"><label className="form-label">Compact Layout<select className="form-control" value={selectedCompactLayoutId} onChange={(event) => setSelectedCompactLayoutId(event.target.value)}>
             {compactLayouts.map((layout) => <option key={layout.id} value={layout.id}>{layout.label}</option>)}
-          </select></label>
+          </select></label></PlatformPageSlot>
           {compactLayouts.map((layout) => layout.id === selectedCompactLayoutId && <div key={layout.id}>
             <div className="metadata-card-header">
-              <label className="form-label">Compact Layout Label<input className="form-control" value={layout.label} onChange={(event) => updateCompactLayout(layout.id, { label: event.target.value })} /></label>
+              <PlatformPageSlot slotKey="field-object-18"><label className="form-label">Compact Layout Label<input className="form-control" value={layout.label} onChange={(event) => updateCompactLayout(layout.id, { label: event.target.value })} /></label></PlatformPageSlot>
               <button type="button" className="btn" disabled={compactLayouts.length <= 1} onClick={() => removeCompactLayout(layout.id)}><X size={14} />Delete</button>
             </div>
             <FieldSelectorList fields={draft.fields} selected={layout.fieldApiNames} onToggle={(apiName) => updateCompactLayout(layout.id, { fieldApiNames: toggleField(layout.fieldApiNames, apiName) })} />
@@ -888,12 +888,12 @@ function ObjectManager({
         </div>
         <div className="object-editor-side">
           <h3>Compact Layout Assignment</h3>
-          <label className="form-label">Record Type<select className="form-control" value={selectedRecordTypeId} onChange={(event) => setSelectedRecordTypeId(event.target.value)}>
+          <PlatformPageSlot slotKey="field-object-19"><label className="form-label">Record Type<select className="form-control" value={selectedRecordTypeId} onChange={(event) => setSelectedRecordTypeId(event.target.value)}>
             {recordTypes.filter((recordType) => recordType.active).map((recordType) => <option key={recordType.id} value={recordType.id}>{recordType.label}</option>)}
-          </select></label>
-          <label className="form-label">Profile<select className="form-control" aria-label="Profile for compact layout assignment" value={layoutProfileId} onChange={(event) => setLayoutProfileId(event.target.value)}>
+          </select></label></PlatformPageSlot>
+          <PlatformPageSlot slotKey="field-object-20"><label className="form-label">Profile<select className="form-control" aria-label="Profile for compact layout assignment" value={layoutProfileId} onChange={(event) => setLayoutProfileId(event.target.value)}>
             <option value="*">All Profiles</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}
-          </select></label>
+          </select></label></PlatformPageSlot>
           <button className="btn" onClick={saveCompactLayoutAssignment} disabled={!selectedRecordTypeId || !selectedCompactLayoutId}><Plus size={14} />Add / Update Assignment</button>
           <div className="assignment-list">{(draft.compactLayoutAssignments ?? []).map((assignment) => <div className="metadata-row" key={`${assignment.profileId}-${assignment.recordTypeId}`}>
             <span><strong>{assignment.profileId === '*' ? 'All Profiles' : profiles.find((profile) => profile.id === assignment.profileId)?.label ?? assignment.profileId}</strong>
@@ -935,8 +935,8 @@ function ObjectManager({
         setFieldSetApiName('');
       }} disabled={!fieldSetLabel.trim() || !/^[A-Za-z][A-Za-z0-9_]{0,254}$/.test(fieldSetApiName.trim())}><Plus size={14} />New Field Set</button></div>
       {fieldSets.map((fieldSet, fieldSetIndex) => <div className="metadata-card" key={`field-set-${fieldSetIndex}`}>
-        <div className="metadata-card-header"><label className="form-label">Field Set Label<input className="form-control" maxLength={80} value={fieldSet.label} onChange={(event) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, label: event.target.value } : item) })} /></label>
-          <label className="form-label">API Name<input className="form-control api-name" maxLength={255} value={fieldSet.apiName} onChange={(event) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, apiName: event.target.value } : item) })} /></label>
+        <div className="metadata-card-header"><PlatformPageSlot slotKey="field-object-21"><label className="form-label">Field Set Label<input className="form-control" maxLength={80} value={fieldSet.label} onChange={(event) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, label: event.target.value } : item) })} /></label></PlatformPageSlot>
+          <PlatformPageSlot slotKey="field-object-22"><label className="form-label">API Name<input className="form-control api-name" maxLength={255} value={fieldSet.apiName} onChange={(event) => updateDraft({ fieldSets: fieldSets.map((item) => item.apiName === fieldSet.apiName ? { ...item, apiName: event.target.value } : item) })} /></label></PlatformPageSlot>
           <button className="row-menu" aria-label={`Delete field set ${fieldSet.label}`} onClick={() => {
             if (!window.confirm(`Delete field set "${fieldSet.label}"? Record-detail field-set views will no longer offer it.`)) return;
             updateDraft({ fieldSets: fieldSets.filter((item) => item.apiName !== fieldSet.apiName) });
@@ -1049,12 +1049,12 @@ function ObjectManager({
         <div className="metadata-card"><h3>{page.label}</h3><p>{page.status} · {page.components.length} components</p></div>
         <div className="metadata-card">
           <h3>Activation Assignment</h3>
-          <label className="form-label">Assign as<select className="form-control" value={activationScope} onChange={(event) => setActivationScope(event.target.value as PageActivationAssignmentMetadata['scope'])}><option>Org Default</option><option>App Default</option><option>App and Profile</option><option>App, Record Type, and Profile</option></select></label>
-          {activationScope !== 'Org Default' && <label className="form-label">App API Name<input className="form-control" list={`lightning-page-apps-${object.apiName}`} value={activationAppId} onChange={(event) => setActivationAppId(event.target.value)} placeholder="For example, Sales" /><datalist id={`lightning-page-apps-${object.apiName}`}>{activationAppIds.map((appId) => <option key={appId} value={appId} />)}</datalist></label>}
-          {activationScope === 'App and Profile' && <label className="form-label">Profile<select className="form-control" value={activationProfileId} onChange={(event) => setActivationProfileId(event.target.value)}><option value="">Select a profile…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}</select></label>}
+          <PlatformPageSlot slotKey="field-object-23"><label className="form-label">Assign as<select className="form-control" value={activationScope} onChange={(event) => setActivationScope(event.target.value as PageActivationAssignmentMetadata['scope'])}><option>Org Default</option><option>App Default</option><option>App and Profile</option><option>App, Record Type, and Profile</option></select></label></PlatformPageSlot>
+          {activationScope !== 'Org Default' && <PlatformPageSlot slotKey="field-object-24"><label className="form-label">App API Name<input className="form-control" list={`lightning-page-apps-${object.apiName}`} value={activationAppId} onChange={(event) => setActivationAppId(event.target.value)} placeholder="For example, Sales" /><datalist id={`lightning-page-apps-${object.apiName}`}>{activationAppIds.map((appId) => <option key={appId} value={appId} />)}</datalist></label></PlatformPageSlot>}
+          {activationScope === 'App and Profile' && <PlatformPageSlot slotKey="field-object-25"><label className="form-label">Profile<select className="form-control" value={activationProfileId} onChange={(event) => setActivationProfileId(event.target.value)}><option value="">Select a profile…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}</select></label></PlatformPageSlot>}
           {activationScope === 'App, Record Type, and Profile' && <>
-            <label className="form-label">Record Type<select className="form-control" value={selectedRecordTypeId} onChange={(event) => setSelectedRecordTypeId(event.target.value)}>{recordTypes.filter((recordType) => recordType.active).map((recordType) => <option key={recordType.id} value={recordType.id}>{recordType.label}</option>)}</select></label>
-            <label className="form-label">Profile<select className="form-control" value={activationProfileId} onChange={(event) => setActivationProfileId(event.target.value)}><option value="">Select a profile…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}</select></label>
+            <PlatformPageSlot slotKey="field-object-26"><label className="form-label">Record Type<select className="form-control" value={selectedRecordTypeId} onChange={(event) => setSelectedRecordTypeId(event.target.value)}>{recordTypes.filter((recordType) => recordType.active).map((recordType) => <option key={recordType.id} value={recordType.id}>{recordType.label}</option>)}</select></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-object-27"><label className="form-label">Profile<select className="form-control" value={activationProfileId} onChange={(event) => setActivationProfileId(event.target.value)}><option value="">Select a profile…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label}</option>)}</select></label></PlatformPageSlot>
           </>}
           <div className="form-label">Form Factors</div>
           <div className="form-options">{(['Desktop', 'Phone'] as const).map((formFactor) => <label className="checkbox-row" key={formFactor}><input type="checkbox" disabled={!page.devices.includes(formFactor)} checked={activationFormFactors.includes(formFactor) && page.devices.includes(formFactor)} onChange={() => setActivationFormFactors((current) => current.includes(formFactor) ? current.filter((item) => item !== formFactor) : [...current, formFactor])} />{formFactor}</label>)}</div>
@@ -1131,7 +1131,7 @@ function ObjectManager({
       {relationshipFields.map((field) => {
         const fieldFilters = filters.filter((filter) => filter.fieldApiName === field.apiName);
         if (fieldFilters.length < 2) return null;
-        return <label className="form-label" key={`logic-${field.apiName}`}>Required criteria match for {field.label}
+        return <PlatformPageSlot slotKey="field-object-28"><label className="form-label" key={`logic-${field.apiName}`}>Required criteria match for {field.label}
           <select className="form-control" aria-label={`Lookup filter logic for ${field.label}`} value={draft.relatedLookupFilterLogic?.[field.apiName] ?? 'All'} onChange={(event) => {
             const relatedLookupFilterLogic = { ...draft.relatedLookupFilterLogic };
             if (event.target.value === 'All') delete relatedLookupFilterLogic[field.apiName];
@@ -1140,7 +1140,7 @@ function ObjectManager({
           }}>
             <option value="All">All criteria</option><option value="Any">Any criterion</option>
           </select>
-        </label>;
+        </label></PlatformPageSlot>;
       })}
       {relationshipFields.length === 0 && <div className="empty-state">Create a lookup or master-detail field to configure a related lookup filter.</div>}
     </section>;
@@ -1244,24 +1244,24 @@ function ObjectManager({
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="field-details-title">
           <div className="modal-header"><h2 id="field-details-title">Field Details</h2><button className="icon-button dark" onClick={() => setEditingField(null)} aria-label="Close"><X size={18} /></button></div>
           <p className="modal-copy">Edit the field label and help metadata. The API name remains stable for existing references.</p>
-          <label className="form-label">Field Label<input className="form-control" value={editingField.label} onChange={(event) => setEditingField({ ...editingField, label: event.target.value })} /></label>
-          <label className="form-label">Field Name<div className="form-display">{editingField.apiName}</div></label>
-          <label className="form-label">Data Type<div className="form-display">{editingField.dataType}</div></label>
-          {editingField.dataType.startsWith('Text(') && <label className="form-label">Length<input className="form-control" type="number" min={1} max={255} step={1} value={editingField.dataType.match(/^Text\((\d+)\)$/)?.[1] ?? ''} onChange={(event) => setEditingField({ ...editingField, dataType: `Text(${event.target.value})` })} /></label>}
+          <PlatformPageSlot slotKey="field-object-29"><label className="form-label">Field Label<input className="form-control" value={editingField.label} onChange={(event) => setEditingField({ ...editingField, label: event.target.value })} /></label></PlatformPageSlot>
+          <PlatformPageSlot slotKey="field-object-30"><label className="form-label">Field Name<div className="form-display">{editingField.apiName}</div></label></PlatformPageSlot>
+          <PlatformPageSlot slotKey="field-object-31"><label className="form-label">Data Type<div className="form-display">{editingField.dataType}</div></label></PlatformPageSlot>
+          {editingField.dataType.startsWith('Text(') && <PlatformPageSlot slotKey="field-object-32"><label className="form-label">Length<input className="form-control" type="number" min={1} max={255} step={1} value={editingField.dataType.match(/^Text\((\d+)\)$/)?.[1] ?? ''} onChange={(event) => setEditingField({ ...editingField, dataType: `Text(${event.target.value})` })} /></label></PlatformPageSlot>}
           {/^(Number|Currency|Percent)\(/.test(editingField.dataType) && (() => {
             const [, type = 'Number', precisionText = '18', scaleText = '0'] = editingField.dataType.match(/^(Number|Currency|Percent)\((\d+),\s*(\d+)\)$/) ?? [];
             const precision = Number(precisionText);
             const scale = Number(scaleText);
             return <div className="form-options">
-              <label className="form-label">Length (Precision)<input className="form-control" type="number" min={1} max={18} step={1} value={precision} onChange={(event) => {
+              <PlatformPageSlot slotKey="field-object-33"><label className="form-label">Length (Precision)<input className="form-control" type="number" min={1} max={18} step={1} value={precision} onChange={(event) => {
                 const nextPrecision = Number(event.target.value);
                 setEditingField({ ...editingField, dataType: `${type}(${event.target.value}, ${Math.min(scale, nextPrecision)})` });
-              }} /></label>
-              <label className="form-label">Decimal Places (Scale)<input className="form-control" type="number" min={0} max={precision} step={1} value={scale} onChange={(event) => setEditingField({ ...editingField, dataType: `${type}(${precision}, ${event.target.value})` })} /></label>
+              }} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-object-34"><label className="form-label">Decimal Places (Scale)<input className="form-control" type="number" min={0} max={precision} step={1} value={scale} onChange={(event) => setEditingField({ ...editingField, dataType: `${type}(${precision}, ${event.target.value})` })} /></label></PlatformPageSlot>
             </div>;
           })()}
-          <label className="form-label">Description<input className="form-control" value={editingField.description ?? ''} onChange={(event) => setEditingField({ ...editingField, description: event.target.value })} /></label>
-          <label className="form-label">Help Text<textarea className="form-control" value={editingField.helpText ?? ''} onChange={(event) => setEditingField({ ...editingField, helpText: event.target.value })} maxLength={255} rows={2} /></label>
+          <PlatformPageSlot slotKey="field-object-35"><label className="form-label">Description<input className="form-control" value={editingField.description ?? ''} onChange={(event) => setEditingField({ ...editingField, description: event.target.value })} /></label></PlatformPageSlot>
+          <PlatformPageSlot slotKey="field-object-36"><label className="form-label">Help Text<textarea className="form-control" value={editingField.helpText ?? ''} onChange={(event) => setEditingField({ ...editingField, helpText: event.target.value })} maxLength={255} rows={2} /></label></PlatformPageSlot>
           <div className="form-options">
             <label className="checkbox-row"><input type="checkbox" checked={editingField.required} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label>
             <label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={['Long Text Area', 'Multi-Select Picklist'].includes(editingField.dataType) || Boolean(editingField.relationship) || Boolean(editingField.formula)}
@@ -1278,7 +1278,7 @@ function ObjectManager({
           {!editingField.formula && !editingField.relationship && !['AutoNumber', 'Auto Number'].includes(editingField.dataType) && (editingField.dataType === 'Checkbox'
             ? <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.defaultValue !== undefined} onChange={(event) => { if (event.target.checked) setEditingField({ ...editingField, defaultValue: false }); else { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } }} />Set a default value</label><label className="checkbox-row"><input type="checkbox" disabled={editingField.defaultValue === undefined} checked={editingField.defaultValue === true} onChange={(event) => setEditingField({ ...editingField, defaultValue: event.target.checked })} />Default to checked</label></div>
             : (editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist')
-              ? <label className="form-label">Default Value<select className="form-control" multiple={editingField.dataType === 'Multi-Select Picklist'} value={editingField.dataType === 'Multi-Select Picklist' ? String(editingField.defaultValue ?? '').split(';').filter(Boolean) : String(editingField.defaultValue ?? '')} onChange={(event) => {
+              ? <PlatformPageSlot slotKey="field-object-37"><label className="form-label">Default Value<select className="form-control" multiple={editingField.dataType === 'Multi-Select Picklist'} value={editingField.dataType === 'Multi-Select Picklist' ? String(editingField.defaultValue ?? '').split(';').filter(Boolean) : String(editingField.defaultValue ?? '')} onChange={(event) => {
                 const values = Array.from(event.currentTarget.selectedOptions, (option) => option.value);
                 const value = editingField.dataType === 'Multi-Select Picklist' ? values.join(';') : values[0] ?? '';
                 if (!value) {
@@ -1286,15 +1286,15 @@ function ObjectManager({
                   delete next.defaultValue;
                   setEditingField(next);
                 } else setEditingField({ ...editingField, defaultValue: value });
-              }}><option value="">— None —</option>{(editingField.picklistValues ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-              : <label className="form-label">Default Value<input className="form-control" type={/^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? 'number' : editingField.dataType === 'Date' ? 'date' : ['Date/Time', 'DateTime'].includes(editingField.dataType) ? 'datetime-local' : editingField.dataType === 'Email' ? 'email' : editingField.dataType === 'URL' ? 'url' : 'text'}
+              }}><option value="">— None —</option>{(editingField.picklistValues ?? []).map((value) => <option key={value} value={value}>{value}</option>)}</select></label></PlatformPageSlot>
+              : <PlatformPageSlot slotKey="field-object-38"><label className="form-label">Default Value<input className="form-control" type={/^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? 'number' : editingField.dataType === 'Date' ? 'date' : ['Date/Time', 'DateTime'].includes(editingField.dataType) ? 'datetime-local' : editingField.dataType === 'Email' ? 'email' : editingField.dataType === 'URL' ? 'url' : 'text'}
                 min={editingNumericMaximum === undefined ? undefined : -editingNumericMaximum}
                 max={editingNumericMaximum}
                 step={editingNumericFormat ? (Number(editingNumericFormat[2]) ? 10 ** -Number(editingNumericFormat[2]) : 1) : undefined}
                 maxLength={editingTextMaximum ? Number(editingTextMaximum) : editingField.dataType === 'Text' ? 255 : undefined}
-                value={editingField.defaultValue === undefined ? '' : String(editingField.defaultValue)} onChange={(event) => { const value = event.target.value; if (!value) { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } else setEditingField({ ...editingField, defaultValue: /^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? Number(value) : value }); }} /></label>)}
+                value={editingField.defaultValue === undefined ? '' : String(editingField.defaultValue)} onChange={(event) => { const value = event.target.value; if (!value) { const next = { ...editingField }; delete next.defaultValue; setEditingField(next); } else setEditingField({ ...editingField, defaultValue: /^(Number|Currency|Percent)(\(|$)/.test(editingField.dataType) ? Number(value) : value }); }} /></label></PlatformPageSlot>)}
           {(editingField.dataType === 'Picklist' || editingField.dataType === 'Multi-Select Picklist') && <>
-            <label className="form-label">Picklist Values<textarea className="form-control" rows={4} value={(editingField.picklistValues ?? []).join('\n')} onChange={(event) => {
+            <PlatformPageSlot slotKey="field-object-39"><label className="form-label">Picklist Values<textarea className="form-control" rows={4} value={(editingField.picklistValues ?? []).join('\n')} onChange={(event) => {
               const picklistValues = event.target.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
               const valueSettings = editingField.valueSettings
                 ? Object.fromEntries(Object.entries(editingField.valueSettings).map(([key, values]) => [key, values.filter((value) => picklistValues.includes(value))]))
@@ -1305,9 +1305,9 @@ function ObjectManager({
                 delete nextField.defaultValue;
               }
               setEditingField(nextField);
-            }} placeholder={'New\nIn Progress\nCompleted'} /></label>
+            }} placeholder={'New\nIn Progress\nCompleted'} /></label></PlatformPageSlot>
             <label className="checkbox-row"><input type="checkbox" checked={editingField.picklistRestricted ?? false} onChange={(event) => setEditingField({ ...editingField, picklistRestricted: event.target.checked })} />Restrict to the values defined in the value set</label>
-            <><label className="form-label">Controlling Field<select className="form-control" value={editingField.controllerFieldApiName ?? ''} onChange={(event) => {
+            <><PlatformPageSlot slotKey="field-object-40"><label className="form-label">Controlling Field<select className="form-control" value={editingField.controllerFieldApiName ?? ''} onChange={(event) => {
               const controllerField = draft.fields.find((field) => field.apiName === event.target.value);
               const controllerValues = controllerField?.dataType === 'Checkbox' ? ['true', 'false'] : controllerField?.picklistValues ?? [];
               const nextField: FieldMetadata = { ...editingField };
@@ -1321,7 +1321,7 @@ function ObjectManager({
               setEditingField(nextField);
             }}>
               <option value="">None</option>{draft.fields.filter((field) => field.apiName !== editingField.apiName && (field.dataType === 'Picklist' || field.dataType === 'Checkbox')).map((field) => <option key={field.apiName} value={field.apiName}>{field.label} ({field.dataType})</option>)}
-            </select></label>
+            </select></label></PlatformPageSlot>
             {editingField.controllerFieldApiName && (() => {
               const controllerField = draft.fields.find((field) => field.apiName === editingField.controllerFieldApiName);
               const controllerValues = controllerField?.dataType === 'Checkbox' ? ['true', 'false'] : controllerField?.picklistValues ?? [];
@@ -1335,8 +1335,8 @@ function ObjectManager({
           <label className="checkbox-row"><input type="checkbox" checked={editingField.trackHistory ?? false} disabled={!draft.settings?.trackFieldHistory || Boolean(editingField.formula)} onChange={(event) => setEditingField({ ...editingField, trackHistory: event.target.checked })} />Track field history</label>
           {!draft.settings?.trackFieldHistory && <div className="info-callout">Enable Track Field History in object Details before selecting fields.</div>}
           {editingField.formula && <>
-            <label className="form-label">Formula Return Type<div className="form-display">{editingField.formula.returnType}</div></label>
-            <label className="form-label">Formula<textarea className="form-control" rows={4} value={editingField.formula.expression} onChange={(event) => setEditingField({ ...editingField, formula: { ...editingField.formula!, expression: event.target.value } })} /></label>
+            <PlatformPageSlot slotKey="field-object-41"><label className="form-label">Formula Return Type<div className="form-display">{editingField.formula.returnType}</div></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-object-42"><label className="form-label">Formula<textarea className="form-control" rows={4} value={editingField.formula.expression} onChange={(event) => setEditingField({ ...editingField, formula: { ...editingField.formula!, expression: event.target.value } })} /></label></PlatformPageSlot>
           </>}
           {editingField.relationship && <div className="info-callout">{editingField.relationship.type} relationship to {editingField.relationship.targetObject}; relationship target and API name are immutable here.</div>}
           {!editingField.formula && <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={editingField.required} disabled={editingField.relationship?.type === 'Master-Detail'} onChange={(event) => setEditingField({ ...editingField, required: event.target.checked })} />Required</label><label className="checkbox-row"><input type="checkbox" checked={editingField.unique} disabled={Boolean(editingField.relationship) || editingField.dataType === 'Long Text Area' || editingField.dataType === 'Multi-Select Picklist'} onChange={(event) => setEditingField({ ...editingField, unique: event.target.checked })} />Unique</label></div>}
