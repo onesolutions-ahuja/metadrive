@@ -17,7 +17,7 @@ const ctx=()=>({tenantId:'tenant-a',userId:'alice',
 test('send replaces browser recipient and credential using signed inbound conversation mapping',()=>{
   const d=authoriseChatterFlow('CHATTER_SEND_MESSAGE',ctx());
   assert.equal(d?.ok,true);
-  if(d?.ok){assert.equal(d.input.RecipientPhone,id);assert.equal(d.input.AuthorisedCredentialId,'trusted');}
+  if(d?.ok){assert.equal(d.input.RecipientPhone,id);assert.equal(d.input.AuthorisedCredentialId,'trusted');assert.equal(d.input.AuthorisedMessagePath,'messages');}
 });
 test('ungranted and forged channel messages cannot send, Meta decides window eligibility',()=>{
   const no=ctx();no.tenant.records.Chatter_Channel_Grant__c=[];
@@ -45,4 +45,11 @@ test('new outbound chat requires a tenant-scoped sending grant and derives trust
   if(send?.ok){assert.equal(send.input.RecipientPhone,id);assert.equal(send.input.AssignedUserId,'alice');}
   context.tenant.records.Chatter_Channel_Grant__c=[];
   assert.equal(authoriseChatterFlow('CHATTER_SEND_MESSAGE',context)?.ok,false);
+});
+
+test('version-only Meta credential uses trusted configured phone number for account-specific path',()=>{
+  const c=ctx();c.credentials=[{...c.credentials[0],baseUrl:'https://graph.facebook.com/v22.0'}];
+  const decision=authoriseChatterFlow('CHATTER_SEND_MESSAGE',c);
+  assert.equal(decision?.ok,true);
+  if(decision?.ok)assert.equal(decision.input.AuthorisedMessagePath,account+'/messages');
 });
