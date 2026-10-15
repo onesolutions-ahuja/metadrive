@@ -139,7 +139,7 @@ try {
     const runtimeFrame=page.locator('iframe[sandbox="allow-scripts"]').first();
     await runtimeFrame.waitFor({state:'attached'});
     await runtimeFrame.contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
-    const oneFrame=page.locator('iframe[sandbox="allow-scripts"]').filter({has:page.locator('body')}).last();
+    const oneFrame=page.locator('iframe[sandbox="allow-scripts"]').last();
     await oneFrame.contentFrame().getByText('One Core Page proof',{exact:false}).waitFor();
   }
   await page.setViewportSize({width:1440,height:900});
