@@ -40,7 +40,7 @@ import { resolvePageAssignment } from './modules/pages/page-assignment.js';
 import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-properties.js';
 import { evaluateFormula, formulaLocalDate, isSafeFlowRegex } from './modules/flows/formula-evaluator.js';
 import { evaluateCustomConditionLogic } from './modules/flows/condition-logic.js';
-import { assertExecutionAdmission } from './modules/flows/execution-admission.js';
+import { authoriseManualCoreFlow } from './modules/flows/execution-admission.js';
 import { dashboardLocalParts, flowLocalDateTimeToInstant } from './core/local-time.js';
 import cors from 'cors';
 import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
@@ -8035,18 +8035,9 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   const flow = tenant.flows.find((item) => item.apiName === apiName);
   if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
   if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
-  // Generic core Flows have no optional-app dependency. The route-level OneEngine
-  // grant is rechecked here; app-owned executions must additionally pass their
-  // AppExchange lifecycle gate before being dispatched by that subsystem.
   try {
-    assertExecutionAdmission({
-      tenantId: principal.tenantId,
-      principalTenantId: tenant.tenantId ?? principal.tenantId,
-      principalId: principal.userId,
-      grants: new Set(principal.permissions), requiredPermission: 'flows:run',
-      installed: true, licensed: true, activated: true,
-      published: flow.status === 'Active'
-    });
+    authoriseManualCoreFlow(principal.tenantId, principal.tenantId,
+      principal.userId, principal.permissions, flow.status);
   } catch (error) {
     return res.status(403).json({ error: error instanceof Error ? error.message : 'Flow execution denied' });
   }
