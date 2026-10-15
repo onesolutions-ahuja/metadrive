@@ -26,8 +26,19 @@ class ComponentRenderBoundary extends React.Component<{ children: ReactNode }, C
   }
 }
 
+// Only server-trusted bundled components reach this cache; untrusted tenant JSX
+// continues through its isolated sandbox, never the host compiler.
+const trustedModules=new Map<string,ReturnType<typeof compileComponentModule>>();
+function resolveTrustedModule(source:string){
+ const cached=trustedModules.get(source);
+ if(cached)return cached;
+ const compiled=compileComponentModule(source,React);
+ if(trustedModules.size>=32)trustedModules.delete(trustedModules.keys().next().value!);
+ trustedModules.set(source,compiled);
+ return compiled;
+}
 function RegisteredComponentBody({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
-  const Component = useMemo(() => compileComponentModule(definition.compiledJs, React), [definition.compiledJs]);
+  const Component = useMemo(() => resolveTrustedModule(definition.compiledJs), [definition.compiledJs]);
 
   return <div className={`registered-component metadrive-component-${definition.apiName.toLowerCase()}`}>
     {definition.scopedCss && <style>{definition.scopedCss}</style>}
