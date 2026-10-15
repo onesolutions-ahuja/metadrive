@@ -40,7 +40,7 @@ import { resolvePageAssignment } from './modules/pages/page-assignment.js';
 import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-properties.js';
 import { evaluateFormula, formulaLocalDate, isSafeFlowRegex } from './modules/flows/formula-evaluator.js';
 import { evaluateCustomConditionLogic } from './modules/flows/condition-logic.js';
-import { authoriseManualCoreFlow } from './modules/flows/execution-admission.js';
+import { authoriseManualCoreFlow, assertFlowRuntimeAdmission } from './modules/flows/execution-admission.js';
 import { dashboardLocalParts, flowLocalDateTimeToInstant } from './core/local-time.js';
 import cors from 'cors';
 import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
@@ -10351,6 +10351,15 @@ async function executeFlowImplementation(
     && user.tenantId === tenantId && !user.disabled);
   if (!runningUser) throw new Error('The Flow running user is not available in this tenant.');
   const runningPrincipal = principalForUser(runningUser, tenant);
+  // All dispatchers converge here: manual, scheduled, trigger, subflow and resume.
+  // The running identity must already be a live tenant member (checked above).
+  // Action/record permissions continue to be checked by OneEngine at each step.
+  assertFlowRuntimeAdmission({
+    tenantId, principalTenantId: runningPrincipal.tenantId,
+    principalId: runningPrincipal.userId,
+    status: flow.status, allowDraftExecution,
+    installed: true, licensed: true, activated: true
+  });
   const interviewGuid = resume?.interviewGuid ?? parentInterview?.interviewGuid ?? randomUUID();
   const interviewStartTime = resume?.interviewStartTime ?? parentInterview?.interviewStartTime ?? new Date().toISOString();
   const context: FlowRuntimeContext = {
