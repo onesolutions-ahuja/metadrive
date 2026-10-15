@@ -8,6 +8,8 @@ import {chromium} from 'playwright';
 import {kioskPresentationComponents} from './kiosk-phase4-components.mjs';
 import {commercePages,commerceApp} from './kiosk-phase4-pages.mjs';
 import {kioskObjectDefinitions,demoCategories,demoProducts} from './kiosk-demo-fixtures.mjs';
+import {customisationObjects,basketObjectExtensions,demoModifierGroups,demoModifierOptions,demoModifierAssignments} from './kiosk-commerce-capabilities.mjs';
+import {commerceFlows} from './kiosk-phase4-flows.mjs';
 
 const temp=mkdtempSync(join(tmpdir(),'kiosk-visual-'));
 const evidence=process.env.KIOSK_EVIDENCE_DIR||join(temp,'screenshots');
@@ -47,21 +49,36 @@ try{
  token=(await request('/auth/login','POST',user)).access_token;
  assert.ok(token);
  const existing=new Set((await request('/metadata/objects')).objects.map(o=>o.apiName));
- for(const obj of kioskObjectDefinitions.filter(o=>['ProductCategory__c','Product__c','Order__c'].includes(o.apiName)))
-  if(!existing.has(obj.apiName))await request('/metadata/objects','POST',obj);
+ for(const obj of [...kioskObjectDefinitions,...customisationObjects])
+  if(!existing.has(obj.apiName) && obj.apiName!=='SaleLine__c')await request('/metadata/objects','POST',obj);
+ const latest=(await request('/metadata/objects')).objects;
+ for(const [name,fields] of Object.entries(basketObjectExtensions)){
+  const obj=latest.find(o=>o.apiName===name);
+  assert.ok(obj,'Missing '+name);
+  const missing=fields.filter(f=>!obj.fields.some(x=>x.apiName===f.apiName));
+  if(missing.length)await request('/metadata/objects/'+name,'PUT',{...obj,fields:[...obj.fields,...missing]});
+ }
  const categoryIds=new Map();
  for(const record of demoCategories){
   const result=await request('/records/ProductCategory__c','POST',record);
   categoryIds.set(record.Name,String(result.record?.Id||result.Id));
  }
- for(const p of demoProducts)await request('/records/Product__c','POST',{
+ const productIds=new Map();
+ for(const p of demoProducts){const made=await request('/records/Product__c','POST',{
   Name:p.Name,DefaultPrice:p.DefaultPrice,Description:p.Description,ImageUrl:p.ImageUrl,
   CategoryId:categoryIds.get(p.category),IsActive:true
+ });productIds.set(p.Name,made.record?.Id||made.Id)}
+ const groupIds=new Map();
+ for(const group of demoModifierGroups){const made=await request('/records/ModifierGroup__c','POST',group);groupIds.set(group.Name,made.record?.Id||made.Id)}
+ for(const option of demoModifierOptions){const {group,...values}=option;await request('/records/ModifierOption__c','POST',{...values,GroupId:groupIds.get(group)})}
+ for(const a of demoModifierAssignments)await request('/records/ProductModifierGroup__c','POST',{
+  Name:'Demo assignment '+a.product+' '+a.group,ProductId:productIds.get(a.product),GroupId:groupIds.get(a.group)
  });
  for(const comp of kioskPresentationComponents){
   await request('/component-library','POST',{...comp,publicationStatus:'Draft'});
   await request('/component-library/'+encodeURIComponent(comp.apiName)+'/publish','POST');
  }
+ for(const flow of commerceFlows)await request('/metadata/flows/'+flow.apiName,'PUT',flow);
  await request('/metadata/apps','POST',{...commerceApp,navigationPageApiNames:[],navigationOrder:[{type:'Object',apiName:'Product__c'}]});
  for(const p of commercePages)await request('/metadata/pages/'+p.apiName,'PUT',p);
  // Complete active app navigation after Pages exist.
@@ -95,6 +112,8 @@ try{
   assert.ok(checkout.y>=bounds[2].y && checkout.y+checkout.height<=bounds[2].y+bounds[2].height+2,
    'Checkout button is outside its visible iframe viewport: '+JSON.stringify({checkout,footer:bounds[2]}));
   assert.ok(bounds[1].width>100,'Product grid too narrow');
+  const errorText=await frames.nth(2).contentFrame().locator('[role="alert"]').allInnerTexts();
+  assert.deepEqual(errorText,[],'Checkout has an action/Flow error: '+JSON.stringify(errorText));
   await page.screenshot({path:join(evidence,'kiosk-'+label+'.png'),fullPage:true});
   console.log('Rendered Kiosk '+label+' '+JSON.stringify(bounds.map(x=>({width:x.width,height:x.height}))));
  }
