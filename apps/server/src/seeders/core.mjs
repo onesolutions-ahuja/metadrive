@@ -89,7 +89,7 @@ export function initializeTenantCore(template, {authorizedUserIds=[]}={}) {
   const provisioned=allowed.size>0 ? Object.fromEntries(initialKeys
     .filter(key=>Object.hasOwn(template,key))
     .map(key=>[key,structuredClone(template[key])])) : seed;
-  return {...provisioned,
+  return {...seed,...provisioned,
     users:[],
     accessControl:{
       ...seed.accessControl,
