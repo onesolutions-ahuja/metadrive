@@ -70,3 +70,11 @@ test('metadata-bound sandbox presenter preserves fillRegion height through inter
  assert.match(presenter,/return <div style=\{properties\.fillRegion === true \? \{height:'100%',minHeight:0,minWidth:0,display:'flex',flexDirection:'column'\}/);
  assert.match(presenter,/RegisteredComponent definition=\{definition\}/);
 });
+
+test('published sandbox registered-component boundary respects metadata fillRegion',()=>{
+ const registered=readFileSync(new URL('../apps/web/src/RegisteredComponent.tsx',import.meta.url),'utf8');
+ const sandbox=readFileSync(new URL('../apps/web/src/ComponentSandbox.tsx',import.meta.url),'utf8');
+ assert.match(registered,/effectiveProps\.fillRegion === true \? \{height:'100%',minHeight:0,minWidth:0\}/);
+ assert.match(sandbox,/height: '100%'/);
+ assert.match(sandbox,/sandbox="allow-scripts"/);
+});
