@@ -45,8 +45,14 @@ export function mergeCoreMetadata(tenant, seed) {
 }
 
 /** Reuse the canonical platform Core factory on fresh tenant provisioning. */
-export function initializeTenantCore(template) {
-  // A new tenant must never inherit arbitrary keys from a source snapshot.
-  // Return only the metadata allowlist assembled by coreMetadataSeed.
-  return coreMetadataSeed(template);
+export function initializeTenantCore(template, {authorizedUserIds=[]}={}) {
+  // Only an identity newly verified and explicitly authorized by the tenant
+  // provisioner can enter this fresh tenant. Never copy template/sample users.
+  const seed=coreMetadataSeed(template);
+  const allowed=new Set(authorizedUserIds);
+  return {...seed,accessControl:{
+    ...seed.accessControl,
+    users:(template.accessControl?.users??[])
+      .filter(user=>allowed.has(user.id)).map(user=>structuredClone(user))
+  }};
 }
