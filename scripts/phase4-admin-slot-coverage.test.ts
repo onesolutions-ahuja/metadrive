@@ -165,3 +165,14 @@ test('Setup shell forwards metadata and security read grants to protected worksp
  assert.ok(presentation.includes('permitted={canReadMetadata}'));
 
 });
+
+test('extracted Setup presentation receives every declared context value',()=>{
+ const presentation=read('setupShellPresentation.tsx');
+ const shell=read('setupAppShell.tsx');
+ const declared=presentation.match(/const \\{([\\s\\S]*?)\\} = ctx;/)?.[1];
+ const supplied=shell.match(/return renderSetupShell\\(\\{([\\s\\S]*?)\\}\\);/)?.[1];
+ assert.ok(declared && supplied,'both setup context boundaries must be present');
+ const inputs=(text:string)=>text.split(',').map(name=>name.trim()).filter(Boolean);
+ const missing=inputs(declared).filter(name=>!inputs(supplied).includes(name));
+ assert.deepEqual(missing,[],'no extracted setup page may reference a missing context binding');
+});
