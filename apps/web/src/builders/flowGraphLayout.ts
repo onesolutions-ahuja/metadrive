@@ -55,5 +55,5 @@ export function layoutFlowGraph(flow: FlowDefinitionMetadata, freeformLayout: bo
     graphWidth = bounds.width;
     graphHeight = bounds.height;
   }
-  return { graphPadding, graphWidth, graphHeight, graphPositions, autoGraphPositions };
+  return { graphNodeWidth, graphPadding, graphWidth, graphHeight, graphPositions, autoGraphPositions };
 }
