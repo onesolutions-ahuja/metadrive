@@ -1,4 +1,7 @@
 import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
+import { loadAppSeedCatalog } from './seeders/catalog.mjs';
+import { initializeTenantCore } from './seeders/core.mjs';
+import { reconcileInstalledAppSeeds } from './seeders/apps.mjs';
 import { registerReportRoutes } from './modules/reports/routes.js';
 import { registerDashboardRoutes } from './modules/dashboards/routes.js';
 import { registerDashboardSnapshotRoutes } from './modules/dashboards/snapshot-routes.js';
@@ -98,13 +101,7 @@ import { RECOVERY_FLOW_API, defaultRecoveryFlowDefinition, recoveryFlowActions, 
 function tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {
   return state.tenantRegistry[tenantId]?.name ?? tenantId;
 }
-import {
-  canAccessDashboard,
-  canEditDashboard,
-  dashboardFolderAccessLevel,
-  matchesDashboardFilters,
-  type DashboardFolderAccessLevel
-} from './dashboard-access.js';
+import { canAccessDashboard, canEditDashboard, dashboardFolderAccessLevel, matchesDashboardFilters, type DashboardFolderAccessLevel } from './dashboard-access.js';
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const schedulePollInterval = Number(process.env.METADRIVE_SCHEDULE_POLL_MS ?? 30_000);
@@ -3265,7 +3262,7 @@ const connectorAppCatalog = z.object({
   packages: z.array(z.record(z.unknown())),
   flows: z.array(flowSchema)
 }).parse(JSON.parse(readFileSync(new URL('../data/connector-apps.json', import.meta.url), 'utf8')));
-const installableAppCatalog = JSON.parse(readFileSync(new URL('../data/installable-app-packages.json', import.meta.url), 'utf8'));
+const installableAppCatalog = loadAppSeedCatalog();
 function ensureConnectorAppRecords(records: RuntimeRecord[] | undefined, ownerId: string): RuntimeRecord[] {
   const existing = [...(records ?? [])];
   const now = new Date().toISOString();
@@ -4424,7 +4421,7 @@ if (!maintenanceMode) {
         pkg.appKey === row.AppKey__c && (pkg.installation?.allowInstalledMetadataWithoutLicence === true
           || ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)))))) continue;
     try {
-      const installed = applyInstallableAppPackages(tenant, installableAppCatalog, tenantId) as TenantData;
+      const installed = reconcileInstalledAppSeeds(tenant, installableAppCatalog, tenantId) as TenantData;
       if (JSON.stringify(installed) !== JSON.stringify(tenant)) {
         nextTenants[tenantId] = installed;
         repaired++;
@@ -4704,7 +4701,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
       role: 'System Administrator', permissionSetIds: ['system-administrator'],
       permissionSetGroupIds: [], disabled: true, createdAt
     };
-    const tenantSeed = defaultTenantData(admin);
+    const tenantSeed = initializeTenantCore(defaultTenantData(admin));
     const developerAccess = {
       id: developer.id, name: developer.name, username: developer.email,
       role: developer.role, roleId: roleIdForName(developer.role, tenantSeed.accessControl.roles),
