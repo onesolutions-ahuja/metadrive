@@ -21,4 +21,4 @@ export function coreMetadataSeed<T extends object>(template: T): {
   integrationConnections: [];
 };
 export function mergeCoreMetadata(tenant: TenantData, seed: Partial<TenantData>): TenantData;
-export function initializeTenantCore(template: TenantData): TenantData;
+export function initializeTenantCore(template: TenantData, options?: {authorizedUserIds?: string[]; trustedProvisioningDefaults?: boolean}): TenantData;

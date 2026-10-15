@@ -4,204 +4,62 @@ import { apiBase, getAccessToken, setAccessToken, apiRequest, ApiRequestError, i
 import { ConnectorSettingsWorkspace } from './connectorSettingsView';
 import { MetadataComponentProperties } from './componentPropertiesView';
 import { createPageRuntimeViews } from './pageRuntimeViews';
-import { createSetupApp } from './setupAppShell';
 import { createRecordWorkspaceViews } from './recordWorkspaceViews';
-import { createPageBuilder } from './pageBuilderView';
-import { ReportBuilder } from './reportBuilderView';
-import { createPermissions } from './permissionsView';
-import { createObjectManager } from './objectManagerView';
-import { createSetupHome } from './setupHomeView';
-import { createSettingsViews } from './settingsWorkspaceViews';
-import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
-import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
-import { initialScreenValues, screenFieldIsVisible } from './flowScreenRuntimeUtils';
-import { objectSettings, parseAppRoute, appRoutePath, type AppRoute } from './appRouting';
-import { NavigationLoadTime, resolveCurrentAppNavigation } from './appNavigationView';
-import { isStandalonePagePresentation, pageCanvasPresentationStyle } from './pageRuntimePresentation';
-import { insertFlowElementAtPath } from './flowInsertElement.mjs';
-import AdvancedSharingSettings from './AdvancedSharingSettings';
-import {resolveSetupNavigation} from './platformSetupNavigation';
-import {readVerifiedMetadata,saveVerifiedMetadata,type MetadataPublicationResponse} from './verifiedMetadataCache';
-import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflineRecord,
-  synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
-import SchemaBuilder from './SchemaBuilder';
+
+
+
+import { parseAppRoute, appRoutePath } from './appRouting';
+
+
+
+
+
+
+
+
 import * as React from 'react';
-import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import {
-  Activity,
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Bell,
-  Building2,
-  BriefcaseBusiness,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  CircleHelp,
-  ClipboardList,
-  ClipboardPaste,
-  Command,
-  Copy,
-  Database,
-  Ellipsis,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  Lock,
-  Unlock,
-  FileText,
-  Filter,
-  GripVertical,
-  Grid2X2,
-  ListFilter,
-  Maximize2,
-  Monitor,
-  MoreHorizontal,
-  Pencil,
-  Plus,
-  Puzzle,
-  Smartphone,
-  RefreshCw,
-  Save,
-  Search,
-  ShieldCheck,
-  Scissors,
-  Settings2,
-  SlidersHorizontal,
-  Star,
-  Undo2,
-  Redo2,
-  Trash2,
-  Tablet,
-  UsersRound,
-  X,
-  Workflow,
-  Wifi,
-  WifiOff,
-  PanelLeft,
-  PanelRight
-} from 'lucide-react';
-import FlowBuilderWorkspace from './FlowBuilder';
-import FlowScreenContent from './FlowScreenContent';
-import FlowLogs from './FlowLogs';
-import FlowInterviews from './FlowInterviews';
-import ScheduledFlows from './ScheduledFlows';
-import DashboardBuilder from './DashboardBuilder';
-import ComponentLibrary from './ComponentLibrary';
-import RegisteredComponent from './RegisteredComponent';
-import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
-import FlowInputBindingEditor from './FlowInputBindingEditor';
-import RecordFilterEditor from './RecordFilterEditor';
-import ComponentVisibilityEditor from './ComponentVisibilityEditor';
-import PageRouteDirectory from './PageRouteDirectory';
-import { isComponentVisible } from './componentVisibility';
-import PageComponentVisualEditor from './PageComponentVisualEditor';
-import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
-import PageComponentStyleEditor from './PageComponentStyleEditor';
-import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
-import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
-import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
-import AppExchange from './AppExchange';
-import AppManager from './AppManager';
-import PlatformWorkspaceSurface from './PlatformWorkspaceSurface';
-import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
-import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
-import NamedCredentials from './NamedCredentials';
-import TenantManagement from './TenantManagement';
-import TenantDomains from './TenantDomains';
-import TenantRecoveryPanel from './TenantRecoveryPanel';
-import TenantUsagePanel from './TenantUsagePanel';
-import DeveloperAccountSettings from './DeveloperAccountSettings';
-import SettingsViewRow from './SettingsViewRow';
-import ApprovalProcessManager from './ApprovalProcessManager';
-import { standardPageComponents } from './componentCatalog';
-import EmbeddedDashboard from './EmbeddedDashboard';
-import { inspectPageDependencies } from './pageDependencies';
-import {
-  canvasDimensionsForOrientation,
-  canvasBoundPosition,
-  canvasOrientation,
-  canvasScaleToFitWidth,
-  canvasUnitsFromScreenDelta
-} from './pageCanvas';
-import {
-  createComponentPreviewProps,
-  getPageBuilderComponentCategories,
-  pageBuilderPaletteCategories
-} from './pageBuilderPalette';
-import {
-  defaultFlow,
-  defaultLightningPage,
-  defaultAccessControl,
-  objectMetadata,
-  setupShortcuts,
-  workspaces,
-  type ObjectMetadata,
-  type FieldMetadata,
-  type FieldSetMetadata,
-  type PageLayoutMetadata,
-  type PageLayoutCustomLinkMetadata,
-  type CompactLayoutMetadata,
-  type RecordTypeMetadata,
-  type RelatedLookupFilterMetadata,
-  type ObjectActionMetadata,
-  type ObjectSettingsMetadata,
-  type ProfileMetadata,
-  type PageActivationAssignmentMetadata,
-  type FlowDefinitionMetadata,
-  type FlowExecutionLogMetadata,
-  type FlowInterviewMetadata,
-  type FlowElementMetadata,
-  type FlowResourceMetadata,
-  type FlowValidationMetadata,
-  type PlatformEventMetadata,
-  type LightningPageTemplate,
-  type NamedCredentialMetadata,
-  type EmailAlertMetadata,
-  type CustomNotificationMetadata,
-  type ApprovalRequestMetadata,
-  type ApprovalProcessMetadata,
-  type ApprovalProcessInput,
-  type ConnectorProviderMetadata,
-  type IntegrationConnectionMetadata,
-  type LightningPageMetadata,
-  type PageComponentMetadata,
-  type LibraryComponentMetadata,
-  type DashboardFilterMetadata,
-  type DashboardMetadata,
-  type DashboardFolderMetadata,
-  type DashboardFolderInput,
-  type DashboardTerritoryMetadata,
-  type DashboardSubscription,
-  type DashboardSubscriptionInput,
-  type DashboardSnapshot,
-  type ReportMetadata,
-  type ReportBucketMetadata,
-  type ReportFolderMetadata,
-  type ReportFolderInput,
-  type ReportRunMetadata,
-  type ReportStandardFiltersMetadata,
-  type ReportFilterMetadata,
-  type ReportDateRange,
-  type ReportDateGrouping,
-  type ReportSummaryOperation,
-  type ReportCrossFilterMetadata,
-  type AccessControlMetadata,
-  type CurrencySettingsMetadata,
-  type LightningAppMetadata,
-  type PermissionSetMetadata,
-  type PermissionSetGroupMetadata,
-  type PublicGroupMetadata,
-  type QueueMetadata,
-  type SharingRuleMetadata,
-  type UserMetadata,
-  type WorkspaceId
-} from './metadata';
+
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Building2, BriefcaseBusiness, CalendarDays, Check, ClipboardList, Database, FileText, UsersRound } from 'lucide-react';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import { type ObjectMetadata, type RelatedLookupFilterMetadata, type FlowDefinitionMetadata, type LightningPageMetadata, type LightningAppMetadata } from './metadata';
 
 type NewFieldLookupFilterDraft = {
   id: string;
@@ -390,11 +248,13 @@ async function fetchFlowListPage(page: number, search: string) {
 }
 
 
-let setupAppImplementation: React.ComponentType<any> | undefined;
+// The full setup workspace is an on-demand route module, never part of the login bundle.
+const LazySetupWorkspace = React.lazy(async () => {
+  const { createSetupApp } = await import('./setupAppShell');
+  return { default: createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings}) };
+});
 function SetupApp(props: {onLogout: () => void; entryTiming: EntryTiming | null}) {
-  if (!setupAppImplementation) setupAppImplementation = createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings});
-  const Component = setupAppImplementation;
-  return <Component {...props} />;
+  return <React.Suspense fallback={<div className="auth-loading">Loading workspace…</div>}><LazySetupWorkspace {...props} /></React.Suspense>;
 }
 
 function PageHeading({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: ReactNode }) {
@@ -414,14 +274,19 @@ const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, Lig
 
 const { RecordWorkspace, RecordFormDialog } = createRecordWorkspaceViews(apiRequest, usePageLayoutDevice, ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent);
 
-const SetupHome = createSetupHome(PageHeading);
-
-const { AutomationSettingsWorkspace, TenantEmailRecoverySettings, TenantUserLockSettings, AccountSessionSecurity, TenantSecurityAudit, TenantMfaSettings, CompanySettings } = createSettingsViews(apiRequest, PageHeading);
-
-const ObjectManager = createObjectManager(apiRequest);
-
-const PageBuilder = createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent);
-
-const Permissions = createPermissions(apiRequest, PageHeading);
+// Builders and advanced settings are separate on-demand chunks, not login dependencies.
+const SetupHome = React.lazy(async () => ({ default: (await import('./setupHomeView')).createSetupHome(PageHeading) }));
+const ObjectManager = React.lazy(async () => ({ default: (await import('./objectManagerView')).createObjectManager(apiRequest) }));
+const PageBuilder = React.lazy(async () => ({ default: (await import('./pageBuilderView')).createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent) }));
+const ReportBuilder = React.lazy(async () => ({ default: (await import('./reportBuilderView')).ReportBuilder }));
+const Permissions = React.lazy(async () => ({ default: (await import('./permissionsView')).createPermissions(apiRequest, PageHeading) }));
+const settingsViewModules = () => import('./settingsWorkspaceViews').then(module => module.createSettingsViews(apiRequest, PageHeading));
+const AutomationSettingsWorkspace = React.lazy(async () => ({ default: (await settingsViewModules()).AutomationSettingsWorkspace }));
+const TenantEmailRecoverySettings = React.lazy(async () => ({ default: (await settingsViewModules()).TenantEmailRecoverySettings }));
+const TenantUserLockSettings = React.lazy(async () => ({ default: (await settingsViewModules()).TenantUserLockSettings }));
+const AccountSessionSecurity = React.lazy(async () => ({ default: (await settingsViewModules()).AccountSessionSecurity }));
+const TenantSecurityAudit = React.lazy(async () => ({ default: (await settingsViewModules()).TenantSecurityAudit }));
+const TenantMfaSettings = React.lazy(async () => ({ default: (await settingsViewModules()).TenantMfaSettings }));
+const CompanySettings = React.lazy(async () => ({ default: (await settingsViewModules()).CompanySettings }));
 
 export default App;
