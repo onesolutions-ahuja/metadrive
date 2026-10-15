@@ -17,4 +17,5 @@ jobs:
         env:
           METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+          METADRIVE_VERIFY_CLEANUP: 'true'
         run: node scripts/live-scheduled-flow-proof.mjs
