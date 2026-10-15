@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS metadrive_page_component_instances_sql (
   -- Only specialised and nested settings go here (Flows, actions, bindings).
   additional_properties JSONB NOT NULL DEFAULT '{}'::jsonb
     CHECK (jsonb_typeof(additional_properties)='object'),
+  CHECK (NOT (additional_properties ?| ARRAY[
+    'width','height','x','y','backgroundColor','textColor',
+    'fontSize','padding','borderRadius','visible','region','position'
+  ])),
   PRIMARY KEY (tenant_id,page_api_name,instance_id),
   UNIQUE (tenant_id,page_api_name,position),
   FOREIGN KEY (tenant_id,component_api_name)
