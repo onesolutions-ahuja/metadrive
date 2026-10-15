@@ -190,6 +190,7 @@ const upsertStateSql = `INSERT INTO metadrive_platform_state (id, payload) VALUE
 // Initialise the canonical versioned seeder ledger in the SAME database and
 // schema used by the runtime; a table on another service cannot protect writes.
 let seedLedgerReady: Promise<void> | null = null;
+let seedLedgerTenantConstraintPending = false;
 function ensureSeedLedger(): Promise<void> {
   if (!pool) return Promise.reject(new Error('SQL ledger requires PostgreSQL'));
   if (!seedLedgerReady) seedLedgerReady = (async () => {
@@ -209,10 +210,12 @@ function ensureSeedLedger(): Promise<void> {
     // Add the FK when the authoritative tenant table exists, without assuming
     // bootstrap ordering or removing the constraint from existing installations.
     const tenantTable = await pool.query("SELECT to_regclass('metadrive_rel_tenants') AS name");
+    seedLedgerTenantConstraintPending = !tenantTable.rows[0]?.name;
     if (tenantTable.rows[0]?.name) {
       await pool.query(`DO $ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'md_seed_package_versions_tenant_fk'
-          AND conrelid = 'md_seed_package_versions'::regclass) THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE contype = 'f'
+          AND conrelid = 'md_seed_package_versions'::regclass
+          AND confrelid = 'metadrive_rel_tenants'::regclass) THEN
           ALTER TABLE md_seed_package_versions
             ADD CONSTRAINT md_seed_package_versions_tenant_fk
             FOREIGN KEY (tenant_id) REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT;
@@ -270,8 +273,7 @@ async function drainStateWrites(): Promise<void> {
         } finally { client.release(); }
       }
       // On the first fresh-db snapshot the tenant table now exists. Attach FK.
-      seedLedgerReady = null;
-      await ensureSeedLedger();
+      if (seedLedgerTenantConstraintPending) { seedLedgerReady = null; await ensureSeedLedger(); }
       writeFailure = null;
       for (const waiter of batch) waiter.resolve();
     } catch (error) {
