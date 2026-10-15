@@ -130,3 +130,11 @@ test('all registered administration field slots expose independently editable ac
  assert.ok(slot.includes('aria-label={typeof instance.properties.controlLabel'));
  assert.ok(control.includes("usePlatformSlotPresentation('field-'+definition.propertyKey)"));
 });
+
+test('Page Builder exposes protected administrative presentation properties before they have values',()=>{
+ const editor=read('componentPropertiesView.tsx');
+ assert.ok(editor.includes("typeof properties.platformSlotKey === 'string'"));
+ for(const key of ['controlLabel','controlPlaceholder','controlHelpText','controlDescription'])
+  assert.ok(editor.includes("'"+key+"'"),key);
+ assert.ok(editor.includes('onChange={(event)=>update(key,event.target.value)}'));
+});
