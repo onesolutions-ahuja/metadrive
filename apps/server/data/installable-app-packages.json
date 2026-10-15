@@ -23,7 +23,8 @@
             "modifyAll": false
           }
         },
-        "credentialGrantSeeds": [
+        "pageMigration": {"propertyRules":[{"templateKey":"contactsObjectApiName","when":{"key":"contactsObjectApiName","mode":"missing"},"copy":["contactsObjectApiName"]}]},
+      "credentialGrantSeeds": [
           {
             "objectApiName": "Chatter_Channel_Grant__c",
             "profileId": "system-administrator",
