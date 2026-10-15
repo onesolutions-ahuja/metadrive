@@ -4607,7 +4607,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     const developer: LocalUser = {
       id: randomUUID(), tenantId, name: 'Developer', email: developerEmail,
       passwordSalt: developerCredentials.salt, passwordHash: developerCredentials.hash,
-      role: 'System Administrator', permissionSetIds: ['system-administrator'],
+      role: 'System Administrator', permissionSetIds: ['system-administrator','oneengine-tenant-developer'],
       permissionSetGroupIds: [], disabled: true, createdAt
     };
     const tenantSeed = initializeTenantCore(defaultTenantData(admin), {authorizedUserIds:[admin.id], trustedProvisioningDefaults:true});
@@ -7854,7 +7854,7 @@ function persistTenantRecords(tenantId: string, tenant: TenantData): void {
   for (const [key, sequence] of Object.entries(currentSequences)) {
     autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
   }
-  const updatedTenant = applyInstallableAppPackages({ ...tenant, autoNumberSequences }, installableAppCatalog) as TenantData;
+  const updatedTenant = reconcileInstalledAppSeeds({ ...tenant, autoNumberSequences }, installableAppCatalog, tenantId) as TenantData;
   const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
     updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
   const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };

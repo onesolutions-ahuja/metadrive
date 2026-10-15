@@ -12,4 +12,4 @@ export type QueryPool = {
   connect(): Promise<QueryClient>;
 };
 export function readRelationalState(pool: QueryPool): Promise<RelationalSnapshot>;
-export function writeRelationalState(pool: QueryPool, nextState: unknown, previous: RelationalSnapshot): Promise<RelationalSnapshot>;
+export function writeRelationalState(pool: QueryPool, nextState: unknown, previous: RelationalSnapshot, beforeCommit?: ((client:QueryClient,state:unknown)=>Promise<void>)|null): Promise<RelationalSnapshot>;

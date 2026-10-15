@@ -12,8 +12,8 @@ export function installedAppSeed(tenant, catalog, tenantId, appKey) {
   const installed = (tenant.records?.Connector_App__c ?? [])
     .some(row => row.AppKey__c === appKey && row.Installed__c === true);
   if (!installed) return tenant;
-  return applyInstallableAppPackages(tenant,
-    {...catalog, packages: [pkg], retiredPackages: [], retiredTrustedComponentPrefixes: []}, tenantId);
+  return applyDeveloperAppGrants(tenant,applyInstallableAppPackages(tenant,
+    {...catalog, packages: [pkg], retiredPackages: [], retiredTrustedComponentPrefixes: []}, tenantId),[pkg]);
 }
 export function listSeedPackages(catalog) {
   return (catalog?.packages ?? []).map(pkg => ({
@@ -27,5 +27,55 @@ export function listSeedPackages(catalog) {
 
 /** Reconciliation keeps all existing AppExchange entitlement and uninstall gates. */
 export function reconcileInstalledAppSeeds(tenant,catalog,tenantId) {
-  return applyInstallableAppPackages(tenant,catalog,tenantId);
+  return applyDeveloperAppGrants(tenant,applyInstallableAppPackages(tenant,catalog,tenantId),catalog?.packages??[]);
+}
+
+/**
+ * Initial OneEngine Tenant Developer access for metadata ADDED by installing
+ * an active package. Existing explicit permissions, including denies, are
+ * administrator-owned and never replayed or overwritten on reinstall.
+ */
+export function applyDeveloperAppGrants(before, after, packages) {
+  const policyIndex=(after.accessControl?.permissionSets??[])
+    .findIndex(policy=>policy.id==='oneengine-tenant-developer');
+  if (policyIndex<0) return after;
+  const policy=after.accessControl.permissionSets[policyIndex];
+  const objectPermissions={...(policy.objectPermissions??{})};
+  const fieldPermissions={...(policy.fieldPermissions??{})};
+  const appPermissions={...(policy.appPermissions??{})};
+  const oldObjects=new Map((before.objects??[]).map(object=>[object.apiName,object]));
+  const oldApps=new Set((before.apps??[]).map(app=>app.apiName));
+  let changed=false;
+  for(const pkg of packages) {
+    const installation=(after.records?.Connector_App__c??[])
+      .find(row=>row.AppKey__c===pkg.appKey && row.Installed__c===true);
+    if(!installation || (!pkg.installation?.allowInstalledMetadataWithoutLicence
+      && !['Trial','Licensed'].includes(installation.LicenceStatus__c))) continue;
+    for(const definition of [...(pkg.objects??[]),...(pkg.extendObjects??[])]) {
+      const object=(after.objects??[]).find(item=>item.apiName===definition.apiName);
+      if(!object)continue;
+      if(!oldObjects.has(object.apiName) && !Object.hasOwn(objectPermissions,object.apiName)) {
+        objectPermissions[object.apiName]={read:true,create:true,edit:true,delete:true,viewAll:true,modifyAll:true};
+        changed=true;
+      }
+      const oldFields=new Set((oldObjects.get(object.apiName)?.fields??[]).map(field=>field.apiName));
+      for(const field of definition.fields??[]) {
+        if(oldFields.has(field.apiName) ||
+          !(object.fields??[]).some(item=>item.apiName===field.apiName))continue;
+        const key=object.apiName+'.'+field.apiName;
+        if(Object.hasOwn(fieldPermissions,key))continue;
+        fieldPermissions[key]={read:true,edit:true};
+        changed=true;
+      }
+    }
+    for(const app of pkg.apps??[]) {
+      if(oldApps.has(app.apiName) || Object.hasOwn(appPermissions,app.apiName))continue;
+      if(!(after.apps??[]).some(item=>item.apiName===app.apiName))continue;
+      appPermissions[app.apiName]=true;changed=true;
+    }
+  }
+  if(!changed)return after;
+  const permissionSets=[...after.accessControl.permissionSets];
+  permissionSets[policyIndex]={...policy,objectPermissions,fieldPermissions,appPermissions};
+  return {...after,accessControl:{...after.accessControl,permissionSets}};
 }
