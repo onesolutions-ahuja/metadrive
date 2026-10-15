@@ -387,6 +387,9 @@ app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
             Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
             Direction__c: 'Incoming', From_Number__c: message.from,
             To_Number__c: value?.metadata?.display_phone_number ?? '',
+            // Channel identity is established from the signed webhook phone ID, never client input.
+            ...(object.fields.some(field => field.apiName === 'Channel_Account__c')
+              ? { Channel_Account__c: phoneId } : {}),
             Message_Body__c: body, Conversation_Key__c: conversationKey,
             Conversation_Context__c: currentContext,
             Status__c: fresh ? 'Received' : 'Expired', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
