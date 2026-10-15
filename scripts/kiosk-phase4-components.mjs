@@ -254,11 +254,11 @@ const cardCss=`
 const footerSource=`
 
 export default function CheckoutBar({title='SHOW BASKET',accentColor='#92b000',currencySymbol='£',
- pageState={},refreshToken=0,emptyText='Your basket is empty',onAction,sessionId}){
+ pageState={},viewRevision=0,emptyText='Your basket is empty',onAction,sessionId}){
  const [data,setData]=React.useState({Basket:null,Lines:[]}),[busy,setBusy]=React.useState(''),[error,setError]=React.useState('');
  const opened=pageState.basketOpen===true;
  const load=async()=>{const response=await onAction({event:'load',value:{}});setData({Basket:response?.outputs?.Basket||null,Lines:response?.outputs?.Lines||[]})};
- React.useEffect(()=>{let current=true;(async()=>{try{const r=await onAction({event:'load',value:{}});if(current)setData({Basket:r?.outputs?.Basket||null,Lines:r?.outputs?.Lines||[]})}catch(e){if(current)setError(String(e))}})();return()=>{current=false}},[sessionId,refreshToken]);
+ React.useEffect(()=>{let current=true;(async()=>{try{const r=await onAction({event:'load',value:{}});if(current)setData({Basket:r?.outputs?.Basket||null,Lines:r?.outputs?.Lines||[]})}catch(e){if(current)setError(String(e))}})();return()=>{current=false}},[sessionId,viewRevision]);
  const lines=data.Lines||[];
  const total=Number(data.Basket?.Total||lines.reduce((sum,item)=>sum+Number(item.LineTotal||0),0));
  const act=async(event,value={})=>{if(busy)return;setBusy(event);setError('');
