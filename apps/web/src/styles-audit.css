@@ -109,3 +109,14 @@
   .records-responsive-list .record-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .records-responsive-list .record-row-actions button { min-height: 44px; }
 }
+
+/* Permission-aware, metadata-driven record imagery and empty states. */
+.record-image-thumbnail { display: block; width: 72px; height: 52px; max-width: 100%; object-fit: cover; border-radius: 6px; background: #f2f3f5; }
+.records-empty-action { display: grid; justify-items: start; align-content: center; gap: 10px; min-height: 150px; }
+.records-empty-action strong { color: var(--text, #222); }
+.records-empty-action p { margin: 0; }
+.records-empty-action .btn { min-height: 40px; }
+@media (max-width: 600px) {
+ .records-empty-action .btn { min-height: 44px; }
+ .records-responsive-list .records-table td .record-image-thumbnail { flex-shrink: 0; }
+}
