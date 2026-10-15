@@ -1,0 +1,23 @@
+name: Activate Chatter production
+on:
+  push:
+    branches: [ops/chatter-activate-20261015]
+    paths:
+      - scripts/chatter-production-activation.mjs
+      - .github/workflows/chatter-production-activation.yml
+permissions:
+  contents: read
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Activate through authenticated tenant metadata APIs
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/chatter-production-activation.mjs
