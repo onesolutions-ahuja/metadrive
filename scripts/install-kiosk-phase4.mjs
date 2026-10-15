@@ -213,17 +213,7 @@ try{
   updates.push(page.apiName);
   installedPages++;
  }
- // Retirement is reversible; protected generic Page API has no DELETE route.
- // Do not remove Pages belonging to another tenant or a different application.
- const obsolete=pages.filter(page=>
-  obsoleteCommercePages.includes(page.apiName)
-  || (page.label==='Kiosk Editable Canvas' && page.pageType==='App Page'));
- for(const old of obsolete){
-  if(old.status==='Draft')continue;
-  await api('/metadata/pages/'+encodeURIComponent(old.apiName),'PUT',
-    {...old,status:'Draft'});
-  updates.push(old.apiName);retiredPages.push(old.apiName);installedPages++;
- }
+
 }catch(error){
  // Restore previously committed Pages when an individual metadata write fails.
  const rollbackErrors=[];
@@ -255,6 +245,18 @@ if(JSON.stringify(currentApp.navigationPageApiNames??[])!==JSON.stringify(expect
   navigationItems:[...new Set([...(currentApp.navigationItems??[]),'Product__c'])]
  });
 }
+// Retire obsolete Page definitions only after removing app navigation references.
+// Retirement is reversible; protected generic Page API has no DELETE route.
+ // Do not remove Pages belonging to another tenant or a different application.
+ const obsolete=pages.filter(page=>
+  obsoleteCommercePages.includes(page.apiName)
+  || (page.label==='Kiosk Editable Canvas' && page.pageType==='App Page'));
+ for(const old of obsolete){
+  if(old.status==='Draft'){retiredPages.push(old.apiName);continue;}
+  await api('/metadata/pages/'+encodeURIComponent(old.apiName),'PUT',
+    {...old,status:'Draft'});
+  updates.push(old.apiName);retiredPages.push(old.apiName);installedPages++;
+ }
 // Delete obsolete Page metadata only AFTER app navigation stops referencing it.
 // The generic Page endpoint denies cross-tenant, protected and dependent deletes.
 for(const name of retiredPages){
