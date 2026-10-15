@@ -11,17 +11,26 @@ export type FlowInstallation = {
   AppKey__c?: unknown;
   Installed__c?: unknown;
   LicenceStatus__c?: unknown;
+  LicenceExpiresAt__c?: unknown;
+  TrialExpiresAt__c?: unknown;
+  TrialUsed__c?: unknown;
 };
 export function flowPackageAdmission(
   flowApiName: string,
   packages: readonly FlowPackage[],
-  installations: readonly FlowInstallation[]
+  installations: readonly FlowInstallation[],
+  now = new Date()
 ): { installed: boolean; licensed: boolean; activated: boolean } {
   const owner = packages.find((pkg) => pkg.flows?.some((flow) => flow.apiName === flowApiName));
   if (!owner) return { installed: true, licensed: true, activated: true };
   const install = installations.find((row) => row.AppKey__c === owner.appKey);
   const installed = install?.Installed__c === true;
+  const activePaid = typeof install?.LicenceExpiresAt__c === 'string'
+    && Date.parse(install.LicenceExpiresAt__c) > now.getTime();
+  const activeTrial = install?.TrialUsed__c === true
+    && typeof install?.TrialExpiresAt__c === 'string'
+    && Date.parse(install.TrialExpiresAt__c) > now.getTime();
   const licensed = owner.installation?.allowInstalledMetadataWithoutLicence === true
-    || (install?.LicenceStatus__c === 'Licensed' || install?.LicenceStatus__c === 'Trial');
+    || activePaid || activeTrial;
   return { installed, licensed, activated: installed && licensed };
 }
