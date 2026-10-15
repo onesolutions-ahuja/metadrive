@@ -965,8 +965,7 @@ export const workspaces: WorkspaceMetadata[] = [
   { id: 'approval-processes', label: 'Approval Processes', icon: Workflow },
   { id: 'app-manager', label: 'App Manager', icon: LayoutTemplate },
   { id: 'app-exchange', label: 'AppExchange', icon: Store },
-  { id: 'named-credentials', label: 'Named Credentials', icon: Database },
-  { id: 'connector-settings', label: 'Connector Settings', icon: Puzzle },
+  { id: 'named-credentials', label: 'Named Credentials', icon: Database }, { id: 'connector-settings', label: 'Connector Settings', icon: Puzzle },
   { id: 'company-settings', label: 'Company Information', icon: Building2 },
   { id: 'tenant-management', label: 'Tenant Management', icon: Building2 },
   { id: 'rbac', label: 'Users & Permissions', icon: ShieldCheck }
