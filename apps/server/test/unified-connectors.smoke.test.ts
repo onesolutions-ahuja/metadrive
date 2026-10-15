@@ -102,7 +102,12 @@ test('one connector store survives migration and restart without duplicate objec
     // genuine pre-consolidation snapshot from the legacy configuration metadata
     // to exercise the migration without reintroducing deprecated startup seeds.
     const owner = String(state.users.find((item: Record<string, any>) => item.tenantId === tenantId)?.id ?? 'system');
-    const existing = (tenant.connectorSettings as Array<{ apiName: string; label: string; fields: Array<{ apiName: string; value: string }> }>).map((setting) => ({
+    const legacySettings = (tenant.connectorSettings?.length
+      ? tenant.connectorSettings
+      : ['WhatsApp', 'Email', 'SMS', 'Uber', 'Deliveroo'].map((name) => ({
+        apiName: name, label: name, fields: []
+      }))) as Array<{ apiName: string; label: string; fields: Array<{ apiName: string; value: string }> }>;
+    const existing = legacySettings.map((setting) => ({
       Id: randomUUID(),
       Name: setting.label,
       ConnectorType__c: setting.apiName,
