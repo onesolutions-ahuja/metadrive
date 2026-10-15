@@ -3,7 +3,7 @@
   "label": "Chatter",
   "targetObject": "Communication_Records__c",
   "pageType": "Record Page",
-  "layoutMode": "free-canvas",
+  "layoutMode": "template",
   "canvasWidth": 1200,
   "canvasHeight": 800,
   "status": "Draft",
@@ -18,12 +18,6 @@
       "label": "Chatter Inbox",
       "region": "main",
       "visible": true,
-      "position": {
-        "x": 0,
-        "y": 0,
-        "width": 1200,
-        "height": 800
-      },
       "properties": {
         "libraryComponentId": "ChatterInbox",
         "title": "Chatter",
@@ -66,5 +60,6 @@
         "Phone"
       ]
     }
-  ]
+  ],
+  "template": "one-region"
 }
