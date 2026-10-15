@@ -1,0 +1,23 @@
+name: Chatter Send production diagnostic
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/chatter-send-diagnostic-20261015.mjs
+      - .github/workflows/chatter-send-diagnostic-20261015.yml
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read-only live Chatter diagnosis
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/chatter-send-diagnostic-20261015.mjs

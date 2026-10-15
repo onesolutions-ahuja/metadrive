@@ -17,7 +17,7 @@ const ctx=()=>({tenantId:'tenant-a',userId:'alice',
 test('send replaces browser recipient and credential using signed inbound conversation mapping',()=>{
   const d=authoriseChatterFlow('CHATTER_SEND_MESSAGE',ctx());
   assert.equal(d?.ok,true);
-  if(d?.ok){assert.equal(d.input.RecipientPhone,id);assert.equal(d.input.AuthorisedCredentialId,'trusted');assert.equal(d.input.AuthorisedMessagePath,'messages');}
+  if(d?.ok){assert.equal(d.input.RecipientPhone,id);assert.equal(d.input.AuthorisedCredentialId,'trusted');assert.equal(d.input.AuthorisedMessagePath,'messages');assert.equal(Object.hasOwn(d.input,'TargetRecordId'),false,'Send Flow must not receive Assign-only TargetRecordId');}
 });
 test('ungranted and forged channel messages cannot send, Meta decides window eligibility',()=>{
   const no=ctx();no.tenant.records.Chatter_Channel_Grant__c=[];
