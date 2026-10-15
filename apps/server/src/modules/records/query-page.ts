@@ -33,3 +33,20 @@ export function orderAuthorisedRecords<T extends RecordRow>(rows: readonly T[], 
 export function pageAuthorisedRecords<T>(rows: readonly T[], offset: number, limit: number) {
   return { records: rows.slice(offset, offset + limit), total: rows.length, offset, limit };
 }
+
+/** Filter only records already sanitised for the requesting principal. */
+export function filterAuthorisedRecords<T extends RecordRow>(
+  records: readonly T[],
+  options: { relatedField?: string; relatedId?: string; filterField?: string; filterValue?: string;
+    needle?: string; searchFields?: readonly string[] }
+): T[] {
+  const { relatedField, relatedId, filterField, filterValue, needle = '', searchFields = [] } = options;
+  const scoped = relatedField !== undefined && relatedId !== undefined
+    ? records.filter((record) => record[relatedField] === relatedId) : [...records];
+  const exact = filterField !== undefined && filterValue !== undefined
+    ? scoped.filter((record) => String(record[filterField] ?? '') === filterValue) : scoped;
+  if (!needle) return exact;
+  return exact.filter((record) => searchFields.some((field) =>
+    Object.prototype.hasOwnProperty.call(record, field)
+    && String(record[field] ?? '').toLocaleLowerCase().includes(needle)));
+}
