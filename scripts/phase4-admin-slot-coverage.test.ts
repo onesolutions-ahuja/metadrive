@@ -85,3 +85,10 @@ test('metadata-driven administration fields render as individual registered slot
    assert.ok(source.includes("'"+slot.slice(6)+"'"),workspace+' '+slot);
  }
 });
+
+test('AppExchange marketplace search is a separate protected editable control',()=>{
+ const source=read('AppExchange.tsx');
+ for(const slot of protectedWorkspacePageSlots['app-exchange'])
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing app-exchange slot '+slot);
+ assert.ok(protectedWorkspacePageSlots.rbac.filter(key=>key.startsWith('field-')).length>=30);
+});
