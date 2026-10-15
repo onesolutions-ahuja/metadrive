@@ -17,7 +17,16 @@ if(p.status!==200||f.status!==200||c.status!==200)throw Error('Metadata endpoint
 const page=p.data.pages.find(x=>x.apiName==='UNE_CHATTER');
 if(!page)throw Error('Chatter page missing');
 const grantCount=(c.data.grants||[]).filter(x=>x.canRead&&x.canSend).length;
-if(!grantCount)throw Error('No usable verified WhatsApp grant for administrator. Activation blocked.');
+if(!grantCount){
+ const [credentials,grantRows,profiles]=await Promise.all([
+  api('/named-credentials'),api('/records/Chatter_Channel_Grant__c?limit=100'),
+  api('/metadata/access-control')]);
+ const credentialRows=credentials.data.credentials||[];
+ const meta=credentialRows.filter(x=>{
+  try{return new URL(x.baseUrl).hostname==='graph.facebook.com';}catch{return false}
+ }).map(x=>({hasPathNumber:/^\/v\\d+\\.\\d+\/[A-Za-z0-9_-]{5,120}/.test(new URL(x.baseUrl).pathname),configurationKeys:Object.keys(x.configuration||{}),enabled:x.enabled!==false}));
+ throw Error('No usable WhatsApp channel grant: '+JSON.stringify({credentialsStatus:credentials.status,graphCredentials:meta,grantRowsStatus:grantRows.status,grantsCount:grantRows.data.records?.length,profileStatus:profiles.status,grantsVisible:c.data.grants?.length}));
+}
 report.rbac='verified';
 for(const name of ['CHATTER_SEND_MESSAGE','CHATTER_ASSIGN_CONVERSATION']){
  const flow=f.data.flows.find(x=>x.apiName===name);
