@@ -42,7 +42,7 @@ export default function PlatformWorkspaceSurface({
  const definition=resolveSystemWorkspace(workspace);
  if(!definition||!permitted)return <div role="alert">Workspace unavailable</div>;
  const pageName='MetaDrive_Admin_'+workspace.replace(/-/g,'_');
- const page=pages.find(item=>item.apiName===pageName&&item.scope==='platform-system'&&item.ownerNamespace==='MetaDrive'&&item.status==='Active'&&Array.isArray(item.requiredPermissions)&&item.requiredPermissions.length>0);
+ const page=pages.find(item=>item.apiName===pageName&&item.scope==='platform-system'&&item.ownerNamespace==='MetaDrive'&&item.status==='Active'&&Array.isArray(item.requiredPermissions)&&item.requiredPermissions.length===1&&item.requiredPermissions[0]===definition.requiredPermission);
  const registered=page?.components.filter(instance=>instance.visible&&!instance.properties.platformSlotKey&&instance.type.startsWith('Custom:'))
   .map(instance=>({
     instance,component:findRegisteredComponent(libraryComponents,instance.type.slice('Custom:'.length),'page')
