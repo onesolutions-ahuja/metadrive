@@ -146,7 +146,16 @@ export async function readPersistedState(): Promise<unknown | null> {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`);
   const result = await pool.query('SELECT payload FROM metadrive_platform_state WHERE id = 1');
-  return result.rows[0]?.payload ?? null;
+  if (!result.rows[0]?.payload) return null;
+  // SQL owns refresh sessions even while the metadata snapshot is JSONB.
+  await ensureLegacySqlSessions();
+  const sessions = await pool.query('SELECT token_hash,family_id,user_id,tenant_id,expires_at,used_at,revoked_at,extra FROM metadrive_rel_refresh_sessions ORDER BY position ASC');
+  const refreshSessions = sessions.rows.map((row: Record<string, any>) => ({
+    ...row.extra, tokenHash: row.token_hash, familyId: row.family_id,
+    userId: row.user_id, tenantId: row.tenant_id, expiresAt: row.expires_at,
+    usedAt: row.used_at, revokedAt: row.revoked_at
+  }));
+  return { ...result.rows[0].payload, refreshSessions };
 }
 
 // At most one in-flight and one pending complete-state snapshot are retained.
@@ -154,6 +163,17 @@ export async function readPersistedState(): Promise<unknown | null> {
 // Every caller resolves only after a snapshot at least as new has been committed.
 type PersistWaiter = { resolve: () => void; reject: (error: unknown) => void };
 let newestPayload: string | null = null;
+let newestSessions: unknown[] = [];
+const legacySessionTableSql = `CREATE TABLE IF NOT EXISTS metadrive_rel_refresh_sessions (
+ token_hash TEXT PRIMARY KEY, position INTEGER NOT NULL, family_id TEXT NOT NULL,
+ user_id TEXT NOT NULL, tenant_id TEXT NOT NULL, expires_at DOUBLE PRECISION NOT NULL,
+ used_at DOUBLE PRECISION, revoked_at DOUBLE PRECISION,
+ extra JSONB NOT NULL DEFAULT '{}'::jsonb
+)`;
+async function ensureLegacySqlSessions(): Promise<void> {
+  if (!pool || persistenceMode !== 'jsonb') return;
+  await pool.query(legacySessionTableSql);
+}
 let drainActive = false;
 let writeFailure: unknown = null;
 let waiting: PersistWaiter[] = [];
@@ -164,6 +184,7 @@ const upsertStateSql = `INSERT INTO metadrive_platform_state (id, payload) VALUE
 async function drainStateWrites(): Promise<void> {
   while (newestPayload !== null) {
     const payload = newestPayload;
+    const newestSessionsForCommit = newestSessions;
     newestPayload = null;
     const batch = waiting.splice(0);
     try {
@@ -182,7 +203,26 @@ async function drainStateWrites(): Promise<void> {
           pool as unknown as Parameters<typeof writeRelationalState>[0], JSON.parse(payload), relationalSnapshot
         );
       } else {
-        await pool.query(upsertStateSql, [payload]);
+        await ensureLegacySqlSessions();
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query(upsertStateSql, [payload]);
+          await client.query('DELETE FROM metadrive_rel_refresh_sessions');
+          await client.query(`INSERT INTO metadrive_rel_refresh_sessions
+            (position,token_hash,family_id,user_id,tenant_id,expires_at,used_at,revoked_at,extra)
+            SELECT ordinality-1, item->>'tokenHash',item->>'familyId',item->>'userId',
+              item->>'tenantId',(item->>'expiresAt')::double precision,
+              (item->>'usedAt')::double precision,(item->>'revokedAt')::double precision,
+              item - 'tokenHash' - 'familyId' - 'userId' - 'tenantId' -
+                'expiresAt' - 'usedAt' - 'revokedAt'
+            FROM jsonb_array_elements($1::jsonb) WITH ORDINALITY AS rows(item,ordinality)`,
+            [JSON.stringify(newestSessionsForCommit)]);
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally { client.release(); }
       }
       writeFailure = null;
       for (const waiter of batch) waiter.resolve();
@@ -201,9 +241,14 @@ async function drainStateWrites(): Promise<void> {
 export function persistToPostgres(state: unknown, preSerialized?: string): Promise<unknown> {
   if (!pool) return Promise.resolve();
   if (writeFailure !== null && persistenceMode !== 'jsonb') return Promise.reject(writeFailure);
-  const payload = preSerialized ?? JSON.stringify(state);
+  const record = state as { refreshSessions?: unknown[] };
+  const sessions = Array.isArray(record.refreshSessions) ? record.refreshSessions : [];
+  const payload = persistenceMode === 'jsonb'
+    ? JSON.stringify({ ...(state as object), refreshSessions: [] })
+    : preSerialized ?? JSON.stringify(state);
   return new Promise<void>((resolve, reject) => {
     newestPayload = payload;
+    newestSessions = sessions;
     waiting.push({ resolve, reject });
     if (!drainActive) {
       drainActive = true;
