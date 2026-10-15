@@ -9,6 +9,7 @@ type TemplatePageRuntimeLayoutProps = {
   fullscreen: boolean;
   phone: boolean;
   layoutVariant?: string;
+  overlayOpen?: boolean;
   header: ReactNode;
   main: ReactNode;
   sidebar: ReactNode;
@@ -16,7 +17,7 @@ type TemplatePageRuntimeLayoutProps = {
 
 /** Shared, metadata-selected runtime layout. No app-specific paths or names. */
 export default function TemplatePageRuntimeLayout({
-  apiName, label, pageType, template, fullscreen, phone, layoutVariant, header, main, sidebar
+  apiName, label, pageType, template, fullscreen, phone, layoutVariant, overlayOpen, header, main, sidebar
 }: TemplatePageRuntimeLayoutProps) {
   const rail = fullscreen && layoutVariant === 'rail-checkout';
   const hasSidebar = template === 'main-sidebar' || template === 'header-main-sidebar';
@@ -39,7 +40,7 @@ export default function TemplatePageRuntimeLayout({
         style={rail ? {gridColumn:2,gridRow:1,minWidth:0,minHeight:0,overflowY:'auto',padding:phone?10:24,boxSizing:'border-box',background:'#f8f8f8'} : fullscreen ? {minWidth:0,minHeight:0,overflowY:'auto',padding:phone?12:20,
           boxSizing:'border-box',background:'#f7f7f7'} : undefined}>{main}</main>
       {hasSidebar && <aside className="record-runtime-sidebar"
-        style={rail ? {gridColumn:'1 / -1',gridRow:2,minWidth:0,minHeight:0,overflow:'hidden',padding:0,background:'#fff',borderTop:'1px solid #e9e9e9'} : fullscreen ? {minWidth:0,minHeight:0,overflowY:'auto',padding:0,
+        style={rail ? {gridColumn:'1 / -1',gridRow:overlayOpen?'1 / -1':2,minWidth:0,minHeight:0,overflow:'hidden',padding:0,background:overlayOpen?'transparent':'#fff',borderTop:overlayOpen?'none':'1px solid #e9e9e9',zIndex:overlayOpen?20:1} : fullscreen ? {minWidth:0,minHeight:0,overflowY:'auto',padding:0,
           borderLeft:phone?'none':'1px solid #e8e8e8',background:'#fff'} : undefined}>{sidebar}</aside>}
     </div>
   </div>;
