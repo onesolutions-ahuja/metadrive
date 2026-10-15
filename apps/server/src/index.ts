@@ -50,7 +50,7 @@ import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant
 import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
 import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from './chatter-authorisation.js';
 import { authoriseChatterFlow } from './chatter-flow-authorisation.js';
-import { sanitizeChatterCallerInput } from './modules/flows/chatter-request-input.mjs';
+import { sanitizeChatterCallerInput, trustedChatterExecutionFlow } from './modules/flows/chatter-request-input.mjs';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
@@ -8163,7 +8163,7 @@ app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission(
   if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
   try {
     const working = structuredClone(tenant);
-    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, authorisedInput, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
+    const result = await executeFlow(guard?.ok ? trustedChatterExecutionFlow(flow, authorisedInput) : flow, working, principal.tenantId, principal.userId, authorisedInput, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
     if (result.status === 'waiting') {
       const interview = createFlowInterview(flow, principal.userId, result);
       working.interviews = [...working.interviews, interview];
