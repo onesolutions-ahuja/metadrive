@@ -12,7 +12,11 @@ test('Chatter uses the installed Communication record page and published compone
   assert.equal(preset.pageType,'Record Page');
   assert.equal(preset.targetObject,'Communication_Records__c');
   assert.deepEqual(preset.devices,['Desktop','Phone']);
-  assert.deepEqual(pkg.pages.find(p=>p.apiName===preset.apiName),preset);
+  const installedPage=pkg.pages.find(p=>p.apiName===preset.apiName);
+  assert.ok(installedPage,'Installer must register editable Chatter page');
+  assert.deepEqual({...installedPage,status:preset.status},preset,
+    'Published installation may activate the matching editable Draft preset');
+  assert.equal(installedPage.status,'Active');
   assert.ok(preset.activationAssignments.some(a=>a.scope==='Org Default'
     && a.formFactors.includes('Desktop')&&a.formFactors.includes('Phone')));
   for(const c of preset.components)
