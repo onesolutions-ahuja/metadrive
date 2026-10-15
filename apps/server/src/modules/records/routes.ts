@@ -1,5 +1,6 @@
 /** Record API handlers. All platform services are injected, preserving tenant/RBAC checks. */
 import type { Request, Response } from 'express';
+import { orderAuthorisedRecords, pageAuthorisedRecords } from './query-page.js';
 import type { RecordRoutesDependencies, TenantData, RuntimeRecord, LocalUser, PlatformState } from '../../index.js';
 import type { Principal } from '../../auth.js';
 import { protectedChatterRecordWrite } from '../../chatter-record-write-policy.js';
@@ -190,30 +191,10 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
       return res.status(403).json({ error: 'Missing field read permission for sort' });
   }
   const sortType = typeof sortField === 'string' ? object.fields.find((field) => field.apiName === sortField)?.dataType ?? '' : '';
-  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-  const ordered = typeof sortField === 'string' ? [...filtered].sort((left, right) => {
-    const a = left[sortField];
-    const b = right[sortField];
-    const aMissing = a === null || a === undefined || a === '';
-    const bMissing = b === null || b === undefined || b === '';
-    if (aMissing !== bMissing) return aMissing ? 1 : -1;
-    let comparison = 0;
-    if (!aMissing && !bMissing) {
-      if (sortType.startsWith('Number') || sortType.startsWith('Currency') || sortType.startsWith('Percent')) comparison = Number(a) - Number(b);
-      else if (['Date', 'Date/Time', 'DateTime'].includes(sortType)) comparison = new Date(String(a)).getTime() - new Date(String(b)).getTime();
-      else comparison = collator.compare(String(a), String(b));
-    }
-    if (!Number.isFinite(comparison)) comparison = collator.compare(String(a), String(b));
-    return comparison ? (sortDirection === 'desc' ? -Math.sign(comparison) : Math.sign(comparison))
-      : collator.compare(String(left.Id), String(right.Id));
-  }) : filtered;
+  const ordered = orderAuthorisedRecords(filtered, typeof sortField === 'string'
+    ? { field: sortField, direction: sortDirection as 'asc' | 'desc', dataType: sortType } : undefined);
   if (!paginated) return res.json({ records: ordered });
-  return res.json({
-    records: ordered.slice(rawOffset, rawOffset + rawLimit),
-    total: filtered.length,
-    offset: rawOffset,
-    limit: rawLimit
-  });
+  return res.json(pageAuthorisedRecords(ordered, rawOffset, rawLimit));
 });
 app.get('/api/records/:objectName/:recordId', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
