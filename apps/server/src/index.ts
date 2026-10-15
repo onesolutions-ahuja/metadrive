@@ -1,3 +1,4 @@
+import { registerAppListRoute } from './modules/apps/list-routes.js';
 import { registerFlowElementRoutes } from './modules/flows/element-routes.js';
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
@@ -8629,16 +8630,7 @@ registerReportRoutes({
  app, runtimeRecordSchema, dashboardFilterSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFilterMatches, dashboardFolderShareSchema, reportFolderSchema, isNumericField, reportFilterOperatorAllowed, dashboardFilterOperatorAllowed, dashboardFilterValueError, reportFilterValueError, persistState, tenantData, getPrincipal, dashboardRunningPrincipal, dashboardRunningUserSelectionError, reportFolderAccessLevelForUser, reportFolderForUser, validateReportFolderReferences, dashboardForUser, requirePermission, accessAuthentication, hasObjectPermission, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, resolveReportCrossFilters, resolveDashboardCrossFilters, canManageReportFolders, calculateFormulaFields, randomUUID, canAccessDashboard, matchesDashboardFilters,
  getState: () => state, setState: (next) => { state = next; }
 });
-app.get('/api/metadata/apps', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  res.json({ apps: tenant.apps
-    .filter((app) => canOpenApp(principal, tenant, app.apiName))
-    .map((app) => ({ ...app,
-      navigationItems: app.navigationItems.filter((name) => canOpenTab(principal, tenant, name)),
-      navigationOrder: app.navigationOrder.filter((item) => item.type !== 'Object' || canOpenTab(principal, tenant, item.apiName))
-    })) });
-});
+registerAppListRoute(app, { requirePermission, getPrincipal, tenantData, canOpenApp, canOpenTab });
 app.get('/api/apps/:appApiName/home-page', accessAuthentication, (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
