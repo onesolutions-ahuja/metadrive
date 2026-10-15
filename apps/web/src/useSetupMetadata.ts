@@ -1,10 +1,59 @@
 // @ts-nocheck
 // Tenant-scoped bootstrap: core metadata first, optional admin metadata afterwards.
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from './metadata';
 import type { MetadataPublicationResponse } from './verifiedMetadataCache';
 export function useSetupMetadata(ctx: any) {
-  const { apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, readVerifiedMetadata, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
+  const { advancedMetadataLoaded, apiRequest, approvalProcesses, apps, currentAppId, dashboards, emailAlerts, entryTiming, flowSnapshots, flows, isAuthErrorMessage, object, objects, page, pages, platformEvents, readVerifiedMetadata, reports, route, saveVerifiedMetadata, setAccessControl, setAccessControlError, setAdvancedMetadataLoaded, setApprovalProcesses, setApps, setCanCreateDashboards, setCanManageApprovalProcesses, setCanManageApps, setCanReadMetadata, setCanReadSecurity, setCanManageDashboardTerritories, setCanManageDashboards, setCanManageFlows, setCanManageLibrary, setCanManagePlatformLicences, setCanManagePlatformTenants, setCanManageReportFolders, setCanManageUserIdentities, setCanRunFlows, setCanScheduleDashboards, setConnectorProviders, setCurrentAppId, setCurrentFieldAccess, setCurrentProfileId, setCurrentRecordTypeAccess, setDashboardFolders, setDashboardRunningUserIds, setDashboardTerritories, setDashboardUserId, setDashboards, setEmailAlerts, setFlow, setFlows, setIntegrationConnections, setLibraryComponents, setMetadataLoadError, setMetadataLoaded, setNamedCredentials, setObject, setObjects, setPage, setPages, setPlatformEvents, setReportFolders, setReports, setSelectedFlowId, setToast, toast, workspace } = ctx;
+  // Optional business metadata is resolved only for the active screen or page dependencies.
+  // Tenant installation, entitlement and OneEngine access are always checked by the APIs.
+  const analyticsLoads = useRef(new Set<string>());
+  useEffect(() => {
+    if (!advancedMetadataLoaded) return;
+    const currentPage = pages.filter((page) =>
+      (route.kind === 'app-page' && page.apiName === route.pageApiName)
+      || (route.kind === 'app-home' && page.pageType === 'Home Page' &&
+        (page.activationAssignments ?? []).some((item) => item.appId === route.appId))
+      || ((route.kind === 'record-list' || route.kind === 'record-detail') &&
+        page.pageType === 'Record Page' && page.targetObject === route.objectApiName));
+    const components = currentPage.flatMap((page) => page.components ?? []);
+    const adminDependencies = route.kind === 'setup' &&
+      ['page-builder', 'object-manager'].includes(workspace);
+    const dashboardNeeded = adminDependencies || (route.kind === 'setup' && workspace === 'dashboard-builder')
+      || components.some((component) => component.type === 'Dashboard');
+    const reportNeeded = dashboardNeeded || adminDependencies || (route.kind === 'setup' && workspace === 'report-builder')
+      || components.some((component) => component.type === 'Report Chart');
+    if (reportNeeded && !analyticsLoads.current.has('reports')) {
+      analyticsLoads.current.add('reports');
+      void Promise.all([
+        apiRequest('/metadata/reports'),
+        apiRequest('/metadata/report-folders')
+      ]).then(([reportsPayload, foldersPayload]) => {
+        setReports(reportsPayload.reports ?? []);
+        setReportFolders(foldersPayload.folders ?? []);
+        setCanManageReportFolders(Boolean(foldersPayload.canManageAll));
+      }).catch(() => analyticsLoads.current.delete('reports'));
+    }
+    if (dashboardNeeded && !analyticsLoads.current.has('dashboards')) {
+      analyticsLoads.current.add('dashboards');
+      void Promise.all([
+        apiRequest('/metadata/dashboards'),
+        apiRequest('/metadata/dashboard-folders'),
+        apiRequest('/metadata/dashboard-territories')
+      ]).then(([payload, foldersPayload, territoryPayload]) => {
+        setDashboards(payload.dashboards ?? []);
+        setDashboardUserId(payload.userId ?? '');
+        setDashboardRunningUserIds(payload.runningUserIds ?? []);
+        setCanCreateDashboards(Boolean(payload.canCreate));
+        setCanManageDashboards(Boolean(payload.canManageAll));
+        setCanScheduleDashboards(Boolean(payload.canSchedule));
+        setDashboardFolders(foldersPayload.folders ?? []);
+        setDashboardTerritories(territoryPayload.territories ?? []);
+        setCanManageDashboardTerritories(Boolean(territoryPayload.canManage));
+      }).catch(() => analyticsLoads.current.delete('dashboards'));
+    }
+  }, [advancedMetadataLoaded, route, workspace, pages]);
+
   useEffect(() => {
     const loadMetadata = async () => {
       const failures: string[] = [];
@@ -99,11 +148,11 @@ export function useSetupMetadata(ctx: any) {
           recover<{ providers: ConnectorProviderMetadata[] }>('/connector-providers', { providers: [] }),
           recover<{ connections: IntegrationConnectionMetadata[] }>('/integration-connections', { connections: [] }),
           recover<{ components: LibraryComponentMetadata[]; canManage: boolean }>('/component-library', { components: [], canManage: false }),
-          recover<{ dashboards: DashboardMetadata[]; userId: string; runningUserIds: string[]; canCreate: boolean; canManageAll: boolean; canSchedule: boolean }>('/metadata/dashboards', { dashboards: [], userId: '', runningUserIds: [], canCreate: false, canManageAll: false, canSchedule: false }),
-          recover<{ folders: DashboardFolderMetadata[] }>('/metadata/dashboard-folders', { folders: [] }),
-          recover<{ territories: DashboardTerritoryMetadata[]; canManage: boolean }>('/metadata/dashboard-territories', { territories: [], canManage: false }),
-          recover<{ folders: ReportFolderMetadata[]; canManageAll: boolean }>('/metadata/report-folders', { folders: [], canManageAll: false }),
-          recover<{ reports: ReportMetadata[] }>('/metadata/reports', { reports: [] }),
+          Promise.resolve({ dashboards: [], userId: '', runningUserIds: [], canCreate: false, canManageAll: false, canSchedule: false }),
+          Promise.resolve({ folders: [] as DashboardFolderMetadata[] }),
+          Promise.resolve({ territories: [] as DashboardTerritoryMetadata[], canManage: false }),
+          Promise.resolve({ folders: [] as ReportFolderMetadata[], canManageAll: false }),
+          Promise.resolve({ reports: [] as ReportMetadata[] }),
           recover<{ user: { id?: string; tenantId?: string; profileId: string; permissions: string[]; fieldAccess: Record<string, { read: boolean; edit: boolean }>; recordTypeAccess: Record<string, boolean> } }>('/auth/me', { user: { profileId: '', permissions: [], fieldAccess: {}, recordTypeAccess: {} } })
         ]);
         // RBAC settings are optional for initial page rendering. Fetch them
