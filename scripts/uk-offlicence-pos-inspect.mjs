@@ -96,7 +96,7 @@ const packageStatus = installedPackage ? {
 console.log('POS_TENANT_METADATA ' + JSON.stringify({
   inspectedAt: new Date().toISOString(), tenantMatched: true, packageStatus, registeredComponents, objects, pages, flows,
   commerceCandidates: objectData.objects.filter(object =>
-    /product|invoice|till|session|stock|refund|receipt|payment|discount|shift/i.test(object.apiName)
+    /product|invoice|till|session|stock|inventory|refund|receipt|payment|discount|shift/i.test(object.apiName)
   ).map(object => ({apiName: object.apiName, fields: (object.fields ?? []).map(field =>
     ({apiName: field.apiName, dataType: field.dataType}))}))
 }));
