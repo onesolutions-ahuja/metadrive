@@ -17,6 +17,9 @@ export function seedCredentialGrants(tenant, directives = [], tenantId = '') {
       const idFromPath=match?.[1];
       const configured=credential.configuration?.[directive.accountConfigField];
       if(configured&&idFromPath&&configured!==idFromPath)continue;
+      // Version-only Graph endpoints are valid only with a configured PhoneNumberId.
+      // Reject unrelated Graph paths even when credentials contain an ID.
+      if(!idFromPath && !/^\/v\d+\.\d+\/?$/.test(url.pathname))continue;
       const account=idFromPath||configured;
       if(!account||!/^[A-Za-z0-9_-]{5,120}$/.test(account))continue;
       for(const principal of principals){

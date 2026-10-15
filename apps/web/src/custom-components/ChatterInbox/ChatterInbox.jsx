@@ -4,6 +4,7 @@ export default function ChatterInbox(props) {
   const [selectedId, select] = React.useState(null);
   const [newChat, setNewChat] = React.useState(false);
   const [newRecipient, setNewRecipient] = React.useState('');
+  const [contactSearch, setContactSearch] = React.useState('');
   const [sentNotice, setSentNotice] = React.useState('');
   const [search, setSearch] = React.useState('');
   const [tab, setTab] = React.useState('all');
@@ -15,6 +16,8 @@ export default function ChatterInbox(props) {
   const conversations = Array.isArray(p.conversations) ? p.conversations : [];
   const messages = Array.isArray(p.messages) ? p.messages : [];
   const accounts = Array.isArray(p.channelAccounts) ? p.channelAccounts : [];
+  const contacts = Array.isArray(p.contactChoices) ? p.contactChoices : [];
+  const matchingContacts = contacts.filter(c => [c.name,c.phone].join(' ').toLowerCase().includes(contactSearch.trim().toLowerCase())).slice(0,30);
   const assignedAccounts = accounts.filter(a => Array.isArray(p.allowedAccountIds) && p.allowedAccountIds.includes(a.id));
   const scoped = conversations.filter(c => {
     if (selectedAccount && String(c.channelAccountId) !== selectedAccount) return false;
@@ -58,7 +61,7 @@ export default function ChatterInbox(props) {
     catch (e) { setError(e instanceof Error ? e.message : 'Action failed'); }
     finally { setBusy(false); }
   };
-  return <section className={'md-chatter ' + (selected ? 'md-chatter-open' : '')}
+  return <section className={'md-chatter ' + ((selected || newChat) ? 'md-chatter-open' : '')}
     style={{'--chatter-accent': p.accentColor || '#168657', '--chatter-background': p.backgroundColor || '#f7f8f7'}}>
     <aside className="md-chatter-list">
       <header><div className="md-chatter-heading"><h2>{p.title || 'Chatter'}</h2><span>{scoped.length} chats</span></div>
@@ -84,7 +87,7 @@ export default function ChatterInbox(props) {
         : 'No conversations match your filters.'}</p>}</div>
     </aside>
     <div className="md-chatter-thread">
-      {newChat ? <div className="md-chatter-new-thread"><header><button type="button" onClick={()=>setNewChat(false)}>‹ Back</button><strong>New WhatsApp chat</strong></header><form className="md-chatter-compose" onSubmit={send}><label>Sending account<select aria-label="Send from account" value={selectedAccount} onChange={e=>setSelectedAccount(e.target.value)}>{assignedAccounts.filter(a=>a.canSend!==false).map(a=><option key={a.id} value={String(a.id)}>{a.name||a.id}</option>)}</select></label><label>Customer phone number<input aria-label="Customer phone number" type="tel" value={newRecipient} onChange={e=>setNewRecipient(e.target.value)} placeholder="447700900123" required /></label><label>Message<textarea aria-label="New chat message" value={draft} onChange={e=>setDraft(e.target.value)} maxLength={4096} required /></label><button type="submit" disabled={busy||!canSendSelected||!draft.trim()}>Send</button></form>{error&&<p role="alert">{error}</p>}{sentNotice&&<p role="status">{sentNotice}</p>}</div> : selected ? <><header className="md-chatter-thread-head">
+      {newChat ? <div className="md-chatter-new-thread"><header><button type="button" onClick={()=>setNewChat(false)}>‹ Back</button><strong>New WhatsApp chat</strong></header><form className="md-chatter-compose" onSubmit={send}><label>Sending account<select aria-label="Send from account" value={selectedAccount} onChange={e=>setSelectedAccount(e.target.value)}>{assignedAccounts.filter(a=>a.canSend!==false).map(a=><option key={a.id} value={String(a.id)}>{a.name||a.id}</option>)}</select></label><label>Find contact<input aria-label="Find contact" type="search" value={contactSearch} onChange={e=>setContactSearch(e.target.value)} placeholder="Search customer name or phone" /></label>{contacts.length>0&&contactSearch.trim()&&<div className="md-chatter-contact-choices" role="listbox" aria-label="Matching contacts">{matchingContacts.map(c=><button key={c.id} role="option" aria-selected={newRecipient===c.phone} type="button" onClick={()=>{setNewRecipient(c.phone);setContactSearch(c.name||c.phone);}}>{c.name||c.phone} · {c.phone}</button>)}</div>}<label>Customer phone number<input aria-label="Customer phone number" type="tel" value={newRecipient} onChange={e=>setNewRecipient(e.target.value)} placeholder="447700900123" required /></label><label>Message<textarea aria-label="New chat message" value={draft} onChange={e=>setDraft(e.target.value)} maxLength={4096} required /></label><button type="submit" disabled={busy||!canSendSelected||!draft.trim()}>Send</button></form>{error&&<p role="alert">{error}</p>}{sentNotice&&<p role="status">{sentNotice}</p>}</div> : selected ? <><header className="md-chatter-thread-head">
         <button type="button" className="md-chatter-back" aria-label="Back to chats" onClick={()=>select(null)}>‹</button>
         <span className="md-chatter-avatar" aria-hidden="true">{String(selected.contactName || '?').slice(0,1).toUpperCase()}</span>
         <div><strong>{selected.contactName || selected.phoneNumber}</strong><small>{selected.phoneNumber} · {accountName(selected.channelAccountId)}</small></div>
