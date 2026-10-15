@@ -59,3 +59,21 @@ an empty seed automatically.
 The SQL ledger DDL is additive and is **not** wired to the live installation
 path in this branch. Migration execution and idempotency against an isolated
 PostgreSQL test database remain required prior to activation.
+
+## Transactional package version API
+
+`src/seeders/sql-package-ledger.mjs` exports `packageChecksum`,
+`assertSeedIdentity`, and `applyVersionedSeed(client, options)`.
+The caller **must** already hold an open SQL transaction and have completed
+app installation, licensing, entitlement, tenant and OneEngine checks. Pass
+`{tenantId, kind, key, version, definition, apply}`, where `apply(client,
+definition)` performs all metadata writes on the SAME transaction client.
+Commit only after this function resolves successfully. Roll back on failure.
+Never invoke it as a standalone connection or mark a package installed merely
+because a catalog entry exists. Identical version and checksum skip safely;
+reusing a version for changed metadata fails closed. Do not use it for tenant
+business records or automatic permission resets.
+
+Integration with the live SQL metadata repository and AppExchange transaction
+owner remains a separate agent handoff. This module does not run during startup
+unless explicitly invoked by the existing installer.
