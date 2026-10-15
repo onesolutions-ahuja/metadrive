@@ -1,6 +1,6 @@
 
 
-import { ReportBuilder } from './reportBuilderView';
+
 
 
 
@@ -29,12 +29,12 @@ const FieldWizardModal = React.lazy(() => import('./setupFieldWizard'));
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Check, ChevronLeft, ChevronRight, CircleHelp, Database, Monitor, History, Search, X } from 'lucide-react';
-import FlowBuilderWorkspace from './FlowBuilder';
+const FlowBuilderWorkspace = React.lazy(() => import('./FlowBuilder'));
 const SetupFlowDialogs = React.lazy(() => import('./setupFlowDialogs'));
 const FlowLogs = React.lazy(() => import('./FlowLogs'));
 const FlowInterviews = React.lazy(() => import('./FlowInterviews'));
 const ScheduledFlows = React.lazy(() => import('./ScheduledFlows'));
-import DashboardBuilder from './DashboardBuilder';
+const DashboardBuilder = React.lazy(() => import('./DashboardBuilder'));
 const ComponentLibrary = React.lazy(() => import('./ComponentLibrary'));
 
 
@@ -55,13 +55,13 @@ import PlatformWorkspaceSurface from './PlatformWorkspaceSurface'; import { Plat
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 
 const NamedCredentials = React.lazy(() => import('./NamedCredentials'));
-import TenantManagement from './TenantManagement';
-import TenantDomains from './TenantDomains';
-import TenantRecoveryPanel from './TenantRecoveryPanel';
-import TenantUsagePanel from './TenantUsagePanel';
-import DeveloperAccountSettings from './DeveloperAccountSettings';
+const TenantManagement = React.lazy(() => import('./TenantManagement'));
+const TenantDomains = React.lazy(() => import('./TenantDomains'));
+const TenantRecoveryPanel = React.lazy(() => import('./TenantRecoveryPanel'));
+const TenantUsagePanel = React.lazy(() => import('./TenantUsagePanel'));
+const DeveloperAccountSettings = React.lazy(() => import('./DeveloperAccountSettings'));
 
-import ApprovalProcessManager from './ApprovalProcessManager';
+const ApprovalProcessManager = React.lazy(() => import('./ApprovalProcessManager'));
 
 const EmbeddedDashboard = React.lazy(() => import('./EmbeddedDashboard'));
 
