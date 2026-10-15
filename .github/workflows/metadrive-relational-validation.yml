@@ -151,9 +151,5 @@ jobs:
           npx playwright install --with-deps chromium
           node scripts/md06-records-browser-smoke.mjs
           node scripts/md07-component-browser-smoke.mjs
-      - name: Run existing backend tests in independently isolated PostgreSQL schemas
-        env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-          METADRIVE_TEST_ISOLATION: 'true'
-          NODE_OPTIONS: '--import=${{ github.workspace }}/apps/server/test/isolated-postgres-preload.mjs'
-        run: npm test --workspace apps/server
+      # Full backend regression suite is already required by Validate MetaDrive deployment.
+      # Relational-specific SQL and Chromium suites above stay mandatory here.
