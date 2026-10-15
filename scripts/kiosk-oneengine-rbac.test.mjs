@@ -18,3 +18,13 @@ test('installer seeds existing OneEngine administrator without overriding saved 
  assert.match(code,/hasOwnProperty\.call\(admin\.fieldPermissions/);
  assert.match(code,/await updateSecurity\(access=>/);
 });
+
+test('administrator grant update removes only stale object and field references before central RBAC validation',()=>{
+ const code=readFileSync(new URL('./install-kiosk-phase4.mjs',import.meta.url),'utf8');
+ const adminUpdate=code.slice(code.indexOf('// Seed the existing OneEngine administrator profile'),code.indexOf('// Prepare a limited OneEngine permission set'));
+ assert.match(adminUpdate,/profiles:\(access\.profiles\?\?\[\]\)\.map\(profile=>scrub\(/);
+ assert.match(adminUpdate,/permissionSets:\(access\.permissionSets\?\?\[\]\)\.map\(scrub\)/);
+ assert.match(adminUpdate,/permissionSetGroups:\(access\.permissionSetGroups\?\?\[\]\)\.map\(scrub\)/);
+ assert.match(code,/const knownFields=new Map\(objectList\.map/);
+ assert.match(code,/const keepKnown=/);
+});
