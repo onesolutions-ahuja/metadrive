@@ -4,7 +4,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import PlatformWorkspaceSurface from '../apps/web/src/PlatformWorkspaceSurface';
 const page={apiName:'MetaDrive_Admin_app_manager',scope:'platform-system' as const,label:'App Manager',
-  pageType:'App Page' as const,targetObject:'Account',layoutMode:'free-canvas' as const,
+  pageType:'App Page' as const,targetObject:'Account',layoutMode:'template' as const,
   ownerNamespace:'MetaDrive',requiredPermissions:['metadata:read'],definitionVersion:2,
   canvasWidth:1440,canvasHeight:900,status:'Active' as const,devices:['Desktop' as const],
   components:[]};
