@@ -7,7 +7,7 @@ import { loadAppSeedCatalog } from '../src/seeders/catalog.mjs';
 import { ensureBundledAppComponents } from '../src/bundled-app-components.mjs';
 
 const dir=resolve(fileURLToPath(new URL('..',import.meta.url)));
-const manifestRoot=resolve(dir,'../../web/src/custom-components');
+const manifestRoot=resolve(dir,'../web/src/custom-components');
 const catalog=loadAppSeedCatalog();
 test('Core bundles reconcile with existing 39 entries without dropping tenant definitions',()=>{
  const recovered=Array.from({length:39},(_,i)=>({apiName:'RecoveredShared'+i,status:'Published',trustedBundled:true,version:1}));
