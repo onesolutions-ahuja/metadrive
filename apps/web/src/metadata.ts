@@ -965,7 +965,7 @@ export const workspaces: WorkspaceMetadata[] = [
   { id: 'approval-processes', label: 'Approval Processes', icon: Workflow },
   { id: 'app-manager', label: 'App Manager', icon: LayoutTemplate },
   { id: 'app-exchange', label: 'AppExchange', icon: Store },
-  { id: 'named-credentials', label: 'Named Credentials', icon: Database },
+  { id: 'named-credentials', label: 'Named Credentials', icon: Database }, { id: 'connector-settings', label: 'Connector Settings', icon: Puzzle },
   { id: 'company-settings', label: 'Company Information', icon: Building2 },
   { id: 'tenant-management', label: 'Tenant Management', icon: Building2 },
   { id: 'rbac', label: 'Users & Permissions', icon: ShieldCheck }
@@ -975,7 +975,7 @@ export const setupNavigation = [
   { group: 'Platform Administration', items: ['Tenant Management'] },
   { group: 'Company Settings', items: ['Company Information', 'Currencies'] },
   { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Lightning App Builder', 'App Manager', 'Component Library', 'AppExchange'] },
-  { group: 'Integrations', items: ['Named Credentials', 'Named Devices'] },
+  { group: 'Integrations', items: ['Named Credentials', 'Named Devices', 'Connector Settings'] },
   { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Failed Flow Logs', 'Approval Processes', 'Process Automation Settings'] },
   { group: 'Analytics', items: ['Reports', 'Dashboards'] },
   { group: 'Security', items: ['Users', 'Roles', 'Public Groups', 'Profiles', 'Permission Sets', 'Permission Set Groups', 'Sharing Settings', 'Sharing Rules'] }

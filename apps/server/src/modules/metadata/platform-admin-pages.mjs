@@ -1,5 +1,5 @@
 /** Presentation-only slots for the existing protected OneEngine Page Builder. */
-export const protectedWorkspacePageSlots=Object.freeze({"company-settings":["company-info","domains","developer-accounts","usage","recovery","mfa","email-recovery","locks","sessions","audit"],"object-manager":["object-workspace","object-list","object-heading","object-subnav","object-setting"],"app-manager":["identity","pages","assignments","navigation-items","navigation-order","utility","actions"],"app-exchange":["marketplace-search","marketplace-filters","marketplace-catalog","marketplace-details"],"rbac":["permissions","rbac-tabs","rbac-list","rbac-editor","rbac-help"],"tenant-management":["directory","tenant-details","tenant-domains","tenant-usage","tenant-recovery"]});
+export const protectedWorkspacePageSlots=Object.freeze({"company-settings":["company-info","domains","developer-accounts","usage","recovery","mfa","email-recovery","locks","sessions","audit"],"object-manager":["object-workspace","object-list","object-heading","object-subnav","object-setting"],"app-manager":["identity","pages","assignments","navigation-items","navigation-order","utility","actions"],"app-exchange":["marketplace-search","marketplace-filters","marketplace-catalog","marketplace-details"],"rbac":["permissions","rbac-tabs","rbac-list","rbac-editor","rbac-help"],"tenant-management":["directory","tenant-details","tenant-domains","tenant-usage","tenant-recovery"],"named-credentials":["credentials"],"connector-settings":["connector-workspace"],"approval-processes":["approval-workspace"],"automation-settings":["automation-policy"]});
 export function protectedAdministrationSlotComponents(workspace){
  const keys=protectedWorkspacePageSlots[workspace]??[];
  return keys.map((key,index)=>({
@@ -19,7 +19,11 @@ export const protectedWorkspacePageDescriptors=Object.freeze([
  {workspace:'app-manager',label:'App Manager',permission:'metadata:read'},
  {workspace:'app-exchange',label:'AppExchange',permission:'metadata:write'},
  {workspace:'rbac',label:'Users & Permissions',permission:'security:read'},
- {workspace:'tenant-management',label:'Tenant Management',permission:'platform:superadmin'}
+ {workspace:'tenant-management',label:'Tenant Management',permission:'platform:superadmin'},
+ {workspace:'named-credentials',label:'Named Credentials',permission:'metadata:write'},
+ {workspace:'connector-settings',label:'Connector Settings',permission:'metadata:write'},
+ {workspace:'approval-processes',label:'Approval Processes',permission:'metadata:read'},
+ {workspace:'automation-settings',label:'Process Automation Settings',permission:'metadata:read'}
 ]);
 export const protectedPageApiName=workspace=>'MetaDrive_Admin_'+workspace.replace(/-/g,'_');
 export function isProtectedAdministrationPage(page){

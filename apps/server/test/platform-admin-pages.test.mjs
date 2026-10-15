@@ -5,12 +5,12 @@ import {
  validateProtectedAdministrationPageUpdate,isProtectedAdministrationPage
 } from '../src/modules/metadata/platform-admin-pages.mjs';
 const original={pages:[{apiName:'Tenant_Landing',status:'Active',components:[{id:'custom'}]}]};
-test('Phase 4 seeds six distinct protected Page Builder layouts without modifying tenant pages',()=>{
+test('Phase 4 seeds all protected Page Builder layouts without modifying tenant pages',()=>{
  const seeded=seedProtectedAdministrationPages(original);
- assert.equal(seeded.pages.length,7);
+ assert.equal(seeded.pages.length,11);
  assert.equal(seeded.pages[0],original.pages[0]);
- assert.equal(protectedWorkspacePageDescriptors.length,6);
- assert.equal(new Set(seeded.pages.map(p=>p.apiName)).size,7);
+ assert.equal(protectedWorkspacePageDescriptors.length,10);
+ assert.equal(new Set(seeded.pages.map(p=>p.apiName)).size,11);
  assert.ok(seeded.pages.slice(1).every(p=>p.scope==='platform-system'&&p.ownerNamespace==='MetaDrive'
  &&p.definitionVersion===2&&p.overridePolicy==='presentation-only'
  &&p.status==='Active'&&p.pageType==='App Page'));
@@ -23,7 +23,7 @@ test('a system page cannot be silently overwritten during an upgrade',()=>{
  const altered={...system,components:[{id:'custom-admin-layout',type:'Custom:SystemPanel',properties:{},visible:true}]};
  const next=seedProtectedAdministrationPages({pages:[altered,...seeded.pages.filter(p=>p!==system)]});
  assert.equal(next.pages[0],altered);
- assert.equal(next.pages.length,7);
+ assert.equal(next.pages.length,11);
 });
 test('platform ownership and RBAC cannot be forged with ordinary metadata:write permissions',()=>{
  const page=seedProtectedAdministrationPages({pages:[]}).pages[0];

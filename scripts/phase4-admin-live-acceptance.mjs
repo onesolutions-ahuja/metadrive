@@ -1,6 +1,6 @@
 /** Phase 4 protected administration Page Builder live acceptance (read only). */
 import assert from 'node:assert/strict';
-import {protectedWorkspacePageDescriptors,protectedPageApiName} from '../apps/server/src/modules/metadata/platform-admin-pages.mjs';
+import {protectedWorkspacePageDescriptors,protectedWorkspacePageSlots,protectedPageApiName} from '../apps/server/src/modules/metadata/platform-admin-pages.mjs';
 const origin=(process.env.METADRIVE_API_URL||'').replace(/\/$/,'').replace(/\/api$/,'');
 const email=process.env.METADRIVE_ADMIN_EMAIL,password=process.env.METADRIVE_ADMIN_PASSWORD;
 if(!origin.startsWith('https://')||!email||!password)throw Error('HTTPS URL and authorised CI credentials required');
@@ -39,8 +39,12 @@ for(const descriptor of protectedWorkspacePageDescriptors){
  assert.equal(page.status,'Active');
  assert.equal(page.definitionVersion,2);
  assert.deepEqual(page.requiredPermissions,[descriptor.permission]);
+ const slots=protectedWorkspacePageSlots[descriptor.workspace]??[];
+ const actual=page.components.filter(item=>item.properties?.platformSlotKey).map(item=>item.properties.platformSlotKey);
+ assert.equal(new Set(actual).size,actual.length,'Duplicate admin slot identity');
+ assert.ok(actual.every(key=>slots.includes(key)),'Unknown protected admin slot identity');
  count++;
 }
 assert.ok(count>=3,'Expected centrally permission-filtered system pages');
 assert.equal(new Set(visible.map(page=>page.apiName)).size,visible.length,'Duplicate page registration');
-console.log(JSON.stringify({result:'PASS',readOnly:true,tenantVerified:true,protectedPagesAccessible:count,totalProtectedDefinitions:6,rbacFiltered:true}));
+console.log(JSON.stringify({result:'PASS',readOnly:true,tenantVerified:true,protectedPagesAccessible:count,totalProtectedDefinitions:protectedWorkspacePageDescriptors.length,rbacFiltered:true}));

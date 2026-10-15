@@ -34,3 +34,44 @@ test('admin slot presentation uses the existing workspace and RBAC instead of an
   ['TenantManagement.tsx',['directory','tenant-details']]
  ] as const)for(const key of keys)assert.ok(read(file).includes('slotKey="'+key+'"'),file+' '+key);
 });
+test('company and object administration render inside protected page hosts',()=>{
+ const source=read('setupAppShell.tsx');
+ for(const workspace of ['company-settings','object-manager']){
+  const prefix="workspace === '"+workspace+"' && (";
+  assert.ok(source.includes('workspace="'+workspace+'" permitted={canReadMetadata}'),workspace);
+ }
+ for(const slot of protectedWorkspacePageSlots['company-settings'])
+  assert.ok(source.includes('slotKey="'+slot+'"'),slot);
+ assert.ok(source.includes('<PlatformPageSlot slotKey="audit">'));
+});
+
+test('Object Manager uses every seeded independent page slot',()=>{
+ const source=read('objectManagerView.tsx');
+ for(const slot of protectedWorkspacePageSlots['object-manager'])
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing editable object slot '+slot);
+});
+
+test('RBAC screen renders through all seeded protected page slots',()=>{
+ const source=read('permissionsView.tsx');
+ for(const slot of protectedWorkspacePageSlots.rbac)
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing RBAC slot '+slot);
+});
+
+test('tenant management has independently editable detail, domain, usage and recovery slots',()=>{
+ const source=read('TenantManagement.tsx');
+ for(const slot of protectedWorkspacePageSlots['tenant-management'])
+  assert.ok(source.includes('slotKey="'+slot+'"'),'Missing tenant management slot '+slot);
+});
+
+test('integrations and automation administration use protected page slots',()=>{
+ const source=read('setupAppShell.tsx');
+ for(const [workspace,slot] of [
+  ['named-credentials','credentials'],
+  ['connector-settings','connector-workspace'],
+  ['approval-processes','approval-workspace'],
+  ['automation-settings','automation-policy']
+ ]){
+  assert.ok(source.includes('workspace="'+workspace+'"'),workspace);
+  assert.ok(source.includes('slotKey="'+slot+'"'),slot);
+ }
+});
