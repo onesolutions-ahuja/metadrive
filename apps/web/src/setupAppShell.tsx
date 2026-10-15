@@ -19,6 +19,7 @@ import { queueOfflineRecord, listOfflineRecords, markOfflineRecord, removeOfflin
   synchronizeOfflineRecords, type OfflineQueueOwner, type OfflineRecordItem, type OfflineRecordWrite } from './offlineRecordQueue';
 import SchemaBuilder from './SchemaBuilder';
 import * as React from 'react';
+import { createSetupNotificationActions } from './setupNotificationActions';
 import { useSetupAnalyticsActions } from './useSetupAnalyticsActions';
 import { createSetupObjectActions } from './setupObjectActions';
 import { createSetupFlowActions } from './setupFlowActions';
@@ -1025,59 +1026,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   };
   const { loadDashboardRecords, saveReport, saveReportFolder, deleteReport, runReport, previewReport, loadDashboardSnapshots, createDashboardSnapshot, deleteDashboardSnapshot, loadDashboardSubscriptions, saveDashboardSubscription, deleteDashboardSubscription, runDashboardSubscription, saveDashboard, saveDashboardFolder, deleteDashboardFolder, saveDashboardTerritories, deleteDashboard, selectDashboard, openDashboardViewer, exitDashboardViewer, selectPageForObject, openPageForObject } = useSetupAnalyticsActions({ apiRequest, dashboards, navigateRoute, notify, objects, page, pages, reports, setDashboardFolders, setDashboardTerritories, setDashboards, setPage, setReportFolders, setReports, workspace });
 
-  const loadNotifications = async () => {
-    setNotificationsLoading(true);
-    try {
-      const [result, approvalResult] = await Promise.all([
-        apiRequest<{ notifications: CustomNotificationMetadata[]; unreadCount: number }>('/notifications'),
-        apiRequest<{ requests: ApprovalRequestMetadata[] }>('/approvals/inbox')
-      ]);
-      setNotifications(result.notifications);
-      setNotificationsUnreadCount(result.unreadCount);
-      setApprovalRequests(approvalResult.requests);
-    } catch (error) {
-      notify(error instanceof Error ? error.message : 'Unable to load notifications');
-    } finally {
-      setNotificationsLoading(false);
-    }
-  };
-
-  const toggleNotifications = () => {
-    const opening = !notificationsOpen;
-    setNotificationsOpen(opening);
-    if (opening) void loadNotifications();
-  };
-
-  const markNotificationRead = async (notification: CustomNotificationMetadata) => {
-    if (notification.readAt) return;
-    try {
-      const result = await apiRequest<{ notification: CustomNotificationMetadata }>(
-        `/notifications/${encodeURIComponent(notification.id)}/read`,
-        { method: 'POST' }
-      );
-      setNotifications((current) => current.map((item) => item.id === notification.id ? result.notification : item));
-      setNotificationsUnreadCount((current) => Math.max(0, current - 1));
-    } catch (error) {
-      notify(error instanceof Error ? error.message : 'Unable to mark notification as read');
-    }
-  };
-
-  const decideApproval = async (request: ApprovalRequestMetadata, decision: 'Approved' | 'Rejected') => {
-    setApprovalBusyId(request.id);
-    try {
-      await apiRequest<{ request: ApprovalRequestMetadata }>(
-        `/approvals/${encodeURIComponent(request.id)}/decision`,
-        { method: 'POST', body: JSON.stringify({ decision }) }
-      );
-      setApprovalRequests((current) => current.filter((item) => item.groupId !== request.groupId));
-      notify(`Approval request ${decision.toLowerCase()}`);
-      void loadNotifications();
-    } catch (error) {
-      notify(error instanceof Error ? error.message : `Unable to ${decision.toLowerCase()} approval request`);
-    } finally {
-      setApprovalBusyId('');
-    }
-  };
+  const { loadNotifications, toggleNotifications, markNotificationRead, decideApproval } = createSetupNotificationActions({ apiRequest, notifications, notificationsOpen, notify, setApprovalBusyId, setApprovalRequests, setNotifications, setNotificationsLoading, setNotificationsOpen, setNotificationsUnreadCount });
 
   // Standalone presentation is a page metadata capability, not an app identity.
   // Only an active, route-matched page can opt into the edge-to-edge shell.
