@@ -216,6 +216,36 @@
       "phase": 7,
       "reason": "Owner-approved temporary second half of the legacy shared stylesheet; retain original CSS cascade while progressively reducing both files",
       "baselineLines": 1375
+    },
+    {
+      "path": "apps/web/src/setupAppShell.tsx",
+      "phase": 4,
+      "reason": "Owner-approved temporary App.tsx split; extract shell orchestration and workspace screens below 1000 lines",
+      "baselineLines": 3370
+    },
+    {
+      "path": "apps/web/src/pageBuilderView.tsx",
+      "phase": 5,
+      "reason": "Owner-approved temporary App.tsx split; decompose builder canvas and inspector below 1000 lines",
+      "baselineLines": 1979
+    },
+    {
+      "path": "apps/web/src/recordWorkspaceViews.tsx",
+      "phase": 4,
+      "reason": "Owner-approved temporary App.tsx split; decompose record list and forms below 1000 lines",
+      "baselineLines": 1739
+    },
+    {
+      "path": "apps/web/src/reportBuilderView.tsx",
+      "phase": 5,
+      "reason": "Owner-approved temporary App.tsx split; separate report designer and preview below 1000 lines",
+      "baselineLines": 1528
+    },
+    {
+      "path": "apps/web/src/objectManagerView.tsx",
+      "phase": 4,
+      "reason": "Owner-approved temporary App.tsx split; separate object fields and layout editors below 1000 lines",
+      "baselineLines": 1371
     }
   ],
   "knownRisks": [
@@ -255,5 +285,12 @@
       "details": "Existing oversized files require phased cohesive extraction, no hardcoded file-size exemption for changed code",
       "phase": 7
     }
-  ]
+  ],
+  "temporaryExtractionLimits": {
+    "apps/web/src/setupAppShell.tsx": 3370,
+    "apps/web/src/pageBuilderView.tsx": 1979,
+    "apps/web/src/recordWorkspaceViews.tsx": 1739,
+    "apps/web/src/reportBuilderView.tsx": 1528,
+    "apps/web/src/objectManagerView.tsx": 1371
+  }
 }

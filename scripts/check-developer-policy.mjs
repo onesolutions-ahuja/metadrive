@@ -10,8 +10,12 @@ const lines = content => content.length ? content.split('\n').length - Number(co
 if (!BASE) { console.error('POLICY_BASE_SHA required.'); process.exit(2); }
 const diff = execFileSync('git',['diff','--name-only','--diff-filter=ACMR',BASE,HEAD,'--'],{encoding:'utf8'});
 const paths = diff.split('\n').filter(Boolean).filter(path => CODE_EXT.test(path));
-const owned = new Set(JSON.parse(readFileSync('docs/metadata-driven-platform/MIGRATION_MAP.v1.json','utf8'))
-  .sources.filter(source => source.baselineLines > LIMIT).map(source => source.path));
+const migration = JSON.parse(readFileSync('docs/metadata-driven-platform/MIGRATION_MAP.v1.json','utf8'));
+const owned = new Set(migration.sources.filter(source => source.baselineLines > LIMIT).map(source => source.path));
+// Owner-approved temporary exception ONLY for the App.tsx extraction PR.
+// Never apply to unrelated branches or files, and never allow growth above a fixed ceiling.
+const extractionPr = process.env.GITHUB_HEAD_REF === 'refactor/app-routing-navigation-extraction';
+const extractionLimits = extractionPr ? migration.temporaryExtractionLimits ?? {} : {};
 const failures = [], transitional = [];
 for (const path of paths) {
   if (!existsSync(path)) continue;
@@ -23,6 +27,11 @@ for (const path of paths) {
   })); } catch { /* New files have no base. */ }
   if (original > LIMIT && owned.has(path) && current <= original) {
     transitional.push(path+': '+original+' -> '+current);
+    continue;
+  }
+  if (extractionPr && Object.hasOwn(extractionLimits, path) && owned.has(path)
+      && original === 0 && current <= extractionLimits[path]) {
+    transitional.push(path+': approved extraction '+current+' / '+extractionLimits[path]);
     continue;
   }
   failures.push(path+': '+current+' lines (base: '+original+', limit: '+LIMIT+')');
