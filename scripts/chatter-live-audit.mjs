@@ -18,7 +18,8 @@ const token = login.data.access_token;
 const result = {};
 for (const [key,path] of Object.entries({
   pages:'/api/metadata/pages', flows:'/api/metadata/flows', objects:'/api/metadata/objects',
-  credentials:'/api/named-credentials', apps:'/api/metadata/apps'
+  credentials:'/api/named-credentials', apps:'/api/metadata/apps',
+  connectorApps:'/api/records/Connector_App__c'
 })) {
   const reply = await call(path, token);
   const data = reply.data;
@@ -28,5 +29,6 @@ for (const [key,path] of Object.entries({
   if (key === 'objects') result[key].communicationFields = (data.objects || []).find(x => x.apiName === 'Communication_Records__c')?.fields?.map(x => x.apiName) ?? [];
   if (key === 'credentials') result[key].whatsAppCount = (data.credentials || []).filter(x => /whatsapp/i.test(String(x.name) + ' ' + String(x.label))).length;
   if (key === 'apps') result[key].names = (data.apps || []).filter(x => /communication|chatter/i.test(x.apiName + ' ' + x.label)).map(x => x.apiName);
+  if (key === 'connectorApps') result[key].whatsApp = (data.records || []).filter(x=>x.AppKey__c==='whatsapp').map(x=>({installed:x.Installed__c,licence:x.LicenceStatus__c}));
 }
 console.log('CHatter metadata audit (no secrets):', JSON.stringify(result));
