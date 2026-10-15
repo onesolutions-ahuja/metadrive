@@ -38,3 +38,12 @@ test('installer upgrades versioned components while respecting existing page pro
  assert.match(installer,/matchesBaseline/);
  assert.match(installer,/obsoleteCommercePages/);
 });
+
+test('live kiosk embeds fill all three independently editable template regions',()=>{
+ const menu=commercePages.find(page=>page.apiName==='MD_Commerce_Menu');
+ assert.deepEqual(menu.components.map(component=>component.region),['header','main','sidebar']);
+ assert.ok(menu.components.every(component=>component.properties.fillRegion===true),
+  'Sandboxed iframe components must fill the template grid rather than render as 160px strips');
+ const runtime=readFileSync(new URL('../apps/web/src/pageRuntimeViews.tsx',import.meta.url),'utf8');
+ assert.match(runtime,/component\.properties\?\.fillRegion===true\s*\?\s*\{height:'100%',minHeight:0\}/);
+});
