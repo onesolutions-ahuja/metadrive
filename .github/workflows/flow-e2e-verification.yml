@@ -23,6 +23,7 @@ jobs:
       METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
       DATABASE_URL: ''
       NODE_ENV: test
+      METADRIVE_TEST_MODE: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
