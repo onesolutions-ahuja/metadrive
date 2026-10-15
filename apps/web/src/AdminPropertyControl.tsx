@@ -23,6 +23,7 @@ export default function AdminPropertyControl({definition,value,disabled=false,on
      : <input {...common} className="form-control"
         type={definition.inputType??(definition.kind==='COLOR'?'color':'text')}
         autoComplete={definition.autoComplete}/>}
+   {presentation.description&&<span className="form-description">{presentation.description}</span>}
    {presentation.helpText&&<small className="form-help">{presentation.helpText}</small>}
  </label></PlatformPageSlot>;
 }
