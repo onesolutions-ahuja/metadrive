@@ -1,6 +1,6 @@
 /** Record API handlers. All platform services are injected, preserving tenant/RBAC checks. */
 import type { Request, Response } from 'express';
-import { orderAuthorisedRecords, pageAuthorisedRecords } from './query-page.js';
+import { filterAuthorisedRecords, orderAuthorisedRecords, pageAuthorisedRecords } from './query-page.js';
 import type { RecordRoutesDependencies, TenantData, RuntimeRecord, LocalUser, PlatformState } from '../../index.js';
 import type { Principal } from '../../auth.js';
 import { protectedChatterRecordWrite } from '../../chatter-record-write-policy.js';
@@ -168,17 +168,14 @@ app.get('/api/records/:objectName', accessAuthentication, (req: Request, res: Re
     ? object.fields.filter((field) => configuredFields.includes(field.apiName))
     : object.fields;
   const needle = typeof rawSearch === 'string' ? rawSearch.trim().toLocaleLowerCase() : '';
-  const scopedRecords = typeof relatedField === 'string' && typeof relatedId === 'string'
-    ? records.filter((record) => record[relatedField] === relatedId)
-    : records;
-  const exactFiltered = typeof filterField === 'string' && typeof filterValue === 'string'
-    ? scopedRecords.filter((record) => String(record[filterField] ?? '') === filterValue)
-    : scopedRecords;
-  const filtered = needle
-    ? exactFiltered.filter((record) => searchFields.some((field) =>
-        Object.prototype.hasOwnProperty.call(record, field.apiName)
-        && String(record[field.apiName] ?? '').toLocaleLowerCase().includes(needle)))
-    : exactFiltered;
+  const filtered = filterAuthorisedRecords(records, {
+    relatedField: typeof relatedField === 'string' ? relatedField : undefined,
+    relatedId: typeof relatedId === 'string' ? relatedId : undefined,
+    filterField: typeof filterField === 'string' ? filterField : undefined,
+    filterValue: typeof filterValue === 'string' ? filterValue : undefined,
+    needle,
+    searchFields: searchFields.map((field) => field.apiName)
+  });
   // Sort authorised values before taking a page; reject sorting hidden fields
   // because even record ordering can reveal restricted field information.
   const sortField = req.query.sortField;
