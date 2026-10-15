@@ -9,7 +9,7 @@ const sqlMigratedSeedObjects = new Set([
   'Sale__c', 'Campaign', 'Tenant__c', 'Global_Settings__c',
   'Communication_Records__c'
 ]);
-function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): PlatformState {
+export function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): PlatformState {
   return {
     ...snapshot,
     tenants: Object.fromEntries(Object.entries(snapshot.tenants).map(([tenantId, tenant]) => [
