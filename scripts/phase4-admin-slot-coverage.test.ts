@@ -62,3 +62,15 @@ test('tenant management has independently editable detail, domain, usage and rec
  for(const slot of protectedWorkspacePageSlots['tenant-management'])
   assert.ok(source.includes('slotKey="'+slot+'"'),'Missing tenant management slot '+slot);
 });
+
+test('integrations and automation administration use protected page slots',()=>{
+ const source=read('setupAppShell.tsx');
+ for(const [workspace,slot] of [
+  ['named-credentials','credentials'],
+  ['approval-processes','approval-workspace'],
+  ['automation-settings','automation-policy']
+ ]){
+  assert.ok(source.includes('workspace="'+workspace+'"'),workspace);
+  assert.ok(source.includes('slotKey="'+slot+'"'),slot);
+ }
+});
