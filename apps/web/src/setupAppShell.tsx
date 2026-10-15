@@ -575,8 +575,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           setPages(pagePayload.pages);
           setPage(pagePayload.pages.find((item) =>
             route.kind === 'setup' && route.workspace === 'page-builder' && item.apiName === route.resourceApiName)
-            ?? pagePayload.pages.find((item) => item.targetObject === 'Account' && item.pageType === 'Record Page')
-            ?? pagePayload.pages[0]);
+                        ?? pagePayload.pages[0]);
         }
         setApps(appPayload.apps);
         if (!appPayload.apps.some((app) => app.apiName === currentAppId)) {
@@ -819,7 +818,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       : nextWorkspace === 'flow-builder'
         ? { kind: 'setup', workspace: nextWorkspace }
         : nextWorkspace === 'page-builder'
-          ? { kind: 'setup', workspace: nextWorkspace, resourceApiName: page.apiName }
+          ? { kind: 'setup', workspace: nextWorkspace }
           : nextWorkspace === 'report-builder'
             ? { kind: 'setup', workspace: nextWorkspace, resourceApiName: 'Opportunities_by_Stage' }
             : nextWorkspace === 'dashboard-builder'
