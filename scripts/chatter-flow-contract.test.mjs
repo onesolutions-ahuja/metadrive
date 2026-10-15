@@ -8,7 +8,7 @@ test('Chatter validates public inputs before trusted authorization enriches reso
  const pos=server.indexOf("app.post('/api/flows/:apiName/execute'");
  assert.ok(pos>0);
  const route=server.slice(pos,pos+2600);
- const inputCheck=route.indexOf('validateFlowInputValues(flow, input.data)');
+ const inputCheck=route.indexOf('validateFlowInputValues(flow, sanitizeChatterCallerInput(apiName, input.data))');
  const authorize=route.indexOf('authoriseChatterFlow(apiName');
  assert.ok(inputCheck>0 && authorize>inputCheck,'validate raw input before server-derived Flow resources');
  assert.ok(!route.includes('validateFlowInputValues(flow, authorisedInput)'), 'server-derived values must not be rejected as external input');
