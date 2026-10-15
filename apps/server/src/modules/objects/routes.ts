@@ -1,44 +1,19 @@
 import { removeObjectMetadata } from './remove-object.js';
 import { pageComponentFeatureEnabled } from './metadata-validation.js';
+import { metadataPrecondition as checkMetadataPrecondition, commitObjectMetadata as persistObjectMetadataRevision } from './metadata-revisions.js';
 /** All Object Manager metadata HTTP routes, kept as a cohesive module. */
 import type { Request, Response } from 'express';
 import type { ObjectMetadata, ObjectMetadataChange, TenantData, ObjectMetadataRoutesDependencies } from '../../index.js';
 
 export function registerObjectMetadataRoutes(deps: ObjectMetadataRoutesDependencies): void {
  const { app, fieldSchema, relatedLookupFilterSchema, objectSchema, validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies, fullObjectPermissions, withObjectDefaults, tenantData, getPrincipal, requirePermission, requireAnyPermission, metadataVersion, persistTenantRecords, routeParam, formulaContextForUser, validateFieldChange, validateExistingFieldValues, validateObjectLayoutProfileAssignments, evaluateFormula, z } = deps;
-function metadataPrecondition(req: Request, res: Response, current: ObjectMetadata): boolean {
-  const supplied = req.header('if-match');
-  // Legacy API clients may omit this header. The Object Manager always sends it.
-  if (supplied === undefined) return true;
-  if (supplied !== `"${metadataVersion(current)}"`) {
-    res.status(412).json({
-      error: 'Metadata has changed since it was loaded; refresh before saving',
-      expectedRevision: metadataVersion(current)
-    });
-    return false;
-  }
-  return true;
-}
-function commitObjectMetadata(
+const metadataPrecondition = (req: Request, res: Response, current: ObjectMetadata) =>
+  checkMetadataPrecondition(req, res, current, metadataVersion);
+const commitObjectMetadata = (
   tenantId: string, actorUserId: string, updatedTenant: TenantData,
   action: ObjectMetadataChange['action'], before?: ObjectMetadata, after?: ObjectMetadata
-): ObjectMetadata | undefined {
-  const revision = Math.max(metadataVersion(before), metadataVersion(after)) + 1;
-  const saved = after ? { ...after, revision } : undefined;
-  const audit: ObjectMetadataChange = {
-    objectApiName: (after ?? before)!.apiName,
-    revision, action, actorUserId, at: new Date().toISOString(),
-    ...(before ? { before: structuredClone(before) } : {}),
-    ...(saved ? { after: structuredClone(saved) } : {})
-  };
-  persistTenantRecords(tenantId, {
-    ...updatedTenant,
-    objects: updatedTenant.objects.map((candidate) =>
-      candidate.apiName === saved?.apiName ? saved : candidate),
-    metadataHistory: [...(updatedTenant.metadataHistory ?? []), audit].slice(-300)
-  });
-  return saved;
-}
+) => persistObjectMetadataRevision(tenantId, actorUserId, updatedTenant, action,
+  before, after, metadataVersion, persistTenantRecords);
 app.get('/api/metadata/objects/:apiName/history', requirePermission('metadata:read'), (req: Request, res: Response) => {
   const tenant = tenantData(getPrincipal(res).tenantId)!;
   const apiName = routeParam(req, 'apiName');
