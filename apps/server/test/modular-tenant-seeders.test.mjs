@@ -72,3 +72,5 @@ import './agent2-trusted-bootstrap.test.mjs';
 import './agent2-versioned-registry.test.mjs';
 import './agent2-developer-policy.test.mjs';
 import './agent2-live-ledger.test.mjs';
+
+import './seed-metadata-only.test.mjs';
