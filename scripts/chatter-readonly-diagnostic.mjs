@@ -22,7 +22,7 @@ const usable=msg.filter(x=>x.Channel_Account__c&&x.Id&&
  (String(x.Direction__c).toLowerCase()==='incoming'?x.From_Number__c:x.To_Number__c));
 const gr=access.data.grants||[];
 console.log('CHATTER_READONLY_DIAGNOSTIC '+JSON.stringify({
- role:login.data.user.role,
+ role:login.data.user.role,expectedSupportIdentity:String(login.data.user.email||'').toLowerCase()==='support@unesolutions.co.uk',
  endpoints:{access:access.status,records:records.status,grantRecords:grants.status,objects:objects.status},
  counts:{visibleRecordPage:list.length,whatsapp:whatsapp.length,whatsappMessages:msg.length,renderableMessages:usable.length,authorizedChannels:gr.filter(x=>x.canRead).length,sendableChannels:gr.filter(x=>x.canSend).length,assignableChannels:gr.filter(x=>x.canAssign).length},
  grantObjectExists:(objects.data.objects||[]).some(o=>o.apiName==='Chatter_Channel_Grant__c')
