@@ -81,3 +81,14 @@ test('install, licence and trial lifecycle preserve prior one-time trial and fai
   assert.equal(uninstalled.LicenceStatus__c,'Not Installed');
   assert.equal(applyConnectorLifecycle(uninstalled,{...uninstalled,Installed__c:true},[],[],now).TrialUsed__c,true);
 });
+
+test('duplicate package definitions never install conflicting metadata', () => {
+  const tenant = {
+    objects:[], apps:[], pages:[], flows:[], accessControl:{profiles:[],permissionSets:[]},
+    records:{Connector_App__c:[{AppKey__c:'demo',Installed__c:true,LicenceStatus__c:'Licensed'}]}
+  };
+  const entry = {appKey:'demo',objects:[{apiName:'Example__c',label:'Example',kind:'Custom Object',fields:[]}]};
+  const duplicate = {...entry,objects:[{...entry.objects[0],label:'Conflicting'}]};
+  assert.strictEqual(applyInstallableAppPackages(tenant,{packages:[entry,duplicate]}),tenant);
+  assert.equal(tenant.objects.length,0);
+});
