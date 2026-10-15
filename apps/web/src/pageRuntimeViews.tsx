@@ -580,7 +580,7 @@ function LightningAppRuntime({
         ? <div className="metadata-nested-host" data-nested-host={component.id}>{content}{nestedChildren}</div>
         : content;
       return page.layoutMode === 'free-canvas' ? rendered
-        : <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{rendered}</div>;
+        : <div key={component.id} style={{...resolvePageComponentStyle(component.properties, component.type, layoutDevice), ...(component.properties?.fillRegion===true ? {height:'100%',minHeight:0}: {})}}>{rendered}</div>;
     }
     if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
       <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
