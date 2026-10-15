@@ -10,6 +10,8 @@ test('portrait kiosk layout uses separate category, grid, and checkout blocks',(
  assert.equal(menu.canvasHeight,1920);
  assert.equal(menu.components.length,3);
  assert.equal(menu.components[0].properties.presentationLayout,'rail-checkout');
+ assert.equal(menu.components[0].properties.objectApiName,'ProductCategory__c');
+ assert.equal(menu.components[1].properties.objectApiName,'Product__c');
  assert.deepEqual(menu.components.map(c=>c.type),[
   'Custom:MD_CommerceNavigationV2',
   'Custom:MD_CommerceProductGridV2',
@@ -34,4 +36,5 @@ test('installer upgrades versioned components while respecting existing page pro
  assert.match(installer,/block\.properties/);
  assert.match(installer,/component-library.*PUT/);
  assert.match(installer,/matchesBaseline/);
+ assert.match(installer,/obsoleteCommercePages/);
 });
