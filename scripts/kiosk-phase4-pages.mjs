@@ -30,7 +30,7 @@ export const commercePages=[
     actionFlows:{selectCategory:setPageState('selectedCategory','$event')}
    }),
    block('menu-products','MD_CommerceProductGridV2','Editable product grid and filters','main',{
-    objectApiName:'Product__c',presentationVariant:'portrait',title:'MENU',
+    objectApiName:'Product__c',presentationVariant:'portrait',fillRegion:true,title:'MENU',
     columns:3,currencySymbol:'£',nameField:'Name',priceField:'DefaultPrice',
     imageField:'ImageUrl',categoryField:'CategoryId',filterField:'Subcategory',
     bestsellerField:'IsBestseller',featuredBorderColor:'#92b000',chipColor:'#ed002d',
@@ -42,7 +42,7 @@ export const commercePages=[
     }
    }),
    block('menu-basket','MD_CommerceBasketPanelV2','Editable bottom basket and order bar','sidebar',{
-    objectApiName:'Order__c',presentationVariant:'portrait',
+    objectApiName:'Order__c',presentationVariant:'portrait',fillRegion:true,
     title:'SHOW BASKET',accentColor:'#92b000',currencySymbol:'£',
     iframeMinHeight:84,actionFlows:basketActions
    })
