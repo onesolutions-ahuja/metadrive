@@ -4701,7 +4701,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
       role: 'System Administrator', permissionSetIds: ['system-administrator'],
       permissionSetGroupIds: [], disabled: true, createdAt
     };
-    const tenantSeed = initializeTenantCore(defaultTenantData(admin), {authorizedUserIds:[admin.id]});
+    const tenantSeed = initializeTenantCore(defaultTenantData(admin), {authorizedUserIds:[admin.id], trustedProvisioningDefaults:true});
     const developerAccess = {
       id: developer.id, name: developer.name, username: developer.email,
       role: developer.role, roleId: roleIdForName(developer.role, tenantSeed.accessControl.roles),
