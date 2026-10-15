@@ -97,26 +97,3 @@
   .header-record-picker-options { width: min(340px, calc(100vw - 24px)); }
 }
 
-/* Records: metadata labels provide a compact card alternative to sideways scrolling. */
-@media (max-width: 600px) {
-  .records-responsive-list { max-height: none !important; overflow-x: visible !important; }
-  .records-responsive-list .records-table { display: block; min-width: 0 !important; width: 100%; }
-  .records-responsive-list .records-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .records-responsive-list .records-table tbody { display: grid; gap: 12px; padding: 12px; }
-  .records-responsive-list .records-table tbody tr { display: block; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-  .records-responsive-list .records-table tbody td { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; min-width: 0; max-width: none; width: 100%; padding: 9px 2px; border: 0; overflow-wrap: anywhere; }
-  .records-responsive-list .records-table tbody td[data-label]::before { content: attr(data-label); flex: 0 0 38%; font-weight: 600; color: var(--muted); }
-  .records-responsive-list .record-row-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-  .records-responsive-list .record-row-actions button { min-height: 44px; }
-}
-
-/* Permission-aware, metadata-driven record imagery and empty states. */
-.record-image-thumbnail { display: block; width: 72px; height: 52px; max-width: 100%; object-fit: cover; border-radius: 6px; background: #f2f3f5; }
-.records-empty-action { display: grid; justify-items: start; align-content: center; gap: 10px; min-height: 150px; }
-.records-empty-action strong { color: var(--text, #222); }
-.records-empty-action p { margin: 0; }
-.records-empty-action .btn { min-height: 40px; }
-@media (max-width: 600px) {
- .records-empty-action .btn { min-height: 44px; }
- .records-responsive-list .records-table td .record-image-thumbnail { flex-shrink: 0; }
-}
