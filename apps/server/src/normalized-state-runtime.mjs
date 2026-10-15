@@ -70,7 +70,7 @@ export async function readNormalizedState(pool,verifyPhysicalRecords=null) {
     throw error;
   } finally {client.release();}
 }
-export async function writeNormalizedState(pool,nextState,previous,synchronizePhysicalRecords=null,alreadyNormalized=false) {
+export async function writeNormalizedState(pool,nextState,previous,synchronizePhysicalRecords=null,alreadyNormalized=false,beforeCommit=null) {
   if(!previous||!Number.isSafeInteger(previous.version)||!previous.digest ||
      !Number.isSafeInteger(previous.storageRevision)||!Array.isArray(previous.nodes))
     throw Error('A verified normalized SQL snapshot with storage nodes is required');
@@ -158,6 +158,7 @@ export async function writeNormalizedState(pool,nextState,previous,synchronizePh
     if(synchronizePhysicalRecords)
       await synchronizePhysicalRecords(client,nextState,previous.state);
     const physicalSyncFinishedAt=performance.now();
+    if(beforeCommit) await beforeCommit(client,nextState);
     await client.query('COMMIT');
     const commitFinishedAt=performance.now();
     if(commitFinishedAt-writeStartedAt>500) console.info(`SQL state commit phases: projection=${(projectedAt-writeStartedAt).toFixed(1)}ms delta-verify=${(preparedAt-projectedAt).toFixed(1)}ms pool-connect=${(connectedAt-preparedAt).toFixed(1)}ms begin=${(sqlStartedAt-connectedAt).toFixed(1)}ms sql=${(sqlFinishedAt-sqlStartedAt).toFixed(1)}ms readback=${(verificationFinishedAt-sqlFinishedAt).toFixed(1)}ms typed-sync=${(physicalSyncFinishedAt-verificationFinishedAt).toFixed(1)}ms commit=${(commitFinishedAt-physicalSyncFinishedAt).toFixed(1)}ms total=${(commitFinishedAt-writeStartedAt).toFixed(1)}ms changed=${touched.length} removed=${delta.deleted.length}`);
