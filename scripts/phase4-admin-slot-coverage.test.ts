@@ -38,7 +38,7 @@ test('company and object administration render inside protected page hosts',()=>
  const source=read('setupAppShell.tsx');
  for(const workspace of ['company-settings','object-manager']){
   const prefix="workspace === '"+workspace+"' && (";
-  assert.ok(source.includes('workspace="'+workspace+'" permitted={canReadMetadata}'),workspace);
+  assert.match(source,new RegExp('workspace="'+workspace+'"[^>]*permitted=\\{canReadMetadata\\}'),workspace);
  }
  for(const slot of protectedWorkspacePageSlots['company-settings'])
   assert.ok((slot.startsWith('field-')?read('settingsWorkspaceViews.tsx'):source)
