@@ -15,7 +15,7 @@ const optional = [
 ].map(find);
 const staticImports = (content) => {
   const paths = [];
-  const matcher = /\bimport\s*(?!\()(?:[^;"']*?\sfrom\s*)?["'](\.[^"']+\.js)["']/g;
+  const matcher = /\bimport\s*(?!\()(?:[^;"']*?\bfrom\s*)?["'](\.[^"']+\.js)["']/g;
   for (const match of content.matchAll(matcher)) paths.push(match[1]);
   return paths;
 };
