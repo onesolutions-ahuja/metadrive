@@ -102,9 +102,13 @@ export async function recordInstalledAppPackageVersions(client, state, catalog) 
         && !['Trial','Licensed'].includes(app.LicenceStatus__c))) continue;
       // No ledger entry may claim installation before the actual seeded
       // metadata exists in the same tenant-scoped state being committed.
+      const containsDefinition=(collection,entry)=>
+        (tenant[collection]??[]).some(item=>item.apiName===entry.apiName
+          && (collection!=='objects' || (entry.fields??[]).every(field=>
+            (item.fields??[]).some(existing=>existing.apiName===field.apiName))));
       const complete=['objects','pages','apps','flows'].every(collection=>
-        (pkg[collection] ?? []).every(entry=>
-          (tenant[collection] ?? []).some(item=>item.apiName===entry.apiName)));
+        (pkg[collection]??[]).every(entry=>containsDefinition(collection,entry)))
+        && (pkg.extendObjects??[]).every(entry=>containsDefinition('objects',entry));
       // An older installation is allowed to reconcile through the established
       // AppExchange upgrade path. Never stamp an incomplete package as seeded.
       if (!complete) continue;
