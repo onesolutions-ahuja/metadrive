@@ -615,9 +615,9 @@ function Permissions({
             }} disabled={draft.sharingRules.some((rule) => rule.targetType === 'PublicGroup' && rule.targetId === selected.id)
               || draft.publicGroups.some((group) => group.groupIds.includes(selected.id))}><Trash2 size={14} />Delete</button></div>
             <div className="permission-form-grid">
-              <label className="form-label">Label<input className="form-control" value={selected.label} onChange={(event) => patchPublicGroup(selected.id, { label: event.target.value })} /></label>
-              <label className="form-label">API Name<input className="form-control" value={selected.apiName} onChange={(event) => patchPublicGroup(selected.id, { apiName: event.target.value })} /></label>
-              <label className="form-label">Description<input className="form-control" value={selected.description} onChange={(event) => patchPublicGroup(selected.id, { description: event.target.value })} /></label>
+              <PlatformPageSlot slotKey="field-rbac-01"><label className="form-label">Label<input className="form-control" value={selected.label} onChange={(event) => patchPublicGroup(selected.id, { label: event.target.value })} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-02"><label className="form-label">API Name<input className="form-control" value={selected.apiName} onChange={(event) => patchPublicGroup(selected.id, { apiName: event.target.value })} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-03"><label className="form-label">Description<input className="form-control" value={selected.description} onChange={(event) => patchPublicGroup(selected.id, { description: event.target.value })} /></label></PlatformPageSlot>
             </div>
             <h3 className="permission-section-heading">Users</h3>
             <div className="permission-check-grid">{draft.users.map((user) => <label className="checkbox-row" key={user.id}><input type="checkbox" checked={selected.userIds.includes(user.id)} onChange={() => patchMembers('userIds', user.id)} />{user.name} · {user.username}</label>)}</div>
@@ -645,18 +645,18 @@ function Permissions({
               setSelectedId('');
             }}><Trash2 size={14} />Delete</button></div>
             <div className="permission-form-grid">
-              <label className="form-label">Label<input className="form-control" value={selected.label} onChange={(event) => patchSharingRule(selected.id, { label: event.target.value })} /></label>
-              <label className="form-label">API Name<input className="form-control" value={selected.apiName} onChange={(event) => patchSharingRule(selected.id, { apiName: event.target.value })} /></label>
-              <label className="form-label">Object<select className="form-control" value={selected.objectApiName} onChange={(event) => patchSharingRule(selected.id, { objectApiName: event.target.value, criteria: [] })}>{objects.filter((item) => item.apiName !== 'User').map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label>
-              <label className="form-label">Rule Type<select className="form-control" value={selected.type} onChange={(event) => patchSharingRule(selected.id, { type: event.target.value as SharingRuleMetadata['type'] })}><option value="OwnerBased">Owner-based</option><option value="CriteriaBased">Criteria-based</option></select></label>
-              <label className="form-label">Share With<select className="form-control" value={selected.targetType} onChange={(event) => {
+              <PlatformPageSlot slotKey="field-rbac-04"><label className="form-label">Label<input className="form-control" value={selected.label} onChange={(event) => patchSharingRule(selected.id, { label: event.target.value })} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-05"><label className="form-label">API Name<input className="form-control" value={selected.apiName} onChange={(event) => patchSharingRule(selected.id, { apiName: event.target.value })} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-06"><label className="form-label">Object<select className="form-control" value={selected.objectApiName} onChange={(event) => patchSharingRule(selected.id, { objectApiName: event.target.value, criteria: [] })}>{objects.filter((item) => item.apiName !== 'User').map((item) => <option key={item.apiName} value={item.apiName}>{item.label}</option>)}</select></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-07"><label className="form-label">Rule Type<select className="form-control" value={selected.type} onChange={(event) => patchSharingRule(selected.id, { type: event.target.value as SharingRuleMetadata['type'] })}><option value="OwnerBased">Owner-based</option><option value="CriteriaBased">Criteria-based</option></select></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-08"><label className="form-label">Share With<select className="form-control" value={selected.targetType} onChange={(event) => {
                 const targetType = event.target.value as SharingRuleMetadata['targetType'];
                 const initialTarget = targetType === 'User' ? draft.users[0]?.id
                   : targetType === 'PublicGroup' ? draft.publicGroups[0]?.id : draft.roles[0]?.id;
                 patchSharingRule(selected.id, { targetType, targetId: initialTarget ?? '' });
-              }}><option value="PublicGroup">Public Group</option><option value="Role">Role</option><option value="RoleAndSubordinates">Role and Subordinates</option><option value="User">User</option></select></label>
-              <label className="form-label">Target<select className="form-control" value={selected.targetId} onChange={(event) => patchSharingRule(selected.id, { targetId: event.target.value })}>{targetOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-              <label className="form-label">Access Level<select className="form-control" value={selected.accessLevel} onChange={(event) => patchSharingRule(selected.id, { accessLevel: event.target.value as SharingRuleMetadata['accessLevel'] })}><option value="Read">Read Only</option><option value="Edit">Read/Write</option></select></label>
+              }}><option value="PublicGroup">Public Group</option><option value="Role">Role</option><option value="RoleAndSubordinates">Role and Subordinates</option><option value="User">User</option></select></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-09"><label className="form-label">Target<select className="form-control" value={selected.targetId} onChange={(event) => patchSharingRule(selected.id, { targetId: event.target.value })}>{targetOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-10"><label className="form-label">Access Level<select className="form-control" value={selected.accessLevel} onChange={(event) => patchSharingRule(selected.id, { accessLevel: event.target.value as SharingRuleMetadata['accessLevel'] })}><option value="Read">Read Only</option><option value="Edit">Read/Write</option></select></label></PlatformPageSlot>
               <label className="checkbox-row"><input type="checkbox" checked={selected.active} onChange={(event) => patchSharingRule(selected.id, { active: event.target.checked })} />Active</label>
             </div>
             {selected.type === 'OwnerBased' ? <>
@@ -664,21 +664,21 @@ function Permissions({
               <div className="permission-check-grid">{draft.roles.map((role) => <label className="checkbox-row" key={role.id}><input type="checkbox" checked={selected.ownerRoleIds.includes(role.id)} onChange={() => toggleOwnerRole(role.id)} />{role.name} and subordinate roles</label>)}</div>
             </> : <>
               <h3 className="permission-section-heading">Criteria</h3>
-              <label className="form-label">Condition Logic<select className="form-control" value={selected.filterLogic} onChange={(event) => patchSharingRule(selected.id, { filterLogic: event.target.value as 'All' | 'Any' })}><option value="All">All conditions are met</option><option value="Any">Any condition is met</option></select></label>
+              <PlatformPageSlot slotKey="field-rbac-11"><label className="form-label">Condition Logic<select className="form-control" value={selected.filterLogic} onChange={(event) => patchSharingRule(selected.id, { filterLogic: event.target.value as 'All' | 'Any' })}><option value="All">All conditions are met</option><option value="Any">Any condition is met</option></select></label></PlatformPageSlot>
               {selected.criteria.map((criterion, index) => <div className="permission-form-grid" key={`${selected.id}-criterion-${index}`}>
-                <label className="form-label">Field<select className="form-control" value={criterion.fieldApiName} onChange={(event) => {
+                <PlatformPageSlot slotKey="field-rbac-12"><label className="form-label">Field<select className="form-control" value={criterion.fieldApiName} onChange={(event) => {
                   const criteria = selected.criteria.map((item, itemIndex) => itemIndex === index ? { ...item, fieldApiName: event.target.value } : item);
                   patchSharingRule(selected.id, { criteria });
-                }}>{(object?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select></label>
-                <label className="form-label">Operator<select className="form-control" value={criterion.operator} onChange={(event) => {
+                }}>{(object?.fields ?? []).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</select></label></PlatformPageSlot>
+                <PlatformPageSlot slotKey="field-rbac-13"><label className="form-label">Operator<select className="form-control" value={criterion.operator} onChange={(event) => {
                   const operator = event.target.value as SharingRuleMetadata['criteria'][number]['operator'];
                   const criteria = selected.criteria.map((item, itemIndex) => itemIndex === index ? { ...item, operator, value: operator === 'Is Null' ? '' : item.value } : item);
                   patchSharingRule(selected.id, { criteria });
-                }}>{['Equals', 'Not Equals', 'Contains', 'Starts With', 'Greater Than', 'Less Than', 'Is Null'].map((operator) => <option key={operator}>{operator}</option>)}</select></label>
-                {criterion.operator !== 'Is Null' && <label className="form-label">Value<input className="form-control" value={criterion.value} onChange={(event) => {
+                }}>{['Equals', 'Not Equals', 'Contains', 'Starts With', 'Greater Than', 'Less Than', 'Is Null'].map((operator) => <option key={operator}>{operator}</option>)}</select></label></PlatformPageSlot>
+                {criterion.operator !== 'Is Null' && <PlatformPageSlot slotKey="field-rbac-14"><label className="form-label">Value<input className="form-control" value={criterion.value} onChange={(event) => {
                   const criteria = selected.criteria.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item);
                   patchSharingRule(selected.id, { criteria });
-                }} /></label>}
+                }} /></label></PlatformPageSlot>}
                 <button className="btn" onClick={() => patchSharingRule(selected.id, { criteria: selected.criteria.filter((_item, itemIndex) => itemIndex !== index) })}><Trash2 size={14} />Remove condition</button>
               </div>)}
               <button className="btn" onClick={() => {
@@ -700,9 +700,9 @@ function Permissions({
               setSelectedId('');
             }} disabled={Boolean(assignedUsers.length || childRoles.length)}><Trash2 size={14} />Delete</button></div>
             <div className="permission-form-grid">
-              <label className="form-label">Role Name<input className="form-control" value={selectedRole.name} onChange={(event) => setDraft((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole.id ? { ...role, name: event.target.value } : role) }))} /></label>
-              <label className="form-label">Role API Name<input className="form-control" value={selectedRole.apiName} onChange={(event) => setDraft((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole.id ? { ...role, apiName: event.target.value } : role) }))} /></label>
-              <label className="form-label">Reports To<select className="form-control" value={selectedRole.parentRoleId ?? ''} onChange={(event) => setDraft((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole.id ? { ...role, parentRoleId: event.target.value || null } : role) }))}><option value="">No parent role</option>{draft.roles.filter((role) => role.id !== selectedRole.id).map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
+              <PlatformPageSlot slotKey="field-rbac-15"><label className="form-label">Role Name<input className="form-control" value={selectedRole.name} onChange={(event) => setDraft((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole.id ? { ...role, name: event.target.value } : role) }))} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-16"><label className="form-label">Role API Name<input className="form-control" value={selectedRole.apiName} onChange={(event) => setDraft((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole.id ? { ...role, apiName: event.target.value } : role) }))} /></label></PlatformPageSlot>
+              <PlatformPageSlot slotKey="field-rbac-17"><label className="form-label">Reports To<select className="form-control" value={selectedRole.parentRoleId ?? ''} onChange={(event) => setDraft((current) => ({ ...current, roles: current.roles.map((role) => role.id === selectedRole.id ? { ...role, parentRoleId: event.target.value || null } : role) }))}><option value="">No parent role</option>{draft.roles.filter((role) => role.id !== selectedRole.id).map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label></PlatformPageSlot>
             </div>
             <h3 className="permission-section-heading">Assigned Users</h3>
             {assignedUsers.length ? <ul>{assignedUsers.map((user) => <li key={user.id}>{user.name} · {user.username}</li>)}</ul> : <p className="permission-help">Assign users to this role in Users & Assignments.</p>}
@@ -715,10 +715,10 @@ function Permissions({
             setSelectedId('');
           }} disabled={selectedProfile.isStandard || draft.users.some((user) => user.profileId === selectedProfile.id)}><Trash2 size={14} />Delete</button></div>
           <div className="permission-form-grid">
-            <label className="form-label">Label<input className="form-control" value={selectedProfile.label} onChange={(event) => patchProfile(selectedProfile.id, { label: event.target.value })} /></label>
-            <label className="form-label">API Name<input className="form-control" value={selectedProfile.apiName} onChange={(event) => patchProfile(selectedProfile.id, { apiName: event.target.value })} /></label>
-            <label className="form-label">License<input className="form-control" value={selectedProfile.license} onChange={(event) => patchProfile(selectedProfile.id, { license: event.target.value })} /></label>
-            <label className="form-label">Description<input className="form-control" value={selectedProfile.description} onChange={(event) => patchProfile(selectedProfile.id, { description: event.target.value })} /></label>
+            <PlatformPageSlot slotKey="field-rbac-18"><label className="form-label">Label<input className="form-control" value={selectedProfile.label} onChange={(event) => patchProfile(selectedProfile.id, { label: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-19"><label className="form-label">API Name<input className="form-control" value={selectedProfile.apiName} onChange={(event) => patchProfile(selectedProfile.id, { apiName: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-20"><label className="form-label">License<input className="form-control" value={selectedProfile.license} onChange={(event) => patchProfile(selectedProfile.id, { license: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-21"><label className="form-label">Description<input className="form-control" value={selectedProfile.description} onChange={(event) => patchProfile(selectedProfile.id, { description: event.target.value })} /></label></PlatformPageSlot>
           </div>
           <h3 className="permission-section-heading">System Permissions</h3>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedProfile.systemPermissions.includes(key)} onChange={() => patchProfile(selectedProfile.id, { systemPermissions: toggleString(selectedProfile.systemPermissions, key) })} />{label}</label>)}</div>
@@ -762,10 +762,10 @@ function Permissions({
             setSelectedId('');
           }} disabled={selectedSet.id === 'system-administrator' || draft.users.some((user) => user.permissionSetIds.includes(selectedSet.id)) || draft.permissionSetGroups.some((group) => group.permissionSetIds.includes(selectedSet.id))}><Trash2 size={14} />Delete</button></div>
           <div className="permission-form-grid">
-            <label className="form-label">Label<input className="form-control" value={selectedSet.label} onChange={(event) => patchSet(selectedSet.id, { label: event.target.value })} /></label>
-            <label className="form-label">API Name<input className="form-control" value={selectedSet.apiName} onChange={(event) => patchSet(selectedSet.id, { apiName: event.target.value })} /></label>
-            <label className="form-label">License<input className="form-control" value={selectedSet.license} onChange={(event) => patchSet(selectedSet.id, { license: event.target.value })} /></label>
-            <label className="form-label">Description<input className="form-control" value={selectedSet.description} onChange={(event) => patchSet(selectedSet.id, { description: event.target.value })} /></label>
+            <PlatformPageSlot slotKey="field-rbac-22"><label className="form-label">Label<input className="form-control" value={selectedSet.label} onChange={(event) => patchSet(selectedSet.id, { label: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-23"><label className="form-label">API Name<input className="form-control" value={selectedSet.apiName} onChange={(event) => patchSet(selectedSet.id, { apiName: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-24"><label className="form-label">License<input className="form-control" value={selectedSet.license} onChange={(event) => patchSet(selectedSet.id, { license: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-25"><label className="form-label">Description<input className="form-control" value={selectedSet.description} onChange={(event) => patchSet(selectedSet.id, { description: event.target.value })} /></label></PlatformPageSlot>
           </div>
           <h3 className="permission-section-heading">System Permissions</h3>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedSet.systemPermissions.includes(key)} onChange={() => patchSet(selectedSet.id, { systemPermissions: toggleString(selectedSet.systemPermissions, key) })} />{label}</label>)}</div>
@@ -804,9 +804,9 @@ function Permissions({
             setSelectedId('');
           }} disabled={draft.users.some((user) => user.permissionSetGroupIds.includes(selectedGroup.id))}><Trash2 size={14} />Delete</button></div>
           <div className="permission-form-grid">
-            <label className="form-label">Label<input className="form-control" value={selectedGroup.label} onChange={(event) => patchGroup(selectedGroup.id, { label: event.target.value })} /></label>
-            <label className="form-label">API Name<input className="form-control" value={selectedGroup.apiName} onChange={(event) => patchGroup(selectedGroup.id, { apiName: event.target.value })} /></label>
-            <label className="form-label">Description<input className="form-control" value={selectedGroup.description} onChange={(event) => patchGroup(selectedGroup.id, { description: event.target.value })} /></label>
+            <PlatformPageSlot slotKey="field-rbac-26"><label className="form-label">Label<input className="form-control" value={selectedGroup.label} onChange={(event) => patchGroup(selectedGroup.id, { label: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-27"><label className="form-label">API Name<input className="form-control" value={selectedGroup.apiName} onChange={(event) => patchGroup(selectedGroup.id, { apiName: event.target.value })} /></label></PlatformPageSlot>
+            <PlatformPageSlot slotKey="field-rbac-28"><label className="form-label">Description<input className="form-control" value={selectedGroup.description} onChange={(event) => patchGroup(selectedGroup.id, { description: event.target.value })} /></label></PlatformPageSlot>
           </div>
           <h3 className="permission-section-heading">Permission Sets in Group</h3>
           <div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={selectedGroup.permissionSetIds.includes(permissionSet.id)} onChange={() => patchGroup(selectedGroup.id, { permissionSetIds: toggleString(selectedGroup.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div>
@@ -842,19 +842,19 @@ function Permissions({
         </>}
         {tab === 'users' && <>
           <div className="section-toolbar"><div><h2>User Assignments</h2><p>Direct permission-set and permission-set-group memberships for this tenant.</p></div><button className="btn btn-brand" onClick={onOpenUserRecords}>Manage Users (CRUD)</button></div>
-          {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label><label className="form-label">User Type
+          {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><PlatformPageSlot slotKey="field-rbac-29"><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-30"><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-31"><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-32"><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-33"><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-34"><label className="form-label">User Type
           <select className="form-control" value={user.userType ?? 'internal'}
             onChange={(event) => patchUser(user.id, {
               userType: event.target.value as 'internal' | 'external',
               externalAccountId: event.target.value === 'external' ? user.externalAccountId : undefined
             })}>
             <option value="internal">Internal</option><option value="external">External portal</option>
-          </select></label>
-          {user.userType === 'external' && <label className="form-label">Verified tenant Account ID
+          </select></label></PlatformPageSlot>
+          {user.userType === 'external' && <PlatformPageSlot slotKey="field-rbac-35"><label className="form-label">Verified tenant Account ID
             <input className="form-control" value={user.externalAccountId ?? ''}
               onChange={(event) => patchUser(user.id, { externalAccountId: event.target.value })}
               placeholder="Tenant account record ID" />
-          </label>}<h3 className="permission-section-heading">Permission Sets</h3><div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={user.permissionSetIds.includes(permissionSet.id)} onChange={() => patchUser(user.id, { permissionSetIds: toggleString(user.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div><h3 className="permission-section-heading">Permission Set Groups</h3><div className="permission-check-grid">{draft.permissionSetGroups.map((group) => <label className="checkbox-row" key={group.id}><input type="checkbox" checked={user.permissionSetGroupIds.includes(group.id)} onChange={() => patchUser(user.id, { permissionSetGroupIds: toggleString(user.permissionSetGroupIds, group.id) })} />{group.label}</label>)}</div></details>)}
+          </label></PlatformPageSlot>}<h3 className="permission-section-heading">Permission Sets</h3><div className="permission-check-grid">{draft.permissionSets.map((permissionSet) => <label className="checkbox-row" key={permissionSet.id}><input type="checkbox" checked={user.permissionSetIds.includes(permissionSet.id)} onChange={() => patchUser(user.id, { permissionSetIds: toggleString(user.permissionSetIds, permissionSet.id) })} />{permissionSet.label}</label>)}</div><h3 className="permission-section-heading">Permission Set Groups</h3><div className="permission-check-grid">{draft.permissionSetGroups.map((group) => <label className="checkbox-row" key={group.id}><input type="checkbox" checked={user.permissionSetGroupIds.includes(group.id)} onChange={() => patchUser(user.id, { permissionSetGroupIds: toggleString(user.permissionSetGroupIds, group.id) })} />{group.label}</label>)}</div></details>)}
         </>}
         {tab === 'profiles' && !selectedProfile && <div className="empty-state">Select a profile or create one to get started.</div>}
         {tab === 'sets' && !selectedSet && <div className="empty-state">Select a permission set or create one to get started.</div>}
