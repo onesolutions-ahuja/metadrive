@@ -41,6 +41,7 @@ import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-p
 import { evaluateFormula, formulaLocalDate, isSafeFlowRegex } from './modules/flows/formula-evaluator.js';
 import { evaluateCustomConditionLogic } from './modules/flows/condition-logic.js';
 import { authoriseManualCoreFlow, assertFlowRuntimeAdmission } from './modules/flows/execution-admission.js';
+import { flowPackageAdmission } from './modules/flows/package-admission.js';
 import { dashboardLocalParts, flowLocalDateTimeToInstant } from './core/local-time.js';
 import cors from 'cors';
 import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
@@ -10354,11 +10355,15 @@ async function executeFlowImplementation(
   // All dispatchers converge here: manual, scheduled, trigger, subflow and resume.
   // The running identity must already be a live tenant member (checked above).
   // Action/record permissions continue to be checked by OneEngine at each step.
+  const appAdmission = flowPackageAdmission(
+    flow.apiName, installableAppCatalog.packages,
+    tenant.records.Connector_App__c ?? []
+  );
   assertFlowRuntimeAdmission({
     tenantId, principalTenantId: runningPrincipal.tenantId,
     principalId: runningPrincipal.userId,
     status: flow.status, allowDraftExecution,
-    installed: true, licensed: true, activated: true
+    ...appAdmission
   });
   const interviewGuid = resume?.interviewGuid ?? parentInterview?.interviewGuid ?? randomUUID();
   const interviewStartTime = resume?.interviewStartTime ?? parentInterview?.interviewStartTime ?? new Date().toISOString();
