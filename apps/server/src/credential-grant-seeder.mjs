@@ -19,7 +19,7 @@ export function seedCredentialGrants(tenant, directives = [], tenantId = '') {
       if(configured&&idFromPath&&configured!==idFromPath)continue;
       // Version-only Graph endpoints are valid only with a configured PhoneNumberId.
       // Reject unrelated Graph paths even when credentials contain an ID.
-      if(!idFromPath && !/^\/v\d+\.\d+\/?$/.test(url.pathname))continue;
+      if(!idFromPath && !(/^\/v\d+\.\d+\/?$/.test(url.pathname) || (url.pathname==='/' && /^v?\d+\.\d+$/.test(String(credential.configuration?.ApiVersion??'')))))continue;
       const account=idFromPath||configured;
       if(!account||!/^[A-Za-z0-9_-]{5,120}$/.test(account))continue;
       for(const principal of principals){
