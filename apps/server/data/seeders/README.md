@@ -21,3 +21,41 @@ tenant isolation or uninstall data-retention policy.
 records. Actual SQL loss requires tested encrypted PostgreSQL backups, point-in-time
 recovery and restore verification. Never replace a failed populated database with
 an empty seed automatically.
+
+## Agent 2 integration contract (non-destructive)
+
+- The current Core merge adds previously unknown Object/Page/Flow definitions by
+  stable `apiName`, skips duplicates and preserves tenant-owned definitions and
+  previously edited OneEngine grants. It is **not** a substitute for SQL
+  repository persistence; live runtime activation needs an integration change.
+- The additive `sql/tenant-seed-package-versions-v1.sql` ledger uses
+  `(tenant_id, package_kind, package_key)` as its stable package identity.
+  Package kinds are `core`, `shared`, and `app`. A successful package
+  application must validate the SHA-256 definition checksum and update version
+  state in the **same SQL transaction** as metadata changes. Failed and
+  partially applied packages must not advance the ledger.
+- Store stable searchable identifiers, ownership, relationships, version,
+  publish state, and tenancy in SQL columns. Validated JSONB is permitted only
+  for flexible component property bags and layout/style/event/binding values.
+  Do not introduce a second active JSON snapshot store.
+- **Agent 5 handoff:** keep AppExchange package manifest/catalog ownership.
+  The installer should invoke the requested app seeder only after licence,
+  entitlement, activation and dependency checks, and revoke executable
+  routes/flows/jobs on deactivation while preserving customer records.
+  The package catalog must supply a stable package key, version and checksum.
+- **Core/OneEngine handoff:** fresh provisioned tenant-developer policy grants
+  and separately scoped platform-developer grants must flow through the
+  existing security engine and SQL metadata repository. Do not infer platform
+  privileges from email address, and never replay initial grants over modified
+  administrator permissions.
+- Existing SQL migrations are not automatically safe to execute on production.
+  Test against a disposable restored database, with a verified backup and
+  explicit migration rollback plan before any runtime cutover.
+
+## Verification
+
+`node --test apps/server/test/agent2-core-seeder.test.mjs`
+
+The SQL ledger DDL is additive and is **not** wired to the live installation
+path in this branch. Migration execution and idempotency against an isolated
+PostgreSQL test database remain required prior to activation.
