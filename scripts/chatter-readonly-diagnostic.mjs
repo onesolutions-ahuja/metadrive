@@ -22,7 +22,7 @@ const usable=msg.filter(x=>x.Channel_Account__c&&x.Id&&
  (String(x.Direction__c).toLowerCase()==='incoming'?x.From_Number__c:x.To_Number__c));
 const gr=access.data.grants||[];
 const creds=await get('/named-credentials');
-const graph=(creds.data.credentials||[]).filter(c=>{try{return new URL(c.baseUrl).hostname==='graph.facebook.com';}catch{return false}}).map(c=>({protocol:c.protocol,enabled:c.enabled,accountIdConfigured:!!c.configuration?.PhoneNumberId,pathType:(()=>{const p=new URL(c.baseUrl).pathname;return /^\/v\d+\.\d+\/?$/.test(p)?'version-only':/^\/v\d+\.\d+\/[A-Za-z0-9_-]+\/?$/.test(p)?'account-path':'other'})()}));
+const graph=(creds.data.credentials||[]).filter(c=>{try{return new URL(c.baseUrl).hostname==='graph.facebook.com';}catch{return false}}).map(c=>({protocol:c.protocol,enabled:c.enabled,accountIdConfigured:!!c.configuration?.PhoneNumberId,apiVersionConfigured:/^v?\d+\.\d+$/.test(String(c.configuration?.ApiVersion??'')),pathType:(()=>{const p=new URL(c.baseUrl).pathname;return /^\/v\d+\.\d+\/?$/.test(p)?'version-only':/^\/v\d+\.\d+\/[A-Za-z0-9_-]+\/?$/.test(p)?'account-path':'other'})()}));
 console.log('CHATTER_READONLY_DIAGNOSTIC '+JSON.stringify({
  role:login.data.user.role, graphCredentials:graph, credentialsStatus:creds.status,
  supportAccount: String(login.data.user.email||email).toLowerCase()==='support@unesolutions.co.uk',
