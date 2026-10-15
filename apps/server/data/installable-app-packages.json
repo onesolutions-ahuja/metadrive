@@ -348,7 +348,7 @@
               "config": {
                 "namedCredentialResource": "{!CredentialId}",
                 "method": "POST",
-                "path": "{!PhoneNumberId}/messages",
+                "path": "{!MessagePath}",
                 "headers": "Content-Type: application/json",
                 "body": "{\"messaging_product\":\"whatsapp\",\"to\":\"{!RecipientPhone}\",\"type\":\"text\",\"text\":{\"body\":\"{!Body}\"}}",
                 "deliveryMode": "SYNC",
@@ -517,6 +517,15 @@
               "availableForInput": false,
               "availableForOutput": true,
               "value": 0
+            },
+            {
+              "name": "MessagePath",
+              "label": "Provider operation path",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false
             }
           ],
           "versions": []
