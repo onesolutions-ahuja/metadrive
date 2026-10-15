@@ -4311,7 +4311,7 @@ function persistState(next: PlatformState): void {
   if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
   assertTenantIdentityIsolation(next);
   // Typed SQL mode must never persist an unencrypted local JSON state copy.
-  const serialized = JSON.stringify(next);
+  const serialized = JSON.stringify(persistenceMode === 'jsonb' ? { ...next, refreshSessions: [] } : next);
   if (persistenceMode !== 'typed') {
     mkdirSync(dirname(dataPath), { recursive: true });
     const temporaryPath = `${dataPath}.tmp`;
