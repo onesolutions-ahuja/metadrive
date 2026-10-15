@@ -9,7 +9,11 @@ test('4d maps App Manager and AppExchange to their registered workspaces',()=>{
 test('4e maps RBAC settings to central security workspace without granting access',()=>{
  assert.equal(platformNavigationEntries().find(x=>x.label==='Profiles')?.id,'rbac');
  assert.equal(authorizePlatformNavigation('Profiles',new Set()),undefined);
- assert.ok(authorizePlatformNavigation('Profiles',new Set(['metadata:read'])));
+ assert.equal(authorizePlatformNavigation('Profiles',new Set(['metadata:read'])),undefined);
+ assert.ok(authorizePlatformNavigation('Profiles',new Set(['security:read'])));
+ assert.equal(authorizePlatformNavigation('Profiles',new Set(['security:read','metadata:write']),'edit'),undefined);
+ assert.ok(authorizePlatformNavigation('Profiles',new Set(['security:read','security:manage']),'edit'));
+ assert.equal(authorizePlatformNavigation('Sharing Rules',new Set(['metadata:read'])),undefined);
 });
 test('4f connectors require metadata write access',()=>{
  assert.equal(authorizePlatformNavigation('Named Credentials',new Set(['metadata:read'])),undefined);

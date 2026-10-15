@@ -7,7 +7,7 @@ import {workspaces,setupNavigation} from './metadata';
 type SetupWorkspace=typeof workspaces[number];
 export type PlatformWorkspaceDescriptor={
  id:string;label:string;group:string;
- permission:'metadata:read'|'metadata:write'|'platform:superadmin';
+ permission:'metadata:read'|'metadata:write'|'security:read'|'platform:superadmin';
 };
 const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission']>>={
  'Tenant Management':'platform:superadmin',
@@ -17,9 +17,14 @@ const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission'
  'Named Credentials':'metadata:write',
  'AppExchange':'metadata:write',
  'App Manager':'metadata:read',
- 'Users':'metadata:read',
- 'Profiles':'metadata:read',
- 'Permission Sets':'metadata:read'
+ 'Users':'security:read',
+ 'Profiles':'security:read',
+ 'Permission Sets':'security:read',
+ 'Roles':'security:read',
+ 'Public Groups':'security:read',
+ 'Permission Set Groups':'security:read',
+ 'Sharing Settings':'security:read',
+ 'Sharing Rules':'security:read'
 };
 export function platformWorkspaceDescriptors():PlatformWorkspaceDescriptor[]{
  const byLabel=new Map<string,SetupWorkspace>(workspaces.map(w=>[w.label,w]));
@@ -50,8 +55,8 @@ export function validatePlatformEditorBinding(
  if(!workspace)return ['Unknown platform workspace'];
  if(!granted.has(workspace.permission))return ['Workspace permission denied'];
  if(!['view','edit'].includes(binding.mode))return ['Invalid editor mode'];
- if(binding.mode==='edit'&&!granted.has('metadata:write'))
-  return ['Metadata write permission denied'];
+ if(binding.mode==='edit'&&!granted.has(workspace.permission==='security:read'?'security:manage':workspace.permission==='platform:superadmin'?'platform:superadmin':'metadata:write'))
+  return ['Workspace edit permission denied'];
  if(binding.workspaceId==='object-manager'&&
    (typeof binding.objectApiName!=='string'||!availableObjectApiNames.has(binding.objectApiName)))
   return ['Object metadata unavailable'];
@@ -82,6 +87,6 @@ export function authorizePlatformNavigation(
 ):PlatformWorkspaceDescriptor|undefined{
  const descriptor=platformNavigationEntries().find(item=>item.label===label);
  if(!descriptor||!grants.has(descriptor.permission))return undefined;
- if(mode==='edit'&&!grants.has('metadata:write'))return undefined;
+ if(mode==='edit'&&!grants.has(descriptor.permission==='security:read'?'security:manage':descriptor.permission==='platform:superadmin'?'platform:superadmin':'metadata:write'))return undefined;
  return descriptor;
 }

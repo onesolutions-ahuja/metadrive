@@ -9,7 +9,7 @@ const page={apiName:'MetaDrive_Admin_app_manager',scope:'platform-system' as con
   canvasWidth:1440,canvasHeight:900,status:'Active' as const,devices:['Desktop' as const],
   components:[]};
 const render=(options:Record<string,unknown>)=>renderToStaticMarkup(React.createElement(PlatformWorkspaceSurface,{
- workspace:'app-manager',pages:[page],...options
+ workspace:'app-manager',permitted:true,pages:[page],...options
 },React.createElement('button',null,'Functional admin action')));
 test('registered system page exposes Page Builder edit action only for platform admins',()=>{
  const reader=render({canEditSystemPage:false});
@@ -20,7 +20,7 @@ test('registered system page exposes Page Builder edit action only for platform 
 });
 test('system-page registration is not inferred from unprotected tenant metadata',()=>{
  const html=renderToStaticMarkup(React.createElement(PlatformWorkspaceSurface,{
- workspace:'app-manager',canEditSystemPage:true,onEditSystemPage:()=>{},
+ workspace:'app-manager',permitted:true,canEditSystemPage:true,onEditSystemPage:()=>{},
  pages:[{...page,scope:'tenant'}]
  },React.createElement('span',null,'Safe fallback')));
  assert.doesNotMatch(html,/Edit page layout/);
