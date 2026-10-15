@@ -40,3 +40,31 @@ export function authoriseManualCoreFlow(
     published: status === 'Active' || status === 'Draft'
   });
 }
+
+/** Central dispatcher gate used by manual, resumed, scheduled and nested Flows.
+ * A trusted automatic invocation is restricted to the active definition and
+ * current tenant user; Flow steps retain their existing OneEngine checks.
+ * Interactive entrypoints additionally require their route-level flows:run grant.
+ */
+export function assertFlowRuntimeAdmission(input: {
+  tenantId: string;
+  principalTenantId: string;
+  principalId: string;
+  status: string;
+  allowDraftExecution: boolean;
+  installed: boolean;
+  licensed: boolean;
+  activated: boolean;
+}): void {
+  assertExecutionAdmission({
+    tenantId: input.tenantId,
+    principalTenantId: input.principalTenantId,
+    principalId: input.principalId,
+    grants: new Set(['runtime:dispatch']),
+    requiredPermission: 'runtime:dispatch',
+    installed: input.installed,
+    licensed: input.licensed,
+    activated: input.activated,
+    published: input.status === 'Active' || (input.allowDraftExecution && input.status === 'Draft')
+  });
+}
