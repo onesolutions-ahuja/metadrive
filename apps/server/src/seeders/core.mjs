@@ -115,7 +115,20 @@ export function initializeTenantCore(template, {authorizedUserIds=[], trustedPro
     .filter(item=>item.name==='WhatsApp_Dummy' && item.authType==='None'
       && /^https:\/\/graph\.facebook\.com\/v\d+\.\d+\/000000000000000\/?$/.test(item.baseUrl??''))
     .map(item=>structuredClone(item)) : [];
+  // This path is called with newly generated, server-constructed defaults.
+  // Preserve only connector catalogue/configuration metadata needed for fresh
+  // tenant discovery and legacy connector migration. Never copy ordinary
+  // business objects, histories, sessions, or customer transactions.
+  const trustedConnectorObjects = new Set([
+    'Connector_App__c', 'UneConnector__c', 'ConnectorProvider__c'
+  ]);
+  const connectorSeedRecords = allowed.size>0 && trustedProvisioningDefaults
+    ? Object.fromEntries(Object.entries(template.records ?? {})
+      .filter(([apiName])=>trustedConnectorObjects.has(apiName))
+      .map(([apiName, rows])=>[apiName,structuredClone(rows)]))
+    : {};
   return {...seed,...provisioned,
+    records:connectorSeedRecords,
     namedCredentials:placeholders,
     users:[],
     accessControl:{
@@ -124,4 +137,40 @@ export function initializeTenantCore(template, {authorizedUserIds=[], trustedPro
         .filter(user=>allowed.has(user.id)).map(user=>structuredClone(user))
     }
   };
+}
+
+
+const SHARED_COLLECTIONS = ['objects','pages','flows','apps','reports','dashboards',
+  'platformEvents','approvalProcesses','connectorDefinitions','libraryComponents'];
+const KEY_FIELDS = ['apiName','componentApiName','name'];
+
+/**
+ * A shared dependency is metadata only, never tenant data or credentials.
+ * Existing definitions are authoritative, including owner-adjusted permissions.
+ */
+export function mergeSharedDependency(tenant, dependency) {
+  if (!dependency || typeof dependency !== 'object' || Array.isArray(dependency))
+    throw Error('Shared dependency definition required');
+  const forbidden = ['records','users','accessControl','namedCredentials',
+    'integrationConnections','refreshSessions','securityAudit','recordShares'];
+  for (const key of forbidden)
+    if (Object.hasOwn(dependency,key))
+      throw Error('Shared dependency may not seed tenant business/security state: ' + key);
+  const result = mergeCoreMetadata(tenant,{
+    objects:dependency.objects??[],pages:dependency.pages??[],flows:dependency.flows??[]});
+  for (const name of SHARED_COLLECTIONS.filter(name=>!['objects','pages','flows'].includes(name))) {
+    const existing = result[name]??[];
+    if (!Array.isArray(existing) || !Array.isArray(dependency[name]??[]))
+      throw Error('Shared metadata collection must be an array: '+name);
+    const seen = new Set(existing.map(item=>KEY_FIELDS.map(key=>item?.[key]).find(Boolean)).filter(Boolean));
+    const added=[];
+    for(const item of dependency[name]??[]) {
+      const id=KEY_FIELDS.map(key=>item?.[key]).find(value=>typeof value==='string'&&value.trim());
+      if(!id)throw Error('Shared '+name+' definition requires stable API identity');
+      if(seen.has(id))continue;
+      seen.add(id);added.push(structuredClone(item));
+    }
+    result[name]=[...existing,...added];
+  }
+  return result;
 }

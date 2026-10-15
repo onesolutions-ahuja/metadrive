@@ -20,3 +20,27 @@ test('agent2: trusted provisioning never copies tenant business activity',()=>{
   assert.equal(fresh.accessControl.users.length,1);
   assert.equal(template.records.Account.length,1);
 });
+
+test('agent2: trusted generated connector defaults survive fresh-tenant bootstrap',()=>{
+  const template={
+    objects:[],pages:[],flows:[],
+    records:{
+      Connector_App__c:[{Id:'package-entry',AppKey__c:'whatsapp',Installed__c:false}],
+      UneConnector__c:[{Id:'legacy-entry',Name:'WhatsApp'}],
+      ConnectorProvider__c:[{Id:'provider-entry',Name:'Provider'}],
+      IntegrationConnection__c:[{Id:'private-connection'}],
+      Account:[{Id:'customer'}]
+    },
+    accessControl:{users:[{id:'authorized'}]}
+  };
+  const fresh=initializeTenantCore(template,{
+    authorizedUserIds:['authorized'],trustedProvisioningDefaults:true
+  });
+  assert.equal(fresh.records.Connector_App__c.length,1);
+  assert.equal(fresh.records.UneConnector__c.length,1);
+  assert.equal(fresh.records.ConnectorProvider__c.length,1);
+  assert.equal(fresh.records.Account,undefined);
+  assert.equal(fresh.records.IntegrationConnection__c,undefined);
+  assert.equal(fresh.records.Connector_App__c[0].Installed__c,false);
+  assert.notEqual(fresh.records.Connector_App__c,template.records.Connector_App__c);
+});
