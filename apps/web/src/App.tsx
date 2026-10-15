@@ -256,7 +256,7 @@ async function fetchFlowListPage(page: number, search: string) {
 
 // The full setup workspace is an on-demand route module, never part of the login bundle.
 const LazySetupWorkspace = React.lazy(async () => {
-  const { createSetupApp } = await import('./setupAppWorkspace');
+  const { createSetupApp } = await import('./setupAppShell');
   return { default: createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings}) };
 });
 function SetupApp(props: {onLogout: () => void; entryTiming: EntryTiming | null}) {
