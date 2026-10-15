@@ -1,3 +1,4 @@
+import { relatedListRelationships } from './builders/relatedListRelationships';
 import { pageTemplates, pageStringList } from './builders/pageEditorMetadata';
 import BuilderTemplatePreviewLayout from './BuilderTemplatePreviewLayout';import { reconcileNavigationOrder } from './appNavigation';
 import { createObjectManager } from './objectManagerView';
@@ -249,11 +250,11 @@ function PageBuilder({
     : standardPageComponents
       .filter((component) => ['Accordion', 'Tabs', 'Report Chart', 'Dashboard'].includes(component.apiName))
       .map((component) => component.apiName);
-  const relatedListOptions = [...new Map(objects.flatMap((childObject) => childObject.fields.flatMap((field) => {
-    const relationship = field.relationship;
-    if (relationship?.targetObject !== page.targetObject || !relationship.childRelationshipName) return [];
-    return [[relationship.childRelationshipName, childObject.pluralLabel] as const];
-  })))].map(([apiName, label]) => ({ apiName, label }));
+  const relatedListOptions = [...new Map(
+    relatedListRelationships(objects, page.targetObject)
+      .filter((item) => Boolean(item.childRelationshipName))
+      .map((item) => [item.childRelationshipName, item.pluralLabel] as const)
+  )].map(([apiName, label]) => ({ apiName, label }));
   const defaultRelatedLists = relatedListOptions.slice(0, 3).map((item) => item.apiName);
   const availableComponents = pageTypeComponents.filter((component) =>
     (component !== 'Activities' || targetObject?.settings?.allowActivities)
