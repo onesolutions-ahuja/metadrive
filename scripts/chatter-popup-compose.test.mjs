@@ -8,7 +8,12 @@ const builder = read('apps/web/src/pageBuilderView.tsx');
 const preset = JSON.parse(read('apps/web/src/page-presets/chatter.editable.json'));
 
 test('existing Chatter composer accepts direct input changes in external popup preview', () => {
-  assert.match(inbox, /aria-label="Message" value=\{draft\}[\s\S]*?onInput=\{e=>setDraft\(e\.currentTarget\.value\)\}/);
+  assert.match(inbox, /ref=\{draftInputRef\} aria-label="Message" value=\{draft\}[\s\S]*?onInput=\{e=>setDraft\(e\.currentTarget\.value\)\}/);
+  assert.match(inbox, /ref=\{draftInputRef\} aria-label="New chat message"/);
+  assert.match(inbox, /input\.addEventListener\('input', onNativeInput\)/);
+  assert.match(inbox, /input\.removeEventListener\('input', onNativeInput\)/);
+  assert.match(inbox, /const onNativeInput = \(\) => setDraft\(input\.value\)/);
+  assert.match(inbox, /\}, \[selectedId, newChat\]\);/);
   assert.match(inbox, /onChange=\{e=>setDraft\(e\.currentTarget\.value\)\}/);
   assert.match(inbox, /disabled=\{busy\} maxLength=\{4096\}/);
   assert.match(builder, /disabled: !interactivePreview/);
