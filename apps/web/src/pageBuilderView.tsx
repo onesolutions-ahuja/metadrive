@@ -281,7 +281,7 @@ function PageBuilder({
   const [propertiesPanelVisible, setPropertiesPanelVisible] = useState(true);
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(310);
   const propertiesResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
-  const [pageListObject, setPageListObject] = useState(page.targetObject || objects[0]?.apiName || '');
+  const [pageListObject, setPageListObject] = useState('');
   const [pageListSearch, setPageListSearch] = useState('');
   const paletteResizeStart = useRef<{ pointerId: number; pointerX: number; width: number } | null>(null);
   const [customPropertiesDraft, setCustomPropertiesDraft] = useState('');
@@ -1428,7 +1428,7 @@ function PageBuilder({
           <td><span className={item.status === 'Active' ? 'page-status-badge active' : 'page-status-badge'}>{item.status}</span></td>
           <td className="page-manager-actions"><button className="btn btn-small" type="button" aria-label={'Edit '+item.label} onClick={()=>selectSavedPage(item.apiName)}><Pencil size={14}/> Edit</button>
           <button className="btn btn-small" type="button" disabled={saving} aria-label={(item.status==='Active'?'Deactivate ':'Activate ')+item.label} onClick={()=>void savePage(item.status==='Active'?'Draft':'Active',item,true)}>{item.status==='Active'?'Deactivate':'Activate'}</button></td>
-        </tr>)}</tbody></table>{!visiblePages.length && <div className="records-empty">No pages found for this object. Create a new page to begin.</div>}</div>
+        </tr>)}</tbody></table>{!visiblePages.length && <div className="records-empty">No pages match the selected filter. Create a new page to begin.</div>}</div>
       </section>}
       {editorMode && <>
       <div className="builder-titlebar builder-compact-toolbar">
