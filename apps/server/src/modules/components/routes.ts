@@ -1,3 +1,4 @@
+import { hasDefaultComponentExport, scopeLibraryCss } from './component-source.js';
 import type { Request, Response } from 'express';
 import { transform } from 'esbuild';
 import { z } from 'zod';
@@ -77,7 +78,7 @@ app.post('/api/component-library', requirePermission('components:manage'), async
     // JSX compilation yields; another request can register the name meanwhile.
     if (componentNameTaken(parsed.data.apiName, principal.tenantId))
       return res.status(409).json({ error: 'Component API name was registered concurrently' });
-    const nextState = { ...state, libraryComponents: [...getState().libraryComponents, component] };
+    const nextState = { ...getState(), libraryComponents: [...getState().libraryComponents, component] };
     persistState(nextState);
     setState(nextState);
     return res.status(201).json({ component });
@@ -139,7 +140,7 @@ app.put('/api/component-library/:apiName', requirePermission('components:manage'
       return res.status(409).json({ error: 'Component changed while compiling; reload and retry' });
     const libraryComponents = [...getState().libraryComponents];
     libraryComponents[existingIndex] = component;
-    const nextState = { ...state, libraryComponents };
+    const nextState = { ...getState(), libraryComponents };
     persistState(nextState);
     setState(nextState);
     return res.json({ component });
@@ -168,7 +169,7 @@ app.post('/api/component-library/:apiName/publish', requirePermission('component
     : {...existing,status:'Published',publishedVersion:existing.version};
   next.tenantId = principal.tenantId;
   const libraryComponents=[...getState().libraryComponents];libraryComponents[index]=next;
-  const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
+  const nextState={...getState(),libraryComponents};persistState(nextState);setState(nextState);
   return res.json({component:next});
 });
 app.post('/api/component-library/:apiName/rollback', requirePermission('components:manage'), (req: Request, res: Response) => {
@@ -190,7 +191,7 @@ app.post('/api/component-library/:apiName/rollback', requirePermission('componen
     publishedVersion:nextVersion,pendingDraft:undefined,revisions:[...(existing.revisions??[]),libraryRevision(existing)].slice(-100)};
   next.tenantId=principal.tenantId;
   const libraryComponents=[...getState().libraryComponents];libraryComponents[index]=next;
-  const nextState={...state,libraryComponents};persistState(nextState);state=nextState;
+  const nextState={...getState(),libraryComponents};persistState(nextState);setState(nextState);
   return res.json({component:next,restoredFrom:parsed.data.version});
 });
 app.delete('/api/component-library/:apiName', requirePermission('components:manage'), (req: Request, res: Response) => {
@@ -208,7 +209,7 @@ app.delete('/api/component-library/:apiName', requirePermission('components:mana
       dependencies
     });
   }
-  const nextState = { ...state, libraryComponents: getState().libraryComponents.filter((_, index) => index !== componentIndex) };
+  const nextState = { ...getState(), libraryComponents: getState().libraryComponents.filter((_, index) => index !== componentIndex) };
   persistState(nextState);
   setState(nextState);
   return res.status(204).end();
