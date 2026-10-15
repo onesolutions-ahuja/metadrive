@@ -2804,7 +2804,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'connector-settings' && (() => {
             const provider = connectorProviders.find((item) => item.connectorKey === route.resourceApiName) ?? connectorProviders[0];
-            return provider ? <ConnectorSettingsWorkspace
+            return <PlatformWorkspaceSurface workspace="connector-settings" permitted={connectorRights.view} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:"setup",workspace:"page-builder",resourceApiName:apiName});}}><PlatformPageSlot slotKey="connector-workspace">{provider ? <ConnectorSettingsWorkspace
               key={provider.connectorKey}
               provider={provider}
               providers={connectorProviders}
@@ -2815,7 +2815,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
               onTestIntegrationConnection={testIntegrationConnection}
               canManage={connectorRights.edit}
               onNotify={notify}
-            /> : <div className="connector-settings-page"><div className="surface connector-empty">Connector metadata is loading…</div></div>;
+            /> : <div className="connector-settings-page"><div className="surface connector-empty">Connector metadata is loading…</div></div>}</PlatformPageSlot></PlatformWorkspaceSurface>;
           })()}
           {route.kind === 'setup' && workspace === 'report-builder' && <ReportBuilder reports={reports} reportFolders={reportFolders} canManageReportFolders={canManageReportFolders} accessControl={accessControl} objects={objects} onSave={saveReport} onSaveFolder={saveReportFolder} onDelete={deleteReport} onRun={runReport} onPreview={previewReport} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'scheduled-flows' && (
