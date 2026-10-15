@@ -31,7 +31,7 @@
         "conversationsObjectApiName": "Communication_Records__c",
         "messagesObjectApiName": "Communication_Records__c",
         "channelAccountObjectApiName": "Connector_App__c",
-        "restrictToAssigned": false,
+        "restrictToAssigned": true,
         "enableAssignment": true,
         "actionFlows": {
           "send": {
@@ -47,10 +47,15 @@
             "flowApiName": "CHATTER_ASSIGN_CONVERSATION",
             "inputs": {
               "ConversationId": "$event.conversationId",
-              "ChannelAccountId": "$event.channelAccountId"
+              "ChannelAccountId": "$event.channelAccountId",
+              "AssigneeId": "$event.assigneeId"
             }
           }
-        }
+        },
+        "objectApiName": "Communication_Records__c",
+        "recordPresenterApiName": "CommunicationThread",
+        "canSend": false,
+        "canAssign": false
       }
     }
   ],
