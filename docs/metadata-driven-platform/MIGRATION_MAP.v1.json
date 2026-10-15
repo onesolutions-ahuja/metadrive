@@ -210,6 +210,12 @@
       "phase": 7,
       "reason": "Split oversized Report Builder regressions while preserving report metadata and permission coverage",
       "baselineLines": 1078
+    },
+    {
+      "path": "apps/web/src/styles-part2.css",
+      "phase": 7,
+      "reason": "Owner-approved temporary second half of the legacy shared stylesheet; retain original CSS cascade while progressively reducing both files",
+      "baselineLines": 1375
     }
   ],
   "knownRisks": [
