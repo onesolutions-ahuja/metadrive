@@ -35,3 +35,23 @@ test('draft and untrusted definitions never receive privileged interactive child
   assert.match(html,/Save configuration/);
  }
 });
+
+import PlatformWorkspaceSurface from '../apps/web/src/PlatformWorkspaceSurface';
+test('protected custom page actions use the shared bound Object and Flow runtime',()=>{
+ const actionPage={apiName:'MetaDrive_Admin_app_manager',scope:'platform-system',ownerNamespace:'MetaDrive',
+  status:'Active',label:'App Manager',requiredPermissions:['metadata:read'],components:[{
+   id:'action-1',type:'Custom:TestAction',visible:true,label:'Action',
+   properties:{actionFlows:{click:{flowApiName:'Admin_Action_Flow'}}},
+   position:{x:0,y:0,width:240,height:80}
+  }]};
+ const actionComponent={...definition,apiName:'TestAction',compiledJs:
+  'module.exports.default = props => React.createElement("button", {"data-bound-action": typeof props.onAction === "function"}, "Execute");'};
+ const context={apiRequest:async()=>({}),objects:[],apps:[],pages:[],reports:[],
+  availableFlows:[],currentAppId:'Records',formFactor:'Desktop',
+  onNavigate:()=>{},onLaunchFlow:()=>{}};
+ const renderSurface=(permitted:boolean)=>renderToStaticMarkup(React.createElement(PlatformWorkspaceSurface,{
+  workspace:'app-manager',permitted,pages:[actionPage],libraryComponents:[actionComponent],componentRuntime:context
+ },React.createElement('div',null,'Admin workspace')));
+ assert.match(renderSurface(true),/data-bound-action="true"/);
+ assert.doesNotMatch(renderSurface(false),/data-bound-action/);
+});
