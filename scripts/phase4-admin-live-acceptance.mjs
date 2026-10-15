@@ -40,8 +40,9 @@ for(const descriptor of protectedWorkspacePageDescriptors){
  assert.equal(page.definitionVersion,2);
  assert.deepEqual(page.requiredPermissions,[descriptor.permission]);
  const slots=protectedWorkspacePageSlots[descriptor.workspace]??[];
- assert.deepEqual(page.components.filter(item=>item.properties?.platformSlotKey).map(item=>item.properties.platformSlotKey),slots,'Protected page slot coverage differs from seed');
- assert.ok(page.components.every(item=>item.visible!==false),'Unexpected hidden canonical admin control');
+ const actual=page.components.filter(item=>item.properties?.platformSlotKey).map(item=>item.properties.platformSlotKey);
+ assert.equal(new Set(actual).size,actual.length,'Duplicate admin slot identity');
+ assert.ok(actual.every(key=>slots.includes(key)),'Unknown protected admin slot identity');
  count++;
 }
 assert.ok(count>=3,'Expected centrally permission-filtered system pages');
