@@ -10,6 +10,7 @@ type TemplatePageRuntimeLayoutProps = {
   phone: boolean;
   layoutVariant?: string;
   overlayOpen?: boolean;
+  embedded?: boolean;
   header: ReactNode;
   main: ReactNode;
   sidebar: ReactNode;
@@ -17,13 +18,13 @@ type TemplatePageRuntimeLayoutProps = {
 
 /** Shared, metadata-selected runtime layout. No app-specific paths or names. */
 export default function TemplatePageRuntimeLayout({
-  apiName, label, pageType, template, fullscreen, phone, layoutVariant, overlayOpen, header, main, sidebar
+  apiName, label, pageType, template, fullscreen, phone, layoutVariant, overlayOpen, embedded, header, main, sidebar
 }: TemplatePageRuntimeLayoutProps) {
   const rail = fullscreen && layoutVariant === 'rail-checkout';
   const hasSidebar = template === 'main-sidebar' || template === 'header-main-sidebar';
   return <div className="records-page lightning-app-page" data-lightning-page={apiName}
     data-standalone-presentation={fullscreen ? 'true' : undefined}
-    style={fullscreen ? { width:'100%', maxWidth:'none', height:'100dvh', minHeight:0,
+    style={fullscreen ? { width:'100%', maxWidth:'none', height:embedded?'100%':'100dvh', minHeight:0,
       padding:0, margin:0, display:'flex', flexDirection:'column', overflow:'hidden',
       background:'#f7f7f7' } : undefined}>
     {!fullscreen && <div className="record-detail-heading surface">
