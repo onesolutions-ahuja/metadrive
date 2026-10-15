@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {coreMetadataSeed, mergeCoreMetadata} from '../src/seeders/core.mjs';
+import {coreMetadataSeed, mergeCoreMetadata, initializeTenantCore} from '../src/seeders/core.mjs';
 import {installedAppSeed, listSeedPackages} from '../src/seeders/apps.mjs';
 import {createTenantSeedRegistry} from '../src/seeders/registry.mjs';
 
@@ -38,4 +38,23 @@ test('Registry exposes independent Core and tenant app entry points',()=>{
   const registry=createTenantSeedRegistry({coreTemplate:{objects:[],pages:[],flows:[]},appCatalog:{packages:[]}});
   assert.deepEqual(registry.availableApps(),[]);
   assert.deepEqual(registry.freshCore().records,{});
+});
+
+test('Fresh tenant Core bootstrap strips nested ACL identities and arbitrary source data',()=>{
+  const template={
+    objects:[{apiName:'Account',fields:[]}],pages:[],flows:[],
+    records:{Account:[{Id:'customer'}]}, users:[{id:'secret'}],
+    accessControl:{profiles:[{id:'standard-user'}],users:[{id:'sample-login'}]},
+    namedCredentials:[{value:'secret'}], customerRecords:[{Id:'unexpected'}],
+    refreshSessions:[{tokenHash:'sample'}], revokedAccessTokens:{sample:true}
+  };
+  const initial=initializeTenantCore(template);
+  assert.equal(initial.objects.length,1);
+  assert.deepEqual(initial.records,{});
+  assert.deepEqual(initial.users,[]);
+  assert.deepEqual(initial.accessControl.users,[]);
+  assert.deepEqual(initial.namedCredentials,[]);
+  assert.equal('customerRecords' in initial,false);
+  assert.equal('refreshSessions' in initial,false);
+  assert.equal('revokedAccessTokens' in initial,false);
 });
