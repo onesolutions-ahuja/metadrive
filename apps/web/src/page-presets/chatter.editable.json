@@ -44,7 +44,8 @@
               "ChannelAccountId": "$event.channelAccountId"
             }
           }
-        }
+        },
+        "objectApiName": "Communication_Records__c"
       }
     }
   ],
