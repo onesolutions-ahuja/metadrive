@@ -94,6 +94,48 @@ export async function applyVersionedSeed(client,{tenantId,kind,key,version,defin
  * The ledger commit rolls back together with the state on any failure.
  */
 export async function recordInstalledAppPackageVersions(client, state, catalog) {
+  // Older production databases predate the additive ledger migration.
+  // Initialise only the ledger inside the caller's existing transaction;
+  // never touch tenant records or stamp any package as installed.
+  await client.query(`CREATE TABLE IF NOT EXISTS md_seed_package_versions (
+    tenant_id TEXT NOT NULL REFERENCES metadrive_rel_tenants(tenant_id) ON DELETE RESTRICT,
+    package_kind TEXT NOT NULL CHECK (package_kind IN ('core', 'shared', 'app')),
+    package_key TEXT NOT NULL CHECK (length(trim(package_key)) BETWEEN 1 AND 160),
+    package_version TEXT NOT NULL CHECK (length(trim(package_version)) BETWEEN 1 AND 80),
+    definition_checksum CHAR(64) NOT NULL CHECK (definition_checksum ~ '^[a-f0-9]{64}  for (const [tenantId, tenant] of Object.entries(state?.tenants ?? {})) {
+    for (const pkg of catalog?.packages ?? []) {
+      const app = (tenant.records?.Connector_App__c ?? []).find(
+        item=>item.AppKey__c===pkg.appKey && item.Installed__c===true);
+      if (!app || (!pkg.installation?.allowInstalledMetadataWithoutLicence
+        && !['Trial','Licensed'].includes(app.LicenceStatus__c))) continue;
+      // No ledger entry may claim installation before the actual seeded
+      // metadata exists in the same tenant-scoped state being committed.
+      const containsDefinition=(collection,entry)=>
+        (tenant[collection]??[]).some(item=>item.apiName===entry.apiName
+          && (collection!=='objects' || (entry.fields??[]).every(field=>
+            (item.fields??[]).some(existing=>existing.apiName===field.apiName))));
+      const complete=['objects','pages','apps','flows'].every(collection=>
+        (pkg[collection]??[]).every(entry=>containsDefinition(collection,entry)))
+        && (pkg.extendObjects??[]).every(entry=>containsDefinition('objects',entry));
+      // An older installation is allowed to reconcile through the established
+      // AppExchange upgrade path. Never stamp an incomplete package as seeded.
+      if (!complete) continue;
+      await client.query('INSERT INTO metadrive_rel_tenants(tenant_id) VALUES($1) ON CONFLICT DO NOTHING',[tenantId]);
+      const checksum=packageChecksum(pkg);
+      await applyVersionedSeed(client,{
+        tenantId,kind:'app',key:pkg.appKey,
+        version:String(pkg.version ?? 'sha-'+checksum.slice(0,24)),
+        definition:pkg,apply:async()=>{}
+      });
+    }
+  }
+}
+),
+    installed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (tenant_id, package_kind, package_key)
+  )`);
+  await client.query('CREATE INDEX IF NOT EXISTS md_seed_package_versions_kind_idx ON md_seed_package_versions (tenant_id, package_kind, updated_at DESC)');
   for (const [tenantId, tenant] of Object.entries(state?.tenants ?? {})) {
     for (const pkg of catalog?.packages ?? []) {
       const app = (tenant.records?.Connector_App__c ?? []).find(
