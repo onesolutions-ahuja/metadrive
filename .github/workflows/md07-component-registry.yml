@@ -59,4 +59,13 @@ jobs:
         run: npx tsx --test apps/web/test/pageComponentLayout.test.ts
       - name: Verify sandbox payload protection
         run: npx tsx --test apps/web/test/componentSandboxPolicy.test.ts
+      - name: Install isolated Chromium
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Run disposable Page Builder, Page Runtime and Screen Flow One Core browser acceptance
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: node scripts/md07-component-browser-smoke.mjs
       # Complete server suite runs once in required Validate MetaDrive deployment.
