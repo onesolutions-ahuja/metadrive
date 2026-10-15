@@ -252,7 +252,7 @@ if(JSON.stringify(currentApp.navigationPageApiNames??[])!==JSON.stringify(expect
   obsoleteCommercePages.includes(page.apiName)
   || (page.label==='Kiosk Editable Canvas' && page.pageType==='App Page'));
  for(const old of obsolete){
-  if(old.status==='Draft')continue;
+  if(old.status==='Draft'){retiredPages.push(old.apiName);continue;}
   await api('/metadata/pages/'+encodeURIComponent(old.apiName),'PUT',
     {...old,status:'Draft'});
   updates.push(old.apiName);retiredPages.push(old.apiName);installedPages++;
