@@ -1,6 +1,6 @@
 /** Phase 4 protected administration Page Builder live acceptance (read only). */
 import assert from 'node:assert/strict';
-import {protectedWorkspacePageDescriptors,protectedWorkspacePageSlots,protectedPageApiName} from '../apps/server/src/modules/metadata/platform-admin-pages.mjs';
+import {protectedWorkspacePageDescriptors,protectedWorkspacePageSlots,protectedAdministrationPage,protectedPageApiName} from '../apps/server/src/modules/metadata/platform-admin-pages.mjs';
 const origin=(process.env.METADRIVE_API_URL||'').replace(/\/$/,'').replace(/\/api$/,'');
 const email=process.env.METADRIVE_ADMIN_EMAIL,password=process.env.METADRIVE_ADMIN_PASSWORD;
 if(!origin.startsWith('https://')||!email||!password)throw Error('HTTPS URL and authorised CI credentials required');
@@ -40,7 +40,9 @@ for(const descriptor of expected){
  assert.equal(page.scope,'platform-system');
  assert.equal(page.ownerNamespace,'MetaDrive');
  assert.equal(page.status,'Active');
- assert.equal(page.definitionVersion,2);
+ const expectedVersion=protectedAdministrationPage(descriptor).definitionVersion;
+ if(page.updatedAt==='2026-10-14T00:00:00.000Z')assert.equal(page.definitionVersion,expectedVersion,'Unmodified system page upgrade missing');
+ else assert.ok(page.definitionVersion>=2&&page.definitionVersion<=expectedVersion,'Invalid version for customised administration page');
  assert.deepEqual(page.requiredPermissions,[descriptor.permission]);
  const slots=protectedWorkspacePageSlots[descriptor.workspace]??[];
  const actual=page.components.filter(item=>item.properties?.platformSlotKey).map(item=>item.properties.platformSlotKey);
