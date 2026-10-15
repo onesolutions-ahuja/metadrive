@@ -7,6 +7,12 @@ on:
     branches: [feature-aiven-persistent-state]
   workflow_dispatch:
 
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -31,6 +37,8 @@ jobs:
           GITHUB_PAGES_BASE_PATH: '/'
           VITE_API_BASE_URL: https://metadrive.onrender.com/api
         run: npm run build
+      - name: Audit production lazy-loading bundles
+        run: node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist
       - name: Validate Pages UI navigation, branding and layout artifact
         run: node scripts/verify-pages-release.mjs
       - name: Test bounded session restoration and auth lock cancellation

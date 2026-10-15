@@ -90,7 +90,7 @@ export async function readRelationalState(pool) {
   } finally {client.release();}
 }
 
-export async function writeRelationalState(pool,nextState,previous) {
+export async function writeRelationalState(pool,nextState,previous,beforeCommit=null) {
   if(!previous||!Number.isSafeInteger(previous.version)||!previous.rows)
     throw Error('Relational runtime requires a verified prior snapshot');
   const nextRows=projectState(nextState);
@@ -137,6 +137,7 @@ export async function writeRelationalState(pool,nextState,previous) {
       const restored=restoreState(checkRows);
       if(stateDigest(restored)!==digest) throw Error('Relational write readback digest mismatch');
     }
+    if(beforeCommit) await beforeCommit(client,nextState);
     await client.query('COMMIT');
     begun=false;
     return {rows:nextRows,version:previous.version+1,digest,state:nextState};

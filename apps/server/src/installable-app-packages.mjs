@@ -9,8 +9,15 @@ import {seedCredentialGrants} from './credential-grant-seeder.mjs';
 export function applyInstallableAppPackages(tenant, catalog, tenantId = '') {
   let next = retireUninstalledPackageMetadata(tenant, catalog);
   const packages = Array.isArray(catalog?.packages) ? catalog.packages : [];
+  const packageKeyCounts = new Map();
+  for (const pkg of packages) packageKeyCounts.set(pkg.appKey, (packageKeyCounts.get(pkg.appKey) ?? 0) + 1);
   for (const pkg of packages) {
-    const installed = (next.records?.Connector_App__c ?? []).find(row => row.AppKey__c === pkg.appKey);
+    // Reject ambiguous catalog definitions without touching the tenant.
+    if (!pkg.appKey || packageKeyCounts.get(pkg.appKey) !== 1) continue;
+    const matchingInstallations = (next.records?.Connector_App__c ?? [])
+      .filter(row => row.AppKey__c === pkg.appKey);
+    // Ambiguous installation state never activates package metadata.
+    const installed = matchingInstallations.length === 1 ? matchingInstallations[0] : undefined;
     // Installed business apps must expose editable metadata even before trial/licence activation.
     // Runtime usage and protected actions remain subject to normal entitlement/RBAC checks.
     if (!installed || installed.Installed__c !== true ||

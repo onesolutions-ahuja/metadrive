@@ -1,4 +1,5 @@
 import { createSetupHome } from './setupHomeView';
+import { relatedListRelationships } from './builders/relatedListRelationships';
 import { createSettingsViews } from './settingsWorkspaceViews';
 import { pageLayoutForRecord, compactLayoutForRecord, matchesLookupFilterGroup, relatedLookupFilterOperators, type RecordData } from './recordMetadataUtils';
 import { formatRecordValue, parseCsvImport } from './recordCsvUtils';
@@ -190,8 +191,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
-
 export function createObjectManager(apiRequest: <T>(path: string, init?: RequestInit) => Promise<T>) {
 function ObjectManager({
   object, objects, flows, pages, reports, dashboards, profiles, activationAppIds, selectedSetting, search, onSearch, onObjectSelect, onSettingSelect, onOpenDependency, onNewField, onCreateObject, onSaveObject, onRefreshObject, onDeleteObject, onSaveField, onDeleteField, onSavePage, onOpenPageBuilder, onOpenRecords, page, onNotify
@@ -527,11 +526,11 @@ function ObjectManager({
   }
   const layouts = draft.pageLayouts ?? [];
   const compactLayouts = draft.compactLayouts ?? [];
-  const relatedListOptions = objects.flatMap((childObject) => childObject.fields.flatMap((field) =>
-    field.relationship?.targetObject === draft.apiName
-      ? [{ value: field.relationship.childRelationshipName, alias: childObject.pluralLabel, label: `${childObject.pluralLabel} (${field.relationship.childRelationshipName})` }]
-      : []
-  )).filter((option, index, options) =>
+  const relatedListOptions = relatedListRelationships(objects, draft.apiName).map((item) => ({
+    value: item.childRelationshipName,
+    alias: item.pluralLabel,
+    label: `${item.pluralLabel} (${item.childRelationshipName})`
+  })).filter((option, index, options) =>
     options.findIndex((candidate) => candidate.value.toLocaleLowerCase() === option.value.toLocaleLowerCase()) === index);
   const normalizeRelatedLists = (selected: string[]) => selected.map((name) =>
     relatedListOptions.find((option) => option.value.toLocaleLowerCase() === name.toLocaleLowerCase()
@@ -1201,7 +1200,6 @@ function ObjectManager({
     if (selectedSetting === 'Object Limits') return <section className="surface object-setting-surface"><div className="section-toolbar"><div><h2>Object Limits</h2><p>Metadata usage counts only; this view does not define or enforce platform caps.</p></div></div><div className="limit-grid"><div><strong>{draft.fields.length}</strong><span>Fields</span></div><div><strong>{draft.pageLayouts?.length ?? 0}</strong><span>Page Layouts</span></div><div><strong>{draft.recordTypes?.length ?? 0}</strong><span>Record Types</span></div><div><strong>{draft.fieldSets?.length ?? 0}</strong><span>Field Sets</span></div></div></section>;
     return <section className="surface object-setting-surface"><div className="section-toolbar"><div><h2>{selectedSetting}</h2><p>Configure {selectedSetting.toLowerCase()} for the {draft.label} object.</p></div><button className="btn btn-brand" onClick={persistDraft}><Save size={14} />Save</button></div><div className="empty-state">No {selectedSetting.toLowerCase()} metadata is defined yet.</div></section>;
   };
-
   return (
     <PlatformPageSlot slotKey="object-workspace"><div className="object-manager">
       <div className="object-topline"><div className="object-breadcrumb"><button onClick={() => onSettingSelect('Objects')}>Object Manager</button><ChevronRight size={14} /><span>{object.label}</span></div><button className="icon-button subtle" aria-label="Object actions" aria-expanded={showObjectActionsMenu} onClick={() => setShowObjectActionsMenu((current) => !current)}><MoreHorizontal size={18} /></button>
@@ -1230,13 +1228,11 @@ function ObjectManager({
           </div>
           <button className="create-object" onClick={onCreateObject}><Plus size={15} />Create</button>
         </aside></PlatformPageSlot>
-
         <div className="object-details">
           <PlatformPageSlot slotKey="object-heading"><div className="object-titlebar"><div className="object-title-icon">{object.label.charAt(0)}</div><div><div className="eyebrow">{object.kind}</div><h1>{object.label}</h1></div><div className="object-title-actions"><button type="button" className="btn" onClick={() => void validateDraft()}>Validate Draft</button><button type="button" className="btn" onClick={onOpenRecords}><Database size={14} />View Records</button></div></div></PlatformPageSlot>
           <PlatformPageSlot slotKey="object-subnav"><div className="object-subnav">
             {objectSettings.map((setting) => <button key={setting} className={selectedSetting === setting ? 'active' : ''} onClick={() => onSettingSelect(setting)}>{setting}</button>)}
           </div></PlatformPageSlot>
-
           <PlatformPageSlot slotKey="object-setting">{renderSetting()}</PlatformPageSlot>
         </div>
       </div>
@@ -1361,11 +1357,8 @@ function ObjectManager({
     </div></PlatformPageSlot>
   );
 }
-
 function FieldSelectorList({ fields, selected, onToggle }: { fields: FieldMetadata[]; selected: string[]; onToggle: (apiName: string) => void }) {
   return <div className="field-selector-list">{fields.map((field) => <label className="checkbox-row" key={field.apiName}><input type="checkbox" checked={selected.includes(field.apiName)} onChange={() => onToggle(field.apiName)} />{field.label}<small className="api-name">{field.apiName}</small></label>)}</div>;
 }
-
-
 return ObjectManager;
 }

@@ -1,57 +1,90 @@
-# MetaDrive Mandatory Developer Policy (v1.1)
+# MetaDrive — Mandatory Developer Policy v2.0
 
-All development in MetaDrive MUST follow all 13 rules below. This applies to features, bug fixes, refactors, migrations, application installations, pull requests, and generated code. Inspect existing architecture before implementation. If a requested implementation conflicts with this policy, explain the conflict and obtain the project owner's decision **before implementing the conflicting approach**. Never silently bypass a rule.
+**Vision:** One lightweight, universal, metadata-driven, no-code platform for building POS, ERP, CRM, DMS, KDS, Appointments, Bots and any future business software. Salesforce-inspired, without unnecessary complexity.
 
-## 1. Metadata-driven applications and modules
-Use existing Objects, Actions, Flows, registered Components, and other platform metadata for every application/module. Do not hardcode application-specific UI, business fields, workflows, behaviour, or integrations. New generic engine capabilities may be coded when existing primitives cannot support the requirement, but must be registered and made configurable through metadata.
+All rules apply to development, fixes, refactoring, migrations, installations, seeders and PRs.
 
-## 2. Reuse arrays, loops, functions and services
-Inspect existing code before creating new handlers or renderers. Prefer loops over metadata collections and reusable shared functions to copied component-specific code. Avoid the pattern of separate Kiosk/POS implementations for equivalent components or behaviours. Extend shared abstractions rather than duplicating them.
+## 1. Universal Lightweight Core
+One shared Core: authentication, tenant isolation, OneEngine RBAC, metadata, generic CRUD, Component Renderer, Page Runtime, routing, Actions/Flows runtime, printing, communication, AppExchange and essential settings. No app-specific business logic.
 
-## 3. Database-backed component metadata
-New and modified components must declare configurable properties, defaults, validation, styling, events and bindings through registered database metadata. Generic rendering and property editing must consume those declarations. Avoid hardcoded per-component property handling.
+## 2. Independent Applications
+Every app must be independently installable, licensed, activated and uninstalled per tenant. Customers mix and match functionality without unnecessary dependencies.
 
-## 4. OneEngine initial RBAC seeding
-Every new app/module requires idempotent metadata seeding for all relevant View/Create/Edit/Delete/Execute/Configure/Manage permissions, as applicable, initially granting full management access to the existing OneEngine policy/licence. Normal RBAC enforcement remains mandatory. Administrators can subsequently change grants; re-running seeders must not undo administrator decisions.
+## 3. Reuse First
+Before creating Objects, Fields, Components, Actions, Flows, APIs or utilities, inspect and reuse existing capabilities. Extend shared engines before creating new ones. Prefer metadata loops and generic functions over duplicate code.
 
-## 5. No parallel engines
-Reuse the platform Object, Action, Flow, Component, security, and installation engines. Extend them when necessary instead of creating app-specific parallel APIs, stores, renderers, workflow runtimes, or permission systems.
+## 4. Fully Metadata-Driven
+Objects, Fields, Relationships, Pages, layouts, Components, properties, events, navigation, permissions, Actions, Flows and business rules must use metadata. No hardcoded app-specific business behaviour in Core.
 
-## 6. Metadata-driven navigation and layouts
-Drive apps, pages, menus, routes, navigation, device layouts, and page composition from metadata. Do not embed app-specific routes or layouts in platform logic when existing metadata can represent them.
+## 5. Universal Component Engine
+One shared Registry, Renderer and property engine. Every independently editable element supports configurable layout, style, dimensions, responsiveness, visibility, validation, events and bindings. Avoid monolithic components.
 
-## 7. Shared Object API for data access
-Use the generic Object API and metadata relationships for record CRUD, querying, filtering, sorting, pagination, validation, and relationship traversal. Do not add application-specific CRUD endpoints where shared APIs suffice.
+## 6. Builders Separate From Runtime
+Page, Dashboard, Report, Flow and other Builders load only when opened. Published apps run through lightweight shared runtimes without loading Builder code.
 
-## 8. Centralised RBAC enforcement
-Authorise server-side operations through the shared RBAC engine for objects, fields, records, pages, actions and flows as applicable. UI hiding alone is not a security control. Metadata configuration and direct API/Flow invocations must not bypass enforcement. Honour tenant boundaries and existing permission mechanisms.
+## 7. Lazy Loading
+Load only required modules, routes and metadata. Uninstalled apps never initialise. Unopened optional apps must not burden startup or frontend memory. Use secure tenant-aware caching.
 
-## 9. Metadata-driven events and behaviour
-Configure component events (such as click, change, submit and load) to invoke existing Actions or Flows. App-specific business decisions, branching and callouts belong in metadata-configured flows/actions, not hand-written component handlers.
+## 8. SQL Source of Truth
+Store active metadata, settings, permissions, installations and business data in SQL. Stable, searchable properties use relational columns; flexible properties use validated JSONB. No monolithic JSON runtime state.
 
-## 10. Versioned, idempotent installers/seeders
-Deliver apps/modules as upgrade-safe metadata packages with explicit dependencies and seeders for required objects, fields, components, pages, actions, flows, navigation and RBAC. Install and upgrade must preserve existing customer configuration and administrator-modified permissions.
+## 9. Independent Seeders
+Separate Core, shared dependency and per-app seeders. Include Objects, Fields, Components, properties, Pages, Flows, Actions, navigation and RBAC. Seeders must be versioned, idempotent, tenant-aware and upgrade-safe. Never duplicate metadata or overwrite user customisations.
 
-## 11. Shared component-property engine
-Use reusable schemas and property controls for style, layout, responsiveness, visibility, validation and data bindings, with independently editable component instances. Avoid one-off giant components that hide their individual elements from the builder.
+## 10. OneEngine RBAC
+One central permission engine for Objects, Fields, Records, Pages, Actions, Flows and administration. Enforce server-side. App installation, licence, entitlement and RBAC are separate checks. No permission bypasses.
 
-## 12. Mandatory architecture and test verification
-Before completion or merge, inspect implementation for reuse, metadata usage, central RBAC, seeders/migrations, dependency safety, and regressions. Run applicable tests and CI, report actual results, and do not declare work complete when required verification is missing. Review the full requested scope; do not silently leave partial work.
+## 11. Developer Security Policies
+Each tenant has a tenant-scoped `developer@tenant` identity and default OneEngine Tenant Developer policy. Core and app seeders grant applicable full tenant administration permissions during setup/installation. `support@unesolutions.co.uk` receives a separate Platform Developer policy for tenant/platform administration. Tenant business-data access requires explicit, audited authorisation. No email-based bypass, shared passwords or cross-tenant access.
 
-## 13. Maximum 1,000 lines per code file
-Every newly added code file and every existing code file originally at most 1,000 lines must remain **at most 1,000 lines**. Existing oversized legacy files may be edited during the agreed phased extraction **only without increasing their base-branch line count**, with a documented migration owner and progressive reduction. New extracted modules must respect the limit. CI rejects newly oversized files and growth of legacy files. This is an explicit, temporary owner-approved transition, not a permanent exemption.
+## 12. AppExchange Lifecycle
+Centralise discovery, dependency checks, licensing, install, seeding, RBAC, activation, updates, migrations, deactivation, uninstall and reinstall. Uninstall disables app-specific routes, Flows, jobs and modules. Preserve shared dependencies and tenant business records.
 
-## Mandatory implementation sequence
-1. Inspect architecture, registered metadata, security controls, and existing reusable utilities.
-2. Reuse or extend shared engines; identify conflicting requirements and seek a decision before conflicting implementation.
-3. Configure metadata-driven Objects, Actions, Flows, Components, navigation and properties.
-4. Add versioned idempotent seeders, including initial OneEngine RBAC grants.
-5. Enforce centralised server-side RBAC and tenant isolation.
-6. Keep code files at or below 1,000 lines, splitting by responsibility.
-7. Run relevant tests and CI; verify complete scope and report actual status.
+## 13. Generic CRUD
+All apps use shared Object APIs for CRUD, filtering, queries, relationships, validation and pagination. Enforce tenant, Record, Object and Field permissions. No duplicate CRUD engines.
 
-## Enforcement
-- `AGENTS.md` directs coding agents to this full policy.
-- `.github/workflows/developer-policy.yml` runs the changed-code-file size guard on PRs and pushes.
-- The line guard can detect file length, but cannot prove architectural correctness. Reviewers and development agents MUST verify rules 1–12. Do not claim CI automatically validates metadata-driven architecture or RBAC semantics.
-- Historic oversized files are tracked migration debt. During phased extraction CI permits edits only without net growth beyond the base-branch size and with an assigned migration owner.
+## 14. Universal Data Loader
+One import/export engine supporting field mapping, preview, validation, bulk operations, errors, retries and applicable rollback. Enforce OneEngine RBAC and Field permissions.
+
+## 15. Shared Action/Flow Engine
+Use metadata-driven Flows for CRUD, decisions, loops, formulas, HTTP, printing, communication and scheduling. No parallel workflow engines. Enforce permissions and app activation. Support durable execution and failure handling.
+
+## 16. Generic Integrations
+Use reusable HTTP callouts, webhooks, messaging, printing and connectors. Secure credentials, validate external requests, enforce permissions and log failures. No app-specific integration logic in Core.
+
+## 17. No-Code First
+Non-developers must configure Objects, Pages, Flows, business rules and HTTP calls using understandable visual tools. Ordinary supported tasks must not require JavaScript, SQL or JSON.
+
+## 18. Versioning and Publishing
+Support metadata draft/publish, version history, migrations and rollback where applicable. App updates preserve customer customisations and must not silently break published functionality.
+
+## 19. Security and Auditing
+Enforce tenant isolation across APIs, SQL, caching, Flows and jobs. Audit privileged operations, installations, policy changes and support access. Protect credentials and sensitive data. RBAC alone is not complete security.
+
+## 20. Data Recovery
+Seeders must rebuild platform metadata and fresh tenants. Business records require separate SQL backups. Migrations, cleanup and uninstall must not silently delete customer data or customisations.
+
+## 21. Modular Code Limits
+Separate Core, shared runtimes, Builders, Apps, seeders and services. New/extracted files: maximum 1,000 lines. Architectural ceiling: 4,000 lines. Oversized legacy files are temporary exceptions; prevent growth and progressively split.
+
+## 22. Development Execution
+Inspect existing architecture, reuse shared engines, implement the complete approved scope, update SQL/seeders, enforce RBAC, test and fix defects. Prefer one consolidated PR. Avoid repeated audits and partial work. Pause only for genuine blockers or unresolved owner decisions.
+
+## 23. Mandatory Validation
+Verify Core without optional apps, tenant licensing/RBAC, lazy loading, SQL seeder idempotency, component reuse, app lifecycle, Flow activation/deactivation, data preservation, security, performance, builds, tests and CI. Never claim completion without evidence.
+
+## 24. Policy Enforcement
+All developers and AI agents must follow these rules. Repository `DEVELOPER_POLICY.md` is authoritative; `AGENTS.md`, Copilot instructions and CI must remain consistent. Escalate conflicting requirements before implementation. Never silently bypass rules.
+
+## Permanent Principles
+
+**ONE CORE · ONE ONEENGINE RBAC · ONE METADATA PLATFORM · REUSABLE COMPONENTS · SQL SOURCE OF TRUTH · INDEPENDENT APP SEEDERS · TENANT APP INSTALLATION · LAZY LOADING · NO-CODE FIRST**
+
+Every feature must satisfy:
+1. Can a non-developer configure it?
+2. Can other applications reuse it?
+3. Can tenants operate without loading it when unnecessary?
+
+**Priority:** Complete Core cleanup, modularisation, SQL metadata, seeders and shared-engine validation before building new apps.
+
+**Working style:** Short updates: Done / Pending / Blocker. Complete approved tasks without unnecessary pauses. Never report unverified work as complete.

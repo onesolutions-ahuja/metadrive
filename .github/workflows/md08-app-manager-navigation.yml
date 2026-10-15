@@ -10,6 +10,12 @@ on:
       - '.github/workflows/md08-app-manager-navigation.yml'
   workflow_dispatch:
 
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -34,8 +40,4 @@ jobs:
         run: node scripts/verify-pages-release.mjs
       - name: Build API and verify runtime dependencies
         run: npm run build --workspace apps/server
-      - name: Run full server regression suite (includes tenant RBAC navigation)
-        env:
-          NODE_ENV: test
-          METADRIVE_TEST_MODE: 'true'
-        run: npm test --workspace apps/server
+      # Tenant RBAC server regression is gated by Validate MetaDrive deployment.

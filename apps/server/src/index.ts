@@ -4609,7 +4609,7 @@ async function createTenant(tenantId: string, name: string, adminName: string, e
     const developer: LocalUser = {
       id: randomUUID(), tenantId, name: 'Developer', email: developerEmail,
       passwordSalt: developerCredentials.salt, passwordHash: developerCredentials.hash,
-      role: 'System Administrator', permissionSetIds: ['system-administrator'],
+      role: 'System Administrator', permissionSetIds: ['system-administrator','oneengine-tenant-developer'],
       permissionSetGroupIds: [], disabled: true, createdAt
     };
     const tenantSeed = initializeTenantCore(defaultTenantData(admin), {authorizedUserIds:[admin.id], trustedProvisioningDefaults:true});
@@ -6730,8 +6730,8 @@ app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePer
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const key = routeParam(req, 'appKey');
-  const previous = (tenant.records.Connector_App__c ?? []).find((row) => row.AppKey__c === key);
-  if (!previous) return res.status(404).json({ error: 'Connector not found' });
+  const matches = (tenant.records.Connector_App__c ?? []).filter((row) => row.AppKey__c === key);
+  if (matches.length > 1) return res.status(409).json({ error: 'Conflicting AppExchange installation records.' }); const previous = matches[0]; if (!previous) return res.status(404).json({ error: 'Connector not found' });
   if (previous.Installed__c !== true) return res.status(409).json({ error: 'Install the connector before granting a licence.' });
   const days = Number(previous.LicenceTermDays__c ?? 30);
   if (!Number.isInteger(days) || days < 1 || days > 365) return res.status(422).json({ error: 'Invalid licence term metadata.' });
@@ -7833,7 +7833,7 @@ function persistTenantRecords(tenantId: string, tenant: TenantData): void {
   for (const [key, sequence] of Object.entries(currentSequences)) {
     autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
   }
-  const updatedTenant = applyInstallableAppPackages({ ...tenant, autoNumberSequences }, installableAppCatalog) as TenantData;
+  const updatedTenant = reconcileInstalledAppSeeds({ ...tenant, autoNumberSequences }, installableAppCatalog, tenantId) as TenantData;
   const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
     updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
   const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
@@ -8627,7 +8627,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       jsx: z.string().min(1),
       css: z.string().min(1),
       version: z.number().int().min(1).default(1)
-    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')));
+    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''))).concat(installableAppCatalog.coreComponents.map((c: any)=>({apiName:c.apiName,label:c.label,description:c.description,surfaces:c.surfaces,resize:c.resize,jsx:c.jsxFile,css:c.cssFile,version:c.version})));
     const imported: LibraryComponent[] = [];
     const trustedUpgrades = new Map<string, LibraryComponent>();
     for (const entry of manifest) {
@@ -8670,7 +8670,7 @@ function syncBundledLibraryComponents(): Promise<void> {
         surfaces: entry.surfaces.filter(surface=>surface!=='platform'),
         resize: entry.resize,
         jsxSource,
-        cssSource
+        cssSource, propertyDefinitions: installableAppCatalog.coreComponents.find((c: {apiName:string}) => c.apiName === entry.apiName)?.propertyDefinitions
       });
       const compiled = await transform(input.jsxSource, {
         loader: 'tsx',
@@ -13384,7 +13384,7 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 app.listen(port, () => {
   console.log(`MetaDrive API listening on http://localhost:${port} (JWT issuer: ${jwtService.config.issuer})`);
-  void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
+  if (!maintenanceMode) void syncBundledLibraryComponents().catch((error: unknown) => console.error('Startup Core component registration failed', error)); void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
   setInterval(() => {
     void dispatchScheduledFlows().catch((error: unknown) => console.error('Scheduled flow dispatcher failed', error));
   }, schedulePollInterval);
