@@ -598,7 +598,7 @@ function LightningAppRuntime({
     });
   return <TemplatePageRuntimeLayout apiName={page.apiName} label={page.label}
     pageType={page.pageType} template={page.template}
-    fullscreen={isStandaloneRuntime && page.layoutMode === 'template'} phone={formFactor === 'Phone'}
+    fullscreen={isStandaloneRuntime && page.layoutMode === 'template'} phone={formFactor === 'Phone'} layoutVariant={page.components.find(component => component.properties?.standalonePresentation === true)?.properties?.presentationLayout as string | undefined}
     header={renderRegion('header')} main={renderRegion('main')} sidebar={renderRegion('sidebar')} />;
 }
 
