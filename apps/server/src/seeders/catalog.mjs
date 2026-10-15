@@ -8,6 +8,24 @@ import {readFileSync} from 'node:fs';
 export function loadAppSeedCatalog() {
   const catalog = JSON.parse(readFileSync(new URL('../../data/installable-app-packages.json',import.meta.url),'utf8'));
   if (!Array.isArray(catalog?.packages)) throw Error('Invalid AppExchange seed catalog');
+  // Core component definitions are bootstrap metadata for the existing SQL-backed
+  // published registry. They are not an app package and require no app licence.
+  const coreComponents = JSON.parse(readFileSync(
+    new URL('../../../web/src/custom-components/one/manifest.json', import.meta.url),'utf8'
+  ));
+  if (!Array.isArray(coreComponents) || coreComponents.length !== 40)
+    throw Error('Invalid One component catalog');
+  const names = new Set();
+  for (const component of coreComponents) {
+    if (!/^One[A-Za-z0-9_]+$/.test(component.apiName) || names.has(component.apiName) ||
+        !Array.isArray(component.surfaces) || !component.surfaces.every(s=>['page','dashboard','flow'].includes(s)) ||
+        typeof component.jsxFile!=='string' || !component.jsxFile.startsWith('one/') ||
+        typeof component.cssFile!=='string' || component.cssFile!=='one/one.css' ||
+        !Array.isArray(component.propertyDefinitions))
+      throw Error('Invalid or duplicate One component metadata');
+    names.add(component.apiName);
+  }
+  catalog.coreComponents = coreComponents;
   const seen = new Set();
   for (const pkg of catalog.packages) {
     if (typeof pkg.appKey !== 'string' || !pkg.appKey || seen.has(pkg.appKey))
