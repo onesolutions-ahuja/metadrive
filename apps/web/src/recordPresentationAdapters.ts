@@ -17,9 +17,9 @@ function communicationThread(records: readonly CommunicationRow[], context: Pres
   return {
     conversations, messages:model.messages, currentUserId:context.userId,
     canViewAll:context.viewAll || context.grants.some(grant => grant.viewAll === true), allowedAccountIds:[...grants.keys()],
-    canSend:conversations.some(chat=>chat.canSend),
+    canSend:[...grants.values()].some(grant=>grant.canSend),
     eligibleAssignees:context.eligibleAssignees??[],
-    channelAccounts:[...grants.keys()].map(id=>({id,name:id}))
+    channelAccounts:[...grants].map(([id,grant])=>({id,name:id,canSend:grant.canSend,canAssign:grant.canAssign}))
   };
 }
 /** Extend via named metadata adapters, not per-component rendering code. */

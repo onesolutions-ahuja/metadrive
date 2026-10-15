@@ -1373,3 +1373,7 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 .record-runtime-tabs .record-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #e7e2da; }
 .record-runtime-tabs .record-tabs button { padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; color: #626a65; background: transparent; cursor: pointer; font: inherit; }
 .record-runtime-tabs .record-tabs button.active { border-bottom-color: var(--brand); color: var(--brand-dark); font-weight: 700; }
+
+/* The shared history control remains available in compact and mobile headers. */
+.header-tools { position: relative; }
+.header-tools .icon-button.header-history-button:first-child { display: inline-flex; align-items: center; justify-content: center; }

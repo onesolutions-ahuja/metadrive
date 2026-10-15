@@ -1,11 +1,12 @@
 import {randomUUID} from 'node:crypto';
 /** Declarative one-time credential-to-record metadata seeding. Never reads credential secrets. */
-export function seedCredentialGrants(tenant, directives = []) {
+export function seedCredentialGrants(tenant, directives = [], tenantId = '') {
   if (!Array.isArray(directives)||!directives.length)return tenant;
   let records=tenant.records,changed=false;
   for(const directive of directives){
     if(!tenant.objects.some(object=>object.apiName===directive.objectApiName))continue;
-    const principals=(tenant.accessControl?.users??[]).filter(user=>user.profileId===directive.profileId);
+    const allowedEmails=directive.tenantId === tenantId && tenantId ? (directive.targetUserEmails??[]).map(email=>email.toLowerCase()) : [];
+    const principals=(tenant.accessControl?.users??[]).filter(user=>user.profileId===directive.profileId || allowedEmails.includes(String(user.username||user.email||'').toLowerCase()));
     const target=records[directive.objectApiName]??[];
     const additions=[];
     for(const credential of tenant.namedCredentials??[]){
@@ -16,6 +17,9 @@ export function seedCredentialGrants(tenant, directives = []) {
       const idFromPath=match?.[1];
       const configured=credential.configuration?.[directive.accountConfigField];
       if(configured&&idFromPath&&configured!==idFromPath)continue;
+      // Version-only Graph endpoints are valid only with a configured PhoneNumberId.
+      // Reject unrelated Graph paths even when credentials contain an ID.
+      if(!idFromPath && !/^\/v\d+\.\d+\/?$/.test(url.pathname))continue;
       const account=idFromPath||configured;
       if(!account||!/^[A-Za-z0-9_-]{5,120}$/.test(account))continue;
       for(const principal of principals){

@@ -1,4 +1,3 @@
-import SharedMetadataBoundPageComponent from './MetadataBoundPageComponent';
 import { presentPageRecords, type ChannelGrant } from './recordPresentationAdapters';
 import TemplatePageRuntimeLayout from './TemplatePageRuntimeLayout';
 import { loadFlowScreenRecords } from './authClient';
@@ -255,8 +254,258 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
   </div>;
 }
 
-const MetadataBoundPageComponent = (props: Omit<React.ComponentProps<typeof SharedMetadataBoundPageComponent>,'apiRequest'>) =>
- <SharedMetadataBoundPageComponent {...props} apiRequest={apiRequest}/>;
+function MetadataBoundPageComponent({
+  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+}: {
+  definition: LibraryComponentMetadata;
+  component: PageComponentMetadata;
+  objects: ObjectMetadata[];
+  apps: LightningAppMetadata[];
+  pages: LightningPageMetadata[];
+  currentAppId: string;
+  pageSessionKey: string;
+  reports: ReportMetadata[];
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
+  formFactor: 'Desktop' | 'Phone';
+  onNavigate: (route: AppRoute) => void;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  disableActions?: boolean;
+}) {
+  const properties = component.properties;
+  const objectApiName = String(properties.objectApiName ?? '');
+  // An application-independent session can be referenced by configured Flows.
+  const [sessionId, setSessionId] = useState(() => {
+    const key = 'metadrive-page-session:' + pageSessionKey;
+    try {
+      let value = window.sessionStorage.getItem(key);
+      if (!value) {
+        value = crypto.randomUUID();
+        window.sessionStorage.setItem(key, value);
+      }
+      return value;
+    } catch {
+      return crypto.randomUUID();
+    }
+  });
+  // Generic, page-scoped visual state for metadata-configured local actions.
+  // Never grants data permissions or persists cross-tenant information.
+  const [pageState, setPageState] = useState<Record<string, unknown>>({});
+  useEffect(() => {
+    setPageState({});
+    const sync = (event: Event) => {
+      const detail=(event as CustomEvent<{pageSessionKey:string;key:string;value:unknown}>).detail;
+      if(detail?.pageSessionKey !== pageSessionKey || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(detail.key))return;
+      setPageState(previous=>({...previous,[detail.key]:detail.value}));
+    };
+    window.addEventListener('metadrive:page-local-state',sync);
+    return ()=>window.removeEventListener('metadrive:page-local-state',sync);
+  },[pageSessionKey]);
+  const [records, setRecords] = useState<Record<string, unknown>[]>([]);
+  const [contactRecords, setContactRecords] = useState<Record<string, unknown>[]>([]);
+  const [dataError, setDataError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [dataLoading, setDataLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const [channelAccess, setChannelAccess] = useState<{userId: string;viewAll: boolean;grants: ChannelGrant[];eligibleAssignees: {id: string;name: string;channelAccountId: string}[]}>({
+    userId: '', viewAll: false, grants: [], eligibleAssignees: []
+  });
+  const initializedSessions = useRef<Set<string>>(new Set());
+  // Any Flow mutation invalidates all components sharing this page session.
+  useEffect(() => {
+    const sync = (event: Event) => {
+      const detail = (event as CustomEvent<{pageSessionKey:string;sessionId:string}>).detail;
+      if (detail?.pageSessionKey !== pageSessionKey) return;
+      if (detail.sessionId && detail.sessionId !== sessionId) setSessionId(detail.sessionId);
+      setRevision(value => value + 1);
+    };
+    window.addEventListener('metadrive:page-flow-mutated', sync);
+    return () => window.removeEventListener('metadrive:page-flow-mutated', sync);
+  }, [pageSessionKey, sessionId]);
+  useEffect(() => {
+    let active = true;
+    setRecords([]);
+    setDataError('');
+    if (!objectApiName) {
+      setDataLoading(false);
+      return () => { active = false; };
+    }
+    setDataLoading(true);
+    // Existing shared Object API enforces tenant, field and record permissions.
+    void loadFlowScreenRecords(objectApiName)
+      .then((rows) => { if (active) setRecords(rows); })
+      .catch((reason: unknown) => {
+        if (active) setDataError(reason instanceof Error ? reason.message : 'Unable to load records');
+      })
+      .finally(() => { if (active) setDataLoading(false); });
+    return () => { active = false; };
+  }, [objectApiName, revision]);
+  useEffect(() => {
+    if (properties.recordPresenterApiName !== 'CommunicationThread') return;
+    let active = true;
+    let requestNumber = 0;
+    const loadAccess = () => {
+      const request = ++requestNumber;
+      void apiRequest<{userId:string;viewAll:boolean;grants:ChannelGrant[];eligibleAssignees:{id:string;name:string;channelAccountId:string}[]}>('/chatter/access')
+        .then(value => {if (active && request === requestNumber) setChannelAccess(value);})
+        .catch(() => {if (active && request === requestNumber) setChannelAccess({userId:'',viewAll:false,grants:[],eligibleAssignees:[]});});
+    };
+    loadAccess();
+    // A channel assignment may be added while the inbox is open. Re-check on
+    // return to this tab without polling or trusting client-supplied grants.
+    const onFocus = () => loadAccess();
+    const onVisibility = () => {if (document.visibilityState === 'visible') loadAccess();};
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    // Keep an already-open inbox in sync when an administrator assigns a
+    // channel while the browser tab remains focused. The authenticated API
+    // is the sole source of grants; polling never escalates permissions.
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') loadAccess();
+    }, 20000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [properties.recordPresenterApiName, revision]);
+  // Contacts are loaded through the same OneEngine record API and its RBAC checks.
+  // The bound object is metadata-owned, never supplied by a browser caller.
+  const contactsObjectApiName = typeof properties.contactsObjectApiName === 'string' ? properties.contactsObjectApiName : '';
+  useEffect(() => {
+    let active = true;
+    setContactRecords([]);
+    if (!contactsObjectApiName) return () => { active = false; };
+    void loadFlowScreenRecords(contactsObjectApiName)
+      .then(rows => { if (active) setContactRecords(rows); })
+      .catch(() => { if (active) setContactRecords([]); });
+    return () => { active = false; };
+  }, [contactsObjectApiName, revision]);
+  const contactChoices = contactRecords.map(row => ({
+    id: String(row.Id ?? ''),
+    name: String(row.Name ?? [row.FirstName, row.LastName].filter(Boolean).join(' ') ?? ''),
+    phone: String(row.MobilePhone ?? row.Phone ?? '')
+  })).filter(contact => contact.id && contact.phone);
+  const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
+  const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
+  const rawActions = properties.actionFlows;
+  const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
+    ? rawActions as Record<string, unknown> : {};
+  const resolveInput = (source: unknown, eventPayload: Record<string, unknown>): unknown => {
+    if (source === '$session') return sessionId;
+    if (source === '$event') return eventPayload;
+    if (typeof source === 'string' && source.startsWith('$event.')) {
+      return source.slice(7).split('.').reduce<unknown>((current, key) =>
+        current && typeof current === 'object' && !['__proto__','prototype','constructor'].includes(key)
+          ? (current as Record<string, unknown>)[key] : undefined, eventPayload);
+    }
+    if (typeof source === 'string' && source.startsWith('$record.')) {
+      const fieldName = source.slice(8);
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
+    }
+    return source;
+  };
+  const onAction = async (action: { event: string; value?: unknown }) => {
+    if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test actions.');
+    const config = actionFlows[action.event];
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new Error('No metadata event action is configured for "' + action.event + '".');
+    }
+    const binding = config as Record<string, unknown>;
+    if (binding.actionType === 'PageState') {
+      const key=String(binding.stateKey??'');
+      if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key))
+        throw new Error('Page state action requires a valid metadata state key');
+      const payload=action.value && typeof action.value==='object' && !Array.isArray(action.value)
+        ? action.value as Record<string,unknown> : {value:action.value};
+      const value=resolveInput(binding.value,payload);
+      window.dispatchEvent(new CustomEvent('metadrive:page-local-state',{
+        detail:{pageSessionKey,key,value}
+      }));
+      return {updated:true};
+    }
+    if (binding.actionType === 'Navigate') {
+      const target = resolvePageActionRoute(binding, {
+        objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
+      });
+      // Server endpoints enforce the final object and page authorization checks.
+      onNavigate(target);
+      return { navigated: true };
+    }
+    const flowApiName = String(binding.flowApiName ?? '');
+    const selected = availableFlows.find((flow) => flow.apiName === flowApiName);
+    if (!selected || selected.status !== 'Active') {
+      throw new Error('Choose an active Flow for the "' + action.event + '" action in Page Builder.');
+    }
+    const payload = action.value && typeof action.value === 'object' && !Array.isArray(action.value)
+      ? action.value as Record<string, unknown> : { value: action.value };
+    const inputs = Object.fromEntries(Object.entries(
+      binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs)
+        ? binding.inputs as Record<string, unknown> : {}
+    ).map(([key, source]) => [key, resolveInput(source, payload)]));
+    setActionError('');
+    if (selected.flowType === 'Screen Flow') {
+      onLaunchFlow(flowApiName, inputs);
+      return { interviewStarted: true };
+    }
+    if (selected.flowType !== 'Autolaunched Flow') {
+      throw new Error('Component event Flow must be Screen or Autolaunched.');
+    }
+    try {
+      const response = await apiRequest<{ outputs?: Record<string, unknown>; interviewId?: string }>(
+        '/flows/' + encodeURIComponent(flowApiName) + '/execute', {
+          method: 'POST', body: JSON.stringify(inputs)
+        });
+      if (response.interviewId) throw new Error('This action was paused by a Flow Wait element.');
+      let completedSessionId = sessionId;
+      if (binding.resetSessionOnSuccess === true) {
+        const key = 'metadrive-page-session:' + pageSessionKey;
+        const newSession = crypto.randomUUID();
+        try { window.sessionStorage.setItem(key, newSession); } catch { /* private session */ }
+        completedSessionId = newSession;
+        setSessionId(newSession);
+      }
+      if (binding.mutatesData !== false) {
+        setRevision((value) => value + 1);
+        window.dispatchEvent(new CustomEvent('metadrive:page-flow-mutated', {
+        detail: {pageSessionKey,sessionId: completedSessionId}
+        }));
+      }
+      return {
+        ...response,
+        completed: typeof binding.successOutput === 'string'
+          && response.outputs?.[binding.successOutput] === binding.successValue
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Flow action failed';
+      setActionError(message);
+      throw error;
+    }
+  };
+  useEffect(() => {
+    if (disableActions || !actionFlows.start || initializedSessions.current.has(sessionId)) return;
+    initializedSessions.current.add(sessionId);
+    void onAction({ event: 'start', value: {} }).catch(() => {
+      initializedSessions.current.delete(sessionId);
+    });
+  }, [sessionId, disableActions]);
+  return <div>
+    {dataError && <div className="records-message" role="alert">{dataError}</div>}
+    <RegisteredComponent definition={definition} props={{
+      ...properties, ...componentLayoutProps(properties, formFactor),
+      label: component.label, properties, objects, reports, flows: availableFlows, pageState,
+      device: formFactor, onNavigate, onLaunchFlow, onAction, actionError, refreshToken: revision,
+      onChange: (value: unknown) => {
+        if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
+      },
+      loading: dataLoading, sessionId,
+      ...(objectApiName ? { records: visibleRecords } : {}),
+      ...presented,
+      contactChoices
+    }} />
+  </div>;
+}
 
 function usePageLayoutDevice(): LayoutDevice {
   const currentDevice = (): LayoutDevice => window.innerWidth <= 640 ? 'Phone' : window.innerWidth <= 1024 ? 'Tablet' : 'Desktop';
@@ -301,6 +550,18 @@ function LightningAppRuntime({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('');
+  const [layoutState,setLayoutState]=useState<Record<string,unknown>>({});
+  useEffect(()=>{
+    setLayoutState({});
+    const listener=(event:Event)=>{
+      const detail=(event as CustomEvent<{pageSessionKey:string;key:string;value:unknown}>).detail;
+      if(detail?.pageSessionKey!==appId+':'+page?.apiName)return;
+      if(!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(detail.key))return;
+      setLayoutState(prev=>({...prev,[detail.key]:detail.value}));
+    };
+    window.addEventListener('metadrive:page-local-state',listener);
+    return()=>window.removeEventListener('metadrive:page-local-state',listener);
+  },[appId,page?.apiName]);
   useEffect(() => {
     let active = true;
     setPage(null);
@@ -327,7 +588,7 @@ function LightningAppRuntime({
   }, [page?.layoutMode, onStandaloneModeChange]);
   if (error) return <div className="records-page"><div className="records-message" role="alert">{error}</div></div>;
   if (loading) return <div className="records-page"><div className="records-loading">Loading Lightning page…</div></div>;
-  if (!page) return <main className="records-page"><section className="records-empty" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home Page not assigned</h1><p>No active Home Page is assigned to this app and profile.</p><p>An administrator can assign a Home Page in Lightning App Builder.</p></section></main>;
+  if (!page) return <main className="records-page"><section className="records-empty records-home-unassigned" aria-labelledby="records-home-empty-heading"><h1 id="records-home-empty-heading">Home page is not configured</h1><p>This app has no active Home Page assigned for your current profile and device.</p><p>Ask an administrator to activate and assign a Home Page in the Lightning App Builder. Existing app pages and records remain available from navigation.</p></section></main>;
   const isStandaloneRuntime = isStandalonePagePresentation(page);
   const regions: Array<'header' | 'main' | 'sidebar'> = ['header', 'main', 'sidebar'];
   const appVisibilityContext = { formFactor } as const;
@@ -359,7 +620,7 @@ function LightningAppRuntime({
         ? <div className="metadata-nested-host" data-nested-host={component.id}>{content}{nestedChildren}</div>
         : content;
       return page.layoutMode === 'free-canvas' ? rendered
-        : <div key={component.id} style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{rendered}</div>;
+        : <div key={component.id} style={{...resolvePageComponentStyle(component.properties, component.type, layoutDevice), ...(component.properties?.fillRegion===true ? {height:'100%',minHeight:0}: {})}}>{rendered}</div>;
     }
     if (component.type === 'Dashboard') return <section className="record-fields-card surface" key={component.id}>
       <EmbeddedDashboard dashboardApiName={String(component.properties.dashboardApiName ?? '')}
@@ -432,6 +693,7 @@ function LightningAppRuntime({
   return <TemplatePageRuntimeLayout apiName={page.apiName} label={page.label}
     pageType={page.pageType} template={page.template}
     fullscreen={isStandaloneRuntime && page.layoutMode === 'template'} phone={formFactor === 'Phone'} layoutVariant={page.components.find(component => component.properties?.standalonePresentation === true)?.properties?.presentationLayout as string | undefined}
+    overlayOpen={layoutState.basketOpen===true}
     header={renderRegion('header')} main={renderRegion('main')} sidebar={renderRegion('sidebar')} />;
 }
 

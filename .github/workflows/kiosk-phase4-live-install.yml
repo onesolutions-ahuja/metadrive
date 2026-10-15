@@ -8,6 +8,7 @@ on:
       - 'scripts/kiosk-phase4-flows.mjs'
       - 'scripts/kiosk-phase4-pages.mjs'
       - 'scripts/install-kiosk-phase4.mjs'
+      - 'scripts/kiosk-reference-screen.test.mjs'
   workflow_dispatch:
 permissions:
   contents: read

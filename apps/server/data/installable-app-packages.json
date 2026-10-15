@@ -23,7 +23,8 @@
             "modifyAll": false
           }
         },
-        "credentialGrantSeeds": [
+        "pageMigration": {"propertyRules":[{"templateKey":"contactsObjectApiName","when":{"key":"contactsObjectApiName","mode":"missing"},"copy":["contactsObjectApiName"]}]},
+      "credentialGrantSeeds": [
           {
             "objectApiName": "Chatter_Channel_Grant__c",
             "profileId": "system-administrator",
@@ -43,7 +44,11 @@
               "Can_Assign__c": true,
               "View_All__c": true,
               "Active__c": true
-            }
+            },
+            "tenantId": "unesolutions-dev",
+            "targetUserEmails": [
+              "support@unesolutions.co.uk"
+            ]
           }
         ]
       },
@@ -224,6 +229,7 @@
                 "conversationsObjectApiName": "Communication_Records__c",
                 "messagesObjectApiName": "Communication_Records__c",
                 "channelAccountObjectApiName": "Connector_App__c",
+        "contactsObjectApiName": "Contact",
                 "restrictToAssigned": true,
                 "enableAssignment": true,
                 "actionFlows": {
@@ -292,7 +298,7 @@
               "config": {
                 "namedCredentialResource": "{!AuthorisedCredentialId}",
                 "method": "POST",
-                "path": "messages",
+                "path": "{!AuthorisedMessagePath}",
                 "headers": "Content-Type: application/json",
                 "body": "{\"messaging_product\":\"whatsapp\",\"to\":\"{!RecipientPhone}\",\"type\":\"text\",\"text\":{\"body\":\"{!Body}\"}}",
                 "deliveryMode": "SYNC",
