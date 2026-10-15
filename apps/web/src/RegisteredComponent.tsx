@@ -37,16 +37,16 @@ function resolveTrustedModule(source:string){
  trustedModules.set(source,compiled);
  return compiled;
 }
-function RegisteredComponentBody({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
+function RegisteredComponentBody({ definition, props, layoutTransparent=false }: { definition: LibraryComponentMetadata; props: Record<string, unknown>; layoutTransparent?:boolean }) {
   const Component = useMemo(() => resolveTrustedModule(definition.compiledJs), [definition.compiledJs]);
 
-  return <div className={`registered-component metadrive-component-${definition.apiName.toLowerCase()}`}>
+  return <div className={`registered-component metadrive-component-${definition.apiName.toLowerCase()}`} style={layoutTransparent?{display:'contents'}:undefined}>
     {definition.scopedCss && <style>{definition.scopedCss}</style>}
     <Component {...props} />
   </div>;
 }
 
-export default function RegisteredComponent({ definition, props }: { definition: LibraryComponentMetadata; props: Record<string, unknown> }) {
+export default function RegisteredComponent({ definition, props, layoutTransparent=false }: { definition: LibraryComponentMetadata; props: Record<string, unknown>; layoutTransparent?:boolean }) {
   if (definition.status === 'Draft') return <div role="status" className="registered-component-error">Component is a draft. Publish it before use.</div>;
   const configuredProps = definition.propertyDefinitions?.length ? resolveComponentSettings(definition.propertyDefinitions, props) : props;
   const effectiveProps = applyRecordViewAdapter(configuredProps);
@@ -55,7 +55,7 @@ export default function RegisteredComponent({ definition, props }: { definition:
   if (primitiveCheck && !primitiveCheck.valid) return <div className="registered-component-error" role="alert">Invalid primitive metadata: {primitiveCheck.errors.join('; ')}</div>;
   const accessibility = primitive ? primitiveAccessibilityProps(primitive) : {};
   if (definition.trustedBundled !== true) return <div {...accessibility}><ComponentSandbox definition={definition} props={effectiveProps} /></div>;
-  return <div {...accessibility}><ComponentRenderBoundary key={`${definition.apiName}-${definition.version}`}>
-    <RegisteredComponentBody definition={definition} props={effectiveProps} />
+  return <div {...accessibility} style={layoutTransparent?{display:'contents'}:undefined}><ComponentRenderBoundary key={`${definition.apiName}-${definition.version}`}>
+    <RegisteredComponentBody definition={definition} props={effectiveProps} layoutTransparent={layoutTransparent} />
   </ComponentRenderBoundary></div>;
 }
