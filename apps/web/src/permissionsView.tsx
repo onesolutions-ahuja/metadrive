@@ -97,7 +97,7 @@ import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pag
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import AppExchange from './AppExchange';
 import AppManager from './AppManager';
-import PlatformWorkspaceSurface from './PlatformWorkspaceSurface';
+import PlatformWorkspaceSurface from './PlatformWorkspaceSurface'; import {PlatformPageSlot} from './PlatformPageSlot';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
 import NamedCredentials from './NamedCredentials';
@@ -526,7 +526,7 @@ function Permissions({
       : tab === 'roles' ? 'Roles' : tab === 'publicGroups' ? 'Public Groups'
         : tab === 'sharingRules' ? 'Sharing Rules' : 'Users';
 
-  return <div className="permissions-page">
+  return <PlatformPageSlot slotKey="permissions"><div className="permissions-page">
     <PageHeading eyebrow="Setup / Users" title={tabLabel} description="Build reusable access grants, combine them into permission set groups, mute group permissions, and assign access to tenant users." actions={<>
       {tab === 'sets' && <button className="btn btn-brand" onClick={createSet} disabled={Boolean(accessControlError)}><Plus size={14} />New Permission Set</button>}
       {tab === 'groups' && <button className="btn btn-brand" onClick={createGroup} disabled={Boolean(accessControlError)}><Plus size={14} />New Permission Set Group</button>}
@@ -539,7 +539,7 @@ function Permissions({
     </>} />
     {accessControlError && <div className="auth-error" role="alert">Unable to load access-control metadata: {accessControlError}</div>}
     {error && <div className="auth-error" role="alert">{error}</div>}
-    <div className="permission-tabs">
+    <PlatformPageSlot slotKey="rbac-tabs"><div className="permission-tabs">
       <button className={tab === 'profiles' ? 'active' : ''} onClick={() => changeTab('profiles')}>Profiles</button>
       <button className={tab === 'sets' ? 'active' : ''} onClick={() => changeTab('sets')}>Permission Sets</button>
       <button className={tab === 'groups' ? 'active' : ''} onClick={() => changeTab('groups')}>Permission Set Groups</button>
@@ -549,9 +549,9 @@ function Permissions({
       <button className={tab === 'publicGroups' ? 'active' : ''} onClick={() => changeTab('publicGroups')}>Public Groups</button>
       <button className={tab === 'queues' ? 'active' : ''} onClick={() => changeTab('queues')}>Queues</button>
       <button className={tab === 'sharingRules' ? 'active' : ''} onClick={() => changeTab('sharingRules')}>Sharing Rules</button>
-    </div>
+    </div></PlatformPageSlot>
     <section className="surface permission-workspace">
-      <aside className="permission-list">
+      <PlatformPageSlot slotKey="rbac-list"><aside className="permission-list">
         <div className="mini-search"><Search size={13} /><input placeholder={`Search ${tabLabel.toLowerCase()}…`} aria-label={`Search ${tabLabel}`} value={query} onChange={(event) => setQuery(event.target.value)} /></div>
         {tab === 'profiles' && visibleProfiles.map((item) => <button key={item.id} className={`permission-list-item ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); onRouteResourceChange('Profiles', item.apiName); }}><strong>{item.label}</strong><small>{item.apiName} · {item.license}</small></button>)}
         {tab === 'sets' && visibleSets.map((item) => <button key={item.id} className={`permission-list-item ${item.id === selectedId ? 'selected' : ''}`} onClick={() => { setSelectedId(item.id); onRouteResourceChange('PermissionSets', item.apiName); }}><strong>{item.label}</strong><small>{item.apiName}</small></button>)}
@@ -571,8 +571,8 @@ function Permissions({
         {tab === 'publicGroups' && visiblePublicGroups.length === 0 && <div className="empty-state">No public groups found.</div>}
         {tab === 'queues' && visibleQueues.length === 0 && <div className="empty-state">No queues found.</div>}
         {tab === 'sharingRules' && visibleSharingRules.length === 0 && <div className="empty-state">No sharing rules found.</div>}
-      </aside>
-      <div className="permission-editor">
+      </aside></PlatformPageSlot>
+      <PlatformPageSlot slotKey="rbac-editor"><div className="permission-editor">
         {tab === 'sharing' && <>
           <div className="section-toolbar"><div><h2>Organization-Wide Defaults</h2><p>Set the baseline record visibility for each object. Ownership and explicit record shares can grant additional access.</p></div></div>
           <div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Object</th><th>Default Internal Access</th><th>Grant Access Using Hierarchies</th></tr></thead><tbody>{visibleSharingObjects.map((object) => {
@@ -859,10 +859,10 @@ function Permissions({
         {tab === 'profiles' && !selectedProfile && <div className="empty-state">Select a profile or create one to get started.</div>}
         {tab === 'sets' && !selectedSet && <div className="empty-state">Select a permission set or create one to get started.</div>}
         {tab === 'groups' && !selectedGroup && <div className="empty-state">Select a permission set group or create one to get started.</div>}
-      </div>
+      </div></PlatformPageSlot>
     </section>
-    <div className="permission-info"><ShieldCheck size={17} /><span>Tenant-scoped grants are evaluated by the API. Permission-set groups combine their member grants and can mute group-contributed system and object permissions; direct assignments are unaffected by group muting.</span></div>
-  </div>;
+    <PlatformPageSlot slotKey="rbac-help"><div className="permission-info"><ShieldCheck size={17} /><span>Tenant-scoped grants are evaluated by the API. Permission-set groups combine their member grants and can mute group-contributed system and object permissions; direct assignments are unaffected by group muting.</span></div></PlatformPageSlot>
+  </div></PlatformPageSlot>;
 }
 
 
