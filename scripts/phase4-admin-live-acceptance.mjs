@@ -18,12 +18,15 @@ const login=await api('/auth/login',undefined,'POST',{email,password});
 assert.ok(login.access_token,'Secure OneEngine session unavailable');
 if(process.env.METADRIVE_EXPECTED_TENANT_ID)
  assert.equal(login.user?.tenantId,process.env.METADRIVE_EXPECTED_TENANT_ID,'Unexpected tenant');
+const grants=new Set(Array.isArray(login.user?.permissions)?login.user.permissions:[]);
+const expected=protectedWorkspacePageDescriptors.filter(d=>grants.has(d.permission));
+assert.ok(expected.length>=3,'Production acceptance account lacks administration read permissions');
 let visible=[];let lastError='';
 for(let attempt=0;attempt<24;attempt++){
  try {
   const payload=await api('/metadata/pages',login.access_token);
   visible=Array.isArray(payload.pages)?payload.pages:[];
-  const essentials=['object-manager','app-manager','company-settings'].map(protectedPageApiName);
+  const essentials=expected.map(d=>protectedPageApiName(d.workspace));
   if(essentials.every(name=>visible.some(p=>p.apiName===name))){lastError='';break;}
   lastError='Protected administration metadata not deployed yet';
  }catch(e){lastError=e instanceof Error?e.message:'Unable to fetch pages';}
@@ -31,9 +34,9 @@ for(let attempt=0;attempt<24;attempt++){
 }
 if(lastError)throw Error(lastError);
 let count=0;
-for(const descriptor of protectedWorkspacePageDescriptors){
+for(const descriptor of expected){
  const page=visible.find(p=>p.apiName===protectedPageApiName(descriptor.workspace));
- if(!page)continue; // The server intentionally hides privileged page metadata from non-grantees.
+ assert.ok(page,'Granted administration page is absent: '+descriptor.workspace);
  assert.equal(page.scope,'platform-system');
  assert.equal(page.ownerNamespace,'MetaDrive');
  assert.equal(page.status,'Active');
@@ -45,6 +48,6 @@ for(const descriptor of protectedWorkspacePageDescriptors){
  assert.ok(actual.every(key=>slots.includes(key)),'Unknown protected admin slot identity');
  count++;
 }
-assert.ok(count>=3,'Expected centrally permission-filtered system pages');
+assert.equal(count,expected.length,'All centrally authorised system pages must be deployed');
 assert.equal(new Set(visible.map(page=>page.apiName)).size,visible.length,'Duplicate page registration');
-console.log(JSON.stringify({result:'PASS',readOnly:true,tenantVerified:true,protectedPagesAccessible:count,totalProtectedDefinitions:protectedWorkspacePageDescriptors.length,rbacFiltered:true}));
+console.log(JSON.stringify({result:'PASS',readOnly:true,tenantVerified:true,protectedPagesAccessible:count,protectedPagesExpected:expected.length,totalProtectedDefinitions:protectedWorkspacePageDescriptors.length,rbacFiltered:true}));
