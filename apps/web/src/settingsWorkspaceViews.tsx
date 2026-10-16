@@ -493,9 +493,10 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
   </section>;
 }
 
-type CompanyProfile = {legalName:string;tradingName:string;website:string;phone:string;email:string;addressLine1:string;addressLine2:string;city:string;postcode:string;country:string;timezone:string;locale:string;description:string};
-const blankCompanyProfile:CompanyProfile={legalName:'',tradingName:'',website:'',phone:'',email:'',addressLine1:'',addressLine2:'',city:'',postcode:'',country:'',timezone:'Europe/London',locale:'en-GB',description:''};
+type CompanyProfile = {logoUrl?:string;legalName:string;tradingName:string;website:string;phone:string;email:string;addressLine1:string;addressLine2:string;city:string;postcode:string;country:string;timezone:string;locale:string;description:string};
+const blankCompanyProfile:CompanyProfile={logoUrl:'',legalName:'',tradingName:'',website:'',phone:'',email:'',addressLine1:'',addressLine2:'',city:'',postcode:'',country:'',timezone:'Europe/London',locale:'en-GB',description:''};
 const companyFields:ReadonlyArray<{key:keyof CompanyProfile;label:string}>= [
+{key:'logoUrl',label:'Company logo URL (HTTPS)'},
 {key:'legalName',label:'Legal company name'},{key:'tradingName',label:'Trading name'},
 {key:'description',label:'Description'},{key:'website',label:'Website'},
 {key:'email',label:'Contact email'},{key:'phone',label:'Contact phone'},
@@ -644,20 +645,20 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
   return <div className="home-content settings-read-first-page company-settings-page">
     <PageHeading eyebrow="Company Settings" title="Company Settings"
       description="Manage your organisation settings, base currency, VAT and exchange rates in one workspace." />
-    <PlatformPageSlot slotKey="company-info"><section className="surface permission-section company-profile-section" aria-label="Company details">
+    <section className="surface permission-section company-profile-section" aria-label="Company details">
       <div className="section-toolbar"><div><h2>Company details</h2><p>Organisation, contact and regional information.</p></div>
       {canManage&&!companyEditing&&!companyLoading&&<button type="button" className="btn" onClick={()=>{setCompanyBeforeEdit({...company});setCompanyEditing(true);}}>Edit details</button>}</div>
-      {companyLoading?<p>Loading company details…</p>:<div className="company-profile-grid">
-      {companyFields.map(field=><div className="company-profile-field" key={field.key}><label htmlFor={'company-'+field.key}>{field.label}</label>
+      {companyLoading?<p>Loading company details…</p>:<><div className="company-profile-logo">{company.logoUrl?.startsWith("https://")?<img src={company.logoUrl} alt="Company logo" />:<span aria-label="No logo configured">No logo</span>}</div><div className="company-profile-grid">
+      {companyFields.map(field=><div className="company-profile-field" data-company-field={field.key} key={field.key}><label htmlFor={'company-'+field.key}>{field.label}</label>
         {companyEditing?<input id={'company-'+field.key} className="form-control" value={company[field.key]}
           onChange={event=>setCompany(previous=>({...previous,[field.key]:event.target.value}))}/>
-        :<p>{company[field.key]||'Not provided'}</p>}</div>)}</div>}
+        :<p>{company[field.key]||'Not provided'}</p>}</div> )}</div></>}
       {companyEditing&&<div className="settings-read-first-toolbar">
         <button type="button" className="btn" disabled={companySaving} onClick={()=>{setCompany(companyBeforeEdit??blankCompanyProfile);setCompanyEditing(false);setCompanyBeforeEdit(null);}}>Cancel</button>
         <button type="button" className="btn btn-brand" disabled={companySaving} onClick={()=>void saveCompany()}>{companySaving?'Saving…':'Save details'}</button></div>}
       {companyError&&<p className="form-error" role="alert">{companyError}</p>}
       {companyNotice&&<p className="form-success" role="status">{companyNotice}</p>}
-    </section></PlatformPageSlot>
+    </section>
     <section className="surface permission-section">
       <div className="section-toolbar">
         <div><h2>Currency & Tax</h2>

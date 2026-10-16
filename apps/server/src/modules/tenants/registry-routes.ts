@@ -8,6 +8,7 @@ export function registerTenantRegistryRoutes(deps: TenantRegistryRoutesDependenc
   // Tenant-owned company profile: stored in the existing tenant SQL settings projection,
   // never in the platform-only tenant registry. Server checks metadata permissions.
   const companyProfileSchema = z.object({
+    logoUrl:z.union([z.literal(''),z.string().url().max(2000).refine(value=>value.startsWith('https://'))]).optional(),
     legalName:z.string().trim().max(120),tradingName:z.string().trim().max(120),
     website:z.union([z.literal(''),z.string().trim().url().max(500)]),
     phone:z.string().trim().max(50),email:z.union([z.literal(''),z.string().trim().email()]),
