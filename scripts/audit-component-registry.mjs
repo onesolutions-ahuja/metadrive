@@ -14,7 +14,7 @@ const INPUT = Object.freeze({
   catalog: 'apps/web/src/componentCatalog.ts',
   manifest: 'apps/web/src/custom-components/manifest.json',
   metadata: 'apps/web/src/metadata.ts',
-  backend: 'apps/server/src/modules/components/library-schema.ts',
+  backend: 'apps/server/src/index.ts',
   sqlShadow: 'apps/server/sql/component-registry-v4.sql',
   libraryUi: 'apps/web/src/ComponentLibrary.tsx',
   palette: 'apps/web/src/pageBuilderPalette.ts',
