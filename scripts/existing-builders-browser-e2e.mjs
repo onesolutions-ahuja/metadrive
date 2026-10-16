@@ -206,7 +206,7 @@ try {
   }
   await page.reload();
   await flowName.waitFor();
-  if(await flowName.inputValue()!==flowEdited)throw Error('Flow Builder reopen lost saved label');
+  await page.waitForFunction(expected => document.querySelector('input[aria-label="Flow label"]')?.value === expected, flowEdited, {timeout:20000});
   await page.getByRole('button',{name:'Run',exact:true}).click();
   const flowFrame=page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]');
   await flowFrame.waitFor({state:'attached'});
