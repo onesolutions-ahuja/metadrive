@@ -22,11 +22,13 @@ export function createAuthenticationRuntime(deps: {
  hasFieldPermission: (principal: Principal, tenant: TenantData, objectName: string, fieldName: string, action: 'read' | 'edit') => boolean;
  hasRecordTypeAccessForUser: (userId: string, tenant: TenantData, objectName: string, recordTypeId: string) => boolean;
  tenantData: (tenantId: string) => TenantData | undefined;
+ canOpenApp: (principal: Principal, tenant: TenantData, appId: string) => boolean;
+ canOpenTab: (principal: Principal, tenant: TenantData, objectApiName: string) => boolean;
  persistState: (state: PlatformState) => void;
  withSecurityEvent: (tenant: TenantData, actorUserId: string, action: string, details?: Record<string, string>, targetUserId?: string) => TenantData;
 }) {
  const { platformStore, platformInitialization, jwtService, refreshCookieName, isProduction,
-  effectivePermissions, hasFieldPermission, hasRecordTypeAccessForUser, tenantData, persistState, withSecurityEvent } = deps;
+  effectivePermissions, hasFieldPermission, hasRecordTypeAccessForUser, tenantData, persistState, withSecurityEvent, canOpenApp, canOpenTab } = deps;
 function cookieValue(req: Request, name: string): string | undefined {
   const header = req.header('cookie');
   if (!header) return undefined;
@@ -79,7 +81,11 @@ function authenticatedLandingBootstrap(user: LocalUser, tenant: TenantData, perm
   return {
     objects: canReadMetadata ? tenant.objects : [],
     pages: canReadMetadata ? tenant.pages : [],
-    apps: canReadMetadata ? tenant.apps : [],
+    apps: canReadMetadata ? tenant.apps.filter(app => canOpenApp(principal, tenant, app.apiName))
+      .map(app => ({...app,
+        navigationItems: app.navigationItems.filter(item => canOpenTab(principal, tenant, item)),
+        navigationOrder: app.navigationOrder.filter(item => item.type !== 'Object' || canOpenTab(principal, tenant, item.apiName))
+      })) : [],
     user: { profileId, permissions, fieldAccess, recordTypeAccess }
   };
 }
