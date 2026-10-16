@@ -195,7 +195,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
 export function createPageBuilder(MetadataComponentProperties: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
 function PageBuilder({
   page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
@@ -312,7 +311,6 @@ function PageBuilder({
     });
     setExternalPreviewTarget(container);
   };
-
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const [dynamicFormsUpgradeOpen, setDynamicFormsUpgradeOpen] = useState(false);
@@ -1537,9 +1535,7 @@ function PageBuilder({
                 height: page.canvasHeight * fitScale,
                 minHeight: 0,
                 overflow: 'hidden'
-              } : page.layoutMode === 'template' && page.components.some(
-                component => component.visible && component.properties?.standalonePresentation === true
-              ) ? standaloneTemplateCanvasStyle(page.canvasWidth, page.canvasHeight) : undefined}
+              } : page.layoutMode === 'template' && page.components.some(c => c.visible && c.properties?.standalonePresentation === true) ? standaloneTemplateCanvasStyle(page.canvasWidth, page.canvasHeight) : undefined}
             >
               {page.layoutMode === 'free-canvas' ? <div
                 className={`free-canvas-stage ${canvasSnap && !previewMode ? 'canvas-grid-on' : ''}`}
