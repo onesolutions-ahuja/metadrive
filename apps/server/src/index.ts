@@ -885,11 +885,11 @@ installTenantRecoveryCentre(app, {
   isCurrentOperator: (userId: string) => {
     const operator = platformStore.state.users.find(item => item.id === userId && !item.disabled);
     return Boolean(operator && operator.mfaSecret && tenantIsActive(operator.tenantId)
-      && (platformStore.state.platformPolicies[operator.id] ?? []).includes('platform:superadmin'));
+      && (platformStore.state.platformPolicies[operator.id] ?? []).some(permission=>permission==='platform:tenants:manage'||permission==='platform:superadmin'));
   },
   tenantUser: (tenantId: string, userId: string) =>
     platformStore.state.users.find(user => user.tenantId === tenantId && user.id === userId
-      && !user.disabled && !((platformStore.state.platformPolicies[user.id] ?? []).includes('platform:superadmin'))),
+      && !user.disabled && !((platformStore.state.platformPolicies[user.id] ?? []).some(permission=>permission==='platform:tenants:manage'||permission==='platform:superadmin'))),
   domains: (tenantId: string) => platformStore.state.tenantRegistry[tenantId]?.domains ?? [],
   // Every recovery action requires a new TOTP proof, even when tenant MFA
   // policy is only Optional. A cross-instance SQL uniqueness constraint blocks
