@@ -2,8 +2,12 @@ import { createFlowExecutionEngine } from './execution-engine.js';
 import type { FlowExecutionDependencies } from '../../index.js';
 
 /** Single executor binding for manual, scheduled, record, and subflow entry points. */
-export function bindFlowExecution(dependencies: FlowExecutionDependencies) {
-  return createFlowExecutionEngine(dependencies);
+export function bindFlowExecution(dependencies: () => FlowExecutionDependencies) {
+  let executor: ReturnType<typeof createFlowExecutionEngine> | undefined;
+  return (...args: Parameters<ReturnType<typeof createFlowExecutionEngine>>) => {
+    executor ??= createFlowExecutionEngine(dependencies());
+    return executor(...args);
+  };
 }
 
 /** Preserve the shared record-write policy for every Flow entry point. */
