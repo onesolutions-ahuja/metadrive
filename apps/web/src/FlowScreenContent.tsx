@@ -142,7 +142,7 @@ export default function FlowScreenContent({
       </figure>;
     }
     if (['Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater'].includes(type)) {
-      return <FlowScreenAdvancedField key={name} field={field} label={label} inputId={inputId}
+      return <FlowScreenAdvancedField key={name} libraryComponents={libraryComponents} field={field} label={label} inputId={inputId}
         helpId={helpId} helpText={helpText} value={value} values={values} setValue={setValue}
         loadRecords={loadRecords} onError={onError} />;
     }
