@@ -1,0 +1,47 @@
+name: Metadata Architecture Contract
+on:
+  pull_request:
+    paths:
+      - 'contracts/**'
+      - 'docs/metadata-driven-platform/**'
+      - 'scripts/metadata-architecture-*'
+      - 'scripts/phase1*'
+      - 'scripts/audit-platform-architecture*'
+      - '.github/workflows/developer-policy.yml'
+      - 'apps/server/data/platform-metadata.json'
+      - 'package.json'
+      - 'apps/web/src/**'
+      - 'apps/server/src/**'
+      - '.github/workflows/metadata-architecture-phase1.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/**'
+      - 'docs/metadata-driven-platform/**'
+      - 'scripts/metadata-architecture-*'
+      - 'apps/web/src/**'
+      - 'apps/server/src/**'
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+jobs:
+  metadata-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Audit existing architecture
+        run: node scripts/metadata-architecture-audit.mjs --check
+      - name: Validate shared contract and migration ownership
+        run: node --test scripts/metadata-architecture-contract.test.mjs
+      - name: Verify Page Builder shared published registry migration
+        run: node --experimental-strip-types --test scripts/page-builder-core-palette.test.mjs
+      - name: Verify Phase 1a–g acceptance and rollback dependencies
+        run: node --test scripts/audit-platform-architecture.test.mjs scripts/phase1f-migration-dependencies.test.mjs scripts/phase1g-acceptance.test.mjs scripts/phase1-final-acceptance.test.mjs

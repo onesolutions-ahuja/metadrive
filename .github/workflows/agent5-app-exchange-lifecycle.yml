@@ -1,0 +1,50 @@
+name: Agent 5 AppExchange Lifecycle Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent5-app-exchange-lifecycle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  isolated-lifecycle:
+    name: Isolated AppExchange lifecycle and preservation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ''
+      POSTGRES_URL: ''
+      PGHOST: ''
+      METADRIVE_DATABASE_URL: ''
+      METADRIVE_DATA_PATH: /tmp/agent5-app-exchange-isolated.json
+      CI: 'true'
+      NODE_ENV: test
+      METADRIVE_TEST_MODE: 'true'
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Validate real Flow API install, trial, uninstall and reinstall
+        run: npx tsx --test --test-concurrency=1 apps/server/test/connector-app-phase1.smoke.test.ts
+      - name: Validate uninstall data preservation
+        run: node --test apps/server/test/package-retirement-preservation.test.mjs
+      - name: Validate Core and independent app seeders
+        run: node --test apps/server/test/modular-tenant-seeders.test.mjs
+      - name: Validate entitlement and optional-module isolation
+        run: npx tsx --test scripts/agent5-app-exchange-entitlement.test.mjs
+      - name: Record outcome
+        if: always()
+        run: |
+          echo '### Agent 5 AppExchange verification' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Isolated ephemeral tenant only; no live tenant modifications.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Check each job step for PASS/FAIL evidence.' >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,144 @@
+{
+  "description": "Editable, inactive credential-bound smoke flows. Installation must resolve actual tenant credential UUID and provider operation path via the authenticated metadata API. Never put secrets in these files.",
+  "recipientE164": "+447440751016",
+  "flows": [
+    {
+      "apiName": "ONE_WhatsApp_Secure_Smoke",
+      "label": "ONE – WhatsApp Secure Smoke",
+      "description": "Send one approved WhatsApp test through the tenant's existing HTTPS Named Credential. Activate only after verified Graph API base URL and PhoneNumberId are bound.",
+      "flowType": "Autolaunched Flow",
+      "status": "Draft",
+      "versionNumber": 1,
+      "activeVersion": null,
+      "triggerObject": null,
+      "startConfig": {},
+      "elements": [
+        {
+          "id": 1,
+          "type": "Start",
+          "label": "Start",
+          "config": {}
+        },
+        {
+          "id": 2,
+          "type": "HTTP Callout",
+          "label": "Send secure test message",
+          "config": {
+            "namedCredentialId": "REPLACE_WITH_EXISTING_NAMED_CREDENTIAL_UUID",
+            "method": "POST",
+            "path": "REPLACE_WITH_META_PHONE_NUMBER_ID/messages",
+            "headers": "Content-Type: application/json",
+            "body": "{\"messaging_product\":\"whatsapp\",\"to\":\"447440751016\",\"type\":\"text\",\"text\":{\"body\":\"MetaDrive Module 11 WhatsApp secure delivery test.\"}}",
+            "deliveryMode": "SYNC",
+            "onError": "FAIL",
+            "statusVariable": "ProviderStatus"
+          }
+        },
+        {
+          "id": 3,
+          "type": "End",
+          "label": "End",
+          "config": {}
+        }
+      ],
+      "connectors": [
+        {
+          "id": "start_send",
+          "from": 1,
+          "to": 2,
+          "label": "",
+          "kind": "normal"
+        },
+        {
+          "id": "send_end",
+          "from": 2,
+          "to": 3,
+          "label": "",
+          "kind": "normal"
+        }
+      ],
+      "resources": [
+        {
+          "name": "ProviderStatus",
+          "label": "Provider HTTP status",
+          "type": "Variable",
+          "dataType": "Number",
+          "isCollection": false,
+          "availableForInput": false,
+          "availableForOutput": true,
+          "value": 0
+        }
+      ],
+      "versions": []
+    },
+    {
+      "apiName": "ONE_SMSGate_Secure_Smoke",
+      "label": "ONE – SMSGate Secure Smoke",
+      "description": "Send one approved SMS using existing SMSGate Named Credential and provider-defined endpoint. Configure fields to match installed SMSGate provider metadata before activation.",
+      "flowType": "Autolaunched Flow",
+      "status": "Draft",
+      "versionNumber": 1,
+      "activeVersion": null,
+      "triggerObject": null,
+      "startConfig": {},
+      "elements": [
+        {
+          "id": 1,
+          "type": "Start",
+          "label": "Start",
+          "config": {}
+        },
+        {
+          "id": 2,
+          "type": "HTTP Callout",
+          "label": "Send secure test message",
+          "config": {
+            "namedCredentialId": "REPLACE_WITH_EXISTING_NAMED_CREDENTIAL_UUID",
+            "method": "POST",
+            "path": "REPLACE_WITH_SMSGATE_PROVIDER_OPERATION_PATH",
+            "headers": "Content-Type: application/json",
+            "body": "{\"message\":\"MetaDrive Module 11 SMSGate secure delivery test.\",\"phoneNumbers\":[\"+447440751016\"]}",
+            "deliveryMode": "SYNC",
+            "onError": "FAIL",
+            "statusVariable": "ProviderStatus"
+          }
+        },
+        {
+          "id": 3,
+          "type": "End",
+          "label": "End",
+          "config": {}
+        }
+      ],
+      "connectors": [
+        {
+          "id": "start_send",
+          "from": 1,
+          "to": 2,
+          "label": "",
+          "kind": "normal"
+        },
+        {
+          "id": "send_end",
+          "from": 2,
+          "to": 3,
+          "label": "",
+          "kind": "normal"
+        }
+      ],
+      "resources": [
+        {
+          "name": "ProviderStatus",
+          "label": "Provider HTTP status",
+          "type": "Variable",
+          "dataType": "Number",
+          "isCollection": false,
+          "availableForInput": false,
+          "availableForOutput": true,
+          "value": 0
+        }
+      ],
+      "versions": []
+    }
+  ]
+}

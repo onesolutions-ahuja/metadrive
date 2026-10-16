@@ -1,0 +1,103 @@
+[
+  {
+    "apiName": "ChatterInbox",
+    "label": "Chatter Inbox",
+    "category": "Communication",
+    "description": "Responsive object-bound conversation list and thread. Sending and assignment require Flow action bindings; no direct provider calls.",
+    "surfaces": [
+      "page",
+      "dashboard",
+      "flow"
+    ],
+    "defaults": {
+      "title": "Chatter",
+      "accentColor": "#168657",
+      "conversationsObjectApiName": "Communication_Records__c",
+      "messagesObjectApiName": "Communication_Records__c",
+      "channelAccountObjectApiName": "Connector_App__c",
+      "restrictToAssigned": false,
+      "enableAssignment": true,
+      "actionFlows": {
+        "send": {
+          "flowApiName": "CHATTER_SEND_MESSAGE",
+          "inputs": {
+            "ConversationId": "$event.conversationId",
+            "ChannelAccountId": "$event.channelAccountId",
+            "RecipientPhone": "$event.recipientPhone",
+            "Body": "$event.body"
+          }
+        },
+        "assign": {
+          "flowApiName": "CHATTER_ASSIGN_CONVERSATION",
+          "inputs": {
+            "ConversationId": "$event.conversationId",
+            "ChannelAccountId": "$event.channelAccountId"
+          }
+        }
+      }
+    },
+    "jsx": "ChatterInbox/ChatterInbox.jsx",
+    "css": "ChatterInbox/ChatterInbox.css",
+    "version": 4,
+    "resize": {
+      "defaultWidth": 900,
+      "defaultHeight": 650,
+      "minWidth": 320,
+      "minHeight": 380
+    }
+  },
+  {
+    "apiName": "SystemPanel",
+    "label": "System Panel",
+    "category": "Layout",
+    "description": "Protected reusable information panel for Setup and tenant page, dashboard or Flow surfaces; no privileged operations.",
+    "scope": "platform-system",
+    "surfaces": [
+      "page",
+      "dashboard",
+      "flow",
+      "platform"
+    ],
+    "version": 1,
+    "defaults": {
+      "title": "Panel",
+      "description": "",
+      "accentColor": "#1b6586"
+    },
+    "jsx": "SystemPanel/SystemPanel.jsx",
+    "css": "SystemPanel/SystemPanel.css",
+    "resize": {
+      "defaultWidth": 440,
+      "defaultHeight": 200,
+      "minWidth": 180,
+      "minHeight": 90
+    }
+  },
+  {
+    "apiName": "AdminField",
+    "label": "Administration Field",
+    "category": "Forms",
+    "description": "Reusable trusted metadata-bound administration form control; mutations stay in OneEngine owners.",
+    "scope": "platform-system",
+    "surfaces": [
+      "page",
+      "platform"
+    ],
+    "version": 1,
+    "defaults": {
+      "label": "Field",
+      "placeholder": "",
+      "helpText": "",
+      "description": "",
+      "inputType": "text"
+    },
+    "jsx": "AdminField/AdminField.jsx",
+    "css": "AdminField/AdminField.css",
+    "resize": {
+      "defaultWidth": 320,
+      "defaultHeight": 80,
+      "minWidth": 120,
+      "minHeight": 48
+    }
+  }
+]

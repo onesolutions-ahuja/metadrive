@@ -1,0 +1,42 @@
+name: MD-09 Visual Record Filters
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/RecordFilterEditor.tsx'
+      - 'apps/web/src/recordFilterMetadata.ts'
+      - 'scripts/md09-record-filter-metadata.test.mjs'
+      - 'scripts/md09-record-filter-browser-smoke.mjs'
+      - 'package.json'
+      - '.github/workflows/md09-visual-filters.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  visual-filter-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Metadata filter unit tests
+        run: npm run test:record-filter
+      - name: Platform production build
+        run: npm run build
+      - name: Install disposable Chromium dependencies
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Visual filters authoring, persistence and real record runtime
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: node scripts/md09-record-filter-browser-smoke.mjs

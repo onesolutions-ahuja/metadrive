@@ -1,0 +1,66 @@
+name: Kiosk demo data - authorised MetaDrive API seed
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/kiosk-demo-live-seed.yml'
+      - 'scripts/install-kiosk-demo-data.mjs'
+      - 'scripts/kiosk-demo-fixtures.mjs'
+      - 'scripts/kiosk-commerce-capabilities.mjs'
+      - 'scripts/kiosk-commerce-basket.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+  statuses: write
+concurrency:
+  group: kiosk-demo-live-seed
+  cancel-in-progress: false
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify seed fixtures
+        run: node --test scripts/kiosk-demo-fixtures.test.mjs scripts/kiosk-commerce-capabilities.test.mjs
+      - name: Validate live endpoint and authorised seed credentials
+        env:
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: |
+          if [ -z "$METADRIVE_ADMIN_EMAIL" ] || [ -z "$METADRIVE_ADMIN_PASSWORD" ]; then
+            echo '::error::Missing METADRIVE_TEST_EMAIL or METADRIVE_TEST_PASSWORD; live seed not run.'
+            exit 1
+          fi
+          curl --fail --retry 3 --retry-delay 5 --max-time 20 https://metadrive.onrender.com/health >/dev/null
+      - name: Install and verify demo metadata through secured MetaDrive APIs
+        env:
+          METADRIVE_API_URL: https://metadrive.onrender.com
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+          METADRIVE_DEMO_SEED_APPROVED: 'true'
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/install-kiosk-demo-data.mjs 2>&1 | tee kiosk-seed-result.log
+          echo 'Kiosk metadata and product records verified through MetaDrive APIs.'
+      - name: Publish verifiable seed outcome to commit status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED_JOB_STATUS: ${{ job.status }}
+        run: |
+          if [ "$SEED_JOB_STATUS" = "success" ]; then
+            STATE=success
+            DESCRIPTION="Kiosk API seed and record verification passed"
+          else
+            STATE=failure
+            DESCRIPTION="Kiosk API seed incomplete; inspect this workflow's failed step"
+          fi
+          gh api --method POST "/repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" \
+            -f state="$STATE" -f context="kiosk-demo/live-seed" \
+            -f description="$DESCRIPTION"

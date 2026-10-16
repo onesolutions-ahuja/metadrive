@@ -1,0 +1,28 @@
+name: Phase 4 protected administration live acceptance
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/phase4-admin-live-acceptance.yml'
+      - 'scripts/phase4-admin-live-acceptance.mjs'
+      - 'apps/server/src/modules/metadata/platform-admin-pages.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-acceptance:
+    if: github.repository == 'onesolutions-ahuja/metadrive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify authorised production system pages and protected ownership
+        env:
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/phase4-admin-live-acceptance.mjs

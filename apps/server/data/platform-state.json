@@ -1,0 +1,62 @@
+{
+  "libraryComponents": [],
+  "tenants": {
+    "unesolutions-dev": {
+      "objects": [],
+      "flows": [],
+      "platformEvents": [],
+      "platformEventMessages": [],
+      "pages": [],
+      "apps": [],
+      "dashboards": [],
+      "dashboardFolders": [],
+      "reportFolders": [],
+      "dashboardTerritories": [],
+      "dashboardSnapshots": [],
+      "dashboardSubscriptions": [],
+      "reports": [],
+      "accessControl": {
+        "profiles": [],
+        "permissionSets": [],
+        "permissionSetGroups": [],
+        "roles": [],
+        "publicGroups": [],
+        "queues": [],
+        "sharingRules": [],
+        "users": []
+      },
+      "sharingSettings": {},
+      "currencySettings": {
+        "corporateCurrency": "USD",
+        "currencies": [
+          {
+            "currencyIsoCode": "USD",
+            "conversionRate": 1
+          }
+        ]
+      },
+      "recordShares": [],
+      "campaignMembers": [],
+      "activities": [],
+      "chatterPosts": [],
+      "notifications": [],
+      "approvalRequests": [],
+      "approvalProcesses": [],
+      "records": {},
+      "autoNumberSequences": {},
+      "fieldHistory": [],
+      "interviews": [],
+      "flowLogs": [],
+      "scheduleRuns": {},
+      "scheduleRetries": {},
+      "namedCredentials": [],
+      "emailAlerts": [],
+      "connectorSettings": [],
+      "connectorDefinitions": [],
+      "integrationConnections": []
+    }
+  },
+  "users": [],
+  "refreshSessions": [],
+  "revokedAccessTokens": {}
+}

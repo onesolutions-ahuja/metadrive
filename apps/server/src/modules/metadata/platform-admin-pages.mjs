@@ -1,0 +1,118 @@
+/** Presentation-only slots for the existing protected OneEngine Page Builder. */
+export const protectedWorkspacePageSlots=Object.freeze({"company-settings":["company-info","domains","developer-accounts","usage","recovery","mfa","email-recovery","locks","sessions","audit","field-settings-04","field-settings-05","field-settings-06","field-settings-07","field-settings-08","field-settings-09","field-settings-10","field-settings-11","field-settings-12","field-settings-13","field-settings-14","field-settings-15","field-settings-16","field-settings-17"],"object-manager":["object-workspace","object-list","object-heading","object-subnav","object-setting","field-object-01","field-object-02","field-object-03","field-object-04","field-object-05","field-object-06","field-object-07","field-object-08","field-object-09","field-object-10","field-object-11","field-object-12","field-object-13","field-object-14","field-object-15","field-object-16","field-object-17","field-object-18","field-object-19","field-object-20","field-object-21","field-object-22","field-object-23","field-object-24","field-object-25","field-object-26","field-object-27","field-object-28","field-object-29","field-object-30","field-object-31","field-object-32","field-object-33","field-object-34","field-object-35","field-object-36","field-object-37","field-object-38","field-object-39","field-object-40","field-object-41","field-object-42"],"app-manager":["identity","pages","assignments","navigation-items","navigation-order","utility","actions","field-label","field-apiName","field-brandColor","field-description"],"app-exchange":["marketplace-search","marketplace-filters","marketplace-catalog","marketplace-details","field-marketplaceSearch"],"rbac":["permissions","rbac-tabs","rbac-list","rbac-editor","rbac-help","field-rbac-01","field-rbac-02","field-rbac-03","field-rbac-04","field-rbac-05","field-rbac-06","field-rbac-07","field-rbac-08","field-rbac-09","field-rbac-10","field-rbac-11","field-rbac-12","field-rbac-13","field-rbac-14","field-rbac-15","field-rbac-16","field-rbac-17","field-rbac-18","field-rbac-19","field-rbac-20","field-rbac-21","field-rbac-22","field-rbac-23","field-rbac-24","field-rbac-25","field-rbac-26","field-rbac-27","field-rbac-28","field-rbac-29","field-rbac-30","field-rbac-31","field-rbac-32","field-rbac-33","field-rbac-34","field-rbac-35"],"tenant-management":["directory","tenant-details","tenant-domains","tenant-usage","tenant-recovery","field-tenantId","field-tenantName","field-adminName","field-email","field-password","field-developerDomain"],"named-credentials":["credentials","field-credentials-01","field-credentials-02","field-credentials-03","field-credentials-04","field-credentials-05","field-credentials-06","field-credentials-07","field-credentials-08"],"connector-settings":["connector-workspace"],"approval-processes":["approval-workspace","field-approval-01","field-approval-02","field-approval-03","field-approval-04","field-approval-05"],"automation-settings":["automation-policy","field-settings-01","field-settings-02","field-settings-03"]});
+const legacyControlSlots=Object.freeze({
+ 'app-manager':['identity','pages','assignments','navigation-items','navigation-order','utility','actions'],
+ 'tenant-management':['directory','tenant-details','tenant-domains','tenant-usage','tenant-recovery'],
+ 'app-exchange':['marketplace-search','marketplace-filters','marketplace-catalog','marketplace-details'],
+ 'rbac':['permissions','rbac-tabs','rbac-list','rbac-editor','rbac-help'],
+ 'company-settings':["company-info","domains","developer-accounts","usage","recovery","mfa","email-recovery","locks","sessions","audit"],
+ 'named-credentials':["credentials"],
+ 'approval-processes':["approval-workspace"],
+ 'automation-settings':["automation-policy"],
+ 'object-manager':["object-workspace","object-list","object-heading","object-subnav","object-setting"]
+});
+export function protectedAdministrationSlotComponents(workspace,keys=protectedWorkspacePageSlots[workspace]??[]){
+ return keys.map((key,index)=>({
+  id:'md-admin-'+workspace+'-'+key,type:'Custom:SystemPanel',
+  label:key.replace(/-/g,' '),visible:true,region:'main',
+  properties:{platformSlotKey:key,systemWorkspaceId:workspace},
+  position:{x:0,y:32+index*80,width:1280,height:72}
+ }));
+}
+/** Versioned additive seed for protected administration Page Builder layouts.
+ * These are existing Lightning App Pages, never a second page renderer/store.
+ * Control actions remain in the established OneEngine admin modules and RBAC.
+ */
+export const protectedWorkspacePageDescriptors=Object.freeze([
+ {workspace:'company-settings',label:'Company Settings',permission:'metadata:read'},
+ {workspace:'object-manager',label:'Object Manager',permission:'metadata:read'},
+ {workspace:'app-manager',label:'App Manager',permission:'metadata:read'},
+ {workspace:'app-exchange',label:'AppExchange',permission:'metadata:write'},
+ {workspace:'rbac',label:'Users & Permissions',permission:'security:read'},
+ {workspace:'tenant-management',label:'Tenant Management',permission:'platform:superadmin'},
+ {workspace:'named-credentials',label:'Named Credentials',permission:'metadata:write'},
+ {workspace:'connector-settings',label:'Connector Settings',permission:'metadata:write'},
+ {workspace:'approval-processes',label:'Approval Processes',permission:'metadata:read'},
+ {workspace:'automation-settings',label:'Process Automation Settings',permission:'metadata:read'}
+]);
+export const protectedPageApiName=workspace=>'MetaDrive_Admin_'+workspace.replace(/-/g,'_');
+export function isProtectedAdministrationPage(page){
+ return Boolean(page&&typeof page==='object'&&
+  (page.scope==='platform-system'||(typeof page.apiName==='string'&&page.apiName.startsWith('MetaDrive_Admin_'))));
+}
+export function protectedAdministrationPage(descriptor){
+ const apiName=protectedPageApiName(descriptor.workspace);
+ return {
+  apiName,label:descriptor.label,updatedAt:'2026-10-14T00:00:00.000Z',
+  targetObject:'',pageType:'App Page',layoutMode:'template',template:'one-region',
+  canvasWidth:1440,canvasHeight:Math.max(900,120+(protectedWorkspacePageSlots[descriptor.workspace]?.length??0)*80),status:'Active',devices:['Desktop','Phone'],
+  components:protectedAdministrationSlotComponents(descriptor.workspace),activationAssignments:[],
+  scope:'platform-system',ownerNamespace:'MetaDrive',definitionVersion:Object.hasOwn(legacyControlSlots,descriptor.workspace)?3:2,
+  overridePolicy:'presentation-only',requiredPermissions:[descriptor.permission]
+ };
+}
+/** Missing-only; never rewrite tenant customisations or existing privileged layouts. */
+export function seedProtectedAdministrationPages(tenant){
+ const pages=Array.isArray(tenant.pages)?tenant.pages:[];
+ const existing=new Set(pages.map(page=>page.apiName));
+ const additions=protectedWorkspacePageDescriptors
+  .filter(item=>!existing.has(protectedPageApiName(item.workspace)))
+  .map(protectedAdministrationPage);
+ // Upgrade only known pristine system seeds; preserve any edited layout or security policy.
+ const migrated=pages.map(page=>{
+  const d=protectedWorkspacePageDescriptors.find(item=>protectedPageApiName(item.workspace)===page.apiName);
+  // Correct the old Account default independently of layout migration timestamps.
+  // Persisted system pages can have newer updatedAt after normalization or editing.
+  const scoped= d&&page.ownerNamespace==='MetaDrive'&&page.scope==='platform-system'
+    &&page.pageType==='App Page'&&page.targetObject==='Account'
+    ? {...page,targetObject:''} : page;
+  if(!d||page.ownerNamespace!=='MetaDrive'||page.scope!=='platform-system'
+   ||page.updatedAt!=='2026-10-14T00:00:00.000Z'||page.status!=='Active'
+   ||page.layoutMode!=='template'||page.overridePolicy!=='presentation-only'
+   ||!Array.isArray(page.components)
+   ||JSON.stringify(page.requiredPermissions)!==JSON.stringify([d.permission]))return scoped;
+  const next=protectedAdministrationPage(d);
+  // System App Pages are not Record Pages. Repair only known pristine Account
+  // defaults; keep tenant-edited and object-specific pages untouched.
+  const repaired=scoped;
+  if(page.definitionVersion===1&&page.components.length===0)
+   return {...repaired,definitionVersion:next.definitionVersion,canvasHeight:next.canvasHeight,components:next.components};
+  const original=legacyControlSlots[d.workspace];
+  if(page.definitionVersion===2&&original){
+   // The persisted page registry normalises optional component defaults. Compare
+   // immutable seed identities, not a brittle serialised full component tree.
+   const expected=protectedAdministrationSlotComponents(d.workspace,original);
+   const originalSlotsMatch=page.components.length===expected.length&&expected.every((slot,index)=>{
+    const actual=page.components[index];
+    return actual?.id===slot.id&&actual.type===slot.type&&
+     actual.properties?.platformSlotKey===slot.properties.platformSlotKey&&
+     actual.properties?.systemWorkspaceId===slot.properties.systemWorkspaceId;
+   });
+   if(originalSlotsMatch){
+    const newSlots=next.components.filter(slot=>!original.includes(slot.properties.platformSlotKey));
+    return {...repaired,definitionVersion:next.definitionVersion,
+     canvasHeight:Math.max(page.canvasHeight??0,next.canvasHeight),
+     components:[...page.components,...newSlots]};
+   }
+  }
+  return repaired;
+ });
+ return additions.length||migrated.some((page,i)=>page!==pages[i])
+  ?{...tenant,pages:[...migrated,...additions]}:tenant;
+}
+export function validateProtectedAdministrationPageUpdate(existing,proposed,permissions){
+ if(!isProtectedAdministrationPage(existing)&&!isProtectedAdministrationPage(proposed))return null;
+ if(!permissions.includes('platform:superadmin'))return 'Platform administrator permission required';
+ if(existing&&existing.apiName!==proposed.apiName)return 'Protected administration page cannot be renamed';
+ if(proposed.scope!=='platform-system'||proposed.ownerNamespace!=='MetaDrive')
+  return 'Protected administration page ownership cannot change';
+ const canonical=protectedWorkspacePageDescriptors.find(item=>protectedPageApiName(item.workspace)===proposed.apiName);
+ if(canonical&&JSON.stringify(proposed.requiredPermissions)!==JSON.stringify([canonical.permission]))
+  return 'Protected administration page required permission cannot change';
+ if(existing){
+  for(const key of ['requiredPermissions','overridePolicy'])
+   if(JSON.stringify(existing[key]??null)!==JSON.stringify(proposed[key]??null))
+    return 'Protected administration page security metadata cannot change';
+ }
+ return null;
+}

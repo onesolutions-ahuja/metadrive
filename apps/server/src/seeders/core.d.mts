@@ -1,0 +1,24 @@
+import type { TenantData } from '../index.js';
+export function coreMetadataSeed<T extends object>(template: T): {
+  objects: TenantData['objects'];
+  pages: TenantData['pages'];
+  flows: TenantData['flows'];
+  libraryComponents: unknown[];
+  accessControl: TenantData['accessControl'];
+  sharingSettings: TenantData['sharingSettings'];
+  currencySettings: TenantData['currencySettings'];
+  automationSettings: TenantData['automationSettings'];
+  records: {};
+  recordShares: [];
+  users: [];
+  notifications: [];
+  interviews: [];
+  flowLogs: [];
+  scheduleRuns: {};
+  scheduleRetries: {};
+  autoNumberSequences: {};
+  namedCredentials: [];
+  integrationConnections: [];
+};
+export function mergeCoreMetadata(tenant: TenantData, seed: Partial<TenantData>): TenantData;
+export function initializeTenantCore(template: TenantData, options?: {authorizedUserIds?: string[]; trustedProvisioningDefaults?: boolean}): TenantData;

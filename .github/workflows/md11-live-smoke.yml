@@ -1,0 +1,33 @@
+name: MD11 approved one-time live messaging smoke
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/module11-live-smoke.mjs
+      - .github/workflows/md11-live-smoke.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  run-approved-flows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax validation
+        run: |
+          node --check scripts/module11-live-smoke.mjs
+          node --check scripts/module11-publish-result.mjs
+      - name: Execute one-time authorized test via MetaDrive secure Flow runtime
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/module11-live-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: md11-live-message-test-result
+          path: module11-live-smoke-result.json

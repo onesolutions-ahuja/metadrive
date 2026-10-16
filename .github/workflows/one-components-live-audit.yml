@@ -1,0 +1,25 @@
+name: One Core production registry read-only acceptance
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/one-components-live-audit.mjs
+      - .github/workflows/one-components-live-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authenticate and verify all published One components via Railway API
+        env:
+          METADRIVE_API_BASE: https://metadrive-production.up.railway.app
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/one-components-live-audit.mjs

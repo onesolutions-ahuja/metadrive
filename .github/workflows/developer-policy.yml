@@ -1,0 +1,54 @@
+name: Developer Policy and Architecture Inventory
+on:
+  pull_request:
+  push:
+    branches: [main]
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+jobs:
+  code-file-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enforce changed code file limit
+        env:
+          POLICY_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          POLICY_HEAD_SHA: ${{ github.sha }}
+        run: node scripts/check-developer-policy.mjs
+      - name: Test read-only architecture inventory
+        run: node --test scripts/audit-platform-architecture.test.mjs
+      - name: Test registered component coverage
+        run: node --test scripts/audit-component-registry.test.mjs
+      - name: Test shared SQL component property guards
+        run: node --test scripts/component-property-sql-guard.test.mjs
+      - name: Test shared component registration and builder contracts
+        run: node --test scripts/shared-component-runtime.test.mjs
+      - name: Test kiosk shared Objects and safe demo seed
+        run: node --test scripts/kiosk-demo-fixtures.test.mjs
+      - name: Test reusable meal modifiers and basket contracts
+        run: node --test scripts/kiosk-commerce-capabilities.test.mjs
+      - name: Test editable Phase 4 kiosk Pages, components and Flows
+        run: node --test scripts/kiosk-phase4.test.mjs
+      - name: Generate architecture inventory
+        run: node scripts/audit-platform-architecture.mjs --output .artifacts/architecture-inventory.json
+      - name: Generate component registry and reuse inventory
+        run: node scripts/audit-component-registry.mjs --output .artifacts/component-registry-inventory.json
+      - name: Attach safe architecture inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadrive-architecture-inventory
+          path: |
+            .artifacts/architecture-inventory.json
+            .artifacts/component-registry-inventory.json
+          retention-days: 7

@@ -1,0 +1,2254 @@
+{
+  "objects": [
+    {
+      "apiName": "Account",
+      "label": "Account",
+      "pluralLabel": "Accounts",
+      "kind": "Standard Object",
+      "description": "Companies and organizations that you do business with.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Account Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Account Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Industry",
+          "label": "Industry",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "AnnualRevenue",
+          "label": "Annual Revenue",
+          "dataType": "Currency(18, 0)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Phone",
+          "label": "Phone",
+          "dataType": "Phone",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Website",
+          "label": "Website",
+          "dataType": "URL",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "OwnerId",
+          "label": "Account Owner",
+          "dataType": "Lookup(User)",
+          "required": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Contact",
+      "label": "Contact",
+      "pluralLabel": "Contacts",
+      "kind": "Standard Object",
+      "description": "People associated with your accounts.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Contact Name",
+          "dataType": "Name",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Name",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Title",
+          "label": "Title",
+          "dataType": "Text(128)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Email",
+          "label": "Email",
+          "dataType": "Email",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Phone",
+          "label": "Phone",
+          "dataType": "Phone",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Opportunity",
+      "label": "Opportunity",
+      "pluralLabel": "Opportunities",
+      "kind": "Standard Object",
+      "description": "Potential revenue and deals in progress.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Opportunity Name",
+          "dataType": "Text(120)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Name",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "StageName",
+          "label": "Stage",
+          "dataType": "Picklist",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Amount",
+          "label": "Amount",
+          "dataType": "Currency(16, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CloseDate",
+          "label": "Close Date",
+          "dataType": "Date",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "OwnerId",
+          "label": "Opportunity Owner",
+          "dataType": "Lookup(User)",
+          "required": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Case",
+      "label": "Case",
+      "pluralLabel": "Cases",
+      "kind": "Standard Object",
+      "description": "Customer questions, feedback, and product issues.",
+      "fields": [
+        {
+          "apiName": "CaseNumber",
+          "label": "Case Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": true
+        },
+        {
+          "apiName": "Subject",
+          "label": "Subject",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Priority",
+          "label": "Case Priority",
+          "dataType": "Picklist",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Name",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Renewal__c",
+      "label": "Renewal",
+      "pluralLabel": "Renewals",
+      "kind": "Custom Object",
+      "description": "Tracks upcoming customer contract renewals.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Renewal Name",
+          "dataType": "Text(80)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Account__c",
+          "label": "Account",
+          "dataType": "Lookup(Account)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Renewal_Date__c",
+          "label": "Renewal Date",
+          "dataType": "Date",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ARR__c",
+          "label": "Annual Recurring Revenue",
+          "dataType": "Currency(16, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Address",
+      "label": "Address",
+      "pluralLabel": "Addresses",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Line1",
+          "label": "Line1",
+          "dataType": "Text(255)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "City",
+          "label": "City",
+          "dataType": "Text(120)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "PostalCode",
+          "label": "Postal Code",
+          "dataType": "Text(32)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Country",
+          "label": "Country",
+          "dataType": "Text(100)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Product",
+      "label": "Product",
+      "pluralLabel": "Products",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "SKU",
+          "label": "SKU",
+          "dataType": "Text(100)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CategoryId",
+          "label": "Category Id",
+          "dataType": "Lookup(ProductCategory)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "UnitId",
+          "label": "Unit Id",
+          "dataType": "Lookup(UnitOfMeasure)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "TaxId",
+          "label": "Tax Id",
+          "dataType": "Lookup(Tax)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "IsActive",
+          "label": "Is Active",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "DefaultPrice",
+          "label": "Default Price",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Barcode",
+          "label": "Barcode",
+          "dataType": "Text(64)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ImageURL",
+          "label": "Product Image URL",
+          "dataType": "URL",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "AgeRestricted",
+          "label": "Age Restricted",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false,
+          "defaultValue": false
+        },
+        {
+          "apiName": "VATApplicable",
+          "label": "VAT Applicable",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false,
+          "defaultValue": true
+        }
+      ]
+    },
+    {
+      "apiName": "ProductCategory",
+      "label": "Product Category",
+      "pluralLabel": "Product Categories",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ParentId",
+          "label": "Parent Id",
+          "dataType": "Lookup(ProductCategory)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "PriceList",
+      "label": "Price List",
+      "pluralLabel": "Price Lists",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "CurrencyCode",
+          "label": "Currency Code",
+          "dataType": "Text(3)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "IsActive",
+          "label": "Is Active",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Location",
+      "label": "Location",
+      "pluralLabel": "Locations",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AddressId",
+          "label": "Address Id",
+          "dataType": "Lookup(Address)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Resource",
+      "label": "Resource",
+      "pluralLabel": "Resources",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LocationId",
+          "label": "Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "IsActive",
+          "label": "Is Active",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "UnitOfMeasure",
+      "label": "Unit Of Measure",
+      "pluralLabel": "Units of Measure",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(100)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Symbol",
+          "label": "Symbol",
+          "dataType": "Text(24)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Category",
+          "label": "Category",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Tax",
+      "label": "Tax",
+      "pluralLabel": "Taxes",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(120)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Rate",
+          "label": "Rate",
+          "dataType": "Percent(8, 4)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "IsActive",
+          "label": "Is Active",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Quotation",
+      "label": "Quotation",
+      "pluralLabel": "Quotations",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "QuotationNumber",
+          "label": "Quotation Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Date",
+          "label": "Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CurrencyCode",
+          "label": "Currency Code",
+          "dataType": "Text(3)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Total",
+          "label": "Total",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Order",
+      "label": "Order",
+      "pluralLabel": "Orders",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "OrderNumber",
+          "label": "Order Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "OrderDate",
+          "label": "Order Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LocationId",
+          "label": "Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CurrencyCode",
+          "label": "Currency Code",
+          "dataType": "Text(3)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Total",
+          "label": "Total",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Invoice",
+      "label": "Invoice",
+      "pluralLabel": "Invoices",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "InvoiceNumber",
+          "label": "Invoice Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "BillingAddressId",
+          "label": "Billing Address Id",
+          "dataType": "Lookup(Address)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "InvoiceDate",
+          "label": "Invoice Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "DueDate",
+          "label": "Due Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Direction",
+          "label": "Direction",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CurrencyCode",
+          "label": "Currency Code",
+          "dataType": "Text(3)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Total",
+          "label": "Total",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATTotal",
+          "label": "VAT Total",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CashierId",
+          "label": "Cashier",
+          "dataType": "Lookup(User)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "PaymentMethod",
+          "label": "Payment Method",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false,
+          "picklistValues": [
+            "Cash",
+            "Manual"
+          ],
+          "picklistRestricted": true
+        },
+        {
+          "apiName": "PaymentStatus",
+          "label": "Payment Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false,
+          "picklistValues": [
+            "Pending",
+            "Accepted",
+            "Declined"
+          ],
+          "picklistRestricted": true
+        },
+        {
+          "apiName": "AmountTendered",
+          "label": "Amount Tendered",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ChangeDue",
+          "label": "Change Due",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "OrderId",
+          "label": "Order Id",
+          "dataType": "Lookup(Order)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Payment",
+      "label": "Payment",
+      "pluralLabel": "Payments",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "PaymentNumber",
+          "label": "Payment Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "PaymentDate",
+          "label": "Payment Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Direction",
+          "label": "Direction",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Amount",
+          "label": "Amount",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "CurrencyCode",
+          "label": "Currency Code",
+          "dataType": "Text(3)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Fulfilment",
+      "label": "Fulfilment",
+      "pluralLabel": "Fulfilments",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "FulfilmentNumber",
+          "label": "Fulfilment Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "OrderId",
+          "label": "Order Id",
+          "dataType": "Lookup(Order)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LocationId",
+          "label": "Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "FulfilmentDate",
+          "label": "Fulfilment Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Return",
+      "label": "Return",
+      "pluralLabel": "Returns",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "ReturnNumber",
+          "label": "Return Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "OrderId",
+          "label": "Order Id",
+          "dataType": "Lookup(Order)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "InvoiceId",
+          "label": "Invoice Id",
+          "dataType": "Lookup(Invoice)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Date",
+          "label": "Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "InventoryTransaction",
+      "label": "Inventory Transaction",
+      "pluralLabel": "Inventory Transactions",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "TransactionNumber",
+          "label": "Transaction Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Date",
+          "label": "Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "FromLocationId",
+          "label": "From Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ToLocationId",
+          "label": "To Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Appointment",
+      "label": "Appointment",
+      "pluralLabel": "Appointments",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ContactId",
+          "label": "Contact Id",
+          "dataType": "Lookup(Contact)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "StartDateTime",
+          "label": "Start Date Time",
+          "dataType": "Date/Time",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "EndDateTime",
+          "label": "End Date Time",
+          "dataType": "Date/Time",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LocationId",
+          "label": "Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "JournalEntry",
+      "label": "Journal Entry",
+      "pluralLabel": "Journal Entries",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "EntryNumber",
+          "label": "Entry Number",
+          "dataType": "Auto Number",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Date",
+          "label": "Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Description",
+          "label": "Description",
+          "dataType": "Long Text Area",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Activity",
+      "label": "Activity",
+      "pluralLabel": "Activities",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "DueDate",
+          "label": "Due Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "Document",
+      "label": "Document",
+      "pluralLabel": "Documents",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "FileReference",
+          "label": "File Reference",
+          "dataType": "Text(255)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "ResourceAvailability",
+      "label": "Resource Availability",
+      "pluralLabel": "Resource Availability",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ResourceId",
+          "label": "Resource Id",
+          "dataType": "Lookup(Resource)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "StartDateTime",
+          "label": "Start Date Time",
+          "dataType": "Date/Time",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "EndDateTime",
+          "label": "End Date Time",
+          "dataType": "Date/Time",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "StockBalance",
+      "label": "Stock Balance",
+      "pluralLabel": "Stock Balances",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LocationId",
+          "label": "Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "StockReservation",
+      "label": "Stock Reservation",
+      "pluralLabel": "Stock Reservations",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "OrderId",
+          "label": "Order Id",
+          "dataType": "Lookup(Order)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LocationId",
+          "label": "Location Id",
+          "dataType": "Lookup(Location)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "AccountLedger",
+      "label": "Account Ledger",
+      "pluralLabel": "Account Ledgers",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AccountId",
+          "label": "Account Id",
+          "dataType": "Lookup(Account)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "InvoiceId",
+          "label": "Invoice Id",
+          "dataType": "Lookup(Invoice)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "PaymentId",
+          "label": "Payment Id",
+          "dataType": "Lookup(Payment)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Amount",
+          "label": "Amount",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Date",
+          "label": "Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "LedgerAccount",
+      "label": "Ledger Account",
+      "pluralLabel": "Ledger Accounts",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Code",
+          "label": "Code",
+          "dataType": "Text(64)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Type",
+          "label": "Type",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ParentId",
+          "label": "Parent Id",
+          "dataType": "Lookup(LedgerAccount)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "FinancialPeriod",
+      "label": "Financial Period",
+      "pluralLabel": "Financial Periods",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(100)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "StartDate",
+          "label": "Start Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "EndDate",
+          "label": "End Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Status",
+          "label": "Status",
+          "dataType": "Picklist",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "CurrencyExchangeRate",
+      "label": "Currency Exchange Rate",
+      "pluralLabel": "Currency Exchange Rates",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(120)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "FromCurrency",
+          "label": "From Currency",
+          "dataType": "Text(3)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "ToCurrency",
+          "label": "To Currency",
+          "dataType": "Text(3)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Rate",
+          "label": "Rate",
+          "dataType": "Number(18, 8)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "EffectiveDate",
+          "label": "Effective Date",
+          "dataType": "Date",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "DocumentSequence",
+      "label": "Document Sequence",
+      "pluralLabel": "Document Sequences",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(120)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ObjectApiName",
+          "label": "Object Api Name",
+          "dataType": "Text(100)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Prefix",
+          "label": "Prefix",
+          "dataType": "Text(30)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "NextNumber",
+          "label": "Next Number",
+          "dataType": "Number(18, 0)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "PriceListItem",
+      "label": "Price List Item",
+      "pluralLabel": "Price List Items",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "PriceListId",
+          "label": "Price List Id",
+          "dataType": "Lookup(PriceList)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "UnitPrice",
+          "label": "Unit Price",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "QuotationItem",
+      "label": "Quotation Item",
+      "pluralLabel": "Quotation Items",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "QuotationId",
+          "label": "Quotation Id",
+          "dataType": "Lookup(Quotation)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "UnitPrice",
+          "label": "Unit Price",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "OrderItem",
+      "label": "Order Item",
+      "pluralLabel": "Order Items",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "OrderId",
+          "label": "Order Id",
+          "dataType": "Lookup(Order)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "UnitPrice",
+          "label": "Unit Price",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "InvoiceItem",
+      "label": "Invoice Item",
+      "pluralLabel": "Invoice Items",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "InvoiceId",
+          "label": "Invoice Id",
+          "dataType": "Lookup(Invoice)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "UnitPrice",
+          "label": "Unit Price",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "TaxId",
+          "label": "Tax Id",
+          "dataType": "Lookup(Tax)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATApplicable",
+          "label": "VAT Applicable At Sale",
+          "dataType": "Checkbox",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATRate",
+          "label": "VAT Rate At Sale",
+          "dataType": "Percent(8, 4)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "VATAmount",
+          "label": "VAT Amount At Sale",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "LineTotal",
+          "label": "Line Total",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "PaymentAllocation",
+      "label": "Payment Allocation",
+      "pluralLabel": "Payment Allocations",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "PaymentId",
+          "label": "Payment Id",
+          "dataType": "Lookup(Payment)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "InvoiceId",
+          "label": "Invoice Id",
+          "dataType": "Lookup(Invoice)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Amount",
+          "label": "Amount",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "FulfilmentItem",
+      "label": "Fulfilment Item",
+      "pluralLabel": "Fulfilment Items",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "FulfilmentId",
+          "label": "Fulfilment Id",
+          "dataType": "Lookup(Fulfilment)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "OrderItemId",
+          "label": "Order Item Id",
+          "dataType": "Lookup(OrderItem)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "ReturnItem",
+      "label": "Return Item",
+      "pluralLabel": "Return Items",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ReturnId",
+          "label": "Return Id",
+          "dataType": "Lookup(Return)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "InventoryTransactionItem",
+      "label": "Inventory Transaction Item",
+      "pluralLabel": "Inventory Transaction Items",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "InventoryTransactionId",
+          "label": "Inventory Transaction Id",
+          "dataType": "Lookup(InventoryTransaction)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ProductId",
+          "label": "Product Id",
+          "dataType": "Lookup(Product)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Quantity",
+          "label": "Quantity",
+          "dataType": "Number(18, 4)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "AppointmentResource",
+      "label": "Appointment Resource",
+      "pluralLabel": "Appointment Resources",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "AppointmentId",
+          "label": "Appointment Id",
+          "dataType": "Lookup(Appointment)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "ResourceId",
+          "label": "Resource Id",
+          "dataType": "Lookup(Resource)",
+          "required": true,
+          "unique": false
+        }
+      ]
+    },
+    {
+      "apiName": "JournalEntryLine",
+      "label": "Journal Entry Line",
+      "pluralLabel": "Journal Entry Lines",
+      "kind": "Standard Object",
+      "description": "Metadata-seeded universal business object. Extend through Object Manager.",
+      "fields": [
+        {
+          "apiName": "Name",
+          "label": "Name",
+          "dataType": "Text(255)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "JournalEntryId",
+          "label": "Journal Entry Id",
+          "dataType": "Lookup(JournalEntry)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "LedgerAccountId",
+          "label": "Ledger Account Id",
+          "dataType": "Lookup(LedgerAccount)",
+          "required": true,
+          "unique": false
+        },
+        {
+          "apiName": "Debit",
+          "label": "Debit",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        },
+        {
+          "apiName": "Credit",
+          "label": "Credit",
+          "dataType": "Currency(18, 2)",
+          "required": false,
+          "unique": false
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "apiName": "Renewal_Risk_Evaluation",
+      "label": "Renewal Risk Evaluation",
+      "flowType": "Record-Triggered Flow",
+      "status": "Draft",
+      "triggerObject": "Renewal__c",
+      "elements": [
+        {
+          "id": 1,
+          "type": "Start",
+          "label": "Record-Triggered Flow",
+          "config": {
+            "trigger": "created-or-updated",
+            "runWhen": "after-save"
+          }
+        },
+        {
+          "id": 2,
+          "type": "Decision",
+          "label": "Renewal at risk?",
+          "config": {
+            "outcomes": [
+              {
+                "name": "At_Risk",
+                "label": "At Risk"
+              },
+              {
+                "name": "Default",
+                "label": "Default Outcome"
+              }
+            ]
+          }
+        },
+        {
+          "id": 3,
+          "type": "Update Records",
+          "label": "Update Renewal Status",
+          "config": {
+            "object": "Renewal__c",
+            "field": "Status__c",
+            "value": "At Risk"
+          }
+        }
+      ],
+      "connectors": [
+        {
+          "from": 1,
+          "to": 2,
+          "label": ""
+        },
+        {
+          "from": 2,
+          "to": 3,
+          "label": "At Risk"
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "apiName": "Account_Record_Page",
+      "label": "Account Record Page",
+      "targetObject": "Account",
+      "pageType": "Record Page",
+      "status": "Draft",
+      "devices": [
+        "Desktop",
+        "Phone"
+      ],
+      "components": [
+        {
+          "id": "highlights-panel",
+          "type": "Highlights Panel",
+          "label": "Highlights Panel",
+          "properties": {
+            "variant": "compact"
+          },
+          "visible": true
+        },
+        {
+          "id": "record-tabs",
+          "type": "Tabs",
+          "label": "Tabs",
+          "properties": {
+            "tabs": [
+              "Related",
+              "Details",
+              "News"
+            ]
+          },
+          "visible": true
+        },
+        {
+          "id": "related-list",
+          "type": "Related List",
+          "label": "Related List",
+          "properties": {
+            "relatedLists": [
+              "Contacts",
+              "Opportunities",
+              "Cases"
+            ]
+          },
+          "visible": true
+        }
+      ]
+    }
+  ],
+  "accessControl": {
+    "permissionSets": [
+      {
+        "id": "system-administrator",
+        "label": "System Administrator",
+        "apiName": "System_Administrator",
+        "license": "Salesforce",
+        "description": "Full administrative access to platform setup and data.",
+        "objectPermissions": {
+          "Account": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Contact": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Opportunity": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Case": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          },
+          "Renewal__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": true,
+            "viewAll": true,
+            "modifyAll": true
+          }
+        },
+        "fieldPermissions": {},
+        "systemPermissions": [
+          "metadata:read",
+          "metadata:write",
+          "security:read",
+          "security:manage",
+          "objects:manage",
+          "flows:manage",
+          "flows:run",
+          "namedCredentials:manage",
+          "reports:manage",
+          "pages:manage",
+          "components:manage",
+          "dashboards:manage",
+          "dashboards:viewTeam",
+          "data:viewAll",
+          "email:send",
+          "callouts:execute",
+          "notifications:send",
+          "approvals:manage"
+        ]
+      },
+      {
+        "id": "sales-user",
+        "label": "Sales User",
+        "apiName": "Sales_User",
+        "license": "Salesforce",
+        "description": "Manage accounts and opportunities for the sales team.",
+        "objectPermissions": {
+          "Account": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Contact": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Opportunity": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          }
+        },
+        "fieldPermissions": {
+          "Opportunity.Amount": {
+            "read": true,
+            "edit": true
+          },
+          "Opportunity.StageName": {
+            "read": true,
+            "edit": true
+          }
+        }
+      },
+      {
+        "id": "support-agent",
+        "label": "Support Agent",
+        "apiName": "Support_Agent",
+        "license": "Salesforce",
+        "description": "Work on customer cases and view account context.",
+        "objectPermissions": {
+          "Account": {
+            "read": true,
+            "create": false,
+            "edit": false,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Contact": {
+            "read": true,
+            "create": false,
+            "edit": false,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Case": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          }
+        },
+        "fieldPermissions": {
+          "Case.Priority": {
+            "read": true,
+            "edit": true
+          },
+          "Case.Status": {
+            "read": true,
+            "edit": true
+          }
+        }
+      }
+    ],
+    "users": [
+      {
+        "id": "alexandra-curtis",
+        "name": "Alexandra Curtis",
+        "username": "acurtis@metadrive.example",
+        "role": "System Administrator",
+        "permissionSetIds": [
+          "system-administrator"
+        ]
+      },
+      {
+        "id": "david-kim",
+        "name": "David Kim",
+        "username": "dkim@metadrive.example",
+        "role": "Sales Manager",
+        "permissionSetIds": [
+          "sales-user"
+        ]
+      },
+      {
+        "id": "jamie-taylor",
+        "name": "Jamie Taylor",
+        "username": "jtaylor@metadrive.example",
+        "role": "Support Agent",
+        "permissionSetIds": [
+          "support-agent"
+        ]
+      }
+    ]
+  }
+}

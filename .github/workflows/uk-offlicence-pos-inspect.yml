@@ -1,0 +1,31 @@
+name: UK Off Licence POS read-only tenant inspection
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/uk-offlicence-pos-inspect.mjs
+      - .github/workflows/uk-offlicence-pos-inspect.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check inspection script syntax
+        run: node --check scripts/uk-offlicence-pos-inspect.mjs
+      - name: Inspect existing tenant commerce schema and POS definitions
+        env:
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/uk-offlicence-pos-inspect.mjs

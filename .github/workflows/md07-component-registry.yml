@@ -1,0 +1,73 @@
+name: MD-07 Component Registry validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/web/src/ComponentLibrary.tsx'
+      - 'apps/web/src/CustomComponentPropertyEditor.tsx'
+      - 'apps/web/src/componentProperties.ts'
+      - 'apps/web/src/pageComponentLayout.ts'
+      - 'apps/web/src/PageComponentVisualEditor.tsx'
+      - 'apps/web/src/metadata.ts'
+      - 'apps/web/test/pageComponentLayout.test.ts'
+      - 'apps/web/src/App.tsx'
+      - 'apps/web/src/ComponentSandbox.tsx'
+      - 'apps/web/src/componentSandboxPolicy.ts'
+      - 'apps/web/test/componentSandboxPolicy.test.ts'
+      - 'apps/web/src/component-sandbox-frame.tsx'
+      - 'apps/web/src/RegisteredComponent.tsx'
+      - 'apps/web/src/FlowScreenContent.tsx'
+      - 'apps/web/package.json'
+      - 'apps/server/src/index.ts'
+      - 'apps/server/src/modules/**'
+      - 'apps/server/src/core/state/**'
+      - 'apps/server/sql/component-registry-v4.sql'
+      - 'apps/server/test/component-registry-sql.integration.test.mjs'
+      - 'apps/server/test/rbac-sharing.smoke.test.ts'
+      - 'scripts/build-component-sandbox.mjs'
+      - 'scripts/md07-component-browser-smoke.mjs'
+      - 'apps/web/src/DashboardBuilder.tsx'
+      - 'apps/web/src/FlowBuilder.tsx'
+      - 'apps/web/test/componentProperties.test.ts'
+      - '.github/workflows/md07-component-registry.yml'
+  workflow_dispatch:
+
+# Superseded PR commits should not consume runner minutes; distinct workflows
+# retain their own required checks. Main branch validations are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  registry-build-and-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build frontend, backend and foundation contract
+        run: npm run build
+      - name: Verify typed custom-component properties
+        run: npx tsx --test apps/web/test/componentProperties.test.ts
+      - name: Verify nested layouts and responsive styling
+        run: npx tsx --test apps/web/test/pageComponentLayout.test.ts
+      - name: Verify sandbox payload protection
+        run: npx tsx --test apps/web/test/componentSandboxPolicy.test.ts
+      - name: Install isolated Chromium
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts playwright@1.56.0
+          npx playwright install --with-deps chromium
+      - name: Run disposable Page Builder, Page Runtime and Screen Flow One Core browser acceptance
+        env:
+          NODE_ENV: test
+          METADRIVE_TEST_MODE: 'true'
+        run: node scripts/md07-component-browser-smoke.mjs
+      # Complete server suite runs once in required Validate MetaDrive deployment.
