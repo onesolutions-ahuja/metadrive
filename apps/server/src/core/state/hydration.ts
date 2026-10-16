@@ -12,6 +12,7 @@ import { pruneRetiredTrustedComponents } from '../../bundled-app-components.mjs'
 import { findObjectDependencies } from '../../modules/objects/dependencies.js';
 import { removeObjectMetadata } from '../../modules/objects/remove-object.js';
 import type { PlatformState } from './types.js';
+import { restoreMissingCoreAdministratorGrants } from '../../seeders/repair-core-administrator-grants.js';
 import type { CreateStateHydrationDependencies } from '../../index.js';
 
 export function createStateHydration(deps: CreateStateHydrationDependencies) {
@@ -267,7 +268,7 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
         accessControl: {
           ...tenant.accessControl,
           profiles: profiles.map((profile) => profile.id === 'system-administrator'
-            ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { ...deps.fullObjectPermissions } } }
+            ? { ...profile, objectPermissions: restoreMissingCoreAdministratorGrants({ ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { ...deps.fullObjectPermissions } }, objects, deps.fullObjectPermissions) }
             : profile.id === 'sales-manager'
               ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
               : profile),
@@ -276,9 +277,11 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
           permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
             ? {
               ...set,
-              objectPermissions: { ...set.objectPermissions, ...connectorObjectPermissions, Campaign: set.objectPermissions.Campaign ?? { ...deps.fullObjectPermissions } },
+              objectPermissions: restoreMissingCoreAdministratorGrants({ ...connectorObjectPermissions, ...set.objectPermissions, Campaign: set.objectPermissions.Campaign ?? { ...deps.fullObjectPermissions } }, objects, deps.fullObjectPermissions),
               fieldPermissions: { ...Object.fromEntries(objects.flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }]))), ...connectorFieldPermissions, ...set.fieldPermissions }
             }
+            : (set.id === 'oneengine' || set.id === 'oneengine-tenant-developer')
+              ? { ...set, objectPermissions: restoreMissingCoreAdministratorGrants(set.objectPermissions, objects, deps.fullObjectPermissions) }
             : set.id === 'sales-user'
               ? { ...set, objectPermissions: { ...set.objectPermissions, Campaign: set.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
               : set.id === 'support-agent'
