@@ -395,7 +395,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
           setCanManageUserIdentities(firstSession.user.permissions.includes('security:manage'));
           setCanManageApprovalProcesses(firstSession.user.permissions.includes('security:manage')
             || firstSession.user.permissions.includes('metadata:write'));
-          setCanManagePlatformTenants(firstSession.user.permissions.includes('platform:superadmin'));
+          setCanManagePlatformTenants(firstSession.user.permissions.includes('platform:tenants:manage'));
           setCanRunFlows(firstSession.user.permissions.includes('flows:run'));
           setCanManageFlows(firstSession.user.permissions.includes('flows:manage')
             || firstSession.user.permissions.includes('metadata:write'));
@@ -487,7 +487,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         setCanManageApprovalProcesses(sessionPayload.user.permissions.includes('security:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));
         setCanManagePlatformLicences(sessionPayload.user.permissions.includes('licence:manage'));
-        setCanManagePlatformTenants(sessionPayload.user.permissions.includes('platform:superadmin'));
+        setCanManagePlatformTenants(sessionPayload.user.permissions.includes('platform:tenants:manage'));
         setCanRunFlows(sessionPayload.user.permissions.includes('flows:run'));
         setCanManageFlows(sessionPayload.user.permissions.includes('flows:manage')
           || sessionPayload.user.permissions.includes('metadata:write'));

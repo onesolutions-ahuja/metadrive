@@ -12,13 +12,13 @@ export function createPlatformTenantRuntime(deps: {
 }) {
  const {getState, setState, persistState, getPrincipal, provisioningSchema} = deps;
 const platformPolicySchema = z.object({
-  policies: z.array(z.enum(['platform:superadmin', 'licence:manage'])).max(2)
+  policies: z.array(z.enum(['platform:tenants:manage', 'licence:manage'])).max(2)
 }).strict();
 function activePlatformSuperadmins(): string[] {
   return getState().users.filter((user) => !user.disabled
-    && (getState().platformPolicies[user.id] ?? []).includes('platform:superadmin')).map((user) => user.id);
+    && (getState().platformPolicies[user.id] ?? []).some(permission=>permission==='platform:tenants:manage'||permission==='platform:superadmin')).map((user) => user.id);
 }
-function savePlatformPolicies(actorId: string, userId: string, policies: Array<'platform:superadmin' | 'licence:manage'>) {
+function savePlatformPolicies(actorId: string, userId: string, policies: Array<'platform:tenants:manage' | 'platform:superadmin' | 'licence:manage'>) {
   const previous = getState().platformPolicies[userId] ?? [];
   const next = [...new Set(policies)];
   const nextState: PlatformState = {
@@ -65,8 +65,8 @@ function tenantSummary(tenantId: string) {
   };
 }
 function requirePlatformTenantAdmin(_req: Request, res: Response, next: NextFunction): void {
-  if (!getPrincipal(res).permissions.includes('platform:superadmin')) {
-    res.status(403).json({ error: 'Platform administrator policy required.' });
+  if (!getPrincipal(res).permissions.includes('platform:tenants:manage')) {
+    res.status(403).json({ error: 'Platform Developer policy required.' });
     return;
   }
   next();

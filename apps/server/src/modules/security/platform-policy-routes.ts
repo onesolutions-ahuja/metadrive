@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { Express, Request, Response, RequestHandler } from 'express';
 
-type PlatformPolicy = 'platform:superadmin' | 'licence:manage';
+type PlatformPolicy = 'platform:tenants:manage' | 'platform:superadmin' | 'licence:manage';
 export function registerPlatformPolicyRoutes<User extends {id: string; email: string; disabled: boolean}, Principal extends {userId: string; permissions: string[]}>(app: Express, deps: {
   accessAuthentication: RequestHandler;
   getPrincipal: (res: Response) => Principal;
@@ -33,7 +33,7 @@ export function registerPlatformPolicyRoutes<User extends {id: string; email: st
     if (activePlatformSuperadmins().length)
       return res.status(409).json({ error: 'A platform administrator already exists.' });
     try {
-      savePlatformPolicies(user.id, user.id, ['platform:superadmin']);
+      savePlatformPolicies(user.id, user.id, ['platform:tenants:manage']);
       return res.json({ policies: getState().platformPolicies[user.id] });
     } catch {
       return res.status(503).json({ error: 'Unable to persist platform policy.' });
@@ -41,23 +41,23 @@ export function registerPlatformPolicyRoutes<User extends {id: string; email: st
   });
   app.get('/api/platform/policies', accessAuthentication, (_req: Request, res: Response) => {
     const principal = getPrincipal(res);
-    if (!principal.permissions.includes('platform:superadmin'))
-      return res.status(403).json({ error: 'Platform administrator policy required.' });
+    if (!principal.permissions.includes('platform:tenants:manage'))
+      return res.status(403).json({ error: 'Platform Developer policy required.' });
     return res.json({ users: getState().users.filter((user) => (getState().platformPolicies[user.id] ?? []).length)
       .map((user) => ({ id: user.id, email: user.email, disabled: user.disabled, policies: getState().platformPolicies[user.id] })) });
   });
   app.put('/api/platform/policies/:userId', accessAuthentication, (req: Request, res: Response) => {
     const principal = getPrincipal(res);
-    if (!principal.permissions.includes('platform:superadmin'))
-      return res.status(403).json({ error: 'Platform administrator policy required.' });
+    if (!principal.permissions.includes('platform:tenants:manage'))
+      return res.status(403).json({ error: 'Platform Developer policy required.' });
     const parsed = platformPolicySchema.safeParse(req.body);
     if (!parsed.success || !parsed.data) return res.status(400).json({ error: 'Invalid platform policies.' });
     const userId = routeParam(req, 'userId');
     const target = getState().users.find((user) => user.id === userId && !user.disabled);
     if (!target) return res.status(404).json({ error: 'Active platform user not found.' });
     const requested = [...new Set(parsed.data.policies)];
-    if ((getState().platformPolicies[userId] ?? []).includes('platform:superadmin')
-      && !requested.includes('platform:superadmin')
+    if ((getState().platformPolicies[userId] ?? []).some(policy => policy === 'platform:tenants:manage' || policy === 'platform:superadmin')
+      && !requested.includes('platform:tenants:manage')
       && activePlatformSuperadmins().every((id) => id === userId)) {
       return res.status(409).json({ error: 'The last active platform administrator cannot be removed.' });
     }

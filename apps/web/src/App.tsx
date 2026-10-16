@@ -244,23 +244,34 @@ async function fetchFlowListPage(page: number, search: string) {
 
 
 // The full setup workspace is an on-demand route module, never part of the login bundle.
+// Keep the Page Runtime out of Setup administration, including Tenant Management.
+// Only published App Pages, Records and Page Builder need this optional bundle.
+let pageRuntimeViewsPromise: ReturnType<typeof import('./pageRuntimeViews').createPageRuntimeViews> | undefined;
+async function loadPageRuntimeViews() {
+  if (pageRuntimeViewsPromise) return pageRuntimeViewsPromise;
+  const { createPageRuntimeViews } = await import('./pageRuntimeViews');
+  pageRuntimeViewsPromise = createPageRuntimeViews(apiRequest);
+  return pageRuntimeViewsPromise;
+}
 const LazySetupWorkspace = React.lazy(async () => {
-  const [{ createSetupApp }, { createPageRuntimeViews }, { ProfilePasswordMenu, ConnectionHealthIndicator }, { customTabStyles }] = await Promise.all([
-    import('./setupAppShell'), import('./pageRuntimeViews'), import('./authStatusViews'), import('./shell/customTabStyles')
+  const [{ createSetupApp }, { ProfilePasswordMenu, ConnectionHealthIndicator }, { customTabStyles }] = await Promise.all([
+    import('./setupAppShell'), import('./authStatusViews'), import('./shell/customTabStyles')
   ]);
-  const { RuntimeReportChart, MetadataBoundPageComponent, usePageLayoutDevice, LightningAppRuntime } = createPageRuntimeViews(apiRequest);
-  // Record CRUD is an optional workspace, not a dependency of App Pages,
-  // dashboards, Flows or tenant setup. Load it only on record navigation.
+  const LightningAppRuntime = React.lazy(async () => ({
+    default: (await loadPageRuntimeViews()).LightningAppRuntime
+  }));
   const RecordWorkspace = React.lazy(async () => {
-    const { createRecordWorkspaceViews } = await import('./recordWorkspaceViews');
-    return { default: createRecordWorkspaceViews(apiRequest, usePageLayoutDevice,
-      ApiRequestError, getAccessToken, RuntimeReportChart, MetadataBoundPageComponent).RecordWorkspace };
+    const [{ createRecordWorkspaceViews }, runtime] = await Promise.all([
+      import('./recordWorkspaceViews'), loadPageRuntimeViews()
+    ]);
+    return { default: createRecordWorkspaceViews(apiRequest, runtime.usePageLayoutDevice,
+      ApiRequestError, getAccessToken, runtime.RuntimeReportChart, runtime.MetadataBoundPageComponent).RecordWorkspace };
   });
   const PageBuilder = React.lazy(async () => {
-    const [createPageBuilder, { MetadataComponentProperties }] = await Promise.all([
-      loadPageBuilderFactory(), import('./componentPropertiesView')
+    const [createPageBuilder, { MetadataComponentProperties }, runtime] = await Promise.all([
+      loadPageBuilderFactory(), import('./componentPropertiesView'), loadPageRuntimeViews()
     ]);
-    return { default: createPageBuilder(MetadataComponentProperties, MetadataBoundPageComponent) };
+    return { default: createPageBuilder(MetadataComponentProperties, runtime.MetadataBoundPageComponent) };
   });
   return { default: createSetupApp({isAuthErrorMessage, loadAppCommunicationHistory, loadConnectorMarketplaceApps, executeConnectorAppLifecycleFlow, loadFlowScreenRecords, apiRequest, ApiRequestError, fetchFlowListPage, customTabStyles, uneSolutionsLogoUrl, ProfilePasswordMenu, ConnectionHealthIndicator, ConnectorSettingsWorkspace, LightningAppRuntime, RecordWorkspace, ObjectManager, PageBuilder, ReportBuilder, Permissions, SetupHome, AutomationSettingsWorkspace, CompanySettings, TenantMfaSettings, TenantSecurityAudit, TenantUserLockSettings, AccountSessionSecurity, TenantEmailRecoverySettings}) };
 });

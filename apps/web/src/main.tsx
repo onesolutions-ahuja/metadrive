@@ -16,11 +16,26 @@ window.addEventListener('vite:preloadError', (event: Event) => {
 // Keep the authenticated workspace, including its large builder code and CSS,
 // out of the initial public marketing bundle.
 const Workspace = lazy(async () => {
-  await import('./styles.css');
-  await import('./styles-part2.css');
-  await import('./styles-audit.css');
+  await Promise.all([
+    import('./styles.css'), import('./styles-part2.css'), import('./styles-audit.css')
+  ]);
   return import('./App');
 });
+
+function WorkspaceLoadingFallback() {
+  const [slow,setSlow] = React.useState(false);
+  React.useEffect(()=>{
+    const timer=window.setTimeout(()=>setSlow(true),12000);
+    return ()=>window.clearTimeout(timer);
+  },[]);
+  return <main role="status" style={{minHeight:'100vh',display:'grid',placeItems:'center',fontFamily:'system-ui,sans-serif'}}>
+    <div style={{textAlign:'center',maxWidth:480,padding:24}}>
+      <p>Loading your workspace…</p>
+      {slow && <><p>The workspace is taking longer than expected. You can request the latest application files without losing saved data.</p>
+        <button type="button" onClick={reloadLatestWorkspace}>Reload latest version</button></>}
+    </div>
+  </main>;
+}
 
 class WorkspaceFailureBoundary extends React.Component<
   { children: React.ReactNode },
@@ -63,6 +78,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {isMarketingHome
       ? <MarketingSite />
-      : <WorkspaceFailureBoundary><Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', fontFamily: 'system-ui,sans-serif' }}>Loading your workspace…</div>}><Workspace /></Suspense></WorkspaceFailureBoundary>}
+      : <WorkspaceFailureBoundary><Suspense fallback={<WorkspaceLoadingFallback />}><Workspace /></Suspense></WorkspaceFailureBoundary>}
   </React.StrictMode>
 );
