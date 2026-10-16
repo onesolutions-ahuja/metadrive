@@ -524,7 +524,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -569,6 +569,13 @@
           "kind": "TEXT",
           "defaultValue": "",
           "displayOrder": 330
+        },
+        {
+          "propertyKey": "filterKey",
+          "label": "Shared filter key",
+          "kind": "TEXT",
+          "defaultValue": "category",
+          "displayOrder": 370
         }
       ]
     },
@@ -2275,7 +2282,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2320,6 +2327,13 @@
           "kind": "TEXT",
           "defaultValue": "",
           "displayOrder": 350
+        },
+        {
+          "propertyKey": "filterKey",
+          "label": "Shared filter key",
+          "kind": "TEXT",
+          "defaultValue": "category",
+          "displayOrder": 370
         }
       ]
     },
