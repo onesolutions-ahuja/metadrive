@@ -1,0 +1,32 @@
+name: AppExchange Live Tenant Lifecycle Acceptance
+on:
+  pull_request:
+    paths:
+      - 'scripts/appexchange-live-tenant-acceptance.mjs'
+      - '.github/workflows/appexchange-live-tenant-acceptance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    if: github.repository == 'onesolutions-ahuja/metadrive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: appexchange-live-tenant-single-writer
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify live acceptance script syntax
+        run: node --check scripts/appexchange-live-tenant-acceptance.mjs
+      - name: Execute guarded live AppExchange lifecycle and restore original state
+        env:
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+          METADRIVE_LIFECYCLE_APP_KEY: xero
+        run: node scripts/appexchange-live-tenant-acceptance.mjs
