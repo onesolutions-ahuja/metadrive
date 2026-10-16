@@ -20,6 +20,7 @@ const before=await catalog();
 const matches=before.filter(x=>x.AppKey__c===key);
 assert.equal(matches.length,1,'Test package must have one unique installation record');
 const app=matches[0];
+if(process.env.METADRIVE_LIFECYCLE_RECOVERY==='true') { assert.equal(app.Installed__c,true,'Recovery target is not installed'); const result=await req('/flows/'+encodeURIComponent(app.UninstallFlow__c)+'/execute',token,'POST',{AppKey:key}); console.log(JSON.stringify({recoveryStatus:result.status,error:String(result.data?.error||result.data?.message||'').slice(0,500)})); assert.equal(result.status,200,'Recovery uninstall rejected'); process.exit(0); }
 assert.equal(app.Installed__c,false,'Refusing to modify an already installed application');
 assert.equal(app.TrialUsed__c,false,'Refusing to modify previous trial history');
 assert(app.InstallFlow__c&&app.UninstallFlow__c,'Lifecycle Flow metadata not available');
