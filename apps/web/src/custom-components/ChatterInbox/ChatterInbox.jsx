@@ -51,7 +51,7 @@ export default function ChatterInbox(props) {
   const accountName = id => accounts.find(a => String(a.id) === String(id))?.name || '';
   const send = async event => {
     event.preventDefault();
-    if (!draft.trim() || busy || !canSendSelected) return;
+    if (!draft.trim() || busy) return;
     const recipient = newChat ? newRecipient.trim() : selected?.phoneNumber;
     const account = newChat ? selectedAccount : selected?.channelAccountId;
     if (!recipient || !account || (newChat && !/^\+?[1-9]\d{5,14}$/.test(recipient))) { setError('Enter an international phone number including country code.'); return; }
@@ -81,7 +81,7 @@ export default function ChatterInbox(props) {
     style={{'--chatter-accent': p.accentColor || '#168657', '--chatter-background': p.backgroundColor || '#f7f8f7'}}>
     <aside className="md-chatter-list">
       <header><div className="md-chatter-heading"><h2>{p.title || 'Chatter'}</h2><span>{scoped.length} chats</span></div>
-      <button type="button" className="md-chatter-new" disabled={!assignedAccounts.some(a=>a.canSend!==false)} onClick={()=>{setNewChat(true);select(null);setError('');setSentNotice('');setSelectedAccount(id=>id||String(assignedAccounts.find(a=>a.canSend!==false)?.id||''));}}>+ New Chat</button>
+      <button type="button" className="md-chatter-new" disabled={!assignedAccounts.length} onClick={()=>{setNewChat(true);select(null);setError('');setSentNotice('');setSelectedAccount(id=>id||String(assignedAccounts.find(a=>a.canSend!==false)?.id||''));}}>+ New Chat</button>
       <label className="md-chatter-account-picker">Account <select aria-label="WhatsApp account" value={selectedAccount} onChange={e=>{setSelectedAccount(e.target.value);select(null);setNewChat(false);setAssigneeId('');}} disabled={!assignedAccounts.length}>
         <option value="">All assigned accounts</option>
         {assignedAccounts.map(a=><option key={a.id} value={String(a.id)}>{a.name || a.id}</option>)}
@@ -104,7 +104,7 @@ export default function ChatterInbox(props) {
         : 'No conversations match your filters.'}</p>}</div>
     </aside>
     <div className="md-chatter-thread">
-      {newChat ? <div className="md-chatter-new-thread"><header><button type="button" onClick={()=>setNewChat(false)}>‹ Back</button><strong>New WhatsApp chat</strong></header><form className="md-chatter-compose" onSubmit={send}><label>Sending account<select aria-label="Send from account" value={selectedAccount} onChange={e=>setSelectedAccount(e.target.value)}>{assignedAccounts.filter(a=>a.canSend!==false).map(a=><option key={a.id} value={String(a.id)}>{a.name||a.id}</option>)}</select></label><label>Find contact<input aria-label="Find contact" type="search" value={contactSearch} onChange={e=>setContactSearch(e.target.value)} placeholder="Search customer name or phone" /></label>{contacts.length>0&&contactSearch.trim()&&<div className="md-chatter-contact-choices" role="listbox" aria-label="Matching contacts">{matchingContacts.map(c=><button key={c.id} role="option" aria-selected={newRecipient===c.phone} type="button" onClick={()=>{setNewRecipient(c.phone);setContactSearch(c.name||c.phone);}}>{c.name||c.phone} · {c.phone}</button>)}</div>}<label>Customer phone number<input aria-label="Customer phone number" type="tel" value={newRecipient} onChange={e=>setNewRecipient(e.target.value)} placeholder="447700900123" required /></label><label>Message<textarea ref={draftInputRef} aria-label="New chat message" defaultValue={draft} onChange={e=>setDraft(e.target.value)} maxLength={4096} required /></label><button type="submit" disabled={busy||!canSendSelected||!draft.trim()}>Send</button></form>{error&&<p role="alert">{error}</p>}{sentNotice&&<p role="status">{sentNotice}</p>}</div> : selected ? <><header className="md-chatter-thread-head">
+      {newChat ? <div className="md-chatter-new-thread"><header><button type="button" onClick={()=>setNewChat(false)}>‹ Back</button><strong>New WhatsApp chat</strong></header><form className="md-chatter-compose" onSubmit={send}><label>Sending account<select aria-label="Send from account" value={selectedAccount} onChange={e=>setSelectedAccount(e.target.value)}>{assignedAccounts.filter(a=>a.canSend!==false).map(a=><option key={a.id} value={String(a.id)}>{a.name||a.id}</option>)}</select></label><label>Find contact<input aria-label="Find contact" type="search" value={contactSearch} onChange={e=>setContactSearch(e.target.value)} placeholder="Search customer name or phone" /></label>{contacts.length>0&&contactSearch.trim()&&<div className="md-chatter-contact-choices" role="listbox" aria-label="Matching contacts">{matchingContacts.map(c=><button key={c.id} role="option" aria-selected={newRecipient===c.phone} type="button" onClick={()=>{setNewRecipient(c.phone);setContactSearch(c.name||c.phone);}}>{c.name||c.phone} · {c.phone}</button>)}</div>}<label>Customer phone number<input aria-label="Customer phone number" type="tel" value={newRecipient} onChange={e=>setNewRecipient(e.target.value)} placeholder="447700900123" required /></label><label>Message<textarea ref={draftInputRef} aria-label="New chat message" defaultValue={draft} onChange={e=>setDraft(e.target.value)} maxLength={4096} required /></label><button type="submit" disabled={busy||!draft.trim()}>Send</button></form>{error&&<p role="alert">{error}</p>}{sentNotice&&<p role="status">{sentNotice}</p>}</div> : selected ? <><header className="md-chatter-thread-head">
         <button type="button" className="md-chatter-back" aria-label="Back to chats" onClick={()=>select(null)}>‹</button>
         <span className="md-chatter-avatar" aria-hidden="true">{String(selected.contactName || '?').slice(0,1).toUpperCase()}</span>
         <div><strong>{selected.contactName || selected.phoneNumber}</strong><small>{selected.phoneNumber} · {accountName(selected.channelAccountId)}</small></div>
@@ -126,7 +126,7 @@ export default function ChatterInbox(props) {
         <form onSubmit={send} className="md-chatter-compose"><input ref={draftInputRef} aria-label="Message" defaultValue={draft} onChange={e=>setDraft(e.currentTarget.value)}
           onInput={e=>setDraft(e.currentTarget.value)}
           disabled={busy} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
-          <button type="submit" disabled={!draft.trim() || busy || !canSendSelected}>Send</button></form>
+          <button type="submit" disabled={!draft.trim() || busy}>Send</button></form>
         {!canSendSelected
           ? <p className="md-chatter-help" role="status">You can type a message, but you do not have permission to send from this account.</p>
           : p.composerHelpText && <p className="md-chatter-help">{p.composerHelpText}</p>}
