@@ -3752,22 +3752,6 @@ function dashboardRunningUserSelectionError(
   if (!selectedUser) return 'The selected running user must be active and belong to this tenant';
   return undefined;
 }
-): DashboardFolderAccessLevel | null {
-  return folderAccessLevelFromFolders(tenant, tenant.dashboardFolders ?? [], folderId, userId);
-}
-): DashboardFolderAccessLevel | null {
-  const accessUser = tenant.accessControl.users.find((user) => user.id === userId);
-  const roleId = accessUser?.roleId
-    ?? tenant.accessControl.roles.find((role) => role.name === accessUser?.role)?.id;
-  return dashboardFolderAccessLevel(folderId, folders, {
-    userId,
-    roleId,
-    permissionSetGroupIds: accessUser?.permissionSetGroupIds ?? [],
-    roles: tenant.accessControl.roles,
-    publicGroups: tenant.accessControl.publicGroups,
-    territories: tenant.dashboardTerritories ?? []
-  });
-}
 function reportFolderAccessLevelForUser(
   tenant: TenantData,
   folderId: string | null | undefined,
@@ -3808,33 +3792,6 @@ function validateReportFolderReferences(
   shares: ReportFolder['shares']
 ): string | null {
   return validateDashboardFolderReferences(tenant, shares);
-}
-): DashboardFolder & { accessLevel: DashboardFolderAccessLevel | null } {
-  return {
-    ...folder,
-    accessLevel: canManageAll ? 'Manager' : folderAccessLevelForUser(tenant, folder.id, userId)
-  };
-}
-): DashboardMetadata & { folderAccessLevel: DashboardFolderAccessLevel | null } {
-  return {
-    ...dashboard,
-    folderAccessLevel: folderAccessLevelForUser(tenant, dashboard.folderId, userId)
-  };
-}
-): string | null {
-  for (const share of shares) {
-    const exists = share.targetType === 'User'
-      ? tenant.accessControl.users.some((user) => user.id === share.targetId)
-      : share.targetType === 'PublicGroup'
-        ? tenant.accessControl.publicGroups.some((group) => group.id === share.targetId)
-        : share.targetType === 'PermissionSetGroup'
-          ? tenant.accessControl.permissionSetGroups.some((group) => group.id === share.targetId)
-          : share.targetType === 'Territory'
-            ? tenant.dashboardTerritories.some((territory) => territory.id === share.targetId)
-            : tenant.accessControl.roles.some((role) => role.id === share.targetId);
-    if (!exists) return `Folder share references unknown ${share.targetType} "${share.targetId}"`;
-  }
-  return null;
 }
 function requirePermission(permission: string) {
   return requireAnyPermission(permission);
