@@ -114,7 +114,8 @@ export const layoutContainerTypes = new Set(['Container', 'Row', 'Column', 'Card
 
 export function isLayoutContainer(component: PageComponentMetadata): boolean {
   return isLayoutType(component.type)
-    || (component.type.startsWith('Custom:') && component.properties?.layoutContainer === true);
+    || (component.type.startsWith('Custom:') && (component.properties?.layoutContainer === true
+      || ['OneContainer','OneStack','OneGrid','OneSplitPane','OneCard'].includes(component.type.slice('Custom:'.length))));
 }
 export function rawLayoutParentId(component: PageComponentMetadata): string | null {
   return typeof component.properties?.layoutParentId === 'string' && component.properties.layoutParentId
