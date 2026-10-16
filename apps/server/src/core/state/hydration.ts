@@ -13,6 +13,7 @@ import { findObjectDependencies } from '../../modules/objects/dependencies.js';
 import { removeObjectMetadata } from '../../modules/objects/remove-object.js';
 import type { PlatformState } from './types.js';
 import { restoreMissingCoreAdministratorGrants } from '../../seeders/repair-core-administrator-grants.js';
+import { mergeMissingSeededCoreObjects } from '../../seeders/merge-core-standard-objects.js';
 import type { CreateStateHydrationDependencies } from '../../index.js';
 
 export function createStateHydration(deps: CreateStateHydrationDependencies) {
@@ -89,11 +90,11 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
             ]
           };
         });
-        const objects = [
-          ...storedObjects,
-          ...deps.baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'] : ['Campaign', 'Communication_Records__c', 'Connector_App__c']).includes(object.apiName)
-            && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(deps.withObjectDefaults)
-        ];
+        const coreSharedDependencies = new Set(!consolidationReady
+          ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c']
+          : ['Campaign', 'Communication_Records__c', 'Connector_App__c']);
+        const objects = mergeMissingSeededCoreObjects(storedObjects, deps.baseObjects,
+          deps.withObjectDefaults, coreSharedDependencies);
         const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
         const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
         records.Connector_App__c = deps.ensureConnectorAppRecords(records.Connector_App__c, ownerId);
