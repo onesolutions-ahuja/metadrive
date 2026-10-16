@@ -1,3 +1,6 @@
+import { createRecordCascadeRuntime } from './modules/records/record-cascade.js';
+import { createFlowFailureRuntime } from './modules/flows/failure-runtime.js';
+import { publicIntegrationConnection, publicNamedCredential } from './modules/integrations/public-projections.js';
 import { isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText } from './modules/dashboards/filter-validation.js';
 import { createPlatformTenantRuntime } from './modules/tenants/platform-runtime.js';
 import { createAuthenticationRuntime } from './modules/security/auth-runtime.js';
@@ -545,44 +548,6 @@ const initializePlatformStateContext = {
 };
 const platformInitialization = await initializePlatformState(initializePlatformStateContext);
 
-function publicIntegrationConnection(connection: IntegrationConnection, definition: ConnectorDefinition, credentials: Record<string, string>) {
-  return {
-    id: connection.id,
-    connectorKey: connection.connectorKey,
-    name: connection.name,
-    configuration: connection.configuration,
-    status: connection.status,
-    hasCredentials: Object.keys(credentials).length > 0,
-    credentialFields: definition.credentialsSchema.map((field) => ({
-      name: field.name,
-      label: field.label,
-      secret: field.secret,
-      required: field.required,
-      configured: field.secret ? Boolean(credentials[field.name]) : Boolean(connection.configuration[field.name])
-    })),
-    testStatus: connection.testStatus,
-    lastTestedAt: connection.lastTestedAt,
-    lastTestMessage: connection.lastTestMessage,
-    createdAt: connection.createdAt,
-    updatedAt: connection.updatedAt
-  };
-}
-function publicNamedCredential(credential: StoredNamedCredential) {
-  return {
-    id: credential.id,
-    name: credential.name,
-    label: credential.label,
-    protocol: credential.protocol,
-    baseUrl: credential.baseUrl,
-    authType: credential.authType,
-    headerName: credential.headerName ?? '',
-    configuration: credential.configuration ?? {},
-    hasSecret: credential.authType !== 'None',
-    enabled: credential.enabled !== false,
-    keyId: credential.keyId,
-    updatedAt: credential.updatedAt
-  };
-}
 // No schema/tenant is visible to a new tenant until its first durable commit.
 // Serialize provisioning within an instance; SQL modes also use optimistic
 // revisions to reject cross-instance stale writers rather than lose data.
@@ -1354,104 +1319,12 @@ const communicationAuditRuntime = createCommunicationAuditRuntime({
  tenantData, getUsers: () => platformStore.state.users,
  applyRecordDefaults, validateRuntimeRecord, persistTenantRecords
 });
-function createFlowFailureLog(
-  flow: Pick<FlowMetadata, 'apiName' | 'label'>,
-  trigger: FlowExecutionLog['trigger'],
-  error: unknown,
-  userId: string | null
-): FlowExecutionLog {
-  return flowExecutionLogSchema.parse({
-    id: randomUUID(),
-    flowApiName: flow.apiName,
-    flowLabel: flow.label,
-    trigger,
-    failedAt: new Date().toISOString(),
-    error: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
-    userId
-  });
-}
-function persistFlowFailure(
-  tenantId: string,
-  flow: Pick<FlowMetadata, 'apiName' | 'label'>,
-  trigger: FlowExecutionLog['trigger'],
-  error: unknown,
-  userId: string | null
-): void {
-  const tenant = tenantData(tenantId);
-  if (!tenant) throw new Error(`Cannot record flow failure: tenant "${tenantId}" was not found.`);
-  const log = createFlowFailureLog(flow, trigger, error, userId);
-  persistTenantRecords(tenantId, { ...tenant, flowLogs: [...tenant.flowLogs, log] });
-}
-async function deleteRecordCascade(
-  tenantId: string,
-  tenant: TenantData,
-  userId: string,
-  objectName: string,
-  record: RuntimeRecord,
-  depth = 0,
-  debugExecution = false,
-  debugTrace: FlowDebugTraceEntry[] = [],
-  rollbackSnapshot?: TenantData
-): Promise<void> {
-  if (depth > 10) throw new Error('Relationship cascade depth exceeded the 10-level limit.');
-  const user = platformStore.state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
-  if (!user) throw new Error('The user initiating this deletion is no longer active.');
-  const principal: Principal = {
-    userId: user.id, tenantId, email: user.email, roles: [user.role], permissions: effectivePermissions(user, tenant)
-  };
-  if (!hasRecordAccess(principal, tenant, objectName, record, 'Delete')) {
-    throw new Error(`Missing record-level delete access for "${objectName}" record "${record.Id}".`);
-  }
-  await runRecordTriggeredFlows(
-    tenantId, tenant, userId, objectName, 'deleted', record, record, depth, false, debugExecution, debugTrace, rollbackSnapshot
-  );
-  for (const childObject of tenant.objects) {
-    for (const field of childObject.fields) {
-      if (!field.relationship || field.relationship.targetObject !== objectName) continue;
-      const children = (tenant.records[childObject.apiName] ?? []).filter((item) => item[field.apiName] === record.Id);
-      if (!children.length) continue;
-      if (field.relationship.type === 'Master-Detail') {
-        for (const child of children) {
-          await deleteRecordCascade(
-            tenantId, tenant, userId, childObject.apiName, child, depth + 1, debugExecution, debugTrace, rollbackSnapshot
-          );
-        }
-      } else {
-        if (field.relationship.deleteBehavior === 'Restrict') {
-          throw new Error(`Cannot delete this record while lookup "${field.relationship.relationshipName}" (${childObject.apiName}.${field.apiName}) has related records.`);
-        }
-        if (field.required) throw new Error(`Cannot delete this record while required lookup "${childObject.apiName}.${field.apiName}" is populated.`);
-        for (const child of children) {
-          if (!hasRecordAccess(principal, tenant, childObject.apiName, child, 'Edit')) {
-            throw new Error(`Missing record-level edit access to clear "${childObject.apiName}.${field.apiName}" on child record "${child.Id}".`);
-          }
-          assertFieldEditPermissions(principal, tenant, childObject, { [field.apiName]: null });
-        }
-        const childIds = new Set(children.map((child) => child.Id));
-        const now = new Date().toISOString();
-        tenant.records[childObject.apiName] = (tenant.records[childObject.apiName] ?? []).map((child) => {
-          if (!childIds.has(child.Id)) return child;
-          const updated = stampRecordAuditFields({ ...child, [field.apiName]: null, LastModifiedDate: now }, userId, now, child);
-          appendFieldHistory(tenant, childObject, child, updated, userId);
-          return updated;
-        });
-        for (const child of children) {
-          const updated = tenant.records[childObject.apiName].find((item) => item.Id === child.Id);
-          if (updated) {
-            await runRecordTriggeredFlows(
-              tenantId, tenant, userId, childObject.apiName, 'updated', updated, child,
-              depth + 1, false, debugExecution, debugTrace, rollbackSnapshot
-            );
-          }
-        }
-      }
-    }
-  }
-  tenant.records[objectName] = (tenant.records[objectName] ?? []).filter((item) => item.Id !== record.Id);
-  tenant.recordShares = tenant.recordShares.filter((share) =>
-    share.objectApiName !== objectName || share.recordId !== record.Id);
-  if (objectName === 'Campaign') tenant.campaignMembers = tenant.campaignMembers.filter((member) => member.campaignId !== record.Id);
-  if (objectName === 'Contact') tenant.campaignMembers = tenant.campaignMembers.filter((member) => member.contactId !== record.Id);
+const { createFlowFailureLog, persistFlowFailure } = createFlowFailureRuntime({
+ flowExecutionLogSchema, tenantData, persistTenantRecords
+});
+let recordCascadeRuntime: ReturnType<typeof createRecordCascadeRuntime>;
+async function deleteRecordCascade(...args: Parameters<ReturnType<typeof createRecordCascadeRuntime>['deleteRecordCascade']>): Promise<void> {
+ return recordCascadeRuntime.deleteRecordCascade(...args);
 }
 function routeParam(req: Request, name: string): string {
   const value = req.params[name];
@@ -1699,6 +1572,10 @@ async function runBeforeSaveRecordTriggeredFlows(...args: Parameters<typeof reco
 const recordTriggerDependencies = { orderedRecordTriggeredFlows, asConfigRows, flowConditionsMatch, formulaContextForUser, flowVariablesForUser, flowInterviewIdentity, executeFlow, createFlowInterview, persistFlowFailure, calculateFormulaFields };
 export type RecordTriggerDependencies = typeof recordTriggerDependencies;
 const recordTriggerHandlers = createRecordTriggerHandlers(recordTriggerDependencies);
+recordCascadeRuntime = createRecordCascadeRuntime({
+ getUsers: () => platformStore.state.users, effectivePermissions, hasRecordAccess,
+ assertFieldEditPermissions, runRecordTriggeredFlows, appendFieldHistory
+});
 
 const { scheduledOccurrence, nextScheduledOccurrence } = createFlowScheduleCalculations(flowLocalDateTimeToInstant, dashboardLocalParts);
 
