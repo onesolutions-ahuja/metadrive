@@ -29,7 +29,7 @@ test('OneAssistant is an independent metadata-only AppExchange package',()=>{
  assert.ok(oneAssistant.flows.some(flow=>flow.flowType==='Screen Flow'));
  assert.ok(!('records' in oneAssistant),'do not seed tenant customer data');
  assert.equal(JSON.stringify(oneAssistant).includes('kingstonexterior.co.uk'),false,'keep the package tenant-neutral');
- assert.equal(JSON.stringify(oneAssistant).includes('tanha.ahuja2'),false,'no tenant identity in package');
+ assert.equal(JSON.stringify(oneAssistant).includes('@gmail.com'),false,'no administrator identity in package');
  for(const name of ['BookingService__c','BookingBusinessHours__c','BookingPolicy__c','Resource','ResourceAvailability']){
   const grant=oneAssistant.profile.objectPermissions[name];
   assert.deepEqual({read:grant.read,create:grant.create,edit:grant.edit,delete:grant.delete},
