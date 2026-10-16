@@ -112,8 +112,8 @@ return z.object({
       } else if (position.x + position.width > page.canvasWidth || position.y + position.height > page.canvasHeight) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'position'], message: 'Component position and size must fit inside the Free Canvas' });
       }
-      if (page.pageType !== 'Home Page' || !component.type.startsWith('Custom:')) {
-        context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'type'], message: 'Free Canvas is available on Home Pages and supports custom library components' });
+      if (page.pageType === 'Record Page' || !component.type.startsWith('Custom:')) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'type'], message: 'Free Canvas on Home and App Pages supports custom library components' });
       }
     }
     if (['Field Section', 'Record Field'].includes(component.type)
@@ -126,8 +126,8 @@ return z.object({
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['components', index, 'type'], message: 'This component is only available on Record Pages' });
     }
   });
-  if (page.layoutMode === 'free-canvas' && page.pageType !== 'Home Page') {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['layoutMode'], message: 'Free Canvas is only available on Home Pages' });
+  if (page.layoutMode === 'free-canvas' && page.pageType === 'Record Page') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['layoutMode'], message: 'Free Canvas is only available on Home and App Pages' });
   }
   const assignments = page.activationAssignments ?? [];
   const assignmentIds = assignments.map((assignment) => assignment.id);
