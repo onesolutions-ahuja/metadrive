@@ -1,6 +1,8 @@
 // @ts-nocheck
 // Flow interview and debug dialogs load only when a flow screen is opened.
-import FlowScreenContent from './FlowScreenContent';
+import { lazy, Suspense } from 'react';
+// Only fetch the published Screen Flow renderer when an interview opens.
+const FlowScreenContent = lazy(() => import('./FlowScreenContent'));
 import { screenFieldIsVisible } from './flowScreenRuntimeUtils';
 import { X } from 'lucide-react';
 
@@ -13,6 +15,7 @@ export default function SetupFlowDialogs({ context }: { context: any }) {
             <div className="modal-header"><h2 id="flow-screen-title">{flowRun.screen.label}</h2><button className="icon-button dark" type="button" onClick={() => { window.dispatchEvent(new CustomEvent('metadrive:flow-cancelled', { detail: { flowApiName: flowRun.flowApiName } })); setFlowRun(null); }} aria-label="Close"><X size={18} /></button></div>
             {flowRunnerError && <div className="flow-screen-error" role="alert" aria-live="assertive">{flowRunnerError}</div>}
             <div className={`flow-screen-grid${flowRun.screen.config.layout === 'Two Columns' ? ' flow-screen-grid-two' : ''}`}>
+              <Suspense fallback={<div className="records-loading" role="status">Loading screen components…</div>}>
               <FlowScreenContent
                 fields={(Array.isArray(flowRun.screen.config.fields) ? flowRun.screen.config.fields : []) as Array<Record<string, unknown>>}
                 libraryComponents={libraryComponents}
@@ -26,6 +29,7 @@ export default function SetupFlowDialogs({ context }: { context: any }) {
                 onError={setFlowRunnerError}
                 isFieldVisible={screenFieldIsVisible}
               />
+              </Suspense>
             </div>
             <div className="modal-actions"><button className="btn" type="button" onClick={() => { window.dispatchEvent(new CustomEvent('metadrive:flow-cancelled', { detail: { flowApiName: flowRun.flowApiName } })); setFlowRun(null); }}>Cancel</button>{flowRun.canGoBack && <button className="btn" type="button" onClick={() => void goBackFlowScreen()} disabled={flowRunnerSubmitting}>Previous</button>}{flowRun.outcomes.map((outcome) => <button className="btn btn-brand" type="submit" name="outcome" value={outcome.label} key={outcome.name} disabled={flowRunnerSubmitting}>{flowRunnerSubmitting ? 'Continuing…' : outcome.label}</button>)}</div>
           </form>
