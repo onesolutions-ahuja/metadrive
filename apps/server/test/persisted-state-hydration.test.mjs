@@ -18,3 +18,11 @@ test('new field writes still reject empty picklist metadata', () => {
   assert.match(objectSchemas, /if \(!persistedMetadataReadMode.active && isPicklist && !field\.picklistValues\?\.length\)/);
   assert.match(objectSchemas, /Picklist fields must define at least one value/);
 });
+
+test('historical SQL metadata is readable without relaxing new metadata writes', () => {
+  assert.match(objectSchemas, /!persistedMetadataReadMode\.active && \/\^\(\?:Lookup\|Master-Detail\)/);
+  const pageSchemas = readFileSync(new URL('../src/modules/pages/schemas.ts', import.meta.url), 'utf8');
+  assert.match(pageSchemas, /page\.pageType === 'App Page' && !persistedMetadataReadMode\?\.active/);
+  assert.match(source, /const persistedPageSchema = createPageSchema\(persistedMetadataReadMode\)/);
+  assert.match(source, /get pageSchema\(\) \{ return persistedPageSchema; \}/);
+});
