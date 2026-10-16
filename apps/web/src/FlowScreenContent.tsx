@@ -1,5 +1,5 @@
 import {resolveScreenText} from './flowScreenRuntimeUtils';
-import {findRegisteredComponentForInstance} from './componentRegistryLookup';
+import {findRegisteredComponent, findRegisteredComponentForInstance} from './componentRegistryLookup';
 import { useEffect, useState } from 'react';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import FlowScreenAdvancedField from './FlowScreenAdvancedField';
@@ -117,15 +117,77 @@ export default function FlowScreenContent({
         }} />
       </div>;
     }
-    if (type === 'Display Text') return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{resolveScreenText(field.text, values)}</p>;
-    if (type === 'Display Image') return <figure className="flow-screen-image" key={`image-${index}`}>
-      <img src={String(field.imageUrl ?? '')} alt={String(field.imageAltText ?? '')} loading="lazy" />
-      {label && <figcaption>{label}</figcaption>}
-    </figure>;
+    if (type === 'Display Text') {
+      const text = resolveScreenText(field.text, values);
+      const definition = findRegisteredComponent(libraryComponents, 'OneText', 'flow');
+      // Keep empty legacy display text unchanged: OneText has a non-empty placeholder.
+      if (definition && text) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Text', text, label, value: text,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+      return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{text}</p>;
+    }
+    if (type === 'Display Image') {
+      const src = String(field.imageUrl ?? '');
+      const alt = String(field.imageAltText ?? '');
+      const definition = findRegisteredComponent(libraryComponents, 'OneImage', 'flow');
+      // OneImage currently accepts HTTPS assets only; preserve existing legacy URLs.
+      if (definition && src.toLowerCase().startsWith('https://')) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Image', src, alt, caption: label,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+      return <figure className="flow-screen-image" key={`image-${index}`}>
+        <img src={src} alt={alt} loading="lazy" />
+        {label && <figcaption>{label}</figcaption>}
+      </figure>;
+    }
     if (['Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater'].includes(type)) {
-      return <FlowScreenAdvancedField key={name} field={field} label={label} inputId={inputId}
+      return <FlowScreenAdvancedField key={name} libraryComponents={libraryComponents} field={field} label={label} inputId={inputId}
         helpId={helpId} helpText={helpText} value={value} values={values} setValue={setValue}
         loadRecords={loadRecords} onError={onError} />;
+    }
+    // Use the existing registered controls only when they preserve the Flow field contract.
+    const inputTypes: Record<string, string> = {
+      Text: 'text', Password: 'password', Number: 'number', Currency: 'number',
+      Date: 'date', Time: 'time', 'Date/Time': 'datetime-local',
+      Email: 'email', URL: 'url', Phone: 'tel'
+    };
+    if (Object.prototype.hasOwnProperty.call(inputTypes, type)) {
+      const definition = findRegisteredComponent(libraryComponents, 'OneInput', 'flow');
+      // Browser-native constraints and stable IDs remain available through shared props.
+      if (definition) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Input', label, inputId, helpId: helpText ? helpId : undefined,
+        helpText, inputType: inputTypes[type], required: field.required === true,
+        min: field.min, max: field.max, step: field.step,
+        minLength: field.minLength, maxLength: field.maxLength,
+        pattern: field.pattern, validationMessage: field.validationMessage,
+        emptyNumberAsUndefined: true, value: value ?? '',
+        onChange: setValue,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+    }
+    if (type === 'Slider') {
+      const definition = findRegisteredComponent(libraryComponents, 'OneSlider', 'flow');
+      if (definition && field.required !== true) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Slider', label, inputId, helpId: helpText ? helpId : undefined,
+        helpText, min: field.min ?? 0, max: field.max ?? 100, step: field.step ?? 1,
+        value: typeof value === 'number' ? value : field.min ?? 0, onChange: setValue,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+    }
+    if (type === 'Picklist' || type === 'Multi-Select Picklist') {
+      const definition = findRegisteredComponent(libraryComponents, 'OneChoice', 'flow');
+      const mode = type === 'Multi-Select Picklist'
+        ? field.displayAs === 'Checkbox Group' ? 'checkbox' : 'multiple'
+        : field.displayAs === 'Radio Buttons' ? 'radio' : 'select';
+      if (definition && !(field.required === true && (mode === 'checkbox' || mode === 'multiple'))) {
+        return <RegisteredComponent key={name} definition={definition} props={{
+          kind: 'Choice', label, inputId, helpId: helpText ? helpId : undefined,
+          helpText, name: inputId, mode, choices, required: field.required === true,
+          value: type === 'Multi-Select Picklist' ? (Array.isArray(value) ? value : []) : (value ?? ''),
+          onChange: setValue, ...componentLayoutProps(field, layoutDevice)
+        }} />;
+      }
     }
     if (type === 'Checkbox' || type === 'Toggle') return <div key={name}><label className="checkbox-row" htmlFor={inputId}><input id={inputId} type="checkbox" role={type === 'Toggle' ? 'switch' : undefined} required={field.required === true} aria-required={field.required === true} aria-describedby={helpText ? helpId : undefined} checked={value === true} onChange={(event) => setValue(event.target.checked)} />{label}{field.required === true ? ' *' : ''}</label>{help}</div>;
     if (type === 'Long Text Area') return <label className="form-label" htmlFor={inputId} key={name}>{label}<textarea id={inputId} className="form-control" value={typeof value === 'string' ? value : ''} required={field.required === true} minLength={typeof field.minLength === 'number' ? field.minLength : undefined} maxLength={typeof field.maxLength === 'number' ? field.maxLength : undefined} aria-describedby={helpText ? helpId : undefined} onChange={(event) => setValue(event.target.value)} />{help}</label>;

@@ -1,3 +1,6 @@
+import { findRegisteredComponent } from './componentRegistryLookup';
+import RegisteredComponent from './RegisteredComponent';
+import type { LibraryComponentMetadata } from './metadata';
 import { validateFlowScreenUpload } from './flowScreenUploadValidation.mjs';
 import { validFlowScreenSelection } from './flowScreenDataTableSelection.mjs';
 import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react';
@@ -7,6 +10,7 @@ type ScreenRecord = Record<string, unknown>;
 
 type FlowScreenAdvancedFieldProps = {
   field: ScreenConfig;
+  libraryComponents: LibraryComponentMetadata[];
   label: string;
   inputId: string;
   helpId: string;
@@ -48,6 +52,7 @@ function readFile(file: File): Promise<{ name: string; type: string; size: numbe
 
 export default function FlowScreenAdvancedField({
   field,
+  libraryComponents,
   label,
   inputId,
   helpId,
@@ -100,18 +105,31 @@ export default function FlowScreenAdvancedField({
   }
 
   if (type === 'Lookup') {
-    return <LookupInput field={field} label={label} inputId={inputId} help={help}
+    return <LookupInput libraryComponents={libraryComponents} field={field} label={label} inputId={inputId} help={help}
       helpText={helpText} helpId={helpId} value={value} required={required} setValue={setValue}
       loadRecords={loadRecords} onError={onError} />;
   }
 
   if (type === 'Choice Lookup') {
-    return <ChoiceLookupInput field={field} label={label} inputId={inputId} help={help}
+    return <ChoiceLookupInput libraryComponents={libraryComponents} field={field} label={label} inputId={inputId} help={help}
       helpText={helpText} helpId={helpId} value={value} required={required} setValue={setValue}
       loadRecords={loadRecords} onError={onError} />;
   }
 
   if (type === 'Data Table') {
+    const definition = findRegisteredComponent(libraryComponents, 'OneTable', 'flow');
+    if (definition) {
+      const rows = Array.isArray(values[String(field.collection ?? '')]) ? values[String(field.collection)] as ScreenRecord[] : [];
+      const columns = Array.isArray(field.columns) ? field.columns.filter((item): item is string => typeof item === 'string') : [];
+      const selection = validFlowScreenSelection(value, rows, field.multiselect === true);
+      return <fieldset className="form-label flow-screen-table" aria-describedby={helpText ? helpId : undefined}>
+        <legend>{label}{required ? ' *' : ''}</legend>
+        <RegisteredComponent definition={definition} props={{kind:'Table',records:rows,columns,selectionMode:true,
+          multiselect:field.multiselect === true,required,inputId,value:field.multiselect === true ? selection : selection[0] ?? '',
+          onChange:setValue,pageSize:rows.length || 25}} />
+        {help}
+      </fieldset>;
+    }
     const collection = Array.isArray(values[String(field.collection ?? '')])
       ? values[String(field.collection)] as ScreenRecord[]
       : [];
@@ -145,8 +163,7 @@ export default function FlowScreenAdvancedField({
     const maxFiles = typeof field.maxFiles === 'number' ? field.maxFiles : 1;
     const maxFileSize = (typeof field.maxFileSize === 'number' ? field.maxFileSize : 512) * 1024;
     const allowedTypes = Array.isArray(field.allowedTypes) ? field.allowedTypes.filter((item): item is string => typeof item === 'string') : [];
-    const onFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-      const selectedFiles = Array.from(event.target.files ?? []);
+    const onSelectedFiles = async (selectedFiles: File[]) => {
       try {
         validateFlowScreenUpload(selectedFiles, files.map(file => ({ name: String(file.name ?? ''), type: String(file.type ?? ''), size: Number(file.size ?? 0) })), { maxFiles, maxFileSize, allowedTypes });
         const uploads = await Promise.all(selectedFiles.map(readFile));
@@ -157,9 +174,21 @@ export default function FlowScreenAdvancedField({
         setValue(combined);
       } catch (error) {
         onError(error instanceof Error ? error.message : 'Unable to read selected files');
-      } finally {
-        event.target.value = '';
       }
+    };
+    const definition = findRegisteredComponent(libraryComponents, 'OneFileUpload', 'flow');
+    if (definition) return <div className="form-label">
+      <RegisteredComponent definition={definition} props={{kind:'FileUpload',label,accept:allowedTypes.join(','),
+        multiple:maxFiles>1,onFilesSelected:onSelectedFiles}} />
+      {files.length>0&&<ul className="flow-screen-file-list">{files.map((file,index)=><li key={String(file.name)+'-'+index}>
+        {String(file.name)} ({Math.ceil(Number(file.size??0)/1024)} KB)
+        <button type="button" className="text-action" onClick={()=>setValue(files.filter((_,i)=>i!==index))}>Remove</button>
+      </li>)}</ul>}
+      {help}
+    </div>;
+    const onFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+      await onSelectedFiles(Array.from(event.target.files ?? []));
+      event.target.value = '';
     };
     return <div className="form-label">
       <label htmlFor={inputId}>{label}{required ? ' *' : ''}</label>
@@ -215,9 +244,9 @@ export default function FlowScreenAdvancedField({
 }
 
 function LookupInput({
-  field, label, inputId, help, helpText, helpId, value, required, setValue, loadRecords, onError
+  field, libraryComponents, label, inputId, help, helpText, helpId, value, required, setValue, loadRecords, onError
 }: {
-  field: ScreenConfig; label: string; inputId: string; help: ReactNode;
+  libraryComponents: LibraryComponentMetadata[]; field: ScreenConfig; label: string; inputId: string; help: ReactNode;
   helpText: string; helpId: string; value: unknown; required: boolean;
   setValue: (value: unknown) => void; loadRecords: (objectApiName: string) => Promise<ScreenRecord[]>;
   onError: (message: string) => void;
@@ -239,6 +268,11 @@ function LookupInput({
     return () => { active = false; };
   }, [loadRecords, objectApiName, onError]);
 
+  const oneLookup = findRegisteredComponent(libraryComponents, 'OneLookup', 'flow');
+  if (oneLookup && !loading) return <div className="form-label">
+    <RegisteredComponent definition={oneLookup} props={{kind:'Lookup',label,records,loading,
+      inputId,helpId,helpText,required,value,onChange:setValue}} />{help}
+  </div>;
   return <label className="form-label" htmlFor={inputId}>
     {label}{required ? ' *' : ''}
     <select id={inputId} className="form-control" value={stringValue(value)} required={required}
@@ -252,9 +286,9 @@ function LookupInput({
 }
 
 function ChoiceLookupInput({
-  field, label, inputId, help, helpText, helpId, value, required, setValue, loadRecords, onError
+  field, libraryComponents, label, inputId, help, helpText, helpId, value, required, setValue, loadRecords, onError
 }: {
-  field: ScreenConfig; label: string; inputId: string; help: ReactNode;
+  libraryComponents: LibraryComponentMetadata[]; field: ScreenConfig; label: string; inputId: string; help: ReactNode;
   helpText: string; helpId: string; value: unknown; required: boolean;
   setValue: (value: unknown) => void; loadRecords: (objectApiName: string) => Promise<ScreenRecord[]>;
   onError: (message: string) => void;
@@ -287,6 +321,11 @@ function ChoiceLookupInput({
     else setValue(selected[0] === id ? '' : id);
   };
 
+  const oneLookup = findRegisteredComponent(libraryComponents, 'OneLookup', 'flow');
+  if (oneLookup && !loading) return <div className="form-label">
+    <RegisteredComponent definition={oneLookup} props={{kind:'Lookup',label,records,displayField,
+      multiple,required,inputId,helpId,helpText,value,onChange:setValue}} />{help}
+  </div>;
   return <fieldset className="form-label flow-choice-lookup" aria-describedby={helpText ? helpId : undefined}>
     <legend>{label}{required ? ' *' : ''}</legend>
     <label className="form-label" htmlFor={`${inputId}-search`}>Search choices
