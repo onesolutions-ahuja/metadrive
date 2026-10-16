@@ -99,6 +99,10 @@ test('backend routes use tenant-scoped seeder reconciliation and reject duplicat
   assert.match(source, /reconcileInstalledAppSeeds\(\s*\{ \.\.\.tenant, autoNumberSequences \}, deps.installableAppCatalog, tenantId/);
   const routes = readFileSync(new URL('../apps/server/src/modules/integrations/connector-app-routes.ts', import.meta.url),'utf8');
   assert.match(routes, /if \(matches\.length > 1\) return res\.status\(409\)/);
+  const credentialActivation = routes.slice(routes.indexOf("deps.app.patch('/api/connector-apps/:appKey/credential-enabled'"));
+  assert.match(credentialActivation, /const matches = .*Connector_App__c.*\.filter\(/);
+  assert.match(credentialActivation, /if \(matches\.length > 1\) return res\.status\(409\)/);
+  assert.match(credentialActivation, /const appRecord = matches\[0\]/);
 });
 
 test('duplicate package catalog entries never register optional bundles', () => {
