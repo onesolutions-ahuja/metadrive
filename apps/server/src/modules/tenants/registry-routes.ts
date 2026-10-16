@@ -1,8 +1,35 @@
 import type { Request, Response } from "express";
+import { z } from "zod";
 import type { TenantRegistryRoutesDependencies, TenantRegistryEntry } from '../../index.js';
 
 /** Registers existing endpoints with live access to the shared platform services. */
 export function registerTenantRegistryRoutes(deps: TenantRegistryRoutesDependencies): void {
+  // Tenant-owned company profile: stored in the existing tenant SQL settings projection,
+  // never in the platform-only tenant registry. Server checks metadata permissions.
+  const companyProfileSchema = z.object({
+    legalName:z.string().trim().max(120),tradingName:z.string().trim().max(120),
+    website:z.union([z.literal(''),z.string().trim().url().max(500)]),
+    phone:z.string().trim().max(50),email:z.union([z.literal(''),z.string().trim().email()]),
+    addressLine1:z.string().trim().max(200),addressLine2:z.string().trim().max(200),
+    city:z.string().trim().max(120),postcode:z.string().trim().max(30),country:z.string().trim().max(100),
+    timezone:z.string().trim().max(100),locale:z.string().trim().max(50),description:z.string().trim().max(1000)
+  }).strict();
+  deps.app.get('/api/tenant/company-profile',deps.accessAuthentication,deps.requirePermission('metadata:read'),(_req:Request,res:Response)=>{
+    const tenant=deps.tenantData(deps.getPrincipal(res).tenantId);
+    if(!tenant)return res.status(404).json({error:'Tenant unavailable'});
+    res.setHeader('Cache-Control','no-store');
+    return res.json({profile:tenant.companyProfile??null});
+  });
+  deps.app.put('/api/tenant/company-profile',deps.accessAuthentication,deps.requirePermission('metadata:write'),(req:Request,res:Response)=>{
+    const principal=deps.getPrincipal(res),tenant=deps.tenantData(principal.tenantId);
+    if(!tenant)return res.status(404).json({error:'Tenant unavailable'});
+    const parsed=companyProfileSchema.safeParse(req.body);
+    if(!parsed.success)return res.status(400).json({error:'Invalid company details',details:parsed.error.flatten()});
+    deps.persistTenantRecords(principal.tenantId,{...tenant,companyProfile:parsed.data,
+      securityAudit:[...tenant.securityAudit,{id:crypto.randomUUID(),at:new Date().toISOString(),actorUserId:principal.userId,action:'COMPANY_PROFILE_UPDATED'}].slice(-5000)});
+    res.setHeader('Cache-Control','no-store');
+    return res.json({profile:parsed.data});
+  });
   deps.app.get('/api/tenant/usage', deps.accessAuthentication, deps.requirePermission('security:read'),
     (_req: Request, res: Response) => {
       const tenantId = deps.getPrincipal(res).tenantId;
