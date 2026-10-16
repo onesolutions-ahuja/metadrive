@@ -7,27 +7,23 @@ import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from
 import type { RecordData } from './recordMetadataUtils';
 export function renderSetupShell(ctx: any) {
   const { AppExchange, AppManager, ComponentLibrary, FieldWizardModal, FlowInterviews, FlowLogs, NamedCredentials, ScheduledFlows, SetupFlowDialogs, SetupObjectDialogs, AccountSessionSecurity, ApprovalProcessManager, AutomationSettingsWorkspace, Bell, Check, ChevronLeft, ChevronRight, CircleHelp, CompanySettings, ConnectionHealthIndicator, ConnectorSettingsWorkspace, DashboardBuilder, Database, DeveloperAccountSettings, FlowBuilderWorkspace, GlobalRecordSearch, History, LightningAppRuntime, Monitor, NavigationLoadTime, ObjectManager, PageBuilder, Permissions, PlatformPageSlot, PlatformWorkspaceSurface, ProfilePasswordMenu, RecordObjectPicker, RecordWorkspace, ReportBuilder, Search, SetupHome, TenantDomains, TenantEmailRecoverySettings, TenantManagement, TenantMfaSettings, TenantRecoveryPanel, TenantSecurityAudit, TenantUsagePanel, TenantUserLockSettings, X, accessControl, accessControlError, activationAppIds, activeUtility, addField, addFlowElement, advancedMetadataLoaded, apiRequest, appUtilityRef, approvalBusyId, approvalProcesses, approvalRequests, apps, setApps, setPages, authorizeNamedCredential, canCreateDashboards, canManageApprovalProcesses, canManageApps, canReadMetadata, canReadSecurity, canManageDashboardTerritories, canManageDashboards, canManageFlows, canManageLibrary, canManageNamedCredentials, canManagePlatformTenants, canManageReportFolders, canManageUserIdentities, canRunFlows, canScheduleDashboards, cancelFlowInterview, changePage, cloneFlow, commitFlow, connectorProviders, connectorRights, createDashboardSnapshot, createFlow, createObject, currentApp, currentAppNavigation, currentFieldAccess, currentProfileId, currentRecordTypeAccess, customTabObject, customTabStyle, customTabStyles, dashboardFolders, dashboardRunningUserIds, dashboardTerritories, dashboardUserId, dashboards, deactivateFlow, decideApproval, defaultLightningPage, deleteApp, deleteApprovalProcess, deleteDashboard, deleteDashboardFolder, deleteDashboardSnapshot, deleteDashboardSubscription, deleteEmailAlert, deleteField, deleteFlow, deleteLibraryComponent, deleteNamedCredential, deleteObject, deletePlatformEvent, deleteReport, emailAlerts, executeConnectorAppLifecycleFlow, exitDashboardViewer, exportFlow, fetchFlowListPage, filteredSetupGroups, flow, flowDebug, flowHasUnsavedChanges, flowHistory, flowInterviews, flowInterviewsLoading, flowLogs, flowLogsLoading, flowRun, flowRunnerError, flowRunnerSubmitting, flowToolTab, flowValidation, flows, formulaEditorRef, goBackFlowScreen, grantConnectorLicence, importFlow, insertFormulaText, integrationConnections, isStandaloneMetadataPage, launchCustomTabWizard, libraryComponents, loadAppCommunicationHistory, loadConnectorMarketplaceApps, loadDashboardRecords, loadDashboardSnapshots, loadDashboardSubscriptions, loadFlowScreenRecords, loadNotifications, logout, markNotificationRead, metadataLoadError, metadataLoaded, namedCredentials, namedCredentialsEncryptionReady, navigateRoute, navigateSetupItem, newFieldAllowReparenting, newFieldApiName, newFieldCaseSensitive, newFieldChildRelationshipName, newFieldConfigurationError, newFieldController, newFieldControllerApiName, newFieldControllerValues, newFieldDefaultValue, newFieldDeleteBehavior, newFieldDescription, newFieldExternalId, newFieldFormula, newFieldFormulaValidation, newFieldHasDefault, newFieldHelpText, newFieldLabel, newFieldLayoutIds, newFieldLookupFilterLogic, newFieldLookupFilters, newFieldPicklistOptions, newFieldPicklistRestricted, newFieldPicklistValues, newFieldPrecision, newFieldRelationshipName, newFieldRelationshipTarget, newFieldRequired, newFieldReturnType, newFieldScale, newFieldStage, newFieldTextLength, newFieldType, newFieldUnique, newFieldValueSettings, newObjectDescription, newObjectLabel, newObjectPluralLabel, newObjectRecordNameLabel, newObjectSettings, notificationRef, notifications, notificationsLoading, notificationsOpen, notificationsUnreadCount, notify, object, objectSearch, objectSetting, objects, onLogout, openDashboardViewer, openFlowDebug, openPageForObject, openSetupWorkspace, page, pageCreationAppContext, pageRouteApiName, pages, platformEvents, previewReport, protectedPageRuntime, publishLibraryComponent, quickFind, readableRecordObjects, recentRoutes, recordSearch, redoFlow, refreshFlowInterviews, refreshObject, relatedLookupFilterOperators, removeFlowElement, reportFolders, reports, resetNewFieldDraft, restoreFlowVersion, rollbackLibraryComponent, rotateNamedCredential, route, routeAliasError, routeTiming, runDashboardSubscription, runFlow, runFlowDebug, runReport, runSavedFlowTests, runtimeFormFactor, saveAccessControl, saveApp, saveApprovalProcess, saveConnectorProvider, saveCustomTab, saveDashboard, saveDashboardFolder, saveDashboardSubscription, saveDashboardTerritories, saveEmailAlert, saveField, saveFlow, saveIntegrationConnection, saveLibraryComponent, saveNamedCredential, saveObject, savePage, savePageFromBuilder, savePlatformEvent, saveReport, saveReportFolder, selectDashboard, selectFlow, selectedFlowId, setActiveUtility, setCustomTabObject, setCustomTabStyle, setFlowDebug, setFlowRun, setFlowRunnerError, setFlowToolTab, setLaunchCustomTabWizard, setNewFieldAllowReparenting, setNewFieldCaseSensitive, setNewFieldChildRelationshipName, setNewFieldControllerApiName, setNewFieldDefaultValue, setNewFieldDeleteBehavior, setNewFieldDescription, setNewFieldExternalId, setNewFieldFormula, setNewFieldFormulaValidation, setNewFieldHasDefault, setNewFieldHelpText, setNewFieldLabel, setNewFieldLayoutIds, setNewFieldLookupFilterLogic, setNewFieldLookupFilters, setNewFieldPicklistRestricted, setNewFieldPicklistValues, setNewFieldPrecision, setNewFieldRelationshipName, setNewFieldRelationshipTarget, setNewFieldRequired, setNewFieldReturnType, setNewFieldScale, setNewFieldStage, setNewFieldTextLength, setNewFieldType, setNewFieldUnique, setNewFieldValueSettings, setNewObjectDescription, setNewObjectLabel, setNewObjectPluralLabel, setNewObjectRecordNameLabel, setNewObjectSettings, setObjectSearch, setPage, setPageCreationAppContext, setQuickFind, setRecordSearch, setSelectedFlowId, setSetupSidebarCollapsed, setShowNewField, setShowNewObject, setShowCustomTabWizard, setStandalonePageMode, setupSidebarCollapsed, showCustomTabWizard, showNewField, showNewObject, standalonePageMode, submitFlowScreen, testIntegrationConnection, testNamedCredential, toast, toggleNamedCredentialEnabled, toggleNotifications, undoFlow, uneSolutionsLogoUrl, updateFlowConfig, updateFlowLabel, validateFlow, validateNewFieldFormula, workspace } = ctx;
+  const activeAppPage = route.kind === 'app-page'
+    ? pages.find((candidate: LightningPageMetadata) => candidate.apiName === route.pageApiName && candidate.status === 'Active')
+    : null;
   return (
     <div className={standalonePageMode || isStandaloneMetadataPage ? 'lightning standalone-page-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
       <header className="salesforce-header">
         <button type="button" className="brand brand-home-button" aria-label="Go to home" title="Home" onClick={() => openSetupWorkspace('home')}><img className="brand-logo" src={uneSolutionsLogoUrl} alt="UNE Solutions" /></button>
-        <button type="button" className="header-home-link" onClick={() =>
-          navigateRoute({ kind: 'app-home', appId: currentApp?.apiName ?? 'Records' })}>
-          <Monitor size={16} />Home
-        </button>
-        <button type="button" disabled={!readableRecordObjects.length}
-          className={route.kind === 'record-list' || route.kind === 'record-detail' ? 'header-records-link active' : 'header-records-link'}
-          onClick={() => {
-            const targetObject = route.kind === 'record-list' || route.kind === 'record-detail'
-              ? route.objectApiName : readableRecordObjects[0]?.apiName;
-            if (targetObject) navigateRoute({ kind: 'record-list', objectApiName: targetObject, appId: currentApp?.apiName ?? 'Records' });
-          }}><Database size={16} />Records</button>
-        <RecordObjectPicker objects={readableRecordObjects}
-          selected={route.kind === 'record-list' || route.kind === 'record-detail' ? route.objectApiName : ''}
-          onSelect={(apiName) => navigateRoute({ kind: 'record-list', objectApiName: apiName, appId: currentApp?.apiName ?? 'Records' })} />
         <label className="header-installed-apps">
           <span>Apps</span>
           <select aria-label="Open installed app" value="" onChange={(event) => {
+            if (event.target.value === '__home__') { openSetupWorkspace('home'); return; }
+            if (event.target.value === '__records__') {
+              const targetObject = route.kind === 'record-list' || route.kind === 'record-detail'
+                ? route.objectApiName : readableRecordObjects[0]?.apiName;
+              if (targetObject) navigateRoute({kind:'record-list',objectApiName:targetObject,appId:'Records'});
+              return;
+            }
             const app=apps.find((item)=>item.apiName===event.target.value);
             if(!app)return;
             const firstPage=app.navigationOrder.find(item=>item.type==='App Page' &&
@@ -37,7 +33,9 @@ export function renderSetupShell(ctx: any) {
               : {kind:'app-home',appId:app.apiName});
           }}>
             <option value="">Open app…</option>
-            {apps.map(app=><option key={app.apiName} value={app.apiName}>{app.label}</option>)}
+            <option value="__home__">Home</option>
+            {readableRecordObjects.length > 0 && <option value="__records__">Records</option>}
+            {apps.filter((app) => app.apiName !== 'Records').map(app=><option key={app.apiName} value={app.apiName}>{app.label}</option>)}
           </select>
         </label>
         <div className="header-searches">
@@ -47,13 +45,16 @@ export function renderSetupShell(ctx: any) {
             onSelect={(objectApiName, recordId) => navigateRoute({
               kind: 'record-detail', objectApiName, recordId, appId: currentApp?.apiName ?? 'Records'
             })} />
-          {route.kind === 'record-list' && <label className="header-list-search">
-            <Search size={15} aria-hidden="true" />
-            <input type="search" aria-label={`Search ${objects.find((item) => item.apiName === route.objectApiName)?.pluralLabel ?? 'current object'} records`}
-              placeholder={`Search ${objects.find((item) => item.apiName === route.objectApiName)?.pluralLabel ?? 'records'}…`}
-              value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} />
-          </label>}
+
         </div>
+        {activeAppPage && <div className="header-page-context" aria-label="Current page">
+          <span className="header-page-title">{activeAppPage.label}</span>
+          {activeAppPage.components.filter((component: any) => component.visible !== false && typeof component.properties?.customerDisplayUrl === 'string' && component.properties.customerDisplayUrl.trim()).map((component: any) =>
+            <button key={component.id} type="button" className="btn header-page-action"
+              onClick={() => window.dispatchEvent(new CustomEvent('metadrive:page-toolbar-action', {
+                detail: {pageSessionKey: route.appId + ':' + route.pageApiName, componentId: component.id, action: 'openDisplay'}
+              }))}>{component.properties.displayButtonLabel || 'Open customer display'}</button>)}
+        </div>}
         <div className="header-tools" ref={appUtilityRef}>
           <button type="button" className="icon-button header-history-button" title="History" aria-label="History" aria-expanded={activeUtility === 'History'}
             onClick={() => setActiveUtility((current) => current === 'History' ? null : 'History')}><History size={17} /></button>
@@ -102,16 +103,7 @@ export function renderSetupShell(ctx: any) {
         </div>
       </header>
 
-      {route.kind !== 'setup' && currentAppNavigation.some((entry) => entry.type === 'App Page' && pages.some((page) => page.apiName === entry.apiName && page.pageType === 'App Page' && page.status === 'Active')) && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
-        {currentApp?.apiName !== 'Records' && <div className="app-title">
-          <span className="app-icon"><Database size={18} /></span>
-          {apps.length > 1
-            ? <select className="app-title-switcher" aria-label="Switch app" value={currentApp?.apiName ?? ''}
-                onChange={(event) => navigateRoute({ kind: 'app-home', appId: event.target.value })}>
-                {apps.map((app) => <option key={app.apiName} value={app.apiName}>{app.label}</option>)}
-              </select>
-            : <strong className="app-current-label">{currentApp?.label ?? 'Records'}</strong>}
-        </div>}
+      {route.kind !== 'setup' && currentAppNavigation.filter((entry) => entry.type === 'App Page' && pages.some((page) => page.apiName === entry.apiName && page.pageType === 'App Page' && page.status === 'Active')).length > 1 && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
         <nav className="primary-tabs" aria-label="Workspace navigation">
           {currentAppNavigation.filter((entry) => entry.type === 'App Page').map((entry) => {
             const apiName = entry.apiName;
@@ -186,7 +178,8 @@ export function renderSetupShell(ctx: any) {
               .map(({ apiName, label, flowType, status }) => ({ apiName, label, flowType, status }))}
             onLaunchFlow={(apiName: string, inputs?: Record<string, unknown>) => void runFlow(apiName, inputs)}
             reports={reports} metadataLoaded={metadataLoaded} profileId={currentProfileId} canManageUserIdentities={canManageUserIdentities} userRoles={accessControl.roles}
-            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={recordSearch} onNavigate={navigateRoute} />}
+            fieldAccess={currentFieldAccess} recordTypeAccess={currentRecordTypeAccess} libraryComponents={libraryComponents} headerSearch={recordSearch} onSearchChange={setRecordSearch}
+            navigableObjects={readableRecordObjects} onNavigate={navigateRoute} />}
           {route.kind === 'route-alias' && <section className="setup-card" role="status">
             {routeAliasError ? <p role="alert">{routeAliasError}</p> : <p>Resolving route alias…</p>}
           </section>}
