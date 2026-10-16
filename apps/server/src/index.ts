@@ -1,3 +1,4 @@
+import { createFlowRouteRegistrar } from './modules/flows/route-registry.js';
 import { createFlowValidator } from './modules/flows/validation.js';
 import { createRecordTriggerHandlers } from './modules/flows/record-trigger-handlers.js';
 import { createFlowInterview as buildFlowInterview } from './modules/flows/interview-factory.js';
@@ -34,26 +35,18 @@ import { registerTenantLifecycleRoutes } from './modules/tenants/lifecycle-route
 import { registerTenantRetentionRoutes } from './modules/tenants/retention-routes.js';
 import { registerApprovalsDecisionRoutes } from './modules/approvals/decision-routes.js';
 import { registerObjectsListRoutes } from './modules/objects/list-routes.js';
-import { registerFlowsPlatformEventRoutes } from './modules/flows/platform-event-routes.js';
 import { registerApprovalsMetadataRoutes } from './modules/approvals/metadata-routes.js';
-import { registerFlowsMetadataRoutes } from './modules/flows/metadata-routes.js';
 import { registerIntegrationsConnectionRoutes } from './modules/integrations/connection-routes.js';
 import { registerIntegrationsConnectorSettingsRoutes } from './modules/integrations/connector-settings-routes.js';
 import { registerIntegrationsConnectorAppRoutes } from './modules/integrations/connector-app-routes.js';
 import { registerCredentialStatusRoutes } from './modules/integrations/credential-status-routes.js';
 import { registerCredentialManagementRoutes } from './modules/integrations/credential-management-routes.js';
-import { registerFlowsEmailAlertRoutes } from './modules/flows/email-alert-routes.js';
-import { registerFlowDefinitionRoutes } from './modules/flows/definition-routes.js';
 import { registerChatterAccessRoutes } from './modules/chatter/access-routes.js';
-import { registerFlowsExecutionRoutes } from './modules/flows/execution-routes.js';
-import { registerFlowRecordDebugRoutes } from './modules/flows/record-debug-routes.js';
-import { registerFlowsInterviewRoutes } from './modules/flows/interview-routes.js';
 import { registerAppsMetadataRoutes } from './modules/apps/metadata-routes.js';
 import { registerAppsRouteAliasRoutes } from './modules/apps/route-alias-routes.js';
 import { registerPageListRoutes } from './modules/pages/list-routes.js';
 import { registerPageUpdateRoutes } from './modules/pages/update-routes.js';
 import { registerSecurityCurrencyRoutes } from './modules/security/currency-routes.js';
-import { registerFlowElementRoutes } from './modules/flows/element-routes.js';
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
 import { registerHealthAndDiscoveryRoutes } from './modules/security/health-routes.js';
@@ -3864,19 +3857,55 @@ const registerObjectsListRoutesContext = {
 };
 export type ObjectsListRoutesDependencies = typeof registerObjectsListRoutesContext;
 registerObjectsListRoutes(registerObjectsListRoutesContext);
-const registerFlowsPlatformEventRoutesContext = {
+const flowRouteServices = {
+  get accessAuthentication() { return accessAuthentication; },
   get activeFlowDefinition() { return activeFlowDefinition; },
   get app() { return app; },
+  get asConfigRows() { return asConfigRows; },
+  get authoriseChatterFlow() { return authoriseChatterFlow; },
+  get authoriseManualCoreFlow() { return authoriseManualCoreFlow; },
+  get automationSettingsSchema() { return automationSettingsSchema; },
+  get createFlowInterview() { return createFlowInterview; },
+  get defaultAutomationSettings() { return defaultAutomationSettings; },
+  get emailAlertRequestSchema() { return emailAlertRequestSchema; },
+  get emailAlertSchema() { return emailAlertSchema; },
+  get executeFlow() { return executeFlow; },
+  get flowConditionsMatch() { return flowConditionsMatch; },
+  get flowSchema() { return flowSchema; },
+  get flowVariablesForUser() { return flowVariablesForUser; },
+  get flowVersionSnapshot() { return flowVersionSnapshot; },
+  get formulaContextForUser() { return formulaContextForUser; },
   get getPrincipal() { return getPrincipal; },
+  get hasFieldPermission() { return hasFieldPermission; },
+  get hasObjectPermission() { return hasObjectPermission; },
+  get hasRecordAccess() { return hasRecordAccess; },
+  get isSafeFlowRegex() { return isSafeFlowRegex; },
+  get isValidFlowDateTime() { return isValidFlowDateTime; },
+  get isValidFlowTime() { return isValidFlowTime; },
+  get persistFlowFailure() { return persistFlowFailure; },
+  get persistState() { return persistState; },
   get persistTenantRecords() { return persistTenantRecords; },
   get platformEventSchema() { return platformEventSchema; },
+  get randomUUID() { return randomUUID; },
+  get recordFlowDebugRequestSchema() { return recordFlowDebugRequestSchema; },
   get requireAnyPermission() { return requireAnyPermission; },
   get requirePermission() { return requirePermission; },
+  get resolveFlowValue() { return resolveFlowValue; },
   get routeParam() { return routeParam; },
-  get tenantData() { return tenantData; }
+  get runtimeRecordSchema() { return runtimeRecordSchema; },
+  get sanitizeChatterCallerInput() { return sanitizeChatterCallerInput; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
+  get tenantData() { return tenantData; },
+  get trustedChatterExecutionFlow() { return trustedChatterExecutionFlow; },
+  get uniqueFlowHistory() { return uniqueFlowHistory; },
+  get validateFlow() { return validateFlow; },
+  get validateFlowInputValues() { return validateFlowInputValues; },
+  get z() { return z; },
 };
-export type FlowsPlatformEventRoutesDependencies = typeof registerFlowsPlatformEventRoutesContext;
-registerFlowsPlatformEventRoutes(registerFlowsPlatformEventRoutesContext);
+export type FlowRouteServices = typeof flowRouteServices;
+const flowRouteRegistrar = createFlowRouteRegistrar(flowRouteServices);
+flowRouteRegistrar.platformEvents();
 // Metadata mutations share a single version and bounded, tenant-owned history.
 // Writes still go through the current typed SQL/Aiven persistence implementation.
 const metadataVersion = (object: ObjectMetadata | undefined): number => object?.revision ?? 0;
@@ -3900,21 +3929,7 @@ const registerApprovalsMetadataRoutesContext = {
 };
 export type ApprovalsMetadataRoutesDependencies = typeof registerApprovalsMetadataRoutesContext;
 registerApprovalsMetadataRoutes(registerApprovalsMetadataRoutesContext);
-const registerFlowsMetadataRoutesContext = {
-  get app() { return app; },
-  get automationSettingsSchema() { return automationSettingsSchema; },
-  get defaultAutomationSettings() { return defaultAutomationSettings; },
-  get getPrincipal() { return getPrincipal; },
-  get persistTenantRecords() { return persistTenantRecords; },
-  get requireAnyPermission() { return requireAnyPermission; },
-  get requirePermission() { return requirePermission; },
-  get routeParam() { return routeParam; },
-  get state() { return platformStore.state; },
-  set state(next: PlatformState) { platformStore.state = next; },
-  get tenantData() { return tenantData; }
-};
-export type FlowsMetadataRoutesDependencies = typeof registerFlowsMetadataRoutesContext;
-registerFlowsMetadataRoutes(registerFlowsMetadataRoutesContext);
+flowRouteRegistrar.metadata();
 const registerIntegrationsConnectionRoutesContext = {
   get app() { return app; },
   get connectorDefinitionRequestSchema() { return connectorDefinitionRequestSchema; },
@@ -4067,41 +4082,8 @@ const registerCredentialManagementRoutesContext = {
 };
 export type CredentialManagementRoutesDependencies = typeof registerCredentialManagementRoutesContext;
 registerCredentialManagementRoutes(registerCredentialManagementRoutesContext);
-const registerFlowsEmailAlertRoutesContext = {
-  get app() { return app; },
-  get emailAlertRequestSchema() { return emailAlertRequestSchema; },
-  get emailAlertSchema() { return emailAlertSchema; },
-  get getPrincipal() { return getPrincipal; },
-  get persistTenantRecords() { return persistTenantRecords; },
-  get randomUUID() { return randomUUID; },
-  get requireAnyPermission() { return requireAnyPermission; },
-  get requirePermission() { return requirePermission; },
-  get routeParam() { return routeParam; },
-  get tenantData() { return tenantData; },
-  get z() { return z; }
-};
-export type FlowsEmailAlertRoutesDependencies = typeof registerFlowsEmailAlertRoutesContext;
-registerFlowsEmailAlertRoutes(registerFlowsEmailAlertRoutesContext);
-const registerFlowDefinitionRoutesContext = {
-  get activeFlowDefinition() { return activeFlowDefinition; },
-  get app() { return app; },
-  get flowSchema() { return flowSchema; },
-  get flowVersionSnapshot() { return flowVersionSnapshot; },
-  get formulaContextForUser() { return formulaContextForUser; },
-  get getPrincipal() { return getPrincipal; },
-  get persistState() { return persistState; },
-  get persistTenantRecords() { return persistTenantRecords; },
-  get requireAnyPermission() { return requireAnyPermission; },
-  get requirePermission() { return requirePermission; },
-  get routeParam() { return routeParam; },
-  get state() { return platformStore.state; },
-  set state(next: PlatformState) { platformStore.state = next; },
-  get tenantData() { return tenantData; },
-  get uniqueFlowHistory() { return uniqueFlowHistory; },
-  get validateFlow() { return validateFlow; }
-};
-export type FlowDefinitionRoutesDependencies = typeof registerFlowDefinitionRoutesContext;
-registerFlowDefinitionRoutes(registerFlowDefinitionRoutesContext);
+flowRouteRegistrar.emailAlerts();
+flowRouteRegistrar.definitions();
 // Reuse the same validated permission assignments for all object and field checks
 // within a request, instead of repeatedly scanning profiles/sets for every cell.
 type AuthGrantContext = {
@@ -4695,30 +4677,7 @@ const registerChatterAccessRoutesContext = {
 };
 export type ChatterAccessRoutesDependencies = typeof registerChatterAccessRoutesContext;
 registerChatterAccessRoutes(registerChatterAccessRoutesContext);
-const registerFlowsExecutionRoutesContext = {
-  get accessAuthentication() { return accessAuthentication; },
-  get app() { return app; },
-  get authoriseChatterFlow() { return authoriseChatterFlow; },
-  get authoriseManualCoreFlow() { return authoriseManualCoreFlow; },
-  get createFlowInterview() { return createFlowInterview; },
-  get executeFlow() { return executeFlow; },
-  get formulaContextForUser() { return formulaContextForUser; },
-  get getPrincipal() { return getPrincipal; },
-  get persistFlowFailure() { return persistFlowFailure; },
-  get persistTenantRecords() { return persistTenantRecords; },
-  get requirePermission() { return requirePermission; },
-  get routeParam() { return routeParam; },
-  get sanitizeChatterCallerInput() { return sanitizeChatterCallerInput; },
-  get state() { return platformStore.state; },
-  set state(next: PlatformState) { platformStore.state = next; },
-  get tenantData() { return tenantData; },
-  get trustedChatterExecutionFlow() { return trustedChatterExecutionFlow; },
-  get validateFlow() { return validateFlow; },
-  get validateFlowInputValues() { return validateFlowInputValues; },
-  get z() { return z; }
-};
-export type FlowsExecutionRoutesDependencies = typeof registerFlowsExecutionRoutesContext;
-registerFlowsExecutionRoutes(registerFlowsExecutionRoutesContext);
+flowRouteRegistrar.execution();
 const recordFlowDebugRequestSchema = z.object({
   event: z.enum(['created', 'updated', 'deleted']),
   record: z.record(z.unknown()),
@@ -4729,57 +4688,9 @@ const recordFlowDebugRequestSchema = z.object({
 // Salesforce-style record-trigger testing: run the saved Flow definition
 // against a disposable tenant snapshot, with no committed record changes,
 // scheduled jobs, notifications or external communications.
-const registerFlowRecordDebugRoutesContext = {
-  get accessAuthentication() { return accessAuthentication; },
-  get app() { return app; },
-  get asConfigRows() { return asConfigRows; },
-  get executeFlow() { return executeFlow; },
-  get flowConditionsMatch() { return flowConditionsMatch; },
-  get flowVariablesForUser() { return flowVariablesForUser; },
-  get formulaContextForUser() { return formulaContextForUser; },
-  get getPrincipal() { return getPrincipal; },
-  get hasFieldPermission() { return hasFieldPermission; },
-  get hasObjectPermission() { return hasObjectPermission; },
-  get hasRecordAccess() { return hasRecordAccess; },
-  get randomUUID() { return randomUUID; },
-  get recordFlowDebugRequestSchema() { return recordFlowDebugRequestSchema; },
-  get requirePermission() { return requirePermission; },
-  get routeParam() { return routeParam; },
-  get runtimeRecordSchema() { return runtimeRecordSchema; },
-  get tenantData() { return tenantData; },
-  get validateFlow() { return validateFlow; }
-};
-export type FlowRecordDebugRoutesDependencies = typeof registerFlowRecordDebugRoutesContext;
-registerFlowRecordDebugRoutes(registerFlowRecordDebugRoutesContext);
+flowRouteRegistrar.recordDebug();
 
-const registerFlowsInterviewRoutesContext = {
-  get accessAuthentication() { return accessAuthentication; },
-  get activeFlowDefinition() { return activeFlowDefinition; },
-  get app() { return app; },
-  get asConfigRows() { return asConfigRows; },
-  get createFlowInterview() { return createFlowInterview; },
-  get executeFlow() { return executeFlow; },
-  get flowConditionsMatch() { return flowConditionsMatch; },
-  get flowVariablesForUser() { return flowVariablesForUser; },
-  get formulaContextForUser() { return formulaContextForUser; },
-  get getPrincipal() { return getPrincipal; },
-  get hasObjectPermission() { return hasObjectPermission; },
-  get hasRecordAccess() { return hasRecordAccess; },
-  get isSafeFlowRegex() { return isSafeFlowRegex; },
-  get isValidFlowDateTime() { return isValidFlowDateTime; },
-  get isValidFlowTime() { return isValidFlowTime; },
-  get persistFlowFailure() { return persistFlowFailure; },
-  get persistTenantRecords() { return persistTenantRecords; },
-  get requirePermission() { return requirePermission; },
-  get resolveFlowValue() { return resolveFlowValue; },
-  get routeParam() { return routeParam; },
-  get state() { return platformStore.state; },
-  set state(next: PlatformState) { platformStore.state = next; },
-  get tenantData() { return tenantData; },
-  get z() { return z; }
-};
-export type FlowsInterviewRoutesDependencies = typeof registerFlowsInterviewRoutesContext;
-registerFlowsInterviewRoutes(registerFlowsInterviewRoutesContext);
+flowRouteRegistrar.interviews();
 
 const { findLibraryComponentUsages, ownedComponentIndex, componentNameTaken, usageBlockerDetails, syncBundledLibraryComponents } =
   createComponentLibraryService({
@@ -4904,7 +4815,7 @@ registerSecurityMetadataRoutes({
   validateAdvancedSharingMetadata, profileIdForRole, withSecurityEvent,
   effectivePermissions, persistState, persistTenantRecords, roleApiNameForName, routeParam
 });
-registerFlowElementRoutes(app, requirePermission);
+flowRouteRegistrar.elements();
 
 export type FlowRuntimeContext = {
   record?: RuntimeRecord;
@@ -6614,3 +6525,11 @@ export type IntegrationDeliveryDependencies = {
   effectivePermissions: typeof effectivePermissions;
   performHttpCallout: typeof performHttpCallout;
 };
+
+export type FlowsPlatformEventRoutesDependencies = Pick<FlowRouteServices, 'activeFlowDefinition' | 'app' | 'getPrincipal' | 'persistTenantRecords' | 'platformEventSchema' | 'requireAnyPermission' | 'requirePermission' | 'routeParam' | 'tenantData'>;
+export type FlowsMetadataRoutesDependencies = Pick<FlowRouteServices, 'app' | 'automationSettingsSchema' | 'defaultAutomationSettings' | 'getPrincipal' | 'persistTenantRecords' | 'requireAnyPermission' | 'requirePermission' | 'routeParam' | 'state' | 'tenantData'>;
+export type FlowsEmailAlertRoutesDependencies = Pick<FlowRouteServices, 'app' | 'emailAlertRequestSchema' | 'emailAlertSchema' | 'getPrincipal' | 'persistTenantRecords' | 'randomUUID' | 'requireAnyPermission' | 'requirePermission' | 'routeParam' | 'tenantData' | 'z'>;
+export type FlowDefinitionRoutesDependencies = Pick<FlowRouteServices, 'activeFlowDefinition' | 'app' | 'flowSchema' | 'flowVersionSnapshot' | 'formulaContextForUser' | 'getPrincipal' | 'persistState' | 'persistTenantRecords' | 'requireAnyPermission' | 'requirePermission' | 'routeParam' | 'state' | 'tenantData' | 'uniqueFlowHistory' | 'validateFlow'>;
+export type FlowsExecutionRoutesDependencies = Pick<FlowRouteServices, 'accessAuthentication' | 'app' | 'authoriseChatterFlow' | 'authoriseManualCoreFlow' | 'createFlowInterview' | 'executeFlow' | 'formulaContextForUser' | 'getPrincipal' | 'persistFlowFailure' | 'persistTenantRecords' | 'requirePermission' | 'routeParam' | 'sanitizeChatterCallerInput' | 'state' | 'tenantData' | 'trustedChatterExecutionFlow' | 'validateFlow' | 'validateFlowInputValues' | 'z'>;
+export type FlowRecordDebugRoutesDependencies = Pick<FlowRouteServices, 'accessAuthentication' | 'app' | 'asConfigRows' | 'executeFlow' | 'flowConditionsMatch' | 'flowVariablesForUser' | 'formulaContextForUser' | 'getPrincipal' | 'hasFieldPermission' | 'hasObjectPermission' | 'hasRecordAccess' | 'randomUUID' | 'recordFlowDebugRequestSchema' | 'requirePermission' | 'routeParam' | 'runtimeRecordSchema' | 'tenantData' | 'validateFlow'>;
+export type FlowsInterviewRoutesDependencies = Pick<FlowRouteServices, 'accessAuthentication' | 'activeFlowDefinition' | 'app' | 'asConfigRows' | 'createFlowInterview' | 'executeFlow' | 'flowConditionsMatch' | 'flowVariablesForUser' | 'formulaContextForUser' | 'getPrincipal' | 'hasObjectPermission' | 'hasRecordAccess' | 'isSafeFlowRegex' | 'isValidFlowDateTime' | 'isValidFlowTime' | 'persistFlowFailure' | 'persistTenantRecords' | 'requirePermission' | 'resolveFlowValue' | 'routeParam' | 'state' | 'tenantData' | 'z'>;
