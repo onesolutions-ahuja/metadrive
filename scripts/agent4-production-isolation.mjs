@@ -11,7 +11,9 @@ const find = (prefix) => {
 };
 const optional = [
   'pageBuilderView', 'FlowBuilder', 'DashboardBuilder', 'reportBuilderView',
-  'objectManagerView', 'ComponentLibrary'
+  'objectManagerView', 'ComponentLibrary', 'PageComponentStyleEditor',
+  'PageComponentVisualEditor', 'CustomComponentPropertyEditor',
+  'componentPropertiesView'
 ].map(find);
 const staticImports = (content) => {
   const paths = [];
@@ -35,11 +37,15 @@ const closure = (entry) => {
   return visited;
 };
 
+// Explicitly audit the setup shell as well: editors must be fetched only when opened,
+// even after an authenticated tenant has navigated into administration.
+const setup = closure(find('setupAppShell'));
 const landing = closure(find('index'));
 const workspace = closure(find('App'));
 for (const file of optional) {
   assert.ok(!landing.has(file), `${basename(file)} loaded eagerly by the public landing entry`);
   assert.ok(!workspace.has(file), `${basename(file)} loaded eagerly by authenticated App`);
+  assert.ok(!setup.has(file), `${basename(file)} loaded eagerly by setup shell`);
 }
 assert.ok(!landing.has(find('App')), 'Authenticated workspace must remain lazy from landing entry');
 for (const file of optional) {
@@ -47,5 +53,5 @@ for (const file of optional) {
   assert.ok(source.length > 0, `Empty optional chunk: ${basename(file)}`);
 }
 console.log('Agent 4 production static-import isolation PASS');
-console.log(`Landing eager graph: ${landing.size} chunks; authenticated shell eager graph: ${workspace.size} chunks`);
+console.log(`Landing eager graph: ${landing.size} chunks; authenticated shell eager graph: ${workspace.size} chunks; setup shell eager graph: ${setup.size} chunks`);
 console.log('Verified optional chunks:', optional.map(file => basename(file)).join(', '));
