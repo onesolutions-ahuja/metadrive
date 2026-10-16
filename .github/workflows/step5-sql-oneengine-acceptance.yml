@@ -1,0 +1,72 @@
+name: Step 5 - SQL and OneEngine Acceptance
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sql-and-oneengine:
+    name: Isolated SQL and security acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: metadrive_step5
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d metadrive_step5"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      METADRIVE_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_step5
+      PGSSLMODE: disable
+      NODE_ENV: test
+      METADRIVE_TEST_MODE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Compile server runtime
+        run: npx tsc -p apps/server/tsconfig.json && node apps/server/scripts/copy-runtime-assets.mjs
+      - name: Verify repeatable Core and app seeders and SQL package ledger
+        run: |
+          node --test \
+            apps/server/test/modular-tenant-seeders.test.mjs \
+            apps/server/test/agent2-core-seeder.test.mjs \
+            apps/server/test/agent2-package-ledger.test.mjs \
+            apps/server/test/agent2-live-ledger.test.mjs \
+            apps/server/test/agent2-seed-ledger-bootstrap.test.mjs
+      - name: Verify SQL-backed migration, API and restart durability
+        run: node --test apps/server/test/relational-api.integration.test.mjs
+      - name: Verify OneEngine negative access tests and developer scopes
+        run: |
+          env -u DATABASE_URL npx tsx --test --test-concurrency=1 \
+            apps/server/test/rbac-sharing.smoke.test.ts \
+            apps/server/test/user-crud-rbac.smoke.test.ts \
+            apps/server/test/platform-policy.smoke.test.ts \
+            apps/server/test/navigation-rbac.smoke.test.ts \
+            apps/server/test/tenant-management.smoke.test.ts \
+            apps/server/test/tenant-host-routing.test.ts
+      - name: Write acceptance summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Step 5: isolated SQL + OneEngine acceptance'
+            echo
+            echo 'This workflow runs against a disposable PostgreSQL container and locally spawned test APIs.'
+            echo 'It does **not** perform authenticated production Railway tests or change production tenant data.'
+            echo
+            echo 'Check each step result above. Any test failure fails this job.'
+          } >> "$GITHUB_STEP_SUMMARY"
