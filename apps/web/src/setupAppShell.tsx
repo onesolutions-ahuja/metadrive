@@ -857,8 +857,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       return;
     }
     if (item === 'Tenant Management') {
-      if (canManagePlatformTenants) openSetupWorkspace('tenant-management');
-      return;
+      openSetupWorkspace('tenant-management'); return;
     }
     if (item === 'Named Credentials') {
       openSetupWorkspace('named-credentials');
