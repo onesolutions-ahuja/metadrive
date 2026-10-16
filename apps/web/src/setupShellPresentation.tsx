@@ -3,6 +3,7 @@ import CompanySettingsWorkspace from './CompanySettingsWorkspace';
 // Shared shell presentation, composed from registered metadata-driven runtime and tools.
 import * as React from 'react';
 import './InstalledAppMenu.css';
+import { resolvePageToolbarActions } from './pageToolbarActions';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from './metadata';
 import type { RecordData } from './recordMetadataUtils';
 export function renderSetupShell(ctx: any) {
@@ -10,6 +11,7 @@ export function renderSetupShell(ctx: any) {
   const activeAppPage = route.kind === 'app-page'
     ? pages.find((candidate: LightningPageMetadata) => candidate.apiName === route.pageApiName && candidate.status === 'Active')
     : null;
+  const pageToolbarActions = resolvePageToolbarActions(activeAppPage, libraryComponents);
   const activeAppPages = route.kind === 'app-page' || route.kind === 'app-home'
     ? currentAppNavigation.filter((entry: any) => entry.type === 'App Page')
         .map((entry: any) => pages.find((page: LightningPageMetadata) =>
@@ -63,11 +65,11 @@ export function renderSetupShell(ctx: any) {
                 onClick={() => navigateRoute({kind:'app-page',appId:currentApp?.apiName ?? '',pageApiName:appPage.apiName})}>{appPage.label}</button>)}
             {!activeAppPages.length && activeAppPage && <span className="header-page-title">{activeAppPage.label}</span>}
           </nav>
-          {activeAppPage?.components.filter((component: any) => component.visible !== false && typeof component.properties?.customerDisplayUrl === 'string' && component.properties.customerDisplayUrl.trim()).map((component: any) =>
-            <button key={component.id} type="button" className="btn header-page-action"
+          {pageToolbarActions.map(action =>
+            <button key={action.componentId} type="button" className="btn header-page-action"
               onClick={() => window.dispatchEvent(new CustomEvent('metadrive:page-toolbar-action', {
-                detail: {pageSessionKey: route.appId + ':' + route.pageApiName, componentId: component.id, action: 'openDisplay'}
-              }))}>{component.properties.displayButtonLabel || 'Open customer display'}</button>)}
+                detail: {pageSessionKey: route.appId + ':' + route.pageApiName, componentId: action.componentId, action: action.event}
+              }))}>{action.label}</button>)}
         </div>}
         <div className="header-tools" ref={appUtilityRef}>
           <button type="button" className="icon-button header-history-button" title="History" aria-label="History" aria-expanded={activeUtility === 'History'}
