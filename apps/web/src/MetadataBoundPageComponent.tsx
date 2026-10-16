@@ -46,6 +46,16 @@ export default function MetadataBoundPageComponent({
   const [records, setRecords] = useState<Record<string, unknown>[]>([]);
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<Record<string,string>>({});
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const data = (event as CustomEvent<{pageSessionKey:string;filterKey:string;value:string}>).detail;
+      if (data?.pageSessionKey !== pageSessionKey || !data.filterKey) return;
+      setSelectedCategories(previous => ({...previous,[data.filterKey]:data.value}));
+    };
+    window.addEventListener('metadrive:page-filter-selected',listener);
+    return () => window.removeEventListener('metadrive:page-filter-selected',listener);
+  },[pageSessionKey]);
   const [dataLoading, setDataLoading] = useState(false);
   const [revision, setRevision] = useState(0);
   const [channelAccess, setChannelAccess] = useState<{userId: string;viewAll: boolean;grants: ChannelGrant[];eligibleAssignees: {id: string;name: string;channelAccountId: string}[]}>({
@@ -117,6 +127,14 @@ export default function MetadataBoundPageComponent({
       throw new Error('No metadata event action is configured for "' + action.event + '".');
     }
     const binding = config as Record<string, unknown>;
+    if (binding.actionType === 'SetFilter') {
+      const filterKey = String(binding.filterKey || 'category');
+      if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(filterKey)) throw new Error('Invalid filter key');
+      const value = typeof action.value === 'object' && action.value !== null && 'label' in action.value
+        ? String((action.value as {label:unknown}).label ?? '') : String(action.value ?? '');
+      window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected', {detail:{pageSessionKey,filterKey,value}}));
+      return {selected:value};
+    }
     if (binding.actionType === 'Navigate') {
       const target = resolvePageActionRoute(binding, {
         objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
@@ -184,6 +202,7 @@ export default function MetadataBoundPageComponent({
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
+      ...(typeof properties.filterKey === 'string' && properties.filterKey ? {selectedCategory:selectedCategories[properties.filterKey] || ''} : {}),
       label: component.label, properties, objects, reports, flows: availableFlows,
        pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
