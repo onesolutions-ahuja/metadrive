@@ -285,9 +285,13 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
         <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
         <label className="form-label">Action type<select className="form-control" value={actionType}
           onChange={(e) => setBinding({...binding,actionType:e.target.value})}>
-          <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option>
+          <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option><option value="SetFilter">Filter sibling components</option>
         </select></label>
-        {actionType==='Flow' ? <>
+        {actionType==='SetFilter' ? <label className="form-label">Shared filter key
+          <input className="form-control" value={String(binding.filterKey ?? 'category')}
+            onChange={(e) => setBinding({...binding,filterKey:e.target.value})}
+            placeholder="category" pattern="[A-Za-z][A-Za-z0-9_]*" />
+        </label> : actionType==='Flow' ? <>
           <label className="form-label">Flow
             <select className="form-control" value={String(binding.flowApiName ?? '')}
               onChange={(e) => setBinding({ ...binding, flowApiName: e.target.value })}>
