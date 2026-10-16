@@ -813,7 +813,7 @@ export type PermissionSetMetadata = {
   appPermissions?: Record<string, boolean>;
   tabPermissions?: Record<string, boolean>;
   navigationDefaultAccess?: 'Allow' | 'Deny';
-  fieldPermissions: Record<string, { read: boolean; edit: boolean }>;
+  fieldPermissions: Record<string, { read: boolean; edit: boolean; create?: boolean; delete?: boolean }>;
 };
 
 export type PermissionSetGroupMetadata = {
@@ -829,7 +829,7 @@ export type PermissionSetGroupMetadata = {
   mutedRecordTypePermissions: Record<string, boolean>;
   mutedAppPermissions?: Record<string, boolean>;
   mutedTabPermissions?: Record<string, boolean>;
-  mutedFieldPermissions: Record<string, { read: boolean; edit: boolean }>;
+  mutedFieldPermissions: Record<string, { read?: boolean; edit?: boolean; create?: boolean; delete?: boolean }>;
 };
 
 export type ProfileMetadata = {
@@ -844,7 +844,7 @@ export type ProfileMetadata = {
   recordTypePermissions: Record<string, boolean>;
   appPermissions?: Record<string, boolean>;
   tabPermissions?: Record<string, boolean>;
-  fieldPermissions: Record<string, { read: boolean; edit: boolean }>;
+  fieldPermissions: Record<string, { read: boolean; edit: boolean; create?: boolean; delete?: boolean }>;
 };
 
 export type UserMetadata = {

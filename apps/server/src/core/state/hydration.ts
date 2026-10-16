@@ -309,7 +309,7 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
             ? {
               ...set,
               systemPermissions: [...new Set([...set.systemPermissions, ...deps.systemAdminPermissions])],
-              objectPermissions: { ...set.objectPermissions, UneConnector__c: set.objectPermissions.UneConnector__c ?? { ...deps.fullObjectPermissions } },
+              objectPermissions: { ...set.objectPermissions, UneConnector__c: (set.objectPermissions as Record<string, typeof deps.fullObjectPermissions>).UneConnector__c ?? { ...deps.fullObjectPermissions } },
               fieldPermissions: {
                 ...Object.fromEntries((tenant.objects.find((object) => object.apiName === 'UneConnector__c')?.fields ?? []).map((field) => [
                   `UneConnector__c.${field.apiName}`, { read: true, edit: true }

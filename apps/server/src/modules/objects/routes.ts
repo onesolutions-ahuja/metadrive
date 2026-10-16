@@ -280,7 +280,7 @@ app.post('/api/metadata/objects/:apiName/formulas/validate', requireAnyPermissio
     });
   }
 });
-app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
+app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('fields:create', 'metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const object = tenant.objects.find((item) => item.apiName === req.params.apiName);
@@ -405,7 +405,7 @@ app.put('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermiss
   const saved = commitObjectMetadata(principal.tenantId, principal.userId, updatedTenant, 'FIELD_UPDATED', object, updatedObject)!;
   return res.json({ object: saved, field: parsed.data });
 });
-app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
+app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPermission('fields:delete', 'metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const principal = getPrincipal(res);
   const tenant = tenantData(principal.tenantId)!;
   const apiName = routeParam(req, 'apiName');
@@ -416,6 +416,10 @@ app.delete('/api/metadata/objects/:apiName/fields/:fieldApiName', requireAnyPerm
   const field = object.fields.find((item) => item.apiName === fieldApiName);
   if (!field) return res.status(404).json({ error: `Field "${fieldApiName}" was not found` });
   if (!fieldApiName.endsWith('__c')) return res.status(403).json({ error: 'Standard fields cannot be deleted' });
+  // Never erase populated record values as a side effect of deleting field metadata.
+  if ((tenant.records[apiName] ?? []).some((record) => record[fieldApiName] !== undefined && record[fieldApiName] !== null && record[fieldApiName] !== '')) {
+    return res.status(409).json({ error: `Field "${fieldApiName}" contains business data and cannot be deleted` });
+  }
   const dependencies = findFieldDependencies(tenant, apiName, fieldApiName);
   if (dependencies.length) return res.status(409).json({ error: `Field "${fieldApiName}" is referenced by ${dependencies.join(', ')}` });
 

@@ -25,7 +25,7 @@ const permissionSetSchema = z.object({
   recordTypePermissions: z.record(z.boolean()).default({}),
   appPermissions: navigationGrantSchema,
   tabPermissions: navigationGrantSchema,
-  fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean() }).superRefine((permission, context) => {
+  fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean(), create: z.boolean().optional(), delete: z.boolean().optional() }).superRefine((permission, context) => {
     if (permission.edit && !permission.read) context.addIssue({ code: z.ZodIssueCode.custom, path: ['read'], message: 'Field edit access requires read access' });
   }))
 });
@@ -42,7 +42,7 @@ const profileSchema = z.object({
   appPermissions: navigationGrantSchema,
   tabPermissions: navigationGrantSchema,
   navigationDefaultAccess: z.enum(['Allow','Deny']).default('Allow'),
-  fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean() }).superRefine((permission, context) => {
+  fieldPermissions: z.record(z.object({ read: z.boolean(), edit: z.boolean(), create: z.boolean().optional(), delete: z.boolean().optional() }).superRefine((permission, context) => {
     if (permission.edit && !permission.read) context.addIssue({ code: z.ZodIssueCode.custom, path: ['read'], message: 'Field edit access requires read access' });
   }))
 });
@@ -59,7 +59,7 @@ const permissionSetGroupSchema = z.object({
   mutedRecordTypePermissions: z.record(z.boolean()).default({}),
   mutedAppPermissions: navigationGrantSchema,
   mutedTabPermissions: navigationGrantSchema,
-  mutedFieldPermissions: z.record(z.object({ read: z.boolean().optional(), edit: z.boolean().optional() })).default({})
+  mutedFieldPermissions: z.record(z.object({ read: z.boolean().optional(), edit: z.boolean().optional(), create: z.boolean().optional(), delete: z.boolean().optional() })).default({})
 });
 const accessUserSchema = z.object({
   id: z.string().min(1),

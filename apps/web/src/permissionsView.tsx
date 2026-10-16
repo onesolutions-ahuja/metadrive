@@ -497,7 +497,7 @@ function Permissions({
     const current = set.objectPermissions[objectName] ?? { read: false, create: false, edit: false, delete: false, viewAll: false, modifyAll: false };
     patchSet(set.id, { objectPermissions: { ...set.objectPermissions, [objectName]: { ...current, [permission]: !current[permission] } } });
   };
-  const toggleFieldPermission = (set: PermissionSetMetadata, fieldName: string, permission: 'read' | 'edit') => {
+  const toggleFieldPermission = (set: PermissionSetMetadata, fieldName: string, permission: 'read' | 'edit' | 'create' | 'delete') => {
     const current = set.fieldPermissions[fieldName] ?? { read: false, edit: false };
     patchSet(set.id, { fieldPermissions: { ...set.fieldPermissions, [fieldName]: { ...current, [permission]: !current[permission] } } });
   };
@@ -507,6 +507,8 @@ function Permissions({
     ['security:read', 'View users and permissions'],
     ['security:manage', 'Manage users and permissions'],
     ['objects:manage', 'Manage objects and fields'],
+    ['fields:create', 'Create field definitions'],
+    ['fields:delete', 'Delete field definitions'],
     ['flows:manage', 'Manage flows'],
     ['flows:run', 'Run flows'],
     ['namedCredentials:manage', 'Manage named credentials'],
@@ -747,10 +749,10 @@ function Permissions({
             return <tr key={key}><td><strong>{recordType.label}</strong><small>{recordType.developerName}</small></td><td><input type="checkbox" aria-label={`${selectedProfile.label} ${object.label} ${recordType.label} available`} checked={selectedProfile.recordTypePermissions[key] !== false} onChange={() => patchProfile(selectedProfile.id, { recordTypePermissions: { ...selectedProfile.recordTypePermissions, [key]: selectedProfile.recordTypePermissions[key] === false } })} /></td></tr>;
           })}</tbody></table></div>)}
           <h3 className="permission-section-heading">Field Permissions</h3>
-          {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Read</th><th>Edit</th></tr></thead><tbody>{object.fields.map((field) => {
+          {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Create</th><th>Read</th><th>Edit</th><th>Delete</th></tr></thead><tbody>{object.fields.map((field) => {
             const fieldName = `${object.apiName}.${field.apiName}`;
             const permissions = selectedProfile.fieldPermissions[fieldName] ?? { read: false, edit: false };
-            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['read', 'edit'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${selectedProfile.label} ${object.label}.${field.label} ${permission}`} checked={permissions[permission]} onChange={() => patchProfile(selectedProfile.id, { fieldPermissions: { ...selectedProfile.fieldPermissions, [fieldName]: { ...permissions, [permission]: !permissions[permission] } } })} /></td>)}</tr>;
+            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['create', 'read', 'edit', 'delete'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${selectedProfile.label} ${object.label}.${field.label} ${permission}`} checked={Boolean(permissions[permission])} onChange={() => patchProfile(selectedProfile.id, { fieldPermissions: { ...selectedProfile.fieldPermissions, [fieldName]: { ...permissions, [permission]: !permissions[permission] } } })} /></td>)}</tr>;
           })}</tbody></table></div></details>)}
         </>}
         {tab === 'sets' && selectedSet && <>
@@ -791,10 +793,10 @@ function Permissions({
             return <tr key={key}><td><strong>{recordType.label}</strong><small>{recordType.developerName}</small></td><td><input type="checkbox" aria-label={`${selectedSet.label} ${object.label} ${recordType.label} available`} checked={selectedSet.recordTypePermissions[key] === true} onChange={() => patchSet(selectedSet.id, { recordTypePermissions: { ...selectedSet.recordTypePermissions, [key]: selectedSet.recordTypePermissions[key] !== true } })} /></td></tr>;
           })}</tbody></table></div>)}
           <h3 className="permission-section-heading">Field Permissions</h3>
-          {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Read</th><th>Edit</th></tr></thead><tbody>{object.fields.map((field) => {
+          {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Create</th><th>Read</th><th>Edit</th><th>Delete</th></tr></thead><tbody>{object.fields.map((field) => {
             const fieldName = `${object.apiName}.${field.apiName}`;
             const permissions = selectedSet.fieldPermissions[fieldName] ?? { read: false, edit: false };
-            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['read', 'edit'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${object.label}.${field.label} ${permission}`} checked={permissions[permission]} onChange={() => toggleFieldPermission(selectedSet, fieldName, permission)} /></td>)}</tr>;
+            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['create', 'read', 'edit', 'delete'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`${object.label}.${field.label} ${permission}`} checked={Boolean(permissions[permission])} onChange={() => toggleFieldPermission(selectedSet, fieldName, permission)} /></td>)}</tr>;
           })}</tbody></table></div></details>)}
         </>}
         {tab === 'groups' && selectedGroup && <>
@@ -837,7 +839,7 @@ function Permissions({
           {objects.map((object) => <details className="permission-field-group" key={object.apiName}><summary>{object.label} ({object.fields.length} fields)</summary><div className="permission-table-wrap"><table className="slds-table permission-matrix"><thead><tr><th>Field</th><th>Mute Read</th><th>Mute Edit</th></tr></thead><tbody>{object.fields.map((field) => {
             const fieldName = `${object.apiName}.${field.apiName}`;
             const permissions = selectedGroup.mutedFieldPermissions[fieldName] ?? {};
-            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['read', 'edit'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`Mute ${object.label}.${field.label} ${permission}`} checked={Boolean(permissions[permission])} onChange={() => patchGroup(selectedGroup.id, { mutedFieldPermissions: { ...selectedGroup.mutedFieldPermissions, [fieldName]: { ...permissions, [permission]: !permissions[permission] } } })} /></td>)}</tr>;
+            return <tr key={fieldName}><td><strong>{field.label}</strong><small>{field.apiName}</small></td>{(['create', 'read', 'edit', 'delete'] as const).map((permission) => <td key={permission}><input type="checkbox" aria-label={`Mute ${object.label}.${field.label} ${permission}`} checked={Boolean(permissions[permission])} onChange={() => patchGroup(selectedGroup.id, { mutedFieldPermissions: { ...selectedGroup.mutedFieldPermissions, [fieldName]: { ...permissions, [permission]: !permissions[permission] } } })} /></td>)}</tr>;
           })}</tbody></table></div></details>)}
         </>}
         {tab === 'users' && <>
