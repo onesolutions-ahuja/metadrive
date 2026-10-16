@@ -286,9 +286,9 @@ function LookupInput({
 }
 
 function ChoiceLookupInput({
-  field, label, inputId, help, helpText, helpId, value, required, setValue, loadRecords, onError
+  field, libraryComponents, label, inputId, help, helpText, helpId, value, required, setValue, loadRecords, onError
 }: {
-  field: ScreenConfig; label: string; inputId: string; help: ReactNode;
+  libraryComponents: LibraryComponentMetadata[]; field: ScreenConfig; label: string; inputId: string; help: ReactNode;
   helpText: string; helpId: string; value: unknown; required: boolean;
   setValue: (value: unknown) => void; loadRecords: (objectApiName: string) => Promise<ScreenRecord[]>;
   onError: (message: string) => void;
