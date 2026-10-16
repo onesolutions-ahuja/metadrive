@@ -22,7 +22,7 @@ export function registerTenantLifecycleRoutes(deps: TenantLifecycleRoutesDepende
     if (previous.status === desired) return res.status(409).json({ error: 'Tenant is already ' + desired.toLowerCase() });
     if (desired === 'SUSPENDED' && operation === 'suspend') {
       const remaining = deps.state.users.filter((user) => !user.disabled && user.tenantId !== tenantId
-        && deps.tenantIsActive(user.tenantId) && (deps.state.platformPolicies[user.id] ?? []).includes('platform:superadmin'));
+        && deps.tenantIsActive(user.tenantId) && (deps.state.platformPolicies[user.id] ?? []).some(policy => policy === 'platform:tenants:manage' || policy === 'platform:superadmin'));
       if (remaining.length === 0) return res.status(409).json({
         error: 'Cannot suspend the tenant hosting the last active platform administrator.'
       });
