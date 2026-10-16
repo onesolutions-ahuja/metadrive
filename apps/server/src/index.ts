@@ -7,7 +7,7 @@ import { dispatchDueIntegrationJobsRuntime } from './scheduler/integration-dispa
 import { createFlowExecutionEngine } from './modules/flows/execution-engine.js';
 import { parseSubflowMappings } from './modules/flows/subflow-mappings.js';
 import { createFlowScheduleCalculations } from './scheduler/flow-schedule-calculations.js';
-import { createTenantProvisioning } from './core/state/tenant-provisioning.js';
+import { initializeTenantServices } from './core/state/tenant-services.js';
 import { createPersistenceResponseBarrier } from './core/state/response-barrier.js';
 import { createPersistedMetadataReadMode } from './core/state/metadata-read-mode.js';
 import { createSqlStateRefresh } from './core/state/refresh.js';
@@ -17,8 +17,6 @@ import { createPlatformStateSchema } from './core/state/schema.js';
 import { createTenantDefaults } from './core/state/tenant-defaults.js';
 import { createStateHydration } from './core/state/hydration.js';
 import { initializePlatformState } from './core/state/initialization.js';
-import { createTenantDataService } from './core/state/tenant-data.js';
-import { createTenantBootstrap } from './core/state/bootstrap-tenant.js';
 import { createPlatformStateStore } from './core/state/store.js';
 import { registerIntegrationsWebhookRoutes } from './modules/integrations/webhook-routes.js';
 import { registerTenantRegistryRoutes } from './modules/tenants/registry-routes.js';
@@ -117,7 +115,8 @@ import { IntegrationOutbox } from './connector-outbox.js';
 import { dispatchIntegrationDeliveries } from './connector-delivery-worker.js';
 import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorization, validatedOAuthUrl, type OAuthVault, type OAuthToken } from './connector-oauth.js';
 import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
-import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
+import { tenantHostConfig } from './tenant-host-routing.js';
+import { createTenantRequestGuard, tenantInfoForRecovery, withSecurityEvent } from './modules/tenants/platform-services.js';
 import { communicationObjectApiName } from './communication-unification.js';
 import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from './chatter-authorisation.js';
 import { authoriseChatterFlow } from './chatter-flow-authorisation.js';
@@ -148,11 +147,6 @@ import { newTotpSecret, totpUri, verifyTotp } from './mfa.js';
 import { createRefreshToken, hashPassword, hashToken, JwtService, verifyPassword, type Principal } from './auth.js';
 import { normalizeRecoveryPolicy, renderRecoveryTemplate, deliverWithFallback } from './recovery-policy.js';
 import { RECOVERY_FLOW_API, defaultRecoveryFlowDefinition, recoveryFlowActions } from './recovery-flow.js';
-// Tenant name is resolved from the tenant registry, never from unauthenticated request input.
-function tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {
-  return platformStore.state.tenantRegistry[tenantId]?.name ?? tenantId;
-}
-
 import { canAccessDashboard, canEditDashboard, matchesDashboardFilters, type DashboardFolderAccessLevel } from './dashboard-access.js';
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
@@ -169,10 +163,7 @@ const webOrigins = new Set([
 const tenantHostRouting = tenantHostConfig(
   process.env.METADRIVE_TENANT_HOSTS, process.env.METADRIVE_SHARED_API_HOSTS
 );
-function requestTenantMatches(req: Request, tenantId: string): boolean {
-  const route = tenantForRequest(tenantHostRouting, req.header('host'), req.header('origin'));
-  return route.allowed && (route.tenantId === null || route.tenantId === tenantId);
-}
+const { requestTenantMatches, mappedTenantOriginAllowed } = createTenantRequestGuard(tenantHostRouting);
 const refreshCookieName = 'metadrive_refresh';
 const isProduction = process.env.NODE_ENV === 'production';
 const jwtService = await JwtService.create();
@@ -182,7 +173,7 @@ const jwtService = await JwtService.create();
 app.use(cors((req, callback) => {
   const origin = req.header('origin');
   let allowed = !origin || webOrigins.has(origin) || origin === 'http://localhost:4173'
-    || (origin !== undefined && mappedTenantOrigin(tenantHostRouting, origin));
+    || (origin !== undefined && mappedTenantOriginAllowed(origin));
   if (!allowed && origin) {
     try {
       const url = new URL(origin);
@@ -3007,10 +2998,8 @@ function publicNamedCredential(credential: StoredNamedCredential) {
     updatedAt: credential.updatedAt
   };
 }
-// No schema/tenant is visible to a new tenant until its first durable commit.
-// Serialize provisioning within an instance; SQL modes also use optimistic
-// revisions to reject cross-instance stale writers rather than lose data.
-const createTenantProvisioningContext = {
+// Lifecycle retains existing SQL-backed provisioning, guarded bootstrap and tenant state services.
+const tenantProvisioningDependencies = {
   get defaultTenantData() { return defaultTenantData; },
   get connectorRecords() { return connectorRecords; },
   get defaultConnectorSettings() { return defaultConnectorSettings; },
@@ -3018,42 +3007,23 @@ const createTenantProvisioningContext = {
   get persistState() { return persistState; },
   get platformStore() { return platformStore; }
 };
-export type CreateTenantProvisioningDependencies = typeof createTenantProvisioningContext;
-const tenantProvisioning = createTenantProvisioning(createTenantProvisioningContext);
-
-const createTenantBootstrapContext = {
-  get createTenant() { return tenantProvisioning.createTenant; },
-  get persistState() { return persistState; },
-  get platformStore() { return platformStore; }
-};
-const { bootstrapTenant } = createTenantBootstrap(createTenantBootstrapContext);
-// During guarded database maintenance, bootstrap must never mutate persisted state.
-// Existing users and tenants are loaded read-only; bootstrap resumes after maintenance.
-if (!maintenanceMode) await bootstrapTenant();
-const createTenantDataServiceContext = {
-  get bundledCustomComponentsPath() { return bundledCustomComponentsPath; },
-  get installableAppCatalog() { return installableAppCatalog; },
-  get persistState() { return persistState; },
-  get platformStore() { return platformStore; },
-  get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; }
-};
-const { tenantIsActive, tenantData, persistTenantRecords } = createTenantDataService(createTenantDataServiceContext);
-function withSecurityEvent(
-  tenant: TenantData,
-  actorUserId: string,
-  action: string,
-  details?: Record<string, string>,
-  targetUserId?: string
-): TenantData {
-  const event: SecurityAuditEvent = {
-    id: randomUUID(), at: new Date().toISOString(), actorUserId, action,
-    ...(targetUserId ? { targetUserId } : {}),
-    ...(details ? { details } : {})
-  };
-  // No passwords, bearer tokens, MFA secrets, raw request bodies, or network identifiers.
-  return { ...tenant, securityAudit: [...tenant.securityAudit, event].slice(-5000) };
-}
-
+export type CreateTenantProvisioningDependencies = typeof tenantProvisioningDependencies;
+const { provisioning: tenantProvisioning, tenantIsActive, tenantData, persistTenantRecords } = await initializeTenantServices({
+  provisioning: tenantProvisioningDependencies,
+  bootstrap: (service) => ({
+    get createTenant() { return service.createTenant; },
+    get persistState() { return persistState; },
+    get platformStore() { return platformStore; }
+  }),
+  data: (service) => ({
+    get bundledCustomComponentsPath() { return bundledCustomComponentsPath; },
+    get installableAppCatalog() { return installableAppCatalog; },
+    get persistState() { return persistState; },
+    get platformStore() { return platformStore; },
+    get provisioningPendingTenants() { return service.provisioningPendingTenants; }
+  }),
+  maintenanceMode
+});
 function getPrincipal(res: Response): Principal {
   const principal = res.locals.principal as Principal | undefined;
   if (!principal) throw new Error('Authenticated principal was not established');
@@ -3412,7 +3382,7 @@ export const phase3AuthContext = {
   requestTenantMatches,
   refreshCookieName,
   webOrigins,
-  tenantInfoForRecovery,
+  tenantInfoForRecovery: (_tenant: TenantData, tenantId: string) => tenantInfoForRecovery(platformStore.state.tenantRegistry, tenantId),
   activeFlowDefinition,
   durableLogouts: platformInitialization.durableLogouts,
   TenantProvisioningStoreError: tenantProvisioning.TenantProvisioningStoreError,
