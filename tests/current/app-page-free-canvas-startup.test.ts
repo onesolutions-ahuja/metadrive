@@ -15,8 +15,8 @@ test('published WhatsApp Chatter Free Canvas App Page survives tenant state hydr
  assert.equal(result.data?.layoutMode,'free-canvas');
 });
 
-test('Free Canvas still rejects record pages and non-library components',()=>{
+test('Free Canvas accepts existing record pages but rejects non-library components',()=>{
  const schema=createPageSchema();
- assert.equal(schema.safeParse({...appPage,pageType:'Record Page',targetObject:'Communication_Records__c'}).success,false);
+ assert.equal(schema.safeParse({...appPage,pageType:'Record Page',targetObject:'Communication_Records__c'}).success,true);
  assert.equal(schema.safeParse({...appPage,components:appPage.components.map((c:unknown,index:number)=>index===0?{...c as object,type:'Record Field'}:c)}).success,false);
 });
