@@ -265,7 +265,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
       const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
       const selectedFlow = flows.find(flow => flow.apiName === binding.flowApiName);
       const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
-      const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
+      const actionType = binding.actionType === 'Navigate' ? 'Navigate' : binding.actionType === 'SetFilter' ? 'SetFilter' : 'Flow';
       const navigationTargetType = binding.navigationTargetType === 'App Home' || binding.navigationTargetType === 'App Page'
         ? binding.navigationTargetType : 'Record List';
       const navigationAppId = String(binding.navigationAppId || (navigationTargetType === 'Record List' ? 'Records' : currentAppId));
