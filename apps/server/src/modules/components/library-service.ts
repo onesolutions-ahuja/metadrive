@@ -76,6 +76,48 @@ function usageBlockerDetails(usages: LibraryComponentUsage[], tenantId: string) 
   return own;
 }
 
+/** One-off, tenant-scoped cleanup of explicitly retired custom component names.
+ * A protected component or a component with live metadata references is never removed.
+ * Prefixes and target tenant are operational configuration, not hardcoded app rules.
+ */
+function retireConfiguredComponents(): void {
+  const tenantId = process.env.METADRIVE_COMPONENT_RETIRE_TENANT_ID;
+  const rawPrefixes = process.env.METADRIVE_COMPONENT_RETIRE_PREFIXES;
+  if (!tenantId || !rawPrefixes) return;
+  const state = getState();
+  if (!state.tenants[tenantId]) {
+    console.warn('Component retirement skipped: configured tenant not found');
+    return;
+  }
+  const prefixes = rawPrefixes.split(',').map((value) => value.trim().toLowerCase())
+    .filter((value) => /^[a-z][a-z0-9_]{2,63}$/.test(value));
+  if (!prefixes.length) {
+    console.warn('Component retirement skipped: no valid prefixes');
+    return;
+  }
+  const tenantIds = Object.keys(state.tenants);
+  const removed: string[] = [];
+  const blocked: string[] = [];
+  const libraryComponents = state.libraryComponents.filter((component) => {
+    if (!prefixes.some((prefix) => component.apiName.toLowerCase().startsWith(prefix))) return true;
+    if (!libraryComponentEditable(component, tenantId, tenantIds)) return true;
+    const usages = findLibraryComponentUsages(state, component.apiName, tenantId);
+    if (usages.length) {
+      blocked.push(component.apiName + ': ' + usageBlockerDetails(usages, tenantId).join('; '));
+      return true;
+    }
+    removed.push(component.apiName);
+    return false;
+  });
+  if (removed.length) {
+    const nextState = { ...state, libraryComponents };
+    persistState(nextState);
+    setState(nextState);
+    console.info('Component retirement removed', removed.length, 'tenant-owned components:', removed.join(', '));
+  }
+  if (blocked.length) console.warn('Component retirement blocked by dependencies:', blocked.join(' | '));
+}
+
 let bundledComponentSync: Promise<void> | null = null;
 function syncBundledLibraryComponents(): Promise<void> {
   if (bundledComponentSync) return bundledComponentSync;
@@ -182,6 +224,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       persistState(nextState);
       setState(nextState);
     }
+    retireConfiguredComponents();
   })().catch((error: unknown) => {
     bundledComponentSync = null;
     throw error;
