@@ -25,8 +25,8 @@ test('Phase 2a/g: platform components are only seeded by trusted bundled code',(
  }
  const server=read('apps/server/src/modules/components/library-service.ts');
  assert.ok(read('apps/server/src/modules/components/routes.ts').includes("requirePermission('metadata:read')"));
- assert.ok(server.includes("entry.surfaces.includes('platform') && entry.scope !== 'platform-system'"));
- assert.ok(server.includes("component.scope === 'platform-system' && component.trustedBundled === true"));
+ assert.ok(read('apps/server/src/modules/components/library-service.ts').includes("entry.surfaces.includes('platform') && entry.scope !== 'platform-system'"));
+ assert.ok(read('apps/server/src/modules/components/library-schema.ts').includes("component.scope === 'platform-system' && component.trustedBundled === true"));
  const schema=read('apps/server/src/modules/components/library-schema.ts');
  const restricted=schema.slice(schema.indexOf('export const libraryComponentInputSchema'));
  assert.ok(!restricted.includes("publicationStatus: z.enum(['Draft','Published']).default('Published'),\n  scope:"));
