@@ -53,7 +53,7 @@ const fieldSchema = z.object({
   if (field.relationship && field.dataType !== `${field.relationship.type === 'Hierarchical' ? 'Lookup' : field.relationship.type}(${field.relationship.targetObject})`) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['dataType'], message: 'Relationship field type must match its relationship definition' });
   }
-  if (/^(?:Lookup|Master-Detail)\(/.test(field.dataType) !== Boolean(field.relationship)) {
+  if (!persistedMetadataReadMode.active && /^(?:Lookup|Master-Detail)\(/.test(field.dataType) !== Boolean(field.relationship)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['relationship'], message: 'Lookup and master-detail field types require a matching relationship definition' });
   }
   if (field.formula && !['Number', 'Currency', 'Percent', 'Text', 'Date', 'Checkbox'].includes(field.formula.returnType)) {

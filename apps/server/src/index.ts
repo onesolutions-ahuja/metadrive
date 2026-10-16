@@ -70,7 +70,7 @@ function resolveDashboardCrossFilters(...args: Parameters<ReturnType<typeof crea
 function dispatchDashboardSubscription(...args: Parameters<ReturnType<typeof createDashboardRuntime>['dispatchDashboardSubscription']>): ReturnType<ReturnType<typeof createDashboardRuntime>['dispatchDashboardSubscription']> {
  return dashboardRuntime.dispatchDashboardSubscription(...args);
 }
-import { pageActivationAssignmentSchema, lightningAppSchema, pageTemplateSchema, pageTemplateRegions, pageSchema } from './modules/pages/schemas.js';
+import { pageActivationAssignmentSchema, lightningAppSchema, pageTemplateSchema, pageTemplateRegions, pageSchema, createPageSchema } from './modules/pages/schemas.js';
 import { connectorSettingsSchema, defaultConnectorSettings, connectorOperationSchema, connectorTestSchema, connectorDefinitionSchema, defaultConnectorDefinitions, integrationConnectionSchema, integrationConnectionRequestSchema, connectorDefinitionRequestSchema, type ConnectorSettings, type ConnectorDefinition, type IntegrationConnection } from './modules/integrations/connector-schemas.js';
 export type { IntegrationConnection } from './modules/integrations/connector-schemas.js';
 import { isTestLoopbackSmtpUrl, namedCredentialSchema, namedCredentialRequestSchema, emailAlertSchema, emailAlertRequestSchema, type StoredNamedCredential, type EmailAlert, type NamedCredentialPayload, type CredentialKeyRing } from './modules/integrations/credential-schemas.js';
@@ -373,7 +373,7 @@ export type IntegrationsWebhookRoutesDependencies = typeof registerIntegrationsW
 registerIntegrationsWebhookRoutes(registerIntegrationsWebhookRoutesContext);
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
-const persistedMetadataReadMode = createPersistedMetadataReadMode();
+const persistedMetadataReadMode = createPersistedMetadataReadMode(); const persistedPageSchema = createPageSchema(persistedMetadataReadMode);
 const { fieldSchema, pageLayoutSectionSchema, pageLayoutCustomLinkSchema, pageLayoutSchema, pageLayoutAssignmentSchema, compactLayoutSchema, compactLayoutAssignmentSchema, recordTypeSchema, fieldSetSchema, searchLayoutsSchema, relatedLookupFilterSchema, objectActionSchema, objectSettingsSchema, customObjectTabSchema, runtimeRecordSchema, listViewButtonSchema, platformEventSchema, platformEventMessageSchema, normalizeFieldApiName, objectSchema } = createCoreObjectSchemas(persistedMetadataReadMode);
 export type RelatedLookupFilterMetadata = z.infer<typeof relatedLookupFilterSchema>;
 const { flowElementSchema, flowConnectorSchema, flowResourceSchema, flowTestCaseSchema, flowVersionSchema, flowSchema, flowInterviewSchema, automationSettingsSchema, scheduleRetrySchema, flowExecutionLogSchema } = createFlowSchemas(runtimeRecordSchema);
@@ -431,7 +431,7 @@ const createPlatformStateSchemaContext = {
   get lightningAppSchema() { return lightningAppSchema; },
   get namedCredentialSchema() { return namedCredentialSchema; },
   get objectSchema() { return objectSchema; },
-  get pageSchema() { return pageSchema; },
+  get pageSchema() { return persistedPageSchema; },
   get platformEventMessageSchema() { return platformEventMessageSchema; },
   get platformEventSchema() { return platformEventSchema; },
   get recordActivitySchema() { return recordActivitySchema; },

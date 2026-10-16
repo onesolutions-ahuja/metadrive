@@ -71,7 +71,8 @@ export const pageTemplateRegions: Record<z.infer<typeof pageTemplateSchema>, str
   'main-sidebar': ['main', 'sidebar'],
   'header-main-sidebar': ['header', 'main', 'sidebar']
 };
-export const pageSchema = z.object({
+export function createPageSchema(persistedMetadataReadMode?: { readonly active: boolean }) {
+return z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
   updatedAt: z.string().datetime().optional(),
@@ -137,7 +138,7 @@ export const pageSchema = z.object({
     if (page.pageType === 'Home Page' && assignment.scope === 'Org Default') {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['activationAssignments', index], message: 'Home Pages must be assigned to an app or app and profile' });
     }
-    if (page.pageType === 'App Page') {
+    if (page.pageType === 'App Page' && !persistedMetadataReadMode?.active) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ['activationAssignments', index], message: 'App Pages are added to app navigation instead of using activation assignments' });
     }
     for (const other of assignments.slice(index + 1)) {
@@ -152,4 +153,6 @@ export const pageSchema = z.object({
     }
   });
 });
+}
 
+export const pageSchema = createPageSchema();
