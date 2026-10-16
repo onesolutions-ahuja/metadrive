@@ -4,6 +4,7 @@ import {test} from 'node:test';
 
 const preset=JSON.parse(readFileSync(new URL('../apps/web/src/page-presets/chatter.editable.json',import.meta.url),'utf8'));
 const manifest=JSON.parse(readFileSync(new URL('../apps/web/src/custom-components/manifest.json',import.meta.url),'utf8'));
+const oneManifest=JSON.parse(readFileSync(new URL('../apps/web/src/custom-components/one/manifest.json',import.meta.url),'utf8'));
 const catalog=JSON.parse(readFileSync(new URL('../apps/server/data/installable-app-packages.json',import.meta.url),'utf8'));
 const pkg=catalog.packages.find(p=>p.appKey==='whatsapp');
 
@@ -20,9 +21,9 @@ test('Chatter uses the installed Communication record page and published compone
   assert.ok(preset.activationAssignments.some(a=>a.scope==='Org Default'
     && a.formFactors.includes('Desktop')&&a.formFactors.includes('Phone')));
   for(const c of preset.components)
-    assert.ok(manifest.some(m=>'Custom:'+m.apiName===c.type),'Unregistered component: '+c.type);
-  const inbox=preset.components.find(c=>c.type==='Custom:ChatterInbox');
-  assert.ok(inbox,'ChatterInbox must remain individually editable');
+    assert.ok([...manifest,...oneManifest.components].some(m=>'Custom:'+m.apiName===c.type),'Unregistered component: '+c.type);
+  const inbox=preset.components.find(c=>c.type==='Custom:OneConversation');
+  assert.ok(inbox,'Migrated OneConversation must remain individually editable');
   assert.equal(inbox.properties.messagesObjectApiName,'Communication_Records__c');
   assert.equal(inbox.properties.actionFlows.send.flowApiName,'CHATTER_SEND_MESSAGE');
   assert.equal(inbox.properties.actionFlows.assign.flowApiName,'CHATTER_ASSIGN_CONVERSATION');
