@@ -310,6 +310,7 @@
               "label": "Send via authorised WhatsApp account",
               "config": {
                 "namedCredentialResource": "{!AuthorisedCredentialId}",
+                "allowedCredentialAppKeys": ["whatsapp"],
                 "method": "POST",
                 "path": "{!AuthorisedMessagePath}",
                 "headers": "Content-Type: application/json",
