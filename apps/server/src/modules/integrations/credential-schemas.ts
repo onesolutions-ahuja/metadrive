@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { isIP } from 'node:net';
-import type { OAuthToken } from '../../connector-oauth.js';
+import { validatedOAuthUrl, type OAuthToken } from '../../connector-oauth.js';
 
 /** Tenant credentials and Email Alert metadata; no Flow or Core startup side effects. */
 export function isTestLoopbackSmtpUrl(url: URL): boolean {
