@@ -5262,24 +5262,24 @@
           },
           "BookingService__c": {
             "read": true,
-            "create": true,
-            "edit": true,
+            "create": false,
+            "edit": false,
             "delete": false,
             "viewAll": false,
             "modifyAll": false
           },
           "BookingBusinessHours__c": {
             "read": true,
-            "create": true,
-            "edit": true,
+            "create": false,
+            "edit": false,
             "delete": false,
             "viewAll": false,
             "modifyAll": false
           },
           "BookingPolicy__c": {
             "read": true,
-            "create": true,
-            "edit": true,
+            "create": false,
+            "edit": false,
             "delete": false,
             "viewAll": false,
             "modifyAll": false
