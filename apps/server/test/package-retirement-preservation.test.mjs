@@ -128,3 +128,19 @@ test('UK off-licence POS installs its shared Flow, component metadata and least-
   assert(!manifest.some(item=>['RecordCatalogCart','CustomerBasketDisplay'].includes(item.apiName)));
   assert.deepEqual(applyInstallableAppPackages(installed,catalog,'tenant-pos-test'),installed);
 });
+
+test('existing WhatsApp Flow receives only safe additive credential scope metadata',()=>{
+  const catalog=JSON.parse(readFileSync(new URL('../data/installable-app-packages.json',import.meta.url),'utf8'));
+  const pkg=catalog.packages.find(item=>item.appKey==='whatsapp');
+  const existing={apiName:'CHATTER_SEND_MESSAGE',status:'Active',elements:[{id:2,type:'HTTP Callout',config:{namedCredentialResource:'{!AuthorisedCredentialId}',method:'POST'}}]};
+  const tenant={apps:[],pages:[],objects:[],flows:[existing],records:{Connector_App__c:[{AppKey__c:'whatsapp',Installed__c:true,LicenceStatus__c:'Trial'}]},accessControl:{profiles:[],permissionSets:[]}};
+  const result=applyInstallableAppPackages(tenant,{packages:[pkg],retiredPackages:[]});
+  const config=result.flows.find(flow=>flow.apiName==='CHATTER_SEND_MESSAGE').elements[0].config;
+  assert.deepEqual(config.allowedCredentialAppKeys,['whatsapp']);
+  assert.equal(config.method,'POST');
+  assert.strictEqual(applyInstallableAppPackages(result,{packages:[pkg],retiredPackages:[]}),result);
+  const customised=structuredClone(tenant);
+  customised.flows[0].elements[0].config.namedCredentialResource='{!CustomCredential}';
+  const leftAlone=applyInstallableAppPackages(customised,{packages:[pkg],retiredPackages:[]});
+  assert.equal(leftAlone.flows[0].elements[0].config.allowedCredentialAppKeys,undefined);
+});
