@@ -16,7 +16,7 @@ type Dependencies = {
   libraryComponentResizeSchema: z.ZodTypeAny;
   defaultLibraryComponentResize: { defaultWidth: number; defaultHeight: number; minWidth: number; minHeight: number };
   libraryComponentInputSchema: z.ZodTypeAny;
-  installableAppCatalog: { coreComponents: any[] };
+  installableAppCatalog: { coreComponents: any[]; packages?: Array<{ appKey: string; [key: string]: any }> };
 };
 
 export function createComponentLibraryService(deps: Dependencies) {
@@ -81,6 +81,10 @@ function syncBundledLibraryComponents(): Promise<void> {
   if (bundledComponentSync) return bundledComponentSync;
   bundledComponentSync = (async () => {
     const manifestPath = resolve(bundledCustomComponentsPath, 'manifest.json');
+    // AppExchange package components are seeded only for installed, entitled apps.
+    // Do not also initialise them through the legacy global component manifest.
+    const appPackageComponentNames = new Set((installableAppCatalog.packages ?? [])
+      .flatMap((pkg: any) => (pkg.components ?? []).map((c: any) => c.apiName)));
     const manifest = z.array(z.object({
       apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
       label: z.string().trim().min(1).max(80),
@@ -91,7 +95,7 @@ function syncBundledLibraryComponents(): Promise<void> {
       jsx: z.string().min(1),
       css: z.string().min(1),
       version: z.number().int().min(1).default(1)
-    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''))).concat(installableAppCatalog.coreComponents.map((c: any)=>({apiName:c.apiName,label:c.label,description:c.description,surfaces:c.surfaces,resize:c.resize,jsx:c.jsxFile,css:c.cssFile,version:c.version})));
+    })).parse(JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''))).filter(entry => !appPackageComponentNames.has(entry.apiName)).concat(installableAppCatalog.coreComponents.map((c: any)=>({apiName:c.apiName,label:c.label,description:c.description,surfaces:c.surfaces,resize:c.resize,jsx:c.jsxFile,css:c.cssFile,version:c.version})));
     const imported: LibraryComponent[] = [];
     const trustedUpgrades = new Map<string, LibraryComponent>();
     for (const entry of manifest) {

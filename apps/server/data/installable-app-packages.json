@@ -594,7 +594,28 @@
           "Communication_Records__c": true
         },
         "navigationDefaultAccess": "Deny"
-      }
+      },
+      "components": [
+        {
+          "apiName": "ChatterInbox",
+          "label": "Chatter Inbox",
+          "description": "Responsive object-bound conversation list and thread. Sending and assignment require Flow action bindings; no direct provider calls.",
+          "surfaces": [
+            "page",
+            "dashboard",
+            "flow"
+          ],
+          "version": 4,
+          "jsxFile": "ChatterInbox/ChatterInbox.jsx",
+          "cssFile": "ChatterInbox/ChatterInbox.css",
+          "resize": {
+            "defaultWidth": 900,
+            "defaultHeight": 650,
+            "minWidth": 320,
+            "minHeight": 380
+          }
+        }
+      ]
     },
     {
       "appKey": "uk-offlicence-pos",
