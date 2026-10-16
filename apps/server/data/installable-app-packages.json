@@ -4844,7 +4844,8 @@
                 "startFieldApiName": "StartDateTime",
                 "endFieldApiName": "EndDateTime",
                 "titleFieldApiName": "Name",
-                "view": "month"
+                "view": "month",
+                "timeZone": "Europe/London"
               }
             },
             {
