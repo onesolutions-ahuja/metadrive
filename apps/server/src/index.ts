@@ -58,7 +58,8 @@ import { registerReportRoutes } from './modules/reports/routes.js';
 import { registerDashboardRoutes } from './modules/dashboards/routes.js';
 import { registerDashboardSnapshotRoutes } from './modules/dashboards/snapshot-routes.js';
 import { registerComponentLibraryRoutes } from './modules/components/routes.js';
-import { canManageReportFolders } from './modules/reports/report-permissions.js';
+import { canManageReportFolders, createReportFolderPermissions } from './modules/reports/report-permissions.js';
+import { createReportCrossFilterResolver } from './modules/reports/cross-filter.js';
 import { nextDashboardSubscriptionRunAt } from './modules/dashboards/subscription-schedule.js';
 import { hasDefaultComponentExport, scopeLibraryCss } from './modules/components/component-source.js';
 import { validateProtectedAdministrationPageUpdate, isProtectedAdministrationPage } from './modules/metadata/platform-admin-pages.mjs';
@@ -3478,47 +3479,7 @@ function folderAccessLevelFromFolders(
     territories: tenant.dashboardTerritories ?? []
   });
 }
-function reportFolderAccessLevelForUser(
-  tenant: TenantData,
-  folderId: string | null | undefined,
-  userId: string
-): DashboardFolderAccessLevel | null {
-  const folder = tenant.reportFolders.find((item) => item.id === folderId);
-  if (!folder) return null;
-  const inheritedPublic = (() => {
-    let current: ReportFolder | undefined = folder;
-    const visited = new Set<string>();
-    while (current && !visited.has(current.id)) {
-      if (current.visibility === 'All Users') return true;
-      visited.add(current.id);
-      current = current.parentFolderId
-        ? tenant.reportFolders.find((item) => item.id === current!.parentFolderId)
-        : undefined;
-    }
-    return false;
-  })();
-  const shared = folderAccessLevelFromFolders(tenant, tenant.reportFolders, folderId, userId);
-  return inheritedPublic && (!shared || shared === 'Viewer') ? 'Viewer' : shared;
-}
-function reportFolderForUser(
-  tenant: TenantData,
-  folder: ReportFolder,
-  userId: string,
-  canManageAll: boolean
-): ReportFolder & { accessLevel: DashboardFolderAccessLevel | null } {
-  return {
-    ...folder,
-    accessLevel: canManageAll
-      ? 'Manager'
-      : reportFolderAccessLevelForUser(tenant, folder.id, userId)
-  };
-}
-function validateReportFolderReferences(
-  tenant: TenantData,
-  shares: ReportFolder['shares']
-): string | null {
-  return validateDashboardFolderReferences(tenant, shares);
-}
+const { reportFolderAccessLevelForUser, reportFolderForUser, validateReportFolderReferences } = createReportFolderPermissions({ folderAccessLevelFromFolders, validateDashboardFolderReferences });
 function folderForUser(
   tenant: TenantData,
   folder: DashboardFolder,
@@ -8312,63 +8273,7 @@ function dashboardEmailFilterMatches(record: RuntimeRecord, filter: DashboardFil
 type DashboardCrossFilterResolution =
   | { recordIds: Set<string> }
   | { error: string; status: 400 | 403 };
-type ReportCrossFilterResolution =
-  | { matchesRecord: (record: RuntimeRecord) => boolean }
-  | { error: string; status: 400 | 403 };
-
-function resolveReportCrossFilters(
-  principal: Principal,
-  tenant: TenantData,
-  parentObject: ObjectMetadata,
-  crossFilters: z.infer<typeof reportCrossFilterSchema>[],
-  matchesFilter: (record: RuntimeRecord, filter: z.infer<typeof reportFilterSchema>) => boolean
-): ReportCrossFilterResolution {
-  const configured: Array<{
-    mode: 'With' | 'Without';
-    childRecords: RuntimeRecord[];
-    relationshipFieldApiName: string;
-    filters: z.infer<typeof reportFilterSchema>[];
-  }> = [];
-  for (const crossFilter of crossFilters) {
-    const childObject = tenant.objects.find((item) => item.apiName === crossFilter.childObjectApiName);
-    const relationshipField = childObject?.fields.find((field) =>
-      field.relationship?.targetObject === parentObject.apiName);
-    if (!childObject || !relationshipField) {
-      return { error: `Cross-filter object "${crossFilter.childObjectApiName}" is not a child of "${parentObject.apiName}"`, status: 400 };
-    }
-    if (!hasObjectPermission(principal, tenant, childObject.apiName, 'read')) {
-      return { error: `Missing read permission for cross-filter object "${childObject.apiName}"`, status: 403 };
-    }
-    if (!hasFieldPermission(principal, tenant, childObject.apiName, relationshipField.apiName, 'read')) {
-      return { error: `Missing read permission for relationship field "${childObject.apiName}.${relationshipField.apiName}"`, status: 403 };
-    }
-    for (const filter of crossFilter.filters) {
-      if (!childObject.fields.some((field) => field.apiName === filter.fieldApiName)) {
-        return { error: `Cross-filter field "${filter.fieldApiName}" is unavailable on "${childObject.apiName}"`, status: 400 };
-      }
-      if (!hasFieldPermission(principal, tenant, childObject.apiName, filter.fieldApiName, 'read')) {
-        return { error: `Missing read permission for cross-filter field "${childObject.apiName}.${filter.fieldApiName}"`, status: 403 };
-      }
-    }
-    configured.push({
-      mode: crossFilter.mode,
-      relationshipFieldApiName: relationshipField.apiName,
-      filters: crossFilter.filters,
-      childRecords: (tenant.records[childObject.apiName] ?? []).filter((record) =>
-        hasRecordAccess(principal, tenant, childObject.apiName, record, 'Read'))
-        .map((record) => calculateFormulaFields(childObject, record, formulaContextForUser(tenant, principal.userId)))
-    });
-  }
-  return {
-    matchesRecord: (record) => configured.every((crossFilter) => {
-      const hasMatchingChild = crossFilter.childRecords.some((childRecord) =>
-        String(childRecord[crossFilter.relationshipFieldApiName] ?? '') === record.Id
-        && crossFilter.filters.every((filter) => matchesFilter(childRecord, filter)));
-      return crossFilter.mode === 'With' ? hasMatchingChild : !hasMatchingChild;
-    })
-  };
-}
-
+const resolveReportCrossFilters = createReportCrossFilterResolver({hasObjectPermission, hasFieldPermission, hasRecordAccess, calculateFormulaFields, formulaContextForUser});
 type DashboardRelationshipStep = {
   sourceObjectApiName: string;
   targetObjectApiName: string;
