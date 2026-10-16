@@ -373,8 +373,7 @@ export type IntegrationsWebhookRoutesDependencies = typeof registerIntegrationsW
 registerIntegrationsWebhookRoutes(registerIntegrationsWebhookRoutesContext);
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
-const persistedMetadataReadMode = createPersistedMetadataReadMode();
-const persistedPageSchema = createPageSchema(persistedMetadataReadMode);
+const persistedMetadataReadMode = createPersistedMetadataReadMode(); const persistedPageSchema = createPageSchema(persistedMetadataReadMode);
 const { fieldSchema, pageLayoutSectionSchema, pageLayoutCustomLinkSchema, pageLayoutSchema, pageLayoutAssignmentSchema, compactLayoutSchema, compactLayoutAssignmentSchema, recordTypeSchema, fieldSetSchema, searchLayoutsSchema, relatedLookupFilterSchema, objectActionSchema, objectSettingsSchema, customObjectTabSchema, runtimeRecordSchema, listViewButtonSchema, platformEventSchema, platformEventMessageSchema, normalizeFieldApiName, objectSchema } = createCoreObjectSchemas(persistedMetadataReadMode);
 export type RelatedLookupFilterMetadata = z.infer<typeof relatedLookupFilterSchema>;
 const { flowElementSchema, flowConnectorSchema, flowResourceSchema, flowTestCaseSchema, flowVersionSchema, flowSchema, flowInterviewSchema, automationSettingsSchema, scheduleRetrySchema, flowExecutionLogSchema } = createFlowSchemas(runtimeRecordSchema);
