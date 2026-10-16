@@ -43,9 +43,9 @@ const runtimeChunkName = assetNames.find(name => /^pageRuntimeViews-[A-Za-z0-9_-
 assert(runtimeChunkName, 'Authenticated page runtime missing from Pages artifact');
 const runtimeChunk = await read('assets/' + runtimeChunkName);
 
-const appJs = jsAssets.find(asset => asset.content.includes('header-records-link'));
+const appJs = jsAssets.find(asset => asset.content.includes('header-installed-apps'));
 const appCss = cssAssets.find(asset => asset.content.includes('.setup-sidebar') && asset.content.includes('position:sticky'));
-assert(appJs, 'Built app chunk is missing the global Records navigation');
+assert(appJs, 'Built app chunk is missing the installed Apps launcher with Records');
 // Ensure the shipped frontend contains the list-first Page Builder workspace.
 assert(jsAssets.some(asset => asset.content.includes('page-manager-view') && asset.content.includes('All objects')), 'Built frontend is missing the Page Builder pages list');
 const setupShell = (await readFile(resolve('apps/web/src/setupAppShell.tsx'))).toString('utf8');
@@ -67,7 +67,7 @@ const fallback = (await read('404.html')).toString('utf8');
 assert(fallback.includes("window.location.replace('/?__spa='"), 'Custom-domain client-side deep-link fallback missing');
 assert(html.includes('window.history.replaceState({}, \'\', restored)'), 'Custom-domain route restoration is missing');
 assert(!html.includes("'/metadrive' + restored"), 'Custom-domain route restoration uses the old GitHub project prefix');
-console.log('Pages artifact contains logo, Records navigation, sticky header, scrolling sidebar and deep-link fallback.');
+console.log('Pages artifact contains logo, Apps navigation, sticky header, scrolling sidebar and deep-link fallback.');
 
 if (live) {
   let lastError;
@@ -102,7 +102,7 @@ if (live) {
       const publishedJs = await (await get(jsMatch[1])).text();
       assert(publishedJs.includes('Software that makes'), 'Live marketing JavaScript missing');
       const publishedApp = await (await get('/assets/' + appJs.name)).text();
-      assert(publishedApp.includes('header-records-link'), 'Live workspace chunk is missing');
+      assert(publishedApp.includes('header-installed-apps'), 'Live workspace chunk is missing');
       // A missing lazy runtime chunk breaks AppExchange and every authenticated
       // route even when index.html and the public landing page are healthy.
       const servedRuntime = Buffer.from(await (await get('/assets/' + runtimeChunkName)).arrayBuffer());
