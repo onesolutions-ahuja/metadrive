@@ -75,7 +75,7 @@ Typed SQL still rejects a missing database snapshot and never writes a local JSO
 copy. Legacy compatibility modes keep their existing behavior. State and tenant
 services are wired before the server accepts requests; all route contexts refer
 to the same live store. Existing type exports remain compatible; domain metadata
-contracts and three inferred factory dependency types still have type-only links
+contracts and four inferred factory dependency types still have type-only links
 to the entry point, with no runtime import of it.
 
 The entry point decreases from 11,063 to 10,098 lines in this continuation. All 13
