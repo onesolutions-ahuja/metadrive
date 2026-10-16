@@ -2,6 +2,7 @@
 import CompanySettingsWorkspace from './CompanySettingsWorkspace';
 // Shared shell presentation, composed from registered metadata-driven runtime and tools.
 import * as React from 'react';
+import './InstalledAppMenu.css';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from './metadata';
 import type { RecordData } from './recordMetadataUtils';
 export function renderSetupShell(ctx: any) {
