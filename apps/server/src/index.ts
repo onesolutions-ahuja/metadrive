@@ -618,7 +618,8 @@ const provisioningSchema = z.object({
   adminName: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
   password: z.string().min(12).max(256),
-  developerDomain: z.string().trim().min(4).max(253).optional()
+  developerDomain: z.string().trim().min(4).max(253).optional(),
+  grantTenantDeveloperPolicyToAdmin: z.boolean().optional()
 });
 function provisioningIdempotencyKey(req: Request): string | undefined {
   const key = req.header('Idempotency-Key');
