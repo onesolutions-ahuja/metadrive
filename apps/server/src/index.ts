@@ -1,3 +1,14 @@
+import { registerLegacyApprovalAndIntegrationRoutes } from './modules/integrations/approval-connection-routes.js';
+import { createIntegrationDeliveryHandler } from './scheduler/integration-delivery.js';
+import { createFlowSchedulingRuntime } from './scheduler/flow-scheduling.js';
+import { dispatchDueIntegrationJobsRuntime } from './scheduler/integration-dispatch.js';
+import { registerApprovalProcessListRoute } from './modules/approvals/process-list-route.js';
+import { registerPlatformEventListRoute } from './modules/flows/platform-event-list-route.js';
+import { registerConnectorSettingsReadRoute } from './modules/integrations/connector-settings-read-route.js';
+import { registerConnectorProviderListRoute } from './modules/integrations/connector-provider-list-route.js';
+import { registerCurrencyUpdateRoute } from './modules/security/currency-update-route.js';
+import { registerCurrencyReadRoute } from './modules/security/currency-read-route.js';
+import { registerAppListRoute } from './modules/apps/list-routes.js';
 import { createFlowExecutionEngine } from './modules/flows/execution-engine.js';
 import { parseSubflowMappings } from './modules/flows/subflow-mappings.js';
 import { createFlowScheduleCalculations } from './scheduler/flow-schedule-calculations.js';
@@ -4683,6 +4694,52 @@ registerApprovalsDecisionRoutes(registerApprovalsDecisionRoutesContext);
 app.use('/api/metadata', accessAuthentication);
 app.use('/api/connector-settings', accessAuthentication);
 app.use('/api/connector-providers', accessAuthentication);
+app.get('/api/metadata/objects', requirePermission('metadata:read'), (_req: Request, res: Response) => {
+  res.json({ objects: tenantData(getPrincipal(res).tenantId)?.objects ?? [] });
+});
+registerPlatformEventListRoute(app, { requirePermission, getPrincipal, tenantData });
+app.put('/api/metadata/platform-events/:apiName', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
+  const parsed = platformEventSchema.safeParse({ ...req.body, apiName: routeParam(req, 'apiName') });
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid platform event metadata', details: parsed.error.flatten() });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const existing = tenant.platformEvents.find((event) => event.apiName === parsed.data.apiName);
+  const duplicate = tenant.platformEvents.find((event) =>
+    event.apiName.toLowerCase() === parsed.data.apiName.toLowerCase() && event.apiName !== parsed.data.apiName);
+  if (duplicate) return res.status(409).json({ error: 'Platform event API name already exists' });
+  if (existing && tenant.flows.map(activeFlowDefinition).some((flow) => flow !== undefined
+    && flow.flowType === 'Platform Event-Triggered Flow' && flow.triggerObject === existing.apiName)) {
+    const changedFields = JSON.stringify(existing.fields) !== JSON.stringify(parsed.data.fields);
+    if (changedFields) return res.status(409).json({ error: 'Platform event fields cannot change while an active triggered flow subscribes to this event' });
+  }
+  const updated = {
+    ...tenant,
+    platformEvents: existing
+      ? tenant.platformEvents.map((event) => event.apiName === existing.apiName ? parsed.data : event)
+      : [...tenant.platformEvents, parsed.data]
+  };
+  persistTenantRecords(principal.tenantId, updated);
+  return res.status(existing ? 200 : 201).json({ platformEvent: parsed.data });
+});
+app.delete('/api/metadata/platform-events/:apiName', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  const event = tenant.platformEvents.find((candidate) => candidate.apiName === apiName);
+  if (!event) return res.status(404).json({ error: 'Platform event was not found' });
+  const references = tenant.flows.filter((flow) => flow.triggerObject === apiName
+    || flow.elements.some((element) => element.type === 'Publish Platform Event' && element.config.eventApiName === apiName));
+  if (references.length) return res.status(409).json({
+    error: `Platform event is referenced by flows: ${references.map((flow) => flow.label).join(', ')}`
+  });
+  persistTenantRecords(principal.tenantId, {
+    ...tenant,
+    platformEvents: tenant.platformEvents.filter((candidate) => candidate.apiName !== apiName),
+    platformEventMessages: tenant.platformEventMessages.filter((message) => message.eventApiName !== apiName)
+  });
+  return res.status(204).end();
+});
+
 app.use('/api/integration-connections', accessAuthentication);
 app.use('/api/named-credentials', accessAuthentication);
 app.use('/api/component-library', accessAuthentication);
@@ -4714,6 +4771,42 @@ const objectMetadataRouteDependencies = { app, fieldSchema, relatedLookupFilterS
 export type ObjectMetadataRoutesDependencies = typeof objectMetadataRouteDependencies;
 app.use('/api/metadata/objects', accessAuthentication, recordWritePolicyMetadataGuard(getPrincipal, tenantData));
 registerObjectMetadataRoutes(objectMetadataRouteDependencies);
+registerApprovalProcessListRoute(app, { requirePermission, getPrincipal, tenantData });
+registerLegacyApprovalAndIntegrationRoutes({ app, requireAnyPermission, requirePermission, getPrincipal, tenantData, state: platformStore.state, routeParam, approvalProcessRequestSchema, activeFlowDefinition, approvalProcessSchema, persistTenantRecords, defaultAutomationSettings, automationSettingsSchema, connectorDefinitionRequestSchema, stampRecordAuditFields, integrationConnectionRequestSchema, integrationConnectionSchema, integrationConnectionRecord, publicIntegrationConnection, credentialKeyRing, openIntegrationCredentials, sealIntegrationCredentials, randomUUID, executeConnectorTest, httpsRequest, isPublicAddress, isReservedHostname, lookup, registerConnectorProviderListRoute });
+registerConnectorSettingsReadRoute(app, { requirePermission, getPrincipal, tenantData, connectorSettingsSchema });
+app.put('/api/connector-settings/:apiName', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
+  const parsed = connectorSettingsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid connector settings', details: parsed.error.flatten() });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const apiName = routeParam(req, 'apiName');
+  const existing = (tenant.records.UneConnector__c ?? []).find((record) => record.ConnectorType__c === apiName);
+  if (!existing) return res.status(404).json({ error: 'Connector settings record was not found' });
+  if (parsed.data.apiName !== apiName || parsed.data.label !== existing.Name) {
+    return res.status(400).json({ error: 'Connector name and type cannot be changed in connector settings' });
+  }
+  const configuration = Object.fromEntries(parsed.data.fields.map((field) => [field.apiName, field.value]));
+  const now = new Date().toISOString();
+  const updatedRecord = stampRecordAuditFields({
+    ...existing,
+    Configuration__c: JSON.stringify(configuration),
+    Status__c: parsed.data.fields.some((field) => field.value.trim()) ? 'Configured' : 'Not Configured',
+    LastModifiedDate: now
+  }, principal.userId, now, existing);
+  const updatedTenant = {
+    ...tenant,
+    connectorSettings: tenant.connectorSettings.some((item) => item.apiName === apiName)
+      ? tenant.connectorSettings.map((item) => item.apiName === apiName ? parsed.data : item)
+      : [...tenant.connectorSettings, parsed.data],
+    records: {
+      ...tenant.records,
+      UneConnector__c: tenant.records.UneConnector__c.map((record) => record.Id === existing.Id ? updatedRecord : record)
+    }
+  };
+  persistTenantRecords(principal.tenantId, updatedTenant);
+  return res.json({ connector: parsed.data });
+});
+
 const registerApprovalsMetadataRoutesContext = {
   get activeFlowDefinition() { return activeFlowDefinition; },
   get app() { return app; },
@@ -5828,6 +5921,97 @@ registerReportRoutes({
  app, runtimeRecordSchema, dashboardFilterSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFilterMatches, dashboardFolderShareSchema, reportFolderSchema, isNumericField, reportFilterOperatorAllowed, dashboardFilterOperatorAllowed, dashboardFilterValueError, reportFilterValueError, persistState, tenantData, getPrincipal, dashboardRunningPrincipal, dashboardRunningUserSelectionError, reportFolderAccessLevelForUser, reportFolderForUser, validateReportFolderReferences, dashboardForUser, requirePermission, accessAuthentication, hasObjectPermission, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, resolveReportCrossFilters, resolveDashboardCrossFilters, canManageReportFolders, calculateFormulaFields, randomUUID, canAccessDashboard, matchesDashboardFilters,
  getState: () => platformStore.state, setState: (next) => { platformStore.state = next; }
 });
+registerAppListRoute(app, { requirePermission, getPrincipal, tenantData, canOpenApp, canOpenTab });
+app.get('/api/apps/:appApiName/home-page', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const appApiName = routeParam(req, 'appApiName');
+  if (!tenant.apps.some((item) => item.apiName === appApiName) || !canOpenApp(principal, tenant, appApiName))
+    return res.status(404).json({ error: 'Lightning app was not found' });
+  const formFactor = req.query.formFactor;
+  if (formFactor !== undefined && formFactor !== 'Desktop' && formFactor !== 'Phone') {
+    return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
+  }
+  const homePage = resolveActiveLightningHomePage(
+    tenant,
+    appApiName,
+    profileIdForPrincipal(principal, tenant),
+    formFactor === 'Phone' ? 'Phone' : 'Desktop'
+  );
+  return res.json({ page: homePage ?? null });
+});
+app.get('/api/apps/:appApiName/pages/:pageApiName', accessAuthentication, (req: Request, res: Response) => {
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  const appApiName = routeParam(req, 'appApiName');
+  const pageApiName = routeParam(req, 'pageApiName');
+  const app = tenant.apps.find((item) => item.apiName === appApiName);
+  if (!app || !canOpenApp(principal, tenant, appApiName))
+    return res.status(404).json({ error: 'Lightning app was not found' });
+  if (!app.navigationPageApiNames.includes(pageApiName)) return res.status(404).json({ error: 'Lightning page is not in this app navigation' });
+  const page = tenant.pages.find((item) => item.apiName === pageApiName && item.pageType === 'App Page' && item.status === 'Active');
+  if (!page) return res.status(404).json({ error: 'Active App Page was not found' });
+  const formFactor = req.query.formFactor;
+  if (formFactor !== undefined && formFactor !== 'Desktop' && formFactor !== 'Phone') {
+    return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
+  }
+  if (!page.devices.includes(formFactor === 'Phone' ? 'Phone' : 'Desktop')) {
+    return res.status(404).json({ error: 'App Page is not available for this form factor' });
+  }
+  return res.json({ page });
+});
+app.post('/api/metadata/apps', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
+  const parsed = lightningAppSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (tenant.apps.some((item) => item.apiName.toLowerCase() === parsed.data.apiName.toLowerCase())) {
+    return res.status(409).json({ error: `Lightning app "${parsed.data.apiName}" already exists` });
+  }
+  const invalidObject = parsed.data.navigationItems.find((apiName) => !tenant.objects.some((object) => object.apiName === apiName));
+  if (invalidObject) return res.status(400).json({ error: `Navigation item "${invalidObject}" is not a tenant object` });
+  const invalidPage = parsed.data.navigationPageApiNames.find((pageApiName) =>
+    !tenant.pages.some((page) => page.apiName === pageApiName && page.pageType === 'App Page' && page.status === 'Active'));
+  if (invalidPage) return res.status(400).json({ error: `Navigation page "${invalidPage}" must be an active App Page` });
+  const apps = [...tenant.apps, parsed.data];
+  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
+  persistState(nextState);
+  platformStore.state = nextState;
+  return res.status(201).json({ app: parsed.data });
+});
+app.put('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
+  const apiName = routeParam(req, 'apiName');
+  const parsed = lightningAppSchema.safeParse({ ...req.body, apiName });
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (!tenant.apps.some((item) => item.apiName === apiName)) return res.status(404).json({ error: 'Lightning app was not found' });
+  const invalidObject = parsed.data.navigationItems.find((item) => !tenant.objects.some((object) => object.apiName === item));
+  if (invalidObject) return res.status(400).json({ error: `Navigation item "${invalidObject}" is not a tenant object` });
+  const invalidPage = parsed.data.navigationPageApiNames.find((pageApiName) =>
+    !tenant.pages.some((page) => page.apiName === pageApiName && page.pageType === 'App Page' && page.status === 'Active'));
+  if (invalidPage) return res.status(400).json({ error: `Navigation page "${invalidPage}" must be an active App Page` });
+  const apps = tenant.apps.map((item) => item.apiName === apiName ? parsed.data : item);
+  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
+  persistState(nextState);
+  platformStore.state = nextState;
+  return res.json({ app: parsed.data });
+});
+app.delete('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
+  const apiName = routeParam(req, 'apiName');
+  const principal = getPrincipal(res);
+  const tenant = tenantData(principal.tenantId)!;
+  if (!tenant.apps.some((item) => item.apiName === apiName)) return res.status(404).json({ error: 'Lightning app was not found' });
+  if (tenant.pages.some((page) => page.activationAssignments?.some((assignment) => assignment.appId === apiName))) {
+    return res.status(409).json({ error: 'This app is used by Lightning page activation assignments. Reassign those pages before deleting it.' });
+  }
+  const apps = tenant.apps.filter((item) => item.apiName !== apiName);
+  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
+  persistState(nextState);
+  platformStore.state = nextState;
+  return res.status(204).end();
+});
+
 const registerAppsMetadataRoutesContext = {
   get accessAuthentication() { return accessAuthentication; },
   get app() { return app; },
@@ -5891,6 +6075,8 @@ const registerPageListRoutesContext = {
 export type PageListRoutesDependencies = typeof registerPageListRoutesContext;
 registerPageListRoutes(registerPageListRoutesContext);
 registerPageDeletionRoute(app,{permission:requireAnyPermission('metadata:write','pages:manage'),getPrincipal,getState:()=>platformStore.state,isProtected:isProtectedAdministrationPage,commit:async(next:PlatformState)=>{const prior=platformStore.state;platformStore.state=next;try{persistState(next);await platformStore.latestCommit}catch(error){platformStore.state=prior;throw error}}});
+registerCurrencyReadRoute(app, { requirePermission, getPrincipal, tenantData });
+registerCurrencyUpdateRoute(app, { requirePermission, getPrincipal, tenantData, schema: currencySettingsSchema, persistTenantRecords });
 const registerPageUpdateRoutesContext = {
   get app() { return app; },
   get canAccessDashboard() { return canAccessDashboard; },
@@ -5926,7 +6112,7 @@ registerSecurityMetadataRoutes({
 });
 registerFlowElementRoutes(app, requirePermission);
 
-type FlowRuntimeContext = {
+export type FlowRuntimeContext = {
   record?: RuntimeRecord;
   prior?: RuntimeRecord;
   recordEvent?: RecordEvent;
@@ -7181,301 +7367,11 @@ function orderedRecordTriggeredFlows(
 
 const { scheduledOccurrence, nextScheduledOccurrence } = createFlowScheduleCalculations(flowLocalDateTimeToInstant, dashboardLocalParts);
 
-async function resumeDueFlowInterviews(now: Date): Promise<void> {
-  for (const [tenantId, tenant] of Object.entries(platformStore.state.tenants)) {
-    if (!tenantIsActive(tenantId)) continue;
-    for (const interview of [...tenant.interviews]) {
-      if (!['wait', 'scheduled', 'async'].includes(interview.kind) || !interview.waitUntil) continue;
-      const settings = tenant.automationSettings ?? defaultAutomationSettings;
-      const conversationKey = interview.record?.Conversation_Key__c;
-      const conversational = interview.kind !== 'async' && typeof conversationKey === 'string' && Boolean(conversationKey);
-      const owningFlow = conversational ? tenant.flows.find(flow => flow.apiName === interview.flowApiName) : undefined;
-      const sessionRecords = owningFlow?.triggerObject ? (tenant.records[owningFlow.triggerObject] ?? []) : [];
-      const lastActivityAt = sessionRecords.reduce((latest, item) => {
-        if (item.Conversation_Key__c !== conversationKey || item.Direction__c !== 'Incoming') return latest;
-        const timestamp = typeof item.CreatedDate === 'string' ? Date.parse(item.CreatedDate) : NaN;
-        return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
-      }, Date.parse(interview.createdAt));
-      const expired = conversational
-        ? expiredConversationInterview(interview.record, new Date(lastActivityAt).toISOString(), now.getTime(), settings.conversationIdleMinutes)
-        : Date.parse(interview.expiresAt) <= now.getTime();
-      if (expired || (!settings.autoRetryFailedFlows && interview.attempts > 0)
-        || (interview.attempts > 0 && retryBudgetExhausted(interview.attempts, settings.maxRetryAttempts))) {
-        const current = tenantData(tenantId);
-        if (current) persistTenantRecords(tenantId, {
-          ...current, interviews: current.interviews.filter(item => item.id !== interview.id)
-        });
-        continue;
-      }
-      if (Date.parse(interview.waitUntil) > now.getTime()
-        || (interview.retryAt && Date.parse(interview.retryAt) > now.getTime())) continue;
-      const currentTenant = tenantData(tenantId);
-      if (!currentTenant) continue;
-      const savedFlow = currentTenant.flows.find((item) => item.apiName === interview.flowApiName);
-      const activeInterviewFlow = activeFlowDefinition(savedFlow);
-      const archivedAsyncVersion = interview.kind === 'async' && savedFlow?.activeVersion !== null
-        ? savedFlow?.versions.find((version) => version.versionNumber === interview.versionNumber)
-        : undefined;
-      const flow = interview.allowDraft && savedFlow?.status === 'Draft'
-        && savedFlow.versionNumber === interview.versionNumber
-        ? savedFlow
-        : activeInterviewFlow?.versionNumber === interview.versionNumber
-          ? activeInterviewFlow
-          : savedFlow && archivedAsyncVersion
-            ? { ...savedFlow, ...archivedAsyncVersion, status: 'Active' as const,
-              activeVersion: archivedAsyncVersion.versionNumber, versionNumber: archivedAsyncVersion.versionNumber }
-            : undefined;
-      const working = structuredClone(currentTenant);
-      try {
-        if (interview.kind === 'wait' && !conversational && Date.parse(interview.expiresAt) <= now.getTime()) {
-          throw new Error('Wait interview expired before it could resume.');
-        }
-        if (!flow) throw new Error('Wait interview flow version is no longer active.');
-        if (interview.nextElementId === null) {
-          working.interviews = working.interviews.filter((item) => item.id !== interview.id);
-          persistTenantRecords(tenantId, working);
-          continue;
-        }
-        const result = await executeFlow(flow, working, tenantId, interview.userId, {}, interview.record ?? undefined, interview.prior ?? undefined, 0, {
-          startAt: interview.nextElementId,
-          variables: interview.variables,
-          interviewGuid: interview.id,
-          interviewStartTime: interview.createdAt
-        }, 0, interview.recordEvent ?? undefined, interview.isClone, undefined, interview.allowDraft);
-        if (result.status === 'waiting') {
-          const updated = createFlowInterview(flow, interview.userId, result);
-          working.interviews = working.interviews.map((item) => item.id === interview.id ? updated : item);
-        } else {
-          working.interviews = working.interviews.filter((item) => item.id !== interview.id);
-        }
-        persistTenantRecords(tenantId, working);
-      } catch (error) {
-        console.error(`Wait interview "${interview.id}" failed: ${error instanceof Error ? error.message : String(error)}`);
-        const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
-        const failedInterview = failedTenant.interviews.find((item) => item.id === interview.id);
-        const expired = Date.parse(interview.expiresAt) <= now.getTime();
-        if (expired || !settings.autoRetryFailedFlows
-          || retryBudgetExhausted((failedInterview?.attempts ?? 0) + 1, settings.maxRetryAttempts)) {
-          failedTenant.interviews = failedTenant.interviews.filter((item) => item.id !== interview.id);
-        } else if (failedInterview) {
-          failedInterview.attempts += 1;
-          failedInterview.retryAt = new Date(now.getTime() + flowRetryDelayMs(failedInterview.attempts)).toISOString();
-        }
-        failedTenant.flowLogs.push(createFlowFailureLog(
-          flow ?? { apiName: interview.flowApiName, label: interview.flowApiName },
-          interview.kind === 'scheduled' ? 'Scheduled Path' : interview.kind === 'async' ? 'Async Path' : 'Wait Interview',
-          error,
-          interview.userId
-        ));
-        persistTenantRecords(tenantId, failedTenant);
-      }
-    }
-  }
-}
-
-async function executeDueScheduledFlows(now = new Date()): Promise<void> {
-  await resumeDueFlowInterviews(now);
-  for (const [tenantId, tenant] of Object.entries(platformStore.state.tenants)) {
-    if (!tenantIsActive(tenantId)) continue;
-    for (const candidate of [...tenant.flows]) {
-      const currentTenant = tenantData(tenantId);
-      if (!currentTenant) continue;
-      const flow = activeFlowDefinition(candidate);
-      if (!flow || flow.flowType !== 'Schedule-Triggered Flow' || !flow.triggerObject) continue;
-      const runKey = `${flow.apiName}@${flow.activeVersion ?? flow.versionNumber}`;
-      const latestOccurrence = scheduledOccurrence(flow, now);
-      const pendingRetry = currentTenant.scheduleRetries[runKey];
-      const settings = currentTenant.automationSettings ?? defaultAutomationSettings;
-      const autoRetry = settings.autoRetryFailedFlows;
-      if (pendingRetry && (!autoRetry
-        || retryBudgetExhausted(pendingRetry.attempts, settings.maxRetryAttempts))) {
-        const updated = structuredClone(currentTenant);
-        updated.scheduleRuns[runKey] = pendingRetry.occurrenceAt;
-        delete updated.scheduleRetries[runKey];
-        persistTenantRecords(tenantId, updated);
-        continue;
-      }
-      const lastRun = currentTenant.scheduleRuns[runKey];
-      const pendingOccurrence = pendingRetry && (!lastRun || Date.parse(pendingRetry.occurrenceAt) > Date.parse(lastRun))
-        ? new Date(pendingRetry.occurrenceAt)
-        : undefined;
-      const occurrence = pendingOccurrence ?? (lastRun
-        ? nextScheduledOccurrence(flow, new Date(lastRun), now)
-        : latestOccurrence);
-      if (pendingRetry && occurrence?.toISOString() === pendingRetry.occurrenceAt
-        && Date.parse(pendingRetry.retryAt) > now.getTime()) continue;
-      if (!occurrence || (currentTenant.scheduleRuns[runKey] && Date.parse(currentTenant.scheduleRuns[runKey]) >= occurrence.getTime())) continue;
-      const working = structuredClone(currentTenant);
-      try {
-        const objectName = flow.triggerObject;
-        const conditions = asConfigRows(flow.startConfig.entryConditions);
-        const candidates = working.records[objectName] ?? [];
-        if (candidates.length > 2000) throw new Error(`Scheduled flow "${flow.label}" exceeded the 2,000-record execution limit.`);
-        for (const record of candidates) {
-          const scheduledUserId = platformStore.state.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'scheduled-system';
-          const context: FlowRuntimeContext = {
-            record,
-            resourceDefinitions: flow.resources,
-            formulaStack: new Set(),
-            variables: {},
-            currentUserId: scheduledUserId,
-            ...formulaContextForUser(working, scheduledUserId),
-            flowVariables: flowVariablesForUser(working, scheduledUserId)
-          };
-          if (flowConditionsMatch(conditions, record, context, flow.startConfig.conditionLogic)) {
-            const result = await executeFlow(flow, working, tenantId, context.currentUserId, {}, record, undefined, 0, undefined, 0, undefined, false, flowInterviewIdentity(context));
-            if (result.status === 'waiting') {
-              if (result.kind !== 'wait') throw new Error('Scheduled flows cannot pause for screen input.');
-              working.interviews.push(createFlowInterview(flow, context.currentUserId, result));
-            }
-          }
-        }
-        working.scheduleRuns[runKey] = occurrence.toISOString();
-        delete working.scheduleRetries[runKey];
-        persistTenantRecords(tenantId, working);
-      } catch (error) {
-        console.error(`Scheduled flow "${flow.apiName}" failed for tenant "${tenantId}": ${error instanceof Error ? error.message : String(error)}`);
-        const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
-        const attempts = (pendingRetry?.occurrenceAt === occurrence.toISOString() ? pendingRetry.attempts : 0) + 1;
-        if (autoRetry && !retryBudgetExhausted(attempts, settings.maxRetryAttempts)) {
-          failedTenant.scheduleRetries[runKey] = {
-            occurrenceAt: occurrence.toISOString(),
-            attempts,
-            retryAt: new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString()
-          };
-        } else {
-          // Mark the failed occurrence handled; a later scheduled occurrence may still run.
-          failedTenant.scheduleRuns[runKey] = occurrence.toISOString();
-          delete failedTenant.scheduleRetries[runKey];
-        }
-        failedTenant.flowLogs.push(createFlowFailureLog(flow, 'Scheduled', error, null));
-        persistTenantRecords(tenantId, failedTenant);
-      }
-    }
-  }
-}
-
-function platformEventFlowMatches(
-  flow: FlowMetadata,
-  tenant: TenantData,
-  userId: string,
-  payload: RuntimeRecord
-): boolean {
-  const context: FlowRuntimeContext = {
-    record: payload,
-    triggerObjectName: flow.triggerObject ?? undefined,
-    currentUserId: userId,
-    resourceDefinitions: flow.resources,
-    formulaStack: new Set(),
-    variables: Object.fromEntries(flow.resources.map((resource) => [resource.name, resource.value])),
-    flowVariables: flowVariablesForUser(tenant, userId),
-    ...formulaContextForUser(tenant, userId)
-  };
-  return flowConditionsMatch(
-    asConfigRows(flow.startConfig.entryConditions),
-    payload,
-    context,
-    flow.startConfig.conditionLogic
-  );
-}
-
-async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
-  const nowIso = now.toISOString();
-  for (const tenantId of Object.keys(platformStore.state.tenants)) {
-    if (!tenantIsActive(tenantId)) continue;
-    const snapshot = tenantData(tenantId);
-    if (!snapshot) continue;
-    const dueMessages = snapshot.platformEventMessages.filter((message) =>
-      !message.processedAt && !message.deadLettered
-      && (!message.retryAt || Date.parse(message.retryAt) <= now.getTime()));
-    for (const queuedMessage of dueMessages) {
-      let currentTenant = tenantData(tenantId);
-      let message = currentTenant?.platformEventMessages.find((item) => item.id === queuedMessage.id);
-      if (!currentTenant || !message || message.processedAt || message.deadLettered) continue;
-      const settings = currentTenant.automationSettings ?? defaultAutomationSettings;
-      const autoRetry = settings.autoRetryFailedFlows;
-      if ((!autoRetry && message.attempts > 0)
-        || (message.attempts > 0 && retryBudgetExhausted(message.attempts, settings.maxRetryAttempts))) {
-        persistTenantRecords(tenantId, {
-          ...currentTenant,
-          platformEventMessages: currentTenant.platformEventMessages.map(item =>
-            item.id === message?.id ? { ...item, deadLettered: true, retryAt: null } : item)
-        });
-        continue;
-      }
-      const subscriberTenant = currentTenant;
-      const eventMessage = message;
-      const subscribers = subscriberTenant.flows.map(activeFlowDefinition)
-        .filter((flow): flow is FlowMetadata => flow !== undefined
-        && flow.flowType === 'Platform Event-Triggered Flow'
-        && flow.triggerObject === eventMessage.eventApiName
-        && platformEventFlowMatches(flow, subscriberTenant, eventMessage.publishedBy, eventMessage.payload as RuntimeRecord));
-      if (!subscribers.length) {
-        persistTenantRecords(tenantId, {
-          ...currentTenant,
-          platformEventMessages: currentTenant.platformEventMessages.map((item) => item.id === message?.id
-            ? { ...item, processedAt: nowIso, retryAt: null, lastError: '' }
-            : item)
-        });
-        continue;
-      }
-      for (const subscriber of subscribers) {
-        currentTenant = tenantData(tenantId);
-        message = currentTenant?.platformEventMessages.find((item) => item.id === queuedMessage.id);
-        if (!currentTenant || !message || message.deliveredFlowApiNames.includes(subscriber.apiName)) continue;
-        try {
-          const working = structuredClone(currentTenant);
-          const activeFlow = activeFlowDefinition(working.flows.find((flow) => flow.apiName === subscriber.apiName
-            && flow.flowType === 'Platform Event-Triggered Flow'));
-          if (!activeFlow) continue;
-          const result = await executeFlow(
-            activeFlow, working, tenantId, message.publishedBy, {},
-            message.payload as RuntimeRecord
-          );
-          if (result.status === 'waiting') {
-            if (result.kind === 'screen') throw new Error('Platform Event-Triggered Flows cannot pause for screen input.');
-            working.interviews.push(createFlowInterview(activeFlow, message.publishedBy, result));
-          }
-          working.platformEventMessages = working.platformEventMessages.map((item) => item.id === message?.id
-            ? {
-              ...item,
-              deliveredFlowApiNames: [...item.deliveredFlowApiNames, activeFlow.apiName],
-              attempts: 0,
-              retryAt: null,
-              lastError: ''
-            }
-            : item);
-          const updatedMessage = working.platformEventMessages.find((item) => item.id === message?.id);
-          const allDelivered = subscribers.every((flow) =>
-            updatedMessage?.deliveredFlowApiNames.includes(flow.apiName));
-          if (allDelivered && updatedMessage) {
-            working.platformEventMessages = working.platformEventMessages.map((item) => item.id === updatedMessage.id
-              ? { ...item, processedAt: nowIso }
-              : item);
-          }
-          persistTenantRecords(tenantId, working);
-        } catch (error) {
-          const failedTenant = tenantData(tenantId);
-          if (!failedTenant) continue;
-          const failedMessage = failedTenant.platformEventMessages.find((item) => item.id === queuedMessage.id);
-          if (!failedMessage) continue;
-          const attempts = failedMessage.attempts + 1;
-          const deadLettered = !autoRetry || retryBudgetExhausted(attempts, settings.maxRetryAttempts);
-          const retryAt = deadLettered ? null : new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString();
-          const failure = error instanceof Error ? error.message : String(error);
-          persistTenantRecords(tenantId, {
-            ...failedTenant,
-            platformEventMessages: failedTenant.platformEventMessages.map((item) => item.id === failedMessage.id
-              ? { ...item, attempts, retryAt, lastError: failure.slice(0, 1000), deadLettered }
-              : item),
-            flowLogs: [...failedTenant.flowLogs, createFlowFailureLog(subscriber, 'Platform Event', failure, failedMessage.publishedBy)]
-          });
-          break;
-        }
-      }
-    }
-  }
-}
+const { resumeDueFlowInterviews, executeDueScheduledFlows, deliverPendingPlatformEvents } = createFlowSchedulingRuntime({
+  getState: () => platformStore.state, activeFlowDefinition, tenantIsActive, tenantData, persistTenantRecords,
+  createFlowFailureLog, asConfigRows, flowVariablesForUser, flowInterviewIdentity,
+  flowConditionsMatch, formulaContextForUser, createFlowInterview, flowRetryDelayMs, executeFlow
+});
 
 function validateFlow(
   flow: FlowMetadata,
@@ -9199,53 +9095,12 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
     dashboardSubscriptionDispatches.delete(key);
   }
 }
+const integrationDeliveryHandler = createIntegrationDeliveryHandler({ getState: () => platformStore.state, tenantData, effectivePermissions, performHttpCallout });
 async function dispatchDueIntegrationJobs(): Promise<void> {
-  if (persistenceMode === 'jsonb') return;
-  const pool = getRouteAliasPool();
-  if (!pool) return;
-  const outbox = new IntegrationOutbox(pool);
-  // Keep the core scheduler running if an additive Module 11 migration has not yet been applied.
-  // Enqueueing remains fail-closed until the outbox schema is installed.
-  if (!await outbox.ready()) return;
-  const workerId = 'metadrive-outbox-' + process.pid;
-  for (const tenantId of Object.keys(platformStore.state.tenants)) {
-    if (!tenantIsActive(tenantId)) continue;
-    await dispatchIntegrationDeliveries({
-      outbox, tenantId, workerId, limit: 1,
-      dispatch: async delivery => {
-        const value = openIntegrationEnvelope(tenantId, delivery.operationKey,
-          delivery.encryptedRequest, credentialKeyRing());
-        const decoded = z.object({
-          label: z.string().min(1).max(255),
-          config: z.record(z.unknown()),
-          context: z.object({
-            currentUserId: z.string().min(1),
-            variables: z.record(z.unknown())
-          }).passthrough()
-        }).parse(value);
-        const credentialRef = decoded.config.integrationConnectionId || decoded.config.namedCredentialId;
-        if (credentialRef !== delivery.credentialId ||
-            decoded.config.idempotencyKey !== delivery.operationKey ||
-            decoded.config.deliveryMode !== 'SYNC') {
-          throw new CalloutFault('OUTBOX_IDENTITY_MISMATCH', undefined, 1, false);
-        }
-        const currentTenant = tenantData(tenantId);
-        const user = platformStore.state.users.find(item => item.id === decoded.context.currentUserId &&
-          item.tenantId === tenantId && !item.disabled);
-        if (!currentTenant || !user ||
-            !effectivePermissions(user,currentTenant).includes('callouts:execute')) {
-          throw new CalloutFault('OUTBOX_PERMISSION_DENIED', undefined, 1, false);
-        }
-        const restored = { ...decoded.context,
-          formulaStack: new Set<string>(), currentUserId:user.id, debug:false,
-          rollbackSnapshot:undefined } as FlowRuntimeContext;
-        const response = await performHttpCallout(tenantId, currentTenant,
-          { ...decoded.config, maxAttempts: 1, deliveryMode:'SYNC' },
-          restored, decoded.label);
-        return { status: response.status };
-      }
-    });
-  }
+  await dispatchDueIntegrationJobsRuntime({
+    persistenceMode, pool: getRouteAliasPool(), tenantIds: Object.keys(platformStore.state.tenants),
+    tenantIsActive, dispatch: integrationDeliveryHandler
+  });
 }
 const dispatchScheduledFlows = createScheduledDispatcher({
   maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
@@ -9284,3 +9139,26 @@ export type { DashboardMetadata, ReportMetadata };
 export type { FlowDebugTraceEntry, FlowRuntimeContext };
 
 export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowInterview, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };
+
+export type FlowSchedulerDependencies = {
+  getState: () => typeof platformStore.state;
+  activeFlowDefinition: typeof activeFlowDefinition;
+  tenantIsActive: typeof tenantIsActive;
+  tenantData: typeof tenantData;
+  persistTenantRecords: typeof persistTenantRecords;
+  createFlowFailureLog: typeof createFlowFailureLog;
+  asConfigRows: typeof asConfigRows;
+  flowVariablesForUser: typeof flowVariablesForUser;
+  flowInterviewIdentity: typeof flowInterviewIdentity;
+  flowConditionsMatch: typeof flowConditionsMatch;
+  formulaContextForUser: typeof formulaContextForUser;
+  createFlowInterview: typeof createFlowInterview;
+  flowRetryDelayMs: typeof flowRetryDelayMs;
+  executeFlow: typeof executeFlow;
+};
+export type IntegrationDeliveryDependencies = {
+  getState: () => typeof platformStore.state;
+  tenantData: typeof tenantData;
+  effectivePermissions: typeof effectivePermissions;
+  performHttpCallout: typeof performHttpCallout;
+};
