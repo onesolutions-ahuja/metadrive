@@ -1,3 +1,4 @@
+import { isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText } from './modules/dashboards/filter-validation.js';
 import { createPlatformTenantRuntime } from './modules/tenants/platform-runtime.js';
 import { createAuthenticationRuntime } from './modules/security/auth-runtime.js';
 function mfaRequiredForUser(...args: Parameters<ReturnType<typeof createAuthenticationRuntime>['mfaRequiredForUser']>): boolean {
@@ -373,52 +374,6 @@ type LightningPage = z.infer<typeof pageSchema>;
 import { reportFilterSchema, reportDateRangeSchema, reportStandardFiltersSchema, reportCrossFilterSchema, reportRowLimitSchema, reportSummaryOperationSchema, reportDateGroupingSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFilterMatches } from './modules/reports/report-metadata.js';
 
 export type ObjectMetadata = z.infer<typeof objectSchema>;
-function isNumericField(field: { dataType: string; formula?: { returnType: string } } | undefined): boolean {
-  const numericTypes = /^(Number|Currency|Percent)(\(|$)/;
-  return Boolean(field && (numericTypes.test(field.dataType)
-    || (field.dataType.startsWith('Formula(') && numericTypes.test(field.formula?.returnType ?? ''))));
-}
-function dashboardFilterOperatorAllowed(
-  field: { dataType: string; formula?: { returnType: string } },
-  operator: DashboardFilterMetadata['operator']
-): boolean {
-  const type = field.formula?.returnType ?? field.dataType.replace(/\(.*/, '');
-  if (['Includes', 'Excludes'].includes(operator) && type !== 'Multi-Select Picklist') return false;
-  const nullOperators: DashboardFilterMetadata['operator'][] = ['Is Null', 'Is Not Null'];
-  if (type === 'Checkbox' || type === 'Picklist') {
-    return [...nullOperators, 'Equals', 'Not Equal To'].includes(operator);
-  }
-  if (type === 'Multi-Select Picklist') {
-    return [...nullOperators, 'Equals', 'Not Equal To', 'Contains', 'Includes', 'Excludes'].includes(operator);
-  }
-  if (isNumericField(field) || type === 'Date' || type === 'DateTime') {
-    return !['Contains', 'Starts With'].includes(operator);
-  }
-  return true;
-}
-function dashboardFilterValueError(
-  field: { dataType: string; formula?: { returnType: string }; picklistValues?: string[] },
-  value: string
-): string | null {
-  if (!value.trim()) return null;
-  const type = field.formula?.returnType ?? field.dataType.replace(/\(.*/, '');
-  if (isNumericField(field) && !Number.isFinite(Number(value))) return 'Enter a valid number';
-  if (type === 'Date') {
-    const date = new Date(`${value}T00:00:00.000Z`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(date.getTime())
-      || date.toISOString().slice(0, 10) !== value) return 'Enter a valid date';
-  }
-  if (type === 'DateTime' && !Number.isFinite(new Date(value).getTime())) return 'Enter a valid date and time';
-  if (type === 'Checkbox' && !['true', 'false'].includes(value.toLocaleLowerCase())) return 'Choose true or false';
-  if (type === 'Picklist' && field.picklistValues?.length && !field.picklistValues.includes(value)) {
-    return 'Choose a configured picklist value';
-  }
-  if (type === 'Multi-Select Picklist' && field.picklistValues?.length
-    && value.split(';').some((item) => !field.picklistValues!.includes(item))) {
-    return 'Choose configured picklist values';
-  }
-  return null;
-}
 const { reportFilterOperatorAllowed, reportFilterValueError } = createReportFilterValidation({ isNumericField, dashboardFilterValueError });
 export type FlowMetadata = z.infer<typeof flowSchema>;
 export type FlowPlatformEvent = z.infer<typeof platformEventSchema>;
@@ -433,14 +388,6 @@ type PublicGroup = z.infer<typeof publicGroupSchema>;
 type RecordQueue = z.infer<typeof queueSchema>;
 type SharingRule = z.infer<typeof sharingRuleSchema>;
 export type RuntimeRecord = z.infer<typeof runtimeRecordSchema>;
-function sanitizeDashboardRichText(value: string): string {
-  return sanitizeHtml(value, {
-    allowedTags: ['a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'hr', 'i', 'li', 'ol', 'p', 'small', 'span', 'strong', 'sub', 'sup', 'u', 'ul'],
-    allowedAttributes: { a: ['href', 'title'] },
-    allowedSchemes: ['http', 'https', 'mailto'],
-    allowProtocolRelative: false
-  });
-}
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
 const defaultLightningApps = (): LightningApp[] => [
