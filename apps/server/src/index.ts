@@ -734,6 +734,7 @@ const registerTenantRegistryRoutesContext = {
   get state() { return platformStore.state; },
   set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
+  get persistTenantRecords() { return persistTenantRecords; },
   get tenantManagementCreateSchema() { return tenantManagementCreateSchema; },
   get tenantRegistryEntry() { return tenantRegistryEntry; },
   get tenantSummary() { return tenantSummary; },
