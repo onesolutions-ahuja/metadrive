@@ -1,3 +1,4 @@
+import { createFlowFailureRuntime } from './modules/flows/failure-runtime.js';
 import { publicIntegrationConnection, publicNamedCredential } from './modules/integrations/public-projections.js';
 import { isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText } from './modules/dashboards/filter-validation.js';
 import { createPlatformTenantRuntime } from './modules/tenants/platform-runtime.js';
@@ -1317,34 +1318,9 @@ const communicationAuditRuntime = createCommunicationAuditRuntime({
  tenantData, getUsers: () => platformStore.state.users,
  applyRecordDefaults, validateRuntimeRecord, persistTenantRecords
 });
-function createFlowFailureLog(
-  flow: Pick<FlowMetadata, 'apiName' | 'label'>,
-  trigger: FlowExecutionLog['trigger'],
-  error: unknown,
-  userId: string | null
-): FlowExecutionLog {
-  return flowExecutionLogSchema.parse({
-    id: randomUUID(),
-    flowApiName: flow.apiName,
-    flowLabel: flow.label,
-    trigger,
-    failedAt: new Date().toISOString(),
-    error: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
-    userId
-  });
-}
-function persistFlowFailure(
-  tenantId: string,
-  flow: Pick<FlowMetadata, 'apiName' | 'label'>,
-  trigger: FlowExecutionLog['trigger'],
-  error: unknown,
-  userId: string | null
-): void {
-  const tenant = tenantData(tenantId);
-  if (!tenant) throw new Error(`Cannot record flow failure: tenant "${tenantId}" was not found.`);
-  const log = createFlowFailureLog(flow, trigger, error, userId);
-  persistTenantRecords(tenantId, { ...tenant, flowLogs: [...tenant.flowLogs, log] });
-}
+const { createFlowFailureLog, persistFlowFailure } = createFlowFailureRuntime({
+ flowExecutionLogSchema, tenantData, persistTenantRecords
+});
 async function deleteRecordCascade(
   tenantId: string,
   tenant: TenantData,
