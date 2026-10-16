@@ -1,52 +1,33 @@
-name: Validate MetaDrive deployment
-
+name: MetaDrive current platform checks
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [feature-aiven-persistent-state]
+    branches: [main]
   workflow_dispatch:
-
-# Superseded PR commits should not consume runner minutes; distinct workflows
-# retain their own required checks. Main branch validations are never cancelled.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 permissions:
   contents: read
-
+concurrency:
+  group: current-platform-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  build:
+  test-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Validate registered kiosk JSX compilation
-        run: node --test scripts/kiosk-phase4-compile.test.mjs
-      - name: Verify safe retired-package metadata cleanup
-        run: node --test apps/server/test/package-retirement-preservation.test.mjs
-      - name: Build web and server
-        env:
-          GITHUB_PAGES: 'true'
-          GITHUB_PAGES_BASE_PATH: '/'
-          VITE_API_BASE_URL: https://metadrive.onrender.com/api
+      - run: npm ci
+      - name: Test current platform behaviour
+        run: npm run test:unit
+      - name: Compile the web and server once
         run: npm run build
-      - name: Audit production lazy-loading bundles
+      - name: Verify lazy loading
         run: node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist
-      - name: Validate Pages UI navigation, branding and layout artifact
+      - name: Verify published Pages bundle
         run: node scripts/verify-pages-release.mjs
-      - name: Test bounded session restoration and auth lock cancellation
-        run: node --test scripts/session-restore-guard.test.mjs
-      - name: Verify emitted server entrypoint
+      - name: Verify server output
         run: test -f apps/server/dist/index.js
-      - name: Test server workflows and automation policy
-        env:
-          NODE_ENV: test
-          METADRIVE_TEST_MODE: 'true'
-        run: npm run test --workspace apps/server
