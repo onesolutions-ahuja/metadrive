@@ -3,6 +3,8 @@
     {
       "appKey": "whatsapp",
       "installation": {
+        "defaultAppApiName": "ChatterApp",
+        "defaultPageApiName": "UNE_CHATTER_APP",
         "flowMigrations": [
           {
             "elementType": "HTTP Callout",
@@ -215,6 +217,31 @@
           "description": "Extend existing communication records with secure Chatter metadata"
         }
       ],
+      "apps": [
+        {
+          "apiName": "ChatterApp",
+          "label": "Chatter",
+          "description": "WhatsApp conversations, messages and assignments.",
+          "navigationItems": [
+            "Communication_Records__c"
+          ],
+          "navigationPageApiNames": [
+            "UNE_CHATTER_APP"
+          ],
+          "navigationOrder": [
+            {
+              "type": "Object",
+              "apiName": "Communication_Records__c"
+            },
+            {
+              "type": "App Page",
+              "apiName": "UNE_CHATTER_APP"
+            }
+          ],
+          "brandColor": "#168657",
+          "utilityItems": []
+        }
+      ],
       "pages": [
         {
           "apiName": "UNE_CHATTER",
@@ -294,6 +321,73 @@
               ]
             }
           ]
+        },
+        {
+          "apiName": "UNE_CHATTER_APP",
+          "label": "Chatter",
+          "targetObject": "",
+          "pageType": "App Page",
+          "layoutMode": "free-canvas",
+          "canvasWidth": 1200,
+          "canvasHeight": 800,
+          "status": "Active",
+          "devices": [
+            "Desktop",
+            "Phone"
+          ],
+          "components": [
+            {
+              "id": "chatter-app-inbox",
+              "type": "Custom:OneConversation",
+              "label": "Chatter Inbox",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 0,
+                "y": 0,
+                "width": 1200,
+                "height": 800
+              },
+              "properties": {
+                "libraryComponentId": "OneConversation",
+                "title": "Chatter",
+                "accentColor": "#168657",
+                "viewMode": "inbox",
+                "enableNewConversation": true,
+                "searchPlaceholder": "Search name or number",
+                "conversationsObjectApiName": "Communication_Records__c",
+                "messagesObjectApiName": "Communication_Records__c",
+                "channelAccountObjectApiName": "Connector_App__c",
+                "contactsObjectApiName": "Contact",
+                "restrictToAssigned": true,
+                "enableAssignment": true,
+                "actionFlows": {
+                  "send": {
+                    "flowApiName": "CHATTER_SEND_MESSAGE",
+                    "inputs": {
+                      "ConversationId": "$event.conversationId",
+                      "ChannelAccountId": "$event.channelAccountId",
+                      "RecipientPhone": "$event.recipientPhone",
+                      "Body": "$event.body"
+                    }
+                  },
+                  "assign": {
+                    "flowApiName": "CHATTER_ASSIGN_CONVERSATION",
+                    "inputs": {
+                      "ConversationId": "$event.conversationId",
+                      "ChannelAccountId": "$event.channelAccountId",
+                      "AssigneeId": "$event.assigneeId"
+                    }
+                  }
+                },
+                "objectApiName": "Communication_Records__c",
+                "recordPresenterApiName": "CommunicationThread",
+                "canSend": false,
+                "canAssign": false
+              }
+            }
+          ],
+          "activationAssignments": []
         }
       ],
       "flows": [
