@@ -192,21 +192,6 @@ try {
     connectors:[{id:'start-screen',from:1,to:2,label:'',kind:'normal'}],resources:[],versions:[]
   });
   await page.goto('http://127.0.0.1:5173/une/setup/flow-builder/'+flowApiName);
-  // Authenticated Flow Builder: modify label and persist using the real Save button.
-  const flowName=page.getByLabel('Flow label');
-  await flowName.waitFor();
-  const flowEdited='MD07 Flow Builder Saved';
-  await flowName.fill(flowEdited);
-  await page.getByRole('button',{name:'Save',exact:true}).click();
-  for(let attempt=0;attempt<30;attempt++){
-    const flows=(await request('/metadata/flows',token)).flows;
-    if(flows.some(item=>item.apiName===flowApiName&&item.label===flowEdited))break;
-    await pause(250);
-    if(attempt===29)throw Error('Flow Builder UI did not persist edited label');
-  }
-  await page.reload();
-  await flowName.waitFor();
-  await page.waitForFunction(expected => document.querySelector('input[aria-label="Flow label"]')?.value === expected, flowEdited, {timeout:20000});
   await page.getByRole('button',{name:'Run',exact:true}).click();
   const flowFrame=page.locator('.flow-screen-custom-component iframe[sandbox="allow-scripts"]');
   await flowFrame.waitFor({state:'attached'});
@@ -223,6 +208,23 @@ try {
   await page.getByRole('button',{name:'Cancel',exact:true}).last().click();
   await launchedComponentFrame.contentFrame().getByRole('button',{name:'Browse Records'}).click();
   await page.waitForURL(/\/une\/o\/Account\/list/);
+
+  await page.goto('http://127.0.0.1:5173/une/setup/flow-builder/'+flowApiName);
+  // Authenticated Flow Builder: modify label and persist using the real Save button.
+  const flowName=page.getByLabel('Flow label');
+  await flowName.waitFor();
+  const flowEdited='MD07 Flow Builder Saved';
+  await flowName.fill(flowEdited);
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  for(let attempt=0;attempt<30;attempt++){
+    const flows=(await request('/metadata/flows',token)).flows;
+    if(flows.some(item=>item.apiName===flowApiName&&item.label===flowEdited))break;
+    await pause(250);
+    if(attempt===29)throw Error('Flow Builder UI did not persist edited label');
+  }
+  await page.reload();
+  await flowName.waitFor();
+  await page.waitForFunction(expected => document.querySelector('input[aria-label="Flow label"]')?.value === expected, flowEdited, {timeout:20000});
 
   // Authenticated Report Builder: create metadata through shared Object API and
   // exercise the actual editor save/reopen path in this disposable tenant.
