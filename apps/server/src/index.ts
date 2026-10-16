@@ -607,9 +607,7 @@ const accessAuthentication = createAccessAuthentication({
 });
 const authenticationRuntime = createAuthenticationRuntime({
  platformStore, platformInitialization, jwtService, refreshCookieName, isProduction,
- effectivePermissions, hasFieldPermission, hasRecordTypeAccessForUser, tenantData, persistState, withSecurityEvent,
- canOpenApp: (principal, tenant, appId) => canOpenApp(principal, tenant, appId),
- canOpenTab: (principal, tenant, objectId) => canOpenTab(principal, tenant, objectId)
+ effectivePermissions, hasFieldPermission, hasRecordTypeAccessForUser, tenantData, persistState, withSecurityEvent, canOpenApp: (principal, tenant, appId) => canOpenApp(principal, tenant, appId), canOpenTab: (principal, tenant, objectId) => canOpenTab(principal, tenant, objectId)
 });
 const { cookieValue, setRefreshCookie, clearRefreshCookie, issueRefreshSession, authenticatedLandingBootstrap, issueLoginResponse, mfaLoginChallenges, mfaEnrollments, mfaFailures, mfaChallengeTtlMs, sealMfaSecret, openMfaSecret, mfaCredentialReady, newMfaToken, mfaRateLimited, recordMfaFailure, revokeUserRefreshSessions, loginAttempts, userLoginFailures, recordUserLoginFailure, loginSchema } = authenticationRuntime;
 const provisioningSchema = z.object({
