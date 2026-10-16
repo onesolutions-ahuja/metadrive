@@ -22,3 +22,13 @@
 .records-list-card{overflow:visible}
 .records-list-toolbar{position:relative;z-index:3}
 .records-list-context .header-record-picker-options{z-index:10}
+
+/* All metadata-driven app page navigation now lives in the one top bar. */
+.header-page-context{flex:0 1 auto;max-width:min(43vw,560px)}
+.header-page-tabs{display:flex;align-items:center;gap:3px;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:thin}
+.header-page-tab{border:1px solid transparent;background:transparent;color:var(--text,#334155);font:inherit;font-size:12px;padding:8px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+.header-page-tab:hover{background:#edf3fa}
+.header-page-tab.active{font-weight:700;color:#0b5fc1;background:#edf5ff;border-color:#d7e7fd}
+.header-page-tab:focus-visible{outline:2px solid var(--focus,#2574d8);outline-offset:1px}
+@media(max-width:1100px){.header-page-context{max-width:36vw}.header-page-tab{padding:7px 6px}}
+@media(max-width:640px){.header-page-context{max-width:55vw}.header-page-tabs{max-width:140px}}
