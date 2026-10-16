@@ -1,3 +1,5 @@
+import { resolveActiveLightningRecordPage, resolveActiveLightningHomePage, hasRecordTypeAccessForUser } from './modules/pages/activation-access.js';
+import { withSecurityEvent } from './core/security/security-audit.js';
 import { connectorRight, managedConnector, disableOnConnectorUninstall, assertConnectorLifecycleAccess } from './modules/integrations/connector-lifecycle.js';
 import { appendFieldHistory } from './modules/records/field-history.js';
 import { createRecordCascadeRuntime } from './modules/records/record-cascade.js';
@@ -564,22 +566,6 @@ const createTenantDataServiceContext = {
   get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; }
 };
 const { tenantIsActive, tenantData, persistTenantRecords } = createTenantDataService(createTenantDataServiceContext);
-function withSecurityEvent(
-  tenant: TenantData,
-  actorUserId: string,
-  action: string,
-  details?: Record<string, string>,
-  targetUserId?: string
-): TenantData {
-  const event: SecurityAuditEvent = {
-    id: randomUUID(), at: new Date().toISOString(), actorUserId, action,
-    ...(targetUserId ? { targetUserId } : {}),
-    ...(details ? { details } : {})
-  };
-  // No passwords, bearer tokens, MFA secrets, raw request bodies, or network identifiers.
-  return { ...tenant, securityAudit: [...tenant.securityAudit, event].slice(-5000) };
-}
-
 function getPrincipal(res: Response): Principal {
   const principal = res.locals.principal as Principal | undefined;
   if (!principal) throw new Error('Authenticated principal was not established');
@@ -1218,49 +1204,6 @@ function profileIdForPrincipal(principal: Principal, tenant: TenantData): string
   if (!user) return '';
   const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
   return accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles);
-}
-
-function resolveActiveLightningRecordPage(
-  tenant: TenantData,
-  objectApiName: string,
-  appId: string,
-  recordTypeId: string | undefined,
-  profileId: string,
-  formFactor: 'Desktop' | 'Phone'
-): LightningPage | undefined {
-  const match = resolvePageAssignment(tenant.pages, {
-    pageType: 'Record Page', objectApiName, appId, recordTypeId, profileId, formFactor
-  });
-  if (match) return match;
-  // Normal activation metadata is authoritative; no application-specific fallback.
-  return undefined;
-}
-
-function resolveActiveLightningHomePage(
-  tenant: TenantData,
-  appId: string,
-  profileId: string,
-  formFactor: 'Desktop' | 'Phone'
-): LightningPage | undefined {
-  return resolvePageAssignment(tenant.pages, {
-    pageType: 'Home Page', appId, profileId, formFactor
-  });
-}
-
-function hasRecordTypeAccessForUser(userId: string, tenant: TenantData, objectName: string, recordTypeId: string): boolean {
-  const user = tenant.accessControl.users.find((item) => item.id === userId);
-  if (!user) return false;
-  const key = `${objectName}.${recordTypeId}`;
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (user.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  if (profile && profile.recordTypePermissions[key] !== false) return true;
-  const sets = tenant.accessControl.permissionSets;
-  if (sets.some((set) => user.permissionSetIds.includes(set.id) && set.recordTypePermissions[key] === true)) return true;
-  return user.permissionSetGroupIds.some((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    return Boolean(group && group.mutedRecordTypePermissions[key] !== true
-      && sets.some((set) => group.permissionSetIds.includes(set.id) && set.recordTypePermissions[key] === true));
-  });
 }
 
 function allocateAutoNumberSequence(tenantId: string, tenant: TenantData, object: ObjectMetadata, field: ObjectMetadata['fields'][number]): number {
