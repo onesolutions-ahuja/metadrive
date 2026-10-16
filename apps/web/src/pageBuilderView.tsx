@@ -1207,10 +1207,7 @@ function PageBuilder({
       onChange: previewProperties.onChange,
       onNavigate: previewProperties.onNavigate,
       children: nestedChildren,
-      ...(customDefinition?.apiName === 'OneSplitPane' ? {
-        left: childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),
-        right: childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))
-      } : {})
+      ...(customDefinition?.apiName === 'OneSplitPane' ? {left:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),right:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))} : {})
     };
     const accordionContent = typeof component.properties.content === 'string' && component.properties.content.trim()
       ? component.properties.content
@@ -1327,10 +1324,7 @@ function PageBuilder({
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device,
                       children: nestedChildren,
-                      ...(customDefinition.apiName === 'OneSplitPane' ? {
-                        left: childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),
-                        right: childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))
-                      } : {})
+                      ...(customDefinition.apiName === 'OneSplitPane' ? {left:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),right:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))} : {})
                     }} />
                     : libraryPreview
                       ? <div className="component-demo-fallback"><strong>{component.label}</strong><span>{selectedComponentDescription || 'Preview of a reusable page component.'}</span><div><i /><i /><i /></div></div>
