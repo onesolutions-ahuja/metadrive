@@ -29,4 +29,5 @@ jobs:
           METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
           METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
           METADRIVE_LIFECYCLE_APP_KEY: xero
+          METADRIVE_LIFECYCLE_RECOVERY: 'true'
         run: node scripts/appexchange-live-tenant-acceptance.mjs
