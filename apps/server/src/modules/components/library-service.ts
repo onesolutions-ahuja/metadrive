@@ -16,7 +16,7 @@ type Dependencies = {
   libraryComponentResizeSchema: z.ZodTypeAny;
   defaultLibraryComponentResize: { defaultWidth: number; defaultHeight: number; minWidth: number; minHeight: number };
   libraryComponentInputSchema: z.ZodTypeAny;
-  installableAppCatalog: { coreComponents: any[]; packages?: Array<{ components?: Array<{ apiName: string }> }> };
+  installableAppCatalog: { coreComponents: any[]; packages?: Array<{ appKey: string; [key: string]: any }> };
 };
 
 export function createComponentLibraryService(deps: Dependencies) {
