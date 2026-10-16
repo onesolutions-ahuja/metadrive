@@ -1,3 +1,4 @@
+import { publicIntegrationConnection, publicNamedCredential } from './modules/integrations/public-projections.js';
 import { isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText } from './modules/dashboards/filter-validation.js';
 import { createPlatformTenantRuntime } from './modules/tenants/platform-runtime.js';
 import { createAuthenticationRuntime } from './modules/security/auth-runtime.js';
@@ -545,44 +546,6 @@ const initializePlatformStateContext = {
 };
 const platformInitialization = await initializePlatformState(initializePlatformStateContext);
 
-function publicIntegrationConnection(connection: IntegrationConnection, definition: ConnectorDefinition, credentials: Record<string, string>) {
-  return {
-    id: connection.id,
-    connectorKey: connection.connectorKey,
-    name: connection.name,
-    configuration: connection.configuration,
-    status: connection.status,
-    hasCredentials: Object.keys(credentials).length > 0,
-    credentialFields: definition.credentialsSchema.map((field) => ({
-      name: field.name,
-      label: field.label,
-      secret: field.secret,
-      required: field.required,
-      configured: field.secret ? Boolean(credentials[field.name]) : Boolean(connection.configuration[field.name])
-    })),
-    testStatus: connection.testStatus,
-    lastTestedAt: connection.lastTestedAt,
-    lastTestMessage: connection.lastTestMessage,
-    createdAt: connection.createdAt,
-    updatedAt: connection.updatedAt
-  };
-}
-function publicNamedCredential(credential: StoredNamedCredential) {
-  return {
-    id: credential.id,
-    name: credential.name,
-    label: credential.label,
-    protocol: credential.protocol,
-    baseUrl: credential.baseUrl,
-    authType: credential.authType,
-    headerName: credential.headerName ?? '',
-    configuration: credential.configuration ?? {},
-    hasSecret: credential.authType !== 'None',
-    enabled: credential.enabled !== false,
-    keyId: credential.keyId,
-    updatedAt: credential.updatedAt
-  };
-}
 // No schema/tenant is visible to a new tenant until its first durable commit.
 // Serialize provisioning within an instance; SQL modes also use optimistic
 // revisions to reject cross-instance stale writers rather than lose data.
