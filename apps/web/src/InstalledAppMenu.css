@@ -17,3 +17,8 @@
 .records-list-actions{flex-wrap:wrap}
 @media(max-width:900px){.header-page-title{max-width:110px}.header-page-context{gap:5px}.header-page-action{font-size:12px;padding:5px 7px}}
 @media(max-width:640px){.records-list-context{justify-content:flex-start;flex:1 1 100%}.records-list-context .header-record-picker,.records-list-context .records-search{max-width:none}.header-page-title{max-width:65px}}
+
+/* Ensure the object-picker list can expand below the Records toolbar. */
+.records-list-card{overflow:visible}
+.records-list-toolbar{position:relative;z-index:3}
+.records-list-context .header-record-picker-options{z-index:10}
