@@ -166,7 +166,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
 type RecordActivity = {
   id: string;
   objectApiName: string;
