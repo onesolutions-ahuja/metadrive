@@ -615,7 +615,11 @@ function LightningAppRuntime({
             ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
             label: component.label, properties: component.properties,
             pageSessionKey: appId + ':' + page.apiName, componentId: component.id,
-            device: layoutDevice, children: nestedChildren
+            device: layoutDevice, children: nestedChildren,
+            ...(definition.apiName === 'OneSplitPane' ? {
+              left: childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderComponent(child)),
+              right: childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderComponent(child))
+            } : {})
           }} />;
       const rendered = nestedChildren?.length && definition.trustedBundled !== true
         ? <div className="metadata-nested-host" data-nested-host={component.id}>{content}{nestedChildren}</div>
