@@ -1,5 +1,5 @@
 import {resolveScreenText} from './flowScreenRuntimeUtils';
-import {findRegisteredComponentForInstance} from './componentRegistryLookup';
+import {findRegisteredComponent, findRegisteredComponentForInstance} from './componentRegistryLookup';
 import { useEffect, useState } from 'react';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import FlowScreenAdvancedField from './FlowScreenAdvancedField';
@@ -117,11 +117,30 @@ export default function FlowScreenContent({
         }} />
       </div>;
     }
-    if (type === 'Display Text') return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{resolveScreenText(field.text, values)}</p>;
-    if (type === 'Display Image') return <figure className="flow-screen-image" key={`image-${index}`}>
-      <img src={String(field.imageUrl ?? '')} alt={String(field.imageAltText ?? '')} loading="lazy" />
-      {label && <figcaption>{label}</figcaption>}
-    </figure>;
+    if (type === 'Display Text') {
+      const text = resolveScreenText(field.text, values);
+      const definition = findRegisteredComponent(libraryComponents, 'OneText', 'flow');
+      // Keep empty legacy display text unchanged: OneText has a non-empty placeholder.
+      if (definition && text) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Text', text, label, value: text,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+      return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{text}</p>;
+    }
+    if (type === 'Display Image') {
+      const src = String(field.imageUrl ?? '');
+      const alt = String(field.imageAltText ?? '');
+      const definition = findRegisteredComponent(libraryComponents, 'OneImage', 'flow');
+      // OneImage currently accepts HTTPS assets only; preserve existing legacy URLs.
+      if (definition && /^https:\\/\\//i.test(src)) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Image', src, alt, caption: label,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+      return <figure className="flow-screen-image" key={`image-${index}`}>
+        <img src={src} alt={alt} loading="lazy" />
+        {label && <figcaption>{label}</figcaption>}
+      </figure>;
+    }
     if (['Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater'].includes(type)) {
       return <FlowScreenAdvancedField key={name} field={field} label={label} inputId={inputId}
         helpId={helpId} helpText={helpText} value={value} values={values} setValue={setValue}
