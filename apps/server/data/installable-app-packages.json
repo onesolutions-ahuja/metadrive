@@ -6,8 +6,14 @@
         "flowMigrations": [
           {
             "elementType": "HTTP Callout",
-            "matchConfig": {"namedCredentialResource": "{!AuthorisedCredentialId}"},
-            "addConfig": {"allowedCredentialAppKeys": ["whatsapp"]}
+            "matchConfig": {
+              "namedCredentialResource": "{!AuthorisedCredentialId}"
+            },
+            "addConfig": {
+              "allowedCredentialAppKeys": [
+                "whatsapp"
+              ]
+            }
           }
         ],
         "allowInstalledMetadataWithoutLicence": true,
@@ -320,7 +326,9 @@
               "label": "Send via authorised WhatsApp account",
               "config": {
                 "namedCredentialResource": "{!AuthorisedCredentialId}",
-                "allowedCredentialAppKeys": ["whatsapp"],
+                "allowedCredentialAppKeys": [
+                  "whatsapp"
+                ],
                 "method": "POST",
                 "path": "{!AuthorisedMessagePath}",
                 "headers": "Content-Type: application/json",
@@ -4330,6 +4338,961 @@
         "tabPermissions": {
           "Product": true,
           "Invoice": true
+        },
+        "navigationDefaultAccess": "Deny"
+      }
+    },
+    {
+      "appKey": "one-assistant",
+      "installation": {
+        "allowInstalledMetadataWithoutLicence": true,
+        "repairMissingAdministratorPermissions": true,
+        "defaultAppApiName": "OneAssistantApp",
+        "defaultPageApiName": "ONE_ASSISTANT_RECEPTION",
+        "administratorObjectPermissions": {
+          "Appointment": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          },
+          "AppointmentResource": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          },
+          "Contact": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          },
+          "Resource": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          },
+          "ResourceAvailability": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          },
+          "BookingService__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          },
+          "BookingBusinessHours__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          },
+          "BookingPolicy__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": true,
+            "modifyAll": false
+          }
+        }
+      },
+      "objects": [
+        {
+          "apiName": "BookingService__c",
+          "label": "Booking Service",
+          "pluralLabel": "Booking Services",
+          "kind": "Custom Object",
+          "description": "Tenant-owned configurable OneAssistant booking metadata. No customer rows seeded.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "DurationMinutes__c",
+              "label": "Duration (minutes)",
+              "dataType": "Number(10, 0)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "BufferMinutes__c",
+              "label": "Buffer (minutes)",
+              "dataType": "Number(10, 0)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "QuotedPrice__c",
+              "label": "Indicative price",
+              "dataType": "Currency(18, 2)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "RequiresQuote__c",
+              "label": "Requires assessment or quote",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "IsActive__c",
+              "label": "Active",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "Description__c",
+              "label": "Description",
+              "dataType": "Text(255)",
+              "required": false,
+              "unique": false
+            }
+          ],
+          "settings": {
+            "allowReports": true,
+            "allowActivities": true,
+            "trackFieldHistory": true,
+            "allowInChatter": false,
+            "deploymentStatus": "Deployed",
+            "recordNameType": "Text",
+            "recordNameFormat": ""
+          }
+        },
+        {
+          "apiName": "BookingBusinessHours__c",
+          "label": "Booking Business Hour",
+          "pluralLabel": "Booking Business Hours",
+          "kind": "Custom Object",
+          "description": "Tenant-owned configurable OneAssistant booking metadata. No customer rows seeded.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "DayOfWeek__c",
+              "label": "Day of week",
+              "dataType": "Text(12)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "StartTime__c",
+              "label": "Local start (HH:MM)",
+              "dataType": "Text(5)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "EndTime__c",
+              "label": "Local end (HH:MM)",
+              "dataType": "Text(5)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "ResourceId__c",
+              "label": "Optional staff, team or resource",
+              "dataType": "Lookup(Resource)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "TimeZone__c",
+              "label": "IANA timezone",
+              "dataType": "Text(64)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "IsClosed__c",
+              "label": "Closed",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            }
+          ],
+          "settings": {
+            "allowReports": true,
+            "allowActivities": true,
+            "trackFieldHistory": true,
+            "allowInChatter": false,
+            "deploymentStatus": "Deployed",
+            "recordNameType": "Text",
+            "recordNameFormat": ""
+          }
+        },
+        {
+          "apiName": "BookingPolicy__c",
+          "label": "Booking Policy",
+          "pluralLabel": "Booking Policys",
+          "kind": "Custom Object",
+          "description": "Tenant-owned configurable OneAssistant booking metadata. No customer rows seeded.",
+          "fields": [
+            {
+              "apiName": "Name",
+              "label": "Name",
+              "dataType": "Text(255)",
+              "required": true,
+              "unique": false
+            },
+            {
+              "apiName": "TimeZone__c",
+              "label": "IANA timezone",
+              "dataType": "Text(64)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "SlotMinutes__c",
+              "label": "Slot interval (minutes)",
+              "dataType": "Number(10, 0)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "MinNoticeMinutes__c",
+              "label": "Minimum notice (minutes)",
+              "dataType": "Number(10, 0)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "MaxAdvanceDays__c",
+              "label": "Maximum advance days",
+              "dataType": "Number(10, 0)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "RequireConfirmation__c",
+              "label": "Requires receptionist confirmation",
+              "dataType": "Checkbox",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "CancellationPolicy__c",
+              "label": "Cancellation terms",
+              "dataType": "Text(255)",
+              "required": false,
+              "unique": false
+            }
+          ],
+          "settings": {
+            "allowReports": true,
+            "allowActivities": true,
+            "trackFieldHistory": true,
+            "allowInChatter": false,
+            "deploymentStatus": "Deployed",
+            "recordNameType": "Text",
+            "recordNameFormat": ""
+          }
+        }
+      ],
+      "extendObjects": [
+        {
+          "apiName": "Appointment",
+          "label": "Appointment",
+          "pluralLabel": "Appointments",
+          "kind": "Standard Object",
+          "fields": [
+            {
+              "apiName": "BookingServiceId__c",
+              "label": "Booking service",
+              "dataType": "Lookup(BookingService__c)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "BookingSource__c",
+              "label": "Booking source",
+              "dataType": "Text(40)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "BookingApprovalStatus__c",
+              "label": "Reception approval state",
+              "dataType": "Text(32)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "CustomerName__c",
+              "label": "Customer name",
+              "dataType": "Text(255)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "CustomerPhone__c",
+              "label": "Customer telephone",
+              "dataType": "Phone",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "RequestedService__c",
+              "label": "Requested service",
+              "dataType": "Text(255)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "PreferredDate__c",
+              "label": "Preferred date",
+              "dataType": "Date",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "PreferredTime__c",
+              "label": "Preferred time",
+              "dataType": "Text(20)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "ServicePostcode__c",
+              "label": "Service postcode",
+              "dataType": "Text(16)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "ServiceAddressId__c",
+              "label": "Service address",
+              "dataType": "Lookup(Address)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "SiteNotes__c",
+              "label": "Site/access notes",
+              "dataType": "Text(255)",
+              "required": false,
+              "unique": false
+            },
+            {
+              "apiName": "BookingExternalReference__c",
+              "label": "External request reference",
+              "dataType": "Text(120)",
+              "required": false,
+              "unique": false
+            }
+          ]
+        }
+      ],
+      "apps": [
+        {
+          "apiName": "OneAssistantApp",
+          "label": "OneAssistant",
+          "description": "Universal appointments and reception using shared MetaDrive Objects and Flows.",
+          "navigationItems": [
+            "Appointment",
+            "Contact",
+            "Resource",
+            "ResourceAvailability",
+            "BookingService__c",
+            "BookingBusinessHours__c",
+            "BookingPolicy__c"
+          ],
+          "navigationPageApiNames": [
+            "ONE_ASSISTANT_RECEPTION",
+            "ONE_ASSISTANT_SETUP"
+          ],
+          "navigationOrder": [
+            {
+              "type": "App Page",
+              "apiName": "ONE_ASSISTANT_RECEPTION"
+            },
+            {
+              "type": "App Page",
+              "apiName": "ONE_ASSISTANT_SETUP"
+            },
+            {
+              "type": "Object",
+              "apiName": "Appointment"
+            },
+            {
+              "type": "Object",
+              "apiName": "Contact"
+            },
+            {
+              "type": "Object",
+              "apiName": "Resource"
+            },
+            {
+              "type": "Object",
+              "apiName": "BookingService__c"
+            },
+            {
+              "type": "Object",
+              "apiName": "BookingBusinessHours__c"
+            },
+            {
+              "type": "Object",
+              "apiName": "BookingPolicy__c"
+            }
+          ],
+          "brandColor": "#1674a6",
+          "utilityItems": []
+        }
+      ],
+      "pages": [
+        {
+          "apiName": "ONE_ASSISTANT_RECEPTION",
+          "label": "Reception",
+          "targetObject": "Appointment",
+          "pageType": "App Page",
+          "layoutMode": "free-canvas",
+          "canvasWidth": 1200,
+          "canvasHeight": 900,
+          "status": "Active",
+          "devices": [
+            "Desktop",
+            "Phone"
+          ],
+          "components": [
+            {
+              "id": "oneassistant-heading",
+              "type": "Custom:OneText",
+              "label": "Reception",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 10,
+                "width": 800,
+                "height": 65
+              },
+              "properties": {
+                "libraryComponentId": "OneText",
+                "text": "Appointments and enquiries",
+                "fontSize": 24
+              }
+            },
+            {
+              "id": "oneassistant-book",
+              "type": "Custom:OneButton",
+              "label": "New booking request",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 970,
+                "y": 20,
+                "width": 210,
+                "height": 60
+              },
+              "properties": {
+                "libraryComponentId": "OneButton",
+                "label": "New booking request",
+                "actionFlows": {
+                  "click": {
+                    "flowApiName": "ONE_ASSISTANT_BOOKING_REQUEST",
+                    "inputs": {}
+                  }
+                }
+              }
+            },
+            {
+              "id": "oneassistant-calendar",
+              "type": "Custom:OneCalendar",
+              "label": "Bookings calendar",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 90,
+                "width": 1150,
+                "height": 435
+              },
+              "properties": {
+                "libraryComponentId": "OneCalendar",
+                "objectApiName": "Appointment",
+                "kind": "Calendar",
+                "startFieldApiName": "StartDateTime",
+                "endFieldApiName": "EndDateTime",
+                "titleFieldApiName": "Name",
+                "view": "month"
+              }
+            },
+            {
+              "id": "oneassistant-bookings-table",
+              "type": "Custom:OneTable",
+              "label": "Appointments and requests",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 550,
+                "width": 1150,
+                "height": 310
+              },
+              "properties": {
+                "libraryComponentId": "OneTable",
+                "objectApiName": "Appointment",
+                "kind": "Table",
+                "pageSize": 25,
+                "columns": [
+                  "Name",
+                  "StartDateTime",
+                  "EndDateTime",
+                  "BookingApprovalStatus__c",
+                  "BookingSource__c",
+                  "CustomerPhone__c"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "apiName": "ONE_ASSISTANT_SETUP",
+          "label": "Booking configuration",
+          "targetObject": "BookingService__c",
+          "pageType": "App Page",
+          "layoutMode": "free-canvas",
+          "canvasWidth": 1200,
+          "canvasHeight": 900,
+          "status": "Active",
+          "devices": [
+            "Desktop",
+            "Phone"
+          ],
+          "components": [
+            {
+              "id": "oneassistant-services-title",
+              "type": "Custom:OneText",
+              "label": "Services",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 10,
+                "width": 600,
+                "height": 50
+              },
+              "properties": {
+                "libraryComponentId": "OneText",
+                "text": "Services and booking policies",
+                "fontSize": 24
+              }
+            },
+            {
+              "id": "oneassistant-services",
+              "type": "Custom:OneTable",
+              "label": "Available services",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 80,
+                "width": 1150,
+                "height": 250
+              },
+              "properties": {
+                "libraryComponentId": "OneTable",
+                "objectApiName": "BookingService__c",
+                "kind": "Table",
+                "columns": [
+                  "Name",
+                  "DurationMinutes__c",
+                  "BufferMinutes__c",
+                  "RequiresQuote__c",
+                  "IsActive__c"
+                ]
+              }
+            },
+            {
+              "id": "oneassistant-hours",
+              "type": "Custom:OneTable",
+              "label": "Opening hours",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 345,
+                "width": 1150,
+                "height": 250
+              },
+              "properties": {
+                "libraryComponentId": "OneTable",
+                "objectApiName": "BookingBusinessHours__c",
+                "kind": "Table",
+                "columns": [
+                  "Name",
+                  "DayOfWeek__c",
+                  "StartTime__c",
+                  "EndTime__c",
+                  "ResourceId__c",
+                  "IsClosed__c"
+                ]
+              }
+            },
+            {
+              "id": "oneassistant-policies",
+              "type": "Custom:OneTable",
+              "label": "Booking policies",
+              "region": "main",
+              "visible": true,
+              "position": {
+                "x": 20,
+                "y": 610,
+                "width": 1150,
+                "height": 245
+              },
+              "properties": {
+                "libraryComponentId": "OneTable",
+                "objectApiName": "BookingPolicy__c",
+                "kind": "Table",
+                "columns": [
+                  "Name",
+                  "TimeZone__c",
+                  "SlotMinutes__c",
+                  "MinNoticeMinutes__c",
+                  "MaxAdvanceDays__c"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "flows": [
+        {
+          "apiName": "ONE_ASSISTANT_BOOKING_REQUEST",
+          "label": "OneAssistant — Request appointment or site visit",
+          "description": "Captures an appointment enquiry. Does not confirm or reserve a slot; the receptionist verifies availability before confirmation.",
+          "flowType": "Screen Flow",
+          "status": "Active",
+          "versionNumber": 1,
+          "activeVersion": 1,
+          "triggerObject": null,
+          "startConfig": {},
+          "elements": [
+            {
+              "id": 1,
+              "type": "Start",
+              "label": "Start",
+              "config": {}
+            },
+            {
+              "id": 2,
+              "type": "Screen",
+              "label": "Booking enquiry",
+              "config": {
+                "layout": "One Column",
+                "fields": [
+                  {
+                    "type": "Display Text",
+                    "label": "Enquiry",
+                    "text": "Send a booking enquiry. A receptionist confirms the date and time after checking availability."
+                  },
+                  {
+                    "type": "Text",
+                    "apiName": "CustomerName",
+                    "label": "Customer name",
+                    "required": true
+                  },
+                  {
+                    "type": "Text",
+                    "apiName": "CustomerPhone",
+                    "label": "Telephone",
+                    "required": true
+                  },
+                  {
+                    "type": "Text",
+                    "apiName": "ServiceRequested",
+                    "label": "Service required",
+                    "required": true
+                  },
+                  {
+                    "type": "Date",
+                    "apiName": "PreferredDate",
+                    "label": "Preferred date",
+                    "required": true
+                  },
+                  {
+                    "type": "Text",
+                    "apiName": "PreferredTime",
+                    "label": "Preferred time (e.g. 10:30)",
+                    "required": false
+                  },
+                  {
+                    "type": "Text",
+                    "apiName": "ServicePostcode",
+                    "label": "Postcode",
+                    "required": false
+                  },
+                  {
+                    "type": "Text",
+                    "apiName": "SiteNotes",
+                    "label": "Property/access details",
+                    "required": false
+                  }
+                ],
+                "outcomes": [
+                  {
+                    "name": "Submit",
+                    "label": "Send enquiry"
+                  }
+                ]
+              }
+            },
+            {
+              "id": 3,
+              "type": "Create Records",
+              "label": "Save booking request",
+              "config": {
+                "object": "Appointment",
+                "recordSource": "fields",
+                "fieldValues": [
+                  {
+                    "field": "Name",
+                    "value": "{!CustomerName}"
+                  },
+                  {
+                    "field": "CustomerName__c",
+                    "value": "{!CustomerName}"
+                  },
+                  {
+                    "field": "CustomerPhone__c",
+                    "value": "{!CustomerPhone}"
+                  },
+                  {
+                    "field": "RequestedService__c",
+                    "value": "{!ServiceRequested}"
+                  },
+                  {
+                    "field": "PreferredDate__c",
+                    "value": "{!PreferredDate}"
+                  },
+                  {
+                    "field": "PreferredTime__c",
+                    "value": "{!PreferredTime}"
+                  },
+                  {
+                    "field": "ServicePostcode__c",
+                    "value": "{!ServicePostcode}"
+                  },
+                  {
+                    "field": "SiteNotes__c",
+                    "value": "{!SiteNotes}"
+                  },
+                  {
+                    "field": "BookingSource__c",
+                    "value": "Reception"
+                  },
+                  {
+                    "field": "BookingApprovalStatus__c",
+                    "value": "Requested"
+                  }
+                ]
+              }
+            }
+          ],
+          "connectors": [
+            {
+              "id": "begin_enquiry",
+              "from": 1,
+              "to": 2,
+              "kind": "normal",
+              "label": ""
+            },
+            {
+              "id": "submit_enquiry",
+              "from": 2,
+              "to": 3,
+              "kind": "normal",
+              "label": "Submit"
+            }
+          ],
+          "resources": [
+            {
+              "name": "CustomerName",
+              "label": "CustomerName",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "CustomerPhone",
+              "label": "CustomerPhone",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "ServiceRequested",
+              "label": "ServiceRequested",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "PreferredDate",
+              "label": "PreferredDate",
+              "type": "Variable",
+              "dataType": "Date",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "PreferredTime",
+              "label": "PreferredTime",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "ServicePostcode",
+              "label": "ServicePostcode",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            },
+            {
+              "name": "SiteNotes",
+              "label": "SiteNotes",
+              "type": "Variable",
+              "dataType": "Text",
+              "isCollection": false,
+              "availableForInput": true,
+              "availableForOutput": false,
+              "value": ""
+            }
+          ],
+          "versions": []
+        }
+      ],
+      "profile": {
+        "id": "oneassistant-receptionist",
+        "label": "OneAssistant Receptionist",
+        "apiName": "OneAssistant_Receptionist",
+        "systemPermissions": [
+          "flows:run"
+        ],
+        "objectPermissions": {
+          "Appointment": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "AppointmentResource": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Contact": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "Resource": {
+            "read": true,
+            "create": false,
+            "edit": false,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "ResourceAvailability": {
+            "read": true,
+            "create": false,
+            "edit": false,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "BookingService__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "BookingBusinessHours__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          },
+          "BookingPolicy__c": {
+            "read": true,
+            "create": true,
+            "edit": true,
+            "delete": false,
+            "viewAll": false,
+            "modifyAll": false
+          }
+        },
+        "tabPermissions": {
+          "Appointment": true,
+          "AppointmentResource": true,
+          "Contact": true,
+          "Resource": true,
+          "ResourceAvailability": true,
+          "BookingService__c": true,
+          "BookingBusinessHours__c": true,
+          "BookingPolicy__c": true
         },
         "navigationDefaultAccess": "Deny"
       }
