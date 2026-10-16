@@ -3115,7 +3115,16 @@ flowRouteRegistrar.emailAlerts();
 flowRouteRegistrar.definitions();
 // Reuse the same validated permission assignments for all object and field checks
 // within a request, instead of repeatedly scanning profiles/sets for every cell.
-const { authorizationGrants, canNavigate, canOpenApp, canOpenTab, hasObjectPermission, hasObjectWidePermission, hasRoleHierarchyAccess, roleIsAtOrBelow, publicGroupContainsUser, queueContainsUser, sharingRuleMatchesRecord, sharingRuleGrantsUser, recordShareIndex, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions } = createCoreRecordAccess({ principalUser });
+const coreRecordAccess = createCoreRecordAccess({ principalUser });
+const { authorizationGrants, canNavigate, canOpenApp, canOpenTab, hasObjectPermission, hasObjectWidePermission,
+ hasRoleHierarchyAccess, publicGroupContainsUser, queueContainsUser, sharingRuleMatchesRecord,
+ sharingRuleGrantsUser, recordShareIndex, hasRecordAccess, sanitizeRecordForRead, assertFieldEditPermissions } = coreRecordAccess;
+function roleIsAtOrBelow(...args: Parameters<typeof coreRecordAccess.roleIsAtOrBelow>): boolean {
+ return coreRecordAccess.roleIsAtOrBelow(...args);
+}
+function hasFieldPermission(...args: Parameters<typeof coreRecordAccess.hasFieldPermission>): boolean {
+ return coreRecordAccess.hasFieldPermission(...args);
+}
 
 function profileIdForPrincipal(principal: Principal, tenant: TenantData): string {
   const user = principalUser(principal);

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { TenantData } from '../../core/state/types.js';
 import type { FlowRuntimeContext } from '../../index.js';
-import { formulaLocalDate } from '../../core/local-time.js';
+import { formulaLocalDate } from './formula-evaluator.js';
 import { evaluateFormula } from './formula-evaluator.js';
 import { evaluateCustomConditionLogic } from './condition-logic.js';
 
