@@ -60,6 +60,21 @@ async function performHttpCallout(
     : undefined;
   if (!connectionId && !namedCredential) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Named Credential or Integration Connection.`);
   if (connectionId && (!connection || !definition)) throw new Error(`HTTP Callout "${elementLabel}" references an unavailable Integration Connection or provider.`);
+  // Flow-scoped dynamic credentials cannot escape their declared app owners.
+  const appScope = config.allowedCredentialAppKeys;
+  if (appScope !== undefined) {
+    if (!Array.isArray(appScope) || appScope.length === 0 ||
+        !appScope.every((key: unknown) => typeof key === 'string' && key.length > 0)) {
+      throw new Error('Invalid credential app scope metadata.');
+    }
+    if (!namedCredential) throw new Error('Scoped Flow requires an existing Named Credential.');
+    const owners = (tenant.records.Connector_App__c ?? []).filter(
+      (app) => app.CredentialName__c === namedCredential.name
+    );
+    if (owners.length !== 1 || !appScope.includes(owners[0].AppKey__c)) {
+      throw new Error('Flow Named Credential is outside its authorised AppExchange scope.');
+    }
+  }
   if (namedCredential) {
     const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], namedCredential);
     if (!entitlement.allowed) throw new Error(entitlement.message);
