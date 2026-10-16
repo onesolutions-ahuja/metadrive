@@ -23,9 +23,11 @@ test('foundation: both workspaces have runnable development and production entry
   assert.ok(existsSync(resolve(root, 'apps/server/src/index.ts')));
 });
 
-test('foundation: the operator runbook explicitly names unresolved gates', () => {
-  const text = readFileSync(resolve(root, 'docs/PLATFORM_FOUNDATION.md'), 'utf8');
-  for (const phrase of ['Aiven', 'Temporal', 'tenant', 'read-after-restart', 'Partial']) {
-    assert.ok(text.includes(phrase), `missing runbook coverage: ${phrase}`);
+test('foundation: authoritative policy covers tenant, SQL, permissions and recovery', () => {
+  const policy = readFileSync(resolve(root, 'DEVELOPER_POLICY.md'), 'utf8');
+  for (const phrase of ['Tenant', 'SQL', 'OneEngine', 'Data Recovery', 'Lazy Loading']) {
+    assert.ok(policy.includes(phrase), 'missing policy coverage: ' + phrase);
   }
+  const scheduler = readFileSync(resolve(root, 'apps/server/src/scheduler/runtime-bootstrap.ts'), 'utf8');
+  assert.match(scheduler, /createPlatformScheduler/);
 });
