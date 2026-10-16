@@ -41,5 +41,7 @@ jobs:
         run: node scripts/metadata-architecture-audit.mjs --check
       - name: Validate shared contract and migration ownership
         run: node --test scripts/metadata-architecture-contract.test.mjs
+      - name: Verify Page Builder shared published registry migration
+        run: node --experimental-strip-types --test scripts/page-builder-core-palette.test.mjs
       - name: Verify Phase 1a–g acceptance and rollback dependencies
         run: node --test scripts/audit-platform-architecture.test.mjs scripts/phase1f-migration-dependencies.test.mjs scripts/phase1g-acceptance.test.mjs scripts/phase1-final-acceptance.test.mjs

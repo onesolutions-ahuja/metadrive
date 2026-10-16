@@ -1,3 +1,16 @@
+import type { LibraryComponentMetadata } from './metadata';
+
+/** Page Builder uses the published shared registry, never draft or unsupported definitions. */
+export function publishedPageLibraryComponents(components: readonly LibraryComponentMetadata[]): LibraryComponentMetadata[] {
+  const names = new Set<string>();
+  return components.filter(component => {
+    if (component.status === 'Draft' || !component.surfaces.includes('page') ||
+        !/^[A-Za-z][A-Za-z0-9_]*$/.test(component.apiName) || names.has(component.apiName)) return false;
+    names.add(component.apiName);
+    return true;
+  });
+}
+
 /** Platform palette groups are generic. Application-specific categories belong
  * to registered component metadata, not this shared Page Builder module. */
 export const pageBuilderPaletteCategories = [

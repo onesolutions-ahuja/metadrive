@@ -122,9 +122,8 @@ import {
   canvasUnitsFromScreenDelta
 } from './pageCanvas';
 import {
-  createComponentPreviewProps,
-  getPageBuilderComponentCategories,
-  pageBuilderPaletteCategories
+  createComponentPreviewProps, getPageBuilderComponentCategories,
+  publishedPageLibraryComponents, pageBuilderPaletteCategories
 } from './pageBuilderPalette';
 import {
   defaultFlow,
@@ -398,7 +397,7 @@ function PageBuilder({
       description: 'Group selected record fields into a one- or two-column section.',
       categories: ['Layout'] as (typeof pageBuilderPaletteCategories)[number][]
     }] : []),
-    ...libraryComponents.filter((component) => component.surfaces.includes('page')).map((component) => ({
+    ...publishedPageLibraryComponents(libraryComponents).map((component) => ({
       id: `Custom:${component.apiName}`,
       type: `Custom:${component.apiName}`,
       label: component.label,
