@@ -1,4 +1,5 @@
-import type { FlowMetadata } from '../../index.js';
+import type { FlowMetadata, TenantData } from '../../index.js';
+import { activeFlowDefinition } from './versioning.js';
 import { isValidFlowDateTime } from '../../modules/records/record-values.js';
 
 export function isValidFlowTime(value: string): boolean {
