@@ -30,6 +30,19 @@ export function useSetupMetadata(ctx: any) {
     const needsConnectorAdministration = isAdmin && (workspace === 'connector-settings' || needsFlowAdministration);
     const optionalGroups = [
       {
+        key: 'flow-definitions', enabled: needsFlowAdministration,
+        run: () => apiRequest<{flows: FlowDefinitionMetadata[]}>('/metadata/flows')
+          .then((payload) => {
+            const definitions = payload.flows ?? [];
+            flowSnapshots.current = new Map(definitions.map(item => [item.apiName, JSON.stringify(item)]));
+            setFlows(definitions);
+            if (definitions.length) {
+              setFlow(definitions[0]);
+              setSelectedFlowId(definitions[0].elements[0]?.id ?? 1);
+            }
+          })
+      },
+      {
         key: 'flow-admin', enabled: needsFlowAdministration,
         run: () => Promise.all([apiRequest('/metadata/platform-events'), apiRequest('/metadata/email-alerts')])
           .then(([events, alerts]) => { setPlatformEvents(events.platformEvents ?? []); setEmailAlerts(alerts.emailAlerts ?? []); })
@@ -165,7 +178,7 @@ export function useSetupMetadata(ctx: any) {
         }
         const [objectPayload, flowPayload, platformEventPayload, pagePayload, appPayload, credentialPayload, emailAlertPayload, approvalProcessPayload, providerPayload, integrationPayload, libraryPayload, dashboardPayload, folderPayload, territoryPayload, reportFolderPayload, reportPayload, sessionPayload] = await Promise.all([
           recover<{ objects: ObjectMetadata[] }>('/metadata/objects', { objects: [] }),
-          recover<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows', { flows: [] }),
+          Promise.resolve({ flows: [] as FlowDefinitionMetadata[] }), // Flow definitions belong to the Builder, not login.
           Promise.resolve({ platformEvents: [] as PlatformEventMetadata[] }),
           recover<{ pages: LightningPageMetadata[] }>('/metadata/pages', { pages: [] }),
           recover<{ apps: LightningAppMetadata[] }>('/metadata/apps', { apps: [] }),
@@ -195,13 +208,6 @@ export function useSetupMetadata(ctx: any) {
         if (objectPayload.objects.length) {
           setObjects(objectPayload.objects);
           setObject(objectPayload.objects.find((item) => item.apiName === object.apiName) ?? objectPayload.objects[0]);
-        }
-        if (flowPayload.flows.length) {
-          flowSnapshots.current = new Map(flowPayload.flows.map((item) =>
-            [item.apiName, JSON.stringify(item)]));
-          setFlows(flowPayload.flows);
-          setFlow(flowPayload.flows[0]);
-          setSelectedFlowId(flowPayload.flows[0].elements[0]?.id ?? 1);
         }
         setPlatformEvents(platformEventPayload.platformEvents);
         if (pagePayload.pages.length) {

@@ -29,3 +29,11 @@ test('offline writes remain encrypted, provisional and server-validated', () => 
   assert.ok(worker.includes("request.method !== 'GET'"));
   assert.ok(worker.includes("url.pathname.includes('/api/')"));
 });
+
+test('full Flow definitions load only when the Flow Builder is opened', () => {
+  const hook=read('../src/useSetupMetadata.ts');
+  assert.ok(hook.includes("key: 'flow-definitions', enabled: needsFlowAdministration"));
+  assert.ok(hook.includes("needsFlowAdministration = isAdmin && workspace === 'flow-builder'"));
+  assert.ok(hook.includes("Promise.resolve({ flows: [] as FlowDefinitionMetadata[] })"));
+  assert.ok(!hook.includes("recover<{ flows: FlowDefinitionMetadata[] }>('/metadata/flows'"));
+});
