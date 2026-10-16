@@ -1,0 +1,35 @@
+name: Existing Builder Browser E2E Acceptance
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/builder-e2e-acceptance.yml'
+      - 'apps/web/src/**'
+      - 'apps/server/src/**'
+      - 'scripts/md09-flow-binding-browser-smoke.mjs'
+      - 'scripts/md09-page-completion-browser-smoke.mjs'
+      - 'scripts/md07-browser-e2e.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  authenticated-builder-and-published-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Compile frontend and backend
+        run: npm run build
+      - name: Install browser
+        run: |
+          npm install --no-save --ignore-scripts playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Authenticated Page Builder and published Dashboard runtime
+        run: node scripts/md09-page-completion-browser-smoke.mjs
+      - name: Authenticated Page Builder save/reopen and published Flow execution
+        run: node scripts/md09-flow-binding-browser-smoke.mjs
