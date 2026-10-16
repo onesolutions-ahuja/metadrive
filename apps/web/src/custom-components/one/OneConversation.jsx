@@ -148,7 +148,7 @@ function ConversationInbox({props}) {
       {!thread.length&&<p className="one-empty">{props.emptyMessagesText||'No messages yet.'}</p>}
      </div>
      <form className="one-row one-conversation-compose" onSubmit={send}>
-      <input className="one-control" aria-label={props.messageLabel||'Message'} value={draft} disabled={busy}
+      <input className="one-control" aria-label={props.messageLabel||'Message'} value={draft}
        maxLength={Number(props.messageMaxLength)||4096} placeholder={props.placeholder||'Write a message…'}
        onChange={event=>setDraft(event.target.value)}/>
       <button className="one-btn one-btn--primary" type="submit" disabled={busy||!canSend||!draft.trim()}>{props.sendLabel||'Send'}</button>
