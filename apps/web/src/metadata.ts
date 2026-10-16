@@ -983,8 +983,7 @@ export const setupNavigation = [
 ];
 
 export type LightningAppMetadata = {
-  apiName: string;
-  installationAppKey?: string;
+  apiName: string; installationAppKey?: string;
   label: string;
   description: string;
   navigationItems: string[];
