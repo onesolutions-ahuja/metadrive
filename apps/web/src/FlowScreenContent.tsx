@@ -132,7 +132,7 @@ export default function FlowScreenContent({
       const alt = String(field.imageAltText ?? '');
       const definition = findRegisteredComponent(libraryComponents, 'OneImage', 'flow');
       // OneImage currently accepts HTTPS assets only; preserve existing legacy URLs.
-      if (definition && /^https:\\/\\//i.test(src)) return <RegisteredComponent key={name} definition={definition} props={{
+      if (definition && src.toLowerCase().startsWith('https://')) return <RegisteredComponent key={name} definition={definition} props={{
         kind: 'Image', src, alt, caption: label,
         ...componentLayoutProps(field, layoutDevice)
       }} />;
