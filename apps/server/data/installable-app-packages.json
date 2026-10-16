@@ -3,6 +3,13 @@
     {
       "appKey": "whatsapp",
       "installation": {
+        "flowMigrations": [
+          {
+            "elementType": "HTTP Callout",
+            "matchConfig": {"namedCredentialResource": "{!AuthorisedCredentialId}"},
+            "addConfig": {"allowedCredentialAppKeys": ["whatsapp"]}
+          }
+        ],
         "allowInstalledMetadataWithoutLicence": true,
         "repairMissingAdministratorPermissions": true,
         "administratorObjectPermissions": {
@@ -310,6 +317,7 @@
               "label": "Send via authorised WhatsApp account",
               "config": {
                 "namedCredentialResource": "{!AuthorisedCredentialId}",
+                "allowedCredentialAppKeys": ["whatsapp"],
                 "method": "POST",
                 "path": "{!AuthorisedMessagePath}",
                 "headers": "Content-Type: application/json",

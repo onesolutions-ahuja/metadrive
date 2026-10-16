@@ -20,11 +20,18 @@ export function activeConnectorFlowReferences(
     if (element.type !== 'HTTP Callout' && element.type !== 'Action') return false;
     const config = element.config ?? {};
     const selected = text(config.namedCredentialId);
-    // A dynamic binding could resolve to any app credential; fail closed.
+    // Dynamic references are fail-closed unless the Flow explicitly declares
+    // a credential owner scope; that same scope is enforced by HTTP runtime.
+    const scope = config.allowedCredentialAppKeys;
+    const declaredScope = Array.isArray(scope) && scope.length > 0 && scope.every(
+      (key: unknown) => typeof key === 'string' && key.length > 0
+    ) ? scope as string[] : null;
+    const dynamicDependency = Boolean(text(config.namedCredentialResource))
+      && (!declaredScope || declaredScope.includes(text(app.AppKey__c)));
     // Also check the configured API name before a Named Credential exists.
     return (Boolean(configuredName) && selected === configuredName)
       || (Boolean(credential) && selected === credential?.id)
-      || Boolean(text(config.namedCredentialResource));
+      || dynamicDependency;
   })).map((flow) => flow.label || flow.apiName);
 }
 
