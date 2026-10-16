@@ -1,7 +1,8 @@
 import type { Principal } from '../../auth.js';
 import type { TenantData, LocalUser } from '../../core/state/types.js';
 import type { RuntimeRecord } from '../../index.js';
-import type { DashboardMetadata, DashboardFilterMetadata, DashboardSubscription } from './schemas.js';
+import type { DashboardMetadata, DashboardFilterMetadata, DashboardSubscription, DashboardSnapshot } from './schemas.js';
+import { dashboardForUser } from './folder-access.js';
 import { dashboardSnapshotSchema } from './schemas.js';
 import { reportFilterMatches } from '../reports/report-metadata.js';
 import { matchesDashboardFilters, canAccessDashboard } from '../../dashboard-access.js';
@@ -23,9 +24,14 @@ export function createDashboardRuntime(deps: {
  hasFieldPermission: Runtime['hasFieldPermission'];
  effectivePermissions: Runtime['effectivePermissions'];
  sendTenantEmail: ReturnType<typeof createTenantEmailRuntime>['sendTenantEmail'];
+ formulaContextForUser: Runtime['formulaContextForUser'];
+ sanitizeDashboardRichText: Runtime['sanitizeDashboardRichText'];
+ reportFolderAccessLevelForUser: Runtime['reportFolderAccessLevelForUser'];
+ sanitizeRecordForRead: Runtime['sanitizeRecordForRead'];
 }) {
  const { getUsers, tenantData, persistTenantRecords, hasObjectPermission, hasRecordAccess,
-  hasFieldPermission, effectivePermissions, sendTenantEmail } = deps;
+  hasFieldPermission, effectivePermissions, sendTenantEmail, formulaContextForUser,
+  sanitizeDashboardRichText, reportFolderAccessLevelForUser, sanitizeRecordForRead } = deps;
 function dashboardEmailFilterMatches(record: RuntimeRecord, filter: DashboardFilterMetadata): boolean {
   return reportFilterMatches(record, filter);
 }

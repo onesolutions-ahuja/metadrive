@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { Request, Response } from 'express';
+import type { Principal } from '../../auth.js';
+import { profileIdForRole } from './role-helpers.js';
 import { performance } from 'node:perf_hooks';
 import { randomUUID, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { createRefreshToken, hashToken, type JwtService } from '../../auth.js';
@@ -17,12 +19,14 @@ export function createAuthenticationRuntime(deps: {
  refreshCookieName: string;
  isProduction: boolean;
  effectivePermissions: (user: LocalUser, tenant: TenantData) => string[];
+ hasFieldPermission: (principal: Principal, tenant: TenantData, objectName: string, fieldName: string, action: 'read' | 'edit') => boolean;
+ hasRecordTypeAccessForUser: (userId: string, tenant: TenantData, objectName: string, recordTypeId: string) => boolean;
  tenantData: (tenantId: string) => TenantData | undefined;
  persistState: (state: PlatformState) => void;
  withSecurityEvent: (tenant: TenantData, actorUserId: string, action: string, details?: Record<string, string>, targetUserId?: string) => TenantData;
 }) {
  const { platformStore, platformInitialization, jwtService, refreshCookieName, isProduction,
-  effectivePermissions, tenantData, persistState, withSecurityEvent } = deps;
+  effectivePermissions, hasFieldPermission, hasRecordTypeAccessForUser, tenantData, persistState, withSecurityEvent } = deps;
 function cookieValue(req: Request, name: string): string | undefined {
   const header = req.header('cookie');
   if (!header) return undefined;

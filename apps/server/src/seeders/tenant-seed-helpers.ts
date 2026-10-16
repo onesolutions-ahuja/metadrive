@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto';
+import { stampRecordAuditFields } from '../modules/records/record-actions.js';
 import { sealCredentialPayload } from '../core/credential-crypto.js';
 import { communicationObjectApiName } from '../communication-unification.js';
 import type { ObjectMetadata, FlowMetadata, RuntimeRecord, StoredNamedCredential, ConnectorSettings, ConnectorDefinition, IntegrationConnection } from '../index.js';
 
 /** Versioned tenant seed helpers for shared Objects, Flows, communications and connectors. */
 export function createTenantSeedHelpers(deps: {
+ baseObjects: ObjectMetadata[];
  fieldSchema: { parse(value: unknown): ObjectMetadata['fields'][number] };
  flowSchema: { parse(value: unknown): FlowMetadata };
  namedCredentialSchema: { parse(value: unknown): StoredNamedCredential };
 }) {
- const { fieldSchema, flowSchema, namedCredentialSchema } = deps;
+ const { baseObjects, fieldSchema, flowSchema, namedCredentialSchema } = deps;
 function connectorRecords(settings: ConnectorSettings[], ownerId: string): RuntimeRecord[] {
   const now = new Date().toISOString();
   return settings.map((setting) => stampRecordAuditFields({

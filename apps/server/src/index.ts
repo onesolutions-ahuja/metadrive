@@ -552,7 +552,7 @@ const createTenantDefaultsContext = {
 };
 export type CreateTenantDefaultsDependencies = typeof createTenantDefaultsContext;
 const { buildDefaultProfiles, defaultTenantData } = createTenantDefaults(createTenantDefaultsContext);
-const { connectorRecords, connectorDefinitionRecords, integrationConnectionRecord, whatsappDummyCredentialId, whatsappRouterFlow, whatsappContextFlow, migrateUneConnectorCredentials, seedWhatsappDummyCredential, relationshipApiName, withObjectDefaults, ensureCommunicationFields, ensureLeadStreetField } = createTenantSeedHelpers({ fieldSchema, flowSchema, namedCredentialSchema });
+const { connectorRecords, connectorDefinitionRecords, integrationConnectionRecord, whatsappDummyCredentialId, whatsappRouterFlow, whatsappContextFlow, migrateUneConnectorCredentials, seedWhatsappDummyCredential, relationshipApiName, withObjectDefaults, ensureCommunicationFields, ensureLeadStreetField } = createTenantSeedHelpers({ baseObjects, fieldSchema, flowSchema, namedCredentialSchema });
 const createStateHydrationContext = {
   get baseObjects() { return baseObjects; },
   get buildDefaultProfiles() { return buildDefaultProfiles; },
@@ -725,7 +725,7 @@ const accessAuthentication = createAccessAuthentication({
 });
 const authenticationRuntime = createAuthenticationRuntime({
  platformStore, platformInitialization, jwtService, refreshCookieName, isProduction,
- effectivePermissions, tenantData, persistState, withSecurityEvent
+ effectivePermissions, hasFieldPermission, hasRecordTypeAccessForUser, tenantData, persistState, withSecurityEvent
 });
 const { cookieValue, setRefreshCookie, clearRefreshCookie, issueRefreshSession, authenticatedLandingBootstrap, issueLoginResponse, mfaLoginChallenges, mfaEnrollments, mfaFailures, mfaChallengeTtlMs, sealMfaSecret, openMfaSecret, mfaCredentialReady, newMfaToken, mfaRateLimited, recordMfaFailure, revokeUserRefreshSessions, loginAttempts, userLoginFailures, recordUserLoginFailure, loginSchema } = authenticationRuntime;
 const provisioningSchema = z.object({
@@ -1858,7 +1858,8 @@ const validateFlow = createFlowValidator(flowValidationDependencies);
 
 const dashboardRuntime = createDashboardRuntime({
   getUsers: () => platformStore.state.users, tenantData, persistTenantRecords,
-  hasObjectPermission, hasRecordAccess, hasFieldPermission, effectivePermissions, sendTenantEmail
+  hasObjectPermission, hasRecordAccess, hasFieldPermission, effectivePermissions, sendTenantEmail,
+  formulaContextForUser, sanitizeDashboardRichText, reportFolderAccessLevelForUser, sanitizeRecordForRead
 });
 const dispatchScheduledFlows = createSchedulerRuntime({
  maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
