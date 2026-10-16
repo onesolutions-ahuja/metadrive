@@ -44,3 +44,5 @@ No new app, SQL schema or seeder is introduced. The five domain-route regression
 tests cover permission denial, tenant/navigation filtering, live state replacement,
 currency assignment conflicts and tenant-scoped persistence. Run them with
 `npm run pretest --workspace apps/server`; the normal server test command includes them.
+Existing path-filtered registry, completion, alias and relational CI workflows also
+watch `apps/server/src/modules/**`, preserving their coverage after extraction.

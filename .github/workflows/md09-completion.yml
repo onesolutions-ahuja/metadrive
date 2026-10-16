@@ -9,6 +9,7 @@ on:
       - 'apps/web/src/componentCatalog.ts'
       - 'apps/web/src/styles.css'
       - 'apps/server/src/index.ts'
+      - 'apps/server/src/modules/**'
       - 'scripts/md09-page-completion*'
       - '.github/workflows/md09-completion.yml'
   workflow_dispatch:

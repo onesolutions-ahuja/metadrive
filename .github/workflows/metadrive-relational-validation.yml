@@ -12,6 +12,7 @@ on:
       - 'apps/server/src/relational-tables.mjs'
       - 'apps/server/src/postgres-state.ts'
       - 'apps/server/src/index.ts'
+      - 'apps/server/src/modules/**'
       - 'apps/server/src/normalized-typed-records.mjs'
       - 'apps/server/scripts/prove-typed-records-on-restore.mjs'
       - 'apps/server/test/normalized-api.integration.test.mjs'
