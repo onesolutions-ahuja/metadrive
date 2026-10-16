@@ -7,10 +7,10 @@ import {workspaces,setupNavigation} from './metadata';
 type SetupWorkspace=typeof workspaces[number];
 export type PlatformWorkspaceDescriptor={
  id:string;label:string;group:string;
- permission:'metadata:read'|'metadata:write'|'security:read'|'platform:superadmin';
+ permission:'metadata:read'|'metadata:write'|'security:read'|'platform:tenants:manage';
 };
 const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission']>>={
- 'Tenant Management':'platform:superadmin',
+ 'Tenant Management':'platform:tenants:manage',
  'Object Manager':'metadata:read',
  'Company Settings':'metadata:read',
  'Company Information':'metadata:read',
@@ -57,7 +57,7 @@ export function validatePlatformEditorBinding(
  if(!workspace)return ['Unknown platform workspace'];
  if(!granted.has(workspace.permission))return ['Workspace permission denied'];
  if(!['view','edit'].includes(binding.mode))return ['Invalid editor mode'];
- if(binding.mode==='edit'&&!granted.has(workspace.permission==='security:read'?'security:manage':workspace.permission==='platform:superadmin'?'platform:superadmin':'metadata:write'))
+ if(binding.mode==='edit'&&!granted.has(workspace.permission==='security:read'?'security:manage':workspace.permission==='platform:tenants:manage'?'platform:tenants:manage':'metadata:write'))
   return ['Workspace edit permission denied'];
  if(binding.workspaceId==='object-manager'&&
    (typeof binding.objectApiName!=='string'||!availableObjectApiNames.has(binding.objectApiName)))
@@ -89,6 +89,6 @@ export function authorizePlatformNavigation(
 ):PlatformWorkspaceDescriptor|undefined{
  const descriptor=platformNavigationEntries().find(item=>item.label===label);
  if(!descriptor||!grants.has(descriptor.permission))return undefined;
- if(mode==='edit'&&!grants.has(descriptor.permission==='security:read'?'security:manage':descriptor.permission==='platform:superadmin'?'platform:superadmin':'metadata:write'))return undefined;
+ if(mode==='edit'&&!grants.has(descriptor.permission==='security:read'?'security:manage':descriptor.permission==='platform:tenants:manage'?'platform:tenants:manage':'metadata:write'))return undefined;
  return descriptor;
 }
