@@ -56,7 +56,9 @@ export function registerIntegrationsConnectorAppRoutes(deps: IntegrationsConnect
     const parsed = deps.z.object({ enabled: deps.z.boolean() }).strict().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'enabled must be boolean.' });
     const tenant = deps.tenantData(principal.tenantId)!;
-    const appRecord = (tenant.records.Connector_App__c ?? []).find((row) => row.AppKey__c === deps.routeParam(req, 'appKey'));
+    const matches = (tenant.records.Connector_App__c ?? []).filter((row) => row.AppKey__c === deps.routeParam(req, 'appKey'));
+    if (matches.length > 1) return res.status(409).json({ error: 'Conflicting AppExchange installation records.' });
+    const appRecord = matches[0];
     if (!appRecord) return res.status(404).json({ error: 'Connector not found.' });
     const credential = tenant.namedCredentials.find((row) => row.name === appRecord.CredentialName__c);
     if (!credential) return res.status(404).json({ error: 'Configure the connection first.' });
