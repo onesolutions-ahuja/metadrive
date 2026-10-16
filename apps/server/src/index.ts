@@ -5914,7 +5914,7 @@ const { resumeDueFlowInterviews, executeDueScheduledFlows, deliverPendingPlatfor
   flowConditionsMatch, formulaContextForUser, createFlowInterview, flowRetryDelayMs, executeFlow
 });
 
-const flowValidationDependencies = { asConfigRows, validateFlowFormulaSyntax, evaluateFormula, flowLocalDateTimeToInstant, isValidFlowDateTime, isValidFlowTime, libraryComponentVisible, z, getState: () => platformStore.state };
+const flowValidationDependencies = { asConfigRows, validateFlowFormulaSyntax, evaluateFormula, flowLocalDateTimeToInstant, isValidFlowDateTime, isValidFlowTime, libraryComponentVisible, z, dashboardTimeZoneSchema, evaluateCustomConditionLogic, isTestLoopbackSmtpUrl, isReservedHostname, isIP, isPublicAddress, activeFlowDefinition, parseSubflowMappings, isSafeFlowRegex, getState: () => platformStore.state };
 export type FlowValidationDependencies = typeof flowValidationDependencies;
 const validateFlow = createFlowValidator(flowValidationDependencies);
 
