@@ -28,7 +28,7 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
     const key = provisioningIdempotencyKey(req);
     const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
       parsed.data.adminName, parsed.data.email, parsed.data.password, 'provisioning-key', key,
-      parsed.data.developerDomain);
+      parsed.data.developerDomain, parsed.data.grantTenantDeveloperPolicyToAdmin === true);
     return res.status(created ? 201 : 200).json({
       tenantId: user.tenantId, administrator: { id: user.id, email: user.email }, replayed: !created
     });
