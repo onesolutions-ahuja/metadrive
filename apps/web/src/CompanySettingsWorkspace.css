@@ -20,3 +20,10 @@
 .company-workspace-section-contacts .company-profile-field:not([data-company-field="email"]):not([data-company-field="phone"]):not([data-company-field="website"]):not([data-company-field="addressLine1"]):not([data-company-field="addressLine2"]):not([data-company-field="city"]):not([data-company-field="postcode"]):not([data-company-field="country"]){display:none}
 .company-workspace-section-general .company-profile-field[data-company-field="email"],.company-workspace-section-general .company-profile-field[data-company-field="phone"],.company-workspace-section-general .company-profile-field[data-company-field="addressLine1"],.company-workspace-section-general .company-profile-field[data-company-field="addressLine2"],.company-workspace-section-general .company-profile-field[data-company-field="city"],.company-workspace-section-general .company-profile-field[data-company-field="postcode"],.company-workspace-section-general .company-profile-field[data-company-field="country"]{display:none}
 @media(max-width:720px){.company-workspace-tabs{flex-wrap:nowrap;overflow-x:auto}.company-workspace-tabs button{flex-shrink:0}}
+
+.company-profile-logo{display:flex;align-items:center;justify-content:center;width:102px;height:102px;border-radius:16px;background:#eaf0fc;color:#5573a3;font-size:12px;font-weight:650;overflow:hidden;border:1px solid #dbe4f1;margin-bottom:16px}
+.company-profile-logo img{height:100%;width:100%;object-fit:contain}
+.company-workspace-section-branding .company-settings-page>.surface.permission-section:not(.company-profile-section){display:none}
+.company-workspace-section-branding .company-profile-field:not([data-company-field="logoUrl"]){display:none}
+.company-workspace-section-general .company-profile-field[data-company-field="logoUrl"],.company-workspace-section-contacts .company-profile-field[data-company-field="logoUrl"],.company-workspace-section-business .company-profile-field[data-company-field="logoUrl"]{display:none}
+.company-workspace-section-business .company-profile-field:not([data-company-field="description"]):not([data-company-field="tradingName"]){display:none}
