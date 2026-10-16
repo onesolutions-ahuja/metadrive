@@ -47,7 +47,7 @@ export function renderSetupShell(ctx: any) {
             })} />
 
         </div>
-        {activeAppPage && <div className="header-page-context" aria-label="Current page">
+        {activeAppPage && <div className="header-page-context" aria-label="Current page" data-page-session-key={route.appId + ':' + route.pageApiName}>
           <span className="header-page-title">{activeAppPage.label}</span>
           {activeAppPage.components.filter((component: any) => component.visible !== false && typeof component.properties?.customerDisplayUrl === 'string' && component.properties.customerDisplayUrl.trim()).map((component: any) =>
             <button key={component.id} type="button" className="btn header-page-action"
