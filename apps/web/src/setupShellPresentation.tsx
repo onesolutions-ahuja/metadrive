@@ -444,12 +444,31 @@ export function renderSetupShell(ctx: any) {
             />
           )}
           {route.kind === 'setup' && workspace === 'company-settings' && <PlatformWorkspaceSurface workspace="company-settings" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} ><CompanySettingsWorkspace company={<CompanySettings canManage={canManageUserIdentities} />} domains={<PlatformPageSlot slotKey="domains"><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot>} developer={<PlatformPageSlot slotKey="developer-accounts"><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot>} usage={<PlatformPageSlot slotKey="usage"><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot>} recovery={<PlatformPageSlot slotKey="recovery"><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /></PlatformPageSlot>} mfa={<PlatformPageSlot slotKey="mfa"><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /></PlatformPageSlot>} emailRecovery={<PlatformPageSlot slotKey="email-recovery"><TenantEmailRecoverySettings canManage={canManageUserIdentities} /></PlatformPageSlot>} locks={<PlatformPageSlot slotKey="locks"><TenantUserLockSettings /></PlatformPageSlot>} sessions={<PlatformPageSlot slotKey="sessions"><AccountSessionSecurity onReauthenticate={onLogout} /></PlatformPageSlot>} audit={<PlatformPageSlot slotKey="audit"><TenantSecurityAudit /></PlatformPageSlot>} /></PlatformWorkspaceSurface>}
-          {route.kind === 'setup' && workspace === 'tenant-management' && !canManagePlatformTenants && <section role="alert" className="surface" style={{margin:24,padding:24,maxWidth:680,borderRadius:12}}>
-            <h1 style={{fontSize:22,margin:'0 0 10px'}}>Tenant Management access restricted</h1>
-            <p>This workspace requires the OneEngine Platform Developer policy. Your current session does not have the platform tenant-management permission.</p>
-            <p>Tenant Developer permissions manage your tenant, but do not grant platform-wide access to other tenants. An authorised Platform Developer must assign the appropriate platform policy.</p>
-            <button type="button" className="btn" onClick={()=>openSetupWorkspace('home')}>Back to Setup</button>
-          </section>}
+          {route.kind === 'setup' && workspace === 'tenant-management' && !canManagePlatformTenants && <PlatformWorkspaceSurface
+            workspace="company-settings" componentRuntime={protectedPageRuntime}
+            permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents}
+            device={runtimeFormFactor} canEditSystemPage={false}>
+            <section aria-label="My tenant management" className="company-workspace">
+              <header className="company-workspace-heading">
+                <div><p className="company-workspace-eyebrow">OneEngine / Tenant administration</p>
+                  <h1>My Tenant Management</h1>
+                  <p>Manage your own organisation through OneEngine permissions. Platform-wide tenant creation and management remain restricted to the Platform Developer policy.</p>
+                </div>
+              </header>
+              <CompanySettingsWorkspace
+                company={<CompanySettings canManage={canManageUserIdentities} />}
+                domains={<PlatformPageSlot slotKey="domains"><TenantDomains request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot>}
+                developer={<PlatformPageSlot slotKey="developer-accounts"><DeveloperAccountSettings request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot>}
+                usage={<PlatformPageSlot slotKey="usage"><TenantUsagePanel request={apiRequest} permitted={canManageUserIdentities} /></PlatformPageSlot>}
+                recovery={<PlatformPageSlot slotKey="recovery"><TenantRecoveryPanel request={apiRequest} operator={false} permitted={canManageUserIdentities} /></PlatformPageSlot>}
+                mfa={<PlatformPageSlot slotKey="mfa"><TenantMfaSettings onReauthenticate={onLogout} canManage={canManageUserIdentities} /></PlatformPageSlot>}
+                emailRecovery={<PlatformPageSlot slotKey="email-recovery"><TenantEmailRecoverySettings canManage={canManageUserIdentities} /></PlatformPageSlot>}
+                locks={<PlatformPageSlot slotKey="locks"><TenantUserLockSettings /></PlatformPageSlot>}
+                sessions={<PlatformPageSlot slotKey="sessions"><AccountSessionSecurity onReauthenticate={onLogout} /></PlatformPageSlot>}
+                audit={<PlatformPageSlot slotKey="audit"><TenantSecurityAudit /></PlatformPageSlot>}
+              />
+            </section>
+          </PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'tenant-management' && canManagePlatformTenants && <PlatformWorkspaceSurface workspace="tenant-management" componentRuntime={protectedPageRuntime} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} permitted={canManagePlatformTenants}><TenantManagement request={apiRequest} permitted={canManagePlatformTenants} /></PlatformWorkspaceSurface>}
           {route.kind === 'setup' && workspace === 'rbac' && <PlatformWorkspaceSurface workspace="rbac" componentRuntime={protectedPageRuntime} permitted={canReadSecurity} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}}><Permissions
             accessControl={accessControl}
