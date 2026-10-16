@@ -302,7 +302,7 @@ export default function RecordCatalogCart(props) {
     {!pageToolbarOwnsHeader && <header className="md-record-cart-header">
       <div><small>{p.eyebrow || 'SALES'}</small><h1>{p.title || 'Till'}</h1></div>
       <button type="button" onClick={openCustomerDisplay}>{p.displayButtonLabel || 'Open customer display'}</button>
-    </header>
+    </header>}
     {operations.length > 0 && <nav className="md-record-cart-operations" aria-label={p.operationsLabel || 'Operations'}>
       {operations.map(operation => <button type="button" key={operation.event}
         disabled={busy || paymentStatus === 'pending' || (operation.requiresSession === true && !sessionReady) || (operation.requiresNoSession === true && stateChannel?.exists)
