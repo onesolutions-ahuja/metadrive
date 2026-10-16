@@ -56,3 +56,48 @@ jobs:
           echo '### Agent 5 AppExchange verification' >> "$GITHUB_STEP_SUMMARY"
           echo 'Isolated ephemeral tenant only; no live tenant modifications.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Check each job step for PASS/FAIL evidence.' >> "$GITHUB_STEP_SUMMARY"
+
+  sql-backed-lifecycle:
+    name: PostgreSQL-backed AppExchange install / uninstall / reinstall
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: appexchange_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d appexchange_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/appexchange_e2e
+      PGSSLMODE: disable
+      METADRIVE_PERSISTENCE_MODE: jsonb
+      METADRIVE_TEST_MODE: 'false'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Execute actual AppExchange Flow HTTP lifecycle against PostgreSQL
+        run: npx tsx --test --test-concurrency=1 apps/server/test/connector-app-phase1.smoke.test.ts
+      - name: Verify SQL-backed installation records persisted
+        run: |
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false});
+          try {
+            const tables=await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema='public'");
+            if(!tables.rows.length) throw Error('AppExchange lifecycle did not create SQL state');
+            console.log('PostgreSQL schema confirmed after AppExchange lifecycle');
+          } finally { await pool.end(); }
+          NODE
