@@ -27,7 +27,7 @@ export function listSeedPackages(catalog) {
 
 /** Reconciliation keeps all existing AppExchange entitlement and uninstall gates. */
 export function reconcileInstalledAppSeeds(tenant,catalog,tenantId) {
-  return applyDeveloperAppGrants(tenant,applyInstallableAppPackages(tenant,catalog,tenantId),catalog?.packages??[]);
+  return reconcileDeviceDeveloperGrant(applyDeveloperAppGrants(tenant,applyInstallableAppPackages(tenant,catalog,tenantId),catalog?.packages??[]));
 }
 
 /**
@@ -78,4 +78,30 @@ export function applyDeveloperAppGrants(before, after, packages) {
   const permissionSets=[...after.accessControl.permissionSets];
   permissionSets[policyIndex]={...policy,objectPermissions,fieldPermissions,appPermissions};
   return {...after,accessControl:{...after.accessControl,permissionSets}};
+}
+
+/**
+ * Reconcile the tenant-scoped developer policy for an existing Named Devices
+ * object. Older tenants can contain this metadata without its initial grant.
+ * Explicit policy entries (including denies) remain authoritative. This does
+ * not change user assignments, other profiles, or tenant/platform isolation.
+ */
+export function reconcileDeviceDeveloperGrant(tenant) {
+  const object=(tenant.objects??[]).find(item=>item.apiName==='NamedDevice__c');
+  if(!object)return tenant;
+  const sets=tenant.accessControl?.permissionSets??[];
+  const index=sets.findIndex(item=>item.id==='oneengine-tenant-developer');
+  if(index<0)return tenant;
+  const policy=sets[index];
+  if(Object.hasOwn(policy.objectPermissions??{},object.apiName))return tenant;
+  const objectPermissions={...(policy.objectPermissions??{}),
+    [object.apiName]:{read:true,create:true,edit:true,delete:true,viewAll:true,modifyAll:true}};
+  const fieldPermissions={...(policy.fieldPermissions??{})};
+  for(const field of object.fields??[]){
+    const key=object.apiName+'.'+field.apiName;
+    if(!Object.hasOwn(fieldPermissions,key))fieldPermissions[key]={read:true,edit:true};
+  }
+  const permissionSets=[...sets];
+  permissionSets[index]={...policy,objectPermissions,fieldPermissions};
+  return {...tenant,accessControl:{...tenant.accessControl,permissionSets}};
 }
