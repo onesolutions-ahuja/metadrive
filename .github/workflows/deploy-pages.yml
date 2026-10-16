@@ -13,7 +13,9 @@ permissions:
 
 concurrency:
   group: metadrive-pages
-  cancel-in-progress: true
+  # Never interrupt an in-progress Pages asset publication. Old tabs handle
+  # the transition via guarded lazy-chunk refresh rather than broken routes.
+  cancel-in-progress: false
 
 jobs:
   deploy:
