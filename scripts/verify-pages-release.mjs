@@ -34,12 +34,12 @@ const emittedAssets = new Set(assetNames);
 // Vite splits app workspaces into content-hashed lazy modules. Validate the full
 // emitted dynamic import graph, not only the initial marketing JS/CSS.
 const dynamicImports = [...new Set(jsAssets.flatMap(asset =>
-  [...asset.content.matchAll(/\\bimport\\(\\s*["']\\.\\/([^"'?#]+\\.js)["']\\s*\\)/g)]
+  [...asset.content.matchAll(/\bimport\(\s*["']\.\/([^"'?#]+\.js)["']\s*\)/g)]
     .map(match => match[1])))];
 assert(dynamicImports.length > 0, 'No dynamic modules found: unexpectedly eager Pages bundle');
 for (const name of dynamicImports)
   assert(emittedAssets.has(name), 'Published build references missing lazy module: ' + name);
-const runtimeChunkName = assetNames.find(name => /^pageRuntimeViews-[A-Za-z0-9_-]+\\.js$/.test(name));
+const runtimeChunkName = assetNames.find(name => /^pageRuntimeViews-[A-Za-z0-9_-]+\.js$/.test(name));
 assert(runtimeChunkName, 'Authenticated page runtime missing from Pages artifact');
 const runtimeChunk = await read('assets/' + runtimeChunkName);
 
