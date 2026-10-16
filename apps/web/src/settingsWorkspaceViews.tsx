@@ -613,7 +613,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
     }));
   };
 
-  return <div className="home-content settings-read-first-page">
+  return <div className="home-content settings-read-first-page company-settings-page">
     <PageHeading eyebrow="Company Settings" title="Company Information"
       description="View your corporate currency and active conversion rates used by currency formulas." />
     <section className="surface permission-section">
