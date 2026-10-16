@@ -21,7 +21,7 @@ export function loadAppSeedCatalog() {
     propertyDefinitions: [component.propertyDefinitions?.[0],
       ...coreCatalog.commonProperties, ...(component.propertyDefinitions ?? []).slice(1)]
   }));
-  if (!Array.isArray(coreComponents) || coreComponents.length !== 40)
+  if (!Array.isArray(coreComponents) || coreComponents.length !== 41)
     throw Error('Invalid One component catalog');
   const names = new Set();
   for (const component of coreComponents) {

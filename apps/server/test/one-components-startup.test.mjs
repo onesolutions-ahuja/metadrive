@@ -14,15 +14,16 @@ test('Core bundles reconcile with existing 39 entries without dropping tenant de
  const tenantOwned={apiName:'CustomerOwnedComponent',tenantId:'tenant-1',trustedBundled:false,version:3};
  const inputs=[...recovered,tenantOwned];
  const first=ensureBundledAppComponents(inputs, {records:{}}, catalog,manifestRoot);
- assert.equal(first.length,80);
- assert.equal(first.filter(x=>x.apiName.startsWith('One')).length,40);
+ assert.equal(first.length,81);
+ assert.equal(first.filter(x=>x.apiName.startsWith('One')).length,41);
  assert.ok(first.some(x=>x===tenantOwned));
  const second=ensureBundledAppComponents(first, {records:{}}, catalog,manifestRoot);
- assert.equal(second.length,80);
+ assert.equal(second.length,81);
  assert.deepEqual(second.map(x=>x.apiName), first.map(x=>x.apiName));
 });
 test('Server startup schedules Core registration and maintenance prevents writes',()=>{
  const source=readFileSync(resolve(dir,'src/index.ts'),'utf8');
- const callback=source.slice(source.lastIndexOf('app.listen(port,'));
- assert.match(callback,/if \(!maintenanceMode\)[\s\S]*?syncBundledLibraryComponents\(\)/);
+ const startup=readFileSync(resolve(dir,'src/bootstrap/startup.ts'),'utf8');
+ assert.match(source,/syncComponents:\s*syncBundledLibraryComponents/);
+ assert.match(startup,/if \(!maintenanceMode\) void hooks\.syncComponents\(\)/);
 });

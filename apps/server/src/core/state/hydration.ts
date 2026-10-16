@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 import { readFileSync } from 'node:fs';
-import { repairHistoricPackageRecordAudits, retireUninstalledPackageMetadata } from '../../installable-app-packages.mjs';
+import { repairHistoricPackageRecordAudits, repairPackagedAppPageAssignments, retireUninstalledPackageMetadata } from '../../installable-app-packages.mjs';
 import { migrateLegacyWhatsappRecords, migrateLegacyWhatsappFlow, addStarterBeautyAlias, legacyWhatsappObjectApiName } from '../../communication-unification.js';
 import { defaultRoles, roleApiNameForName, roleIdForName, profileIdForRole } from '../../modules/security/role-helpers.js';
 import { randomUUID } from 'node:crypto';
@@ -55,6 +55,7 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
       const storedState: unknown = sqlState ?? JSON.parse(readFileSync(deps.dataPath, 'utf8'));
       const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
       const legacySeedAuditRepaired = repairHistoricPackageRecordAudits(storedState, deps.installableAppCatalog);
+      const appPageAssignmentsRepaired = repairPackagedAppPageAssignments(storedState, deps.installableAppCatalog);
       const parsed = parsePersistedPlatformState(storedState);
       const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
         const consolidationReady = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
@@ -344,7 +345,8 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
         migrated.tenants[tenantId] = removeObjectMetadata(tenant, legacyWhatsappObjectApiName);
         console.info('Retired unused legacy WhatsApp object metadata', { tenantId });
       }
-      if (!deps.maintenanceMode && (leadStreetFieldAdded || legacySeedAuditRepaired || JSON.stringify(migrated) !== JSON.stringify(parsed))) deps.persistState(migrated);
+      if (!deps.maintenanceMode && (leadStreetFieldAdded || legacySeedAuditRepaired
+        || appPageAssignmentsRepaired || JSON.stringify(migrated) !== JSON.stringify(parsed))) deps.persistState(migrated);
       return migrated;
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {

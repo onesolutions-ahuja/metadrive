@@ -14,7 +14,7 @@
   "components": [
     {
       "id": "chatter-inbox",
-      "type": "Custom:ChatterInbox",
+      "type": "Custom:OneConversation",
       "label": "Chatter Inbox",
       "region": "main",
       "visible": true,
@@ -25,9 +25,12 @@
         "height": 800
       },
       "properties": {
-        "libraryComponentId": "ChatterInbox",
+        "libraryComponentId": "OneConversation",
         "title": "Chatter",
         "accentColor": "#168657",
+        "viewMode": "inbox",
+        "enableNewConversation": true,
+        "searchPlaceholder": "Search name or number",
         "conversationsObjectApiName": "Communication_Records__c",
         "messagesObjectApiName": "Communication_Records__c",
         "channelAccountObjectApiName": "Connector_App__c",

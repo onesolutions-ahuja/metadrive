@@ -12,6 +12,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));
 const one = read('apps/web/src/custom-components/one/manifest.json');
 const legacy = read('apps/web/src/custom-components/manifest.json');
+const packageCatalog = read('apps/server/data/installable-app-packages.json');
 const contract = read('contracts/component-reference-compatibility.v1.json');
 const candidates = {
   SystemPanel: ['OneCard', 'OneText'], AdminField: ['OneInput', 'OneSelect'],
@@ -30,7 +31,7 @@ function files(path, out=[]) {
   }
   return out;
 }
-export function audit({oneManifest=one, legacyManifest=legacy, sources=[]}={}) {
+export function audit({oneManifest=one, legacyManifest=legacy, appCatalog=packageCatalog, sources=[]}={}) {
   const defs=oneManifest.components ?? [];
   const names=new Set();
   const failures=[];
@@ -41,11 +42,21 @@ export function audit({oneManifest=one, legacyManifest=legacy, sources=[]}={}) {
     if(!item.jsxFile || !item.cssFile || !item.propertyDefinitions?.length) failures.push('incomplete registration: '+item.apiName);
     if(!item.surfaces?.includes('page') || !item.surfaces?.includes('flow')) failures.push('missing page/flow surface: '+item.apiName);
   }
-  if(defs.length!==40) failures.push('expected 40 One components, found '+defs.length);
+  if(defs.length!==41) failures.push('expected 41 One components, found '+defs.length);
   if(!Array.isArray(oneManifest.commonProperties) || oneManifest.commonProperties.length===0) failures.push('common property schema absent');
-  const legacyNames=legacyManifest.map(x=>x.apiName);
-  const mapping=legacyNames.map(apiName=>({
+  const appComponents=(appCatalog.packages??[]).flatMap(pkg=>(pkg.components??[]).map(component=>({
+    apiName:component.apiName,appKey:pkg.appKey
+  })));
+  const legacyEntries=new Map(legacyManifest.map(component=>[component.apiName,{apiName:component.apiName,appKeys:new Set()}]));
+  for(const component of appComponents){
+    const entry=legacyEntries.get(component.apiName)??{apiName:component.apiName,appKeys:new Set()};
+    entry.appKeys.add(component.appKey);
+    legacyEntries.set(component.apiName,entry);
+  }
+  const legacyNames=[...legacyEntries.keys()];
+  const mapping=[...legacyEntries.values()].map(({apiName,appKeys})=>({
     existing:apiName,
+    ...(appKeys.size?{appKeys:[...appKeys].sort()}:{}),
     candidates:(candidates[apiName]??[]).filter(n=>names.has(n)),
     disposition:'manual review required',
     automaticReplacementAllowed:false,
@@ -59,7 +70,9 @@ export function audit({oneManifest=one, legacyManifest=legacy, sources=[]}={}) {
     liveTenantReferences:'NOT_INSPECTED'
   }));
   return {schemaVersion:1,mode:'read-only-source-inventory',
-    counts:{oneComponents:defs.length,legacyCustomComponents:legacyManifest.length,scannedFiles:sources.length},
+    counts:{oneComponents:defs.length,legacyCustomComponents:legacyManifest.length,
+      appPackageComponents:appComponents.length,scannedFiles:sources.length},
+    appComponents,
     commonProperties:oneManifest.commonProperties.map(x=>x.propertyKey),
     oneComponents:defs.map(x=>({apiName:x.apiName,label:x.label,category:x.category,
       surfaces:x.surfaces,asset:x.jsxFile,propertyKeys:x.propertyDefinitions.map(p=>p.propertyKey)})),

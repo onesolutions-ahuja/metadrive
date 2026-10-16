@@ -5,6 +5,7 @@
  * No component replacement is attempted without a separately approved mapping.
  */
 import { pathToFileURL } from 'node:url';
+import { postgresConnectionOptions } from './postgres-connection.mjs';
 
 export function inventoryPageComponentReferences(rows) {
   const counts = new Map();
@@ -70,7 +71,7 @@ async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is required');
   const { default: pg } = await import('pg');
-  const client = new pg.Client({connectionString: url});
+  const client = new pg.Client(postgresConnectionOptions(url));
   try {
     await client.connect();
     await client.query('BEGIN READ ONLY');

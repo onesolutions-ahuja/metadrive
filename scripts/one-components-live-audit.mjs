@@ -22,7 +22,7 @@ assert.equal(typeof login.access_token,'string','Authentication must return acce
 assert.ok(login.user?.tenantId,'Tenant-scoped user required');
 const registry=await api('/component-library',login.access_token);
 const definitions=(registry.components??[]).filter(item=>/^One[A-Za-z]+$/.test(item.apiName));
-assert.equal(definitions.length,40,'Exactly 40 One Core library definitions');
+assert.equal(definitions.length,41,'Exactly 41 One Core library definitions');
 assert.equal(new Set(definitions.map(item=>item.apiName)).size,40,'No duplicate One API names');
 for(const component of definitions){
   assert.equal(component.status,'Published',component.apiName);

@@ -431,7 +431,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -468,6 +468,13 @@
           "label": "Subtitle",
           "kind": "TEXT",
           "displayOrder": 310,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "description",
+          "label": "Description",
+          "kind": "TEXT",
+          "displayOrder": 320,
           "defaultValue": ""
         }
       ]
@@ -1123,7 +1130,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1229,6 +1236,76 @@
           "kind": "BOOLEAN",
           "displayOrder": 330,
           "defaultValue": false
+        },
+        {
+          "propertyKey": "disabled",
+          "label": "Disabled",
+          "kind": "BOOLEAN",
+          "displayOrder": 340,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "value",
+          "label": "Value",
+          "kind": "TEXT",
+          "displayOrder": 350,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "helpText",
+          "label": "Help text",
+          "kind": "TEXT",
+          "displayOrder": 360,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "description",
+          "label": "Description",
+          "kind": "TEXT",
+          "displayOrder": 370,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "multiline",
+          "label": "Multiline",
+          "kind": "BOOLEAN",
+          "displayOrder": 380,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "rows",
+          "label": "Rows",
+          "kind": "NUMBER",
+          "displayOrder": 390,
+          "defaultValue": 2
+        },
+        {
+          "propertyKey": "maxLength",
+          "label": "Maximum length",
+          "kind": "NUMBER",
+          "displayOrder": 400,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "minLength",
+          "label": "Minimum length",
+          "kind": "NUMBER",
+          "displayOrder": 410,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "pattern",
+          "label": "Validation pattern",
+          "kind": "TEXT",
+          "displayOrder": 420,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "autoComplete",
+          "label": "Browser autocomplete",
+          "kind": "TEXT",
+          "displayOrder": 430,
+          "defaultValue": ""
         }
       ]
     },
@@ -2288,9 +2365,9 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 4,
       "scope": "platform-core",
-      "jsxFile": "one/OneData.jsx",
+      "jsxFile": "one/OneConversation.jsx",
       "cssFile": "one/one.css",
       "resize": {
         "defaultWidth": 660,
@@ -2319,6 +2396,345 @@
           "kind": "TEXT",
           "displayOrder": 300,
           "defaultValue": "Write a message…"
+        },
+        {
+          "propertyKey": "viewMode",
+          "label": "Conversation view",
+          "kind": "SELECT",
+          "displayOrder": 310,
+          "defaultValue": "thread",
+          "choices": [
+            {"key":"thread","label":"Message thread"},
+            {"key":"inbox","label":"Conversation inbox"}
+          ]
+        },
+        {
+          "propertyKey": "enableNewConversation",
+          "label": "Enable new conversations",
+          "kind": "BOOLEAN",
+          "displayOrder": 315,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "title",
+          "label": "Title",
+          "kind": "TEXT",
+          "displayOrder": 325,
+          "defaultValue": "Conversations"
+        },
+        {
+          "propertyKey": "searchPlaceholder",
+          "label": "Search placeholder",
+          "kind": "TEXT",
+          "displayOrder": 335,
+          "defaultValue": "Search conversations"
+        },
+        {
+          "propertyKey": "conversationsObjectApiName",
+          "label": "Conversation object",
+          "kind": "TEXT",
+          "displayOrder": 340,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "messagesObjectApiName",
+          "label": "Message object",
+          "kind": "TEXT",
+          "displayOrder": 350,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "channelAccountObjectApiName",
+          "label": "Account object",
+          "kind": "TEXT",
+          "displayOrder": 360,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "contactsObjectApiName",
+          "label": "Contact object",
+          "kind": "TEXT",
+          "displayOrder": 370,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "recordPresenterApiName",
+          "label": "Record presentation",
+          "kind": "TEXT",
+          "displayOrder": 380,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "restrictToAssigned",
+          "label": "Restrict to assigned conversations",
+          "kind": "BOOLEAN",
+          "displayOrder": 390,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "enableAssignment",
+          "label": "Enable assignment actions",
+          "kind": "BOOLEAN",
+          "displayOrder": 400,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "messageMaxLength",
+          "label": "Maximum message length",
+          "kind": "NUMBER",
+          "displayOrder": 420,
+          "defaultValue": 4096
+        },
+        {
+          "propertyKey": "emptyTitle",
+          "label": "Empty conversation title",
+          "kind": "TEXT",
+          "displayOrder": 430,
+          "defaultValue": "Select a conversation"
+        },
+        {
+          "propertyKey": "recordViewAdapter",
+          "label": "Record view adapter",
+          "kind": "TEXT",
+          "displayOrder": 440,
+          "defaultValue": ""
+        }
+      ]
+    },
+    {
+      "apiName": "OneShoppingCart",
+      "label": "One-Shopping-Cart",
+      "category": "Data",
+      "description": "Universal product catalogue, basket and paired-display presentation; server Flows own checkout and permissions.",
+      "surfaces": [
+        "page",
+        "dashboard",
+        "flow"
+      ],
+      "version": 1,
+      "scope": "platform-core",
+      "jsxFile": "one/OneShoppingCart.jsx",
+      "cssFile": "one/one.css",
+      "resize": {
+        "defaultWidth": 900,
+        "defaultHeight": 650,
+        "minWidth": 320,
+        "minHeight": 320
+      },
+      "propertyDefinitions": [
+        {
+          "propertyKey": "kind",
+          "label": "Component kind",
+          "kind": "SELECT",
+          "required": true,
+          "defaultValue": "ShoppingCart",
+          "displayOrder": 0,
+          "choices": [
+            {
+              "key": "ShoppingCart",
+              "label": "One-Shopping-Cart"
+            }
+          ]
+        },
+        {
+          "propertyKey": "viewMode",
+          "label": "Presentation",
+          "kind": "SELECT",
+          "displayOrder": 300,
+          "defaultValue": "till",
+          "choices": [
+            {"key":"till","label":"Product catalogue and basket"},
+            {"key":"display","label":"Paired customer display"}
+          ]
+        },
+        {
+          "propertyKey": "title",
+          "label": "Title",
+          "kind": "TEXT",
+          "displayOrder": 305,
+          "defaultValue": "Shopping cart"
+        },
+        {
+          "propertyKey": "nameFieldApiName",
+          "label": "Product name field",
+          "kind": "TEXT",
+          "displayOrder": 310,
+          "defaultValue": "Name"
+        },
+        {
+          "propertyKey": "priceFieldApiName",
+          "label": "Product price field",
+          "kind": "TEXT",
+          "displayOrder": 320,
+          "defaultValue": "DefaultPrice"
+        },
+        {
+          "propertyKey": "barcodeFieldApiName",
+          "label": "Barcode field",
+          "kind": "TEXT",
+          "displayOrder": 330,
+          "defaultValue": "Barcode"
+        },
+        {
+          "propertyKey": "skuFieldApiName",
+          "label": "SKU field",
+          "kind": "TEXT",
+          "displayOrder": 340,
+          "defaultValue": "SKU"
+        },
+        {
+          "propertyKey": "imageFieldApiName",
+          "label": "Product image field",
+          "kind": "TEXT",
+          "displayOrder": 350,
+          "defaultValue": "ImageURL"
+        },
+        {
+          "propertyKey": "ageRestrictedFieldApiName",
+          "label": "Age restriction field",
+          "kind": "TEXT",
+          "displayOrder": 360,
+          "defaultValue": "AgeRestricted"
+        },
+        {
+          "propertyKey": "vatApplicableFieldApiName",
+          "label": "VAT applicability field",
+          "kind": "TEXT",
+          "displayOrder": 370,
+          "defaultValue": "VATApplicable"
+        },
+        {
+          "propertyKey": "customerDisplayUrl",
+          "label": "Customer display URL",
+          "kind": "TEXT",
+          "displayOrder": 380,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "currencyCode",
+          "label": "Currency code",
+          "kind": "TEXT",
+          "displayOrder": 390,
+          "defaultValue": "GBP"
+        },
+        {
+          "propertyKey": "showVatTotal",
+          "label": "Show VAT total",
+          "kind": "BOOLEAN",
+          "displayOrder": 400,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "stateSyncEnabled",
+          "label": "Synchronise paired display through Flow",
+          "kind": "BOOLEAN",
+          "displayOrder": 410,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "stateReadFlowApiName",
+          "label": "State read Flow",
+          "kind": "TEXT",
+          "displayOrder": 420,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "stateWriteFlowApiName",
+          "label": "State write Flow",
+          "kind": "TEXT",
+          "displayOrder": 430,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "stateObjectApiName",
+          "label": "State object",
+          "kind": "TEXT",
+          "displayOrder": 440,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "stateValueFieldApiName",
+          "label": "State value field",
+          "kind": "TEXT",
+          "displayOrder": 450,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "stateVersionFieldApiName",
+          "label": "State revision field",
+          "kind": "TEXT",
+          "displayOrder": 460,
+          "defaultValue": ""
+        },
+        {
+          "propertyKey": "stateKeyInput",
+          "label": "State key input",
+          "kind": "TEXT",
+          "displayOrder": 470,
+          "defaultValue": "Key"
+        },
+        {
+          "propertyKey": "stateValueInput",
+          "label": "State value input",
+          "kind": "TEXT",
+          "displayOrder": 480,
+          "defaultValue": "Value"
+        },
+        {
+          "propertyKey": "stateValueOutput",
+          "label": "State value output",
+          "kind": "TEXT",
+          "displayOrder": 490,
+          "defaultValue": "Value"
+        },
+        {
+          "propertyKey": "stateVersionOutput",
+          "label": "State revision output",
+          "kind": "TEXT",
+          "displayOrder": 500,
+          "defaultValue": "Version"
+        },
+        {
+          "propertyKey": "stateRecordIdOutput",
+          "label": "State record output",
+          "kind": "TEXT",
+          "displayOrder": 510,
+          "defaultValue": "RecordId"
+        },
+        {
+          "propertyKey": "statePollIntervalMs",
+          "label": "State polling interval (ms)",
+          "kind": "NUMBER",
+          "displayOrder": 520,
+          "defaultValue": 1500
+        },
+        {
+          "propertyKey": "stateSessionQueryParam",
+          "label": "Display session query parameter",
+          "kind": "TEXT",
+          "displayOrder": 530,
+          "defaultValue": "displaySession"
+        },
+        {
+          "propertyKey": "operationEvents",
+          "label": "Configured operation events",
+          "kind": "TEXT",
+          "displayOrder": 540,
+          "defaultValue": "[]"
+        },
+        {
+          "propertyKey": "standalonePresentation",
+          "label": "Standalone paired display",
+          "kind": "BOOLEAN",
+          "displayOrder": 550,
+          "defaultValue": false
+        },
+        {
+          "propertyKey": "storeName",
+          "label": "Store name",
+          "kind": "TEXT",
+          "displayOrder": 560,
+          "defaultValue": "Welcome"
         }
       ]
     },

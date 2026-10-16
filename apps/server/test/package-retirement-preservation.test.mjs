@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {
   applyInstallableAppPackages, retireUninstalledPackageMetadata,
-  repairHistoricPackageRecordAudits
+  repairHistoricPackageRecordAudits, repairPackagedAppPageAssignments
 } from '../src/installable-app-packages.mjs';
 import {ensureBundledAppComponents} from '../src/bundled-app-components.mjs';
 
@@ -70,6 +70,36 @@ test('manual tenant apps are preserved without a matching original installation 
   const before=fixture();
   before.records.Connector_App__c=[{AppKey__c:'whatsapp'}];
   assert.strictEqual(retireUninstalledPackageMetadata(before,catalog),before);
+});
+
+test('repairs only navigable, package-generated App Page activation assignments',()=>{
+  const pageApiName='UK_OFFLICENCE_CUSTOMER';
+  const appId='UKOffLicenceApp';
+  const assignmentId='package-uk-offlicence-pos-customer-default';
+  const raw={tenants:{tenant:{
+    apps:[{apiName:appId,navigationOrder:[{type:'App Page',apiName:pageApiName}]}],
+    pages:[{apiName:pageApiName,pageType:'App Page',activationAssignments:[
+      {id:assignmentId,appId,scope:'App Default'},
+      {id:'tenant-custom-assignment',appId,scope:'App Default'}
+    ]}]
+  }}};
+  assert.equal(repairPackagedAppPageAssignments(raw,catalog),true);
+  assert.deepEqual(raw.tenants.tenant.pages[0].activationAssignments,[
+    {id:'tenant-custom-assignment',appId,scope:'App Default'}
+  ]);
+  assert.equal(repairPackagedAppPageAssignments(raw,catalog),false);
+});
+
+test('retains generated App Page assignments when the page is not app navigation',()=>{
+  const pageApiName='UK_OFFLICENCE_CUSTOMER';
+  const raw={tenants:{tenant:{
+    apps:[{apiName:'UKOffLicenceApp',navigationOrder:[]}],
+    pages:[{apiName:pageApiName,pageType:'App Page',activationAssignments:[
+      {id:'package-uk-offlicence-pos-customer-default',appId:'UKOffLicenceApp',scope:'App Default'}
+    ]}]
+  }}};
+  assert.equal(repairPackagedAppPageAssignments(raw,catalog),false);
+  assert.equal(raw.tenants.tenant.pages[0].activationAssignments.length,1);
 });
 
 test('a newly registered package with a reused key overrides historic retirement',()=>{

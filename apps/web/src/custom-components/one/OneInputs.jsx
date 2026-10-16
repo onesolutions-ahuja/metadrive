@@ -8,9 +8,18 @@ export default function OneInputs(p){
  const current=p.value!==undefined?p.value:local;
  const set=value=>{setLocal(value);fire(p,'change',value)};
  const label=p.label||kind;
- const wrap=child=><div {...root}><label className="one-label">{label}{child}{p.helpText&&<small>{p.helpText}</small>}</label></div>;
+ const wrap=child=><div {...root}><label className="one-label">{label}{child}{p.helpText&&<small id={p.helpId}>{p.helpText}</small>}</label>{p.description&&<small className="one-muted">{p.description}</small>}</div>;
  const options=list(p.options||p.choices).map(normalizeChoice);
- if(kind==='Input'){const typ=p.inputType||'text';const htmlType=typ==='currency'||typ==='percent'?'number':typ==='barcode'?'text':typ;return wrap(<input className="one-control" type={htmlType} placeholder={p.placeholder||''} value={current??''} required={p.required===true} disabled={p.disabled===true} min={p.min} max={p.max} step={p.step} minLength={p.minLength} maxLength={p.maxLength} pattern={p.pattern} title={p.validationMessage} id={p.inputId} aria-describedby={p.helpId} onChange={e=>set(['number','currency','percent'].includes(typ)?(e.target.value===''?(p.emptyNumberAsUndefined?undefined:''):Number(e.target.value)):e.target.value)}/>);}
+ if(kind==='Input'){
+  const typ=p.inputType||'text';
+  const acceptedTypes=['text','email','password','number','currency','percent','date','time','datetime-local','tel','url','search','barcode'];
+  const htmlType=typ==='currency'||typ==='percent'?'number':typ==='barcode'?'text':acceptedTypes.includes(typ)?typ:'text';
+  const inputValue=e=>set(['number','currency','percent'].includes(typ)?(e.target.value===''?(p.emptyNumberAsUndefined?undefined:''):Number(e.target.value)):e.target.value);
+  const constraints={value:current??'',required:p.required===true,disabled:p.disabled===true,minLength:p.minLength,maxLength:p.maxLength,pattern:p.pattern,id:p.inputId,'aria-describedby':p.helpId,autoComplete:p.autoComplete,onChange:inputValue};
+  return wrap(p.multiline===true
+   ? <textarea className="one-control" placeholder={p.placeholder||''} rows={Math.max(1,Math.min(20,Number(p.rows)||2))} {...constraints}/>
+   : <input className="one-control" type={htmlType} placeholder={p.placeholder||''} min={p.min} max={p.max} step={p.step} title={p.validationMessage} {...constraints}/>);
+ }
  if(kind==='Toggle')return <div {...root}><label className="one-row"><input role="switch" type="checkbox" checked={Boolean(current)} disabled={p.disabled===true} onChange={e=>set(e.target.checked)}/>{label}</label></div>;
  if(kind==='Slider')return wrap(<div className="one-row"><input style={{flex:1,accentColor:'var(--one-accent)'}} type="range" min={p.min??0} max={p.max??100} step={p.step??1} value={Number(current)||0} id={p.inputId} aria-describedby={p.helpId} disabled={p.disabled===true} onChange={e=>set(Number(e.target.value))}/><output>{String(current??0)}</output></div>);
  if(kind==='Choice'){

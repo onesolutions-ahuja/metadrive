@@ -232,7 +232,7 @@
           "components": [
             {
               "id": "chatter-inbox",
-              "type": "Custom:ChatterInbox",
+              "type": "Custom:OneConversation",
               "label": "Chatter Inbox",
               "region": "main",
               "visible": true,
@@ -243,9 +243,12 @@
                 "height": 800
               },
               "properties": {
-                "libraryComponentId": "ChatterInbox",
+                "libraryComponentId": "OneConversation",
                 "title": "Chatter",
                 "accentColor": "#168657",
+                "viewMode": "inbox",
+                "enableNewConversation": true,
+                "searchPlaceholder": "Search name or number",
                 "conversationsObjectApiName": "Communication_Records__c",
                 "messagesObjectApiName": "Communication_Records__c",
                 "channelAccountObjectApiName": "Connector_App__c",
@@ -631,17 +634,6 @@
         "allowInstalledMetadataWithoutLicence": true,
         "repairMissingAdministratorPermissions": true,
         "defaultAppApiName": "UKOffLicenceApp",
-        "defaultPageApiName": "UK_OFFLICENCE_TILL",
-        "activationAssignments": [
-          {
-            "idSuffix": "till-default",
-            "scope": "App Default",
-            "formFactors": [
-              "Desktop",
-              "Phone"
-            ]
-          }
-        ],
         "administratorObjectPermissions": {
           "Product": {
             "read": true,
@@ -1912,12 +1904,12 @@
           "components": [
             {
               "id": "uk-offlicence-till",
-              "type": "Custom:RecordCatalogCart",
+              "type": "Custom:OneShoppingCart",
               "label": "Till",
               "region": "main",
               "visible": true,
               "properties": {
-                "libraryComponentId": "RecordCatalogCart",
+                "libraryComponentId": "OneShoppingCart",
                 "objectApiName": "Product",
                 "nameFieldApiName": "Name",
                 "priceFieldApiName": "DefaultPrice",
@@ -1978,12 +1970,12 @@
           "components": [
             {
               "id": "uk-offlicence-customer-display",
-              "type": "Custom:CustomerBasketDisplay",
+              "type": "Custom:OneShoppingCart",
               "label": "Customer Basket Display",
               "region": "main",
               "visible": true,
               "properties": {
-                "libraryComponentId": "CustomerBasketDisplay",
+                "libraryComponentId": "OneShoppingCart",
                 "standalonePresentation": true,
                 "currencyCode": "GBP",
                 "storeName": "Welcome",
@@ -2002,19 +1994,6 @@
                 "statePollIntervalMs": 1500,
                 "stateSessionQueryParam": "displaySession"
               }
-            }
-          ],
-          "activationAssignments": [
-            {
-              "id": "package-uk-offlicence-pos-customer-default",
-              "scope": "App Default",
-              "appId": "UKOffLicenceApp",
-              "profileId": null,
-              "recordTypeId": null,
-              "formFactors": [
-                "Desktop",
-                "Phone"
-              ]
             }
           ]
         }

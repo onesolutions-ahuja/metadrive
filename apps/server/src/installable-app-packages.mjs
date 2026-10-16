@@ -90,7 +90,8 @@ export function applyInstallableAppPackages(tenant, catalog, tenantId = '') {
     // A package may introduce a new editable landing page. Move only its own
     // generated activation assignments; never touch tenant-authored assignments.
     const defaultPageApiName = pkg.installation?.defaultPageApiName;
-    if (defaultPageApiName) {
+    const defaultPage = pages.find(page => page.apiName === defaultPageApiName);
+    if (defaultPageApiName && defaultPage?.pageType !== 'App Page') {
       const packageAssignmentIds = new Set((pkg.installation?.activationAssignments ?? []).map(rule => 'package-'+pkg.appKey+'-'+rule.idSuffix));
       for (let i=0;i<pages.length;i++) {
         if (pages[i].apiName === defaultPageApiName) continue;
@@ -331,6 +332,69 @@ export function repairHistoricPackageRecordAudits(raw, catalog) {
           if (!record.LastModifiedDate) { record.LastModifiedDate = now; changed = true; }
         }
       }
+    }
+  }
+  return changed;
+}
+
+/** Repair only generated package assignments that conflict with App Page navigation rules. */
+export function repairPackagedAppPageAssignments(raw, catalog) {
+  if (!raw || typeof raw !== 'object' || !raw.tenants || typeof raw.tenants !== 'object') return false;
+  const generated = new Map();
+  const generatedPrefixes = [];
+  for (const pkg of catalog?.packages ?? []) {
+    const appId = pkg.installation?.defaultAppApiName;
+    if (!appId) continue;
+    const appPageNames = [];
+    for (const page of pkg.pages ?? []) {
+      if (page.pageType !== 'App Page') continue;
+      appPageNames.push(page.apiName);
+      for (const assignment of page.activationAssignments ?? []) {
+        if (typeof assignment.id === 'string' && assignment.appId === appId) {
+          generated.set(assignment.id, {appId, pageApiName:page.apiName});
+        }
+      }
+    }
+    if (appPageNames.length) generatedPrefixes.push({
+      prefix:'package-'+pkg.appKey+'-',appId,pageApiNames:new Set(appPageNames)
+    });
+    const defaultPage = (pkg.pages ?? []).find(page =>
+      page.apiName === pkg.installation?.defaultPageApiName && page.pageType === 'App Page');
+    if (defaultPage) {
+      for (const rule of pkg.installation?.activationAssignments ?? []) {
+        if (typeof rule.idSuffix === 'string') generated.set(
+          'package-'+pkg.appKey+'-'+rule.idSuffix,
+          {appId, pageApiName:defaultPage.apiName}
+        );
+      }
+    }
+  }
+  let changed = false;
+  for (const tenant of Object.values(raw.tenants)) {
+    if (!tenant || typeof tenant !== 'object' || !Array.isArray(tenant.pages)) continue;
+    for (const page of tenant.pages) {
+      if (page?.pageType !== 'App Page' || !Array.isArray(page.activationAssignments)) continue;
+      const retained = page.activationAssignments.filter(assignment => {
+        let definition = generated.get(assignment?.id);
+        if (!definition) {
+          definition = generatedPrefixes.find(candidate =>
+            assignment?.id?.startsWith(candidate.prefix)
+            && candidate.appId === assignment.appId
+            && candidate.pageApiNames.has(page.apiName)
+          );
+        }
+        if (!definition || definition.appId !== assignment.appId
+          || (definition.pageApiName && definition.pageApiName !== page.apiName)) return true;
+        const app = tenant.apps?.find(item => item.apiName === definition.appId);
+        const isNavigable = (app?.navigationOrder ?? []).some(item =>
+          item.type === 'App Page' && item.apiName === page.apiName)
+          || (app?.navigationPageApiNames ?? []).includes(page.apiName)
+          || (app?.navigationItems ?? []).includes(page.apiName);
+        if (!isNavigable) return true;
+        changed = true;
+        return false;
+      });
+      if (retained.length !== page.activationAssignments.length) page.activationAssignments = retained;
     }
   }
   return changed;
