@@ -22,7 +22,10 @@ app.post('/api/auth/provision-tenant', async (req: Request, res: Response) => {
   if (!provided || provided.length !== expected.length || !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
     return res.status(401).json({ error: 'Invalid provisioning credential' });
   }
-  const parsed = provisioningSchema.safeParse(req.body);
+  const tenantProvisioningRequestSchema = provisioningSchema.extend({
+    grantTenantDeveloperPolicyToAdmin: z.boolean().optional()
+  });
+  const parsed = tenantProvisioningRequestSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant provisioning request', details: parsed.error.flatten() });
   try {
     const key = provisioningIdempotencyKey(req);
