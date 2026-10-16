@@ -61,7 +61,6 @@ import { registerComponentLibraryRoutes } from './modules/components/routes.js';
 import { createComponentLibraryService } from './modules/components/library-service.js';
 import { canManageReportFolders } from './modules/reports/report-permissions.js';
 import { nextDashboardSubscriptionRunAt } from './modules/dashboards/subscription-schedule.js';
-import { hasDefaultComponentExport, scopeLibraryCss } from './modules/components/component-source.js';
 import { validateProtectedAdministrationPageUpdate, isProtectedAdministrationPage } from './modules/metadata/platform-admin-pages.mjs';
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
 import { registerPageDeletionRoute } from './modules/metadata/page-deletion-route.mjs';
@@ -117,12 +116,11 @@ import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from '
 import { authoriseChatterFlow } from './chatter-flow-authorisation.js';
 import { sanitizeChatterCallerInput, trustedChatterExecutionFlow } from './modules/flows/chatter-request-input.mjs';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
 import { normalizeTenantDomain, domainChallenge, matchesDomainChallenge, reservedDomain } from './tenant-domains.mjs';
 import { readFileSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
@@ -130,7 +128,6 @@ import { performance } from 'node:perf_hooks';
 import { executeConnectorTest } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
 
-import { bundledLegacyMigrationDecision } from './bundled-component-migration.mjs';
 
 import nodemailer from 'nodemailer';
 import pg from 'pg';
