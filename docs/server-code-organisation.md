@@ -16,3 +16,31 @@ Kiosk, POS, KDS, and other vertical solutions remain **installable applications*
 ## Next extraction candidates
 
 Object Manager schema/validation, records services, Flow scheduler/execution, metadata API routers, report/dashboard services. Use dependency injection or narrow service interfaces to avoid importing `index.ts` from an extracted module.
+
+## API route extraction continuation (PR #501)
+
+Migration owner: `onesolutions-ahuja` (Core, phase 6 in `MIGRATION_MAP.v1.json`).
+The continuation starts from main at `13cf3dba`, including the merged extraction
+in PR #496. All 88 remaining direct HTTP endpoint registrations now live in 27
+domain registrars under `modules/`. Bootstrap middleware and registrar calls stay
+in their original order in `index.ts`.
+
+- `tenants`: registry/usage, provisioning/developer account, domains, lifecycle and retention.
+- `integrations`: signed webhook transport, connections/providers, settings, app licensing, credential status and management/OAuth.
+- `approvals`: inbox/decisions and process metadata.
+- `flows`: platform events, definition metadata, logs/settings/interviews, email alerts, execution, record debugging and interview resume.
+- `apps`, `pages`, `objects`, `security`, `chatter`: app metadata/navigation, route aliases, page listing/updates, object listing, currencies and Chatter access.
+
+Registrars receive only their referenced platform dependencies. Live accessors
+preserve mutable state, pending commit promises and provisioning failure state;
+the early webhook registrar also defers reads of services initialised later.
+No registrar imports `index.ts` at runtime. Type-only dependency contracts follow
+the existing Object/Record route convention temporarily; extracting shared service
+and metadata types remains part of the Core cleanup.
+
+The extraction preserves URLs, request/response contracts, shared OneEngine RBAC,
+tenant lookups, validation, persistence ordering and app lifecycle enforcement.
+No new app, SQL schema or seeder is introduced. The five domain-route regression
+tests cover permission denial, tenant/navigation filtering, live state replacement,
+currency assignment conflicts and tenant-scoped persistence. Run them with
+`npm run pretest --workspace apps/server`; the normal server test command includes them.
