@@ -185,6 +185,7 @@ export default function MetadataBoundPageComponent({
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows,
+       pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
       loadCompanySettings: () => apiRequest('/metadata/currencies'),
       onChange: (value: unknown) => {
