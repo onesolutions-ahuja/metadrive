@@ -495,6 +495,7 @@ function MetadataBoundPageComponent({
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
       label: component.label, properties, objects, reports, flows: availableFlows, pageState,
+       pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError, viewRevision: revision,
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
@@ -613,6 +614,7 @@ function LightningAppRuntime({
         : <RegisteredComponent definition={definition} props={{
             ...component.properties, ...componentLayoutProps(component.properties, layoutDevice),
             label: component.label, properties: component.properties,
+            pageSessionKey: appId + ':' + page.apiName, componentId: component.id,
             device: layoutDevice, children: nestedChildren
           }} />;
       const rendered = nestedChildren?.length && definition.trustedBundled !== true

@@ -73,13 +73,14 @@ import {
 } from 'lucide-react';
 import FlowScreenContent from './FlowScreenContent';
 import RegisteredComponent from './RegisteredComponent';
+import { RecordsListPageHeading, RecordsListSearchControls } from './RecordsListNavigation';
 import PageRouteDirectory from './PageRouteDirectory';
 import { isComponentVisible } from './componentVisibility';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
-import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
+import { GlobalRecordSearch, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import { standardPageComponents } from './componentCatalog';
@@ -165,7 +166,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
 type RecordActivity = {
   id: string;
   objectApiName: string;
@@ -208,6 +208,8 @@ function RecordWorkspace({
   recordTypeAccess,
   libraryComponents,
   headerSearch,
+  onSearchChange,
+  navigableObjects,
   onNavigate
 }: {
   route: Extract<AppRoute, { kind: 'record-list' | 'record-detail' }>;
@@ -225,6 +227,8 @@ function RecordWorkspace({
   recordTypeAccess: Record<string, boolean>;
   libraryComponents: LibraryComponentMetadata[];
   headerSearch: string;
+  onSearchChange: (search: string) => void;
+  navigableObjects: ObjectMetadata[];
   onNavigate: (route: AppRoute) => void;
 }) {
   const object = objects.find((item) => item.apiName === route.objectApiName);
@@ -1515,16 +1519,11 @@ function RecordWorkspace({
     })());
   return <div className="records-page">
     {(offlineItems.length>0 || !navigator.onLine) && renderOfflineQueue()}
-    <div className="records-page-heading">
-      <div className="record-object-icon"><Database size={18} /></div>
-      <div><div className="eyebrow">OBJECT</div><h1>{object.pluralLabel}</h1></div>
-      <div className="records-heading-actions">
-        <button className="btn" onClick={() => setRefreshKey((current) => current + 1)}><RefreshCw size={14} />Refresh</button>
-      </div>
-    </div>
+    <RecordsListPageHeading label={object.pluralLabel} onRefresh={() => setRefreshKey((current) => current + 1)} />
     <section className="records-list-card surface">
       <div className="records-list-toolbar">
         <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
+        <RecordsListSearchControls objects={navigableObjects} selected={object.apiName} label={object.pluralLabel} search={headerSearch} onObjectSelect={(objectApiName) => onNavigate({kind:'record-list',objectApiName,appId:route.appId})} onSearchChange={(value) => {setListOffset(0);onSearchChange(value);}} />
         <div className="records-list-actions">
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}

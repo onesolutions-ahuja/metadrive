@@ -59,6 +59,21 @@ export async function initializePlatformState(deps: {
 
   deps.platformStore.state = authOverlay.restoreDurableAuthOverlay(deps.platformStore.state);
 
+  // One-time legacy migration: former demo Sales/Service defaults were created as
+  // ordinary tenant apps, so they remained navigable without installation.
+  // Mark only those original defaults as installation-owned, retaining tenant data
+  // and customisations. The generic canOpenApp check then hides them until installed.
+  for (const tenant of Object.values(deps.platformStore.state.tenants)) {
+    tenant.apps = tenant.apps.map((app) => {
+      if (app.installationAppKey) return app;
+      if (app.apiName === 'SalesApp')
+        return { ...app, installationAppKey: 'sales' };
+      if (app.apiName === 'ServiceApp')
+        return { ...app, installationAppKey: 'service' };
+      return app;
+    });
+  }
+
   // Repair licensed declarative package metadata without granting extra RBAC permissions.
   if (!deps.maintenanceMode) {
     const nextTenants = { ...deps.platformStore.state.tenants };

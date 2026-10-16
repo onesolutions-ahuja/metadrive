@@ -95,9 +95,15 @@ try {
   }
   await page.goto('http://127.0.0.1:5173/une/o/Account/list?filterName=AllAccounts&appId=Records');
   await list.waitFor({state:'visible'});
-  // Record search is now a dedicated topbar control, not a duplicated list field.
-  const search=page.getByRole('searchbox',{name:/Search Accounts records/i});
-  if(await list.locator('.records-search').count()) throw Error('Duplicate record search must not appear in list');
+  // Records owns the single object picker and local search; the top bar stays global.
+  const search=list.getByRole('searchbox',{name:/Search Accounts records/i});
+  if(await list.locator('.records-search').count()!==1) throw Error('Expected exactly one Records-page search');
+  if(await list.getByRole('combobox',{name:'Find record object'}).count()!==1) throw Error('Missing Records-page object picker');
+  if(await page.locator('.salesforce-header .header-record-picker').count()) throw Error('Duplicate topbar object picker');
+  const launcher=page.getByRole('combobox',{name:'Open installed app'});
+  const choices=await launcher.locator('option').allTextContents();
+  if(!choices.includes('Home')||!choices.includes('Records'))throw Error('Home and Records must be in Apps');
+  if(choices.includes('Sales')||choices.includes('Service'))throw Error('Uninstalled default apps exposed');
   await page.getByRole('button',{name:/Search records and navigation/}).click();
   const palette=page.getByRole('dialog',{name:'Global search command palette'});
   const global=palette.getByRole('searchbox',{name:'Global record search'});

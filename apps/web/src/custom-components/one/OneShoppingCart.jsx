@@ -259,11 +259,22 @@ function ShoppingCartTill({props}) {
   void flowAction(props,operation.event,{...saleValue(cart),sessionKey:channel?.key||props.sessionId})
    .catch(cause=>setError(cause instanceof Error?cause.message:'Unable to start operation.'));
  };
+ React.useEffect(()=>{
+  if(!props.pageSessionKey||!props.componentId)return undefined;
+  const onToolbarAction=event=>{
+   const detail=event.detail;
+   if(detail?.pageSessionKey===props.pageSessionKey&&detail?.componentId===props.componentId&&detail?.action==='openDisplay')openDisplay();
+  };
+  window.addEventListener('metadrive:page-toolbar-action',onToolbarAction);
+  return ()=>window.removeEventListener('metadrive:page-toolbar-action',onToolbarAction);
+ },[props.pageSessionKey,props.componentId,openDisplay]);
+ const pageToolbarOwnsHeader=typeof document!=='undefined'&&
+  document.querySelector('.header-page-context')?.getAttribute('data-page-session-key')===props.pageSessionKey;
  return <section className="one-shopping-till">
-  <header className="one-row" style={{justifyContent:'space-between'}}>
+  {!pageToolbarOwnsHeader&&<header className="one-row" style={{justifyContent:'space-between'}}>
    <div><small>{props.eyebrow||'SALES'}</small><h2 className="one-heading">{props.title||'Till'}</h2></div>
    <button className="one-btn" type="button" onClick={openDisplay}>{props.displayButtonLabel||'Open customer display'}</button>
-  </header>
+  </header>}
   {operationError&&<p role="alert">{operationError}</p>}
   {operations.length>0&&<nav className="one-row" aria-label={props.operationsLabel||'Operations'}>
    {operations.map(operation=><button className="one-btn" type="button" key={operation.event}

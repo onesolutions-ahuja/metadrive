@@ -30,7 +30,7 @@ export default function TemplatePageRuntimeLayout({
     style={fullscreen ? { width:'100%', maxWidth:'none', height:embedded?'100%':'100dvh', minHeight:0,
       padding:0, margin:0, display:'flex', flexDirection:'column', overflow:'hidden',
       background:'#f7f7f7' } : undefined}>
-    {!fullscreen && <div className="record-detail-heading surface">
+    {!fullscreen && pageType !== 'App Page' && <div className="record-detail-heading surface">
       <div className="record-object-icon"><Grid2X2 size={18}/></div>
       <div><div className="eyebrow">{pageType}</div><h1>{label}</h1></div>
     </div>}
