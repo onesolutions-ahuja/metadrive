@@ -42,3 +42,67 @@
   .settings-edit-row-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-view-row-label { font-size: 12px; }
 }
+
+/* Company Settings: align metadata-driven read/edit rows to one compact rhythm. */
+.company-settings-page {
+  --company-space: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.company-settings-page > .surface.permission-section {
+  padding: 18px 20px 20px;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.company-settings-page .section-toolbar {
+  margin: 0 0 16px;
+  padding: 0;
+  min-height: 0;
+}
+.company-settings-page .section-toolbar h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 650;
+}
+.company-settings-page .section-toolbar p {
+  margin: 3px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.company-settings-page .settings-read-first-section {
+  margin: 0 0 10px;
+  border-radius: 8px;
+}
+.company-settings-page .settings-view-row {
+  min-height: 58px;
+  padding: 10px var(--company-space);
+  box-sizing: border-box;
+}
+.company-settings-page .settings-view-row-content { gap: 2px; }
+.company-settings-page .settings-view-row-label {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.company-settings-page .settings-view-row-value {
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.company-settings-page .permission-section-heading {
+  margin: 20px 0 10px;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 650;
+}
+.company-settings-page .settings-edit-row { padding: 12px var(--company-space); }
+.company-settings-page .settings-read-first-toolbar { margin: 12px 0 0; }
+.company-settings-page .settings-view-pencil { width: 36px; height: 36px; flex-basis: 36px; }
+.company-settings-page .surface.permission-section > .btn {
+  margin-top: 4px;
+}
+@media (max-width: 640px) {
+  .company-settings-page { --company-space: 12px; }
+  .company-settings-page > .surface.permission-section { padding: 14px; }
+  .company-settings-page .section-toolbar h2 { font-size: 16px; }
+}
