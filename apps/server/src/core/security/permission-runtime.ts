@@ -42,7 +42,9 @@ function effectivePermissions(user: LocalUser, data: TenantData): string[] {
     if (permission === 'licence:manage' || permission.startsWith('platform:')) permissions.delete(permission);
   }
   const policies = getState().platformPolicies[user.id] ?? [];
-  if (policies.includes('platform:superadmin')) {
+  if (policies.includes('platform:tenants:manage') || policies.includes('platform:superadmin')) {
+    permissions.add('platform:tenants:manage');
+    // Compatibility for older published platform-admin Page metadata.
     permissions.add('platform:superadmin');
     permissions.add('licence:manage');
   } else if (policies.includes('licence:manage')) {
