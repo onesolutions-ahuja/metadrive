@@ -1,3 +1,16 @@
+import { createTenantProvisioning } from './core/state/tenant-provisioning.js';
+import { createPersistenceResponseBarrier } from './core/state/response-barrier.js';
+import { createPersistedMetadataReadMode } from './core/state/metadata-read-mode.js';
+import { createSqlStateRefresh } from './core/state/refresh.js';
+import type { TenantData, SecurityAuditEvent, MfaEncryptedSecret, LocalUser, RefreshSession, TenantDomainRecord, TenantRegistryEntry, TenantManagementAuditEvent, PlatformState } from './core/state/types.js';
+export type { TenantData, SecurityAuditEvent, MfaEncryptedSecret, LocalUser, RefreshSession, TenantDomainRecord, TenantRegistryEntry, TenantManagementAuditEvent, PlatformState } from './core/state/types.js';
+import { createPlatformStateSchema } from './core/state/schema.js';
+import { createTenantDefaults } from './core/state/tenant-defaults.js';
+import { createStateHydration } from './core/state/hydration.js';
+import { initializePlatformState } from './core/state/initialization.js';
+import { createTenantDataService } from './core/state/tenant-data.js';
+import { createTenantBootstrap } from './core/state/bootstrap-tenant.js';
+import { createPlatformStateStore } from './core/state/store.js';
 import { registerIntegrationsWebhookRoutes } from './modules/integrations/webhook-routes.js';
 import { registerTenantRegistryRoutes } from './modules/tenants/registry-routes.js';
 import { registerTenantProvisioningRoutes } from './modules/tenants/provisioning-routes.js';
@@ -29,16 +42,15 @@ import { registerFlowElementRoutes } from './modules/flows/element-routes.js';
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
 import { registerHealthAndDiscoveryRoutes } from './modules/security/health-routes.js';
-import { defaultRoles, roleApiNameForName, roleIdForName, profileIdForRole } from './modules/security/role-helpers.js';
+import { roleApiNameForName, roleIdForName, profileIdForRole } from './modules/security/role-helpers.js';
 import { createScheduledDispatcher } from './scheduler/dispatcher.js';
 import { startPlatformServer } from './bootstrap/startup.js';
 import { registerProductionFrontend, registerPlatformErrorHandler } from './bootstrap/frontend.js';
-import { credentialKeyRing, credentialAad, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
-import {recordWritePolicySchema, withFlowRecordWriteContext, grantedObjectPermission, assertRecordFieldPermissions, lockedRecordWriteAllowed, recordWritePolicyMetadataGuard} from './record-write-policy.js';
-import { localStateWithoutSqlObjectDefinitions } from './local-platform-seed.js';
+import { credentialKeyRing, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
+import { recordWritePolicySchema, withFlowRecordWriteContext, grantedObjectPermission, assertRecordFieldPermissions, lockedRecordWriteAllowed, recordWritePolicyMetadataGuard } from './record-write-policy.js';
+
 import { loadAppSeedCatalog } from './seeders/catalog.mjs';
-import { initializeTenantCore } from './seeders/core.mjs';
-import { reconcileInstalledAppSeeds } from './seeders/apps.mjs';
+
 import { registerReportRoutes } from './modules/reports/routes.js';
 import { registerDashboardRoutes } from './modules/dashboards/routes.js';
 import { registerDashboardSnapshotRoutes } from './modules/dashboards/snapshot-routes.js';
@@ -46,31 +58,30 @@ import { registerComponentLibraryRoutes } from './modules/components/routes.js';
 import { canManageReportFolders } from './modules/reports/report-permissions.js';
 import { nextDashboardSubscriptionRunAt } from './modules/dashboards/subscription-schedule.js';
 import { hasDefaultComponentExport, scopeLibraryCss } from './modules/components/component-source.js';
-import {seedProtectedAdministrationPages,validateProtectedAdministrationPageUpdate,isProtectedAdministrationPage} from './modules/metadata/platform-admin-pages.mjs';
+import { validateProtectedAdministrationPageUpdate, isProtectedAdministrationPage } from './modules/metadata/platform-admin-pages.mjs';
 import { registerAuthenticationRoutes } from './modules/security/auth-routes.js';
-import {registerPageDeletionRoute} from './modules/metadata/page-deletion-route.mjs';
-import {pageComponentSchema} from './modules/metadata/page-component-schema.js';
-import {registerMetadataPublicationRoute} from './modules/metadata/offline-publication-route.mjs';
-import {libraryRevision,nextLibraryRevision,libraryHistory} from './modules/metadata/component-revisions.mjs';
+import { registerPageDeletionRoute } from './modules/metadata/page-deletion-route.mjs';
+import { pageComponentSchema } from './modules/metadata/page-component-schema.js';
+
 import { registerIdentityProfileRoute } from './modules/security/identity-profile-route.js';
 import { registerSessionSecurityRoutes } from './modules/security/session-routes.js';
 import { registerSecurityMetadataRoutes } from './modules/security/metadata-routes.js';
 import { createAccessAuthentication } from './modules/security/access-authentication.js';
-import { bearerToken, tenantForRequestHost as resolveTenantForRequestHost } from './modules/security/request-auth.js';
-import { removeObjectMetadata } from './modules/objects/remove-object.js';
+import { tenantForRequestHost as resolveTenantForRequestHost } from './modules/security/request-auth.js';
+
 import { validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies } from './modules/objects/dependencies.js';
 import { registerObjectMetadataRoutes } from './modules/objects/routes.js';
 import { registerRecordRoutes } from './modules/records/routes.js';
 import { applyRecordDefaults as applyMetadataRecordDefaults } from './modules/records/record-defaults.js';
 import { validateRuntimeRecord as validateMetadataRecord } from './modules/records/runtime-validation.js';
-import { matchesRelatedLookupFilter, validateGeolocationValue } from './modules/records/record-constraints.js';
+
 import { calculateFormulaFields } from './modules/records/formula-fields.js';
 import { sanitizeRecordValues, withCaseClosedDate, recordUnmodified } from './modules/records/record-input.js';
 import { stampRecordAuditFields, recordActionEnabled } from './modules/records/record-actions.js';
-import { autoNumberFormatForField, formatAutoNumber, autoNumberSequenceFromValue, autoNumberSequenceKey, migrateAutoNumberSequences } from './modules/records/auto-number.js';
-import { numericFieldValueError, validateFieldChange, uniqueFieldValueKey, validateExistingFieldValues, isValidFlowDateTime, normalizeRuntimeValues, normalizeFlowRecordAssignments } from './modules/records/record-values.js';
-import { validateRelationshipReparenting, validateRequiredRecordFields } from './modules/records/field-rules.js';
-import { validateObjectLayoutProfileAssignments, pageComponentFeatureEnabled } from './modules/objects/metadata-validation.js';
+import { autoNumberSequenceKey } from './modules/records/auto-number.js';
+import { numericFieldValueError, validateFieldChange, validateExistingFieldValues, isValidFlowDateTime, normalizeRuntimeValues, normalizeFlowRecordAssignments } from './modules/records/record-values.js';
+import { validateRelationshipReparenting } from './modules/records/field-rules.js';
+import { validateObjectLayoutProfileAssignments } from './modules/objects/metadata-validation.js';
 import { resolvePageAssignment } from './modules/pages/page-assignment.js';
 import { pickDashboardSnapshotProperties } from './modules/dashboards/snapshot-properties.js';
 import { evaluateFormula, formulaLocalDate, isSafeFlowRegex } from './modules/flows/formula-evaluator.js';
@@ -83,7 +94,7 @@ import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
 import { prepareFlowCreateCollection } from './flow-create-collection.mjs';
 import { applyFlowCollectionAssignment } from './flow-collection-assignment.mjs';
 import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation, readDurableAuthLogins, persistDurableAuthLogin, type DurableAuthLogin } from './postgres-state.js';
-import { assertTenantIdentityIsolation } from './tenant-identity-isolation.mjs';
+
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
 import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
 import { tenantUsageSnapshot } from './tenant-usage.mjs';
@@ -97,7 +108,7 @@ import { dispatchIntegrationDeliveries } from './connector-delivery-worker.js';
 import { getOAuthAccessToken, beginOAuthAuthorization, completeOAuthAuthorization, validatedOAuthUrl, type OAuthVault, type OAuthToken } from './connector-oauth.js';
 import { SqlOAuthChallengeStore, type ChallengeCipher } from './connector-oauth-challenges.js';
 import { mappedTenantOrigin, tenantForRequest, tenantHostConfig } from './tenant-host-routing.js';
-import { communicationObjectApiName, legacyWhatsappObjectApiName, migrateLegacyWhatsappFlow, migrateLegacyWhatsappRecords, addStarterBeautyAlias } from './communication-unification.js';
+import { communicationObjectApiName } from './communication-unification.js';
 import { canAccessChatterRecord, chatterScopeForUser, isWhatsAppMessage } from './chatter-authorisation.js';
 import { authoriseChatterFlow } from './chatter-flow-authorisation.js';
 import { sanitizeChatterCallerInput, trustedChatterExecutionFlow } from './modules/flows/chatter-request-input.mjs';
@@ -105,20 +116,18 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { transform } from 'esbuild';
 import { lookup, resolveTxt } from 'node:dns/promises';
 import { normalizeTenantDomain, domainChallenge, matchesDomainChallenge, reservedDomain } from './tenant-domains.mjs';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCipheriv, createDecipheriv, createHmac, createHash, randomBytes, randomInt, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import { performance } from 'node:perf_hooks';
-import { executeConnectorTest, type ConnectorTestResult } from './connector-test.js';
+import { executeConnectorTest } from './connector-test.js';
 import { applyConnectorLifecycle, connectorEntitlement } from './connector-app-runtime.js';
-import { applyInstallableAppPackages, retireUninstalledPackageMetadata, repairHistoricPackageRecordAudits } from './installable-app-packages.mjs';
-import { ensureBundledAppComponents, pruneRetiredTrustedComponents } from './bundled-app-components.mjs';
+
 import { bundledLegacyMigrationDecision } from './bundled-component-migration.mjs';
-import postcss from 'postcss';
-import selectorParser from 'postcss-selector-parser';
+
 import nodemailer from 'nodemailer';
 import pg from 'pg';
 import { installTenantRecoveryCentre } from './tenant-recovery-centre.mjs';
@@ -126,19 +135,12 @@ import sanitizeHtml from 'sanitize-html';
 import { z } from 'zod';
 import { appNavigationEntrySchema } from './app-navigation-schema.js';
 import { newTotpSecret, totpUri, verifyTotp } from './mfa.js';
-import {
-  createRefreshToken,
-  hashPassword,
-  hashToken,
-  JwtService,
-  verifyPassword,
-  type Principal
-} from './auth.js';
+import { createRefreshToken, hashPassword, hashToken, JwtService, verifyPassword, type Principal } from './auth.js';
 import { normalizeRecoveryPolicy, renderRecoveryTemplate, deliverWithFallback } from './recovery-policy.js';
-import { RECOVERY_FLOW_API, defaultRecoveryFlowDefinition, recoveryFlowActions, type RecoveryStage } from './recovery-flow.js';
+import { RECOVERY_FLOW_API, defaultRecoveryFlowDefinition, recoveryFlowActions } from './recovery-flow.js';
 // Tenant name is resolved from the tenant registry, never from unauthenticated request input.
 function tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {
-  return state.tenantRegistry[tenantId]?.name ?? tenantId;
+  return platformStore.state.tenantRegistry[tenantId]?.name ?? tenantId;
 }
 import { canAccessDashboard, canEditDashboard, dashboardFolderAccessLevel, matchesDashboardFilters, type DashboardFolderAccessLevel } from './dashboard-access.js';
 const app = express();
@@ -193,42 +195,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // In all SQL modes, acknowledge API writes only after the database transaction
 // commits. Otherwise a fast API response followed by restart loses records/Flows.
 // Legacy JSONB response semantics remain unchanged.
-let latestStateCommit: Promise<unknown> = Promise.resolve();
-app.use((req: Request, res: Response, next: NextFunction) => {
-  if (persistenceMode === 'jsonb' || !req.path.startsWith('/api') || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-  const end = res.end;
-  const requestStartedAt = performance.now();
-  let ending = false;
-  res.end = ((...args: unknown[]) => {
-    if (ending) return res;
-    ending = true;
-    const commit = res.locals.authSqlCommitted === true ? Promise.resolve() : latestStateCommit;
-    const gateStartedAt = performance.now();
-    void commit.then(() => {
-      if (req.path === '/api/auth/login' || req.path === '/api/auth/mfa/verify' || req.path === '/api/auth/refresh' || req.path === '/api/auth/logout') {
-        const waitMs = performance.now() - gateStartedAt;
-        const totalMs = performance.now() - requestStartedAt;
-        const preceding = String(res.getHeader('Server-Timing') ?? '');
-        res.setHeader('Server-Timing', `${preceding}${preceding ? ',' : ''}commit-wait;dur=${waitMs.toFixed(1)},server-total;dur=${totalMs.toFixed(1)}`);
-        console.info(`Auth path timing ${req.path}: sql-commit=${waitMs.toFixed(1)}ms total=${totalMs.toFixed(1)}ms`);
-      }
-      Reflect.apply(end, res, args);
-    }).catch((error: unknown) => {
-      console.error('MetaDrive API transaction not acknowledged:', error);
-      if (res.headersSent) {
-        res.destroy(error instanceof Error ? error : new Error('Database persistence failed'));
-        return;
-      }
-      res.statusCode = 503;
-      res.removeHeader('Content-Length');
-      res.removeHeader('ETag');
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      Reflect.apply(end, res, [JSON.stringify({ error: 'Database persistence unavailable' })]);
-    });
-    return res;
-  }) as typeof res.end;
-  next();
-});
+const platformStore = createPlatformStateStore({ maintenance: maintenanceMode, persistenceMode, dataPath, persistToPostgres });
+const persistState = platformStore.persistState;
+app.use(createPersistenceResponseBarrier({
+  persistenceMode, get latestCommit() { return platformStore.latestCommit; }
+}));
 app.use((req: Request, res: Response, next: NextFunction) => {
   // Only explicitly identified external API traffic belongs in Communication Records.
   // Browser, internal automation and platform API requests must not be logged here.
@@ -291,8 +262,8 @@ const registerIntegrationsWebhookRoutesContext = {
   get sanitizeRecordValues() { return sanitizeRecordValues; },
   get shouldTriggerInboundMessage() { return shouldTriggerInboundMessage; },
   get stampRecordAuditFields() { return stampRecordAuditFields; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
   get tenantIsActive() { return tenantIsActive; },
   get timingSafeEqual() { return timingSafeEqual; },
@@ -303,7 +274,7 @@ export type IntegrationsWebhookRoutesDependencies = typeof registerIntegrationsW
 registerIntegrationsWebhookRoutes(registerIntegrationsWebhookRoutesContext);
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
-let hydratingPersistedMetadata = false;
+const persistedMetadataReadMode = createPersistedMetadataReadMode();
 const fieldSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().min(1),
@@ -374,10 +345,10 @@ const fieldSchema = z.object({
   if (field.picklistValues && !isPicklist) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist values can only be configured on Picklist fields' });
   }
-  if (!hydratingPersistedMetadata && field.picklistValues && field.picklistValues.length === 0) {
+  if (!persistedMetadataReadMode.active && field.picklistValues && field.picklistValues.length === 0) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist fields must define at least one value' });
   }
-  if (!hydratingPersistedMetadata && isPicklist && !field.picklistValues?.length) {
+  if (!persistedMetadataReadMode.active && isPicklist && !field.picklistValues?.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['picklistValues'], message: 'Picklist fields must define at least one value' });
   }
   if ((field.picklistRestricted !== undefined || field.controllerFieldApiName !== undefined || field.valueSettings !== undefined) && !isPicklist) {
@@ -2859,11 +2830,7 @@ const integrationConnectionRequestSchema = z.object({
 const connectorDefinitionRequestSchema = connectorDefinitionSchema;
 type FlowExecutionLog = z.infer<typeof flowExecutionLogSchema>;
 type LightningApp = z.infer<typeof lightningAppSchema>;
-type SecurityAuditEvent = {
-  id: string; at: string; actorUserId: string; action: string;
-  targetUserId?: string; details?: Record<string, string>;
-};
-export type TenantData = { metadataHistory?: ObjectMetadataChange[]; passwordRecovery: { smtpCredentialId: string; fromEmail: string; policy?: unknown }; securityAudit: SecurityAuditEvent[]; mfaPolicy: { mode: 'Off' | 'Optional' | 'Required' }; objects: ObjectMetadata[]; flows: FlowMetadata[]; platformEvents: z.infer<typeof platformEventSchema>[]; platformEventMessages: z.infer<typeof platformEventMessageSchema>[]; pages: PageMetadata[]; apps: LightningApp[]; dashboards: DashboardMetadata[]; dashboardFolders: DashboardFolder[]; reportFolders: ReportFolder[]; dashboardTerritories: DashboardTerritory[]; dashboardSnapshots: DashboardSnapshot[]; dashboardSubscriptions: DashboardSubscription[]; reports: ReportMetadata[]; accessControl: AccessControl; sharingSettings: Record<string, SharingSetting>; currencySettings: CurrencySettings; recordShares: RecordShare[]; campaignMembers: CampaignMember[]; activities: RecordActivity[]; chatterPosts: ChatterPost[]; notifications: CustomNotification[]; approvalRequests: ApprovalRequest[]; approvalProcesses: ApprovalProcess[]; records: Record<string, RuntimeRecord[]>; autoNumberSequences: Record<string, number>; fieldHistory: FieldHistoryEntry[]; interviews: FlowInterview[]; flowLogs: FlowExecutionLog[]; scheduleRuns: Record<string, string>; scheduleRetries: Record<string, z.infer<typeof scheduleRetrySchema>>; automationSettings: z.infer<typeof automationSettingsSchema>; namedCredentials: StoredNamedCredential[]; emailAlerts: EmailAlert[]; connectorSettings: ConnectorSettings[]; connectorDefinitions: ConnectorDefinition[]; integrationConnections: IntegrationConnection[] };
+
 const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'Records', label: 'Records', description: 'Browse and manage customer records.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
   { apiName: 'SalesApp', label: 'Sales', description: 'Manage sales accounts and opportunities.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
@@ -2885,211 +2852,55 @@ function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous
     }));
   if (entries.length) tenant.fieldHistory.push(...entries);
 }
-export type MfaEncryptedSecret = { keyId: string; iv: string; authTag: string; ciphertext: string };
-export type LocalUser = {
-  id: string;
-  tenantId: string;
-  name: string;
-  email: string;
-  passwordSalt: string;
-  passwordHash: string;
-  role: string;
-  permissionSetIds: string[];
-  permissionSetGroupIds: string[];
-  disabled: boolean;
-  createdAt: string;
-  authRevokedBefore?: number;
-  mfaSecret?: MfaEncryptedSecret;
-  mfaLastUsedStep?: number;
-  mfaVersion?: number;
-  authVersion?: number;
-  passwordReset?: { tokenHash: string; expiresAt: number };
-  lockedUntil?: number;
+
+const createPlatformStateSchemaContext = {
+  get accessControlSchema() { return accessControlSchema; },
+  get approvalProcessSchema() { return approvalProcessSchema; },
+  get approvalRequestSchema() { return approvalRequestSchema; },
+  get automationSettingsSchema() { return automationSettingsSchema; },
+  get campaignMemberSchema() { return campaignMemberSchema; },
+  get chatterPostSchema() { return chatterPostSchema; },
+  get connectorDefinitionSchema() { return connectorDefinitionSchema; },
+  get connectorSettingsSchema() { return connectorSettingsSchema; },
+  get currencySettingsSchema() { return currencySettingsSchema; },
+  get customNotificationSchema() { return customNotificationSchema; },
+  get dashboardFolderSchema() { return dashboardFolderSchema; },
+  get dashboardSchema() { return dashboardSchema; },
+  get dashboardSnapshotSchema() { return dashboardSnapshotSchema; },
+  get dashboardSubscriptionSchema() { return dashboardSubscriptionSchema; },
+  get dashboardTerritorySchema() { return dashboardTerritorySchema; },
+  get defaultConnectorDefinitions() { return defaultConnectorDefinitions; },
+  get defaultConnectorSettings() { return defaultConnectorSettings; },
+  get defaultLightningApps() { return defaultLightningApps; },
+  get emailAlertSchema() { return emailAlertSchema; },
+  get fieldHistoryEntrySchema() { return fieldHistoryEntrySchema; },
+  get flowExecutionLogSchema() { return flowExecutionLogSchema; },
+  get flowInterviewSchema() { return flowInterviewSchema; },
+  get flowSchema() { return flowSchema; },
+  get integrationConnectionSchema() { return integrationConnectionSchema; },
+  get libraryComponentSchema() { return libraryComponentSchema; },
+  get lightningAppSchema() { return lightningAppSchema; },
+  get namedCredentialSchema() { return namedCredentialSchema; },
+  get objectSchema() { return objectSchema; },
+  get pageSchema() { return pageSchema; },
+  get platformEventMessageSchema() { return platformEventMessageSchema; },
+  get platformEventSchema() { return platformEventSchema; },
+  get recordActivitySchema() { return recordActivitySchema; },
+  get recordShareSchema() { return recordShareSchema; },
+  get reportFolderSchema() { return reportFolderSchema; },
+  get reportSchema() { return reportSchema; },
+  get runtimeRecordSchema() { return runtimeRecordSchema; },
+  get scheduleRetrySchema() { return scheduleRetrySchema; },
+  get sharingSettingSchema() { return sharingSettingSchema; }
 };
-type RefreshSession = {
-  tokenHash: string;
-  familyId: string;
-  userId: string;
-  tenantId: string;
-  expiresAt: number;
-  usedAt: number | null;
-  revokedAt: number | null;
-  mfaVerified?: boolean;
-  authVersion?: number;
-};
-type TenantDomainRecord = {
-  hostname: string; status: 'PENDING' | 'VERIFIED' | 'REVOKED'; verificationToken: string;
-  createdAt: string; verifiedAt?: string; revokedAt?: string;
-};
-type TenantRegistryEntry = {
-  domains?: TenantDomainRecord[];
-  name: string; description: string; status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'; archivedAt?: string; retentionUntil?: string; legalHold?: boolean;
-  usageTargets?: { users?: number; records?: number; objects?: number; flows?: number }; createdAt: string; updatedAt: string;
-  // The complete initial workspace and administrator commit together.
-  provisioning?: { status: 'READY'; version: number; completedAt: string };
-  provisioningRequestHash?: string;
-  developerSeed?: { userId: string; email: string; seededAt: string; activatedAt?: string };
-};
-type TenantManagementAuditEvent = {
-  actorId: string; tenantId: string; action: 'CREATED' | 'UPDATED' | 'SUSPENDED' | 'REACTIVATED' | 'ARCHIVED' | 'RESTORED' | 'RETENTION_UPDATED' | 'USAGE_TARGETS_UPDATED' | 'DOMAIN_ADDED' | 'DOMAIN_VERIFIED' | 'DOMAIN_REMOVED';
-  at: string; previous?: TenantRegistryEntry; next: TenantRegistryEntry;
-};
-export type PlatformState = {
-  // Central registry is controlled exclusively by platform policy, never tenant RBAC.
-  tenantRegistry: Record<string, TenantRegistryEntry>;
-  tenantManagementAudit: TenantManagementAuditEvent[];
-  // Platform policies are outside tenant-managed profiles and permission sets.
-  platformPolicies: Record<string, Array<'platform:superadmin' | 'licence:manage'>>;
-  platformPolicyAudit: Array<{
-    actorId: string; userId: string; previous: string[]; next: string[]; at: string;
-  }>;
-  tenants: Record<string, TenantData>;
-  libraryComponents: LibraryComponent[];
-  users: LocalUser[];
-  refreshSessions: RefreshSession[];
-  revokedAccessTokens: Record<string, number>;
-};
-const tenantRegistryEntrySchema = z.object({
-  domains: z.array(z.object({
-    hostname: z.string().min(4).max(253), status: z.enum(['PENDING', 'VERIFIED', 'REVOKED']),
-    verificationToken: z.string().regex(/^[0-9a-f]{64}$/),
-    createdAt: z.string().datetime(), verifiedAt: z.string().datetime().optional(),
-    revokedAt: z.string().datetime().optional()
-  }).strict()).max(5000).optional(),
-  name: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(1000).default(''),
-  status: z.enum(['ACTIVE', 'SUSPENDED', 'ARCHIVED']),
-  archivedAt: z.string().datetime().optional(),
-  retentionUntil: z.string().datetime().optional(),
-  legalHold: z.boolean().optional(),
-  usageTargets: z.object({
-    users: z.number().int().min(1).max(1000000000).optional(),
-    records: z.number().int().min(1).max(1000000000).optional(),
-    objects: z.number().int().min(1).max(1000000000).optional(),
-    flows: z.number().int().min(1).max(1000000000).optional()
-  }).strict().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  provisioning: z.object({
-    status: z.literal('READY'),
-    version: z.number().int().min(1),
-    completedAt: z.string().datetime()
-  }).strict().optional(),
-  provisioningRequestHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
-  developerSeed: z.object({
-    userId: z.string().uuid(), email: z.string().email(),
-    seededAt: z.string().datetime(), activatedAt: z.string().datetime().optional()
-  }).strict().optional()
-}).strict();
-const tenantManagementAuditSchema = z.object({
-  actorId: z.string(), tenantId: z.string(),
-  action: z.enum(['CREATED','UPDATED','SUSPENDED','REACTIVATED','ARCHIVED','RESTORED','RETENTION_UPDATED','USAGE_TARGETS_UPDATED','DOMAIN_ADDED','DOMAIN_VERIFIED','DOMAIN_REMOVED']),
-  at: z.string().datetime(),
-  previous: tenantRegistryEntrySchema.optional(),
-  next: tenantRegistryEntrySchema
-});
+export type CreatePlatformStateSchemaDependencies = typeof createPlatformStateSchemaContext;
+const { stateSchema } = createPlatformStateSchema(createPlatformStateSchemaContext);
+
 export type ObjectMetadataChange = {
   objectApiName: string; revision: number; action: 'CREATED' | 'UPDATED' | 'DELETED' | 'FIELD_CREATED' | 'FIELD_UPDATED' | 'FIELD_DELETED';
   actorUserId: string; at: string; before?: ObjectMetadata; after?: ObjectMetadata;
 };
-const objectMetadataChangeSchema = z.object({
-  objectApiName: z.string(), revision: z.number().int().nonnegative(),
-  action: z.enum(['CREATED', 'UPDATED', 'DELETED', 'FIELD_CREATED', 'FIELD_UPDATED', 'FIELD_DELETED']),
-  actorUserId: z.string(), at: z.string().datetime(),
-  before: objectSchema.optional(), after: objectSchema.optional()
-});
-const stateSchema = z.object({
-  tenantRegistry: z.record(tenantRegistryEntrySchema).default({}),
-  tenantManagementAudit: z.array(tenantManagementAuditSchema).default([]),
-  platformPolicies: z.record(z.array(z.enum(['platform:superadmin', 'licence:manage']))).default({}),
-  platformPolicyAudit: z.array(z.object({
-    actorId: z.string(), userId: z.string(), previous: z.array(z.string()),
-    next: z.array(z.string()), at: z.string().datetime()
-  })).default([]),
-  libraryComponents: z.array(libraryComponentSchema).default([]),
-  tenants: z.record(z.object({
-    passwordRecovery: z.object({ smtpCredentialId: z.string().default(''), fromEmail: z.string().default(''), policy: z.unknown().optional() })
-      .default({ smtpCredentialId: '', fromEmail: '' }),
-    securityAudit: z.array(z.object({
-      id: z.string(), at: z.string().datetime(), actorUserId: z.string(), action: z.string(),
-      targetUserId: z.string().optional(), details: z.record(z.string()).optional()
-    })).default([]),
-    mfaPolicy: z.object({ mode: z.enum(['Off', 'Optional', 'Required']) }).default({ mode: 'Off' }),
-    objects: z.array(objectSchema),
-    metadataHistory: z.array(objectMetadataChangeSchema).default([]),
-    flows: z.array(flowSchema),
-    platformEvents: z.array(platformEventSchema).default([]),
-    platformEventMessages: z.array(platformEventMessageSchema).default([]),
-    pages: z.array(pageSchema),
-    apps: z.array(lightningAppSchema).default(defaultLightningApps),
-    dashboards: z.array(dashboardSchema).default([]),
-    dashboardFolders: z.array(dashboardFolderSchema).default([]),
-    reportFolders: z.array(reportFolderSchema).default([]),
-    dashboardTerritories: z.array(dashboardTerritorySchema).default([]),
-    dashboardSnapshots: z.array(dashboardSnapshotSchema).default([]),
-    dashboardSubscriptions: z.array(dashboardSubscriptionSchema).default([]),
-    reports: z.array(reportSchema).default([]),
-    accessControl: accessControlSchema,
-    sharingSettings: z.record(sharingSettingSchema).default({}),
-    currencySettings: currencySettingsSchema.default({ corporateCurrency: 'USD', standardVatRate: 20, currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] }),
-    recordShares: z.array(recordShareSchema).default([]),
-    campaignMembers: z.array(campaignMemberSchema).default([]),
-    activities: z.array(recordActivitySchema).default([]),
-    chatterPosts: z.array(chatterPostSchema).default([]),
-    notifications: z.array(customNotificationSchema).default([]),
-    approvalRequests: z.array(approvalRequestSchema).default([]),
-    approvalProcesses: z.array(approvalProcessSchema).default([]),
-    records: z.record(z.array(runtimeRecordSchema)).default({}),
-    autoNumberSequences: z.record(z.number().int().nonnegative()).default({}),
-    fieldHistory: z.array(fieldHistoryEntrySchema).default([]),
-    interviews: z.array(flowInterviewSchema).default([]),
-    flowLogs: z.array(flowExecutionLogSchema).default([]),
-    scheduleRuns: z.record(z.string().datetime()).default({}),
-    scheduleRetries: z.record(scheduleRetrySchema).default({}),
-    automationSettings: automationSettingsSchema.default(defaultAutomationSettings),
-    namedCredentials: z.array(namedCredentialSchema).default([]),
-    emailAlerts: z.array(emailAlertSchema).default([]),
-    connectorSettings: z.array(connectorSettingsSchema).default(defaultConnectorSettings),
-    connectorDefinitions: z.array(connectorDefinitionSchema).default(defaultConnectorDefinitions),
-    integrationConnections: z.array(integrationConnectionSchema).default([])
-  })),
-  users: z.array(z.object({
-    id: z.string(), tenantId: z.string(), name: z.string(), email: z.string().email(),
-    passwordSalt: z.string(), passwordHash: z.string(), role: z.string(),
-    permissionSetIds: z.array(z.string()), permissionSetGroupIds: z.array(z.string()).default([]),
-    disabled: z.boolean(), createdAt: z.string().datetime(),
-    authRevokedBefore: z.number().int().nonnegative().optional(),
-    mfaSecret: z.object({ keyId: z.string(), iv: z.string(), authTag: z.string(), ciphertext: z.string() }).optional(),
-    mfaLastUsedStep: z.number().int().nonnegative().optional(),
-    mfaVersion: z.number().int().nonnegative().optional(),
-    authVersion: z.number().int().nonnegative().optional(),
-    passwordReset: z.object({
-      tokenHash: z.string().regex(/^(?:[0-9a-f]{64}|[0-9a-f]{32}:[0-9a-f]{64})$/),
-      expiresAt: z.number().int().nonnegative()
-    }).optional(),
-    lockedUntil: z.number().int().nonnegative().optional()
-  })),
-  refreshSessions: z.array(z.object({
-    tokenHash: z.string(), familyId: z.string(), userId: z.string(), tenantId: z.string(),
-    expiresAt: z.number(), usedAt: z.number().nullable(), revokedAt: z.number().nullable(),
-    mfaVerified: z.boolean().optional(),
-    authVersion: z.number().int().nonnegative().optional()
-  })),
-  revokedAccessTokens: z.record(z.number())
-}).superRefine((state, context) => {
-  const emails = new Set<string>();
-  state.users.forEach((user, index) => {
-    const normalizedEmail = user.email.trim().toLowerCase();
-    if (emails.has(normalizedEmail)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['users', index, 'email'],
-        message: `Email "${normalizedEmail}" must be unique across all tenants`
-      });
-    }
-    emails.add(normalizedEmail);
-  });
-});
+
 const fullObjectPermissions = { read: true, create: true, edit: true, delete: true, viewAll: true, modifyAll: true };
 const systemAdminPermissions = [
   'metadata:read', 'metadata:write', 'security:read', 'security:manage',
@@ -3284,34 +3095,29 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'Configuration__c', label: 'Configuration Values', dataType: 'Long Text Area', required: false, unique: false, description: 'Connector configuration values stored as JSON metadata.' }
   ] }
 ];
-function buildDefaultProfiles(objects: ObjectMetadata[], permissionSets: AccessControl['permissionSets']): AccessProfile[] {
-  const allAccess = Object.fromEntries(objects.map((object) => [object.apiName, { ...fullObjectPermissions }]));
-  const adminSet = permissionSets.find((set) => set.id === 'system-administrator');
-  const adminFields = Object.fromEntries(objects.flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }])));
-  const salesSet = permissionSets.find((set) => set.id === 'sales-user');
-  const supportSet = permissionSets.find((set) => set.id === 'support-agent');
-  return [
-    {
-      id: 'system-administrator', label: 'System Administrator', apiName: 'System_Administrator', license: 'MetaDrive',
-      description: 'Full administrative access to setup and tenant data.', isStandard: true,
-      systemPermissions: [...new Set([...(adminSet?.systemPermissions ?? []), ...systemAdminPermissions])],
-      objectPermissions: { ...allAccess, ...(adminSet?.objectPermissions ?? {}) },
-      recordTypePermissions: { ...(adminSet?.recordTypePermissions ?? {}) },
-      fieldPermissions: { ...adminFields, ...(adminSet?.fieldPermissions ?? {}) }
-    },
-    {
-      id: 'standard-user', label: 'Standard User', apiName: 'Standard_User', license: 'MetaDrive',
-      description: 'Tenant user with only the access granted by assigned permission sets.', isStandard: true,
-      systemPermissions: [], objectPermissions: {}, recordTypePermissions: {}, fieldPermissions: {}
-    },
-    ...(salesSet ? [{
-      ...salesSet, id: 'sales-manager', label: 'Sales Manager', apiName: 'Sales_Manager', isStandard: false
-    }] : []),
-    ...(supportSet ? [{
-      ...supportSet, id: 'support-agent', label: 'Support Agent', apiName: 'Support_Agent', isStandard: false
-    }] : [])
-  ].map((profile) => ({ ...profile, navigationDefaultAccess: 'Allow' as const }));
-}
+const createTenantDefaultsContext = {
+  get accessControlSchema() { return accessControlSchema; },
+  get baseObjects() { return baseObjects; },
+  get connectorAppCatalog() { return connectorAppCatalog; },
+  get connectorDefinitionRecords() { return connectorDefinitionRecords; },
+  get connectorRecords() { return connectorRecords; },
+  get defaultConnectorDefinitions() { return defaultConnectorDefinitions; },
+  get defaultConnectorSettings() { return defaultConnectorSettings; },
+  get defaultLightningApps() { return defaultLightningApps; },
+  get ensureConnectorAppRecords() { return ensureConnectorAppRecords; },
+  get flowSchema() { return flowSchema; },
+  get fullObjectPermissions() { return fullObjectPermissions; },
+  get pageSchema() { return pageSchema; },
+  get salesPermissions() { return salesPermissions; },
+  get seedWhatsappDummyCredential() { return seedWhatsappDummyCredential; },
+  get supportPermissions() { return supportPermissions; },
+  get systemAdminPermissions() { return systemAdminPermissions; },
+  get whatsappContextFlow() { return whatsappContextFlow; },
+  get whatsappRouterFlow() { return whatsappRouterFlow; },
+  get withObjectDefaults() { return withObjectDefaults; }
+};
+export type CreateTenantDefaultsDependencies = typeof createTenantDefaultsContext;
+const { buildDefaultProfiles, defaultTenantData } = createTenantDefaults(createTenantDefaultsContext);
 function connectorRecords(settings: ConnectorSettings[], ownerId: string): RuntimeRecord[] {
   const now = new Date().toISOString();
   return settings.map((setting) => stampRecordAuditFields({
@@ -3549,92 +3355,7 @@ function seedWhatsappDummyCredential(tenantId: string, current: StoredNamedCrede
     ...sealCredentialPayload(tenantId, whatsappDummyCredentialId, {}), createdAt: now, updatedAt: now
   })];
 }
-function defaultTenantData(admin?: Pick<LocalUser, 'id' | 'tenantId' | 'name' | 'email' | 'role' | 'permissionSetIds'>): TenantData {
-  const unified = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
-    && Boolean(process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID);
-  const objects = baseObjects.filter((object) => !unified || !['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c'].includes(object.apiName)).map(withObjectDefaults);
-  const allAccess = Object.fromEntries(objects.map((object) => [object.apiName, { ...fullObjectPermissions }]));
-  const permissionSets = [
-    { id: 'system-administrator', label: 'System Administrator', apiName: 'System_Administrator', license: 'MetaDrive', description: 'Full administrative access.', systemPermissions: systemAdminPermissions, objectPermissions: allAccess, recordTypePermissions: {}, fieldPermissions: Object.fromEntries(objects.flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }]))) },
-    { id: 'sales-user', label: 'Sales User', apiName: 'Sales_User', license: 'MetaDrive', description: 'Manage accounts and opportunities.', systemPermissions: salesPermissions, objectPermissions: {
-      Account: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false },
-      Contact: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false },
-      Campaign: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false },
-      Opportunity: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false }
-    }, recordTypePermissions: {}, fieldPermissions: { 'Opportunity.Amount': { read: true, edit: true }, 'Opportunity.StageName': { read: true, edit: true } } },
-    { id: 'support-agent', label: 'Support Agent', apiName: 'Support_Agent', license: 'MetaDrive', description: 'Work on customer cases.', systemPermissions: supportPermissions, objectPermissions: {
-      Account: { read: true, create: false, edit: false, delete: false, viewAll: false, modifyAll: false },
-      Contact: { read: true, create: false, edit: false, delete: false, viewAll: false, modifyAll: false },
-      Case: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false }
-    }, recordTypePermissions: {}, fieldPermissions: { 'Case.Priority': { read: true, edit: true }, 'Case.Status': { read: true, edit: true } }
-    }
-  ];
-  // Dedicated, assignable OneEngine permission set for credential administration.
-  // A flow author does not receive this permission merely by editing flows.
-  // Named Credentials uses existing RBAC system permissions.
-  const profiles = buildDefaultProfiles(objects, permissionSets);
-  const accessControl = accessControlSchema.parse({
-    profiles,
-    permissionSets,
-    permissionSetGroups: [],
-    roles: defaultRoles(),
-    users: admin ? [{
-      ...admin, username: admin.email, roleId: roleIdForName(admin.role, defaultRoles()),
-      profileId: profileIdForRole(admin.role, profiles)
-    }] : []
-  });
-  const flow = flowSchema.parse({
-    apiName: 'Renewal_Risk_Evaluation', label: 'Renewal Risk Evaluation', flowType: 'Record-Triggered Flow',
-    status: 'Draft', versionNumber: 1, activeVersion: null, triggerObject: 'Renewal__c',
-    startConfig: { trigger: 'created-or-updated', runWhen: 'after-save', entryConditions: [] },
-    elements: [
-      { id: 1, type: 'Start', label: 'Record-Triggered Flow', config: { trigger: 'created-or-updated', runWhen: 'after-save' } },
-      { id: 2, type: 'Decision', label: 'Renewal at risk?', config: { outcomes: [{ name: 'At_Risk', label: 'At Risk', conditions: [] }, { name: 'Default', label: 'Default Outcome', conditions: [] }] } },
-      { id: 3, type: 'Update Records', label: 'Update Renewal Status', config: { object: 'Renewal__c', field: 'Status__c', value: 'At Risk' } }
-    ],
-    connectors: [
-      { id: 'connector-1', from: 1, to: 2, label: '', kind: 'normal' },
-      { id: 'connector-2', from: 2, to: 3, label: 'At Risk', kind: 'normal' }
-    ],
-    resources: [{ name: 'recordId', label: 'Record ID', type: 'Variable', dataType: 'Text', isCollection: false, availableForInput: true, availableForOutput: false }],
-    versions: []
-  });
-  const page = pageSchema.parse({
-    apiName: 'Account_Record_Page', label: 'Account Record Page', targetObject: 'Account',
-    pageType: 'Record Page', template: 'header-main-sidebar', status: 'Draft', devices: ['Desktop', 'Phone'],
-    components: [
-      { id: 'highlights-panel', type: 'Highlights Panel', label: 'Highlights Panel', properties: { variant: 'compact' }, visible: true, region: 'header' },
-      { id: 'record-tabs', type: 'Tabs', label: 'Tabs', properties: { tabs: ['Related', 'Details', 'News'] }, visible: true, region: 'main' },
-      { id: 'related-list', type: 'Related List', label: 'Related List', properties: { relatedLists: ['Contacts', 'Opportunities', 'Cases'] }, visible: true, region: 'sidebar' }
-    ],
-    activationAssignments: [
-      { id: 'account-default-desktop', scope: 'Org Default', appId: null, profileId: null, recordTypeId: null, formFactors: ['Desktop'] },
-      { id: 'account-default-phone', scope: 'Org Default', appId: null, profileId: null, recordTypeId: null, formFactors: ['Phone'] }
-    ]
-  });
-  return {
-    mfaPolicy: { mode: 'Off' }, passwordRecovery: { smtpCredentialId: '', fromEmail: '' }, securityAudit: [],
-    objects, flows: [flow, flowSchema.parse(defaultRecoveryFlowDefinition()), whatsappRouterFlow(), whatsappContextFlow(), ...connectorAppCatalog.flows], platformEvents: [], platformEventMessages: [], pages: [page], apps: defaultLightningApps(), dashboards: [], dashboardFolders: [], reportFolders: [], dashboardTerritories: [], dashboardSnapshots: [], dashboardSubscriptions: [], reports: [], accessControl,
-    currencySettings: { corporateCurrency: 'USD', standardVatRate: 20, currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] },
-    sharingSettings: Object.fromEntries(objects.map((object) => [object.apiName, {
-      defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true
-    }])),
-    recordShares: [], campaignMembers: [], activities: [], chatterPosts: [], notifications: [], approvalRequests: [], approvalProcesses: [],
-    records: {
-      ...(unified ? {} : {
-        UneConnector__c: connectorRecords(defaultConnectorSettings, admin?.id ?? 'system'),
-        ConnectorProvider__c: connectorDefinitionRecords(defaultConnectorDefinitions, admin?.id ?? 'system'),
-        IntegrationConnection__c: []
-      }),
-      Connector_App__c: ensureConnectorAppRecords([], admin?.id ?? 'system')
-    },
-    autoNumberSequences: {},
-    fieldHistory: [], interviews: [], flowLogs: [], scheduleRuns: {}, scheduleRetries: {}, automationSettings: { ...defaultAutomationSettings }, namedCredentials: seedWhatsappDummyCredential(admin?.tenantId ?? 'bootstrap', []), emailAlerts: [],
-    connectorSettings: structuredClone(defaultConnectorSettings),
-    connectorDefinitions: structuredClone(defaultConnectorDefinitions),
-    integrationConnections: []
-  };
-}
+
 function relationshipApiName(label: string): string {
   const normalized = label.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
   return /^[A-Za-z]/.test(normalized) ? normalized : `Related_${normalized}`;
@@ -3772,508 +3493,50 @@ function ensureLeadStreetField(object: ObjectMetadata): ObjectMetadata {
   if (!streetField) throw new Error('Standard Lead Street field metadata is missing');
   return { ...object, fields: [...object.fields, streetField] };
 }
-const initialState: PlatformState = {
-  platformPolicies: {}, platformPolicyAudit: [], tenantRegistry: {}, tenantManagementAudit: [], tenants: {}, libraryComponents: [],
-  users: [], refreshSessions: [], revokedAccessTokens: {}
+const createStateHydrationContext = {
+  get baseObjects() { return baseObjects; },
+  get buildDefaultProfiles() { return buildDefaultProfiles; },
+  get chatterPostSchema() { return chatterPostSchema; },
+  get connectorAppCatalog() { return connectorAppCatalog; },
+  get connectorDefinitionRecords() { return connectorDefinitionRecords; },
+  get connectorRecords() { return connectorRecords; },
+  get dataPath() { return dataPath; },
+  get defaultConnectorDefinitions() { return defaultConnectorDefinitions; },
+  get ensureCommunicationFields() { return ensureCommunicationFields; },
+  get ensureConnectorAppRecords() { return ensureConnectorAppRecords; },
+  get ensureLeadStreetField() { return ensureLeadStreetField; },
+  get flowSchema() { return flowSchema; },
+  get fullObjectPermissions() { return fullObjectPermissions; },
+  get persistedMetadataReadMode() { return persistedMetadataReadMode; },
+  get installableAppCatalog() { return installableAppCatalog; },
+  get integrationConnectionRecord() { return integrationConnectionRecord; },
+  get maintenanceMode() { return maintenanceMode; },
+  get migrateUneConnectorCredentials() { return migrateUneConnectorCredentials; },
+  get persistState() { return persistState; },
+  get recordActivitySchema() { return recordActivitySchema; },
+  get seedWhatsappDummyCredential() { return seedWhatsappDummyCredential; },
+  get stateSchema() { return stateSchema; },
+  get supportPermissions() { return supportPermissions; },
+  get systemAdminPermissions() { return systemAdminPermissions; },
+  get whatsappContextFlow() { return whatsappContextFlow; },
+  get whatsappRouterFlow() { return whatsappRouterFlow; },
+  get withObjectDefaults() { return withObjectDefaults; }
 };
-function migrateStoredLeadStreetField(value: unknown): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const state = value as Record<string, unknown>;
-  if (!state.tenants || typeof state.tenants !== 'object' || Array.isArray(state.tenants)) return false;
-  const streetField = baseObjects.find((item) => item.apiName === 'Lead')
-    ?.fields.find((field) => field.apiName === 'Street');
-  if (!streetField) throw new Error('Standard Lead Street field metadata is missing');
-  let changed = false;
-  for (const tenant of Object.values(state.tenants as Record<string, unknown>)) {
-    if (!tenant || typeof tenant !== 'object' || Array.isArray(tenant)) continue;
-    const objects = (tenant as Record<string, unknown>).objects;
-    if (!Array.isArray(objects)) continue;
-    const lead = objects.find((object) => object && typeof object === 'object'
-      && !Array.isArray(object) && (object as Record<string, unknown>).apiName === 'Lead');
-    if (!lead || typeof lead !== 'object' || Array.isArray(lead)) continue;
-    const leadRecord = lead as Record<string, unknown>;
-    if (!Array.isArray(leadRecord.fields)
-      || leadRecord.fields.some((field) => field && typeof field === 'object'
-        && !Array.isArray(field) && (field as Record<string, unknown>).apiName === 'Street')) continue;
-    leadRecord.fields = [...leadRecord.fields, structuredClone(streetField)];
-    changed = true;
-  }
-  return changed;
-}
-// Persisted snapshots may predate today's required picklist validation. Reads
-// retain the startup compatibility mode; metadata create/update APIs do not.
-function parsePersistedPlatformState(raw: unknown): z.infer<typeof stateSchema> {
-  const previous = hydratingPersistedMetadata;
-  hydratingPersistedMetadata = true;
-  try {
-    return stateSchema.parse(raw);
-  } finally {
-    hydratingPersistedMetadata = previous;
-  }
-}
-function loadState(sqlState?: unknown): PlatformState {
-  try {
-    const storedState: unknown = sqlState ?? JSON.parse(readFileSync(dataPath, 'utf8'));
-    const leadStreetFieldAdded = migrateStoredLeadStreetField(storedState);
-    const legacySeedAuditRepaired = repairHistoricPackageRecordAudits(storedState, installableAppCatalog);
-    const parsed = parsePersistedPlatformState(storedState);
-    const tenants = Object.fromEntries(Object.entries(parsed.tenants).map(([tenantId, tenant]) => {
-      const consolidationReady = process.env.METADRIVE_UNIFIED_CONNECTORS === 'true'
-        && Boolean(process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID);
-      const retiredConnectorObjects = new Set(['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c']);
-      const storedObjects = tenant.objects.filter((object) => !consolidationReady || !retiredConnectorObjects.has(object.apiName)).map((object) => {
-        const ensured = withObjectDefaults(ensureLeadStreetField(ensureCommunicationFields(object)));
-        const baseline = baseObjects.find((candidate) => candidate.apiName === object.apiName);
-        if (baseline?.listViewFilter && !ensured.listViewFilter) {
-          const legacyDefaultColumns = object.fields.slice(0, 5).map((field) => field.apiName);
-          const existingColumns = object.searchLayouts?.searchResults;
-          const unchangedStarterColumns = !existingColumns
-            || (existingColumns.length === legacyDefaultColumns.length
-              && existingColumns.every((name, index) => name === legacyDefaultColumns[index]));
-          // Populate new metadata only for an untouched starter layout.
-          if (unchangedStarterColumns) return {
-            ...ensured, searchLayouts: {
-              ...ensured.searchLayouts,
-              searchResults: baseline.searchLayouts?.searchResults ?? existingColumns
-            },
-            listViewFilter: baseline.listViewFilter
-          };
-        }
-        if (!baseline || !['ConnectorProvider__c', 'IntegrationConnection__c', 'Connector_App__c'].includes(object.apiName)) return ensured;
-        return {
-          ...ensured,
-          fields: [
-            ...ensured.fields,
-            ...baseline.fields.filter((field) => !ensured.fields.some((existing) => existing.apiName === field.apiName))
-          ]
-        };
-      });
-      const objects = [
-        ...storedObjects,
-        ...baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'] : ['Campaign', 'Communication_Records__c', 'Connector_App__c']).includes(object.apiName)
-          && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(withObjectDefaults)
-      ];
-      const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
-      const ownerId = parsed.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'system';
-      records.Connector_App__c = ensureConnectorAppRecords(records.Connector_App__c, ownerId);
-      if (!consolidationReady && !(records.UneConnector__c?.length)) records.UneConnector__c = connectorRecords(tenant.connectorSettings, ownerId);
-      const previousProviderRecords = records.ConnectorProvider__c ?? [];
-      const connectorDefinitions = (tenant.connectorDefinitions ?? structuredClone(defaultConnectorDefinitions)).map((definition) => {
-        const previousRecord = previousProviderRecords.find((record) => record.ConnectorKey__c === definition.connectorKey);
-        const baseline = defaultConnectorDefinitions.find((candidate) => candidate.connectorKey === definition.connectorKey);
-        if (previousRecord?.Test__c === undefined && !definition.test && baseline?.test
-          && definition.authType === baseline.authType && definition.baseUrl === baseline.baseUrl) {
-          return { ...definition, test: baseline.test };
-        }
-        return definition;
-      });
-      records.ConnectorProvider__c = connectorDefinitions.flatMap((definition) => {
-        const previous = previousProviderRecords.find((record) => record.ConnectorKey__c === definition.connectorKey);
-        if (!previous) return connectorDefinitionRecords([definition], ownerId);
-        return [{
-          ...previous,
-          AuthCredential__c: definition.authCredential ?? '',
-          Test__c: definition.test ? JSON.stringify(definition.test) : ''
-        }];
-      });
-      const previousConnections = records.IntegrationConnection__c ?? [];
-      records.IntegrationConnection__c = (tenant.integrationConnections ?? []).map((connection) =>
-        integrationConnectionRecord(connection, String(previousConnections.find((record) => record.Id === connection.id)?.OwnerId ?? ownerId)));
-      const migratedCredentials = migrateUneConnectorCredentials(tenantId, records.UneConnector__c ?? [], connectorDefinitions,
-        seedWhatsappDummyCredential(tenantId, tenant.namedCredentials ?? []));
-      if (consolidationReady) {
-        // Retire duplicate Object Manager records only once their configurations have
-        // reached the encrypted tenant-scoped credential store.
-        const legacy = records.UneConnector__c ?? [];
-        const migratedNames = new Set(migratedCredentials.map((credential) => credential.label.toLowerCase()));
-        if (legacy.every((record) => {
-          const label = String(record.Name ?? '').toLowerCase();
-          return migratedNames.has(label)
-            || (label === 'email' && migratedCredentials.some((credential) => credential.protocol === 'SMTP'))
-            || (label === 'whatsapp' && migratedCredentials.some((credential) => credential.name === 'WhatsApp_Dummy'));
-        })) {
-          delete records.UneConnector__c;
-          delete records.ConnectorProvider__c;
-          delete records.IntegrationConnection__c;
-        } else {
-          throw new Error('Connector consolidation did not migrate all legacy configuration records');
-        }
-      }
-      const defaultProfiles = buildDefaultProfiles(objects, tenant.accessControl.permissionSets);
-      const connectorObjectNames = ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c', 'Connector_App__c'];
-      const connectorObjectPermissions = Object.fromEntries(connectorObjectNames.map((apiName) => [apiName, { ...fullObjectPermissions }]));
-      const connectorFieldPermissions = Object.fromEntries(objects
-        .filter((object) => connectorObjectNames.includes(object.apiName))
-        .flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }])));
-      const profiles = [
-        ...defaultProfiles.filter((profile) => !tenant.accessControl.profiles.some((existing) => existing.id === profile.id)),
-        ...tenant.accessControl.profiles
-      ].map((profile) => profile.id === 'system-administrator'
-        ? {
-          ...profile,
-          systemPermissions: [...new Set([...profile.systemPermissions, ...systemAdminPermissions])],
-          objectPermissions: { ...connectorObjectPermissions, ...profile.objectPermissions },
-          fieldPermissions: {
-            ...connectorFieldPermissions,
-            ...profile.fieldPermissions
-          }
-        }
-        : profile.id === 'sales-manager'
-          ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
-          : profile);
-      const roles = [
-        ...defaultRoles().filter((role) => !tenant.accessControl.roles.some((existing) => existing.id === role.id)),
-        ...tenant.accessControl.roles.map((role) => ({ ...role, apiName: role.apiName ?? roleApiNameForName(role.name) }))
-      ];
-      const profileIds = new Set(profiles.map((profile) => profile.id));
-      const accessUsers = tenant.accessControl.users.map((user) => ({
-        ...user,
-        roleId: user.roleId && roles.some((role) => role.id === user.roleId)
-          ? user.roleId : roleIdForName(user.role, roles),
-        profileId: user.role === 'System Administrator' ? 'system-administrator' : user.profileId && profileIds.has(user.profileId) ? user.profileId : profileIdForRole(user.role, profiles)
-      }));
-      // The login identity store is authoritative for tenant membership. Keep every
-      // authenticated tenant identity represented in RBAC without replacing existing grants.
-      const syncedAccessUsers = [
-        ...accessUsers,
-        ...parsed.users.filter((identity) => identity.tenantId === tenantId
-          && !accessUsers.some((entry) => entry.id === identity.id)).map((identity) => ({
-          id: identity.id,
-          name: identity.name,
-          username: identity.email,
-          locale: 'en-GB',
-          timeZone: 'Europe/London',
-          role: identity.role,
-          roleId: roleIdForName(identity.role, roles),
-          profileId: profileIdForRole(identity.role, profiles),
-          permissionSetIds: identity.permissionSetIds.filter((id) => tenant.accessControl.permissionSets.some((set) => set.id === id)),
-          permissionSetGroupIds: identity.permissionSetGroupIds,
-        }))
-      ];
-      const dashboardFolders = [...(tenant.dashboardFolders ?? [])];
-      const reportFolders = [...(tenant.reportFolders ?? [])];
-      const legacyReportFolderId = tenant.reports.length
-        ? (reportFolders.find((folder) => folder.label === 'Legacy Reports')?.id ?? randomUUID())
-        : '';
-      if (tenant.reports.length && !reportFolders.some((folder) => folder.id === legacyReportFolderId)) {
-        const now = new Date().toISOString();
-        reportFolders.push({
-          id: legacyReportFolderId,
-          label: 'Legacy Reports',
-          parentFolderId: null,
-          ownerUserId: ownerId,
-          shares: [],
-          visibility: 'All Users',
-          createdAt: now,
-          updatedAt: now
-        });
-      }
-      const reports = tenant.reports.map((report) => report.folderId && reportFolders.some((folder) => folder.id === report.folderId)
-        ? report
-        : { ...report, folderId: legacyReportFolderId || null });
-      const legacyFolderIds = new Map<string, string>();
-      const dashboards = tenant.dashboards.map((dashboard) => {
-        if (dashboard.folderId) return dashboard;
-        const folderKey = `${dashboard.ownerUserId}\0${dashboard.folderName.toLocaleLowerCase()}`;
-        let folderId = legacyFolderIds.get(folderKey);
-        if (!folderId) {
-          folderId = randomUUID();
-          legacyFolderIds.set(folderKey, folderId);
-          const now = new Date().toISOString();
-          dashboardFolders.push({
-            id: folderId,
-            label: dashboard.folderName,
-            parentFolderId: null,
-            ownerUserId: dashboard.ownerUserId,
-            shares: [],
-            createdAt: now,
-            updatedAt: now
-          });
-        }
-        return { ...dashboard, folderId };
-      });
-      return [tenantId, {
-      ...tenant,
-      records,
-      autoNumberSequences: migrateAutoNumberSequences(objects, records, tenant.autoNumberSequences),
-      apps: tenant.apps,
-      fieldHistory: tenant.fieldHistory ?? [],
-      interviews: tenant.interviews ?? [],
-      flowLogs: tenant.flowLogs ?? [],
-      scheduleRuns: tenant.scheduleRuns ?? {},
-      scheduleRetries: tenant.scheduleRetries ?? {},
-      automationSettings: tenant.automationSettings ?? { ...defaultAutomationSettings },
-      notifications: tenant.notifications ?? [],
-      approvalRequests: tenant.approvalRequests ?? [],
-      approvalProcesses: tenant.approvalProcesses ?? [],
-      namedCredentials: migratedCredentials,
-      connectorDefinitions,
-      integrationConnections: tenant.integrationConnections ?? [],
-      dashboards,
-      dashboardFolders,
-      reportFolders,
-      dashboardTerritories: tenant.dashboardTerritories ?? [],
-      dashboardSnapshots: tenant.dashboardSnapshots ?? [],
-      dashboardSubscriptions: tenant.dashboardSubscriptions ?? [],
-      reports,
-      sharingSettings: Object.fromEntries(objects.map((object) => [
-        object.apiName,
-        tenant.sharingSettings?.[object.apiName] ?? { defaultAccess: 'Private' as const, grantAccessUsingHierarchies: true }
-      ])),
-      recordShares: tenant.recordShares ?? [],
-      campaignMembers: tenant.campaignMembers ?? [],
-      activities: (tenant.activities ?? []).map((activity) => recordActivitySchema.parse(activity)),
-      chatterPosts: (tenant.chatterPosts ?? []).map((post) => chatterPostSchema.parse(post)),
-      accessControl: {
-        ...tenant.accessControl,
-        profiles: profiles.map((profile) => profile.id === 'system-administrator'
-          ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { ...fullObjectPermissions } } }
-          : profile.id === 'sales-manager'
-            ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
-            : profile),
-        roles,
-        users: syncedAccessUsers,
-        permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
-          ? {
-            ...set,
-            objectPermissions: { ...set.objectPermissions, ...connectorObjectPermissions, Campaign: set.objectPermissions.Campaign ?? { ...fullObjectPermissions } },
-            fieldPermissions: { ...Object.fromEntries(objects.flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }]))), ...connectorFieldPermissions, ...set.fieldPermissions }
-          }
-          : set.id === 'sales-user'
-            ? { ...set, objectPermissions: { ...set.objectPermissions, Campaign: set.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
-            : set.id === 'support-agent'
-              ? { ...set, systemPermissions: [...new Set([...set.systemPermissions, ...supportPermissions])] }
-            : set),
-      },
-      objects,
-      flows: [...tenant.flows,
-        ...(tenant.flows.some((f) => f.apiName === RECOVERY_FLOW_API) ? [] : [flowSchema.parse(defaultRecoveryFlowDefinition())]),
-        ...connectorAppCatalog.flows.filter((definition) => !tenant.flows.some((existingFlow) => existingFlow.apiName === definition.apiName)),
-        ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_ROUTER') ? [] : [whatsappRouterFlow()]),
-        ...(tenant.flows.some((existingFlow) => existingFlow.apiName === 'WA_CONTEXT') ? [] : [whatsappContextFlow()])
-      ].map(migrateLegacyWhatsappFlow).map(addStarterBeautyAlias),
-      pages: seedProtectedAdministrationPages(tenant).pages.map((page) => ({
-        ...page,
-        activationAssignments: page.activationAssignments ?? (page.status === 'Active' && page.pageType === 'Record Page' ? [
-          { id: `${page.apiName}-default-desktop`, scope: 'Org Default' as const, appId: null, profileId: null, recordTypeId: null, formFactors: ['Desktop' as const] },
-          { id: `${page.apiName}-default-phone`, scope: 'Org Default' as const, appId: null, profileId: null, recordTypeId: null, formFactors: ['Phone' as const] }
-        ] : [])
-      }))
-    }]; }));
-    const tenantsWithLibraryManagement = Object.fromEntries(Object.entries(tenants).map(([tenantId, tenant]) => [tenantId, {
-      ...tenant,
-      accessControl: {
-        ...tenant.accessControl,
-        users: tenant.accessControl.users.map((user) => ({ ...user, permissionSetIds: user.permissionSetIds.filter((id) => id !== 'oneengine-named-credentials') })),
-        permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
-          ? {
-            ...set,
-            systemPermissions: [...new Set([...set.systemPermissions, ...systemAdminPermissions])],
-            objectPermissions: { ...set.objectPermissions, UneConnector__c: set.objectPermissions.UneConnector__c ?? { ...fullObjectPermissions } },
-            fieldPermissions: {
-              ...Object.fromEntries((tenant.objects.find((object) => object.apiName === 'UneConnector__c')?.fields ?? []).map((field) => [
-                `UneConnector__c.${field.apiName}`, { read: true, edit: true }
-              ])),
-              ...set.fieldPermissions
-            }
-          }
-          : set.id === 'support-agent'
-            ? { ...set, systemPermissions: [...new Set([...set.systemPermissions, ...supportPermissions])] }
-          : set).filter((set) => set.id !== 'oneengine-named-credentials')
-      }
-    }]));
-    const migrated: PlatformState = {
-      ...parsed,
-      users: parsed.users.map((user) => ({ ...user, permissionSetIds: user.permissionSetIds.filter((id) => id !== 'oneengine-named-credentials') })),
-      tenants: Object.fromEntries(Object.entries(tenantsWithLibraryManagement).map(([tenantId, tenant]) => [
-        tenantId, retireUninstalledPackageMetadata(tenant, installableAppCatalog)
-      ])),
-      libraryComponents: pruneRetiredTrustedComponents(parsed.libraryComponents ?? [], installableAppCatalog)
-    };
-    // One-time, fail-closed retirement of the superseded WhatsApp object.
-    // The unified Communication Records object remains authoritative.
-    for (const [tenantId, tenant] of Object.entries(migrated.tenants)) {
-      if (!tenant.objects.some((object) => object.apiName === legacyWhatsappObjectApiName)) continue;
-      const recordsRemaining = (tenant.records[legacyWhatsappObjectApiName] ?? []).length;
-      const dependencies = findObjectDependencies(tenant, legacyWhatsappObjectApiName);
-      if (recordsRemaining > 0 || dependencies.length > 0) {
-        console.warn('Retaining legacy WhatsApp metadata; object still has records or dependencies', {
-          tenantId, recordsRemaining, dependencyCount: dependencies.length
-        });
-        continue;
-      }
-      migrated.tenants[tenantId] = removeObjectMetadata(tenant, legacyWhatsappObjectApiName);
-      console.info('Retired unused legacy WhatsApp object metadata', { tenantId });
-    }
-    if (!maintenanceMode && (leadStreetFieldAdded || legacySeedAuditRepaired || JSON.stringify(migrated) !== JSON.stringify(parsed))) persistState(migrated);
-    return migrated;
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      if (!maintenanceMode) persistState(initialState);
-      return structuredClone(initialState);
-    }
-    throw new Error(`Cannot load platform state from ${dataPath}: ${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-function persistState(next: PlatformState): void {
-  if (maintenanceMode) throw new Error('Database writes disabled during maintenance');
-  assertTenantIdentityIsolation(next);
-  // Typed SQL mode must never persist an unencrypted local JSON state copy.
-  const serialized = JSON.stringify(persistenceMode === 'jsonb' ? { ...next, refreshSessions: [] } : next);
-  const localSerialized = JSON.stringify(localStateWithoutSqlObjectDefinitions({ ...next, refreshSessions: [] }));
-  if (persistenceMode !== 'typed') {
-    mkdirSync(dirname(dataPath), { recursive: true });
-    const temporaryPath = `${dataPath}.tmp`;
-    writeFileSync(temporaryPath, localSerialized, { encoding: 'utf8', mode: 0o600 });
-    renameSync(temporaryPath, dataPath);
-  }
-  latestStateCommit = persistToPostgres(next, serialized);
-  void latestStateCommit.catch((error: unknown) => {
-    console.error('CRITICAL: MetaDrive state commit failed', error);
-  });
-}
-const startupStateStartedAt = performance.now();
-const existingPostgresState = await readPersistedState();
-console.info(`Startup persistence read: ${(performance.now() - startupStateStartedAt).toFixed(0)}ms`);
-if (persistenceMode === 'typed' && existingPostgresState === null)
-  throw new Error('Typed SQL runtime requires a verified database snapshot; cannot seed from JSON files');
-if (existingPostgresState !== null && persistenceMode !== 'typed') {
-  mkdirSync(dirname(dataPath), { recursive: true });
-  writeFileSync(dataPath, JSON.stringify(localStateWithoutSqlObjectDefinitions(existingPostgresState as PlatformState)), { encoding: 'utf8', mode: 0o600 });
-} else if (existingPostgresState === null) {
-  // Never replace an existing database state with a new empty seed.
-  console.log('No PostgreSQL state found; initializing from MetaDrive seed/state file');
-}
-const stateHydrationStartedAt = performance.now();
-let state = loadState(persistenceMode === 'typed' ? existingPostgresState : undefined);
-// Security tombstones commit separately from the large SQL metadata graph.
-// Merge them before accepting requests, so logout remains revoked after crash
-// recovery even if no subsequent metadata snapshot was written.
-const durableAuthLogins: DurableAuthLogin[] = maintenanceMode ? [] : await readDurableAuthLogins();
-const durableLogouts = maintenanceMode ? [] : await readAuthLogoutRevocations();
-let authOverlayRevision = 0;
-// Replay the independent durable auth records after every SQL snapshot refresh,
-// not just restart: otherwise the scheduler can overwrite live session changes.
-function restoreDurableAuthOverlay(snapshot: PlatformState): PlatformState {
-  if (persistenceMode !== 'typed') return snapshot;
-  const now = Date.now() / 1000;
-  const usersById = new Map(snapshot.users.map(user => [user.id, user.tenantId]));
-  const existingSessionHashes = new Set(snapshot.refreshSessions.map(session => session.tokenHash));
-  const refreshSessions = [...snapshot.refreshSessions];
-  const securityByTenant = new Map<string, SecurityAuditEvent[]>();
-  for (const entry of durableAuthLogins) {
-    if (!snapshot.tenants[entry.tenantId] || usersById.get(entry.userId) !== entry.tenantId) continue;
-    if (entry.expiresAt > now && !existingSessionHashes.has(entry.tokenHash)) {
-      refreshSessions.push({
-        tokenHash: entry.tokenHash, familyId: entry.familyId,
-        userId: entry.userId, tenantId: entry.tenantId, expiresAt: entry.expiresAt,
-        usedAt: entry.usedAt, revokedAt: entry.revokedAt,
-        mfaVerified: entry.mfaVerified, authVersion: entry.authVersion
-      });
-      existingSessionHashes.add(entry.tokenHash);
-    }
-    if (!securityByTenant.has(entry.tenantId)) securityByTenant.set(entry.tenantId, []);
-    securityByTenant.get(entry.tenantId)!.push({
-      id: entry.auditId, at: entry.auditAt,
-      actorUserId: entry.userId, action: 'auth.login.succeeded'
-    });
-  }
-  const tenants = { ...snapshot.tenants };
-  for (const [tenantId, events] of securityByTenant) {
-    const tenant = tenants[tenantId];
-    const audit = new Map(tenant.securityAudit.map(event => [event.id, event]));
-    for (const event of events) if (!audit.has(event.id)) audit.set(event.id, event);
-    tenants[tenantId] = {
-      ...tenant,
-      securityAudit: [...audit.values()].sort((a, b) => a.at.localeCompare(b.at)).slice(-5000)
-    };
-  }
-  const revokedAccessTokens = { ...snapshot.revokedAccessTokens };
-  const refreshRevocations = new Map<string, number>();
-  for (const entry of durableLogouts) {
-    if (entry.accessExpiresAt > now)
-      revokedAccessTokens[entry.jti] = Math.max(revokedAccessTokens[entry.jti] ?? 0, entry.accessExpiresAt);
-    if (entry.refreshHash && entry.refreshExpiresAt !== null && entry.refreshExpiresAt > now) {
-      const key = entry.tenantId + ':' + entry.userId + ':' + entry.refreshHash;
-      refreshRevocations.set(key, Math.max(refreshRevocations.get(key) ?? 0, entry.revokedAt));
-    }
-  }
-  return {
-    ...snapshot, tenants, revokedAccessTokens,
-    refreshSessions: refreshSessions.map(session => {
-      const revokedAt = refreshRevocations.get(session.tenantId + ':' + session.userId + ':' + session.tokenHash);
-      return revokedAt === undefined ? session
-        : { ...session, revokedAt: Math.max(session.revokedAt ?? 0, revokedAt) };
-    })
-  };
-}
-state = restoreDurableAuthOverlay(state);
-// Reconcile installed, licensed declarative app packages on every startup.
-// Historical installations can have a valid licence but no materialised
-// Home Page or registered component; they must be repaired without a
-// manual reinstall, account impersonation or an app-specific API bypass.
-if (!maintenanceMode) {
-  const nextTenants = { ...state.tenants };
-  let bundledLibrary = state.libraryComponents;
-  let repaired = 0;
-  for (const [tenantId, tenant] of Object.entries(state.tenants)) {
-    if (!(tenant.records?.Connector_App__c ?? []).some(row =>
-      row.Installed__c === true &&
-      installableAppCatalog.packages.some((pkg: { appKey: string; installation?: { allowInstalledMetadataWithoutLicence?: boolean } }) =>
-        pkg.appKey === row.AppKey__c && (pkg.installation?.allowInstalledMetadataWithoutLicence === true
-          || ['Trial', 'Licensed'].includes(String(row.LicenceStatus__c)))))) continue;
-    try {
-      const installed = reconcileInstalledAppSeeds(tenant, installableAppCatalog, tenantId) as TenantData;
-      if (JSON.stringify(installed) !== JSON.stringify(tenant)) {
-        nextTenants[tenantId] = installed;
-        repaired++;
-      }
-      bundledLibrary = ensureBundledAppComponents(
-        bundledLibrary, installed, installableAppCatalog, bundledCustomComponentsPath
-      );
-    } catch (error) {
-      console.error('Unable to reconcile licensed app metadata for tenant', tenantId, error);
-    }
-  }
-  if (repaired || bundledLibrary.some((item, index) => item !== state.libraryComponents[index])) {
-    state = { ...state, tenants: nextTenants, libraryComponents: bundledLibrary };
-    console.info('Reconciled licensed app metadata at startup for tenants:', repaired);
-  }
-}
-assertTenantIdentityIsolation(state);
-console.info(`Startup state hydration: ${(performance.now() - stateHydrationStartedAt).toFixed(0)}ms`);
-// Remove legacy internal UI requests from Communication Records before the
-// startup snapshot is persisted. Preserve inbound provider webhooks, genuine
-// messages, and outbound API history; never erase non-internal records.
-let removedInternalApiAuditRecords = 0;
-for (const tenant of Object.values(state.tenants)) {
-  const entries = tenant.records.Communication_Records__c;
-  if (!entries) continue;
-  const kept = entries.filter((record) => {
-    const internalApiAudit = record.Communication_Mode__c === 'API'
-      && record.Direction__c === 'Incoming'
-      && String(record.Api_Id__c ?? '').includes(' /api/');
-    if (internalApiAudit) removedInternalApiAuditRecords += 1;
-    return !internalApiAudit;
-  });
-  if (kept.length !== entries.length) tenant.records.Communication_Records__c = kept;
-}
-if (removedInternalApiAuditRecords) {
-  console.info('Removed legacy internal API audit records:', removedInternalApiAuditRecords);
-}
-try {
-  credentialKeyRing();
-  console.info('Named Credentials encryption readiness: configured');
-} catch (error) {
-  const missingKeys = !process.env.METADRIVE_CREDENTIAL_KEYS;
-  const missingActiveId = !process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID;
-  const status = missingKeys && missingActiveId ? 'both variables missing'
-    : missingKeys ? 'METADRIVE_CREDENTIAL_KEYS missing'
-    : missingActiveId ? 'METADRIVE_CREDENTIAL_ACTIVE_KEY_ID missing'
-    : 'invalid environment configuration';
-  console.warn('Named Credentials encryption readiness: ' + status);
-}
-if (!maintenanceMode) await persistToPostgres(state);
+export type CreateStateHydrationDependencies = typeof createStateHydrationContext;
+const { loadState, parsePersistedPlatformState } = createStateHydration(createStateHydrationContext);
+
+const initializePlatformStateContext = {
+  persistence: { persistenceMode, readPersistedState, readDurableAuthLogins,
+    readAuthLogoutRevocations, persistToPostgres },
+  get bundledCustomComponentsPath() { return bundledCustomComponentsPath; },
+  get dataPath() { return dataPath; },
+  get installableAppCatalog() { return installableAppCatalog; },
+  get loadState() { return loadState; },
+  get maintenanceMode() { return maintenanceMode; },
+  get platformStore() { return platformStore; }
+};
+const platformInitialization = await initializePlatformState(initializePlatformStateContext);
+
 function publicIntegrationConnection(connection: IntegrationConnection, definition: ConnectorDefinition, credentials: Record<string, string>) {
   return {
     id: connection.id,
@@ -4315,239 +3578,34 @@ function publicNamedCredential(credential: StoredNamedCredential) {
 // No schema/tenant is visible to a new tenant until its first durable commit.
 // Serialize provisioning within an instance; SQL modes also use optimistic
 // revisions to reject cross-instance stale writers rather than lose data.
-const provisioningPendingTenants = new Set<string>();
-let provisioningCommitFailed = false;
-let tenantProvisioningSerial: Promise<void> = Promise.resolve();
-class TenantProvisioningStoreError extends Error {
-  constructor() { super('Tenant provisioning could not be durably committed. Retry after database recovery.'); }
-}
-function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData, developer?: LocalUser): void {
-  if (!data.accessControl.users.some((user) => user.id === admin.id && user.profileId === 'system-administrator'))
-    throw new Error('Initial administrator permissions were not provisioned');
-  for (const apiName of ['Account', 'Contact', 'User']) {
-    if (!data.objects.some((item) => item.apiName === apiName))
-      throw new Error('Required tenant object was not provisioned');
-  }
-  if (!data.accessControl.permissionSets.some((set) => set.id === 'system-administrator'))
-    throw new Error('Initial system administrator permission set is missing');
-  const expectedIds = new Set([admin.id, ...(developer ? [developer.id] : [])]);
-  if (admin.tenantId !== tenantId || (developer && (developer.tenantId !== tenantId || !developer.disabled))
-    || data.accessControl.users.length !== expectedIds.size
-    || data.accessControl.users.some((user) => !expectedIds.has(user.id)))
-    throw new Error('Initial tenant user isolation check failed');
-  if (developer && !data.accessControl.users.some((user) =>
-    user.id === developer.id && user.profileId === 'system-administrator'
-    && user.permissionSetIds.includes('system-administrator')))
-    throw new Error('Developer initial permissions were not provisioned');
-  // The existing tenant template intentionally seeds a disabled WhatsApp dummy
-  // credential, scoped to this tenant. Never inherit a live connection.
-  if (data.integrationConnections.length !== 0)
-    throw new Error('New tenants must not inherit another tenant integration connection');
-}
-// The developer identity is a tenant-owned seeder, never an operator backdoor.
-// Domain defaults to the tenant administrator's mailbox domain, or an explicit
-// tenant domain supplied at provisioning. No credentials are shared with MetaDrive.
-function developerDomainFor(email: string, preferred?: string): string {
-  const domain = (preferred ?? email.split('@')[1] ?? '').trim().toLowerCase();
-  if (domain.length > 253 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain))
-    throw new Error('A valid tenant domain is required for the developer account');
-  return domain;
-}
-async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string,
-  actorId = 'bootstrap', idempotencyKey?: string, developerDomain?: string): Promise<{ user: LocalUser; created: boolean }> {
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId))
-    throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
-  const normalizedEmail = email.trim().toLowerCase();
-  const normalizedName = name.trim();
-  const normalizedAdminName = adminName.trim();
-  // Without a tenant-controlled domain, use a distinct tenant-scoped placeholder
-  // rather than claiming "developer@" at a shared email-provider domain.
-  const domain = developerDomain ? developerDomainFor(normalizedEmail, developerDomain)
-    : developerDomainFor(normalizedEmail, tenantId.toLowerCase() + '.' + normalizedEmail.split('@')[1]);
-  const developerEmail = 'developer@' + domain;
-  if (developerEmail === normalizedEmail)
-    throw new Error('The initial administrator email must differ from the developer seeder email');
-  if (!normalizedName || !normalizedAdminName) throw new Error('Tenant and administrator names are required');
-  const requestHash = idempotencyKey ? hashToken(actorId + ':' + idempotencyKey) : undefined;
-  const previous = tenantProvisioningSerial;
-  let release: () => void = () => {};
-  tenantProvisioningSerial = new Promise<void>((resolve) => { release = resolve; });
-  await previous;
-  try {
-    if (provisioningCommitFailed)
-      throw new TenantProvisioningStoreError();
-    if (requestHash && Object.entries(state.tenantRegistry).some(([existingId, item]) =>
-      item.provisioningRequestHash === requestHash && existingId !== tenantId))
-      throw new Error('Idempotency key was already used for another tenant');
-    const existing = state.tenants[tenantId];
-    if (existing) {
-      const entry = state.tenantRegistry[tenantId];
-      const user = state.users.find((item) => item.tenantId === tenantId && item.email === normalizedEmail);
-      // A retry with the same actor/key must not change passwords or grant
-      // permissions; return the original result without creating another user.
-      if (requestHash && entry?.provisioningRequestHash === requestHash && user)
-        return { user, created: false };
-      throw new Error('Tenant already exists');
-    }
-    if (state.users.some((user) => [normalizedEmail, developerEmail].includes(user.email.trim().toLowerCase())))
-      throw new Error('Administrator or developer email is already registered. Each email belongs to one tenant.');
-    const credentials = await hashPassword(password);
-    // The developer gets an unguessable, never-disclosed secret and is disabled.
-    // Only tenant security administrators can activate it with a new password.
-    const developerCredentials = await hashPassword(randomBytes(32).toString('base64url'));
-    // No other provisioning writer can interleave while this hash is calculated.
-    const createdAt = new Date().toISOString();
-    const admin: LocalUser = {
-      id: randomUUID(), tenantId, name: normalizedAdminName, email: normalizedEmail,
-      passwordSalt: credentials.salt, passwordHash: credentials.hash,
-      role: 'System Administrator', permissionSetIds: ['system-administrator'],
-      permissionSetGroupIds: [], disabled: false, createdAt
-    };
-    const developer: LocalUser = {
-      id: randomUUID(), tenantId, name: 'Developer', email: developerEmail,
-      passwordSalt: developerCredentials.salt, passwordHash: developerCredentials.hash,
-      role: 'System Administrator', permissionSetIds: ['system-administrator','oneengine-tenant-developer'],
-      permissionSetGroupIds: [], disabled: true, createdAt
-    };
-    const tenantSeed = initializeTenantCore(defaultTenantData(admin), {authorizedUserIds:[admin.id], trustedProvisioningDefaults:true});
-    const developerAccess = {
-      id: developer.id, name: developer.name, username: developer.email,
-      role: developer.role, roleId: roleIdForName(developer.role, tenantSeed.accessControl.roles),
-      profileId: profileIdForRole(developer.role, tenantSeed.accessControl.profiles),
-      permissionSetIds: developer.permissionSetIds, permissionSetGroupIds: developer.permissionSetGroupIds,
-      timeZone: 'UTC', locale: 'en-GB'
-    };
-    const data: TenantData = {
-      ...tenantSeed,
-      records: {
-        ...tenantSeed.records,
-        Connector_App__c: ensureConnectorAppRecords(tenantSeed.records.Connector_App__c, admin.id),
-        ...(!((process.env.METADRIVE_UNIFIED_CONNECTORS === 'true') &&
-          process.env.METADRIVE_CREDENTIAL_KEYS && process.env.METADRIVE_CREDENTIAL_ACTIVE_KEY_ID)
-          ? { UneConnector__c: tenantSeed.records.UneConnector__c?.length
-              ? tenantSeed.records.UneConnector__c : connectorRecords(defaultConnectorSettings, admin.id) }
-          : {})
-      },
-      accessControl: {
-        ...tenantSeed.accessControl,
-        users: [...tenantSeed.accessControl.users, developerAccess]
-      }
-    };
-    verifySeededTenant(tenantId, admin, data, developer);
-    const registryEntry: TenantRegistryEntry = {
-      name: normalizedName, description: '', status: 'ACTIVE', createdAt, updatedAt: createdAt,
-      provisioning: { status: 'READY', version: 1, completedAt: createdAt },
-      developerSeed: { userId: developer.id, email: developer.email, seededAt: createdAt },
-      ...(requestHash ? { provisioningRequestHash: requestHash } : {})
-    };
-    // Preserve provenance before opening a second tenant: a legacy unowned
-    // component could only have been authored in the existing sole tenant.
-    // Do this inside the same durable provisioning commit, never on a later
-    // best-effort migration or by guessing ownership with multiple tenants.
-    const previousTenantIds = Object.keys(state.tenants);
-    const libraryComponents = previousTenantIds.length === 1
-      ? state.libraryComponents.map((component) =>
-        component.tenantId || component.trustedBundled
-          ? component : { ...component, tenantId: previousTenantIds[0] })
-      : state.libraryComponents;
-    const nextState: PlatformState = {
-      ...state,
-      libraryComponents,
-      tenants: { ...state.tenants, [tenantId]: data },
-      tenantRegistry: { ...state.tenantRegistry, [tenantId]: registryEntry },
-      tenantManagementAudit: [...state.tenantManagementAudit,
-        { actorId, tenantId, action: 'CREATED' as const, at: createdAt, next: registryEntry }].slice(-5000),
-      users: [...state.users, admin, developer]
-    };
-    provisioningPendingTenants.add(tenantId);
-    try {
-      // The persisted state contains registry, objects, permission sets and
-      // login identity in ONE complete database snapshot/SQL transaction.
-      persistState(nextState);
-      state = nextState;
-      const commit = latestStateCommit;
-      await commit;
-    } catch (error) {
-      // Never report success or allow the provisional administrator to log in.
-      // Reconcile uncertain writes through the durable SQL state on restart.
-      provisioningCommitFailed = true;
-      console.error('CRITICAL: tenant provisioning persistence failed', error);
-      throw new TenantProvisioningStoreError();
-    }
-    provisioningPendingTenants.delete(tenantId);
-    console.info('Tenant provisioning committed', { tenantId, actorId });
-    return { user: admin, created: true };
-  } finally {
-    release();
-  }
-}
-async function bootstrapTenant(): Promise<void> {
-  const tenantId = process.env.METADRIVE_BOOTSTRAP_TENANT_ID;
-  const tenantName = process.env.METADRIVE_BOOTSTRAP_TENANT_NAME;
-  const adminName = process.env.METADRIVE_BOOTSTRAP_ADMIN_NAME ?? 'Organization Administrator';
-  const email = process.env.METADRIVE_BOOTSTRAP_ADMIN_EMAIL;
-  const password = process.env.METADRIVE_BOOTSTRAP_ADMIN_PASSWORD;
-  if (!tenantId && !tenantName && !email && !password) return;
-  if (!tenantId || !tenantName || !email || !password) {
-    throw new Error('Set METADRIVE_BOOTSTRAP_TENANT_ID, METADRIVE_BOOTSTRAP_TENANT_NAME, METADRIVE_BOOTSTRAP_ADMIN_EMAIL, and METADRIVE_BOOTSTRAP_ADMIN_PASSWORD together');
-  }
-  const tenant = state.tenants[tenantId];
-  const normalizedEmail = email.trim().toLowerCase();
-  const existingUser = state.users.find((user) => user.email.trim().toLowerCase() === normalizedEmail);
-  if (!tenant) {
-    await createTenant(tenantId, tenantName, adminName, email, password);
-    return;
-  }
-  // Bootstrap credentials are only for first-time provisioning. Never reset an
-  // existing administrator's password on application startup or redeployment.
-  const credentials = existingUser ? null : await hashPassword(password);
-  const user = existingUser && existingUser.tenantId === tenantId
-    ? existingUser
-    : {
-        id: randomUUID(), tenantId, name: adminName, email: normalizedEmail,
-        passwordSalt: credentials!.salt, passwordHash: credentials!.hash,
-        role: 'System Administrator', permissionSetIds: ['system-administrator'],
-        permissionSetGroupIds: [],
-        disabled: false, createdAt: new Date().toISOString()
-      };
-  if (existingUser && existingUser.tenantId !== tenantId) {
-    throw new Error('Bootstrap administrator email already belongs to another tenant');
-  }
-  const accessUser = {
-    id: user.id, name: user.name, username: user.email, role: user.role,
-    roleId: roleIdForName(user.role, tenant.accessControl.roles),
-    profileId: profileIdForRole(user.role, tenant.accessControl.profiles),
-    permissionSetIds: user.permissionSetIds,
-    permissionSetGroupIds: user.permissionSetGroupIds,
-    timeZone: 'UTC',
-    locale: 'en-US'
-  };
-  const nextTenant = {
-    ...tenant,
-    accessControl: {
-      ...tenant.accessControl,
-      users: tenant.accessControl.users.some((item) => item.id === user.id)
-        ? tenant.accessControl.users.map((item) => item.id === user.id ? { ...item, ...accessUser } : item)
-        : [...tenant.accessControl.users, accessUser]
-    }
-  };
-  const nextState = {
-    ...state,
-    tenants: { ...state.tenants, [tenantId]: nextTenant },
-    users: state.users.some((item) => item.id === user.id)
-      ? state.users.map((item) => item.id === user.id ? user : item)
-      : [...state.users, user]
-  };
-  persistState(nextState);
-  state = nextState;
-}
+const createTenantProvisioningContext = {
+  get defaultTenantData() { return defaultTenantData; },
+  get connectorRecords() { return connectorRecords; },
+  get defaultConnectorSettings() { return defaultConnectorSettings; },
+  get ensureConnectorAppRecords() { return ensureConnectorAppRecords; },
+  get persistState() { return persistState; },
+  get platformStore() { return platformStore; }
+};
+export type CreateTenantProvisioningDependencies = typeof createTenantProvisioningContext;
+const tenantProvisioning = createTenantProvisioning(createTenantProvisioningContext);
+
+const createTenantBootstrapContext = {
+  get createTenant() { return tenantProvisioning.createTenant; },
+  get persistState() { return persistState; },
+  get platformStore() { return platformStore; }
+};
+const { bootstrapTenant } = createTenantBootstrap(createTenantBootstrapContext);
 // During guarded database maintenance, bootstrap must never mutate persisted state.
 // Existing users and tenants are loaded read-only; bootstrap resumes after maintenance.
 if (!maintenanceMode) await bootstrapTenant();
-function tenantIsActive(tenantId: string): boolean {
-  return !provisioningPendingTenants.has(tenantId)
-    && (state.tenantRegistry[tenantId]?.status ?? 'ACTIVE') === 'ACTIVE';
-}
+const createTenantDataServiceContext = {
+  get bundledCustomComponentsPath() { return bundledCustomComponentsPath; },
+  get installableAppCatalog() { return installableAppCatalog; },
+  get persistState() { return persistState; },
+  get platformStore() { return platformStore; },
+  get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; }
+};
+const { tenantIsActive, tenantData, persistTenantRecords } = createTenantDataService(createTenantDataServiceContext);
 function withSecurityEvent(
   tenant: TenantData,
   actorUserId: string,
@@ -4563,16 +3621,14 @@ function withSecurityEvent(
   // No passwords, bearer tokens, MFA secrets, raw request bodies, or network identifiers.
   return { ...tenant, securityAudit: [...tenant.securityAudit, event].slice(-5000) };
 }
-function tenantData(tenantId: string): TenantData | undefined {
-  return tenantIsActive(tenantId) ? state.tenants[tenantId] : undefined;
-}
+
 function getPrincipal(res: Response): Principal {
   const principal = res.locals.principal as Principal | undefined;
   if (!principal) throw new Error('Authenticated principal was not established');
   return principal;
 }
 function principalUser(principal: Principal): LocalUser | undefined {
-  return state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
+  return platformStore.state.users.find((user) => user.id === principal.userId && user.tenantId === principal.tenantId && !user.disabled);
 }
 // In-memory, tenant-reference/versioned authorization cache. No TTL-based stale grants:
 // tenant metadata updates replace the tenant object; identity changes replace the
@@ -4581,7 +3637,7 @@ const effectivePermissionCache = new WeakMap<TenantData, Map<string, {
   user: LocalUser; platformGrants?: PlatformState['platformPolicies'][string]; permissions: string[];
 }>>();
 function effectivePermissions(user: LocalUser, data: TenantData): string[] {
-  const platformGrants = state.platformPolicies[user.id];
+  const platformGrants = platformStore.state.platformPolicies[user.id];
   let tenantCache = effectivePermissionCache.get(data);
   if (!tenantCache) {
     tenantCache = new Map();
@@ -4614,7 +3670,7 @@ function effectivePermissions(user: LocalUser, data: TenantData): string[] {
   for (const permission of permissions) {
     if (permission === 'licence:manage' || permission.startsWith('platform:')) permissions.delete(permission);
   }
-  const policies = state.platformPolicies[user.id] ?? [];
+  const policies = platformStore.state.platformPolicies[user.id] ?? [];
   if (policies.includes('platform:superadmin')) {
     permissions.add('platform:superadmin');
     permissions.add('licence:manage');
@@ -4648,7 +3704,7 @@ function canSelectDashboardRunningUser(viewer: Principal, tenant: TenantData, ta
     && roleIsAtOrBelow(targetRoleId, viewerRoleId, tenant.accessControl.roles));
 }
 function dashboardRunningUserChoices(viewer: Principal, tenant: TenantData): string[] {
-  return state.users
+  return platformStore.state.users
     .filter((user) => user.tenantId === viewer.tenantId && !user.disabled
       && canSelectDashboardRunningUser(viewer, tenant, user.id))
     .map((user) => user.id);
@@ -4662,13 +3718,13 @@ function dashboardRunningPrincipal(
   if (dashboard.allowViewerToSelectRunningUser) {
     if (!selectedRunningUserId || selectedRunningUserId === viewer.userId) return viewer;
     if (!canSelectDashboardRunningUser(viewer, tenant, selectedRunningUserId)) return undefined;
-    const selectedUser = state.users.find((item) =>
+    const selectedUser = platformStore.state.users.find((item) =>
       item.id === selectedRunningUserId && item.tenantId === viewer.tenantId && !item.disabled);
     return selectedUser ? principalForUser(selectedUser, tenant) : undefined;
   }
   if (selectedRunningUserId && selectedRunningUserId !== dashboard.runningUserId) return undefined;
   if (!dashboard.runningUserId) return viewer;
-  const user = state.users.find((item) =>
+  const user = platformStore.state.users.find((item) =>
     item.id === dashboard.runningUserId && item.tenantId === viewer.tenantId && !item.disabled);
   return user ? principalForUser(user, tenant) : undefined;
 }
@@ -4687,7 +3743,7 @@ function dashboardRunningUserSelectionError(
   if (!canSelectDashboardRunningUser(viewer, tenant, selectedRunningUserId)) {
     return 'You do not have permission to choose this running user';
   }
-  const selectedUser = state.users.find((item) =>
+  const selectedUser = platformStore.state.users.find((item) =>
     item.id === selectedRunningUserId && item.tenantId === viewer.tenantId && !item.disabled);
   if (!selectedUser) return 'The selected running user must be active and belong to this tenant';
   return undefined;
@@ -4813,9 +3869,9 @@ function requireAnyPermission(...permissions: string[]) {
     next();
   };
 }
-const tenantForRequestHost = (req: Request) => resolveTenantForRequestHost(req, state.tenantRegistry);
+const tenantForRequestHost = (req: Request) => resolveTenantForRequestHost(req, platformStore.state.tenantRegistry);
 const accessAuthentication = createAccessAuthentication({
-  jwtService, getState: () => state, tenantIsActive, requestTenantMatches,
+  jwtService, getState: () => platformStore.state, tenantIsActive, requestTenantMatches,
   mfaRequiredForUser, effectivePermissions
 });
 function cookieValue(req: Request, name: string): string | undefined {
@@ -4908,16 +3964,16 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
       console.error('Secure login session persistence failed', error);
       return void res.status(503).json({ error: 'Unable to establish a durable session' });
     }
-    durableAuthLogins.push(durableEntry);
-    authOverlayRevision++;
+    platformInitialization.durableAuthLogins.push(durableEntry);
+    platformInitialization.authOverlayRevision++;
     // Merge onto the latest state after awaiting SQL; concurrent metadata
     // changes must not be overwritten by an older captured state object.
-    const latestTenant = state.tenants[user.tenantId];
-    state = {
-      ...state,
-      refreshSessions: [...state.refreshSessions, refresh.session],
+    const latestTenant = platformStore.state.tenants[user.tenantId];
+    platformStore.state = {
+      ...platformStore.state,
+      refreshSessions: [...platformStore.state.refreshSessions, refresh.session],
       tenants: {
-        ...state.tenants,
+        ...platformStore.state.tenants,
         [user.tenantId]: {
           ...latestTenant,
           securityAudit: [...latestTenant.securityAudit, securityEvent].slice(-5000)
@@ -4929,16 +3985,16 @@ async function issueLoginResponse(res: Response, user: LocalUser, data: TenantDa
     res.locals.authSqlCommitted = true;
   } else {
     const nextState = {
-      ...state,
-      refreshSessions: [...state.refreshSessions, refresh.session],
+      ...platformStore.state,
+      refreshSessions: [...platformStore.state.refreshSessions, refresh.session],
       tenants: {
-        ...state.tenants, [user.tenantId]: withSecurityEvent(data, user.id, 'auth.login.succeeded')
+        ...platformStore.state.tenants, [user.tenantId]: withSecurityEvent(data, user.id, 'auth.login.succeeded')
       },
       revokedAccessTokens: Object.fromEntries(
-        Object.entries(state.revokedAccessTokens).filter(([, expiry]) => expiry > Date.now() / 1000))
+        Object.entries(platformStore.state.revokedAccessTokens).filter(([, expiry]) => expiry > Date.now() / 1000))
     };
     persistState(nextState);
-    state = nextState;
+    platformStore.state = nextState;
   }
   const sessionStateMs = performance.now() - sessionStateStartedAt;
   setRefreshCookie(res, refresh.token);
@@ -5022,7 +4078,7 @@ function recordMfaFailure(userId: string): void {
 }
 function revokeUserRefreshSessions(userId: string, tenantId: string): RefreshSession[] {
   const now = Date.now() / 1000;
-  return state.refreshSessions.map((session) =>
+  return platformStore.state.refreshSessions.map((session) =>
     session.userId === userId && session.tenantId === tenantId && session.revokedAt === null
       ? { ...session, revokedAt: now }
       : session);
@@ -5041,16 +4097,16 @@ function recordUserLoginFailure(user: LocalUser): void {
   const tenant = tenantData(user.tenantId);
   if (!tenant) return;
   const nextState: PlatformState = {
-    ...state,
-    users: state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
+    ...platformStore.state,
+    users: platformStore.state.users.map((item) => item.id === user.id && item.tenantId === user.tenantId
       ? { ...item, lockedUntil: now + 15 * 60_000, authVersion: (item.authVersion ?? 0) + 1 }
       : item),
     refreshSessions: revokeUserRefreshSessions(user.id, user.tenantId),
-    tenants: { ...state.tenants, [user.tenantId]: withSecurityEvent(
+    tenants: { ...platformStore.state.tenants, [user.tenantId]: withSecurityEvent(
       tenant, user.id, 'auth.account.auto-locked') }
   };
   persistState(nextState);
-  state = nextState;
+  platformStore.state = nextState;
 }
 const loginSchema = z.object({
   email: z.string().trim().email().max(254),
@@ -5081,9 +4137,9 @@ export const phase3AuthContext = {
   webOrigins,
   tenantInfoForRecovery,
   activeFlowDefinition,
-  durableLogouts,
-  TenantProvisioningStoreError,
-  createTenant,
+  durableLogouts: platformInitialization.durableLogouts,
+  TenantProvisioningStoreError: tenantProvisioning.TenantProvisioningStoreError,
+  createTenant: tenantProvisioning.createTenant,
   tenantIsActive,
   withSecurityEvent,
   tenantData,
@@ -5141,16 +4197,16 @@ export const phase3AuthContext = {
   persistAuthLogoutRevocation,
   persistenceMode,
   z,
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
-  get latestStateCommit() { return latestStateCommit; },
-  set latestStateCommit(v: Promise<unknown>) { latestStateCommit = v; },
-  get authOverlayRevision() { return authOverlayRevision; },
-  set authOverlayRevision(v: number) { authOverlayRevision = v; }
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
+  get latestStateCommit() { return platformStore.latestCommit; },
+  set latestStateCommit(v: Promise<unknown>) { platformStore.latestCommit = v; },
+  get authOverlayRevision() { return platformInitialization.authOverlayRevision; },
+  set authOverlayRevision(v: number) { platformInitialization.authOverlayRevision = v; }
 };
 registerAuthenticationRoutes(phase3AuthContext);
 registerSessionSecurityRoutes({ app, accessAuthentication, requirePermission, getPrincipal, principalUser,
-  tenantData, jwtService, getState: () => state, setState: (next) => { state = next; },
+  tenantData, jwtService, getState: () => platformStore.state, setState: (next) => { platformStore.state = next; },
   persistState, revokeUserRefreshSessions, withSecurityEvent, effectivePermissions,
   clearRefreshCookie, userLoginFailures });
 // MD-01A: separate, audited platform policies. All lookups use the current in-memory
@@ -5159,25 +4215,25 @@ const platformPolicySchema = z.object({
   policies: z.array(z.enum(['platform:superadmin', 'licence:manage'])).max(2)
 }).strict();
 function activePlatformSuperadmins(): string[] {
-  return state.users.filter((user) => !user.disabled
-    && (state.platformPolicies[user.id] ?? []).includes('platform:superadmin')).map((user) => user.id);
+  return platformStore.state.users.filter((user) => !user.disabled
+    && (platformStore.state.platformPolicies[user.id] ?? []).includes('platform:superadmin')).map((user) => user.id);
 }
 function savePlatformPolicies(actorId: string, userId: string, policies: Array<'platform:superadmin' | 'licence:manage'>) {
-  const previous = state.platformPolicies[userId] ?? [];
+  const previous = platformStore.state.platformPolicies[userId] ?? [];
   const next = [...new Set(policies)];
   const nextState: PlatformState = {
-    ...state,
-    platformPolicies: { ...state.platformPolicies, [userId]: next },
-    platformPolicyAudit: [...state.platformPolicyAudit, {
+    ...platformStore.state,
+    platformPolicies: { ...platformStore.state.platformPolicies, [userId]: next },
+    platformPolicyAudit: [...platformStore.state.platformPolicyAudit, {
       actorId, userId, previous, next, at: new Date().toISOString()
     }].slice(-2000)
   };
   persistState(nextState);
-  state = nextState;
+  platformStore.state = nextState;
 }
 registerPlatformPolicyRoutes(app, {
   accessAuthentication, getPrincipal, principalUser, activePlatformSuperadmins,
-  savePlatformPolicies, getState: () => state, parsePolicies: (v) => platformPolicySchema.safeParse(v), routeParam
+  savePlatformPolicies, getState: () => platformStore.state, parsePolicies: (v) => platformPolicySchema.safeParse(v), routeParam
 });
 // MD-03.1: platform-only tenant directory and lifecycle. Tenant-editable
 // profiles/permission sets never confer this policy; no impersonation or secrets.
@@ -5187,16 +4243,16 @@ const tenantManagementUpdateSchema = z.object({
   description: z.string().trim().max(1000).optional()
 }).strict().refine((value) => Object.keys(value).length > 0);
 function tenantRegistryEntry(tenantId: string): TenantRegistryEntry {
-  const saved = state.tenantRegistry[tenantId];
+  const saved = platformStore.state.tenantRegistry[tenantId];
   if (saved) return saved;
   // Older tenants pre-date the registry: display them without changing their data.
-  const earliest = state.users.filter((user) => user.tenantId === tenantId)
+  const earliest = platformStore.state.users.filter((user) => user.tenantId === tenantId)
     .map((user) => user.createdAt).sort()[0] ?? new Date(0).toISOString();
   return { name: tenantId, description: '', status: 'ACTIVE', createdAt: earliest, updatedAt: earliest };
 }
 function tenantSummary(tenantId: string) {
   const entry = tenantRegistryEntry(tenantId);
-  const users = state.users.filter((user) => user.tenantId === tenantId);
+  const users = platformStore.state.users.filter((user) => user.tenantId === tenantId);
   return {
     tenantId, name: entry.name, description: entry.description, status: entry.status,
     archivedAt: entry.archivedAt ?? null, retentionUntil: entry.retentionUntil ?? null, legalHold: entry.legalHold ?? false,
@@ -5223,23 +4279,23 @@ function commitTenantChange(actorId: string, tenantId: string,
   action: TenantManagementAuditEvent['action'], next: TenantRegistryEntry,
   previous?: TenantRegistryEntry) {
   const nextState: PlatformState = {
-    ...state,
-    tenantRegistry: { ...state.tenantRegistry, [tenantId]: next },
-    tenantManagementAudit: [...state.tenantManagementAudit,
+    ...platformStore.state,
+    tenantRegistry: { ...platformStore.state.tenantRegistry, [tenantId]: next },
+    tenantManagementAudit: [...platformStore.state.tenantManagementAudit,
       { actorId, tenantId, action, at: new Date().toISOString(), ...(previous ? { previous } : {}), next }
     ].slice(-5000),
     ...(['SUSPENDED', 'ARCHIVED'].includes(action) ? {
       // Access JWTs are stateless; advance every tenant user's revocation epoch
       // so pre-suspension bearer tokens cannot revive after reactivation.
-      users: state.users.map((user) => user.tenantId === tenantId
+      users: platformStore.state.users.map((user) => user.tenantId === tenantId
         ? { ...user, authRevokedBefore: Math.max(user.authRevokedBefore ?? 0, Math.floor(Date.now() / 1000)) }
         : user),
-      refreshSessions: state.refreshSessions.map((session) =>
+      refreshSessions: platformStore.state.refreshSessions.map((session) =>
         session.tenantId === tenantId ? { ...session, revokedAt: Date.now() / 1000 } : session)
     } : {})
   };
   persistState(nextState);
-  state = nextState;
+  platformStore.state = nextState;
 }
 // MD-03.8: on-demand usage only for the selected tenant. Counts are
 // informational; targets cannot silently disable users or tenant workflows.
@@ -5251,24 +4307,24 @@ const tenantUsageTargetSchema = z.object({
 }).strict();
 function tenantUsageFor(tenantId: string) {
   return tenantUsageSnapshot({
-    tenantId, tenant: state.tenants[tenantId],
-    users: state.users, registry: tenantRegistryEntry(tenantId)
+    tenantId, tenant: platformStore.state.tenants[tenantId],
+    users: platformStore.state.users, registry: tenantRegistryEntry(tenantId)
   });
 }
 const registerTenantRegistryRoutesContext = {
-  get TenantProvisioningStoreError() { return TenantProvisioningStoreError; },
+  get TenantProvisioningStoreError() { return tenantProvisioning.TenantProvisioningStoreError; },
   get accessAuthentication() { return accessAuthentication; },
   get app() { return app; },
   get commitTenantChange() { return commitTenantChange; },
-  get createTenant() { return createTenant; },
+  get createTenant() { return tenantProvisioning.createTenant; },
   get getPrincipal() { return getPrincipal; },
   get provisioningIdempotencyKey() { return provisioningIdempotencyKey; },
-  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; },
   get requirePermission() { return requirePermission; },
   get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
   get tenantManagementCreateSchema() { return tenantManagementCreateSchema; },
   get tenantRegistryEntry() { return tenantRegistryEntry; },
@@ -5294,15 +4350,15 @@ const registerTenantProvisioningRoutesContext = {
   get hasObjectPermission() { return hasObjectPermission; },
   get hashPassword() { return hashPassword; },
   get jwtService() { return jwtService; },
-  get latestStateCommit() { return latestStateCommit; },
+  get latestStateCommit() { return platformStore.latestCommit; },
   get persistState() { return persistState; },
-  get provisioningCommitFailed() { return provisioningCommitFailed; },
-  set provisioningCommitFailed(next: boolean) { provisioningCommitFailed = next; },
-  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get provisioningCommitFailed() { return tenantProvisioning.provisioningCommitFailed; },
+  set provisioningCommitFailed(next: boolean) { tenantProvisioning.provisioningCommitFailed = next; },
+  get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; },
   get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
   get tenantManagementUpdateSchema() { return tenantManagementUpdateSchema; },
   get tenantRegistryEntry() { return tenantRegistryEntry; },
@@ -5319,7 +4375,7 @@ const domainCheckLastAttempt = new Map<string, number>();
 let domainCommitUncertain = false;
 function domainContext(req: Request, res: Response, platform: boolean): string | undefined {
   const tenantId = platform ? routeParam(req, 'tenantId') : getPrincipal(res).tenantId;
-  return Object.hasOwn(state.tenants, tenantId) && !provisioningPendingTenants.has(tenantId)
+  return Object.hasOwn(platformStore.state.tenants, tenantId) && !tenantProvisioning.provisioningPendingTenants.has(tenantId)
     ? tenantId : undefined;
 }
 function checkedDomain(hostname: string): string | null {
@@ -5333,7 +4389,7 @@ async function saveDomainChange(actorId: string, tenantId: string,
   action: TenantManagementAuditEvent['action'], updated: TenantRegistryEntry, previous: TenantRegistryEntry) {
   if (domainCommitUncertain) throw new Error('Previous domain persistence is uncertain; restart and reconcile');
   commitTenantChange(actorId, tenantId, action, updated, previous);
-  const committed = latestStateCommit;
+  const committed = platformStore.latestCommit;
   try { await committed; } catch {
     domainCommitUncertain = true;
     throw new Error('Domain change persistence failed; restart and reconcile before further writes');
@@ -5354,7 +4410,7 @@ async function addTenantDomain(req: Request, res: Response, platform: boolean) {
   if (!hostname) return res.status(400).json({ error: 'Invalid DNS hostname' });
   if (reservedDomain(hostname, webOrigins))
     return res.status(409).json({ error: 'Platform-owned hostnames cannot be registered to tenants' });
-  if (Object.values(state.tenantRegistry).some((entry) =>
+  if (Object.values(platformStore.state.tenantRegistry).some((entry) =>
     entry.domains?.some((domain) => domain.hostname === hostname && domain.status !== 'REVOKED')))
     return res.status(409).json({ error: 'Domain is already registered' });
   const previous = tenantRegistryEntry(tenantId);
@@ -5453,11 +4509,11 @@ const registerTenantLifecycleRoutesContext = {
   get app() { return app; },
   get commitTenantChange() { return commitTenantChange; },
   get getPrincipal() { return getPrincipal; },
-  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; },
   get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantIsActive() { return tenantIsActive; },
   get tenantRegistryEntry() { return tenantRegistryEntry; },
   get tenantSummary() { return tenantSummary; }
@@ -5475,11 +4531,11 @@ const registerTenantRetentionRoutesContext = {
   get app() { return app; },
   get commitTenantChange() { return commitTenantChange; },
   get getPrincipal() { return getPrincipal; },
-  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; },
   get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantRegistryEntry() { return tenantRegistryEntry; },
   get tenantRetentionSchema() { return tenantRetentionSchema; },
   get tenantSummary() { return tenantSummary; }
@@ -5539,14 +4595,14 @@ installTenantRecoveryCentre(app, {
   platformAdmin: requirePlatformTenantAdmin,
   principal: getPrincipal,
   isCurrentOperator: (userId: string) => {
-    const operator = state.users.find(item => item.id === userId && !item.disabled);
+    const operator = platformStore.state.users.find(item => item.id === userId && !item.disabled);
     return Boolean(operator && operator.mfaSecret && tenantIsActive(operator.tenantId)
-      && (state.platformPolicies[operator.id] ?? []).includes('platform:superadmin'));
+      && (platformStore.state.platformPolicies[operator.id] ?? []).includes('platform:superadmin'));
   },
   tenantUser: (tenantId: string, userId: string) =>
-    state.users.find(user => user.tenantId === tenantId && user.id === userId
-      && !user.disabled && !((state.platformPolicies[user.id] ?? []).includes('platform:superadmin'))),
-  domains: (tenantId: string) => state.tenantRegistry[tenantId]?.domains ?? [],
+    platformStore.state.users.find(user => user.tenantId === tenantId && user.id === userId
+      && !user.disabled && !((platformStore.state.platformPolicies[user.id] ?? []).includes('platform:superadmin'))),
+  domains: (tenantId: string) => platformStore.state.tenantRegistry[tenantId]?.domains ?? [],
   // Every recovery action requires a new TOTP proof, even when tenant MFA
   // policy is only Optional. A cross-instance SQL uniqueness constraint blocks
   // replay and platform policies alone never count as MFA.
@@ -5570,8 +4626,8 @@ installTenantRecoveryCentre(app, {
   applyRestrictedRepair: async ({tenantId,userId,caseId}: {
     tenantId: string; userId: string; caseId: string
   }) => {
-    const user = state.users.find(item => item.id === userId && item.tenantId === tenantId && !item.disabled);
-    const tenant = state.tenants[tenantId];
+    const user = platformStore.state.users.find(item => item.id === userId && item.tenantId === tenantId && !item.disabled);
+    const tenant = platformStore.state.tenants[tenantId];
     if (!user || !tenant || !tenantIsActive(tenantId)
       || !tenant.accessControl.profiles.some(profile => profile.id === 'system-administrator')
       || !tenant.accessControl.users.some(item => item.id === userId))
@@ -5586,17 +4642,17 @@ installTenantRecoveryCentre(app, {
     }, userId, 'security.recovery.admin-restored', {caseId}, userId);
     const now = Math.floor(Date.now() / 1000);
     const nextState: PlatformState = {
-      ...state,
-      tenants: {...state.tenants, [tenantId]: nextTenant},
-      users: state.users.map(item => item.id === userId && item.tenantId === tenantId
+      ...platformStore.state,
+      tenants: {...platformStore.state.tenants, [tenantId]: nextTenant},
+      users: platformStore.state.users.map(item => item.id === userId && item.tenantId === tenantId
         ? {...item, role: 'System Administrator', authVersion: (item.authVersion ?? 0) + 1,
            authRevokedBefore: now} : item),
-      refreshSessions: state.refreshSessions.map(session => session.userId === userId && session.tenantId === tenantId
+      refreshSessions: platformStore.state.refreshSessions.map(session => session.userId === userId && session.tenantId === tenantId
         ? {...session, revokedAt: now} : session)
     };
     persistState(nextState);
-    state = nextState;
-    await latestStateCommit;
+    platformStore.state = nextState;
+    await platformStore.latestCommit;
   }
 });
 
@@ -5615,8 +4671,8 @@ const registerApprovalsDecisionRoutesContext = {
   get persistTenantRecords() { return persistTenantRecords; },
   get randomUUID() { return randomUUID; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; }
 };
 export type ApprovalsDecisionRoutesDependencies = typeof registerApprovalsDecisionRoutesContext;
@@ -5665,8 +4721,8 @@ const registerApprovalsMetadataRoutesContext = {
   get requireAnyPermission() { return requireAnyPermission; },
   get requirePermission() { return requirePermission; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; }
 };
 export type ApprovalsMetadataRoutesDependencies = typeof registerApprovalsMetadataRoutesContext;
@@ -5680,8 +4736,8 @@ const registerFlowsMetadataRoutesContext = {
   get requireAnyPermission() { return requireAnyPermission; },
   get requirePermission() { return requirePermission; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; }
 };
 export type FlowsMetadataRoutesDependencies = typeof registerFlowsMetadataRoutesContext;
@@ -5865,8 +4921,8 @@ const registerFlowDefinitionRoutesContext = {
   get requireAnyPermission() { return requireAnyPermission; },
   get requirePermission() { return requirePermission; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
   get uniqueFlowHistory() { return uniqueFlowHistory; },
   get validateFlow() { return validateFlow; }
@@ -6238,7 +5294,7 @@ function allocateAutoNumberSequence(tenantId: string, tenant: TenantData, object
   return sequence;
 }
 function applyRecordDefaults(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, userId: string): Record<string, unknown> {
-  return applyMetadataRecordDefaults(tenantId, tenant, object, values, userId, {users:state.users,hasRecordTypeAccessForUser,allocateAutoNumberSequence});
+  return applyMetadataRecordDefaults(tenantId, tenant, object, values, userId, {users:platformStore.state.users,hasRecordTypeAccessForUser,allocateAutoNumberSequence});
 }
 function redactCommunicationValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactCommunicationValue);
@@ -6310,8 +5366,8 @@ function appendCommunicationRecord(
   const tenant = tenantData(tenantId);
   const object = tenant?.objects.find((item) => item.apiName === 'Communication_Records__c');
   if (!tenant || !object) throw new Error(`Communication Records is unavailable for tenant "${tenantId}".`);
-  const ownerId = state.users.find((user) => user.id === requestedOwnerId && user.tenantId === tenantId && !user.disabled)?.id
-    ?? state.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id;
+  const ownerId = platformStore.state.users.find((user) => user.id === requestedOwnerId && user.tenantId === tenantId && !user.disabled)?.id
+    ?? platformStore.state.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id;
   if (!ownerId) throw new Error(`No active owner is available for Communication Records in tenant "${tenantId}".`);
   const now = new Date().toISOString();
   const values = applyRecordDefaults(tenantId, tenant, object, {
@@ -6344,19 +5400,6 @@ function appendCommunicationRecord(
   });
 }
 
-function persistTenantRecords(tenantId: string, tenant: TenantData): void {
-  const currentSequences = state.tenants[tenantId]?.autoNumberSequences ?? {};
-  const autoNumberSequences = { ...tenant.autoNumberSequences };
-  for (const [key, sequence] of Object.entries(currentSequences)) {
-    autoNumberSequences[key] = Math.max(autoNumberSequences[key] ?? 0, sequence);
-  }
-  const updatedTenant = reconcileInstalledAppSeeds({ ...tenant, autoNumberSequences }, installableAppCatalog, tenantId) as TenantData;
-  const libraryComponents = ensureBundledAppComponents(state.libraryComponents,
-    updatedTenant, installableAppCatalog, bundledCustomComponentsPath);
-  const nextState = { ...state, libraryComponents, tenants: { ...state.tenants, [tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-}
 function createFlowFailureLog(
   flow: Pick<FlowMetadata, 'apiName' | 'label'>,
   trigger: FlowExecutionLog['trigger'],
@@ -6397,7 +5440,7 @@ async function deleteRecordCascade(
   rollbackSnapshot?: TenantData
 ): Promise<void> {
   if (depth > 10) throw new Error('Relationship cascade depth exceeded the 10-level limit.');
-  const user = state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
+  const user = platformStore.state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
   if (!user) throw new Error('The user initiating this deletion is no longer active.');
   const principal: Principal = {
     userId: user.id, tenantId, email: user.email, roles: [user.role], permissions: effectivePermissions(user, tenant)
@@ -6461,7 +5504,7 @@ function routeParam(req: Request, name: string): string {
   return Array.isArray(value) ? value[0] ?? '' : value ?? '';
 }
 
-const recordRoutesDependencies = { app, accessAuthentication, accessControlSchema, recordShareSchema, recordActivitySchema, chatterCommentSchema, chatterPostSchema, appendFieldHistory, profileIdForRole, persistState, getState: () => state, setState: (next: PlatformState) => { state = next; }, tenantIsActive, withSecurityEvent, tenantData, getPrincipal, principalUser, effectivePermissions, disableOnConnectorUninstall, assertConnectorLifecycleAccess, canOpenApp, hasObjectPermission, hasObjectWidePermission, queueContainsUser, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions, profileIdForPrincipal, resolveActiveLightningRecordPage, hasRecordTypeAccessForUser, applyRecordDefaults, persistTenantRecords, deleteRecordCascade, routeParam, formulaContextForUser, validateRuntimeRecord, runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows, calculateFormulaFields, sanitizeRecordValues, withCaseClosedDate, recordUnmodified, stampRecordAuditFields, recordActionEnabled, normalizeFlowRecordAssignments, validateRelationshipReparenting, waitForPersistedState, randomUUID, applyConnectorLifecycle, z, hashPassword };
+const recordRoutesDependencies = { app, accessAuthentication, accessControlSchema, recordShareSchema, recordActivitySchema, chatterCommentSchema, chatterPostSchema, appendFieldHistory, profileIdForRole, persistState, getState: () => platformStore.state, setState: (next: PlatformState) => { platformStore.state = next; }, tenantIsActive, withSecurityEvent, tenantData, getPrincipal, principalUser, effectivePermissions, disableOnConnectorUninstall, assertConnectorLifecycleAccess, canOpenApp, hasObjectPermission, hasObjectWidePermission, queueContainsUser, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions, profileIdForPrincipal, resolveActiveLightningRecordPage, hasRecordTypeAccessForUser, applyRecordDefaults, persistTenantRecords, deleteRecordCascade, routeParam, formulaContextForUser, validateRuntimeRecord, runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows, calculateFormulaFields, sanitizeRecordValues, withCaseClosedDate, recordUnmodified, stampRecordAuditFields, recordActionEnabled, normalizeFlowRecordAssignments, validateRelationshipReparenting, waitForPersistedState, randomUUID, applyConnectorLifecycle, z, hashPassword };
 export type RecordRoutesDependencies = typeof recordRoutesDependencies;
 registerRecordRoutes(recordRoutesDependencies);
 // Data-source-neutral Chatter channel grants come from server-owned tenant records.
@@ -6473,8 +5516,8 @@ const registerChatterAccessRoutesContext = {
   get communicationObjectApiName() { return communicationObjectApiName; },
   get getPrincipal() { return getPrincipal; },
   get hasObjectPermission() { return hasObjectPermission; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; }
 };
 export type ChatterAccessRoutesDependencies = typeof registerChatterAccessRoutesContext;
@@ -6528,8 +5571,8 @@ const registerFlowsExecutionRoutesContext = {
   get requirePermission() { return requirePermission; },
   get routeParam() { return routeParam; },
   get sanitizeChatterCallerInput() { return sanitizeChatterCallerInput; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
   get trustedChatterExecutionFlow() { return trustedChatterExecutionFlow; },
   get validateFlow() { return validateFlow; },
@@ -6592,8 +5635,8 @@ const registerFlowsInterviewRoutesContext = {
   get requirePermission() { return requirePermission; },
   get resolveFlowValue() { return resolveFlowValue; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
   get z() { return z; }
 };
@@ -6637,15 +5680,15 @@ function findLibraryComponentUsages(platformState: PlatformState, apiName: strin
   return usages;
 }
 function ownedComponentIndex(apiName: string, tenantId: string): number {
-  return state.libraryComponents.findIndex((component) =>
+  return platformStore.state.libraryComponents.findIndex((component) =>
     component.apiName === apiName
-    && libraryComponentEditable(component, tenantId, Object.keys(state.tenants)));
+    && libraryComponentEditable(component, tenantId, Object.keys(platformStore.state.tenants)));
 }
 function componentNameTaken(apiName: string, tenantId: string): boolean {
-  return state.libraryComponents.some((component) =>
+  return platformStore.state.libraryComponents.some((component) =>
     component.apiName.toLowerCase() === apiName.toLowerCase()
     && (component.trustedBundled === true
-      || libraryComponentVisible(component, tenantId, Object.keys(state.tenants))));
+      || libraryComponentVisible(component, tenantId, Object.keys(platformStore.state.tenants))));
 }
 function usageBlockerDetails(usages: LibraryComponentUsage[], tenantId: string) {
   const own = usages.filter((usage) => usage.tenantId === tenantId)
@@ -6674,10 +5717,10 @@ function syncBundledLibraryComponents(): Promise<void> {
     const imported: LibraryComponent[] = [];
     const trustedUpgrades = new Map<string, LibraryComponent>();
     for (const entry of manifest) {
-      const existingBundled = state.libraryComponents.find((component) =>
+      const existingBundled = platformStore.state.libraryComponents.find((component) =>
       component.apiName.toLowerCase() === entry.apiName.toLowerCase()
       && component.trustedBundled === true);
-    const legacyCandidate = state.libraryComponents.find((component) =>
+    const legacyCandidate = platformStore.state.libraryComponents.find((component) =>
       component.apiName.toLowerCase() === entry.apiName.toLowerCase()
       && component.trustedBundled !== true);
 
@@ -6749,13 +5792,13 @@ function syncBundledLibraryComponents(): Promise<void> {
       } else imported.push(registered);
     }
     if (imported.length || trustedUpgrades.size) {
-      const nextState = { ...state, libraryComponents: [
-        ...state.libraryComponents.map((item) =>
+      const nextState = { ...platformStore.state, libraryComponents: [
+        ...platformStore.state.libraryComponents.map((item) =>
           trustedUpgrades.get(item.apiName.toLowerCase()) ?? item),
         ...imported
       ] };
       persistState(nextState);
-      state = nextState;
+      platformStore.state = nextState;
     }
   })().catch((error: unknown) => {
     bundledComponentSync = null;
@@ -6766,21 +5809,21 @@ function syncBundledLibraryComponents(): Promise<void> {
 
 registerComponentLibraryRoutes({
   app, libraryComponentInputSchema, persistState, tenantData, getPrincipal, requirePermission, canOpenApp, canOpenTab, routeParam, findLibraryComponentUsages, ownedComponentIndex, componentNameTaken, usageBlockerDetails, syncBundledLibraryComponents,
-  getState: () => state, setState: (next) => { state = next; }
+  getState: () => platformStore.state, setState: (next) => { platformStore.state = next; }
 });
 
 registerDashboardRoutes({
  app, dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardTimeZoneSchema, dashboardSubscriptionSchema, isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText, persistState, tenantData, getPrincipal, principalUser, effectivePermissions, dashboardRunningUserChoices, dashboardRunningPrincipal, dashboardRunningUserSelectionError, folderAccessLevelForUser, folderForUser, dashboardForUser, validateDashboardFolderReferences, requirePermission, requireAnyPermission, hasObjectPermission, hasRecordAccess, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, dashboardRelationshipPaths, dispatchDashboardSubscription, nextDashboardSubscriptionRunAt, calculateFormulaFields, libraryComponentVisible, randomUUID, canAccessDashboard, canEditDashboard,
- getState: () => state, setState: (next) => { state = next; }
+ getState: () => platformStore.state, setState: (next) => { platformStore.state = next; }
 });
 
 registerDashboardSnapshotRoutes({
  app, dashboardFilterSchema, reportFilterMatches, dashboardSnapshotSchema, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText, tenantData, getPrincipal, dashboardRunningPrincipal, dashboardRunningUserSelectionError, reportFolderAccessLevelForUser, dashboardForUser, requirePermission, hasObjectPermission, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, resolveDashboardCrossFilters, calculateFormulaFields, pickDashboardSnapshotProperties, libraryComponentVisible, randomUUID, sanitizeHtml, canAccessDashboard, matchesDashboardFilters,
- getState: () => state, setState: (next) => { state = next; }
+ getState: () => platformStore.state, setState: (next) => { platformStore.state = next; }
 });
 registerReportRoutes({
  app, runtimeRecordSchema, dashboardFilterSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFilterMatches, dashboardFolderShareSchema, reportFolderSchema, isNumericField, reportFilterOperatorAllowed, dashboardFilterOperatorAllowed, dashboardFilterValueError, reportFilterValueError, persistState, tenantData, getPrincipal, dashboardRunningPrincipal, dashboardRunningUserSelectionError, reportFolderAccessLevelForUser, reportFolderForUser, validateReportFolderReferences, dashboardForUser, requirePermission, accessAuthentication, hasObjectPermission, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, resolveReportCrossFilters, resolveDashboardCrossFilters, canManageReportFolders, calculateFormulaFields, randomUUID, canAccessDashboard, matchesDashboardFilters,
- getState: () => state, setState: (next) => { state = next; }
+ getState: () => platformStore.state, setState: (next) => { platformStore.state = next; }
 });
 const registerAppsMetadataRoutesContext = {
   get accessAuthentication() { return accessAuthentication; },
@@ -6795,8 +5838,8 @@ const registerAppsMetadataRoutesContext = {
   get requirePermission() { return requirePermission; },
   get resolveActiveLightningHomePage() { return resolveActiveLightningHomePage; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; }
 };
 export type AppsMetadataRoutesDependencies = typeof registerAppsMetadataRoutesContext;
@@ -6844,7 +5887,7 @@ const registerPageListRoutesContext = {
 };
 export type PageListRoutesDependencies = typeof registerPageListRoutesContext;
 registerPageListRoutes(registerPageListRoutesContext);
-registerPageDeletionRoute(app,{permission:requireAnyPermission('metadata:write','pages:manage'),getPrincipal,getState:()=>state,isProtected:isProtectedAdministrationPage,commit:async(next:PlatformState)=>{const prior=state;state=next;try{persistState(next);await latestStateCommit}catch(error){state=prior;throw error}}});
+registerPageDeletionRoute(app,{permission:requireAnyPermission('metadata:write','pages:manage'),getPrincipal,getState:()=>platformStore.state,isProtected:isProtectedAdministrationPage,commit:async(next:PlatformState)=>{const prior=platformStore.state;platformStore.state=next;try{persistState(next);await platformStore.latestCommit}catch(error){platformStore.state=prior;throw error}}});
 const registerPageUpdateRoutesContext = {
   get app() { return app; },
   get canAccessDashboard() { return canAccessDashboard; },
@@ -6855,8 +5898,8 @@ const registerPageUpdateRoutesContext = {
   get persistState() { return persistState; },
   get requireAnyPermission() { return requireAnyPermission; },
   get routeParam() { return routeParam; },
-  get state() { return state; },
-  set state(next: PlatformState) { state = next; },
+  get state() { return platformStore.state; },
+  set state(next: PlatformState) { platformStore.state = next; },
   get tenantData() { return tenantData; },
   get validateProtectedAdministrationPageUpdate() { return validateProtectedAdministrationPageUpdate; }
 };
@@ -6873,8 +5916,8 @@ const registerSecurityCurrencyRoutesContext = {
 export type SecurityCurrencyRoutesDependencies = typeof registerSecurityCurrencyRoutesContext;
 registerSecurityCurrencyRoutes(registerSecurityCurrencyRoutesContext);
 registerSecurityMetadataRoutes({
-  app, requirePermission, tenantData, getPrincipal, getState: () => state,
-  setState: (next) => { state = next; }, accessControlSchema, roleSchema, sharingSettingSchema,
+  app, requirePermission, tenantData, getPrincipal, getState: () => platformStore.state,
+  setState: (next) => { platformStore.state = next; }, accessControlSchema, roleSchema, sharingSettingSchema,
   validateAdvancedSharingMetadata, profileIdForRole, withSecurityEvent,
   effectivePermissions, persistState, persistTenantRecords, roleApiNameForName, routeParam
 });
@@ -7625,7 +6668,7 @@ function formulaContextForUser(tenant: TenantData, userId: string): {
 }
 
 function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>, current?: RuntimeRecord): void {
-  validateMetadataRecord(tenantId, tenant, object, values, current, state.users);
+  validateMetadataRecord(tenantId, tenant, object, values, current, platformStore.state.users);
 }
 
 type FlowExecutionResult =
@@ -7675,7 +6718,7 @@ function scheduledPathTimestamp(
 
 function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract<FlowExecutionResult, { status: 'waiting' }>): FlowInterview {
   const createdAt = result.interviewStartTime;
-  const tenantId = state.users.find(user => user.id === userId)?.tenantId;
+  const tenantId = platformStore.state.users.find(user => user.id === userId)?.tenantId;
   const idleMinutes = (tenantId ? tenantData(tenantId)?.automationSettings.conversationIdleMinutes : undefined)
     ?? defaultAutomationSettings.conversationIdleMinutes;
   const conversationExpiry = ['screen', 'wait'].includes(result.kind) && typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
@@ -7767,7 +6810,7 @@ async function performSendEmail(
   context: FlowRuntimeContext,
   elementLabel: string
 ): Promise<void> {
-  const runningUser = state.users.find((user) => user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
+  const runningUser = platformStore.state.users.find((user) => user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
   if (!runningUser || !effectivePermissions(runningUser, tenant).includes('email:send')) {
     throw new Error('The running user does not have permission to send email.');
   }
@@ -7820,7 +6863,7 @@ function performPostToChatter(
   context: FlowRuntimeContext,
   elementLabel: string
 ): void {
-  const runningUser = state.users.find((user) =>
+  const runningUser = platformStore.state.users.find((user) =>
     user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
   if (!runningUser) throw new Error('The running user is no longer active.');
   const principal = principalForUser(runningUser, tenant);
@@ -7860,7 +6903,7 @@ function performCustomNotification(
   context: FlowRuntimeContext,
   elementLabel: string
 ): void {
-  const runningUser = state.users.find((user) =>
+  const runningUser = platformStore.state.users.find((user) =>
     user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
   if (!runningUser || !effectivePermissions(runningUser, tenant).includes('notifications:send')) {
     throw new Error('The running user does not have permission to send custom notifications.');
@@ -7868,7 +6911,7 @@ function performCustomNotification(
   const recipientText = resolveFlowTemplate(String(config.recipientIds ?? ''), context);
   const recipientIds = [...new Set(recipientText.split(/[;,\r\n]+/).map((value) => value.trim()).filter(Boolean))];
   if (!recipientIds.length) throw new Error(`Custom Notification "${elementLabel}" requires at least one recipient user ID.`);
-  const recipients = recipientIds.map((recipientId) => state.users.find((user) =>
+  const recipients = recipientIds.map((recipientId) => platformStore.state.users.find((user) =>
     user.id === recipientId && user.tenantId === tenantId && !user.disabled));
   const missingRecipientIndex = recipients.findIndex((recipient) => !recipient);
   if (missingRecipientIndex >= 0) {
@@ -7901,7 +6944,7 @@ function performSubmitForApproval(
   context: FlowRuntimeContext,
   elementLabel: string
 ): string {
-  const submitter = state.users.find((user) =>
+  const submitter = platformStore.state.users.find((user) =>
     user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
   if (!submitter) throw new Error('The running user is no longer active.');
   const principal = principalForUser(submitter, tenant);
@@ -7929,7 +6972,7 @@ function performSubmitForApproval(
     : resolveFlowTemplate(String(config.approverIds ?? ''), context);
   const approverIds = [...new Set(approverText.split(/[;,\r\n]+/).map((value) => value.trim()).filter(Boolean))];
   if (!approverIds.length) throw new Error(`Submit for Approval "${elementLabel}" requires at least one approver.`);
-  const approvers = approverIds.map((approverId) => state.users.find((user) =>
+  const approvers = approverIds.map((approverId) => platformStore.state.users.find((user) =>
     user.id === approverId && user.tenantId === tenantId && !user.disabled));
   const missingApproverIndex = approvers.findIndex((approver) => !approver);
   if (missingApproverIndex >= 0) {
@@ -8031,7 +7074,7 @@ async function executeFlowImplementation(
 ): Promise<FlowExecutionResult> {
   if (depth > 10) throw new Error('Flow subflow nesting exceeded the 10-level limit.');
   if (flow.status !== 'Active' && !allowDraftExecution) throw new Error(`Flow "${flow.label}" is not active.`);
-  const runningUser = state.users.find((user) => user.id === currentUserId
+  const runningUser = platformStore.state.users.find((user) => user.id === currentUserId
     && user.tenantId === tenantId && !user.disabled);
   if (!runningUser) throw new Error('The Flow running user is not available in this tenant.');
   const runningPrincipal = principalForUser(runningUser, tenant);
@@ -8677,7 +7720,7 @@ async function executeFlowImplementation(
         } else if (String(config.actionType ?? '') === 'Custom Notification') {
           performCustomNotification(tenantId, tenant, flow, config, context, element.label);
         } else if (String(config.actionType ?? '') === 'Outbound Message') {
-          const runningUser = state.users.find((user) =>
+          const runningUser = platformStore.state.users.find((user) =>
             user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
           if (!runningUser || !effectivePermissions(runningUser, tenant).includes('callouts:execute')) {
             throw new Error('The running user does not have permission to send outbound messages.');
@@ -8699,7 +7742,7 @@ async function executeFlowImplementation(
         }
         break;
       case 'HTTP Callout': {
-        const runningUser = state.users.find((user) =>
+        const runningUser = platformStore.state.users.find((user) =>
           user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
         if (!runningUser || !effectivePermissions(runningUser, tenant).includes('callouts:execute')) {
           throw new Error('The running user does not have permission to execute HTTP callouts.');
@@ -8951,7 +7994,7 @@ function nextScheduledOccurrence(flow: FlowMetadata, previous: Date, now: Date):
 }
 
 async function resumeDueFlowInterviews(now: Date): Promise<void> {
-  for (const [tenantId, tenant] of Object.entries(state.tenants)) {
+  for (const [tenantId, tenant] of Object.entries(platformStore.state.tenants)) {
     if (!tenantIsActive(tenantId)) continue;
     for (const interview of [...tenant.interviews]) {
       if (!['wait', 'scheduled', 'async'].includes(interview.kind) || !interview.waitUntil) continue;
@@ -9044,7 +8087,7 @@ async function resumeDueFlowInterviews(now: Date): Promise<void> {
 
 async function executeDueScheduledFlows(now = new Date()): Promise<void> {
   await resumeDueFlowInterviews(now);
-  for (const [tenantId, tenant] of Object.entries(state.tenants)) {
+  for (const [tenantId, tenant] of Object.entries(platformStore.state.tenants)) {
     if (!tenantIsActive(tenantId)) continue;
     for (const candidate of [...tenant.flows]) {
       const currentTenant = tenantData(tenantId);
@@ -9081,7 +8124,7 @@ async function executeDueScheduledFlows(now = new Date()): Promise<void> {
         const candidates = working.records[objectName] ?? [];
         if (candidates.length > 2000) throw new Error(`Scheduled flow "${flow.label}" exceeded the 2,000-record execution limit.`);
         for (const record of candidates) {
-          const scheduledUserId = state.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'scheduled-system';
+          const scheduledUserId = platformStore.state.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'scheduled-system';
           const context: FlowRuntimeContext = {
             record,
             resourceDefinitions: flow.resources,
@@ -9150,7 +8193,7 @@ function platformEventFlowMatches(
 
 async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
   const nowIso = now.toISOString();
-  for (const tenantId of Object.keys(state.tenants)) {
+  for (const tenantId of Object.keys(platformStore.state.tenants)) {
     if (!tenantIsActive(tenantId)) continue;
     const snapshot = tenantData(tenantId);
     if (!snapshot) continue;
@@ -9632,9 +8675,9 @@ function validateFlow(
         }
         if (type === 'Custom Component') {
           const apiName = typeof field.componentApiName === 'string' ? field.componentApiName.trim() : '';
-          const definition = state.libraryComponents.find((component) =>
+          const definition = platformStore.state.libraryComponents.find((component) =>
             component.apiName === apiName && component.surfaces.includes('flow') && component.status !== 'Draft'
-            && libraryComponentVisible(component, tenantId, Object.keys(state.tenants)));
+            && libraryComponentVisible(component, tenantId, Object.keys(platformStore.state.tenants)));
           if (!definition) {
             errors.push(`Custom screen component "${apiName}" on "${element.label}" must reference a published Flow-enabled registry component.`);
           }
@@ -10372,7 +9415,6 @@ function validateFlow(
   return { valid: errors.length === 0, errors, warnings };
 }
 
-
 function dashboardEmailFilterMatches(record: RuntimeRecord, filter: DashboardFilterMetadata): boolean {
   return reportFilterMatches(record, filter);
 }
@@ -10882,14 +9924,14 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
     const runAt = new Date();
     if (!manual && Date.parse(subscription.nextRunAt) > runAt.getTime()) return;
     const dashboard = tenant.dashboards.find((item) => item.apiName === subscription.dashboardApiName && item.status === 'Deployed');
-    const creator = state.users.find((item) => item.id === subscription.createdBy && item.tenantId === tenantId && !item.disabled);
+    const creator = platformStore.state.users.find((item) => item.id === subscription.createdBy && item.tenantId === tenantId && !item.disabled);
     if (!dashboard) throw new Error('The subscribed dashboard is no longer deployed.');
     if (!creator || !effectivePermissions(creator, tenant).includes('email:send')) {
       throw new Error('The subscription owner is no longer active or lacks email:send permission.');
     }
     const failures: string[] = [];
     for (const userId of subscription.recipientUserIds) {
-      const recipient = state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
+      const recipient = platformStore.state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
       if (!recipient) {
         failures.push('A scheduled recipient is no longer active.');
         continue;
@@ -10978,7 +10020,7 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
   // Enqueueing remains fail-closed until the outbox schema is installed.
   if (!await outbox.ready()) return;
   const workerId = 'metadrive-outbox-' + process.pid;
-  for (const tenantId of Object.keys(state.tenants)) {
+  for (const tenantId of Object.keys(platformStore.state.tenants)) {
     if (!tenantIsActive(tenantId)) continue;
     await dispatchIntegrationDeliveries({
       outbox, tenantId, workerId, limit: 1,
@@ -11000,7 +10042,7 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
           throw new CalloutFault('OUTBOX_IDENTITY_MISMATCH', undefined, 1, false);
         }
         const currentTenant = tenantData(tenantId);
-        const user = state.users.find(item => item.id === decoded.context.currentUserId &&
+        const user = platformStore.state.users.find(item => item.id === decoded.context.currentUserId &&
           item.tenantId === tenantId && !item.disabled);
         if (!currentTenant || !user ||
             !effectivePermissions(user,currentTenant).includes('callouts:execute')) {
@@ -11019,27 +10061,18 @@ async function dispatchDueIntegrationJobs(): Promise<void> {
 }
 const dispatchScheduledFlows = createScheduledDispatcher({
   maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
-  refresh: async () => {
-    if (persistenceMode === 'jsonb') return true;
-    const snapshotCommit = latestStateCommit;
-    const snapshotAuthRevision = authOverlayRevision;
-    const committed = await readPersistedState();
-    if (latestStateCommit !== snapshotCommit || authOverlayRevision !== snapshotAuthRevision) {
-      await waitForPersistedState();
-      return false;
-    }
-    if (committed === null) throw new Error('Scheduler requires a verified SQL snapshot');
-    const restored = restoreDurableAuthOverlay(parsePersistedPlatformState(committed));
-    assertTenantIdentityIsolation(restored);
-    state = restored;
-    return true;
-  },
+  refresh: createSqlStateRefresh({
+    persistenceMode, store: platformStore,
+    authRevision: () => platformInitialization.authOverlayRevision,
+    readPersistedState, waitForPersistedState, parsePersistedPlatformState,
+    restoreDurableAuthOverlay: platformInitialization.restoreDurableAuthOverlay
+  }),
   events: () => deliverPendingPlatformEvents(),
   flows: () => executeDueScheduledFlows(),
   integrations: () => dispatchDueIntegrationJobs(),
   subscriptions: async () => {
     const now = Date.now();
-    const dueSubscriptions = Object.entries(state.tenants).flatMap(([tenantId, tenant]) =>
+    const dueSubscriptions = Object.entries(platformStore.state.tenants).flatMap(([tenantId, tenant]) =>
       tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
         subscription.active && Date.parse(subscription.nextRunAt) <= now)
         .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
@@ -11060,4 +10093,6 @@ export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySc
 export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
 export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
 export type { DashboardMetadata, ReportMetadata };
-export type { TenantRegistryEntry, TenantManagementAuditEvent, FlowDebugTraceEntry, FlowRuntimeContext };
+export type { FlowDebugTraceEntry, FlowRuntimeContext };
+
+export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowInterview, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };

@@ -10,6 +10,7 @@ on:
       - 'apps/server/test/normalized-state-*.mjs'
       - 'apps/server/scripts/copy-normalized-state-on-restore.mjs'
       - 'apps/server/src/postgres-state.ts'
+      - 'apps/server/src/core/state/**'
       - 'apps/server/src/normalized-object-schema.mjs'
       - 'apps/server/src/normalized-typed-records.mjs'
       - 'apps/server/test/normalized-typed-field-widen.integration.test.mjs'

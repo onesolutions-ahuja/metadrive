@@ -7,6 +7,7 @@ on:
       - 'apps/server/src/postgres-state.ts'
       - 'apps/server/src/index.ts'
       - 'apps/server/src/modules/**'
+      - 'apps/server/src/core/state/**'
       - 'apps/server/sql/route-aliases-v1.sql'
       - 'apps/web/src/App.tsx'
       - 'apps/web/src/PageRouteDirectory.tsx'
