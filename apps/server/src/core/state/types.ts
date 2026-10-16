@@ -27,7 +27,7 @@ export type TenantData = {
     accessControl: AccessControl;
     sharingSettings: Record<string, SharingSetting>;
     currencySettings: CurrencySettings;
-    companyProfile?: { legalName: string; tradingName: string; website: string; phone: string; email: string; addressLine1: string; addressLine2: string; city: string; postcode: string; country: string; timezone: string; locale: string; description: string };
+    companyProfile?: { logoUrl?: string; legalName: string; tradingName: string; website: string; phone: string; email: string; addressLine1: string; addressLine2: string; city: string; postcode: string; country: string; timezone: string; locale: string; description: string };
     recordShares: RecordShare[];
     campaignMembers: CampaignMember[];
     activities: RecordActivity[];
