@@ -5974,7 +5974,7 @@ app.post('/api/metadata/apps', requireAnyPermission('metadata:write', 'pages:man
     !tenant.pages.some((page) => page.apiName === pageApiName && page.pageType === 'App Page' && page.status === 'Active'));
   if (invalidPage) return res.status(400).json({ error: `Navigation page "${invalidPage}" must be an active App Page` });
   const apps = [...tenant.apps, parsed.data];
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
+  const nextState = { ...platformStore.state, tenants: { ...platformStore.state.tenants, [principal.tenantId]: { ...tenant, apps } } };
   persistState(nextState);
   platformStore.state = nextState;
   return res.status(201).json({ app: parsed.data });
@@ -5992,7 +5992,7 @@ app.put('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'p
     !tenant.pages.some((page) => page.apiName === pageApiName && page.pageType === 'App Page' && page.status === 'Active'));
   if (invalidPage) return res.status(400).json({ error: `Navigation page "${invalidPage}" must be an active App Page` });
   const apps = tenant.apps.map((item) => item.apiName === apiName ? parsed.data : item);
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
+  const nextState = { ...platformStore.state, tenants: { ...platformStore.state.tenants, [principal.tenantId]: { ...tenant, apps } } };
   persistState(nextState);
   platformStore.state = nextState;
   return res.json({ app: parsed.data });
@@ -6006,7 +6006,7 @@ app.delete('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write',
     return res.status(409).json({ error: 'This app is used by Lightning page activation assignments. Reassign those pages before deleting it.' });
   }
   const apps = tenant.apps.filter((item) => item.apiName !== apiName);
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
+  const nextState = { ...platformStore.state, tenants: { ...platformStore.state.tenants, [principal.tenantId]: { ...tenant, apps } } };
   persistState(nextState);
   platformStore.state = nextState;
   return res.status(204).end();
@@ -9136,7 +9136,7 @@ export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySc
 export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
 export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
 export type { DashboardMetadata, ReportMetadata };
-export type { FlowDebugTraceEntry, FlowRuntimeContext };
+export type { FlowDebugTraceEntry };
 
 export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowInterview, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };
 
