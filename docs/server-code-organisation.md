@@ -55,3 +55,33 @@ Preservation tests resolve asset directories with `fileURLToPath` so paths conta
 spaces and Windows drive letters work. The developer-policy guard reports
 `index.ts: 13243 -> 11063`; an AST comparison verified unchanged handler logic and
 middleware for all 88 extracted endpoints.
+
+## Core and SQL state continuation
+
+Migration owner: `onesolutions-ahuja`, Core phase 6. The follow-up extracts state
+responsibilities from the same entry point into `core/state/`:
+
+- `types.ts` and `schema.ts`: platform, tenant and identity contracts and persisted snapshot validation.
+- `store.ts` and `response-barrier.ts`: the shared live state reference, latest SQL commit, atomic legacy cache writes and HTTP commit acknowledgement.
+- `hydration.ts` and `metadata-read-mode.ts`: legacy-safe snapshot parsing and existing metadata migrations, with strict validation restored after every read.
+- `initialization.ts` and `auth-overlay.ts`: SQL-first startup, durable login/logout replay, installed-package reconciliation and maintenance-mode read-only initialization.
+- `tenant-defaults.ts`, `tenant-provisioning.ts`, `bootstrap-tenant.ts` and `tenant-data.ts`: existing tenant defaults, serialized durable provisioning, bootstrap, tenant visibility and tenant-scoped persistence.
+- `refresh.ts`: scheduler refresh coordination; concurrent state or auth writes prevent replacement by a stale SQL read.
+
+`postgres-state.ts` remains the existing SQL adapter and owns its SQL transaction
+queue, normalized/relational snapshots and connection pools. Core delegates to it;
+the extraction introduces no alternative persistence engine, SQL schema or seeder.
+Typed SQL still rejects a missing database snapshot and never writes a local JSON
+copy. Legacy compatibility modes keep their existing behavior. State and tenant
+services are wired before the server accepts requests; all route contexts refer
+to the same live store. Existing type exports remain compatible; domain metadata
+contracts and four inferred factory dependency types still have type-only links
+to the entry point, with no runtime import of it.
+
+The entry point decreases from 11,063 to 10,098 lines in this continuation. All 13
+new Core state files are below 1,000 lines. Fourteen focused tests cover commit
+failure and acknowledgement, SQL refresh races, durable auth replay, tenant and
+sequence preservation, maintenance behavior, SQL-only startup and nested parsing.
+They run in the normal server pretest alongside the route regressions. Production
+build, server compilation and targeted tenant lifecycle/navigation smoke checks
+passed; the full server suite and database-backed CI verify the final revision.

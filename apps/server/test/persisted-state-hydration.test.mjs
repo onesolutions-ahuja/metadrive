@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+const hydration = readFileSync(new URL('../src/core/state/hydration.ts', import.meta.url), 'utf8');
+const refresh = readFileSync(new URL('../src/core/state/refresh.ts', import.meta.url), 'utf8');
 
 test('startup and scheduled-flow reloads share the legacy-safe persisted-state parser', () => {
-  assert.match(source, /const parsed = parsePersistedPlatformState\(storedState\);/);
-  assert.match(source, /restoreDurableAuthOverlay\(parsePersistedPlatformState\(committed\)\)/);
-  assert.match(source, /function parsePersistedPlatformState\(raw: unknown\)[\s\S]*?hydratingPersistedMetadata = true;[\s\S]*?return stateSchema\.parse\(raw\);[\s\S]*?hydratingPersistedMetadata = previous;/);
+  assert.match(hydration, /const parsed = parsePersistedPlatformState\(storedState\);/);
+  assert.match(refresh, /restoreDurableAuthOverlay\(deps.parsePersistedPlatformState\(committed\)\)/);
+  assert.match(hydration, /return deps.persistedMetadataReadMode.parse\(deps.stateSchema, raw\);/);
 });
 
 test('new field writes still reject empty picklist metadata', () => {
-  assert.match(source, /if \(!hydratingPersistedMetadata && isPicklist && !field\.picklistValues\?\.length\)/);
+  assert.match(source, /if \(!persistedMetadataReadMode.active && isPicklist && !field\.picklistValues\?\.length\)/);
   assert.match(source, /Picklist fields must define at least one value/);
 });

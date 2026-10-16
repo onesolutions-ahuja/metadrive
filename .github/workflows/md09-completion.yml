@@ -10,6 +10,7 @@ on:
       - 'apps/web/src/styles.css'
       - 'apps/server/src/index.ts'
       - 'apps/server/src/modules/**'
+      - 'apps/server/src/core/state/**'
       - 'scripts/md09-page-completion*'
       - '.github/workflows/md09-completion.yml'
   workflow_dispatch:

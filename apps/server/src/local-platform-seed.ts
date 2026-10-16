@@ -1,4 +1,4 @@
-import type { PlatformState } from './index.js';
+import type { PlatformState } from './core/state/types.js';
 
 // The migrated built-in and connector object definitions are present in PostgreSQL.
 // Keep them in the runtime state (including the database snapshot), but not in

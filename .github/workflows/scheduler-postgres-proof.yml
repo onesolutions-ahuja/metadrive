@@ -6,6 +6,7 @@ on:
       - '.github/workflows/scheduler-postgres-proof.yml'
       - 'apps/server/test/scheduler-postgres-lease.integration.test.ts'
       - 'apps/server/src/postgres-state.ts'
+      - 'apps/server/src/core/state/**'
       - 'apps/server/package.json'
   workflow_dispatch:
 permissions:
