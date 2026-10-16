@@ -7,7 +7,6 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const load = path => JSON.parse(readFileSync(resolve(root, path), 'utf8'));
 const source = path => readFileSync(resolve(root, path), 'utf8');
 const contract = load('contracts/metadata-self-hosting.v1.json');
-const migration = load('docs/metadata-driven-platform/MIGRATION_MAP.v1.json');
 
 test('the versioned contract explicitly reuses existing engines instead of parallel ones', () => {
   assert.equal(contract.schemaVersion, 1);
@@ -35,19 +34,22 @@ test('platform definition ownership, permissions and recovery fail closed', () =
   assert.ok(contract.migrationRules.some(value => /second metadata engine/.test(value)));
 });
 
-test('all seven migration phases have unambiguous ownership and all referenced files exist', () => {
-  assert.equal(migration.schemaVersion, 1);
-  assert.deepEqual(migration.phases.map(item => item.number), [1, 2, 3, 4, 5, 6, 7]);
-  assert.ok(migration.sources.length >= 25);
-  const paths = migration.sources.map(item => item.path);
-  assert.equal(paths.length, new Set(paths).size);
-  for (const item of migration.sources) {
-    assert.ok(existsSync(resolve(root, item.path)), 'Missing source: ' + item.path);
-    assert.ok(Number.isInteger(item.phase) && item.phase >= 2 && item.phase <= 7, item.path);
-    assert.ok(item.reason.length > 20, item.path);
-  }
-  for (const risk of migration.knownRisks) {
-    assert.ok(paths.includes(risk.source), risk.id);
+test('current shared runtimes exist and use the canonical platform engines', () => {
+  const modules = [
+    'core/security/record-access.ts',
+    'core/security/security-audit.ts',
+    'modules/flows/flow-context-runtime.ts',
+    'scheduler/runtime-bootstrap.ts',
+    'modules/integrations/http-callout-executor.ts',
+    'modules/integrations/connector-lifecycle.ts',
+    'modules/reports/filter-validation.ts',
+    'modules/dashboards/runtime.ts',
+    'modules/pages/activation-access.ts',
+    'modules/records/field-history.ts',
+    'modules/components/library-service.ts'
+  ];
+  for (const module of modules) {
+    assert.ok(existsSync(resolve(root, 'apps/server/src', module)), module);
   }
 });
 
@@ -65,10 +67,13 @@ test('contract references observed reusable component, installer and RBAC paths'
   assert.match(bindings, /actionFlows/);
 });
 
-test('the phase-1 baseline records critical oversized legacy files for later extraction', () => {
-  const byPath = new Map(migration.sources.map(item => [item.path, item]));
-  assert.ok(byPath.get('apps/web/src/App.tsx')?.baselineLines > 1000);
-  assert.ok(byPath.get('apps/server/src/index.ts')?.baselineLines > 1000);
-  assert.ok(byPath.get('apps/server/test/rbac-sharing.smoke.test.ts')?.baselineLines > 1000);
-  assert.ok(migration.knownRisks.some(item => item.id === 'OVERSIZED_LEGACY'));
+test('server entry point composes shared runtimes rather than duplicating their algorithms', () => {
+  const entry = source('apps/server/src/index.ts');
+  assert.ok(entry.split('\n').length < 4000, 'bootstrap must remain below architectural ceiling');
+  for (const registrar of ['registerRecordRoutes', 'registerReportRoutes', 'registerDashboardRoutes']) {
+    assert.ok(entry.includes(registrar), registrar);
+  }
+  for (const factory of ['createCoreRecordAccess', 'createSchedulerRuntime', 'createHttpCalloutExecutor']) {
+    assert.ok(entry.includes(factory), factory);
+  }
 });

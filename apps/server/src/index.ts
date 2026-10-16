@@ -1,3 +1,7 @@
+import { resolveActiveLightningRecordPage, resolveActiveLightningHomePage, hasRecordTypeAccessForUser } from './modules/pages/activation-access.js';
+import { withSecurityEvent } from './core/security/security-audit.js';
+import { connectorRight, managedConnector, disableOnConnectorUninstall, assertConnectorLifecycleAccess } from './modules/integrations/connector-lifecycle.js';
+import { appendFieldHistory } from './modules/records/field-history.js';
 import { createRecordCascadeRuntime } from './modules/records/record-cascade.js';
 import { createFlowFailureRuntime } from './modules/flows/failure-runtime.js';
 import { publicIntegrationConnection, publicNamedCredential } from './modules/integrations/public-projections.js';
@@ -398,23 +402,6 @@ const defaultLightningApps = (): LightningApp[] => [
   { apiName: 'SalesApp', label: 'Sales', description: 'Manage sales accounts and opportunities.', navigationItems: ['Account', 'Contact', 'Lead', 'Opportunity'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Lead', 'Opportunity'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#0176d3', utilityItems: ['Notes', 'History'] },
   { apiName: 'ServiceApp', label: 'Service', description: 'Manage customer support cases.', navigationItems: ['Account', 'Contact', 'Case'], navigationPageApiNames: [], navigationOrder: ['Account', 'Contact', 'Case'].map((apiName) => ({ type: 'Object' as const, apiName })), brandColor: '#7526a8', utilityItems: ['Notes', 'History'] }
 ].map((app) => lightningAppSchema.parse(app));
-function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous: RuntimeRecord, updated: RuntimeRecord, userId: string): void {
-  if (!object.settings?.trackFieldHistory) return;
-  const changedAt = new Date().toISOString();
-  const entries = object.fields.filter((field) => field.trackHistory && !Object.is(previous[field.apiName], updated[field.apiName]))
-    .map((field) => ({
-      id: randomUUID(),
-      objectApiName: object.apiName,
-      recordId: updated.Id,
-      fieldApiName: field.apiName,
-      oldValue: previous[field.apiName] ?? null,
-      newValue: updated[field.apiName] ?? null,
-      changedBy: userId,
-      changedAt
-    }));
-  if (entries.length) tenant.fieldHistory.push(...entries);
-}
-
 const createPlatformStateSchemaContext = {
   get accessControlSchema() { return accessControlSchema; },
   get approvalProcessSchema() { return approvalProcessSchema; },
@@ -579,22 +566,6 @@ const createTenantDataServiceContext = {
   get provisioningPendingTenants() { return tenantProvisioning.provisioningPendingTenants; }
 };
 const { tenantIsActive, tenantData, persistTenantRecords } = createTenantDataService(createTenantDataServiceContext);
-function withSecurityEvent(
-  tenant: TenantData,
-  actorUserId: string,
-  action: string,
-  details?: Record<string, string>,
-  targetUserId?: string
-): TenantData {
-  const event: SecurityAuditEvent = {
-    id: randomUUID(), at: new Date().toISOString(), actorUserId, action,
-    ...(targetUserId ? { targetUserId } : {}),
-    ...(details ? { details } : {})
-  };
-  // No passwords, bearer tokens, MFA secrets, raw request bodies, or network identifiers.
-  return { ...tenant, securityAudit: [...tenant.securityAudit, event].slice(-5000) };
-}
-
 function getPrincipal(res: Response): Principal {
   const principal = res.locals.principal as Principal | undefined;
   if (!principal) throw new Error('Authenticated principal was not established');
@@ -1125,28 +1096,6 @@ export type IntegrationsConnectorSettingsRoutesDependencies = typeof registerInt
 registerIntegrationsConnectorSettingsRoutes(registerIntegrationsConnectorSettingsRoutesContext);
 
 type ConnectorRight = 'view' | 'edit' | 'secrets' | 'test' | 'install';
-function connectorRight(principal: Principal, right: ConnectorRight): boolean {
-  // Legacy installations retain access; new profiles can grant each permission independently.
-  return principal.permissions.includes('connectorApps:' + right)
-    || (principal.permissions.includes('namedCredentials:manage') && principal.permissions.includes('security:manage'));
-}
-function managedConnector(tenant: TenantData, credentialName: string): RuntimeRecord | undefined {
-  return (tenant.records.Connector_App__c ?? []).find((item) => item.CredentialName__c === credentialName);
-}
-function disableOnConnectorUninstall(tenant: TenantData, previous: RuntimeRecord, next: RuntimeRecord) {
-  // Every installation transition, including reinstall, starts with callouts disabled.
-  // Configuration and encrypted secret bytes are preserved.
-  if (previous.Installed__c !== next.Installed__c) {
-    tenant.namedCredentials = tenant.namedCredentials.map((credential) =>
-      credential.name === previous.CredentialName__c ? { ...credential, enabled: false } : credential);
-  }
-}
-function assertConnectorLifecycleAccess(previous: RuntimeRecord, requested: RuntimeRecord, principal: Principal) {
-  if ((previous.Installed__c !== requested.Installed__c || requested.TrialRequested__c === true)
-    && !connectorRight(principal, 'install')) {
-    throw new Error('Missing connectorApps:install permission to install, uninstall or start a trial.');
-  }
-}
 // AppExchange is a tenant-scoped package catalogue, not an ordinary privately-owned
 // business record list. Require connector viewing rights, then return only metadata
 // for the authenticated tenant (never credentials or records from other tenants).
@@ -1255,49 +1204,6 @@ function profileIdForPrincipal(principal: Principal, tenant: TenantData): string
   if (!user) return '';
   const accessUser = tenant.accessControl.users.find((item) => item.id === user.id);
   return accessUser?.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles);
-}
-
-function resolveActiveLightningRecordPage(
-  tenant: TenantData,
-  objectApiName: string,
-  appId: string,
-  recordTypeId: string | undefined,
-  profileId: string,
-  formFactor: 'Desktop' | 'Phone'
-): LightningPage | undefined {
-  const match = resolvePageAssignment(tenant.pages, {
-    pageType: 'Record Page', objectApiName, appId, recordTypeId, profileId, formFactor
-  });
-  if (match) return match;
-  // Normal activation metadata is authoritative; no application-specific fallback.
-  return undefined;
-}
-
-function resolveActiveLightningHomePage(
-  tenant: TenantData,
-  appId: string,
-  profileId: string,
-  formFactor: 'Desktop' | 'Phone'
-): LightningPage | undefined {
-  return resolvePageAssignment(tenant.pages, {
-    pageType: 'Home Page', appId, profileId, formFactor
-  });
-}
-
-function hasRecordTypeAccessForUser(userId: string, tenant: TenantData, objectName: string, recordTypeId: string): boolean {
-  const user = tenant.accessControl.users.find((item) => item.id === userId);
-  if (!user) return false;
-  const key = `${objectName}.${recordTypeId}`;
-  const profile = tenant.accessControl.profiles.find((item) =>
-    item.id === (user.profileId ?? profileIdForRole(user.role, tenant.accessControl.profiles)));
-  if (profile && profile.recordTypePermissions[key] !== false) return true;
-  const sets = tenant.accessControl.permissionSets;
-  if (sets.some((set) => user.permissionSetIds.includes(set.id) && set.recordTypePermissions[key] === true)) return true;
-  return user.permissionSetGroupIds.some((groupId) => {
-    const group = tenant.accessControl.permissionSetGroups.find((item) => item.id === groupId);
-    return Boolean(group && group.mutedRecordTypePermissions[key] !== true
-      && sets.some((set) => group.permissionSetIds.includes(set.id) && set.recordTypePermissions[key] === true));
-  });
 }
 
 function allocateAutoNumberSequence(tenantId: string, tenant: TenantData, object: ObjectMetadata, field: ObjectMetadata['fields'][number]): number {
