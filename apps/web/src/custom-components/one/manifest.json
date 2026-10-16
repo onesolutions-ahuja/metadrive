@@ -2152,7 +2152,7 @@
           "label": "IANA display timezone",
           "kind": "TEXT",
           "displayOrder": 350,
-          "defaultValue": "Europe/London"
+          "defaultValue": ""
         }
       ]
     },
