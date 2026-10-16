@@ -208,6 +208,8 @@ function RecordWorkspace({
   recordTypeAccess,
   libraryComponents,
   headerSearch,
+  onSearchChange,
+  navigableObjects,
   onNavigate
 }: {
   route: Extract<AppRoute, { kind: 'record-list' | 'record-detail' }>;
@@ -225,6 +227,8 @@ function RecordWorkspace({
   recordTypeAccess: Record<string, boolean>;
   libraryComponents: LibraryComponentMetadata[];
   headerSearch: string;
+  onSearchChange: (search: string) => void;
+  navigableObjects: ObjectMetadata[];
   onNavigate: (route: AppRoute) => void;
 }) {
   const object = objects.find((item) => item.apiName === route.objectApiName);
@@ -1525,6 +1529,15 @@ function RecordWorkspace({
     <section className="records-list-card surface">
       <div className="records-list-toolbar">
         <div><h2>{object.pluralLabel}</h2><span>{loading ? 'Loading records…' : `${listTotal} record${listTotal === 1 ? '' : 's'}`}</span></div>
+        <div className="records-list-context">
+          <RecordObjectPicker objects={navigableObjects} selected={object.apiName}
+            onSelect={(objectApiName) => onNavigate({kind:'record-list',objectApiName,appId:route.appId})} />
+          <label className="records-search"><Search size={15} aria-hidden="true" />
+            <input type="search" aria-label={`Search ${object.pluralLabel} records`}
+              placeholder={`Search ${object.pluralLabel}…`} value={headerSearch}
+              onChange={(event) => {setListOffset(0);onSearchChange(event.target.value);}} />
+          </label>
+        </div>
         <div className="records-list-actions">
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
