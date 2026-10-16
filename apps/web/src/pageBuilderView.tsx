@@ -1842,7 +1842,6 @@ function PageBuilder({
             </div>}
             <p className="properties-help">Device, dimensions and orientation are selected when creating a page. Create another page for a different layout size.</p>
             <div className="page-property-summary"><strong>{page.components.length}</strong> components</div>
-
           </>}
         </aside>
       </div>
@@ -1963,6 +1962,5 @@ function PageBuilder({
     </div>
   );
 }
-
 return PageBuilder;
 }
