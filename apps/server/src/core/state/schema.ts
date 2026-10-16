@@ -84,7 +84,7 @@ export function createPlatformStateSchema(deps: CreatePlatformStateSchemaDepende
       reports: z.array(deps.reportSchema).default([]),
       accessControl: deps.accessControlSchema,
       sharingSettings: z.record(deps.sharingSettingSchema).default({}),
-      companyProfile: z.object({legalName:z.string().max(120),tradingName:z.string().max(120),website:z.string().max(500),phone:z.string().max(50),email:z.union([z.literal(''),z.string().email()]),addressLine1:z.string().max(200),addressLine2:z.string().max(200),city:z.string().max(120),postcode:z.string().max(30),country:z.string().max(100),timezone:z.string().max(100),locale:z.string().max(50),description:z.string().max(1000)}).strict().optional(),
+      companyProfile: z.object({logoUrl:z.string().url().max(2000).or(z.literal('')).optional(),legalName:z.string().max(120),tradingName:z.string().max(120),website:z.string().max(500),phone:z.string().max(50),email:z.union([z.literal(''),z.string().email()]),addressLine1:z.string().max(200),addressLine2:z.string().max(200),city:z.string().max(120),postcode:z.string().max(30),country:z.string().max(100),timezone:z.string().max(100),locale:z.string().max(50),description:z.string().max(1000)}).strict().optional(),
       currencySettings: deps.currencySettingsSchema.default({ corporateCurrency: 'USD', standardVatRate: 20, currencies: [{ currencyIsoCode: 'USD', conversionRate: 1 }] }),
       recordShares: z.array(deps.recordShareSchema).default([]),
       campaignMembers: z.array(deps.campaignMemberSchema).default([]),
