@@ -5124,7 +5124,7 @@ registerSecurityMetadataRoutes({
 });
 registerFlowElementRoutes(app, requirePermission);
 
-type FlowRuntimeContext = {
+export type FlowRuntimeContext = {
   record?: RuntimeRecord;
   prior?: RuntimeRecord;
   recordEvent?: RecordEvent;
@@ -5147,8 +5147,8 @@ type FlowRuntimeContext = {
   userCurrencyIsoCode?: string;
   currencyIsoCode?: string;
 };
-type FlowDebugTraceEntry = { flowApiName: string; elementId: number; type: string; label: string };
-type RecordEvent = 'created' | 'updated' | 'deleted';
+export type FlowDebugTraceEntry = { flowApiName: string; elementId: number; type: string; label: string };
+export type RecordEvent = 'created' | 'updated' | 'deleted';
 const namedCredentialPayloadSchema = z.object({
   username: z.string().optional(),
   secret: z.string().optional(),
