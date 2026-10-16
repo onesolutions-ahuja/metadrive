@@ -1,6 +1,6 @@
 // Real Module 7 Chromium acceptance on a disposable local tenant.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -101,7 +101,11 @@ try {
   await page.locator('iframe[sandbox="allow-scripts"]').first().contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
   const coreRegistry=await request('/component-library',token);
   const core=coreRegistry.components.filter(item=>/^One[A-Za-z]+$/.test(item.apiName));
-  if(core.length!==40 || new Set(core.map(item=>item.apiName)).size!==40 ||
+  const expectedCore=JSON.parse(readFileSync(
+    new URL('../apps/web/src/custom-components/one/manifest.json',import.meta.url),'utf8'
+  )).components.map(item=>item.apiName);
+  if(core.length!==expectedCore.length || new Set(core.map(item=>item.apiName)).size!==expectedCore.length ||
+    expectedCore.some(apiName=>!core.some(item=>item.apiName===apiName)) ||
     core.some(item=>item.status!=='Published'||item.trustedBundled!==true||
       !['page','dashboard','flow'].every(surface=>item.surfaces.includes(surface))))
     throw Error('One Core registered-component contract failed in authenticated tenant');
