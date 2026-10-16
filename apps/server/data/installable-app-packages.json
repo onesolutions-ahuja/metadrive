@@ -1296,7 +1296,7 @@
           },
           "jsxFile": "RecordCatalogCart/RecordCatalogCart.jsx",
           "cssFile": "RecordCatalogCart/RecordCatalogCart.css",
-          "version": 4,
+          "version": 5,
           "propertyDefinitions": [
             {
               "propertyKey": "title",
@@ -1395,6 +1395,27 @@
               "kind": "TEXT",
               "defaultValue": "Open customer display",
               "displayOrder": 14
+            },
+            {
+              "propertyKey": "topbarActionEvent",
+              "label": "Topbar action event",
+              "kind": "TEXT",
+              "defaultValue": "openDisplay",
+              "displayOrder": 140
+            },
+            {
+              "propertyKey": "topbarActionLabelProperty",
+              "label": "Topbar action label property",
+              "kind": "TEXT",
+              "defaultValue": "displayButtonLabel",
+              "displayOrder": 150
+            },
+            {
+              "propertyKey": "topbarActionRequiresProperty",
+              "label": "Topbar action requires property",
+              "kind": "TEXT",
+              "defaultValue": "customerDisplayUrl",
+              "displayOrder": 160
             },
             {
               "propertyKey": "productsLabel",
