@@ -12,7 +12,7 @@ import { pruneRetiredTrustedComponents } from '../../bundled-app-components.mjs'
 import { findObjectDependencies } from '../../modules/objects/dependencies.js';
 import { removeObjectMetadata } from '../../modules/objects/remove-object.js';
 import type { PlatformState } from './types.js';
-import { restoreMissingCoreAdministratorGrants } from '../../seeders/repair-core-administrator-grants.mjs';
+import { restoreMissingCoreAdministratorGrants } from '../../seeders/repair-core-administrator-grants.js';
 import type { CreateStateHydrationDependencies } from '../../index.js';
 
 export function createStateHydration(deps: CreateStateHydrationDependencies) {
