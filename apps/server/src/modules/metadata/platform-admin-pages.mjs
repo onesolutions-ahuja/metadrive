@@ -29,7 +29,7 @@ export const protectedWorkspacePageDescriptors=Object.freeze([
  {workspace:'app-manager',label:'App Manager',permission:'metadata:read'},
  {workspace:'app-exchange',label:'AppExchange',permission:'metadata:write'},
  {workspace:'rbac',label:'Users & Permissions',permission:'security:read'},
- {workspace:'tenant-management',label:'Tenant Management',permission:'platform:superadmin'},
+ {workspace:'tenant-management',label:'Tenant Management',permission:'platform:tenants:manage'},
  {workspace:'named-credentials',label:'Named Credentials',permission:'metadata:write'},
  {workspace:'connector-settings',label:'Connector Settings',permission:'metadata:write'},
  {workspace:'approval-processes',label:'Approval Processes',permission:'metadata:read'},
@@ -102,7 +102,7 @@ export function seedProtectedAdministrationPages(tenant){
 }
 export function validateProtectedAdministrationPageUpdate(existing,proposed,permissions){
  if(!isProtectedAdministrationPage(existing)&&!isProtectedAdministrationPage(proposed))return null;
- if(!permissions.includes('platform:superadmin'))return 'Platform administrator permission required';
+ if(!permissions.includes('platform:tenants:manage'))return 'Platform Developer permission required';
  if(existing&&existing.apiName!==proposed.apiName)return 'Protected administration page cannot be renamed';
  if(proposed.scope!=='platform-system'||proposed.ownerNamespace!=='MetaDrive')
   return 'Protected administration page ownership cannot change';
