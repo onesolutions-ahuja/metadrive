@@ -246,6 +246,14 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     </select>
   </label>;
   return <div className="metadata-component-properties">
+    {typeof properties.layoutParentId === 'string' && properties.layoutParentId && <label className="form-label">Split pane placement
+      <select className="form-control" value={String(properties.layoutPane ?? 'first')}
+        onChange={(event) => update('layoutPane', event.target.value)}>
+        <option value="first">First / left pane</option>
+        <option value="second">Second / right pane</option>
+      </select>
+    </label>}
+
     {objectBindings.map((key) => <label className="form-label" key={key}>{labelFor(key)}
       <select className="form-control" value={String(properties[key] ?? '')}
         onChange={(event) => update(key, event.target.value)}>
