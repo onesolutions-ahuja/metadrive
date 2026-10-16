@@ -7,8 +7,8 @@ const sections:ReadonlyArray<{id:Section;label:string}>=[
 {id:'contacts',label:'Contacts'},{id:'integrations',label:'Integrations'},
 {id:'security',label:'Security & Recovery'}];
 /** Presentation only: retains existing OneEngine-protected runtime controls and slots. */
-export default function CompanySettingsWorkspace({company,currency,domains,developer,usage,recovery,mfa,emailRecovery,locks,sessions,audit}:{
-company:ReactNode;currency:ReactNode;domains:ReactNode;developer:ReactNode;usage:ReactNode;
+export default function CompanySettingsWorkspace({company,domains,developer,usage,recovery,mfa,emailRecovery,locks,sessions,audit}:{
+company:ReactNode;domains:ReactNode;developer:ReactNode;usage:ReactNode;
 recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;sessions:ReactNode;audit:ReactNode;
 }){
  const [active,setActive]=useState<Section>('general');
@@ -19,7 +19,7 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
      {sections.map(section=><button key={section.id} type="button" className={active===section.id?'active':''}
        aria-current={active===section.id?'page':undefined} onClick={()=>setActive(section.id)}>{section.label}</button>)}
    </nav>
-   <div className="company-workspace-body">
+   <div className={"company-workspace-body company-workspace-section-"+active}>
      {/* CompanySettings currently contains both company details and currency sections.
          Render it once, avoiding duplicate state and network requests. */}
      {(active==='general'||active==='currency'||active==='business'||active==='contacts')&&company}
