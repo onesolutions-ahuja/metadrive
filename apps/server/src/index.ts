@@ -1,3 +1,5 @@
+import { activeFlowDefinition, flowVersionSnapshot, uniqueFlowHistory } from './modules/flows/versioning.js';
+import { isValidFlowTime, validateFlowInputValues, flowNeedsRollbackSnapshot, orderedRecordTriggeredFlows } from './modules/flows/runtime-helpers.js';
 import { createDashboardRunningUserHelpers } from './modules/dashboards/running-users.js';
 import { dashboardComponentSchema, dashboardFilterSchema, dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardSnapshotSchema, dashboardSubscriptionSchema, dashboardTimeZoneSchema, type DashboardFolder, type DashboardTerritory, type DashboardMetadata, type DashboardFilterMetadata, type DashboardSnapshot, type DashboardSubscription } from './modules/dashboards/schemas.js';
 import { folderAccessLevelForUser, folderAccessLevelFromFolders, folderForUser, dashboardForUser, validateDashboardFolderReferences } from './modules/dashboards/folder-access.js';
@@ -1796,52 +1798,6 @@ function reportFilterValueError(
   return null;
 }
 export type FlowMetadata = z.infer<typeof flowSchema>;
-/** The draft in Flow Builder is not necessarily the published executable version. */
-function activeFlowDefinition(candidate: FlowMetadata | undefined): FlowMetadata | undefined {
-  if (!candidate || candidate.activeVersion === null) return undefined;
-  if (candidate.status === 'Active' && candidate.versionNumber === candidate.activeVersion) return candidate;
-  const published = candidate.versions.find((version) => version.versionNumber === candidate.activeVersion);
-  if (!published) return undefined;
-  return {
-    ...candidate,
-    ...published,
-    versionNumber: candidate.activeVersion,
-    activeVersion: candidate.activeVersion,
-    status: 'Active',
-    versions: candidate.versions
-  };
-}
-function flowVersionSnapshot(flow: FlowMetadata, savedAt: string): FlowMetadata['versions'][number] {
-  return {
-    versionNumber: flow.versionNumber,
-    status: flow.status,
-    savedAt,
-    label: flow.label,
-    description: flow.description,
-    flowType: flow.flowType,
-    triggerObject: flow.triggerObject,
-    startConfig: flow.startConfig,
-    elements: flow.elements,
-    connectors: flow.connectors,
-    resources: flow.resources,
-    tests: flow.tests
-  };
-}
-function uniqueFlowHistory(flow: FlowMetadata | undefined, savedAt: string): FlowMetadata['versions'] {
-  if (!flow) return [];
-  const snapshots = new Map<number, FlowMetadata['versions'][number]>();
-  for (const version of flow.versions) snapshots.set(version.versionNumber, version);
-  // The editable current version is authoritative when both it and a history entry exist.
-  snapshots.set(flow.versionNumber, flowVersionSnapshot(flow, savedAt));
-  return [...snapshots.values()]
-    .map((version) => ({
-      ...version,
-      status: version.versionNumber === flow.activeVersion
-        ? 'Active' as const
-        : version.status === 'Draft' ? 'Draft' as const : 'Obsolete' as const
-    }))
-    .sort((left, right) => left.versionNumber - right.versionNumber);
-}
 type FlowInterview = z.infer<typeof flowInterviewSchema>;
 type PageMetadata = z.infer<typeof pageSchema>;
 
@@ -4799,41 +4755,6 @@ const registerChatterAccessRoutesContext = {
 };
 export type ChatterAccessRoutesDependencies = typeof registerChatterAccessRoutesContext;
 registerChatterAccessRoutes(registerChatterAccessRoutesContext);
-function validateFlowInputValues(flow: FlowMetadata, values: Record<string, unknown>): string | undefined {
-  const inputResources = flow.resources.filter((resource) => resource.availableForInput);
-  for (const [name, value] of Object.entries(values)) {
-    const resource = inputResources.find((candidate) => candidate.name === name);
-    if (!resource) return `Resource "${name}" is not available for input`;
-    const dataType = resource.dataType.toLowerCase();
-    const invalid = (): string => `Input "${resource.label}" must be a valid ${resource.dataType} value`;
-    if (['number', 'currency', 'percent'].some((type) => dataType.startsWith(type))) {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return invalid();
-    } else if (['boolean', 'checkbox'].includes(dataType)) {
-      if (typeof value !== 'boolean') return invalid();
-    } else if (dataType === 'date') {
-      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
-        || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`))
-        || new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value) return invalid();
-    } else if (dataType === 'date/time' || dataType === 'datetime') {
-      if (typeof value !== 'string' || !isValidFlowDateTime(value)) return invalid();
-    } else if (dataType === 'time') {
-      if (typeof value !== 'string' || !isValidFlowTime(value)) return invalid();
-    } else if (['text', 'string', 'email', 'phone', 'url', 'id', 'picklist', 'multi-select picklist'].includes(dataType)) {
-      if (dataType === 'multi-select picklist'
-        ? (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))
-        : typeof value !== 'string') return invalid();
-    } else if (resource.type === 'Record') {
-      if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalid();
-    } else if (resource.type === 'Record Collection') {
-      if (!Array.isArray(value) || value.some((item) => typeof item !== 'object' || item === null || Array.isArray(item))) {
-        return invalid();
-      }
-    } else {
-      return `Input "${resource.label}" uses unsupported data type "${resource.dataType}"`;
-    }
-  }
-  return undefined;
-}
 const registerFlowsExecutionRoutesContext = {
   get accessAuthentication() { return accessAuthentication; },
   get app() { return app; },
@@ -5237,11 +5158,6 @@ function asConfigRows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object' && !Array.isArray(item))
     : [];
-}
-
-function isValidFlowTime(value: string): boolean {
-  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value);
-  return match !== null;
 }
 
 function flowVariablesForUser(
@@ -6308,23 +6224,6 @@ function performSubmitForApproval(
   return groupId;
 }
 
-function flowNeedsRollbackSnapshot(
-  flow: FlowMetadata,
-  knownFlows: FlowMetadata[],
-  visited: Set<string> = new Set()
-): boolean {
-  if (visited.has(flow.apiName)) return false;
-  visited.add(flow.apiName);
-  return flow.elements.some(element => {
-    if (element.type === 'Roll Back Records') return true;
-    if (element.type !== 'Subflow') return false;
-    const target = element.config.flowApiName;
-    if (typeof target !== 'string') return false;
-    const subflow = knownFlows.find(candidate => candidate.apiName === target);
-    return Boolean(subflow && flowNeedsRollbackSnapshot(subflow, knownFlows, visited));
-  });
-}
-
 async function executeFlow(...args: Parameters<typeof executeFlowImplementation>): Promise<FlowExecutionResult> {
   return withFlowRecordWriteContext(args[0].apiName, args[2], args[3], () => executeFlowImplementation(...args));
 }
@@ -6434,24 +6333,6 @@ async function runBeforeSaveRecordTriggeredFlows(
       throw error;
     }
   }
-}
-
-function orderedRecordTriggeredFlows(
-  tenant: TenantData,
-  objectName: string,
-  runWhen: 'before-save' | 'after-save'
-): FlowMetadata[] {
-  return tenant.flows
-    .map(activeFlowDefinition)
-    .filter((flow): flow is FlowMetadata => flow !== undefined
-      && flow.flowType === 'Record-Triggered Flow'
-      && flow.triggerObject === objectName
-      && String(flow.startConfig.runWhen ?? 'after-save') === runWhen)
-    .sort((left, right) => {
-      const leftOrder = typeof left.startConfig.triggerOrder === 'number' ? left.startConfig.triggerOrder : Number.MAX_SAFE_INTEGER;
-      const rightOrder = typeof right.startConfig.triggerOrder === 'number' ? right.startConfig.triggerOrder : Number.MAX_SAFE_INTEGER;
-      return leftOrder - rightOrder || left.apiName.localeCompare(right.apiName);
-    });
 }
 
 const { scheduledOccurrence, nextScheduledOccurrence } = createFlowScheduleCalculations(flowLocalDateTimeToInstant, dashboardLocalParts);
