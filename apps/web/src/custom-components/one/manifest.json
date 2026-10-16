@@ -2511,7 +2511,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
