@@ -24,9 +24,10 @@ export type TenantSummary = {
 
 type TenantCreate = {
   tenantId: string; tenantName: string; adminName: string; email: string; password: string; developerDomain?: string;
+  grantTenantDeveloperPolicyToAdmin: boolean;
 };
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
-const emptyCreate: TenantCreate = { tenantId: '', tenantName: '', adminName: '', email: '', password: '', developerDomain: '' };
+const emptyCreate: TenantCreate = { tenantId: '', tenantName: '', adminName: '', email: '', password: '', developerDomain: '', grantTenantDeveloperPolicyToAdmin: false };
 const shortDate = (value: string) => {
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? '—' : date.toLocaleDateString();
@@ -223,6 +224,9 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             key={field.key} definition={{...field,propertyKey:field.key,kind:'TEXT'}}
             value={create[field.key]??''}
             onChange={value=>{setCreateKey(crypto.randomUUID());setCreate(old=>({...old,[field.key]:value}));}}/>)}
+          <label><input type="checkbox" checked={create.grantTenantDeveloperPolicyToAdmin}
+            onChange={event=>{setCreateKey(crypto.randomUUID());setCreate(old=>({...old,grantTenantDeveloperPolicyToAdmin:event.target.checked}));}} />
+            Also assign OneEngine Tenant Developer policy to the initial administrator (tenant scope only; does not grant platform or licence administration).</label>
           <p className="tenant-help">Creates an initial administrator and a disabled developer account with full starting tenant permissions. For <strong>developer@tenant-domain.com</strong>, enter tenant-domain.com. The tenant administrator activates the developer account from Company Settings; no password is shared with platform operators.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
         </form> : selected ? <><form onSubmit={(event) => void saveTenant(event)}>
