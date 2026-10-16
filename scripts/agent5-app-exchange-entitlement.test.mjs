@@ -97,7 +97,8 @@ test('duplicate package definitions never install conflicting metadata', () => {
 test('backend routes use tenant-scoped seeder reconciliation and reject duplicate licence records', () => {
   const source = readFileSync(new URL('../apps/server/src/index.ts', import.meta.url),'utf8');
   assert.match(source, /reconcileInstalledAppSeeds\(\s*\{ \.\.\.tenant, autoNumberSequences \}, installableAppCatalog, tenantId/);
-  assert.match(source, /if \(matches\.length > 1\) return res\.status\(409\)/);
+  const routes = readFileSync(new URL('../apps/server/src/modules/integrations/connector-app-routes.ts', import.meta.url),'utf8');
+  assert.match(routes, /if \(matches\.length > 1\) return res\.status\(409\)/);
 });
 
 test('duplicate package catalog entries never register optional bundles', () => {

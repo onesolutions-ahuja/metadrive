@@ -1,3 +1,30 @@
+import { registerIntegrationsWebhookRoutes } from './modules/integrations/webhook-routes.js';
+import { registerTenantRegistryRoutes } from './modules/tenants/registry-routes.js';
+import { registerTenantProvisioningRoutes } from './modules/tenants/provisioning-routes.js';
+import { registerTenantsDomainRoutes } from './modules/tenants/domain-routes.js';
+import { registerTenantLifecycleRoutes } from './modules/tenants/lifecycle-routes.js';
+import { registerTenantRetentionRoutes } from './modules/tenants/retention-routes.js';
+import { registerApprovalsDecisionRoutes } from './modules/approvals/decision-routes.js';
+import { registerObjectsListRoutes } from './modules/objects/list-routes.js';
+import { registerFlowsPlatformEventRoutes } from './modules/flows/platform-event-routes.js';
+import { registerApprovalsMetadataRoutes } from './modules/approvals/metadata-routes.js';
+import { registerFlowsMetadataRoutes } from './modules/flows/metadata-routes.js';
+import { registerIntegrationsConnectionRoutes } from './modules/integrations/connection-routes.js';
+import { registerIntegrationsConnectorSettingsRoutes } from './modules/integrations/connector-settings-routes.js';
+import { registerIntegrationsConnectorAppRoutes } from './modules/integrations/connector-app-routes.js';
+import { registerCredentialStatusRoutes } from './modules/integrations/credential-status-routes.js';
+import { registerCredentialManagementRoutes } from './modules/integrations/credential-management-routes.js';
+import { registerFlowsEmailAlertRoutes } from './modules/flows/email-alert-routes.js';
+import { registerFlowDefinitionRoutes } from './modules/flows/definition-routes.js';
+import { registerChatterAccessRoutes } from './modules/chatter/access-routes.js';
+import { registerFlowsExecutionRoutes } from './modules/flows/execution-routes.js';
+import { registerFlowRecordDebugRoutes } from './modules/flows/record-debug-routes.js';
+import { registerFlowsInterviewRoutes } from './modules/flows/interview-routes.js';
+import { registerAppsMetadataRoutes } from './modules/apps/metadata-routes.js';
+import { registerAppsRouteAliasRoutes } from './modules/apps/route-alias-routes.js';
+import { registerPageListRoutes } from './modules/pages/list-routes.js';
+import { registerPageUpdateRoutes } from './modules/pages/update-routes.js';
+import { registerSecurityCurrencyRoutes } from './modules/security/currency-routes.js';
 import { registerFlowElementRoutes } from './modules/flows/element-routes.js';
 import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
@@ -247,230 +274,33 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 // Meta webhook transport is a platform primitive; routing and replies remain in editable Flows.
 // Configure these four values on Render before enabling the callback.
-app.get('/api/whatsapp/webhook', (req: Request, res: Response) => {
-  const expected = process.env.METADRIVE_WHATSAPP_VERIFY_TOKEN;
-  const supplied = req.query['hub.verify_token'];
-  if (!expected || typeof supplied !== 'string' || req.query['hub.mode'] !== 'subscribe') {
-    return res.sendStatus(403);
-  }
-  const left = Buffer.from(expected);
-  const right = Buffer.from(supplied);
-  if (left.length !== right.length || !timingSafeEqual(left, right)) return res.sendStatus(403);
-  const challenge = req.query['hub.challenge'];
-  if (typeof challenge !== 'string' || !/^\d+$/.test(challenge)) return res.sendStatus(400);
-  return res.status(200).type('text/plain').send(challenge);
-});
-app.post('/api/whatsapp/webhook', async (req: Request, res: Response) => {
-  const reject = (status: number, reason: string) => { console.warn('[WhatsApp webhook] rejected', { status, reason }); return res.sendStatus(status); };
-  console.info('[WhatsApp webhook] delivery received');
-  const appSecret = process.env.WHATSAPP_APP_SECRET || process.env.METADRIVE_WHATSAPP_APP_SECRET;
-  const signature = req.get('x-hub-signature-256');
-  const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
-  if (!appSecret) return reject(503, 'app_secret_not_configured');
-  if (!signature || !/^sha256=[a-f0-9]{64}$/i.test(signature) || !rawBody) return reject(403, 'missing_or_invalid_signature');
-  const digest = 'sha256=' + createHmac('sha256', appSecret).update(rawBody).digest('hex');
-  const supplied = Buffer.from(signature.toLowerCase());
-  const expected = Buffer.from(digest);
-  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return reject(403, 'signature_mismatch');
-  const payload = req.body as { object?: unknown; entry?: Array<{ changes?: Array<{ value?: { metadata?: { phone_number_id?: string; display_phone_number?: string }; messages?: Array<{ id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string } }> } }> }> };
-  if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload.entry)) { console.info('[WhatsApp webhook] ignored unsupported payload'); return res.sendStatus(200); }
-  const phoneIds = [...new Set(payload.entry.flatMap(entry => (entry.changes ?? []).filter(change => (change.value?.messages?.length ?? 0) > 0).map(change => change.value?.metadata?.phone_number_id?.trim()).filter((id): id is string => Boolean(id))))];
-  if (!phoneIds.length) { console.info('[WhatsApp webhook] no inbound messages'); return res.sendStatus(200); }
-  if (phoneIds.length !== 1) return reject(503, 'multiple_phone_ids_in_delivery');
-  const phoneId = phoneIds[0];
-  // Match only the phone ID in a trusted Meta Graph API URL path, never a substring.
-  const matchesMetaPhoneUrl = (rawUrl: string | undefined): boolean => {
-    if (!rawUrl) return false;
-    try {
-      const url = new URL(rawUrl);
-      if (url.protocol !== 'https:' || url.hostname !== 'graph.facebook.com' || url.username || url.password || url.port) return false;
-      const segments = url.pathname.split('/').filter(Boolean);
-      return /^v\d+\.\d+$/.test(segments[0] ?? '') && segments[1] === phoneId && (segments.length === 2 || (segments.length === 3 && segments[2] === 'messages'));
-    } catch { return false; }
-  };
-  const matchesNamedCredential = (data: TenantData, credentialRef: unknown): boolean => {
-    if (typeof credentialRef !== 'string' || !credentialRef.trim()) return false;
-    const ref = credentialRef.trim();
-    return data.namedCredentials.some(credential =>
-      (credential.id === ref || credential.name === ref)
-      && credential.protocol === 'HTTPS'
-      && matchesMetaPhoneUrl(credential.baseUrl)
-    );
-  };
-  const matches = Object.entries(state.tenants).filter(([tenantId, data]) =>
-    tenantIsActive(tenantId) && data.namedCredentials.some(credential => {
-      const config = credential.configuration ?? {};
-      return (credential.name.toLowerCase().includes('whatsapp') || credential.label.toLowerCase().includes('whatsapp'))
-        && (config.PhoneNumberId === phoneId || config.phone_number_id === phoneId
-          || matchesMetaPhoneUrl(config.ApiBaseUrl) || matchesMetaPhoneUrl(credential.baseUrl));
-    }) || (data.records.UneConnector__c ?? []).some(record => {
-      if (String(record.ConnectorType__c ?? '').toLowerCase() !== 'whatsapp') return false;
-      if (typeof record.Configuration__c !== 'string') return false;
-      try {
-        const configuration: unknown = JSON.parse(record.Configuration__c);
-        if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration)) return false;
-        const values = configuration as Record<string, unknown>;
-        return values.PhoneNumberId === phoneId || (typeof values.ApiBaseUrl === 'string' && matchesMetaPhoneUrl(values.ApiBaseUrl)) || matchesNamedCredential(data, values.NamedCredential);
-      } catch { return false; }
-    })
-    || data.connectorSettings.some(setting => {
-      if (setting.apiName !== 'WhatsApp') return false;
-      const fields = Object.fromEntries(setting.fields.map(field => [field.apiName, field.value.trim()]));
-      return fields.PhoneNumberId === phoneId || matchesMetaPhoneUrl(fields.ApiBaseUrl) || matchesNamedCredential(data, fields.NamedCredential);
-    })
-    || data.integrationConnections.some(connection => {
-      if (connection.connectorKey.toUpperCase() !== 'WHATSAPP' || connection.status !== 'ACTIVE') return false;
-      return connection.configuration.phone_number_id?.trim() === phoneId
-        || matchesMetaPhoneUrl(connection.configuration.base_url)
-        || matchesMetaPhoneUrl(connection.configuration.api_base_url);
-    })
-  );
-  if (matches.length !== 1) {
-    // Structural diagnostics only: never log IDs, phone numbers, URLs, tokens, or credentials.
-    const connectorDiagnostics = Object.values(state.tenants).map(data => {
-      const records = data.records.UneConnector__c ?? [];
-      const whatsappRecords = records.filter(record => String(record.ConnectorType__c ?? '').trim().toLowerCase() === 'whatsapp');
-      const shapes = whatsappRecords.map(record => {
-        if (typeof record.Configuration__c !== 'string') return 'configuration_not_string';
-        try {
-          const parsed: unknown = JSON.parse(record.Configuration__c);
-          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'configuration_not_object';
-          const config = parsed as Record<string, unknown>;
-          const rawUrl = typeof config.ApiBaseUrl === 'string' ? config.ApiBaseUrl : '';
-          let urlShape = 'missing';
-          if (rawUrl) {
-            try {
-              const url = new URL(rawUrl);
-              const segments = url.pathname.split('/').filter(Boolean);
-              urlShape = url.hostname === 'graph.facebook.com'
-                ? (segments.length === 2 ? 'graph_two_segments' : segments.length === 3 ? 'graph_three_segments' : 'graph_other_segments')
-                : 'non_graph_host';
-            } catch { urlShape = 'invalid_url'; }
-          }
-          return {
-            hasPhoneNumberId: typeof config.PhoneNumberId === 'string' && Boolean(config.PhoneNumberId.trim()),
-            urlShape,
-            matchesPhoneNumberId: typeof config.PhoneNumberId === 'string' && config.PhoneNumberId.trim() === phoneId,
-            matchesApiBaseUrl: matchesMetaPhoneUrl(rawUrl)
-          };
-        } catch { return 'invalid_configuration_json'; }
-      });
-      return { connectorRecords: records.length, whatsappRecords: whatsappRecords.length, shapes,
-        legacyWhatsAppSettings: data.connectorSettings.filter(item => item.apiName === 'WhatsApp').length,
-        activeIntegrationConnections: data.integrationConnections.filter(item => item.connectorKey.toUpperCase() === 'WHATSAPP' && item.status === 'ACTIVE').length };
-    });
-    console.warn('[WhatsApp webhook] tenant mapping diagnostics', JSON.stringify({ tenantCount: connectorDiagnostics.length, matchCount: matches.length, connectors: connectorDiagnostics }));
-    return reject(503, matches.length ? 'ambiguous_phone_tenant_mapping' : 'phone_tenant_mapping_not_configured');
-  }
-  const [tenantId, tenant] = matches[0];
-  const users = state.users.filter(user => user.tenantId === tenantId && !user.disabled);
-  const systemUser = users.find(user => user.role === 'System Administrator') ?? users.find(user => user.permissionSetIds.includes('system-administrator'));
-  if (!systemUser) return reject(503, 'tenant_system_administrator_unavailable');
-  const userId = systemUser.id;
-  const object = tenant.objects.find(item => item.apiName === communicationObjectApiName);
-  if (!object) return reject(503, 'message_object_missing');
-  let working = tenant;
-  let received = 0;
-  let saved = 0;
-  let duplicate = 0;
-  let unsupported = 0;
-  try {
-    for (const entry of payload.entry) {
-      for (const change of entry.changes ?? []) {
-        const value = change.value;
-        for (const message of value?.messages ?? []) {
-          if (!message.id || !message.from) continue;
-          received++;
-          if ((working.records[object.apiName] ?? []).some(item => item.Event_Type__c === 'Message' && item.Communication_Mode__c === 'WhatsApp' && item.Provider_Message_Id__c === message.id)) { duplicate++; continue; }
-          const body = message.type === 'text' ? message.text?.body : undefined;
-          if (!body) { unsupported++; continue; } // Unsupported message types are acknowledged.
-          // Do not re-execute an old delivery after an outage or redelivery.
-          // Keep the event as an Expired record for audit, without running its Flow.
-          const fresh = shouldTriggerInboundMessage(
-            message.timestamp, Date.now(), working.automationSettings.conversationIdleMinutes
-          );
-          working = structuredClone(tenantData(tenantId) ?? working);
-          const currentContext = activeConversationContext(
-            working.records[object.apiName] ?? [], message.from, Date.now(),
-            working.automationSettings.conversationIdleMinutes
-          );
-          const conversationKey = conversationKeyForIncoming(
-            working.records[object.apiName] ?? [], message.from, Date.now(),
-            working.automationSettings.conversationIdleMinutes, currentContext
-          );
-          const nowForIncoming = new Date().toISOString();
-          const values = applyRecordDefaults(tenantId, working, object, sanitizeRecordValues(object, {
-            Event_Type__c: 'Message', Communication_Mode__c: 'WhatsApp', Source__c: 'Webhook',
-            Direction__c: 'Incoming', From_Number__c: message.from,
-            Channel_Account__c: phoneId,
-            To_Number__c: value?.metadata?.display_phone_number ?? '',
-            Message_Body__c: body, Conversation_Key__c: conversationKey,
-            Conversation_Context__c: currentContext,
-            Status__c: fresh ? 'Received' : 'Expired', Provider_Message_Id__c: message.id, Occurred_At__c: nowForIncoming,
-            ...(message.timestamp && /^\\d+$/.test(message.timestamp) ? { Occurred_At__c: new Date(Number(message.timestamp) * 1000).toISOString() } : {})
-          }), userId);
-          validateRuntimeRecord(tenantId, working, object, values);
-          const now = new Date().toISOString();
-          let record = calculateFormulaFields(object, stampRecordAuditFields({
-            ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now
-          }, userId, now), formulaContextForUser(working, userId));
-          if (fresh) await runBeforeSaveRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
-          const selectedContext = typeof record.Conversation_Context__c === 'string' ? record.Conversation_Context__c : '';
-          if (fresh && selectedContext && selectedContext !== currentContext) {
-            record.Conversation_Key__c = conversationKeyForIncoming(
-              working.records[object.apiName] ?? [], message.from, Date.now(),
-              working.automationSettings.conversationIdleMinutes, selectedContext
-            );
-          }
-          record = calculateFormulaFields(object, record, formulaContextForUser(working, userId));
-          working.records[object.apiName] = [...(working.records[object.apiName] ?? []), record];
-          // Each inbound message refreshes active conversational interviews; 15 minutes is inactivity, not total age.
-          const renewedExpiry = new Date(Date.now() + working.automationSettings.conversationIdleMinutes * 60_000).toISOString();
-          working.interviews = working.interviews.map(interview =>
-            sameConversationSession(interview.record, record)
-              && (interview.kind === 'wait' || interview.kind === 'scheduled')
-              ? { ...interview, expiresAt: renewedExpiry } : interview
-          );
-          saved++;
-          // Commit inbound identity BEFORE external flow callouts. Meta redeliveries must never resend replies.
-          persistTenantRecords(tenantId, working);
-          await waitForPersistedState();
-          if (!fresh) {
-            console.info('[WhatsApp webhook] stale inbound delivery archived without executing flow');
-            working = tenantData(tenantId) ?? working;
-            continue;
-          }
-          try {
-            await runRecordTriggeredFlows(tenantId, working, userId, object.apiName, 'created', record);
-            const latestRecords = tenantData(tenantId)?.records[communicationObjectApiName] ?? [];
-            const pendingIds = new Set((working.records[communicationObjectApiName] ?? []).map(row => row.Id));
-            working.records[communicationObjectApiName] = [
-              ...(working.records[communicationObjectApiName] ?? []),
-              ...latestRecords.filter(row => !pendingIds.has(row.Id))
-            ];
-            persistTenantRecords(tenantId, working);
-          } catch (flowError) {
-            // The triggered flow already writes a Failed Flow Log; keep it rather than
-            // returning 500 to Meta and replaying a previously successful outbound callout.
-            const latest = structuredClone(tenantData(tenantId) ?? working);
-            latest.records[object.apiName] = (latest.records[object.apiName] ?? []).map(item =>
-              item.Id === record.Id ? { ...item, Status__c: 'Failed' } : item);
-            persistTenantRecords(tenantId, latest);
-            console.error('[WhatsApp webhook] flow failed after inbound was saved', {
-              reason: flowError instanceof Error ? flowError.message : String(flowError)
-            });
-          }
-          working = tenantData(tenantId) ?? working;
-        }
-      }
-    }
-    console.info('[WhatsApp webhook] processed', { received, saved, duplicate, unsupported });
-    return res.sendStatus(200);
-  } catch (error) {
-    console.error('[WhatsApp webhook] processing failed', { reason: error instanceof Error ? error.name : 'unknown_error', received, saved });
-    return res.sendStatus(500); // Meta retries unsuccessful deliveries.
-  }
-});
+const registerIntegrationsWebhookRoutesContext = {
+  get activeConversationContext() { return activeConversationContext; },
+  get app() { return app; },
+  get applyRecordDefaults() { return applyRecordDefaults; },
+  get calculateFormulaFields() { return calculateFormulaFields; },
+  get communicationObjectApiName() { return communicationObjectApiName; },
+  get conversationKeyForIncoming() { return conversationKeyForIncoming; },
+  get createHmac() { return createHmac; },
+  get formulaContextForUser() { return formulaContextForUser; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get randomUUID() { return randomUUID; },
+  get runBeforeSaveRecordTriggeredFlows() { return runBeforeSaveRecordTriggeredFlows; },
+  get runRecordTriggeredFlows() { return runRecordTriggeredFlows; },
+  get sameConversationSession() { return sameConversationSession; },
+  get sanitizeRecordValues() { return sanitizeRecordValues; },
+  get shouldTriggerInboundMessage() { return shouldTriggerInboundMessage; },
+  get stampRecordAuditFields() { return stampRecordAuditFields; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; },
+  get tenantIsActive() { return tenantIsActive; },
+  get timingSafeEqual() { return timingSafeEqual; },
+  get validateRuntimeRecord() { return validateRuntimeRecord; },
+  get waitForPersistedState() { return waitForPersistedState; }
+};
+export type IntegrationsWebhookRoutesDependencies = typeof registerIntegrationsWebhookRoutesContext;
+registerIntegrationsWebhookRoutes(registerIntegrationsWebhookRoutesContext);
 // Persisted legacy metadata may contain incomplete picklists. Keep the API available
 // for administrators to repair them; all new metadata writes remain strictly validated.
 let hydratingPersistedMetadata = false;
@@ -5425,199 +5255,62 @@ function tenantUsageFor(tenantId: string) {
     users: state.users, registry: tenantRegistryEntry(tenantId)
   });
 }
-app.get('/api/tenant/usage', accessAuthentication, requirePermission('security:read'),
-  (_req: Request, res: Response) => {
-    const tenantId = getPrincipal(res).tenantId;
-    if (!tenantData(tenantId)) return res.status(404).json({ error: 'Tenant unavailable' });
-    res.setHeader('Cache-Control', 'no-store');
-    return res.json({ usage: tenantUsageFor(tenantId) });
-  });
-app.get('/api/platform/tenants/:tenantId/usage', accessAuthentication, requirePlatformTenantAdmin,
-  (req: Request, res: Response) => {
-    const tenantId = routeParam(req, 'tenantId');
-    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
-    if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
-    res.setHeader('Cache-Control', 'no-store');
-    return res.json({ usage: tenantUsageFor(tenantId) });
-  });
-app.patch('/api/platform/tenants/:tenantId/usage-targets', accessAuthentication, requirePlatformTenantAdmin,
-  (req: Request, res: Response) => {
-    const tenantId = routeParam(req, 'tenantId');
-    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
-    if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
-    const parsed = tenantUsageTargetSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid advisory target settings', details: parsed.error.flatten() });
-    const previous = tenantRegistryEntry(tenantId);
-    const usageTargets = Object.fromEntries(
-      Object.entries(parsed.data).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
-    );
-    const next: TenantRegistryEntry = { ...previous, usageTargets,
-      updatedAt: new Date().toISOString() };
-    commitTenantChange(getPrincipal(res).userId, tenantId, 'USAGE_TARGETS_UPDATED', next, previous);
-    res.setHeader('Cache-Control', 'no-store');
-    return res.json({ usage: tenantUsageFor(tenantId) });
-  });
-app.get('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
-  const query = String(req.query.q ?? '').trim().toLowerCase().slice(0,120);
-  const status = String(req.query.status ?? 'ALL');
-  if (!['ALL', 'ACTIVE', 'SUSPENDED', 'ARCHIVED'].includes(status)) return res.status(400).json({ error: 'Invalid tenant status filter' });
-  const page = Number(req.query.page ?? 1);
-  const pageSize = Number(req.query.pageSize ?? 25);
-  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100)
-    return res.status(400).json({ error: 'Invalid pagination parameters' });
-  // Filter/sort cheap registry metadata first; count users only for one page.
-  // This avoids scanning the entire identity store once per tenant.
-  const matchedIds = Object.keys(state.tenants)
-    .filter((tenantId) => !provisioningPendingTenants.has(tenantId))
-    .filter((tenantId) => {
-      const metadata = state.tenantRegistry[tenantId];
-      const name = metadata?.name ?? tenantId;
-      const tenantStatus = metadata?.status ?? 'ACTIVE';
-      return (status === 'ALL' || tenantStatus === status)
-        && (!query || (tenantId + ' ' + name).toLowerCase().includes(query));
-    })
-    .sort((a, b) => (state.tenantRegistry[a]?.name ?? a).localeCompare(state.tenantRegistry[b]?.name ?? b)
-      || a.localeCompare(b));
-  const offset = (page - 1) * pageSize;
-  return res.json({ tenants: matchedIds.slice(offset, offset + pageSize).map(tenantSummary),
-    total: matchedIds.length, page, pageSize });
-});
-app.post('/api/platform/tenants', accessAuthentication, requirePlatformTenantAdmin, async (req: Request, res: Response) => {
-  const parsed = tenantManagementCreateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant creation request', details: parsed.error.flatten() });
-  try {
-    const key = provisioningIdempotencyKey(req);
-    const { user, created } = await createTenant(parsed.data.tenantId, parsed.data.tenantName,
-      parsed.data.adminName, parsed.data.email, parsed.data.password, getPrincipal(res).userId, key,
-      parsed.data.developerDomain);
-    return res.status(created ? 201 : 200).json({ tenant: tenantSummary(user.tenantId), replayed: !created });
-  } catch (error) {
-    return res.status(error instanceof TenantProvisioningStoreError ? 503
-      : error instanceof Error && error.message.startsWith('Idempotency-Key') ? 400 : 409)
-      .json({ error: error instanceof Error ? error.message : 'Unable to create tenant' });
-  }
-});
+const registerTenantRegistryRoutesContext = {
+  get TenantProvisioningStoreError() { return TenantProvisioningStoreError; },
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get commitTenantChange() { return commitTenantChange; },
+  get createTenant() { return createTenant; },
+  get getPrincipal() { return getPrincipal; },
+  get provisioningIdempotencyKey() { return provisioningIdempotencyKey; },
+  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get requirePermission() { return requirePermission; },
+  get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; },
+  get tenantManagementCreateSchema() { return tenantManagementCreateSchema; },
+  get tenantRegistryEntry() { return tenantRegistryEntry; },
+  get tenantSummary() { return tenantSummary; },
+  get tenantUsageFor() { return tenantUsageFor; },
+  get tenantUsageTargetSchema() { return tenantUsageTargetSchema; }
+};
+export type TenantRegistryRoutesDependencies = typeof registerTenantRegistryRoutesContext;
+registerTenantRegistryRoutes(registerTenantRegistryRoutesContext);
 // MD-03.3: activation belongs to the tenant's security administrators only.
 // A platform superadmin cannot activate an account in another tenant through
 // the platform directory, nor obtain its password or silently impersonate it.
 const activateDeveloperSchema = z.object({
   password: z.string().min(12).max(256)
 }).strict();
-app.get('/api/tenant/developer-account', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
-  if (!principal.permissions.includes('security:manage') || !hasObjectPermission(principal, tenant, 'User', 'read'))
-    return res.status(403).json({ error: 'Tenant user administration permission required' });
-  const seed = state.tenantRegistry[principal.tenantId]?.developerSeed;
-  if (!seed) return res.json({ seeded: false });
-  const user = state.users.find((item) => item.id === seed.userId && item.tenantId === principal.tenantId);
-  return res.json({
-    seeded: true, userId: seed.userId, email: user?.email ?? seed.email,
-    active: Boolean(user && !user.disabled), activated: Boolean(seed.activatedAt),
-    initialPermissions: 'System Administrator', tenantControlled: true
-  });
-});
-app.post('/api/tenant/developer-account/activate', accessAuthentication, async (req: Request, res: Response) => {
-  if (jwtService.config.mode !== 'local')
-    return res.status(501).json({ error: 'Developer credentials are managed by the identity provider' });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
-  if (!principal.permissions.includes('security:manage') || !hasObjectPermission(principal, tenant, 'User', 'edit'))
-    return res.status(403).json({ error: 'Tenant user administration permission required' });
-  const seed = state.tenantRegistry[principal.tenantId]?.developerSeed;
-  if (!seed) return res.status(404).json({ error: 'No developer seeder exists for this tenant' });
-  if (seed.activatedAt) return res.status(409).json({
-    error: 'Developer was already activated. Manage its access through tenant User and RBAC settings.'
-  });
-  if (developerActivationPending.has(seed.userId)) return res.status(409).json({ error: 'Developer activation already in progress' });
-  const parsed = activateDeveloperSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'A new password of 12–256 characters is required' });
-  developerActivationPending.add(seed.userId);
-  try {
-    const credentials = await hashPassword(parsed.data.password);
-    const now = new Date().toISOString();
-    const current = state.users.find((item) => item.id === seed.userId && item.tenantId === principal.tenantId);
-    const currentSeed = state.tenantRegistry[principal.tenantId]?.developerSeed;
-    if (!current || !currentSeed || currentSeed.activatedAt) return res.status(409).json({
-      error: 'Developer identity changed during activation'
-    });
-    const changed: LocalUser = { ...current, disabled: false,
-      passwordSalt: credentials.salt, passwordHash: credentials.hash,
-      authVersion: (current.authVersion ?? 0) + 1,
-      authRevokedBefore: Math.floor(Date.now() / 1000) };
-    const nextState: PlatformState = {
-      ...state,
-      users: state.users.map((item) => item.id === changed.id ? changed : item),
-      tenants: {
-        ...state.tenants,
-        [principal.tenantId]: withSecurityEvent(tenant, principal.userId,
-          'tenant.developer.activated', { developerUserId: changed.id }, changed.id)
-      },
-      tenantRegistry: { ...state.tenantRegistry,
-        [principal.tenantId]: {
-          ...state.tenantRegistry[principal.tenantId],
-          developerSeed: { ...currentSeed, email: changed.email, activatedAt: now }
-        }
-      },
-      refreshSessions: state.refreshSessions.map((item) => item.userId === changed.id
-        ? { ...item, revokedAt: Date.now() / 1000 } : item)
-    };
-    persistState(nextState);
-    state = nextState;
-    await latestStateCommit;
-    return res.json({ activated: true, userId: changed.id, email: changed.email });
-  } catch (error) {
-    console.error('CRITICAL: developer activation commit failed', error);
-    // Fail closed if durability cannot be established until state is reconciled.
-    provisioningCommitFailed = true;
-    return res.status(503).json({ error: 'Developer activation could not be durably committed' });
-  } finally {
-    // Keep the login path closed after a persistence failure.
-    if (!provisioningCommitFailed) developerActivationPending.delete(seed.userId);
-  }
-});
-app.get('/api/platform/tenants/:tenantId/provisioning', accessAuthentication, requirePlatformTenantAdmin,
-  (req: Request, res: Response) => {
-    const tenantId = routeParam(req, 'tenantId');
-    const tenant = Object.hasOwn(state.tenants, tenantId) ? state.tenants[tenantId] : undefined;
-    if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
-    if (provisioningPendingTenants.has(tenantId))
-      return res.status(202).json({ tenantId, status: 'PROVISIONING' });
-    const registry = tenantRegistryEntry(tenantId);
-    return res.json({
-      tenantId,
-      status: registry.provisioning?.status ?? 'READY',
-      version: registry.provisioning?.version ?? 0,
-      completedAt: registry.provisioning?.completedAt ?? registry.createdAt,
-      initialized: {
-        developerAccount: registry.developerSeed ? {
-          email: registry.developerSeed.email, activated: Boolean(registry.developerSeed.activatedAt)
-        } : null,
-        objects: tenant.objects.length, profiles: tenant.accessControl.profiles.length,
-        permissionSets: tenant.accessControl.permissionSets.length,
-        initialAdministrator: tenant.accessControl.users.length > 0
-      }
-    });
-  });
-app.get('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
-  const tenantId = routeParam(req, 'tenantId');
-  if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
-  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
-  return res.json({ tenant: tenantSummary(tenantId) });
-});
-app.patch('/api/platform/tenants/:tenantId', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
-  const tenantId = routeParam(req, 'tenantId');
-  if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
-  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
-  const parsed = tenantManagementUpdateSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid tenant update', details: parsed.error.flatten() });
-  const previous = tenantRegistryEntry(tenantId);
-  const next = { ...previous, ...parsed.data, updatedAt: new Date().toISOString() };
-  commitTenantChange(getPrincipal(res).userId, tenantId, 'UPDATED', next, previous);
-  return res.json({ tenant: tenantSummary(tenantId) });
-});
+const registerTenantProvisioningRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get activateDeveloperSchema() { return activateDeveloperSchema; },
+  get app() { return app; },
+  get commitTenantChange() { return commitTenantChange; },
+  get developerActivationPending() { return developerActivationPending; },
+  get getPrincipal() { return getPrincipal; },
+  get hasObjectPermission() { return hasObjectPermission; },
+  get hashPassword() { return hashPassword; },
+  get jwtService() { return jwtService; },
+  get latestStateCommit() { return latestStateCommit; },
+  get persistState() { return persistState; },
+  get provisioningCommitFailed() { return provisioningCommitFailed; },
+  set provisioningCommitFailed(next: boolean) { provisioningCommitFailed = next; },
+  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; },
+  get tenantManagementUpdateSchema() { return tenantManagementUpdateSchema; },
+  get tenantRegistryEntry() { return tenantRegistryEntry; },
+  get tenantSummary() { return tenantSummary; },
+  get withSecurityEvent() { return withSecurityEvent; }
+};
+export type TenantProvisioningRoutesDependencies = typeof registerTenantProvisioningRoutesContext;
+registerTenantProvisioningRoutes(registerTenantProvisioningRoutesContext);
 // MD-03.5: domain ownership uses TXT DNS proofs. TLS/host attachment is
 // configured at the edge; a verified domain is NOT an SSL certificate claim.
 const addTenantDomainSchema = z.object({ hostname: z.string().min(4).max(253) }).strict();
@@ -5743,91 +5436,56 @@ async function removeTenantDomain(req: Request, res: Response, platform: boolean
     return res.json({ removed: true, hostname });
   } catch { return res.status(503).json({ error: 'Unable to remove tenant domain' }); }
 }
-app.get('/api/platform/tenants/:tenantId/domains', accessAuthentication, requirePlatformTenantAdmin,
-  (req, res) => listTenantDomains(req, res, true));
-app.post('/api/platform/tenants/:tenantId/domains', accessAuthentication, requirePlatformTenantAdmin,
-  (req, res) => { void addTenantDomain(req, res, true); });
-app.post('/api/platform/tenants/:tenantId/domains/:hostname/verify', accessAuthentication, requirePlatformTenantAdmin,
-  (req, res) => { void verifyTenantDomain(req, res, true); });
-app.delete('/api/platform/tenants/:tenantId/domains/:hostname', accessAuthentication, requirePlatformTenantAdmin,
-  (req, res) => { void removeTenantDomain(req, res, true); });
-// Tenants can manage only their own records with security:manage; platform
-// superadmin policy never acts as tenant-admin impersonation.
-app.get('/api/tenant/domains', accessAuthentication, requirePermission('security:manage'),
-  (req, res) => listTenantDomains(req, res, false));
-app.post('/api/tenant/domains', accessAuthentication, requirePermission('security:manage'),
-  (req, res) => { void addTenantDomain(req, res, false); });
-app.post('/api/tenant/domains/:hostname/verify', accessAuthentication, requirePermission('security:manage'),
-  (req, res) => { void verifyTenantDomain(req, res, false); });
-app.delete('/api/tenant/domains/:hostname', accessAuthentication, requirePermission('security:manage'),
-  (req, res) => { void removeTenantDomain(req, res, false); });
-app.post('/api/platform/tenants/:tenantId/:operation', accessAuthentication, requirePlatformTenantAdmin, (req: Request, res: Response) => {
-  const tenantId = routeParam(req, 'tenantId');
-  const operation = routeParam(req, 'operation');
-  if (!['suspend', 'reactivate', 'archive', 'restore'].includes(operation))
-    return res.status(404).json({ error: 'Unknown tenant operation' });
-  if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
-  if (provisioningPendingTenants.has(tenantId)) return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
-  const previous = tenantRegistryEntry(tenantId);
-  const desired = operation === 'archive' ? 'ARCHIVED' : operation === 'restore' ? 'SUSPENDED'
-    : operation === 'suspend' ? 'SUSPENDED' : 'ACTIVE';
-  if (operation === 'archive' && previous.status !== 'SUSPENDED')
-    return res.status(409).json({ error: 'Suspend the tenant before archiving' });
-  if (operation === 'restore' && previous.status !== 'ARCHIVED')
-    return res.status(409).json({ error: 'Only archived tenants can be restored' });
-  if (operation === 'reactivate' && previous.status === 'ARCHIVED')
-    return res.status(409).json({ error: 'Restore the archived tenant before reactivation' });
-  if (previous.status === desired) return res.status(409).json({ error: 'Tenant is already ' + desired.toLowerCase() });
-  if (desired === 'SUSPENDED' && operation === 'suspend') {
-    const remaining = state.users.filter((user) => !user.disabled && user.tenantId !== tenantId
-      && tenantIsActive(user.tenantId) && (state.platformPolicies[user.id] ?? []).includes('platform:superadmin'));
-    if (remaining.length === 0) return res.status(409).json({
-      error: 'Cannot suspend the tenant hosting the last active platform administrator.'
-    });
-  }
-  const next: TenantRegistryEntry = { ...previous, status: desired,
-    ...(operation === 'archive' ? { archivedAt: new Date().toISOString() } : {}),
-    ...(operation === 'restore' ? { archivedAt: undefined } : {}),
-    updatedAt: new Date().toISOString() };
-  const action: TenantManagementAuditEvent['action'] = operation === 'archive' ? 'ARCHIVED'
-    : operation === 'restore' ? 'RESTORED' : operation === 'suspend' ? 'SUSPENDED' : 'REACTIVATED';
-  commitTenantChange(getPrincipal(res).userId, tenantId, action, next, previous);
-  return res.json({ tenant: tenantSummary(tenantId) });
-});
+const registerTenantsDomainRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get addTenantDomain() { return addTenantDomain; },
+  get app() { return app; },
+  get listTenantDomains() { return listTenantDomains; },
+  get removeTenantDomain() { return removeTenantDomain; },
+  get requirePermission() { return requirePermission; },
+  get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
+  get verifyTenantDomain() { return verifyTenantDomain; }
+};
+export type TenantsDomainRoutesDependencies = typeof registerTenantsDomainRoutesContext;
+registerTenantsDomainRoutes(registerTenantsDomainRoutesContext);
+const registerTenantLifecycleRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get commitTenantChange() { return commitTenantChange; },
+  get getPrincipal() { return getPrincipal; },
+  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantIsActive() { return tenantIsActive; },
+  get tenantRegistryEntry() { return tenantRegistryEntry; },
+  get tenantSummary() { return tenantSummary; }
+};
+export type TenantLifecycleRoutesDependencies = typeof registerTenantLifecycleRoutesContext;
+registerTenantLifecycleRoutes(registerTenantLifecycleRoutesContext);
 // MD-03.6: Retention controls are metadata only. No background or automatic purge.
 // Retention and legal holds are auditable and platform-scoped, even for archived tenants.
 const tenantRetentionSchema = z.object({
   retentionUntil: z.string().datetime().nullable(),
   legalHold: z.boolean()
 }).strict();
-app.patch('/api/platform/tenants/:tenantId/retention', accessAuthentication, requirePlatformTenantAdmin,
-  (req: Request, res: Response) => {
-    const tenantId = routeParam(req, 'tenantId');
-    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
-    if (provisioningPendingTenants.has(tenantId))
-      return res.status(409).json({ error: 'Tenant provisioning is not yet ready' });
-    const parsed = tenantRetentionSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: 'Invalid retention policy' });
-    if (parsed.data.retentionUntil && Date.parse(parsed.data.retentionUntil) <= Date.now())
-      return res.status(400).json({ error: 'Retention deadline must be in the future' });
-    const previous = tenantRegistryEntry(tenantId);
-    const next: TenantRegistryEntry = { ...previous,
-      ...(parsed.data.retentionUntil === null ? { retentionUntil: undefined } : { retentionUntil: parsed.data.retentionUntil }),
-      legalHold: parsed.data.legalHold, updatedAt: new Date().toISOString() };
-    commitTenantChange(getPrincipal(res).userId, tenantId, 'RETENTION_UPDATED', next, previous);
-    return res.json({ tenant: tenantSummary(tenantId) });
-  });
-// No destructive endpoint: absence is intentional until an independently verified
-// erasure ceremony and physical backup retention policy exist.
-app.get('/api/platform/tenants/:tenantId/lifecycle-audit', accessAuthentication, requirePlatformTenantAdmin,
-  (req: Request, res: Response) => {
-    const tenantId = routeParam(req, 'tenantId');
-    if (!Object.hasOwn(state.tenants, tenantId)) return res.status(404).json({ error: 'Tenant not found' });
-    // Do not expose historical registry snapshots: they can contain domain ownership challenges.
-    const events = state.tenantManagementAudit.filter((event) => event.tenantId === tenantId)
-      .slice(-100).reverse().map(({ actorId, action, at }) => ({ actorId, action, at }));
-    return res.json({ tenantId, events });
-  });
+const registerTenantRetentionRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get commitTenantChange() { return commitTenantChange; },
+  get getPrincipal() { return getPrincipal; },
+  get provisioningPendingTenants() { return provisioningPendingTenants; },
+  get requirePlatformTenantAdmin() { return requirePlatformTenantAdmin; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantRegistryEntry() { return tenantRegistryEntry; },
+  get tenantRetentionSchema() { return tenantRetentionSchema; },
+  get tenantSummary() { return tenantSummary; }
+};
+export type TenantRetentionRoutesDependencies = typeof registerTenantRetentionRoutesContext;
+registerTenantRetentionRoutes(registerTenantRetentionRoutesContext);
 // MD-03.7: An isolated platform-control database contains recovery cases and
 // one-time factors. Never point it at the normal tenant application database.
 // No runtime table migrations, startup grants, or privileged side doors.
@@ -5945,163 +5603,51 @@ installTenantRecoveryCentre(app, {
 registerIdentityProfileRoute({ app, accessAuthentication, getPrincipal, principalUser, tenantData,
   profileIdForRole, hasFieldPermission, hasRecordTypeAccessForUser, effectivePermissions });
 registerNotificationRoutes(app, { accessAuthentication, getPrincipal, tenantData, routeParam, persistTenantRecords });
-app.get('/api/approvals/inbox', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const canManage = principal.permissions.includes('approvals:manage');
-  const requests = tenant.approvalRequests
-    .filter((item) => item.status === 'Pending' && (item.approverId === principal.userId || canManage))
-    .filter((item) => {
-      const object = tenant.objects.find((candidate) => candidate.apiName === item.objectApiName);
-      const record = tenant.records[item.objectApiName]?.find((candidate) => candidate.Id === item.recordId);
-      return Boolean(object && record && hasRecordAccess(principal, tenant, item.objectApiName, record, 'Read'));
-    })
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-    .map((item) => {
-      const object = tenant.objects.find((candidate) => candidate.apiName === item.objectApiName)!;
-      const record = tenant.records[item.objectApiName]!.find((candidate) => candidate.Id === item.recordId)!;
-      return {
-        ...item,
-        objectLabel: object.label,
-        recordName: object.fields.some((field) => field.apiName === 'Name'
-          && hasFieldPermission(principal, tenant, item.objectApiName, field.apiName, 'read'))
-          ? String(record.Name ?? item.recordId)
-          : item.recordId
-      };
-    });
-  return res.json({ requests });
-});
-app.post('/api/approvals/:id/decision', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const parsed = approvalDecisionSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid approval decision', details: parsed.error.flatten() });
-  const requestId = routeParam(req, 'id');
-  const request = tenant.approvalRequests.find((item) =>
-    item.id === requestId && item.status === 'Pending'
-    && (item.approverId === principal.userId || principal.permissions.includes('approvals:manage')));
-  if (!request) return res.status(404).json({ error: 'Pending approval request was not found' });
-  const record = tenant.records[request.objectApiName]?.find((candidate) => candidate.Id === request.recordId);
-  if (!record || !hasRecordAccess(principal, tenant, request.objectApiName, record, 'Read')) {
-    return res.status(404).json({ error: 'Pending approval request was not found' });
-  }
-  const now = new Date().toISOString();
-  const decided = {
-    ...request,
-    status: parsed.data.decision,
-    decisionComments: parsed.data.comments,
-    decidedAt: now,
-    decidedBy: principal.userId
-  };
-  const peers = tenant.approvalRequests.filter((item) => item.groupId === request.groupId);
-  const allApproved = peers.every((item) => item.id === request.id || item.status === 'Approved');
-  const finalized = parsed.data.decision === 'Rejected' || request.approvalMode !== 'ALL' || allApproved;
-  const requests = tenant.approvalRequests.map((item) => item.groupId !== request.groupId || item.status !== 'Pending'
-    ? item
-    : item.id === request.id
-      ? decided
-      : finalized
-        ? { ...item, status: 'Canceled' as const, decisionComments: 'Resolved by another approver.', decidedAt: now, decidedBy: principal.userId }
-        : item);
-  let interviews = tenant.interviews;
-  // A human decision only releases its own tenant-scoped, version-pinned
-  // orchestration stage. No other pending Flow interview is affected.
-  if (finalized && request.orchestrationInterviewId) {
-    const interview = tenant.interviews.find((item) =>
-      item.id === request.orchestrationInterviewId && item.kind === 'orchestration'
-      && item.flowApiName === request.flowApiName);
-    if (!interview) return res.status(409).json({ error: 'The orchestration stage is no longer pending' });
-    const saved = tenant.flows.find((item) => item.apiName === interview.flowApiName);
-    const active = activeFlowDefinition(saved);
-    const archived = saved?.versions.find((version) => version.versionNumber === interview.versionNumber);
-    const flow = saved?.versionNumber === interview.versionNumber
-      && (saved.status === 'Active' || interview.allowDraft) ? saved
-      : active?.versionNumber === interview.versionNumber ? active
-      : archived ? { ...saved!, ...archived, versionNumber: archived.versionNumber,
-          status: 'Active' as const, activeVersion: archived.versionNumber } : undefined;
-    const stage = flow?.elements.find((item) => item.id === interview.screenElementId && item.type === 'Orchestration Stage');
-    const outcome = parsed.data.decision;
-    const connectors = flow?.connectors.filter((item) =>
-      item.from === stage?.id && item.kind === 'normal' && item.label.toLowerCase() === outcome.toLowerCase()) ?? [];
-    if (!stage || connectors.length !== 1) {
-      return res.status(409).json({ error: 'The orchestration stage has no valid decision path' });
-    }
-    const statusVariable = typeof stage.config.statusVariable === 'string' ? stage.config.statusVariable : '';
-    interviews = tenant.interviews.map((item) => item.id !== interview.id ? item : {
-      ...item, kind: 'async' as const, waitUntil: now, retryAt: null, attempts: 0,
-      nextElementId: connectors[0].to,
-      variables: { ...item.variables, ...(statusVariable ? { [statusVariable]: outcome } : {}) }
-    });
-  }
-  const submitter = state.users.find((user) => user.id === request.submittedBy && user.tenantId === principal.tenantId && !user.disabled);
-  const notifications = finalized && submitter ? [...tenant.notifications, customNotificationSchema.parse({
-    id: randomUUID(),
-    recipientId: submitter.id,
-    title: `Approval ${parsed.data.decision.toLowerCase()}`,
-    body: `${request.objectApiName} ${request.recordId} was ${parsed.data.decision.toLowerCase()} by ${state.users.find((user) => user.id === principal.userId)?.name ?? 'an approver'}.`,
-    flowApiName: request.flowApiName,
-    sentBy: principal.userId,
-    createdAt: now,
-    readAt: null
-  })] : tenant.notifications;
-  persistTenantRecords(principal.tenantId, { ...tenant, approvalRequests: requests, notifications, interviews });
-  return res.json({ request: decided });
-});
+const registerApprovalsDecisionRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get activeFlowDefinition() { return activeFlowDefinition; },
+  get app() { return app; },
+  get approvalDecisionSchema() { return approvalDecisionSchema; },
+  get customNotificationSchema() { return customNotificationSchema; },
+  get getPrincipal() { return getPrincipal; },
+  get hasFieldPermission() { return hasFieldPermission; },
+  get hasRecordAccess() { return hasRecordAccess; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get randomUUID() { return randomUUID; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; }
+};
+export type ApprovalsDecisionRoutesDependencies = typeof registerApprovalsDecisionRoutesContext;
+registerApprovalsDecisionRoutes(registerApprovalsDecisionRoutesContext);
 app.use('/api/metadata', accessAuthentication);
 app.use('/api/connector-settings', accessAuthentication);
 app.use('/api/connector-providers', accessAuthentication);
 app.use('/api/integration-connections', accessAuthentication);
 app.use('/api/named-credentials', accessAuthentication);
 app.use('/api/component-library', accessAuthentication);
-app.get('/api/metadata/objects', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ objects: tenantData(getPrincipal(res).tenantId)?.objects ?? [] });
-});
-app.get('/api/metadata/platform-events', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ platformEvents: tenantData(getPrincipal(res).tenantId)?.platformEvents ?? [] });
-});
-app.put('/api/metadata/platform-events/:apiName', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const parsed = platformEventSchema.safeParse({ ...req.body, apiName: routeParam(req, 'apiName') });
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid platform event metadata', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const existing = tenant.platformEvents.find((event) => event.apiName === parsed.data.apiName);
-  const duplicate = tenant.platformEvents.find((event) =>
-    event.apiName.toLowerCase() === parsed.data.apiName.toLowerCase() && event.apiName !== parsed.data.apiName);
-  if (duplicate) return res.status(409).json({ error: 'Platform event API name already exists' });
-  if (existing && tenant.flows.map(activeFlowDefinition).some((flow) => flow !== undefined
-    && flow.flowType === 'Platform Event-Triggered Flow' && flow.triggerObject === existing.apiName)) {
-    const changedFields = JSON.stringify(existing.fields) !== JSON.stringify(parsed.data.fields);
-    if (changedFields) return res.status(409).json({ error: 'Platform event fields cannot change while an active triggered flow subscribes to this event' });
-  }
-  const updated = {
-    ...tenant,
-    platformEvents: existing
-      ? tenant.platformEvents.map((event) => event.apiName === existing.apiName ? parsed.data : event)
-      : [...tenant.platformEvents, parsed.data]
-  };
-  persistTenantRecords(principal.tenantId, updated);
-  return res.status(existing ? 200 : 201).json({ platformEvent: parsed.data });
-});
-app.delete('/api/metadata/platform-events/:apiName', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const apiName = routeParam(req, 'apiName');
-  const event = tenant.platformEvents.find((candidate) => candidate.apiName === apiName);
-  if (!event) return res.status(404).json({ error: 'Platform event was not found' });
-  const references = tenant.flows.filter((flow) => flow.triggerObject === apiName
-    || flow.elements.some((element) => element.type === 'Publish Platform Event' && element.config.eventApiName === apiName));
-  if (references.length) return res.status(409).json({
-    error: `Platform event is referenced by flows: ${references.map((flow) => flow.label).join(', ')}`
-  });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    platformEvents: tenant.platformEvents.filter((candidate) => candidate.apiName !== apiName),
-    platformEventMessages: tenant.platformEventMessages.filter((message) => message.eventApiName !== apiName)
-  });
-  return res.status(204).end();
-});
+const registerObjectsListRoutesContext = {
+  get app() { return app; },
+  get getPrincipal() { return getPrincipal; },
+  get requirePermission() { return requirePermission; },
+  get tenantData() { return tenantData; }
+};
+export type ObjectsListRoutesDependencies = typeof registerObjectsListRoutesContext;
+registerObjectsListRoutes(registerObjectsListRoutesContext);
+const registerFlowsPlatformEventRoutesContext = {
+  get activeFlowDefinition() { return activeFlowDefinition; },
+  get app() { return app; },
+  get getPrincipal() { return getPrincipal; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get platformEventSchema() { return platformEventSchema; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get tenantData() { return tenantData; }
+};
+export type FlowsPlatformEventRoutesDependencies = typeof registerFlowsPlatformEventRoutesContext;
+registerFlowsPlatformEventRoutes(registerFlowsPlatformEventRoutesContext);
 // Metadata mutations share a single version and bounded, tenant-owned history.
 // Writes still go through the current typed SQL/Aiven persistence implementation.
 const metadataVersion = (object: ObjectMetadata | undefined): number => object?.revision ?? 0;
@@ -6109,463 +5655,77 @@ const objectMetadataRouteDependencies = { app, fieldSchema, relatedLookupFilterS
 export type ObjectMetadataRoutesDependencies = typeof objectMetadataRouteDependencies;
 app.use('/api/metadata/objects', accessAuthentication, recordWritePolicyMetadataGuard(getPrincipal, tenantData));
 registerObjectMetadataRoutes(objectMetadataRouteDependencies);
-app.get('/api/metadata/approval-processes', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId);
-  return res.json({ approvalProcesses: tenant?.approvalProcesses ?? [] });
-});
-app.put('/api/metadata/approval-processes/:apiName', requireAnyPermission('metadata:write', 'security:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const apiName = routeParam(req, 'apiName');
-  const parsed = approvalProcessRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid approval process', details: parsed.error.flatten() });
-  if (parsed.data.apiName !== apiName) return res.status(400).json({ error: 'Approval process API name must match the requested resource' });
-  const object = tenant.objects.find((item) => item.apiName === parsed.data.objectApiName);
-  if (!object) return res.status(400).json({ error: `Approval process object "${parsed.data.objectApiName}" does not exist` });
-  const inactiveApprover = parsed.data.approverUserIds.find((userId) =>
-    !state.users.some((user) => user.id === userId && user.tenantId === principal.tenantId && !user.disabled));
-  if (inactiveApprover) return res.status(400).json({ error: `Approval process approver "${inactiveApprover}" must be an active user in this tenant` });
-  const existing = tenant.approvalProcesses.find((item) => item.apiName === apiName);
-  const activeFlowReferences = existing
-    ? tenant.flows
-      .map(activeFlowDefinition)
-      .filter((flow): flow is FlowMetadata => flow !== undefined && flow.elements.some((element) =>
-        element.type === 'Action' && element.config.actionType === 'Submit for Approval'
-        && element.config.approvalProcessApiName === apiName))
-      .map((flow) => flow.label)
-    : [];
-  if (activeFlowReferences.length && !parsed.data.active) {
-    return res.status(409).json({
-      error: `Approval process cannot be deactivated while referenced by active flows: ${activeFlowReferences.join(', ')}`
-    });
-  }
-  if (existing && existing.objectApiName !== parsed.data.objectApiName && activeFlowReferences.length) {
-    return res.status(409).json({
-      error: `Approval process object cannot change while referenced by active flows: ${activeFlowReferences.join(', ')}`
-    });
-  }
-  const now = new Date().toISOString();
-  const approvalProcess = approvalProcessSchema.parse({
-    ...parsed.data,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now
-  });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    approvalProcesses: existing
-      ? tenant.approvalProcesses.map((item) => item.apiName === apiName ? approvalProcess : item)
-      : [...tenant.approvalProcesses, approvalProcess]
-  });
-  return res.json({ approvalProcess });
-});
-app.delete('/api/metadata/approval-processes/:apiName', requireAnyPermission('metadata:write', 'security:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const apiName = routeParam(req, 'apiName');
-  const approvalProcess = tenant.approvalProcesses.find((item) => item.apiName === apiName);
-  if (!approvalProcess) return res.status(404).json({ error: `Approval process "${apiName}" was not found` });
-  const flowReferences = tenant.flows
-    .filter((flow) => flow.elements.some((element) =>
-      element.type === 'Action' && element.config.actionType === 'Submit for Approval'
-      && element.config.approvalProcessApiName === apiName))
-    .map((flow) => flow.label);
-  if (flowReferences.length) return res.status(409).json({ error: `Approval process is referenced by flows: ${flowReferences.join(', ')}` });
-  if (tenant.approvalRequests.some((item) => item.flowApiName && item.status === 'Pending'
-    && item.processApiName === apiName)) {
-    return res.status(409).json({ error: 'Approval process has pending approval requests' });
-  }
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    approvalProcesses: tenant.approvalProcesses.filter((item) => item.apiName !== apiName)
-  });
-  return res.status(204).end();
-});
-app.get('/api/metadata/flows/list', requirePermission('metadata:read'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const query = typeof req.query.search === 'string' ? req.query.search.trim().toLocaleLowerCase().slice(0, 160) : '';
-  const page = Math.max(1, Math.min(100000, Number.parseInt(String(req.query.page ?? '1'), 10) || 1));
-  const pageSize = 50;
-  const matches = tenant.flows
-    .filter((flow) => !query || [flow.label, flow.apiName, flow.flowType, flow.status].some((value) => value.toLocaleLowerCase().includes(query)))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const offset = (page - 1) * pageSize;
-  const list = matches.slice(offset, offset + pageSize).map((flow) => ({
-    apiName: flow.apiName, label: flow.label, flowType: flow.flowType, status: flow.status,
-    versionNumber: flow.versionNumber, activeVersion: flow.activeVersion,
-    createdAt: flow.createdAt, createdBy: flow.createdBy,
-    lastModifiedAt: flow.lastModifiedAt, lastModifiedBy: flow.lastModifiedBy
-  }));
-  return res.json({ flows: list, total: matches.length, page, pageSize });
-});
-app.get('/api/metadata/flows', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ flows: tenantData(getPrincipal(res).tenantId)?.flows ?? [] });
-});
-app.get('/api/metadata/automation-settings', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json(tenantData(getPrincipal(res).tenantId)?.automationSettings ?? defaultAutomationSettings);
-});
-app.put('/api/metadata/automation-settings', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const parsed = automationSettingsSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid automation settings', details: parsed.error.flatten() });
-  const tenantId = getPrincipal(res).tenantId;
-  const tenant = tenantData(tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
-  persistTenantRecords(tenantId, { ...tenant, automationSettings: parsed.data });
-  return res.json(parsed.data);
-});
-app.get('/api/metadata/flow-logs', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const logs = tenantData(getPrincipal(res).tenantId)?.flowLogs ?? [];
-  res.json({ logs: [...logs].sort((left, right) => right.failedAt.localeCompare(left.failedAt)) });
-});
-app.get('/api/metadata/flow-interviews', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const usersById = new Map(state.users
-    .filter((user) => user.tenantId === getPrincipal(res).tenantId)
-    .map((user) => [user.id, user.name]));
-  const interviews = tenant.interviews
-    .map((interview) => {
-      const flow = tenant.flows.find((candidate) =>
-        candidate.apiName === interview.flowApiName && candidate.versionNumber === interview.versionNumber);
-      const screen = flow?.elements.find((element) => element.id === interview.screenElementId);
-      return {
-        id: interview.id,
-        flowApiName: interview.flowApiName,
-        flowLabel: flow?.label ?? interview.flowApiName,
-        versionNumber: interview.versionNumber,
-        kind: interview.kind,
-        userId: interview.userId,
-        userName: usersById.get(interview.userId) ?? interview.userId,
-        screenLabel: screen?.label ?? null,
-        recordId: interview.record?.Id ?? null,
-        createdAt: interview.createdAt,
-        expiresAt: interview.expiresAt,
-        waitUntil: interview.waitUntil,
-        retryAt: interview.retryAt,
-        attempts: interview.attempts
-      };
-    })
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-  return res.json({ interviews });
-});
-app.delete('/api/metadata/flow-interviews/:interviewId', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const interviewId = routeParam(req, 'interviewId');
-  if (!tenant.interviews.some((interview) => interview.id === interviewId)) {
-    return res.status(404).json({ error: 'Pending Flow interview was not found' });
-  }
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    interviews: tenant.interviews.filter((interview) => interview.id !== interviewId),
-    approvalRequests: tenant.approvalRequests.map((request) =>
-      request.orchestrationInterviewId === interviewId && request.status === 'Pending'
-        ? { ...request, status: 'Canceled' as const, decisionComments: 'Flow interview canceled.',
-          decidedAt: new Date().toISOString(), decidedBy: principal.userId }
-        : request)
-  });
-  return res.status(204).end();
-});
-app.get('/api/connector-providers', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
-  res.json({ providers: tenant.connectorDefinitions });
-});
-app.put('/api/connector-providers/:connectorKey', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
-  const parsed = connectorDefinitionRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid connector provider definition', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const connectorKey = routeParam(req, 'connectorKey');
-  const current = tenant.connectorDefinitions.find((item) => item.connectorKey === connectorKey);
-  if (!current) return res.status(404).json({ error: 'Connector provider definition was not found' });
-  if (parsed.data.connectorKey !== connectorKey) return res.status(400).json({ error: 'Connector key cannot be changed' });
-  const definitions = tenant.connectorDefinitions.map((item) => item.connectorKey === connectorKey ? parsed.data : item);
-  const now = new Date().toISOString();
-  const providerRecords = (tenant.records.ConnectorProvider__c ?? []).map((record) =>
-    record.ConnectorKey__c === connectorKey ? stampRecordAuditFields({
-      ...record,
-      Name: parsed.data.name,
-      AuthType__c: parsed.data.authType,
-      BaseUrl__c: parsed.data.baseUrl,
-      AuthCredential__c: parsed.data.authCredential ?? '',
-      CredentialsSchema__c: JSON.stringify(parsed.data.credentialsSchema),
-      Operations__c: JSON.stringify(parsed.data.operations),
-      Test__c: parsed.data.test ? JSON.stringify(parsed.data.test) : '',
-      TimeoutMs__c: parsed.data.timeoutMs,
-      RetryPolicy__c: JSON.stringify(parsed.data.retryPolicy),
-      Status__c: parsed.data.status,
-      LastModifiedDate: now
-    }, principal.userId, now, record) : record
-  );
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    connectorDefinitions: definitions,
-    records: { ...tenant.records, ConnectorProvider__c: providerRecords }
-  });
-  return res.json({ provider: parsed.data });
-});
-app.get('/api/integration-connections', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const tenantId = getPrincipal(res).tenantId;
-  const tenant = tenantData(tenantId)!;
-  const ring = tenant.integrationConnections.some((connection) => connection.credentialsCiphertext) ? credentialKeyRing() : undefined;
-  const connections = tenant.integrationConnections.flatMap((connection) => {
-    const definition = tenant.connectorDefinitions.find((item) => item.connectorKey === connection.connectorKey);
-    if (!definition) return [];
-    return [publicIntegrationConnection(connection, definition, ring ? openIntegrationCredentials(tenantId, connection, ring) : {})];
-  });
-  res.json({ connections });
-});
-app.post('/api/integration-connections', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
-  const parsed = integrationConnectionRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Integration Connection', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const definition = tenant.connectorDefinitions.find((item) => item.connectorKey === parsed.data.connectorKey && item.status === 'ACTIVE');
-  if (!definition) return res.status(422).json({ error: 'Select an active connector provider definition' });
-  const credentialNames = new Set(definition.credentialsSchema.filter((field) => field.secret).map((field) => field.name));
-  const unknownCredential = Object.keys(parsed.data.credentials).find((name) => !credentialNames.has(name));
-  if (unknownCredential) return res.status(400).json({ error: `Credential "${unknownCredential}" is not defined as a secret by this connector provider` });
-  const plaintextSecret = Object.keys(parsed.data.configuration).find((name) => credentialNames.has(name));
-  if (plaintextSecret) return res.status(400).json({ error: `Secret field "${plaintextSecret}" must be submitted as a credential so it can be encrypted` });
-  const credentials = Object.fromEntries(Object.entries(parsed.data.credentials).filter(([, value]) => value.trim()));
-  const id = randomUUID();
-  const now = new Date().toISOString();
-  const encrypted = Object.keys(credentials).length
-    ? sealIntegrationCredentials(principal.tenantId, id, credentials)
-    : { credentialKeyId: null, credentialIv: null, credentialAuthTag: null, credentialsCiphertext: null };
-  const connection = integrationConnectionSchema.parse({
-    id,
-    connectorKey: parsed.data.connectorKey,
-    name: parsed.data.name,
-    configuration: parsed.data.configuration,
-    ...encrypted,
-    status: parsed.data.status,
-    testStatus: null,
-    lastTestedAt: null,
-    lastTestMessage: null,
-    createdAt: now,
-    updatedAt: now
-  });
-  const records = [
-    ...(tenant.records.IntegrationConnection__c ?? []),
-    integrationConnectionRecord(connection, principal.userId)
-  ];
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    integrationConnections: [...tenant.integrationConnections, connection],
-    records: { ...tenant.records, IntegrationConnection__c: records }
-  });
-  return res.status(201).json({ connection: publicIntegrationConnection(connection, definition, credentials) });
-});
-app.put('/api/integration-connections/:id', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
-  const parsed = integrationConnectionRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Integration Connection', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const id = routeParam(req, 'id');
-  const current = tenant.integrationConnections.find((item) => item.id === id);
-  if (!current) return res.status(404).json({ error: 'Integration Connection was not found' });
-  if (current.connectorKey !== parsed.data.connectorKey) return res.status(400).json({ error: 'An Integration Connection cannot change its provider' });
-  const definition = tenant.connectorDefinitions.find((item) => item.connectorKey === current.connectorKey);
-  if (!definition) return res.status(422).json({ error: 'The connector provider definition is unavailable' });
-  const credentialNames = new Set(definition.credentialsSchema.filter((field) => field.secret).map((field) => field.name));
-  const unknownCredential = Object.keys(parsed.data.credentials).find((name) => !credentialNames.has(name));
-  if (unknownCredential) return res.status(400).json({ error: `Credential "${unknownCredential}" is not defined as a secret by this connector provider` });
-  const plaintextSecret = Object.keys(parsed.data.configuration).find((name) => credentialNames.has(name));
-  if (plaintextSecret) return res.status(400).json({ error: `Secret field "${plaintextSecret}" must be submitted as a credential so it can be encrypted` });
-  const existingCredentials = openIntegrationCredentials(principal.tenantId, current);
-  const credentials = { ...existingCredentials, ...Object.fromEntries(Object.entries(parsed.data.credentials).filter(([, value]) => value.trim())) };
-  const now = new Date().toISOString();
-  const encrypted = Object.keys(credentials).length
-    ? sealIntegrationCredentials(principal.tenantId, id, credentials)
-    : { credentialKeyId: null, credentialIv: null, credentialAuthTag: null, credentialsCiphertext: null };
-  const updated = integrationConnectionSchema.parse({
-    ...current,
-    name: parsed.data.name,
-    configuration: parsed.data.configuration,
-    ...encrypted,
-    status: parsed.data.status,
-    testStatus: null,
-    lastTestedAt: null,
-    lastTestMessage: null,
-    updatedAt: now
-  });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    integrationConnections: tenant.integrationConnections.map((item) => item.id === id ? updated : item),
-    records: {
-      ...tenant.records,
-      IntegrationConnection__c: (tenant.records.IntegrationConnection__c ?? []).map((record) =>
-        record.Id === id ? integrationConnectionRecord(updated, String(record.OwnerId ?? principal.userId)) : record)
-    }
-  });
-  return res.json({ connection: publicIntegrationConnection(updated, definition, credentials) });
-});
-app.post('/api/integration-connections/:id/test', requireAnyPermission('metadata:write', 'namedCredentials:manage'), requirePermission('callouts:execute'), async (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const connection = tenant.integrationConnections.find((item) => item.id === routeParam(req, 'id'));
-  if (!connection) return res.status(404).json({ error: 'Integration Connection was not found' });
-  const definition = tenant.connectorDefinitions.find((item) => item.connectorKey === connection.connectorKey);
-  if (!definition) return res.status(422).json({ error: 'The connector provider definition is unavailable' });
-
-  let result: ConnectorTestResult;
-  let credentials: Record<string, string> = {};
-  if (connection.status !== 'ACTIVE' || definition.status !== 'ACTIVE') {
-    result = { status: 'Failed', message: 'The Integration Connection and provider must both be active before testing.' };
-  } else {
-    try {
-      credentials = openIntegrationCredentials(principal.tenantId, connection);
-      result = await executeConnectorTest(definition, connection.configuration, credentials, async (url, method, headers, timeoutMs) =>
-        new Promise((resolve, reject) => {
-          let responseSize = 0;
-          let timer: ReturnType<typeof setTimeout>;
-          const request = httpsRequest(url, {
-            method,
-            headers,
-            timeout: timeoutMs,
-            maxHeaderSize: 16 * 1024,
-            lookup: (hostname, options, callback) => {
-              if (isReservedHostname(hostname)) {
-                callback(new Error('Connector test host is reserved'), '', 0);
-                return;
-              }
-              void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
-                if (!addresses.length || addresses.some((address) => !isPublicAddress(address.address))) {
-                  callback(new Error('Connector test DNS resolved to a private or reserved address'), '', 0);
-                  return;
-                }
-                const selected = addresses[0];
-                if (options && typeof options === 'object' && 'all' in options && options.all) callback(null, [selected]);
-                else callback(null, selected.address, selected.family);
-              }).catch(() => callback(new Error('Connector test host could not be resolved safely'), '', 0));
-            }
-          }, (incoming) => {
-            const chunks: Buffer[] = [];
-            incoming.on('data', (chunk: Buffer | string) => {
-              const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-              responseSize += data.length;
-              if (responseSize > 64 * 1024) {
-                request.destroy(new Error('Connector test response exceeded the size limit'));
-                return;
-              }
-              chunks.push(data);
-            });
-            incoming.on('end', () => {
-              clearTimeout(timer);
-              const text = Buffer.concat(chunks).toString('utf8');
-              let body: unknown = text;
-              if (text) {
-                try { body = JSON.parse(text) as unknown; } catch { /* Keep non-JSON response content internal to validation. */ }
-              }
-              resolve({ status: incoming.statusCode ?? 0, body, headers: incoming.headers });
-            });
-            incoming.on('error', (error) => { clearTimeout(timer); reject(error); });
-          });
-          timer = setTimeout(() => request.destroy(Object.assign(new Error('Connector test timed out'), { code: 'ETIMEDOUT' })), timeoutMs);
-          request.on('error', (error) => { clearTimeout(timer); reject(error); });
-          request.end();
-        })
-      );
-    } catch (error) {
-      result = {
-        status: 'Failed',
-        message: error instanceof Error && error.message.includes('could not be decrypted')
-          ? 'Saved credentials could not be decrypted; verify the credential encryption configuration.'
-          : 'Connection test could not be completed; verify the saved credentials and configuration.'
-      };
-    }
-  }
-
-  const lastTestedAt = new Date().toISOString();
-  const updated = integrationConnectionSchema.parse({
-    ...connection,
-    testStatus: result.status,
-    lastTestedAt,
-    lastTestMessage: result.message
-  });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    integrationConnections: tenant.integrationConnections.map((item) => item.id === connection.id ? updated : item),
-    records: {
-      ...tenant.records,
-      IntegrationConnection__c: (tenant.records.IntegrationConnection__c ?? []).map((record) =>
-        record.Id === connection.id ? integrationConnectionRecord(updated, String(record.OwnerId ?? principal.userId)) : record)
-    }
-  });
-  return res.json({ result: { ...result, lastTestedAt }, connection: publicIntegrationConnection(updated, definition, credentials) });
-});
-app.get('/api/connector-settings', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const tenant = tenantData(getPrincipal(res).tenantId)!;
-  const templates = new Map(tenant.connectorSettings.map((connector) => [connector.apiName, connector]));
-  const connectorObject = tenant.objects.find((item) => item.apiName === 'UneConnector__c');
-  const configurationField = connectorObject?.fields.find((field) => field.apiName === 'Configuration__c');
-  const connectors = (tenant.records.UneConnector__c ?? []).map((record) => {
-    const label = String(record.Name ?? 'Une Connector');
-    const rawApiName = String(record.ConnectorType__c ?? label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, ''));
-    const apiName = /^[A-Za-z][A-Za-z0-9_]*$/.test(rawApiName) ? rawApiName : 'UneConnector';
-    let values: Record<string, string> = {};
-    if (typeof record.Configuration__c === 'string' && record.Configuration__c) {
-      let decoded: unknown;
-      try {
-        decoded = JSON.parse(record.Configuration__c);
-      } catch {
-        throw new Error(`Configuration values for "${label}" must contain valid JSON.`);
-      }
-      const parsedValues = z.record(z.string()).safeParse(decoded);
-      if (!parsedValues.success) throw new Error(`Configuration values for "${label}" must be a JSON object of string values.`);
-      values = parsedValues.data;
-    }
-    const fieldsByName = new Map((templates.get(apiName)?.fields ?? []).map((field) => [field.apiName, field]));
-    const fields = Object.entries(values).map(([fieldApiName, value]) => ({
-      apiName: fieldApiName,
-      label: fieldsByName.get(fieldApiName)?.label ?? fieldApiName.replace(/([a-z0-9])([A-Z])/g, '$1 $2'),
-      value
-    }));
-    for (const field of templates.get(apiName)?.fields ?? []) {
-      if (!fieldsByName.has(field.apiName) || !values[field.apiName]) {
-        if (!fields.some((entry) => entry.apiName === field.apiName)) fields.push({ ...field, value: values[field.apiName] ?? '' });
-      }
-    }
-    return connectorSettingsSchema.parse({ apiName, label, fields });
-  });
-  if (!configurationField) throw new Error('Une Connectors object is missing its Configuration Values field.');
-  res.json({ connectors });
-});
-app.put('/api/connector-settings/:apiName', requireAnyPermission('metadata:write', 'namedCredentials:manage'), (req: Request, res: Response) => {
-  const parsed = connectorSettingsSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid connector settings', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const apiName = routeParam(req, 'apiName');
-  const existing = (tenant.records.UneConnector__c ?? []).find((record) => record.ConnectorType__c === apiName);
-  if (!existing) return res.status(404).json({ error: 'Connector settings record was not found' });
-  if (parsed.data.apiName !== apiName || parsed.data.label !== existing.Name) {
-    return res.status(400).json({ error: 'Connector name and type cannot be changed in connector settings' });
-  }
-  const configuration = Object.fromEntries(parsed.data.fields.map((field) => [field.apiName, field.value]));
-  const now = new Date().toISOString();
-  const updatedRecord = stampRecordAuditFields({
-    ...existing,
-    Configuration__c: JSON.stringify(configuration),
-    Status__c: parsed.data.fields.some((field) => field.value.trim()) ? 'Configured' : 'Not Configured',
-    LastModifiedDate: now
-  }, principal.userId, now, existing);
-  const updatedTenant = {
-    ...tenant,
-    connectorSettings: tenant.connectorSettings.some((item) => item.apiName === apiName)
-      ? tenant.connectorSettings.map((item) => item.apiName === apiName ? parsed.data : item)
-      : [...tenant.connectorSettings, parsed.data],
-    records: {
-      ...tenant.records,
-      UneConnector__c: tenant.records.UneConnector__c.map((record) => record.Id === existing.Id ? updatedRecord : record)
-    }
-  };
-  persistTenantRecords(principal.tenantId, updatedTenant);
-  return res.json({ connector: parsed.data });
-});
+const registerApprovalsMetadataRoutesContext = {
+  get activeFlowDefinition() { return activeFlowDefinition; },
+  get app() { return app; },
+  get approvalProcessRequestSchema() { return approvalProcessRequestSchema; },
+  get approvalProcessSchema() { return approvalProcessSchema; },
+  get getPrincipal() { return getPrincipal; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; }
+};
+export type ApprovalsMetadataRoutesDependencies = typeof registerApprovalsMetadataRoutesContext;
+registerApprovalsMetadataRoutes(registerApprovalsMetadataRoutesContext);
+const registerFlowsMetadataRoutesContext = {
+  get app() { return app; },
+  get automationSettingsSchema() { return automationSettingsSchema; },
+  get defaultAutomationSettings() { return defaultAutomationSettings; },
+  get getPrincipal() { return getPrincipal; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; }
+};
+export type FlowsMetadataRoutesDependencies = typeof registerFlowsMetadataRoutesContext;
+registerFlowsMetadataRoutes(registerFlowsMetadataRoutesContext);
+const registerIntegrationsConnectionRoutesContext = {
+  get app() { return app; },
+  get connectorDefinitionRequestSchema() { return connectorDefinitionRequestSchema; },
+  get credentialKeyRing() { return credentialKeyRing; },
+  get executeConnectorTest() { return executeConnectorTest; },
+  get getPrincipal() { return getPrincipal; },
+  get httpsRequest() { return httpsRequest; },
+  get integrationConnectionRecord() { return integrationConnectionRecord; },
+  get integrationConnectionRequestSchema() { return integrationConnectionRequestSchema; },
+  get integrationConnectionSchema() { return integrationConnectionSchema; },
+  get isPublicAddress() { return isPublicAddress; },
+  get isReservedHostname() { return isReservedHostname; },
+  get lookup() { return lookup; },
+  get openIntegrationCredentials() { return openIntegrationCredentials; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get publicIntegrationConnection() { return publicIntegrationConnection; },
+  get randomUUID() { return randomUUID; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get sealIntegrationCredentials() { return sealIntegrationCredentials; },
+  get stampRecordAuditFields() { return stampRecordAuditFields; },
+  get tenantData() { return tenantData; }
+};
+export type IntegrationsConnectionRoutesDependencies = typeof registerIntegrationsConnectionRoutesContext;
+registerIntegrationsConnectionRoutes(registerIntegrationsConnectionRoutesContext);
+const registerIntegrationsConnectorSettingsRoutesContext = {
+  get app() { return app; },
+  get connectorSettingsSchema() { return connectorSettingsSchema; },
+  get getPrincipal() { return getPrincipal; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get stampRecordAuditFields() { return stampRecordAuditFields; },
+  get tenantData() { return tenantData; },
+  get z() { return z; }
+};
+export type IntegrationsConnectorSettingsRoutesDependencies = typeof registerIntegrationsConnectorSettingsRoutesContext;
+registerIntegrationsConnectorSettingsRoutes(registerIntegrationsConnectorSettingsRoutesContext);
 
 type ConnectorRight = 'view' | 'edit' | 'secrets' | 'test' | 'install';
 function connectorRight(principal: Principal, right: ConnectorRight): boolean {
@@ -6593,118 +5753,46 @@ function assertConnectorLifecycleAccess(previous: RuntimeRecord, requested: Runt
 // AppExchange is a tenant-scoped package catalogue, not an ordinary privately-owned
 // business record list. Require connector viewing rights, then return only metadata
 // for the authenticated tenant (never credentials or records from other tenants).
-app.get('/api/connector-apps/catalog', accessAuthentication, (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  if (!connectorRight(principal, 'view')) return res.status(403).json({ error: 'Missing connectorApps:view permission.' });
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant not found.' });
-  const current = ensureConnectorAppRecords(tenant.records.Connector_App__c, principal.userId);
-  // The default catalogue is refreshed during state loading. This read path is
-  // also resilient when tenant upgrades were seeded before the latest packages.
-  return res.json({ records: current });
-});
-app.get('/api/connector-apps/capabilities', accessAuthentication, (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  res.json({
-    view: connectorRight(principal, 'view'),
-    edit: connectorRight(principal, 'edit'),
-    secrets: connectorRight(principal, 'secrets'),
-    test: connectorRight(principal, 'test'),
-    install: connectorRight(principal, 'install'),
-    licence: principal.permissions.includes('licence:manage')
-  });
-});
-// A platform licence operator explicitly grants or renews a paid term.
-// This endpoint never processes payment and is deliberately distinct from trial activation.
-app.post('/api/connector-apps/:appKey/licence', accessAuthentication, requirePermission('licence:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const key = routeParam(req, 'appKey');
-  const matches = (tenant.records.Connector_App__c ?? []).filter((row) => row.AppKey__c === key);
-  if (matches.length > 1) return res.status(409).json({ error: 'Conflicting AppExchange installation records.' }); const previous = matches[0]; if (!previous) return res.status(404).json({ error: 'Connector not found' });
-  if (previous.Installed__c !== true) return res.status(409).json({ error: 'Install the connector before granting a licence.' });
-  const days = Number(previous.LicenceTermDays__c ?? 30);
-  if (!Number.isInteger(days) || days < 1 || days > 365) return res.status(422).json({ error: 'Invalid licence term metadata.' });
-  const now = new Date();
-  const priorExpiry = Date.parse(String(previous.LicenceExpiresAt__c ?? ''));
-  const from = Number.isFinite(priorExpiry) && priorExpiry > now.getTime() ? priorExpiry : now.getTime();
-  const expiresAt = new Date(from + days * 86400000).toISOString();
-  const next = applyConnectorLifecycle(previous, { ...previous, LicenceExpiresAt__c: expiresAt },
-    tenant.namedCredentials, tenant.flows, now, true);
-  persistTenantRecords(principal.tenantId, {
-    ...tenant, records: {
-      ...tenant.records,
-      Connector_App__c: tenant.records.Connector_App__c.map((row) => row.Id === previous.Id ? next : row)
-    }
-  });
-  return res.json({ app: next });
-});
-// Enabling is separate from saving configuration. Installation and valid entitlement are mandatory.
-app.patch('/api/connector-apps/:appKey/credential-enabled', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  if (!principal.permissions.includes('namedCredentials:manage')) return res.status(403).json({ error: 'Only Named Credential administrators can change activation.' });
-  const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'enabled must be boolean.' });
-  const tenant = tenantData(principal.tenantId)!;
-  const appRecord = (tenant.records.Connector_App__c ?? []).find((row) => row.AppKey__c === routeParam(req, 'appKey'));
-  if (!appRecord) return res.status(404).json({ error: 'Connector not found.' });
-  const credential = tenant.namedCredentials.find((row) => row.name === appRecord.CredentialName__c);
-  if (!credential) return res.status(404).json({ error: 'Configure the connection first.' });
-  if (parsed.data.enabled) {
-    const entitled = connectorEntitlement(tenant.records.Connector_App__c ?? [], credential);
-    if (!entitled.allowed) return res.status(403).json({ error: entitled.message });
-  }
-  const updated = namedCredentialSchema.parse({ ...credential, enabled: parsed.data.enabled, updatedAt: new Date().toISOString() });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant, namedCredentials: tenant.namedCredentials.map((row) => row.id === credential.id ? updated : row)
-  });
-  return res.json({ credential: publicNamedCredential(updated) });
-});
+const registerIntegrationsConnectorAppRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get applyConnectorLifecycle() { return applyConnectorLifecycle; },
+  get connectorEntitlement() { return connectorEntitlement; },
+  get connectorRight() { return connectorRight; },
+  get ensureConnectorAppRecords() { return ensureConnectorAppRecords; },
+  get getPrincipal() { return getPrincipal; },
+  get namedCredentialSchema() { return namedCredentialSchema; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get publicNamedCredential() { return publicNamedCredential; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get tenantData() { return tenantData; },
+  get z() { return z; }
+};
+export type IntegrationsConnectorAppRoutesDependencies = typeof registerIntegrationsConnectorAppRoutesContext;
+registerIntegrationsConnectorAppRoutes(registerIntegrationsConnectorAppRoutesContext);
 // Operator-controlled activation: connectorApps:edit grants configuration access, not activation.
-app.patch('/api/named-credentials/:id/enabled', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
-  const parsed = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'enabled must be boolean.' });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const credential = tenant.namedCredentials.find((row) => row.id === routeParam(req, 'id'));
-  if (!credential) return res.status(404).json({ error: 'Named Credential was not found.' });
-  if (parsed.data.enabled) {
-    const entitled = connectorEntitlement(tenant.records.Connector_App__c ?? [], credential);
-    if (!entitled.allowed) return res.status(403).json({ error: entitled.message });
-  }
-  const updated = namedCredentialSchema.parse({ ...credential, enabled: parsed.data.enabled, updatedAt: new Date().toISOString() });
-  persistTenantRecords(principal.tenantId, { ...tenant, namedCredentials: tenant.namedCredentials.map((row) => row.id === credential.id ? updated : row) });
-  return res.json({ credential: publicNamedCredential(updated) });
-});
-// Report credential readiness without exposing encryption keys or other tenants' data.
-app.get('/api/named-credentials/readiness', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  const user = principalUser(principal);
-  if (!tenant || !user) return res.status(403).json({ error: 'Tenant membership is no longer active' });
-  const canManage = effectivePermissions(user, tenant).includes('namedCredentials:manage');
-  let encryptionReady = false;
-  try {
-    credentialKeyRing();
-    encryptionReady = true;
-  } catch {
-    // Missing or invalid encryption configuration is reported without key material.
-  }
-  return res.json({ canManage, encryptionReady });
-});
-app.get('/api/named-credentials', requireAnyPermission('metadata:read', 'namedCredentials:manage', 'connectorApps:view'), (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  res.json({ credentials: tenant.namedCredentials.map((credential) => {
-    const managed = managedConnector(tenant, credential.name);
-    if (!managed || connectorRight(principal, 'view')) return publicNamedCredential(credential);
-    // Preserve only matching identity: never leak configuration without explicit view access.
-    return { id: credential.id, name: credential.name, label: '********',
-      protocol: credential.protocol, baseUrl: '********', authType: credential.authType,
-      headerName: '********', configuration: {}, hasSecret: false,
-      enabled: false, keyId: '', updatedAt: credential.updatedAt };
-  }) });
-});
+const registerCredentialStatusRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get connectorEntitlement() { return connectorEntitlement; },
+  get connectorRight() { return connectorRight; },
+  get credentialKeyRing() { return credentialKeyRing; },
+  get effectivePermissions() { return effectivePermissions; },
+  get getPrincipal() { return getPrincipal; },
+  get managedConnector() { return managedConnector; },
+  get namedCredentialSchema() { return namedCredentialSchema; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get principalUser() { return principalUser; },
+  get publicNamedCredential() { return publicNamedCredential; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get tenantData() { return tenantData; },
+  get z() { return z; }
+};
+export type CredentialStatusRoutesDependencies = typeof registerCredentialStatusRoutesContext;
+registerCredentialStatusRoutes(registerCredentialStatusRoutesContext);
 function configuredOAuthCallback():string {
   const raw=process.env.METADRIVE_OAUTH_CALLBACK_URL;
   if(!raw)throw new Error('OAuth callback URL is not configured.');
@@ -6714,538 +5802,77 @@ function configuredOAuthCallback():string {
   return parsed.toString();
 }
 // Setup permission controls connection authorization. This endpoint never exposes tokens.
-app.post('/api/named-credentials/:id/oauth/start',
-  requireAnyPermission('namedCredentials:manage','connectorApps:edit'),async(req:Request,res:Response)=>{
-  const principal=getPrincipal(res);
-  const tenant=tenantData(principal.tenantId);
-  const credential=tenant?.namedCredentials.find(item=>item.id===routeParam(req,'id'));
-  if(!tenant || !credential)return res.status(404).json({error:'Named Credential not found.'});
-  const managed=managedConnector(tenant,credential.name);
-  if(managed) {
-    if(!connectorRight(principal,'edit') || !connectorRight(principal,'secrets'))
-      return res.status(403).json({error:'Missing connector configuration or secret permission.'});
-  } else if(!principal.permissions.includes('namedCredentials:manage'))
-    return res.status(403).json({error:'Named Credential management permission required.'});
-  if(credential.authType!=='OAuth Authorization Code'||credential.protocol!=='HTTPS')
-    return res.status(400).json({error:'Credential is not configured for OAuth Authorization Code.'});
-  const entitlement=connectorEntitlement(tenant.records.Connector_App__c??[],credential);
-  if(!entitlement.allowed)return res.status(403).json({error:entitlement.message});
-  if(credential.enabled===false)return res.status(409).json({error:'Enable the connection before authorization.'});
-  const conf=credential.configuration??{};
-  if(!conf.AuthorizationEndpoint || !conf.OAuthEndpoint || !conf.ClientId)
-    return res.status(400).json({error:'OAuth endpoints and ClientId are required.'});
-  try {
-    const callback=configuredOAuthCallback();
-    const url=await beginOAuthAuthorization({
-      authorizationUrl:conf.AuthorizationEndpoint,tokenUrl:conf.OAuthEndpoint,
-      clientId:conf.ClientId,scope:conf.Scope,redirectUri:callback
-    },{tenantId:principal.tenantId,credentialId:credential.id},oauthChallengeStore());
-    return res.json({authorizationUrl:url});
-  } catch {
-    return res.status(503).json({error:'OAuth authorization could not start. Verify the configured callback, encryption and PostgreSQL challenge table.'});
-  }
-});
-// The external provider redirects here; an unguessable, SQL-backed one-time state authorizes the callback.
-app.get('/api/oauth/callback',async(req:Request,res:Response)=>{
-  const stateValue=typeof req.query.state==='string'?req.query.state:'';
-  const code=typeof req.query.code==='string'?req.query.code:'';
-  if(!/^[A-Za-z0-9_-]{20,1024}$/.test(stateValue) || !code || code.length>8192)
-    return res.status(400).type('text/plain').send('OAuth authorization was not completed.');
-  try {
-    const stateDigest=createHash('sha256').update(stateValue).digest('hex');
-    const challenges=oauthChallengeStore();
-    const scope=await challenges.findScope(stateDigest);
-    const tenant=scope?tenantData(scope.tenantId):null;
-    const credential=tenant?.namedCredentials.find(item=>item.id===scope?.credentialId);
-    if(!scope || !credential || credential.authType!=='OAuth Authorization Code'||credential.protocol!=='HTTPS'
-      || credential.enabled===false)throw new Error('OAuth session unavailable.');
-    const entitlement=connectorEntitlement(tenant?.records.Connector_App__c??[],credential);
-    if(!entitlement.allowed)throw new Error('Connector is not licensed.');
-    const conf=credential.configuration??{};
-    const clientSecret=openCredentialPayload(scope.tenantId,credential).secret;
-    if(!clientSecret || !conf.ClientId || !conf.OAuthEndpoint)throw new Error('OAuth settings unavailable.');
-    await completeOAuthAuthorization({
-      clientId:conf.ClientId,clientSecret,tokenUrl:conf.OAuthEndpoint,scope:conf.Scope
-    },scope,{state:stateValue,code},challenges,oauthCredentialVault(scope.tenantId,scope.credentialId),
-      safeOAuthTokenRequest);
-    res.setHeader('Cache-Control','no-store');
-    return res.status(200).type('text/plain').send('Connection authorized. You may close this window.');
-  } catch {
-    res.setHeader('Cache-Control','no-store');
-    return res.status(400).type('text/plain').send('OAuth authorization failed or expired. Start authorization again from Named Credentials.');
-  }
-});
-app.post('/api/named-credentials', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
-  const parsed = namedCredentialRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const managed = managedConnector(tenant, parsed.data.name);
-  if (managed && (!connectorRight(principal, 'edit')
-    || (parsed.data.secret && !connectorRight(principal, 'secrets'))))
-    return res.status(403).json({ error: 'Missing connector configuration or Manage Secrets permission.' });
-  if (!managed && !principal.permissions.includes('namedCredentials:manage'))
-    return res.status(403).json({ error: 'Missing Named Credentials management permission.' });
-  const packageEntitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [],
-    {id: '', name: parsed.data.name});
-  if (!packageEntitlement.allowed) return res.status(403).json({error:packageEntitlement.message});
-  if (tenant.namedCredentials.some((credential) => credential.name === parsed.data.name)) {
-    return res.status(409).json({ error: `Named Credential "${parsed.data.name}" already exists` });
-  }
-  const now = new Date().toISOString();
-  const id = randomUUID();
-  try {
-    const authType = parsed.data.authType;
-    const secret = parsed.data.secret;
-    const username = parsed.data.username?.trim();
-    if (authType !== 'None' && !secret) return res.status(400).json({ error: 'Provide a secret for this authentication type' });
-    if (authType === 'Basic' && !username) return res.status(400).json({ error: 'Basic authentication requires a username' });
-    const sealed = sealCredentialPayload(principal.tenantId, id, {
-      ...(authType === 'Basic' && username ? { username } : {}),
-      ...(authType !== 'None' && secret ? { secret } : {})
-    });
-    const credential = namedCredentialSchema.parse({
-      id, name: parsed.data.name, label: parsed.data.label,
-      protocol: parsed.data.protocol,
-      baseUrl: parsed.data.baseUrl.endsWith('/') ? parsed.data.baseUrl : `${parsed.data.baseUrl}/`,
-      authType, headerName: parsed.data.headerName?.trim() || undefined,
-      configuration: parsed.data.configuration ?? {},
-      enabled: !managed,
-      ...sealed, createdAt: now, updatedAt: now
-    });
-    const updatedTenant = { ...tenant, namedCredentials: [...tenant.namedCredentials, credential] };
-    persistTenantRecords(principal.tenantId, updatedTenant);
-    return res.status(201).json({ credential: publicNamedCredential(credential) });
-  } catch (error) {
-    return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to create Named Credential' });
-  }
-});
-app.put('/api/named-credentials/:id', requireAnyPermission('namedCredentials:manage', 'connectorApps:edit'), (req: Request, res: Response) => {
-  const parsed = namedCredentialRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Named Credential', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const existing = tenant.namedCredentials.find((credential) => credential.id === routeParam(req, 'id'));
-  if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
-  const managedExisting = managedConnector(tenant, existing.name);
-  if (managedExisting && (!connectorRight(principal, 'edit')
-    || ((parsed.data.secret || parsed.data.username || parsed.data.authType !== existing.authType) && !connectorRight(principal, 'secrets'))))
-    return res.status(403).json({ error: 'Missing connector configuration or Manage Secrets permission.' });
-  if (!managedExisting && !principal.permissions.includes('namedCredentials:manage'))
-    return res.status(403).json({ error: 'Missing Named Credentials management permission.' });
-  if (existing.name !== parsed.data.name && (tenant.records.Connector_App__c ?? []).some((app) => app.CredentialName__c === existing.name)) {
-    return res.status(403).json({error:'Managed connector credential API names cannot be changed.'});
-  }
-  const entitlement = connectorEntitlement(tenant.records.Connector_App__c ?? [], existing);
-  if (!entitlement.allowed) return res.status(403).json({error:entitlement.message});
-  if (tenant.dashboardSubscriptions.some((subscription) =>
-    subscription.namedCredentialId === existing.id && parsed.data.protocol !== 'SMTP')) {
-    return res.status(409).json({ error: 'Named Credential is used by a dashboard subscription and must remain SMTP' });
-  }
-  if (tenant.emailAlerts.some((alert) => alert.namedCredentialId === existing.id && parsed.data.protocol !== 'SMTP')) {
-    return res.status(409).json({ error: 'Named Credential is used by an Email Alert and must remain SMTP' });
-  }
-  if (tenant.namedCredentials.some((credential) => credential.id !== existing.id && credential.name === parsed.data.name)) {
-    return res.status(409).json({ error: `Named Credential "${parsed.data.name}" already exists` });
-  }
-  try {
-    const sameAuthType = existing.authType === parsed.data.authType;
-    const shouldPreserveSecret = parsed.data.authType !== 'None' && !parsed.data.secret && sameAuthType;
-    if (parsed.data.authType !== 'None' && !parsed.data.secret && !shouldPreserveSecret) {
-      return res.status(400).json({ error: 'Provide a new secret when changing the authentication type' });
-    }
-    const payload: NamedCredentialPayload = shouldPreserveSecret
-      ? {
-          ...openCredentialPayload(principal.tenantId, existing),
-          ...(parsed.data.authType === 'Basic' && parsed.data.username?.trim() ? { username: parsed.data.username.trim() } : {})
-        }
-      : {
-          ...(parsed.data.authType === 'Basic' && parsed.data.username?.trim() ? { username: parsed.data.username.trim() } : {}),
-          ...(parsed.data.authType !== 'None' && parsed.data.secret ? { secret: parsed.data.secret } : {})
-        };
-    if (sameAuthType && ['OAuth Client Credentials','OAuth Authorization Code'].includes(parsed.data.authType)
-      && JSON.stringify(existing.configuration ?? {}) !== JSON.stringify(parsed.data.configuration ?? {}))
-      delete payload.oauthToken;
-    if (parsed.data.authType === 'Basic' && !payload.username) {
-      return res.status(400).json({ error: 'Basic authentication requires a username and password' });
-    }
-    const now = new Date().toISOString();
-    const sealed = sealCredentialPayload(principal.tenantId, existing.id, payload);
-    const credential = namedCredentialSchema.parse({
-      ...existing, name: parsed.data.name, label: parsed.data.label,
-      protocol: parsed.data.protocol,
-      baseUrl: parsed.data.baseUrl.endsWith('/') ? parsed.data.baseUrl : `${parsed.data.baseUrl}/`,
-      authType: parsed.data.authType, headerName: parsed.data.headerName?.trim() || undefined,
-      configuration: parsed.data.configuration ?? existing.configuration ?? {},
-      ...sealed, updatedAt: now
-    });
-    const updatedTenant = { ...tenant, namedCredentials: tenant.namedCredentials.map((item) => item.id === credential.id ? credential : item) };
-    persistTenantRecords(principal.tenantId, updatedTenant);
-    return res.json({ credential: publicNamedCredential(credential) });
-  } catch (error) {
-    return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to update Named Credential' });
-  }
-});
-app.delete('/api/named-credentials/:id', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const id = routeParam(req, 'id');
-  const existing = tenant.namedCredentials.find((credential) => credential.id === id);
-  if (!existing) return res.status(404).json({ error: 'Named Credential was not found' });
-  if ((tenant.records.Connector_App__c ?? []).some((app) => app.CredentialName__c === existing.name)) {
-    return res.status(409).json({error:'Connector credentials are retained on uninstall and cannot be deleted from this endpoint.'});
-  }
-  const references = tenant.flows.flatMap((flow) => flow.elements
-    .filter((element) => ['HTTP Callout', 'Action'].includes(element.type) && element.config.namedCredentialId === id)
-    .map((element) => `${flow.label} / ${element.label}`));
-  references.push(...tenant.dashboardSubscriptions
-    .filter((subscription) => subscription.namedCredentialId === id)
-    .map((subscription) => `Dashboard ${subscription.dashboardApiName} / ${subscription.label}`));
-  references.push(...tenant.emailAlerts
-    .filter((alert) => alert.namedCredentialId === id)
-    .map((alert) => `Email Alert ${alert.label}`));
-  if (references.length) return res.status(409).json({ error: `Named Credential is in use by: ${references.join(', ')}` });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant, namedCredentials: tenant.namedCredentials.filter((credential) => credential.id !== id)
-  });
-  return res.status(204).end();
-});
-app.post('/api/named-credentials/:id/test', requireAnyPermission('namedCredentials:manage', 'connectorApps:test'), async (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const credential = tenantData(principal.tenantId)?.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
-  if (!credential) return res.status(404).json({ error: 'Named Credential was not found' });
-  const currentTenant = tenantData(principal.tenantId)!;
-  const testApp = managedConnector(currentTenant, credential.name);
-  if (testApp && !connectorRight(principal, 'test'))
-    return res.status(403).json({ error: 'Missing connectorApps:test permission.' });
-  if (!testApp && !principal.permissions.includes('namedCredentials:manage'))
-    return res.status(403).json({ error: 'Missing Named Credentials management permission.' });
-  const entitlement = connectorEntitlement(tenantData(principal.tenantId)?.records.Connector_App__c ?? [], credential);
-  if (!entitlement.allowed) return res.status(403).json({ error: entitlement.message });
-  if (credential.enabled === false) return res.status(409).json({ error: 'Enable the saved connection before testing.' });
-  if (credential.protocol === 'SMTP') {
-    try {
-      const target = new URL(credential.baseUrl);
-      const host = target.hostname;
-      if (target.protocol !== 'smtp:' || isReservedHostname(host) || (isIP(host) && !isPublicAddress(host))) {
-        return res.status(400).json({ error: 'SMTP test destination must be a public SMTP host' });
-      }
-      const addresses = await lookup(host, { all: true, verbatim: true });
-      if (!addresses.length || addresses.some((address) => !isPublicAddress(address.address))) {
-        return res.status(400).json({ connected: false, message: 'SMTP host did not resolve to public IP addresses.' });
-      }
-      const payload = namedCredentialPayloadSchema.parse(openCredentialPayload(principal.tenantId, credential));
-      if (credential.authType === 'Basic' && (!payload.username || !payload.secret)) {
-        return res.status(400).json({ error: 'SMTP username and password are required' });
-      }
-      const port = Number(target.port || 25);
-      const transporter = nodemailer.createTransport({
-        host: addresses[0].address,
-        port,
-        secure: port === 465,
-        requireTLS: port !== 465,
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 10000,
-        tls: { servername: host, minVersion: 'TLSv1.2' },
-        ...(credential.authType === 'Basic' ? { auth: { user: payload.username!, pass: payload.secret! } } : {})
-      });
-      try {
-        await transporter.verify();
-        return res.json({ connected: true, message: 'SMTP server connection, TLS and authentication verified. No email was sent.' });
-      } finally {
-        transporter.close();
-      }
-    } catch {
-      return res.json({ connected: false, message: 'SMTP connection or authentication failed. Check host, port, TLS and credentials.' });
-    }
-  }
-  const rawTestPath = typeof testApp?.TestPath__c === 'string' ? testApp.TestPath__c : '';
-  const missingTestVariable = [...rawTestPath.matchAll(/\{!([A-Za-z][A-Za-z0-9_]*)\}/g)]
-    .find((match) => !credential.configuration?.[match[1]]);
-  if (missingTestVariable)
-    return res.status(400).json({ error: 'Test endpoint needs a configured ' + missingTestVariable[1] + '.' });
-  const expandedTestPath = rawTestPath.replace(/\{!([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, field: string) =>
-    encodeURIComponent(credential.configuration?.[field] ?? ''));
-  if (expandedTestPath.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(expandedTestPath) || expandedTestPath.includes('..'))
-    return res.status(400).json({ error: 'Test endpoint must be a safe relative path.' });
-  // A saved credential may already point at the resource named in the connector's
-  // metadata test path. Avoid appending the same final segment twice (e.g. phone ID).
-  const credentialBase = new URL(credential.baseUrl);
-  const baseSegments = credentialBase.pathname.split('/').filter(Boolean);
-  const pathPart = expandedTestPath.split(/[?#]/, 1)[0];
-  const relativeSegments = pathPart.split('/').filter(Boolean);
-  const alreadyAtTarget = relativeSegments.length > 0
-    && relativeSegments.length <= baseSegments.length
-    && relativeSegments.every((segment, index) =>
-      segment === baseSegments[baseSegments.length - relativeSegments.length + index]);
-  const resolvedTestPath = alreadyAtTarget
-    ? expandedTestPath.slice(pathPart.length) || '?fields=id'
-    : expandedTestPath;
-  const url = new URL(resolvedTestPath, credential.baseUrl);
-  // Graph-style resource endpoints commonly require /resource?fields=..., not
-  // /resource/?fields=.... Normalize only the exact already-targeted resource.
-  if (alreadyAtTarget && url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1);
-  const basePathWithoutSlash = credentialBase.pathname.replace(/\/$/, '');
-  if (url.origin !== credentialBase.origin
-    || !(url.pathname === basePathWithoutSlash || url.pathname.startsWith(credentialBase.pathname)))
-    return res.status(400).json({ error: 'Test endpoint must remain inside the configured base URL.' });
-  if (url.protocol !== 'https:' || isReservedHostname(url.hostname) || (isIP(url.hostname) && !isPublicAddress(url.hostname))) {
-    return res.status(400).json({ error: 'Test destination is not a public HTTPS host' });
-  }
-  try {
-    const payload = openCredentialPayload(principal.tenantId, credential);
-    if (credential.authType !== 'None' && !payload.secret) return res.status(400).json({ error: 'Authentication secret is not configured' });
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (credential.authType === 'Bearer') headers.Authorization = `Bearer ${payload.secret}`;
-    if (credential.authType === 'OAuth Client Credentials' || credential.authType === 'OAuth Authorization Code')
-      headers.Authorization = `Bearer ${await oauthAccessTokenForCredential(principal.tenantId,credential)}`;
-    if (credential.authType === 'Basic') headers.Authorization = `Basic ${Buffer.from(`${payload.username ?? ''}:${payload.secret}`).toString('base64')}`;
-    if (credential.authType === 'API Key') headers[credential.headerName!] = payload.secret!;
-    const status = await new Promise<number>((resolve, reject) => {
-      const request = httpsRequest(url, {
-        method: testApp?.TestMethod__c === 'HEAD' ? 'HEAD' : 'GET', headers, timeout: 8000, maxHeaderSize: 16384,
-        lookup: (hostname, options, callback) => {
-          if (isReservedHostname(hostname)) return callback(new Error('Reserved destination'), '', 0);
-          void lookup(hostname, { all: true, verbatim: true }).then((addresses) => {
-            if (!addresses.length || addresses.some((address) => !isPublicAddress(address.address))) return callback(new Error('Non-public destination'), '', 0);
-            const selected = addresses[0];
-            if (options && typeof options === 'object' && 'all' in options && options.all) callback(null, [selected]);
-            else callback(null, selected.address, selected.family);
-          }).catch(() => callback(new Error('DNS resolution failed'), '', 0));
-        }
-      }, (incoming) => {
-        const code = incoming.statusCode ?? 0;
-        incoming.destroy();
-        resolve(code);
-      });
-      request.on('timeout', () => request.destroy(new Error('Connection timed out')));
-      request.on('error', reject);
-      request.end();
-    });
-    const connected = status >= 200 && status < 300;
-    return res.json({ connected, status, message: connected
-      ? 'HTTPS endpoint responded successfully.'
-      : status === 401 || status === 403 ? 'Endpoint responded but rejected authentication.'
-      : 'Endpoint responded with HTTP ' + status + '. Check the API path and permissions.' });
-  } catch {
-    return res.json({ connected: false, message: 'Unable to reach or authenticate with the HTTPS endpoint. Check the URL, DNS and credentials.' });
-  }
-});
-// A base-URL GET is a connectivity probe, not a provider-specific API health check.
-// Providers requiring an endpoint path or POST need a configurable test operation.
-app.post('/api/named-credentials/:id/rotate', requirePermission('namedCredentials:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const credential = tenant.namedCredentials.find((item) => item.id === routeParam(req, 'id'));
-  if (!credential) return res.status(404).json({ error: 'Named Credential was not found' });
-  try {
-    const ring = credentialKeyRing();
-    const payload = openCredentialPayload(principal.tenantId, credential, ring);
-    const next = namedCredentialSchema.parse({
-      ...credential, ...sealCredentialPayload(principal.tenantId, credential.id, payload, ring),
-      updatedAt: new Date().toISOString()
-    });
-    persistTenantRecords(principal.tenantId, {
-      ...tenant, namedCredentials: tenant.namedCredentials.map((item) => item.id === next.id ? next : item)
-    });
-    return res.json({ credential: publicNamedCredential(next) });
-  } catch (error) {
-    return res.status(400).json({ error: error instanceof Error ? error.message : 'Unable to rotate Named Credential encryption' });
-  }
-});
-app.get('/api/metadata/email-alerts', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  res.json({ emailAlerts: tenantData(getPrincipal(res).tenantId)?.emailAlerts ?? [] });
-});
-app.post('/api/metadata/email-alerts', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const parsed = emailAlertRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Email Alert', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  if (tenant.emailAlerts.some((alert) => alert.name.toLowerCase() === parsed.data.name.toLowerCase())) {
-    return res.status(409).json({ error: `Email Alert "${parsed.data.name}" already exists` });
-  }
-  const object = tenant.objects.find((candidate) => candidate.apiName === parsed.data.objectApiName);
-  if (!object) return res.status(400).json({ error: `Email Alert object "${parsed.data.objectApiName}" does not exist` });
-  const credential = tenant.namedCredentials.find((candidate) =>
-    candidate.id === parsed.data.namedCredentialId && candidate.protocol === 'SMTP');
-  if (!credential) return res.status(400).json({ error: 'Email Alert requires an SMTP Named Credential' });
-  const recipients = parsed.data.recipients.split(/[;,]/).map((recipient) => recipient.trim()).filter(Boolean);
-  if (!recipients.length || recipients.some((recipient) =>
-    !recipient.includes('{') && !z.string().email().safeParse(recipient).success)) {
-    return res.status(400).json({ error: 'Email Alert requires valid recipient addresses or Flow record references' });
-  }
-  const now = new Date().toISOString();
-  const emailAlert = emailAlertSchema.parse({ ...parsed.data, id: randomUUID(), createdAt: now, updatedAt: now });
-  persistTenantRecords(principal.tenantId, { ...tenant, emailAlerts: [...tenant.emailAlerts, emailAlert] });
-  return res.status(201).json({ emailAlert });
-});
-app.put('/api/metadata/email-alerts/:id', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const parsed = emailAlertRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Email Alert', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const existing = tenant.emailAlerts.find((alert) => alert.id === routeParam(req, 'id'));
-  if (!existing) return res.status(404).json({ error: 'Email Alert was not found' });
-  if (tenant.emailAlerts.some((alert) =>
-    alert.id !== existing.id && alert.name.toLowerCase() === parsed.data.name.toLowerCase())) {
-    return res.status(409).json({ error: `Email Alert "${parsed.data.name}" already exists` });
-  }
-  if (!tenant.objects.some((candidate) => candidate.apiName === parsed.data.objectApiName)) {
-    return res.status(400).json({ error: `Email Alert object "${parsed.data.objectApiName}" does not exist` });
-  }
-  if (!tenant.namedCredentials.some((candidate) =>
-    candidate.id === parsed.data.namedCredentialId && candidate.protocol === 'SMTP')) {
-    return res.status(400).json({ error: 'Email Alert requires an SMTP Named Credential' });
-  }
-  const recipients = parsed.data.recipients.split(/[;,]/).map((recipient) => recipient.trim()).filter(Boolean);
-  if (!recipients.length || recipients.some((recipient) =>
-    !recipient.includes('{') && !z.string().email().safeParse(recipient).success)) {
-    return res.status(400).json({ error: 'Email Alert requires valid recipient addresses or Flow record references' });
-  }
-  const emailAlert = emailAlertSchema.parse({ ...parsed.data, id: existing.id, createdAt: existing.createdAt, updatedAt: new Date().toISOString() });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant, emailAlerts: tenant.emailAlerts.map((alert) => alert.id === emailAlert.id ? emailAlert : alert)
-  });
-  return res.json({ emailAlert });
-});
-app.delete('/api/metadata/email-alerts/:id', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const id = routeParam(req, 'id');
-  const emailAlert = tenant.emailAlerts.find((alert) => alert.id === id);
-  if (!emailAlert) return res.status(404).json({ error: 'Email Alert was not found' });
-  const references = tenant.flows.flatMap((flow) => flow.elements
-    .filter((element) => element.type === 'Action' && element.config.actionType === 'Email Alert'
-      && element.config.emailAlertId === id)
-    .map((element) => `${flow.label} / ${element.label}`));
-  if (references.length) return res.status(409).json({ error: `Email Alert is in use by: ${references.join(', ')}` });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant, emailAlerts: tenant.emailAlerts.filter((alert) => alert.id !== id)
-  });
-  return res.status(204).end();
-});
-app.put('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const parsed = flowSchema.safeParse({ ...req.body, apiName: req.params.apiName });
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid flow metadata', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const existing = tenant.flows.find((flow) => flow.apiName === req.params.apiName);
-  const requested = parsed.data;
-  if (requested.status === 'Active' && existing
-    && tenant.interviews.some((interview) => interview.flowApiName === existing.apiName && interview.kind !== 'async')) {
-    return res.status(409).json({ error: 'Flow cannot be activated while interviews are pending.' });
-  }
-  const now = new Date().toISOString();
-  const history = uniqueFlowHistory(existing, now);
-  const previousActive = existing?.activeVersion ?? null;
-  const versionNumber = existing
-    ? Math.max(existing.versionNumber, ...history.map((version) => version.versionNumber)) + 1
-    : 1;
-  // Draft saves never publish an edited graph. Keep the old published version running.
-  const author = state.users.find((item) => item.id === principal.userId && item.tenantId === principal.tenantId);
-  const nextFlow: FlowMetadata = {
-    ...requested,
-    createdAt: existing?.createdAt ?? now,
-    createdBy: existing?.createdBy ?? author?.name ?? principal.email,
-    lastModifiedAt: now,
-    lastModifiedBy: author?.name ?? principal.email,
-    versionNumber,
-    activeVersion: requested.status === 'Active' ? versionNumber : previousActive,
-    versions: history
-  };
-  if (requested.status === 'Active') {
-    const validation = validateFlow(nextFlow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections, tenant.connectorDefinitions, tenant.emailAlerts,
-      formulaContextForUser(tenant, principal.userId),
-      [...tenant.flows.filter((flow) => flow.apiName !== nextFlow.apiName), nextFlow], tenant.approvalProcesses, tenant.platformEvents, principal.tenantId);
-    if (validation.errors.length) return res.status(422).json({ error: 'Flow validation failed', details: validation.errors });
-    // Exactly one active version; do not leave stale Active labels on archived revisions.
-    nextFlow.versions = [...history.map((version) => ({
-      ...version,
-      status: version.status === 'Draft' ? 'Draft' as const : 'Obsolete' as const
-    })), flowVersionSnapshot(nextFlow, now)];
-  }
-  const updatedTenant = { ...tenant, flows: existing ? tenant.flows.map((flow) => flow.apiName === nextFlow.apiName ? nextFlow : flow) : [...tenant.flows, nextFlow] };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ flow: nextFlow });
-});
-app.post('/api/metadata/flows/:apiName/deactivate', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const existing = tenant.flows.find((flow) => flow.apiName === routeParam(req, 'apiName'));
-  if (!existing) return res.status(404).json({ error: 'Flow was not found' });
-  if (existing.activeVersion === null) {
-    return res.status(409).json({ error: 'Flow is not active' });
-  }
-  if (tenant.interviews.some((interview) => interview.flowApiName === existing.apiName)) {
-    return res.status(409).json({ error: 'Flow cannot be deactivated while its interviews are pending; wait for them to finish or expire.' });
-  }
-  const activeSubflowReferences = tenant.flows
-    .filter((candidate) => candidate.apiName !== existing.apiName)
-    .map(activeFlowDefinition)
-    .filter((candidate): candidate is FlowMetadata => Boolean(candidate))
-    .flatMap((candidate) => candidate.elements
-      .filter((element) => element.type === 'Subflow' && element.config.flowApiName === existing.apiName)
-      .map((element) => `${candidate.label} / ${element.label}`));
-  if (activeSubflowReferences.length) {
-    return res.status(409).json({
-      error: `Flow cannot be deactivated while referenced by active subflows: ${activeSubflowReferences.join(', ')}`
-    });
-  }
-  const versions = uniqueFlowHistory(existing, new Date().toISOString())
-    .map((version) => ({
-      ...version,
-      status: version.status === 'Draft' ? 'Draft' as const : 'Obsolete' as const
-    }));
-  const flow: FlowMetadata = {
-    ...existing,
-    status: 'Draft',
-    versionNumber: Math.max(existing.versionNumber, ...versions.map((version) => version.versionNumber)) + 1,
-    activeVersion: null,
-    versions
-  };
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    flows: tenant.flows.map((candidate) => candidate.apiName === flow.apiName ? flow : candidate)
-  });
-  return res.json({ flow });
-});
-app.delete('/api/metadata/flows/:apiName', requireAnyPermission('metadata:write', 'flows:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const apiName = routeParam(req, 'apiName');
-  const flow = tenant.flows.find((candidate) => candidate.apiName === apiName);
-  if (!flow) return res.status(404).json({ error: 'Flow was not found' });
-  const references = tenant.flows
-    .filter((candidate) => candidate.apiName !== apiName)
-    .flatMap((candidate) => candidate.elements
-      .filter((element) => element.type === 'Subflow' && element.config.flowApiName === apiName)
-      .map((element) => `${candidate.label} / ${element.label}`));
-  if (references.length) return res.status(409).json({ error: `Flow is referenced by subflows: ${references.join(', ')}` });
-  if (tenant.interviews.some((interview) => interview.flowApiName === apiName)) {
-    return res.status(409).json({ error: 'Flow cannot be deleted while its interviews are pending; wait for them to finish or expire.' });
-  }
-  if (flow.activeVersion !== null) return res.status(409).json({ error: 'Deactivate the flow before deleting it.' });
-  persistTenantRecords(principal.tenantId, {
-    ...tenant,
-    flows: tenant.flows.filter((candidate) => candidate.apiName !== apiName),
-    scheduleRuns: Object.fromEntries(Object.entries(tenant.scheduleRuns).filter(([key]) => !key.startsWith(`${apiName}@`))),
-    scheduleRetries: Object.fromEntries(Object.entries(tenant.scheduleRetries).filter(([key]) => !key.startsWith(`${apiName}@`)))
-  });
-  return res.status(204).end();
-});
-app.post('/api/metadata/flows/:apiName/validate', requirePermission('metadata:read'), (req: Request, res: Response) => {
-  const parsed = flowSchema.safeParse({ ...req.body, apiName: req.params.apiName });
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid flow metadata', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const validation = validateFlow(parsed.data, tenant.objects, tenant.namedCredentials, tenant.integrationConnections, tenant.connectorDefinitions, tenant.emailAlerts,
-    formulaContextForUser(tenant, principal.userId),
-    [...tenant.flows.filter((flow) => flow.apiName !== parsed.data.apiName), parsed.data], tenant.approvalProcesses, tenant.platformEvents, principal.tenantId);
-  return res.json(validation);
-});
+const registerCredentialManagementRoutesContext = {
+  get app() { return app; },
+  get beginOAuthAuthorization() { return beginOAuthAuthorization; },
+  get completeOAuthAuthorization() { return completeOAuthAuthorization; },
+  get configuredOAuthCallback() { return configuredOAuthCallback; },
+  get connectorEntitlement() { return connectorEntitlement; },
+  get connectorRight() { return connectorRight; },
+  get createHash() { return createHash; },
+  get credentialKeyRing() { return credentialKeyRing; },
+  get getPrincipal() { return getPrincipal; },
+  get httpsRequest() { return httpsRequest; },
+  get isIP() { return isIP; },
+  get isPublicAddress() { return isPublicAddress; },
+  get isReservedHostname() { return isReservedHostname; },
+  get lookup() { return lookup; },
+  get managedConnector() { return managedConnector; },
+  get namedCredentialPayloadSchema() { return namedCredentialPayloadSchema; },
+  get namedCredentialRequestSchema() { return namedCredentialRequestSchema; },
+  get namedCredentialSchema() { return namedCredentialSchema; },
+  get nodemailer() { return nodemailer; },
+  get oauthAccessTokenForCredential() { return oauthAccessTokenForCredential; },
+  get oauthChallengeStore() { return oauthChallengeStore; },
+  get oauthCredentialVault() { return oauthCredentialVault; },
+  get openCredentialPayload() { return openCredentialPayload; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get publicNamedCredential() { return publicNamedCredential; },
+  get randomUUID() { return randomUUID; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get safeOAuthTokenRequest() { return safeOAuthTokenRequest; },
+  get sealCredentialPayload() { return sealCredentialPayload; },
+  get tenantData() { return tenantData; }
+};
+export type CredentialManagementRoutesDependencies = typeof registerCredentialManagementRoutesContext;
+registerCredentialManagementRoutes(registerCredentialManagementRoutesContext);
+const registerFlowsEmailAlertRoutesContext = {
+  get app() { return app; },
+  get emailAlertRequestSchema() { return emailAlertRequestSchema; },
+  get emailAlertSchema() { return emailAlertSchema; },
+  get getPrincipal() { return getPrincipal; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get randomUUID() { return randomUUID; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get tenantData() { return tenantData; },
+  get z() { return z; }
+};
+export type FlowsEmailAlertRoutesDependencies = typeof registerFlowsEmailAlertRoutesContext;
+registerFlowsEmailAlertRoutes(registerFlowsEmailAlertRoutesContext);
+const registerFlowDefinitionRoutesContext = {
+  get activeFlowDefinition() { return activeFlowDefinition; },
+  get app() { return app; },
+  get flowSchema() { return flowSchema; },
+  get flowVersionSnapshot() { return flowVersionSnapshot; },
+  get formulaContextForUser() { return formulaContextForUser; },
+  get getPrincipal() { return getPrincipal; },
+  get persistState() { return persistState; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; },
+  get uniqueFlowHistory() { return uniqueFlowHistory; },
+  get validateFlow() { return validateFlow; }
+};
+export type FlowDefinitionRoutesDependencies = typeof registerFlowDefinitionRoutesContext;
+registerFlowDefinitionRoutes(registerFlowDefinitionRoutesContext);
 // Reuse the same validated permission assignments for all object and field checks
 // within a request, instead of repeatedly scanning profiles/sets for every cell.
 type AuthGrantContext = {
@@ -7839,28 +6466,19 @@ export type RecordRoutesDependencies = typeof recordRoutesDependencies;
 registerRecordRoutes(recordRoutesDependencies);
 // Data-source-neutral Chatter channel grants come from server-owned tenant records.
 // Never accept account grants, user IDs, or view-all flags from browser properties.
-app.get('/api/chatter/access', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant || !hasObjectPermission(principal, tenant, communicationObjectApiName, 'read')) {
-    return res.status(403).json({error:'Communication access denied'});
-  }
-  const scope = chatterScopeForUser(principal.tenantId, principal.userId, tenant);
-  res.setHeader('Cache-Control','private, no-store');
-  const eligibleAssignees = scope.grants.filter(grant => grant.canAssign).flatMap(grant =>
-    state.users.filter(user => user.tenantId === principal.tenantId && !user.disabled
-      && chatterScopeForUser(principal.tenantId, user.id, tenant).grants.some(candidate =>
-        candidate.channelAccountId === grant.channelAccountId && candidate.canRead))
-      .map(user => ({id:user.id,name:user.name,channelAccountId:grant.channelAccountId})));
-  return res.json({
-    userId: principal.userId, viewAll: scope.viewAllConversations,
-    eligibleAssignees,
-    grants: scope.grants.filter(grant => grant.canRead).map(grant => ({
-      channelAccountId:grant.channelAccountId,canRead:grant.canRead,
-      canSend:grant.canSend,canAssign:grant.canAssign,viewAll:grant.viewAll === true
-    }))
-  });
-});
+const registerChatterAccessRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get chatterScopeForUser() { return chatterScopeForUser; },
+  get communicationObjectApiName() { return communicationObjectApiName; },
+  get getPrincipal() { return getPrincipal; },
+  get hasObjectPermission() { return hasObjectPermission; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; }
+};
+export type ChatterAccessRoutesDependencies = typeof registerChatterAccessRoutesContext;
+registerChatterAccessRoutes(registerChatterAccessRoutesContext);
 function validateFlowInputValues(flow: FlowMetadata, values: Record<string, unknown>): string | undefined {
   const inputResources = flow.resources.filter((resource) => resource.availableForInput);
   for (const [name, value] of Object.entries(values)) {
@@ -7896,88 +6514,30 @@ function validateFlowInputValues(flow: FlowMetadata, values: Record<string, unkn
   }
   return undefined;
 }
-app.post('/api/flows/:apiName/execute', accessAuthentication, requirePermission('flows:run'), async (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const apiName = routeParam(req, 'apiName');
-  const flow = tenant.flows.find((item) => item.apiName === apiName);
-  if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
-  if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be invoked through this endpoint' });
-  try {
-    authoriseManualCoreFlow(principal.tenantId, principal.tenantId,
-      principal.userId, principal.permissions, flow.status);
-  } catch (error) {
-    return res.status(403).json({ error: error instanceof Error ? error.message : 'Flow execution denied' });
-  }
-  const input = z.record(z.unknown()).safeParse(req.body);
-  if (!input.success) return res.status(400).json({ error: 'Flow input values must be an object' });
-  const inputError = validateFlowInputValues(flow, sanitizeChatterCallerInput(apiName, input.data));
-  if (inputError) return res.status(400).json({ error: inputError });
-  const guard = authoriseChatterFlow(apiName, {
-    tenantId: principal.tenantId, userId: principal.userId,
-    tenant, input: sanitizeChatterCallerInput(apiName, input.data), credentials: tenant.namedCredentials, users: state.users
-  });
-  if (guard && !guard.ok) return res.status(guard.status).json({error:guard.error});
-  const authorisedInput = guard?.ok ? guard.input : input.data;
-  const validation = validateFlow(
-    flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
-    tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId), tenant.flows,
-    tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
-  );
-  if (!validation.valid) return res.status(422).json({ error: 'Flow execution validation failed', details: validation.errors });
-  try {
-    const working = structuredClone(tenant);
-    const result = await executeFlow(guard?.ok ? trustedChatterExecutionFlow(flow, authorisedInput) : flow, working, principal.tenantId, principal.userId, authorisedInput, undefined, undefined, 0, undefined, 0, undefined, false, undefined, true);
-    if (result.status === 'waiting') {
-      const interview = createFlowInterview(flow, principal.userId, result);
-      working.interviews = [...working.interviews, interview];
-      persistTenantRecords(principal.tenantId, working);
-      return res.status(202).json(result.kind === 'screen'
-        ? { interviewId: interview.id, screen: result.screen, outcomes: result.outcomes, values: result.variables }
-        : { interviewId: interview.id, waitUntil: result.waitUntil });
-    }
-    persistTenantRecords(principal.tenantId, working);
-    return res.json({ outputs: result.outputs });
-  } catch (error) {
-    persistFlowFailure(principal.tenantId, flow, 'Manual', error, principal.userId);
-    return res.status(422).json({ error: error instanceof Error ? error.message : 'Flow execution failed' });
-  }
-});
-app.post('/api/flows/:apiName/debug', accessAuthentication, requirePermission('flows:run'), async (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const apiName = routeParam(req, 'apiName');
-  const flow = tenant.flows.find((item) => item.apiName === apiName);
-  if (!flow) return res.status(404).json({ error: `Flow "${apiName}" was not found` });
-  if (!['Autolaunched Flow', 'Screen Flow', 'Flow Orchestration'].includes(flow.flowType)) {
-    return res.status(400).json({ error: 'Only autolaunched, screen and orchestration flows can be debugged from Flow Builder' });
-  }
-  const input = z.record(z.unknown()).safeParse(req.body);
-  if (!input.success) return res.status(400).json({ error: 'Flow debug inputs must be an object' });
-  const inputError = validateFlowInputValues(flow, input.data);
-  if (inputError) return res.status(400).json({ error: inputError });
-  const validation = validateFlow(
-    flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
-    tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId), tenant.flows,
-    tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
-  );
-  if (!validation.valid) return res.status(422).json({ error: 'Flow debug validation failed', details: validation.errors });
-  const debugTrace: FlowDebugTraceEntry[] = [];
-  try {
-    const working = structuredClone(tenant);
-    const result = await executeFlow(
-      flow, working, principal.tenantId, principal.userId, input.data,
-      undefined, undefined, 0, undefined, 0, undefined, false, undefined, true, true, debugTrace
-    );
-    return res.json({ ...result, sideEffectsSimulated: true });
-  } catch (error) {
-    return res.status(422).json({
-      error: error instanceof Error ? error.message : 'Flow debug failed',
-      debugTrace,
-      sideEffectsSimulated: true
-    });
-  }
-});
+const registerFlowsExecutionRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get authoriseChatterFlow() { return authoriseChatterFlow; },
+  get authoriseManualCoreFlow() { return authoriseManualCoreFlow; },
+  get createFlowInterview() { return createFlowInterview; },
+  get executeFlow() { return executeFlow; },
+  get formulaContextForUser() { return formulaContextForUser; },
+  get getPrincipal() { return getPrincipal; },
+  get persistFlowFailure() { return persistFlowFailure; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get sanitizeChatterCallerInput() { return sanitizeChatterCallerInput; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; },
+  get trustedChatterExecutionFlow() { return trustedChatterExecutionFlow; },
+  get validateFlow() { return validateFlow; },
+  get validateFlowInputValues() { return validateFlowInputValues; },
+  get z() { return z; }
+};
+export type FlowsExecutionRoutesDependencies = typeof registerFlowsExecutionRoutesContext;
+registerFlowsExecutionRoutes(registerFlowsExecutionRoutesContext);
 const recordFlowDebugRequestSchema = z.object({
   event: z.enum(['created', 'updated', 'deleted']),
   record: z.record(z.unknown()),
@@ -7988,464 +6548,57 @@ const recordFlowDebugRequestSchema = z.object({
 // Salesforce-style record-trigger testing: run the saved Flow definition
 // against a disposable tenant snapshot, with no committed record changes,
 // scheduled jobs, notifications or external communications.
-app.post('/api/flows/:apiName/debug-record', accessAuthentication, requirePermission('flows:run'), async (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId);
-  if (!tenant) return res.status(404).json({ error: 'Tenant was not found' });
-  const flow = tenant.flows.find((item) => item.apiName === routeParam(req, 'apiName'));
-  if (!flow) return res.status(404).json({ error: 'Flow was not found' });
-  if (flow.flowType !== 'Record-Triggered Flow') {
-    return res.status(400).json({ error: 'Record-triggered debug only supports Record-Triggered Flows' });
-  }
-  const parsed = recordFlowDebugRequestSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid record-trigger test inputs', details: parsed.error.flatten() });
-  const { event, isClone } = parsed.data;
-  // Test fixtures may omit platform-maintained audit fields. Supply them only
-  // in the isolated fixture; never modify live records or silently accept an
-  // invalid value explicitly provided by the caller.
-  const now = new Date().toISOString();
-  const recordId = typeof parsed.data.record.Id === 'string' && parsed.data.record.Id
-    ? parsed.data.record.Id : `DEBUG-${randomUUID()}`;
-  const fixture = (values: Record<string, unknown>, id: string) => runtimeRecordSchema.safeParse({
-    Id: id, CreatedDate: now, LastModifiedDate: now, ...values
-  });
-  const recordResult = fixture(parsed.data.record, recordId);
-  const priorResult = parsed.data.prior ? fixture(parsed.data.prior, recordId) : undefined;
-  if (!recordResult.success || (priorResult && !priorResult.success)) {
-    return res.status(400).json({ error: 'Invalid record sample: Id must be text and audit timestamps must be valid ISO dates' });
-  }
-  const record = recordResult.data;
-  const prior = priorResult?.data;
-  if (prior && prior.Id !== record.Id) {
-    return res.status(400).json({ error: 'Current and prior samples must identify the same record' });
-  }
-  const objectName = flow.triggerObject ?? '';
-  const object = tenant.objects.find((item) => item.apiName === objectName);
-  if (!object || !hasObjectPermission(principal, tenant, objectName, 'read')) {
-    return res.status(403).json({ error: 'Read access to the Flow trigger object is required' });
-  }
-  const auditFields = new Set(['CreatedDate', 'LastModifiedDate', 'CreatedById', 'LastModifiedById', 'SystemModstamp']);
-  const availableFields = new Set(['Id', ...auditFields, ...object.fields.map((field) => field.apiName)]);
-  for (const sample of [record, prior]) {
-    if (!sample) continue;
-    const unknown = Object.keys(sample).find((name) => !availableFields.has(name));
-    if (unknown) return res.status(400).json({ error: `Unknown record field "${unknown}"` });
-    const protectedField = Object.keys(sample).find((name) => name !== 'Id' && !auditFields.has(name)
-      && !hasFieldPermission(principal, tenant, objectName, name, 'read'));
-    if (protectedField) return res.status(403).json({ error: `No read permission for field "${protectedField}"` });
-    if (typeof sample.Id === 'string') {
-      const persisted = tenant.records[objectName]?.find((item) => item.Id === sample.Id);
-      if (persisted && !hasRecordAccess(principal, tenant, objectName, persisted, 'Read')) {
-        return res.status(403).json({ error: 'Read access to the selected record is required' });
-      }
-    }
-  }
-  if ((event === 'updated' || event === 'deleted') && !prior) {
-    return res.status(400).json({ error: 'Updated and deleted record tests require prior record values' });
-  }
-  if (event === 'created' && prior) {
-    return res.status(400).json({ error: 'Created record tests cannot contain prior values' });
-  }
-  if (event === 'deleted' && flow.startConfig.runWhen === 'before-save') {
-    return res.status(400).json({ error: 'Deleted record tests cannot run before save' });
-  }
-  const validation = validateFlow(
-    flow, tenant.objects, tenant.namedCredentials, tenant.integrationConnections,
-    tenant.connectorDefinitions, tenant.emailAlerts, formulaContextForUser(tenant, principal.userId),
-    tenant.flows, tenant.approvalProcesses, tenant.platformEvents, principal.tenantId
-  );
-  if (!validation.valid) return res.status(422).json({ error: 'Flow debug validation failed', details: validation.errors });
-  const debugTrace: FlowDebugTraceEntry[] = [];
-  try {
-    const trigger = String(flow.startConfig.trigger ?? 'created-or-updated');
-    const matchesEvent = trigger === event || (trigger === 'created-or-updated' && event !== 'deleted');
-    const source = event === 'deleted' ? prior ?? record : record;
-    const context: FlowRuntimeContext = {
-      record: source, prior, recordEvent: event, isClone,
-      triggerObjectName: objectName, resourceDefinitions: flow.resources,
-      formulaStack: new Set(), variables: {}, currentUserId: principal.userId,
-      debug: true, debugTrace,
-      ...formulaContextForUser(tenant, principal.userId),
-      flowVariables: flowVariablesForUser(tenant, principal.userId)
-    };
-    const conditions = asConfigRows(flow.startConfig.entryConditions);
-    const matchesCriteria = matchesEvent && flowConditionsMatch(conditions, source, context, flow.startConfig.conditionLogic);
-    const matchedPrior = event === 'updated' && flow.startConfig.updatedRecordBehavior === 'transition'
-      && prior && flowConditionsMatch(conditions, prior, { ...context, record: prior, prior: undefined }, flow.startConfig.conditionLogic);
-    if (!matchesCriteria || matchedPrior) {
-      return res.json({
-        status: 'skipped', matchedEvent: matchesEvent,
-        reason: !matchesEvent ? 'Trigger event does not match'
-          : matchedPrior ? 'Record matched entry conditions before this update'
-            : 'Record did not match entry conditions',
-        debugTrace, sideEffectsSimulated: true
-      });
-    }
-    const working = structuredClone(tenant);
-    const result = await executeFlow(
-      flow, working, principal.tenantId, principal.userId, {}, structuredClone(source),
-      prior ? structuredClone(prior) : undefined, 0, undefined, 0, event, isClone,
-      undefined, true, true, debugTrace
-    );
-    return res.json({ ...result, matchedEvent: true, debugTrace, sideEffectsSimulated: true });
-  } catch (error) {
-    return res.status(422).json({
-      error: error instanceof Error ? error.message : 'Record-triggered debug failed',
-      debugTrace, sideEffectsSimulated: true
-    });
-  }
-});
+const registerFlowRecordDebugRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get asConfigRows() { return asConfigRows; },
+  get executeFlow() { return executeFlow; },
+  get flowConditionsMatch() { return flowConditionsMatch; },
+  get flowVariablesForUser() { return flowVariablesForUser; },
+  get formulaContextForUser() { return formulaContextForUser; },
+  get getPrincipal() { return getPrincipal; },
+  get hasFieldPermission() { return hasFieldPermission; },
+  get hasObjectPermission() { return hasObjectPermission; },
+  get hasRecordAccess() { return hasRecordAccess; },
+  get randomUUID() { return randomUUID; },
+  get recordFlowDebugRequestSchema() { return recordFlowDebugRequestSchema; },
+  get requirePermission() { return requirePermission; },
+  get routeParam() { return routeParam; },
+  get runtimeRecordSchema() { return runtimeRecordSchema; },
+  get tenantData() { return tenantData; },
+  get validateFlow() { return validateFlow; }
+};
+export type FlowRecordDebugRoutesDependencies = typeof registerFlowRecordDebugRoutesContext;
+registerFlowRecordDebugRoutes(registerFlowRecordDebugRoutesContext);
 
-app.post('/api/flow-interviews/:interviewId/next', accessAuthentication, requirePermission('flows:run'), async (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const interviewId = routeParam(req, 'interviewId');
-  const tenant = tenantData(principal.tenantId)!;
-  const interview = tenant.interviews.find((item) => item.id === interviewId && item.userId === principal.userId);
-  if (!interview) return res.status(404).json({ error: 'Flow interview was not found' });
-  if (interview.kind !== 'screen') return res.status(409).json({ error: 'Wait interviews are resumed by the runtime scheduler' });
-  if (Date.parse(interview.expiresAt) <= Date.now()) {
-    const updated = { ...tenant, interviews: tenant.interviews.filter((item) => item.id !== interviewId) };
-    persistTenantRecords(principal.tenantId, updated);
-    return res.status(410).json({ error: 'Flow interview has expired' });
-  }
-  const editable = tenant.flows.find((item) => item.apiName === interview.flowApiName);
-  const flow = interview.allowDraft && editable?.status === 'Draft'
-    && editable.versionNumber === interview.versionNumber
-    ? editable
-    : activeFlowDefinition(editable)?.versionNumber === interview.versionNumber
-      ? activeFlowDefinition(editable) : undefined;
-  if (!flow) return res.status(409).json({ error: 'The flow interview version is no longer active' });
-  const values = z.object({
-    values: z.record(z.unknown()).default({}),
-    outcome: z.string().optional(),
-    action: z.enum(['next', 'back']).default('next')
-  }).safeParse(req.body);
-  if (!values.success) return res.status(400).json({ error: 'Screen values must be provided in a values object' });
-  const screen = flow.elements.find((element) => element.id === interview.screenElementId && element.type === 'Screen');
-  if (!screen) return res.status(409).json({ error: 'The current screen no longer exists in this flow version' });
-  if (values.data.action === 'back') {
-    const previous = interview.history.at(-1);
-    if (!previous) return res.status(409).json({ error: 'There is no previous screen in this interview.' });
-    const previousScreen = flow.elements.find((element) =>
-      element.id === previous.screenElementId && element.type === 'Screen');
-    if (!previousScreen) return res.status(409).json({ error: 'The previous screen no longer exists in this flow version.' });
-    const history = interview.history.slice(0, -1);
-    const restored = {
-      ...interview,
-      screenElementId: previous.screenElementId,
-      nextElementId: previous.nextElementId,
-      variables: previous.variables,
-      record: previous.record,
-      prior: previous.prior,
-      history
-    };
-    persistTenantRecords(principal.tenantId, {
-      ...tenant,
-      interviews: tenant.interviews.map((item) => item.id === interviewId ? restored : item)
-    });
-    const outcomes = asConfigRows(previousScreen.config.outcomes).map((outcome, index) => ({
-      name: typeof outcome.name === 'string' ? outcome.name : `Outcome_${index + 1}`,
-      label: typeof outcome.label === 'string' ? outcome.label : `Outcome ${index + 1}`
-    }));
-    return res.json({
-      interviewId,
-      screen: previousScreen,
-      outcomes: outcomes.length ? outcomes : [{ name: 'Default', label: 'Next' }],
-      values: previous.variables,
-      canGoBack: history.length > 0
-    });
-  }
-  const configuredOutcomes = asConfigRows(screen.config.outcomes).map((outcome, index) => ({
-    name: typeof outcome.name === 'string' ? outcome.name : `Outcome_${index + 1}`,
-    label: typeof outcome.label === 'string' ? outcome.label : `Outcome ${index + 1}`
-  }));
-  const screenOutcomes = configuredOutcomes.length ? configuredOutcomes : [{ name: 'Default', label: 'Next' }];
-  const selectedOutcome = values.data.outcome ?? screenOutcomes.find((outcome) => outcome.name === 'Default')?.label ?? screenOutcomes[0].label;
-  const outcomeDefinition = screenOutcomes.find((outcome) => outcome.label === selectedOutcome || outcome.name === selectedOutcome);
-  if (!outcomeDefinition) return res.status(400).json({ error: `Screen outcome "${selectedOutcome}" does not exist` });
-  const screenFields = asConfigRows(screen.config.fields).filter((field) => !['Display Text', 'Display Image', 'Section'].includes(String(field.type)));
-  const knownNames = new Set(screenFields.map((field) => typeof field.apiName === 'string' ? field.apiName : String(field.label ?? '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')));
-  const unknownName = Object.keys(values.data.values).find((name) => !knownNames.has(name));
-  if (unknownName) return res.status(400).json({ error: `Screen field "${unknownName}" does not exist` });
-  const visibilityValues = { ...interview.variables, ...values.data.values };
-  const visibilityContext: FlowRuntimeContext = {
-    record: interview.record ?? undefined,
-    prior: interview.prior ?? undefined,
-    currentUserId: principal.userId,
-    resourceDefinitions: flow.resources,
-    formulaStack: new Set(),
-    ...formulaContextForUser(tenant, principal.userId),
-    flowVariables: flowVariablesForUser(tenant, principal.userId, interview.id, interview.createdAt),
-    variables: visibilityValues
-  };
-  const screenValues: Record<string, unknown> = {};
-  for (const field of screenFields) {
-    const name = typeof field.apiName === 'string' ? field.apiName : String(field.label ?? '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '');
-    const visibilityConditions = asConfigRows(field.visibilityConditions);
-    if (visibilityConditions.length && !flowConditionsMatch(
-      visibilityConditions, visibilityValues, visibilityContext, field.visibilityLogic
-    )) continue;
-    const value = Object.hasOwn(values.data.values, name) ? values.data.values[name] : field.defaultValue;
-    if (field.required === true && (value === undefined || value === null || value === ''
-      || (Array.isArray(value) && value.length === 0)
-      || (['Checkbox', 'Toggle'].includes(String(field.type)) && value !== true))) {
-      return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" is required` });
-    }
-    if (value !== undefined) {
-      const type = String(field.type ?? 'Text');
-      if (['Address', 'Name'].includes(type)) {
-        if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be a structured value` });
-        }
-        const parts = value as Record<string, unknown>;
-        const allowedParts = type === 'Address'
-          ? ['street', 'city', 'state', 'postalCode', 'country']
-          : ['salutation', 'firstName', 'middleName', 'lastName', 'suffix'];
-        if (Object.keys(parts).some((part) => !allowedParts.includes(part))
-          || Object.values(parts).some((part) => typeof part !== 'string' || part.length > 255)) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains invalid ${type} parts` });
-        }
-        if (field.required === true && (type === 'Address'
-          ? !String(parts.street ?? '').trim() || !String(parts.city ?? '').trim()
-          : !String(parts.firstName ?? '').trim() || !String(parts.lastName ?? '').trim())) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" requires ${type === 'Address' ? 'street and city' : 'first and last name'}` });
-        }
-      }
-      if (type === 'Choice Lookup' && value !== '') {
-        const objectApiName = typeof field.objectApiName === 'string' ? field.objectApiName : '';
-        const targetObject = tenant.objects.find((object) => object.apiName === objectApiName);
-        const selectedIds = Array.isArray(value) ? value : [value];
-        if (!targetObject || !hasObjectPermission(principal, tenant, objectApiName, 'read')
-          || (field.multipleSelections === true ? !Array.isArray(value) : Array.isArray(value))
-          || selectedIds.some((id) => typeof id !== 'string' || !id)
-          || new Set(selectedIds).size !== selectedIds.length) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains an invalid choice selection` });
-        }
-        const records = tenant.records[objectApiName] ?? [];
-        if (selectedIds.some((id) => !records.some((record) =>
-          record.Id === id && hasRecordAccess(principal, tenant, objectApiName, record, 'Read')))) {
-          return res.status(400).json({ error: `Selected choice for screen field "${String(field.label ?? name)}" was not found or is not readable` });
-        }
-      }
-      if (type === 'Lookup' && value !== '') {
-        const objectApiName = typeof field.objectApiName === 'string' ? field.objectApiName : '';
-        const targetObject = tenant.objects.find((object) => object.apiName === objectApiName);
-        if (typeof value !== 'string' || !targetObject || !hasObjectPermission(principal, tenant, objectApiName, 'read')) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must select a readable record from its target object` });
-        }
-        const recordExists = objectApiName === 'User'
-          ? state.users.some((user) => user.id === value && user.tenantId === principal.tenantId)
-          : (tenant.records[objectApiName] ?? []).some((record) =>
-            record.Id === value && hasRecordAccess(principal, tenant, objectApiName, record, 'Read'));
-        if (!recordExists) return res.status(400).json({ error: `Selected record for screen field "${String(field.label ?? name)}" was not found or is not readable` });
-      }
-      if (type === 'Data Table') {
-        const collectionName = typeof field.collection === 'string' ? field.collection : '';
-        const records = interview.variables[collectionName];
-        const selectedIds = Array.isArray(value) ? value : [value];
-        if (!Array.isArray(records) || selectedIds.some((id) => typeof id !== 'string'
-          || !records.some((record) => typeof record === 'object' && record !== null
-            && !Array.isArray(record) && (record as Record<string, unknown>).Id === id))
-          || new Set(selectedIds).size !== selectedIds.length
-          || (field.multiselect !== true && selectedIds.length > 1)) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains a selection outside its configured table` });
-        }
-      }
-      if (type === 'File Upload') {
-        const files = Array.isArray(value) ? value : [value];
-        const maxFiles = typeof field.maxFiles === 'number' ? field.maxFiles : 1;
-        const maxFileSize = (typeof field.maxFileSize === 'number' ? field.maxFileSize : 512) * 1024;
-        const allowedTypes = Array.isArray(field.allowedTypes) ? field.allowedTypes : [];
-        let totalBytes = 0;
-        if (files.length > maxFiles || files.length > 10) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" exceeds its file count limit` });
-        }
-        for (const file of files) {
-          if (typeof file !== 'object' || file === null || Array.isArray(file)) {
-            return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains an invalid file` });
-          }
-          const uploaded = file as Record<string, unknown>;
-          const content = typeof uploaded.content === 'string' ? uploaded.content : '';
-          const dataUrl = /^data:([\w.+-]+\/[\w.+-]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(content);
-          if (typeof uploaded.name !== 'string' || !uploaded.name.trim() || uploaded.name.length > 255
-            || typeof uploaded.type !== 'string' || !dataUrl || dataUrl[1] !== uploaded.type
-            || (allowedTypes.length > 0 && !allowedTypes.includes(uploaded.type))) {
-            return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains an invalid or disallowed file` });
-          }
-          const bytes = Buffer.from(dataUrl[2], 'base64');
-          if (bytes.toString('base64') !== dataUrl[2] || bytes.length !== uploaded.size
-            || bytes.length > maxFileSize || bytes.length > 512 * 1024) {
-            return res.status(400).json({ error: `File "${uploaded.name}" exceeds the configured size or has invalid content` });
-          }
-          totalBytes += bytes.length;
-          if (totalBytes > 512 * 1024) {
-            return res.status(400).json({ error: `Files on screen field "${String(field.label ?? name)}" exceed the 512 KB total limit` });
-          }
-        }
-      }
-      if (type === 'Repeater') {
-        if (!Array.isArray(value) || value.length > (typeof field.maximumRows === 'number' ? field.maximumRows : 10)
-          || value.length > 50 || value.length < (typeof field.minimumRows === 'number' ? field.minimumRows : 0)) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains an invalid number of rows` });
-        }
-        const subfields = asConfigRows(field.subfields);
-        for (const row of value) {
-          if (typeof row !== 'object' || row === null || Array.isArray(row)) {
-            return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains an invalid row` });
-          }
-          const rowValues = row as Record<string, unknown>;
-          if (Object.keys(rowValues).some((key) => !subfields.some((subfield) => subfield.apiName === key))) {
-            return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" contains an unknown row value` });
-          }
-          for (const subfield of subfields) {
-            const subfieldName = String(subfield.apiName);
-            const subvalue = rowValues[subfieldName];
-            const subfieldType = String(subfield.type ?? 'Text');
-            if (subfield.required === true && (subvalue === undefined || subvalue === null || subvalue === ''
-              || (subfieldType === 'Checkbox' && subvalue !== true))) {
-              return res.status(400).json({ error: `Repeater row field "${String(subfield.label ?? subfieldName)}" is required` });
-            }
-            if (subvalue !== undefined && (
-              (subfieldType === 'Text' && (typeof subvalue !== 'string' || subvalue.length > 255))
-              || (subfieldType === 'Email' && (typeof subvalue !== 'string' || !z.string().email().safeParse(subvalue).success))
-              || (subfieldType === 'Number' && (typeof subvalue !== 'number' || !Number.isFinite(subvalue)))
-              || (subfieldType === 'Checkbox' && typeof subvalue !== 'boolean')
-              || (subfieldType === 'Date' && (typeof subvalue !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(subvalue)
-                || !Number.isFinite(Date.parse(`${subvalue}T00:00:00.000Z`))
-                || new Date(`${subvalue}T00:00:00.000Z`).toISOString().slice(0, 10) !== subvalue))
-            )) {
-              return res.status(400).json({ error: `Repeater row field "${String(subfield.label ?? subfieldName)}" has an invalid value` });
-            }
-          }
-        }
-      }
-      if (['Text', 'Password', 'Long Text Area', 'Phone'].includes(type) && typeof value !== 'string') {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be text` });
-      }
-      if (['Number', 'Currency', 'Slider'].includes(type) && (typeof value !== 'number' || !Number.isFinite(value))) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be a number` });
-      }
-      if (['Checkbox', 'Toggle'].includes(type) && typeof value !== 'boolean') {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be true or false` });
-      }
-      if (type === 'Email' && (typeof value !== 'string' || !z.string().email().safeParse(value).success)) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be a valid email address` });
-      }
-      if (type === 'Picklist' && (typeof value !== 'string' || !Array.isArray(field.choices) || !field.choices.includes(value))) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be one of its configured choices` });
-      }
-      if (type === 'Multi-Select Picklist' && (!Array.isArray(value)
-        || value.some((choice) => typeof choice !== 'string' || !Array.isArray(field.choices) || !field.choices.includes(choice))
-        || new Set(value).size !== value.length)) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must contain unique configured choices` });
-      }
-      if (type === 'URL' && (typeof value !== 'string' || !z.string().url().safeParse(value).success)) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be a valid URL` });
-      }
-      if (type === 'URL' && typeof value === 'string' && !['http:', 'https:'].includes(new URL(value).protocol)) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must use HTTP or HTTPS` });
-      }
-      if (typeof value === 'string' && typeof field.minLength === 'number' && value.length < field.minLength) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be at least ${field.minLength} characters` });
-      }
-      if (typeof value === 'string' && typeof field.maxLength === 'number' && value.length > field.maxLength) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be at most ${field.maxLength} characters` });
-      }
-      if (typeof value === 'number' && typeof field.min === 'number' && value < field.min) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be at least ${field.min}` });
-      }
-      if (typeof value === 'number' && typeof field.max === 'number' && value > field.max) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be at most ${field.max}` });
-      }
-      if (typeof value === 'number' && typeof field.step === 'number') {
-        const base = typeof field.min === 'number' ? field.min : 0;
-        const steps = (value - base) / field.step;
-        if (Math.abs(steps - Math.round(steps)) > 1e-9) {
-          return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must use increments of ${field.step}` });
-        }
-      }
-      if (typeof field.pattern === 'string' && field.pattern) {
-        let pattern: RegExp;
-        try {
-          if (!isSafeFlowRegex(field.pattern)) throw new Error('pattern syntax is not supported');
-          pattern = new RegExp(`^(?:${field.pattern})$`);
-        } catch {
-          return res.status(422).json({ error: `Screen field "${String(field.label ?? name)}" has an invalid validation pattern` });
-        }
-        if (typeof value !== 'string' || value.length > 512 || !pattern.test(value)) {
-          return res.status(400).json({ error: String(field.validationMessage || `Screen field "${String(field.label ?? name)}" does not match the required format`) });
-        }
-      }
-      if (type === 'Date' && (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
-        || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`))
-        || new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value)) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be a valid date` });
-      }
-      if (type === 'Date/Time' && (typeof value !== 'string' || !isValidFlowDateTime(value))) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be a valid date and time` });
-      }
-      if (type === 'Time' && (typeof value !== 'string' || !isValidFlowTime(value))) {
-        return res.status(400).json({ error: `Screen field "${String(field.label ?? name)}" must be a valid time` });
-      }
-      screenValues[name] = value;
-    }
-    if (value !== undefined) visibilityValues[name] = value;
-  }
-  try {
-    const working = structuredClone(tenant);
-    const variables = { ...interview.variables, ...screenValues };
-    const screenConnectors = flow.connectors.filter((connector) => connector.from === screen.id && connector.kind !== 'fault');
-    const selectedConnector = screenConnectors.find((connector) =>
-      connector.label === outcomeDefinition.label || connector.label === outcomeDefinition.name);
-    const nextElementId = screenConnectors.length === 1 && outcomeDefinition.name === 'Default'
-      ? screenConnectors[0].to
-      : selectedConnector?.to ?? null;
-    if (nextElementId === null) {
-      working.interviews = working.interviews.filter((item) => item.id !== interviewId);
-      const outputContext: FlowRuntimeContext = {
-        record: interview.record ?? undefined,
-        prior: interview.prior ?? undefined,
-        currentUserId: principal.userId,
-        resourceDefinitions: flow.resources,
-        formulaStack: new Set(),
-        ...formulaContextForUser(tenant, principal.userId),
-        flowVariables: flowVariablesForUser(tenant, principal.userId, interview.id, interview.createdAt),
-        variables
-      };
-      const outputs = Object.fromEntries(flow.resources.filter((resource) => resource.availableForOutput)
-        .map((resource) => [resource.name, resolveFlowValue(`{${resource.name}}`, outputContext)]));
-      persistTenantRecords(principal.tenantId, working);
-      return res.json({ completed: true, outputs });
-    }
-    const result = await executeFlow(flow, working, principal.tenantId, principal.userId, {}, interview.record ?? undefined, interview.prior ?? undefined, 0, {
-      startAt: nextElementId, variables, interviewGuid: interview.id, interviewStartTime: interview.createdAt
-    }, 0, interview.recordEvent ?? undefined, interview.isClone, undefined, true);
-    if (result.status === 'waiting') {
-      const updatedInterview = createFlowInterview(flow, principal.userId, result);
-      updatedInterview.history = [
-        ...interview.history,
-        {
-          screenElementId: screen.id,
-          nextElementId: nextElementId,
-          variables,
-          record: interview.record,
-          prior: interview.prior
-        }
-      ];
-      working.interviews = working.interviews.map((item) => item.id === interviewId ? updatedInterview : item);
-      persistTenantRecords(principal.tenantId, working);
-      return res.status(202).json(result.kind === 'screen'
-        ? { interviewId, screen: result.screen, outcomes: result.outcomes, values: result.variables, canGoBack: updatedInterview.history.length > 0 }
-        : { interviewId, waitUntil: result.waitUntil });
-    }
-    working.interviews = working.interviews.filter((item) => item.id !== interviewId);
-    persistTenantRecords(principal.tenantId, working);
-    return res.json({ completed: true, outputs: result.outputs });
-  } catch (error) {
-    persistFlowFailure(principal.tenantId, flow, 'Manual', error, principal.userId);
-    return res.status(422).json({ error: error instanceof Error ? error.message : 'Flow execution failed' });
-  }
-});
+const registerFlowsInterviewRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get activeFlowDefinition() { return activeFlowDefinition; },
+  get app() { return app; },
+  get asConfigRows() { return asConfigRows; },
+  get createFlowInterview() { return createFlowInterview; },
+  get executeFlow() { return executeFlow; },
+  get flowConditionsMatch() { return flowConditionsMatch; },
+  get flowVariablesForUser() { return flowVariablesForUser; },
+  get formulaContextForUser() { return formulaContextForUser; },
+  get getPrincipal() { return getPrincipal; },
+  get hasObjectPermission() { return hasObjectPermission; },
+  get hasRecordAccess() { return hasRecordAccess; },
+  get isSafeFlowRegex() { return isSafeFlowRegex; },
+  get isValidFlowDateTime() { return isValidFlowDateTime; },
+  get isValidFlowTime() { return isValidFlowTime; },
+  get persistFlowFailure() { return persistFlowFailure; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get requirePermission() { return requirePermission; },
+  get resolveFlowValue() { return resolveFlowValue; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; },
+  get z() { return z; }
+};
+export type FlowsInterviewRoutesDependencies = typeof registerFlowsInterviewRoutesContext;
+registerFlowsInterviewRoutes(registerFlowsInterviewRoutesContext);
 
 type LibraryComponentUsage = { tenantId: string; surface: 'page' | 'dashboard' | 'flow'; label: string };
 function containsLibraryComponentReference(value: unknown, apiName: string): boolean {
@@ -8629,105 +6782,25 @@ registerReportRoutes({
  app, runtimeRecordSchema, dashboardFilterSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFilterMatches, dashboardFolderShareSchema, reportFolderSchema, isNumericField, reportFilterOperatorAllowed, dashboardFilterOperatorAllowed, dashboardFilterValueError, reportFilterValueError, persistState, tenantData, getPrincipal, dashboardRunningPrincipal, dashboardRunningUserSelectionError, reportFolderAccessLevelForUser, reportFolderForUser, validateReportFolderReferences, dashboardForUser, requirePermission, accessAuthentication, hasObjectPermission, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, resolveReportCrossFilters, resolveDashboardCrossFilters, canManageReportFolders, calculateFormulaFields, randomUUID, canAccessDashboard, matchesDashboardFilters,
  getState: () => state, setState: (next) => { state = next; }
 });
-app.get('/api/metadata/apps', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  res.json({ apps: tenant.apps
-    .filter((app) => canOpenApp(principal, tenant, app.apiName))
-    .map((app) => ({ ...app,
-      navigationItems: app.navigationItems.filter((name) => canOpenTab(principal, tenant, name)),
-      navigationOrder: app.navigationOrder.filter((item) => item.type !== 'Object' || canOpenTab(principal, tenant, item.apiName))
-    })) });
-});
-app.get('/api/apps/:appApiName/home-page', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const appApiName = routeParam(req, 'appApiName');
-  if (!tenant.apps.some((item) => item.apiName === appApiName) || !canOpenApp(principal, tenant, appApiName))
-    return res.status(404).json({ error: 'Lightning app was not found' });
-  const formFactor = req.query.formFactor;
-  if (formFactor !== undefined && formFactor !== 'Desktop' && formFactor !== 'Phone') {
-    return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
-  }
-  const homePage = resolveActiveLightningHomePage(
-    tenant,
-    appApiName,
-    profileIdForPrincipal(principal, tenant),
-    formFactor === 'Phone' ? 'Phone' : 'Desktop'
-  );
-  return res.json({ page: homePage ?? null });
-});
-app.get('/api/apps/:appApiName/pages/:pageApiName', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const appApiName = routeParam(req, 'appApiName');
-  const pageApiName = routeParam(req, 'pageApiName');
-  const app = tenant.apps.find((item) => item.apiName === appApiName);
-  if (!app || !canOpenApp(principal, tenant, appApiName))
-    return res.status(404).json({ error: 'Lightning app was not found' });
-  if (!app.navigationPageApiNames.includes(pageApiName)) return res.status(404).json({ error: 'Lightning page is not in this app navigation' });
-  const page = tenant.pages.find((item) => item.apiName === pageApiName && item.pageType === 'App Page' && item.status === 'Active');
-  if (!page) return res.status(404).json({ error: 'Active App Page was not found' });
-  const formFactor = req.query.formFactor;
-  if (formFactor !== undefined && formFactor !== 'Desktop' && formFactor !== 'Phone') {
-    return res.status(400).json({ error: 'Form factor must be Desktop or Phone' });
-  }
-  if (!page.devices.includes(formFactor === 'Phone' ? 'Phone' : 'Desktop')) {
-    return res.status(404).json({ error: 'App Page is not available for this form factor' });
-  }
-  return res.json({ page });
-});
-app.post('/api/metadata/apps', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
-  const parsed = lightningAppSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  if (tenant.apps.some((item) => item.apiName.toLowerCase() === parsed.data.apiName.toLowerCase())) {
-    return res.status(409).json({ error: `Lightning app "${parsed.data.apiName}" already exists` });
-  }
-  const invalidObject = parsed.data.navigationItems.find((apiName) => !tenant.objects.some((object) => object.apiName === apiName));
-  if (invalidObject) return res.status(400).json({ error: `Navigation item "${invalidObject}" is not a tenant object` });
-  const invalidPage = parsed.data.navigationPageApiNames.find((pageApiName) =>
-    !tenant.pages.some((page) => page.apiName === pageApiName && page.pageType === 'App Page' && page.status === 'Active'));
-  if (invalidPage) return res.status(400).json({ error: `Navigation page "${invalidPage}" must be an active App Page` });
-  const apps = [...tenant.apps, parsed.data];
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
-  persistState(nextState);
-  state = nextState;
-  return res.status(201).json({ app: parsed.data });
-});
-app.put('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
-  const apiName = routeParam(req, 'apiName');
-  const parsed = lightningAppSchema.safeParse({ ...req.body, apiName });
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning app metadata', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  if (!tenant.apps.some((item) => item.apiName === apiName)) return res.status(404).json({ error: 'Lightning app was not found' });
-  const invalidObject = parsed.data.navigationItems.find((item) => !tenant.objects.some((object) => object.apiName === item));
-  if (invalidObject) return res.status(400).json({ error: `Navigation item "${invalidObject}" is not a tenant object` });
-  const invalidPage = parsed.data.navigationPageApiNames.find((pageApiName) =>
-    !tenant.pages.some((page) => page.apiName === pageApiName && page.pageType === 'App Page' && page.status === 'Active'));
-  if (invalidPage) return res.status(400).json({ error: `Navigation page "${invalidPage}" must be an active App Page` });
-  const apps = tenant.apps.map((item) => item.apiName === apiName ? parsed.data : item);
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ app: parsed.data });
-});
-app.delete('/api/metadata/apps/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
-  const apiName = routeParam(req, 'apiName');
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  if (!tenant.apps.some((item) => item.apiName === apiName)) return res.status(404).json({ error: 'Lightning app was not found' });
-  if (tenant.pages.some((page) => page.activationAssignments?.some((assignment) => assignment.appId === apiName))) {
-    return res.status(409).json({ error: 'This app is used by Lightning page activation assignments. Reassign those pages before deleting it.' });
-  }
-  const apps = tenant.apps.filter((item) => item.apiName !== apiName);
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: { ...tenant, apps } } };
-  persistState(nextState);
-  state = nextState;
-  return res.status(204).end();
-});
+const registerAppsMetadataRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get app() { return app; },
+  get canOpenApp() { return canOpenApp; },
+  get canOpenTab() { return canOpenTab; },
+  get getPrincipal() { return getPrincipal; },
+  get lightningAppSchema() { return lightningAppSchema; },
+  get persistState() { return persistState; },
+  get profileIdForPrincipal() { return profileIdForPrincipal; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get resolveActiveLightningHomePage() { return resolveActiveLightningHomePage; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; }
+};
+export type AppsMetadataRoutesDependencies = typeof registerAppsMetadataRoutesContext;
+registerAppsMetadataRoutes(registerAppsMetadataRoutesContext);
 
 // Route aliases live only in tenant-keyed SQL metadata, never in platform state JSONB.
 // The dedicated migration is intentionally explicit; missing schema fails closed.
@@ -8741,318 +6814,64 @@ function aliasContext(principal: Principal, tenant: TenantData) {
     canOpenTab: (objectId: string) => canOpenTab(principal, tenant, objectId)
   };
 }
-app.get('/api/metadata/route-aliases', requirePermission('metadata:read'), async (_req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const pool = getRouteAliasPool();
-  if (!pool) return aliasDatabaseUnavailable(res);
-  try {
-    const entries = await pool.query(
-      'SELECT app_api_name,slug,target_kind,target_api_name,status,version,updated_at ' +
-      'FROM md_route_aliases WHERE tenant_id=$1 ORDER BY app_api_name,slug LIMIT 1001',
-      [principal.tenantId]
-    );
-    const aliases = entries.rows.map(rowToRouteAlias).filter((item) => canOpenApp(principal,tenant,item.appId));
-    return res.json({ aliases: aliases.slice(0,1000), truncated: entries.rows.length > 1000 });
-  } catch {
-    return aliasDatabaseUnavailable(res);
-  }
-});
-app.put('/api/metadata/route-aliases/:appId/:slug',
-  requireAnyPermission('metadata:write','pages:manage'), async (req: Request,res: Response) => {
-  let alias: ReturnType<typeof validateRouteAliasInput>;
-  try { alias = validateRouteAliasInput(req.body); }
-  catch { return res.status(400).json({error:'Invalid route alias metadata'}); }
-  if (alias.appId !== routeParam(req,'appId') || alias.slug !== routeParam(req,'slug'))
-    return res.status(400).json({error:'Route alias identity cannot be changed'});
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  if (!routeAliasDestination({...alias,status:'Active',version:1}, aliasContext(principal,tenant)))
-    return res.status(400).json({error:'Select an existing, active, permitted destination in this application'});
-  const pool = getRouteAliasPool();
-  if (!pool) return aliasDatabaseUnavailable(res);
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
-  let begun = false;
-  try {
-    client = await pool.connect();
-    await client.query('BEGIN');
-    begun = true;
-    const prior = await client.query(
-      'SELECT version FROM md_route_aliases WHERE tenant_id=$1 AND app_api_name=$2 AND slug=$3 FOR UPDATE',
-      [principal.tenantId,alias.appId,alias.slug]
-    );
-    const previousVersion = prior.rows.length ? Number(prior.rows[0].version) : 0;
-    if (previousVersion !== alias.expectedVersion) {
-      await client.query('ROLLBACK'); begun = false;
-      return res.status(409).json({error:'Route alias changed. Reload before saving.'});
-    }
-    const version = previousVersion+1;
-    if (previousVersion === 0) {
-      await client.query(
-        'INSERT INTO md_route_aliases (tenant_id,app_api_name,slug,target_kind,target_api_name,status,version) ' +
-        'VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [principal.tenantId,alias.appId,alias.slug,alias.kind,alias.targetApiName,alias.status,version]
-      );
-    } else {
-      await client.query(
-        'UPDATE md_route_aliases SET target_kind=$4,target_api_name=$5,status=$6,version=$7,updated_at=now() ' +
-        'WHERE tenant_id=$1 AND app_api_name=$2 AND slug=$3',
-        [principal.tenantId,alias.appId,alias.slug,alias.kind,alias.targetApiName,alias.status,version]
-      );
-    }
-    await client.query(
-      'INSERT INTO md_route_alias_revisions ' +
-      '(tenant_id,app_api_name,slug,version,target_kind,target_api_name,status,changed_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [principal.tenantId,alias.appId,alias.slug,version,alias.kind,alias.targetApiName,alias.status,principal.userId]
-    );
-    await client.query('COMMIT'); begun=false;
-    return res.json({alias:{appId:alias.appId,slug:alias.slug,kind:alias.kind,
-      targetApiName:alias.targetApiName,status:alias.status,version}});
-  } catch (error) {
-    if (begun && client) await client.query('ROLLBACK').catch(()=>undefined);
-    if ((error as {code?:string}).code === '23505')
-      return res.status(409).json({error:'Route alias already exists. Reload before saving.'});
-    return aliasDatabaseUnavailable(res);
-  } finally { client?.release(); }
-});
-app.delete('/api/metadata/route-aliases/:appId/:slug',
-  requireAnyPermission('metadata:write','pages:manage'), async (req: Request,res: Response) => {
-  const appId=routeParam(req,'appId'), slug=routeParam(req,'slug');
-  const expectedVersion=req.body?.expectedVersion;
-  if (!validRouteIdentifier(appId) || !validAliasSlug(slug)
-      || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
-    return res.status(400).json({error:'Invalid route alias identity/version'});
-  const principal=getPrincipal(res), tenant=tenantData(principal.tenantId)!;
-  if (!tenant.apps.some((item)=>item.apiName===appId) || !canOpenApp(principal,tenant,appId))
-    return res.status(404).json({error:'Route alias not found'});
-  const pool=getRouteAliasPool();
-  if (!pool) return aliasDatabaseUnavailable(res);
-  let client: Awaited<ReturnType<typeof pool.connect>> | null=null, begun=false;
-  try {
-    client=await pool.connect(); await client.query('BEGIN'); begun=true;
-    const prior=await client.query(
-      'SELECT version,target_kind,target_api_name FROM md_route_aliases ' +
-      'WHERE tenant_id=$1 AND app_api_name=$2 AND slug=$3 FOR UPDATE',
-      [principal.tenantId,appId,slug]
-    );
-    if (!prior.rows.length) {await client.query('ROLLBACK');begun=false;return res.status(404).json({error:'Route alias not found'});}
-    if (Number(prior.rows[0].version)!==expectedVersion) {
-      await client.query('ROLLBACK');begun=false;
-      return res.status(409).json({error:'Route alias changed. Reload before disabling.'});
-    }
-    const version=expectedVersion+1;
-    await client.query('UPDATE md_route_aliases SET status=$4,version=$5,updated_at=now() ' +
-      'WHERE tenant_id=$1 AND app_api_name=$2 AND slug=$3',
-      [principal.tenantId,appId,slug,'Disabled',version]);
-    await client.query('INSERT INTO md_route_alias_revisions ' +
-      '(tenant_id,app_api_name,slug,version,target_kind,target_api_name,status,changed_by) ' +
-      'VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-      [principal.tenantId,appId,slug,version,prior.rows[0].target_kind,prior.rows[0].target_api_name,'Disabled',principal.userId]);
-    await client.query('COMMIT');begun=false;
-    return res.json({status:'Disabled',version});
-  } catch {
-    if (begun&&client) await client.query('ROLLBACK').catch(()=>undefined);
-    return aliasDatabaseUnavailable(res);
-  } finally { client?.release(); }
-});
-// End users need no metadata edit permission to follow an alias, but access
-// to the target still goes through current tenant/app/tab/page metadata checks.
-app.get('/api/routes/resolve/:appId/:slug', accessAuthentication, async (req: Request,res: Response) => {
-  const appId=routeParam(req,'appId'), slug=routeParam(req,'slug');
-  if (!validRouteIdentifier(appId) || !validAliasSlug(slug))
-    return res.status(404).json({error:'Route alias not found'});
-  const principal=getPrincipal(res),tenant=tenantData(principal.tenantId);
-  if (!tenant || !canOpenApp(principal,tenant,appId))
-    return res.status(404).json({error:'Route alias not found'});
-  const pool=getRouteAliasPool();
-  if (!pool) return aliasDatabaseUnavailable(res);
-  try {
-    const records=await pool.query(
-      'SELECT app_api_name,slug,target_kind,target_api_name,status,version,updated_at FROM md_route_aliases ' +
-      'WHERE tenant_id=$1 AND app_api_name=$2 AND slug=$3 AND status=$4',
-      [principal.tenantId,appId,slug,'Active']
-    );
-    if (!records.rows.length) return res.status(404).json({error:'Route alias not found'});
-    const destination=routeAliasDestination(rowToRouteAlias(records.rows[0]),aliasContext(principal,tenant));
-    if (!destination) return res.status(404).json({error:'Route alias destination is not available'});
-    return res.json({path:destination});
-  } catch {
-    return aliasDatabaseUnavailable(res);
-  }
-});
+const registerAppsRouteAliasRoutesContext = {
+  get accessAuthentication() { return accessAuthentication; },
+  get aliasContext() { return aliasContext; },
+  get aliasDatabaseUnavailable() { return aliasDatabaseUnavailable; },
+  get app() { return app; },
+  get canOpenApp() { return canOpenApp; },
+  get getPrincipal() { return getPrincipal; },
+  get getRouteAliasPool() { return getRouteAliasPool; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get requirePermission() { return requirePermission; },
+  get routeAliasDestination() { return routeAliasDestination; },
+  get routeParam() { return routeParam; },
+  get rowToRouteAlias() { return rowToRouteAlias; },
+  get tenantData() { return tenantData; },
+  get validAliasSlug() { return validAliasSlug; },
+  get validRouteIdentifier() { return validRouteIdentifier; },
+  get validateRouteAliasInput() { return validateRouteAliasInput; }
+};
+export type AppsRouteAliasRoutesDependencies = typeof registerAppsRouteAliasRoutesContext;
+registerAppsRouteAliasRoutes(registerAppsRouteAliasRoutesContext);
 
-app.get('/api/metadata/pages', requirePermission('metadata:read'), (_req: Request, res: Response) => {
-  const principal=getPrincipal(res);
-  const pages=tenantData(principal.tenantId)?.pages??[];
-  res.json({pages:pages.filter(page=>!isProtectedAdministrationPage(page)
-    || (page.requiredPermissions??[]).every(permission=>principal.permissions.includes(permission)))});
-});
+const registerPageListRoutesContext = {
+  get app() { return app; },
+  get getPrincipal() { return getPrincipal; },
+  get isProtectedAdministrationPage() { return isProtectedAdministrationPage; },
+  get requirePermission() { return requirePermission; },
+  get tenantData() { return tenantData; }
+};
+export type PageListRoutesDependencies = typeof registerPageListRoutesContext;
+registerPageListRoutes(registerPageListRoutesContext);
 registerPageDeletionRoute(app,{permission:requireAnyPermission('metadata:write','pages:manage'),getPrincipal,getState:()=>state,isProtected:isProtectedAdministrationPage,commit:async(next:PlatformState)=>{const prior=state;state=next;try{persistState(next);await latestStateCommit}catch(error){state=prior;throw error}}});
-app.put('/api/metadata/pages/:apiName', requireAnyPermission('metadata:write', 'pages:manage'), (req: Request, res: Response) => {
-  const previousApiName = routeParam(req, 'apiName');
-  const requestedApiName = typeof req.body?.apiName === 'string' ? req.body.apiName : previousApiName;
-  const parsed = pageSchema.safeParse({ ...req.body, apiName: requestedApiName });
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid Lightning page metadata', details: parsed.error.flatten() });
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const existingPage = tenant.pages.find((page) => page.apiName === previousApiName);
-  const protectedError = validateProtectedAdministrationPageUpdate(existingPage,parsed.data,principal.permissions);
-  if (protectedError) return res.status(403).json({error:protectedError});
-  if (tenant.pages.some((page) => page.apiName.toLocaleLowerCase() === parsed.data.apiName.toLocaleLowerCase()
-    && page.apiName !== previousApiName)) {
-    return res.status(409).json({ error: `A Lightning page named "${parsed.data.apiName}" already exists` });
-  }
-  if (parsed.data.status === 'Active') {
-    const invalidDashboard = parsed.data.components.find(component => component.type === 'Dashboard'
-      && (typeof component.properties.dashboardApiName !== 'string'
-        || !tenant.dashboards.some(dashboard => dashboard.apiName === component.properties.dashboardApiName
-          && dashboard.status === 'Deployed' && canAccessDashboard(
-            dashboardForUser(tenant, dashboard, principal.userId), principal.userId,
-            tenant.accessControl.users.find(user => user.id === principal.userId)?.permissionSetGroupIds ?? [],
-            principal.permissions.includes('dashboards:manage')))));
-    if (invalidDashboard) return res.status(422).json({
-      error: 'An active Lightning page can embed only a published dashboard accessible to the editor'
-    });
-  }
-  const invalidLibraryComponent = parsed.data.components.find((component) => component.type.startsWith('Custom:') && !state.libraryComponents.some((libraryComponent) =>
-    libraryComponent.apiName === component.type.slice('Custom:'.length) && libraryComponent.surfaces.includes('page')
-    && libraryComponentVisible(libraryComponent, principal.tenantId, Object.keys(state.tenants))));
-  if (invalidLibraryComponent) return res.status(422).json({ error: `Custom page component "${invalidLibraryComponent.type.slice('Custom:'.length)}" is not available in the component library` });
-  const invalidApp = parsed.data.activationAssignments?.find((assignment) => assignment.appId
-    && !tenant.apps.some((app) => app.apiName === assignment.appId));
-  if (invalidApp) return res.status(400).json({ error: `Activation assignment references unknown app "${invalidApp.appId}"` });
-  const invalidProfile = parsed.data.activationAssignments?.find((assignment) => assignment.profileId
-    && !tenant.accessControl.profiles.some((profile) => profile.id === assignment.profileId));
-  if (invalidProfile) return res.status(400).json({ error: `Activation assignment references unknown profile "${invalidProfile.profileId}"` });
-  if (parsed.data.pageType === 'Home Page') {
-    const invalidScope = parsed.data.activationAssignments?.find((assignment) =>
-      !['App Default', 'App and Profile'].includes(assignment.scope));
-    if (invalidScope) return res.status(400).json({ error: 'Home Pages must use App Default or App and Profile assignments' });
-    if (parsed.data.status === 'Active' && !parsed.data.activationAssignments?.length) {
-      return res.status(422).json({ error: 'An active Home Page requires at least one app assignment' });
-    }
-    if (parsed.data.status === 'Active') {
-      const unsupportedFormFactor = parsed.data.activationAssignments?.find((assignment) =>
-        assignment.formFactors.some((formFactor) => !parsed.data.devices.includes(formFactor)));
-      if (unsupportedFormFactor) return res.status(400).json({ error: 'Activation form factors must be supported by the page' });
-      const conflictingAssignment = tenant.pages
-        .filter((page) => page.apiName !== previousApiName && page.status === 'Active' && page.pageType === 'Home Page')
-        .flatMap((page) => page.activationAssignments ?? [])
-        .find((existing) => parsed.data.activationAssignments?.some((assignment) =>
-          assignment.scope === existing.scope
-          && assignment.appId === existing.appId
-          && assignment.profileId === existing.profileId
-          && assignment.formFactors.some((formFactor) => existing.formFactors.includes(formFactor))));
-      if (conflictingAssignment) {
-        return res.status(409).json({ error: `An active Home Page already has a matching ${conflictingAssignment.scope} assignment` });
-      }
-    }
-  }
-  if (parsed.data.pageType === 'Record Page') {
-    const targetObject = tenant.objects.find((object) => object.apiName === parsed.data.targetObject);
-    if (!targetObject) return res.status(400).json({ error: `Target object "${parsed.data.targetObject}" does not exist` });
-    const invalidDynamicField = parsed.data.components.find((component) => {
-      if (component.type === 'Record Field') {
-        return typeof component.properties.fieldApiName !== 'string'
-          || !targetObject.fields.some((field) => field.apiName === component.properties.fieldApiName);
-      }
-      if (component.type === 'Field Section') {
-        const fieldApiNames = component.properties.fieldApiNames;
-        return !Array.isArray(fieldApiNames)
-          || fieldApiNames.some((fieldApiName) => typeof fieldApiName !== 'string'
-            || !targetObject.fields.some((field) => field.apiName === fieldApiName))
-          || new Set(fieldApiNames).size !== fieldApiNames.length;
-      }
-      return false;
-    });
-    if (invalidDynamicField) return res.status(400).json({ error: `Dynamic Forms component "${invalidDynamicField.label}" references an invalid or duplicate field` });
-    const unsupportedFormFactor = parsed.data.activationAssignments?.find((assignment) =>
-      assignment.formFactors.some((formFactor) => !parsed.data.devices.includes(formFactor)));
-    if (unsupportedFormFactor) return res.status(400).json({ error: 'Activation form factors must be supported by the page' });
-    const unsupportedComponent = parsed.data.components.find((component) =>
-      (component.type === 'Activities' && !targetObject.settings?.allowActivities)
-      || (component.type === 'Chatter' && !targetObject.settings?.allowInChatter)
-      || (component.type === 'Report Chart' && !targetObject.settings?.allowReports));
-    if (unsupportedComponent) return res.status(422).json({ error: `The "${unsupportedComponent.type}" component requires its corresponding object feature to be enabled` });
-    if (parsed.data.status === 'Active' && !parsed.data.activationAssignments?.length) {
-      return res.status(422).json({ error: 'An active record page requires at least one activation assignment' });
-    }
-    const invalidRecordType = parsed.data.activationAssignments?.find((assignment) => assignment.recordTypeId && !targetObject.recordTypes?.some((recordType) => recordType.id === assignment.recordTypeId));
-    if (invalidRecordType) return res.status(400).json({ error: `Record type "${invalidRecordType.recordTypeId}" does not exist on "${targetObject.label}"` });
-    if (parsed.data.status === 'Active') {
-      const conflictingAssignment = tenant.pages
-        .filter((page) => page.apiName !== previousApiName && page.status === 'Active'
-          && page.pageType === 'Record Page' && page.targetObject === parsed.data.targetObject)
-        .flatMap((page) => page.activationAssignments ?? [])
-        .find((existing) => parsed.data.activationAssignments?.some((assignment) =>
-          assignment.scope === existing.scope
-          && assignment.appId === existing.appId
-          && assignment.profileId === existing.profileId
-          && assignment.recordTypeId === existing.recordTypeId
-          && assignment.formFactors.some((formFactor) => existing.formFactors.includes(formFactor))));
-      if (conflictingAssignment) {
-        return res.status(409).json({ error: `An active page already has a matching ${conflictingAssignment.scope} assignment for "${parsed.data.targetObject}"` });
-      }
-    }
-  }
-  if (existingPage?.pageType === 'App Page'
-    && (parsed.data.pageType !== 'App Page' || parsed.data.status !== 'Active')
-    && tenant.apps.some((app) => app.navigationPageApiNames.includes(previousApiName))) {
-    return res.status(409).json({ error: 'Remove this page from app navigation before deactivating or changing its type' });
-  }
-  const apps = parsed.data.apiName === previousApiName ? tenant.apps : tenant.apps.map((app) => ({
-    ...app,
-    navigationPageApiNames: app.navigationPageApiNames.map((apiName) => apiName === previousApiName ? parsed.data.apiName : apiName),
-    navigationOrder: app.navigationOrder.map((item) =>
-      item.type === 'App Page' && item.apiName === previousApiName
-        ? { ...item, apiName: parsed.data.apiName }
-        : item)
-  }));
-  const updatedTenant = {
-    ...tenant,
-    apps,
-    pages: [...tenant.pages.filter((page) => page.apiName !== previousApiName), {
-      ...parsed.data,
-      updatedAt: new Date().toISOString()
-    }]
-  };
-  const nextState = { ...state, tenants: { ...state.tenants, [principal.tenantId]: updatedTenant } };
-  persistState(nextState);
-  state = nextState;
-  return res.json({ page: updatedTenant.pages[updatedTenant.pages.length - 1] });
-});
-app.get('/api/metadata/currencies', requirePermission('security:read'), (_req: Request, res: Response) => {
-  res.json(tenantData(getPrincipal(res).tenantId)!.currencySettings);
-});
-app.put('/api/metadata/currencies', requirePermission('security:manage'), (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const parsed = currencySettingsSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid currency settings', details: parsed.error.flatten() });
-  const activeCurrencyCodes = new Set(parsed.data.currencies.map((currency) => currency.currencyIsoCode));
-  const userWithUnavailableCurrency = tenant.accessControl.users.find((user) =>
-    user.currencyIsoCode && !activeCurrencyCodes.has(user.currencyIsoCode));
-  if (userWithUnavailableCurrency) {
-    return res.status(409).json({
-      error: `Currency "${userWithUnavailableCurrency.currencyIsoCode}" is assigned to user "${userWithUnavailableCurrency.username}" and cannot be deactivated`
-    });
-  }
-  const recordWithUnavailableCurrency = Object.entries(tenant.records).find(([objectApiName, records]) =>
-    tenant.objects.some((object) => object.apiName === objectApiName
-      && object.fields.some((field) => /^Currency(?:\(|$)/.test(field.dataType)))
-    && records.some((record) => typeof record.CurrencyIsoCode === 'string'
-      && !activeCurrencyCodes.has(record.CurrencyIsoCode)));
-  if (recordWithUnavailableCurrency) {
-    const record = recordWithUnavailableCurrency[1].find((item) =>
-      typeof item.CurrencyIsoCode === 'string' && !activeCurrencyCodes.has(item.CurrencyIsoCode));
-    return res.status(409).json({
-      error: `Currency "${String(record?.CurrencyIsoCode)}" is assigned to ${recordWithUnavailableCurrency[0]} record "${String(record?.Id)}" and cannot be deactivated`
-    });
-  }
-  const updatedTenant = { ...tenant, currencySettings: parsed.data };
-  persistTenantRecords(principal.tenantId, updatedTenant);
-  return res.json(parsed.data);
-});
+const registerPageUpdateRoutesContext = {
+  get app() { return app; },
+  get canAccessDashboard() { return canAccessDashboard; },
+  get dashboardForUser() { return dashboardForUser; },
+  get getPrincipal() { return getPrincipal; },
+  get libraryComponentVisible() { return libraryComponentVisible; },
+  get pageSchema() { return pageSchema; },
+  get persistState() { return persistState; },
+  get requireAnyPermission() { return requireAnyPermission; },
+  get routeParam() { return routeParam; },
+  get state() { return state; },
+  set state(next: PlatformState) { state = next; },
+  get tenantData() { return tenantData; },
+  get validateProtectedAdministrationPageUpdate() { return validateProtectedAdministrationPageUpdate; }
+};
+export type PageUpdateRoutesDependencies = typeof registerPageUpdateRoutesContext;
+registerPageUpdateRoutes(registerPageUpdateRoutesContext);
+const registerSecurityCurrencyRoutesContext = {
+  get app() { return app; },
+  get currencySettingsSchema() { return currencySettingsSchema; },
+  get getPrincipal() { return getPrincipal; },
+  get persistTenantRecords() { return persistTenantRecords; },
+  get requirePermission() { return requirePermission; },
+  get tenantData() { return tenantData; }
+};
+export type SecurityCurrencyRoutesDependencies = typeof registerSecurityCurrencyRoutesContext;
+registerSecurityCurrencyRoutes(registerSecurityCurrencyRoutesContext);
 registerSecurityMetadataRoutes({
   app, requirePermission, tenantData, getPrincipal, getState: () => state,
   setState: (next) => { state = next; }, accessControlSchema, roleSchema, sharingSettingSchema,
@@ -13241,3 +11060,4 @@ export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySc
 export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
 export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
 export type { DashboardMetadata, ReportMetadata };
+export type { TenantRegistryEntry, TenantManagementAuditEvent, FlowDebugTraceEntry, FlowRuntimeContext };
