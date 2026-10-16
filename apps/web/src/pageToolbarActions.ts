@@ -14,7 +14,7 @@ export function resolvePageToolbarActions(
   if (!page) return [];
   const registered = new Map(library.map(definition => [definition.apiName, definition]));
   return page.components.flatMap(component => {
-    if (!component.visible || !component.type.startsWith('Custom:')) return [];
+    if (component.visible === false || !component.type.startsWith('Custom:')) return [];
     const definition = registered.get(component.type.slice('Custom:'.length));
     if (!definition) return [];
     const defaults = Object.fromEntries((definition.propertyDefinitions ?? [])
