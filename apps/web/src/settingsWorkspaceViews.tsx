@@ -614,11 +614,11 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
   };
 
   return <div className="home-content settings-read-first-page company-settings-page">
-    <PageHeading eyebrow="Company Settings" title="Company Information"
-      description="View your corporate currency and active conversion rates used by currency formulas." />
+    <PageHeading eyebrow="Company Settings" title="Company Settings"
+      description="Manage your organisation settings, base currency, VAT and exchange rates in one workspace." />
     <section className="surface permission-section">
       <div className="section-toolbar">
-        <div><h2>Currency Settings</h2>
+        <div><h2>Currency & Tax</h2>
           <p>Rates express units of corporate currency per one unit of the active currency.</p></div>
       </div>
       {loading ? <p className="permission-help">Loading currency settings…</p> : loaded ? <>
