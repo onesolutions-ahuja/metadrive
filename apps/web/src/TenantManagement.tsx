@@ -44,6 +44,8 @@ export default function TenantManagement({ request, permitted }: { request: Requ
   const [create, setCreate] = useState<TenantCreate>(emptyCreate);
   const [createKey, setCreateKey] = useState(() => crypto.randomUUID());
   const [showCreate, setShowCreate] = useState(false);
+  const [detailTab, setDetailTab] = useState<'details' | 'usage' | 'domains' | 'recovery'>('details');
+  const [editDetails, setEditDetails] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -52,6 +54,9 @@ export default function TenantManagement({ request, permitted }: { request: Requ
   const [retentionUntil, setRetentionUntil] = useState('');
   const [legalHold, setLegalHold] = useState(false);
   const pageSize = 25;
+  const activeOnPage = tenants.filter(item => item.status === 'ACTIVE').length;
+  const suspendedOnPage = tenants.filter(item => item.status === 'SUSPENDED').length;
+  const archivedOnPage = tenants.filter(item => item.status === 'ARCHIVED').length;
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedQuery(query), 250);
@@ -81,6 +86,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
     try {
       const result = await request<{ tenant: TenantSummary }>('/platform/tenants/' + encodeURIComponent(id));
       setSelected(result.tenant);
+      setDetailTab('details'); setEditDetails(false);
       setRetentionUntil(result.tenant.retentionUntil?.slice(0, 10) ?? '');
       setLegalHold(result.tenant.legalHold ?? false);
       setEditing({ name: result.tenant.name, description: result.tenant.description });
@@ -116,6 +122,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
           method: 'PATCH', body: JSON.stringify(editing)
         });
       setSelected(result.tenant); setEditing({ name: result.tenant.name, description: result.tenant.description });
+      setEditDetails(false);
       setNotice('Tenant details saved.'); setRevision((n) => n + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Unable to save tenant');
@@ -197,13 +204,14 @@ export default function TenantManagement({ request, permitted }: { request: Requ
     </header>
     {error && <div className="tenant-alert tenant-alert-error" role="alert"><CircleAlert size={17} /> {error}</div>}
     {notice && <div className="tenant-alert" role="status">{notice}</div>}
+    <section className="tenant-overview" aria-label="Tenant overview"><div><strong>{total}</strong><span>Matching tenants</span></div><div><strong>{activeOnPage}</strong><span>Active on this page</span></div><div><strong>{suspendedOnPage}</strong><span>Suspended on this page</span></div><div><strong>{archivedOnPage}</strong><span>Archived on this page</span></div></section>
     <div className="tenant-columns">
       <PlatformPageSlot slotKey="directory"><section className="tenant-panel" aria-label="Tenants">
         <div className="tenant-toolbar">
           <label className="tenant-search"><Search size={16} /><input type="search" aria-label="Search tenants" placeholder="Search name or tenant ID" value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} /></label>
           <label className="tenant-filter">Status <select aria-label="Filter tenant status" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="ALL">All</option><option value="ACTIVE">Active</option><option value="SUSPENDED">Suspended</option><option value="ARCHIVED">Archived</option></select></label>
         </div>
-        <div className="tenant-table-wrap"><table className="tenant-table"><thead><tr><th>Name / Tenant ID</th><th>Status</th><th>Users</th><th>Created</th></tr></thead>
+        <div className="tenant-table-wrap"><table className="tenant-table"><thead><tr><th>Organisation</th><th>Status</th><th>Users</th><th>Created</th></tr></thead>
           <tbody>{tenants.map((item) => <tr key={item.tenantId} className={selected?.tenantId === item.tenantId ? 'tenant-row-selected' : ''}>
             <td><button className="tenant-name-link" onClick={() => void selectTenant(item.tenantId)}>{item.name}</button><small>{item.tenantId}</small></td>
             <td><span className={item.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{item.status === 'ACTIVE' ? 'Active' : item.status === 'ARCHIVED' ? 'Archived' : 'Suspended'}</span></td>
@@ -225,15 +233,15 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             onChange={value=>{setCreateKey(crypto.randomUUID());setCreate(old=>({...old,[field.key]:value}));}}/>)}
           <p className="tenant-help">Creates an initial administrator and a disabled developer account with full starting tenant permissions. For <strong>developer@tenant-domain.com</strong>, enter tenant-domain.com. The tenant administrator activates the developer account from Company Settings; no password is shared with platform operators.</p>
           <button type="submit" className="tenant-button tenant-button-primary" disabled={busy}>{busy ? 'Creating…' : 'Create tenant'}</button>
-        </form> : selected ? <><form onSubmit={(event) => void saveTenant(event)}>
+        </form> : selected ? <><div className="tenant-detail-tabs" role="tablist" aria-label="Tenant details sections">{([["details","Details"],["usage","Usage"],["domains","Domains"],["recovery","Recovery"]] as const).map(([id,label]) => <button type="button" key={id} role="tab" aria-selected={detailTab === id} className={detailTab === id ? "active" : ""} onClick={() => setDetailTab(id)}>{label}</button>)}</div>{detailTab === "details" && <form onSubmit={(event) => void saveTenant(event)}>
           <div className="tenant-detail-heading"><div><h2>{selected.name}</h2><code>{selected.tenantId}</code></div><button type="button" className="tenant-button" onClick={() => setSelected(null)}>Close</button></div>
           <p className="tenant-provisioning-status"><span className="tenant-pill tenant-pill-active">Provisioning ready</span> <small>Version {selected.provisioning.version} · {shortDate(selected.provisioning.completedAt)}</small></p>
           {selected.developerAccount && <p className="tenant-help">Developer seeder: <strong>{selected.developerAccount.email}</strong> — {selected.developerAccount.activated ? 'Tenant activated' : 'Pending tenant activation'}. The tenant owns all access changes.</p>}
           <p><span className={selected.status === 'ACTIVE' ? 'tenant-pill tenant-pill-active' : 'tenant-pill tenant-pill-suspended'}>{selected.status === 'ACTIVE' ? 'Active' : selected.status === 'ARCHIVED' ? 'Archived' : 'Suspended'}</span></p>
-          <label>Organisation name<input required maxLength={120} value={editing.name} onChange={(event) => setEditing((old) => ({ ...old, name: event.target.value }))} /></label>
-          <label>Description<textarea rows={4} maxLength={1000} value={editing.description} onChange={(event) => setEditing((old) => ({ ...old, description: event.target.value }))} /></label>
+          {editDetails ? <label>Organisation name<input required maxLength={120} value={editing.name} onChange={(event) => setEditing((old) => ({ ...old, name: event.target.value }))} /></label> : <div className="tenant-readonly-field"><span>Organisation name</span><strong>{selected.name}</strong></div>}
+          {editDetails ? <label>Description<textarea rows={4} maxLength={1000} value={editing.description} onChange={(event) => setEditing((old) => ({ ...old, description: event.target.value }))} /></label> : <div className="tenant-readonly-field"><span>Description</span><strong>{selected.description || "Not provided"}</strong></div>}
           <div className="tenant-facts"><span>Created</span><strong>{shortDate(selected.createdAt)}</strong><span>Last updated</span><strong>{shortDate(selected.updatedAt)}</strong><span>Active users</span><strong>{selected.activeUserCount} of {selected.userCount}</strong></div>
-          <div className="tenant-actions"><button type="submit" className="tenant-button tenant-button-primary" disabled={busy || !editing.name.trim()}>{busy ? 'Saving…' : 'Save details'}</button>
+          <div className="tenant-actions">{editDetails ? <><button type="submit" className="tenant-button tenant-button-primary" disabled={busy || !editing.name.trim()}>{busy ? 'Saving…' : 'Save details'}</button><button type="button" className="tenant-button" onClick={() => {setEditing({name:selected.name,description:selected.description});setEditDetails(false);}}>Cancel</button></> : <button type="button" className="tenant-button" onClick={() => setEditDetails(true)}>Edit details</button>}
             {selected.status !== 'ARCHIVED' && <button type="button" className={selected.status === 'ACTIVE' ? 'tenant-button tenant-button-danger' : 'tenant-button'} onClick={() => void changeStatus()} disabled={busy}>{selected.status === 'ACTIVE' ? 'Suspend tenant' : 'Reactivate tenant'}</button>}
             {selected.status === 'SUSPENDED' && <button type="button" className="tenant-button tenant-button-danger" onClick={() => void changeLifecycle('archive')} disabled={busy}>Archive tenant</button>}
             {selected.status === 'ARCHIVED' && <button type="button" className="tenant-button" onClick={() => void changeLifecycle('restore')} disabled={busy}>Restore to suspended</button>}</div>
@@ -245,7 +253,7 @@ export default function TenantManagement({ request, permitted }: { request: Requ
             <button type="button" className="tenant-button" onClick={() => void saveRetention()} disabled={busy}>Save retention policy</button>
             <p className="tenant-help">Retention metadata is audited. No automatic or manual data deletion is enabled.</p>
           </section>
-        </form><PlatformPageSlot slotKey="tenant-usage"><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /></PlatformPageSlot><PlatformPageSlot slotKey="tenant-domains"><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot><PlatformPageSlot slotKey="tenant-recovery"><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot></> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
+        </form>}{detailTab === "usage" && <PlatformPageSlot slotKey="tenant-usage"><TenantUsagePanel request={request} tenantId={selected.tenantId} permitted={permitted} /></PlatformPageSlot>}{detailTab === "domains" && <PlatformPageSlot slotKey="tenant-domains"><TenantDomains request={request} permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot>}{detailTab === "recovery" && <PlatformPageSlot slotKey="tenant-recovery"><TenantRecoveryPanel request={request} operator permitted={permitted} tenantId={selected.tenantId} /></PlatformPageSlot>}</> : <div className="tenant-placeholder"><Building2 size={30} /><h2>Tenant details</h2><p>Select a tenant to view or edit it, or create a new tenant.</p></div>}
       </section></PlatformPageSlot>
     </div>
   </div>;

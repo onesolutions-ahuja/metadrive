@@ -493,7 +493,35 @@ function TenantMfaSettings({ onReauthenticate, canManage }: { onReauthenticate: 
   </section>;
 }
 
+type CompanyProfile = {legalName:string;tradingName:string;website:string;phone:string;email:string;addressLine1:string;addressLine2:string;city:string;postcode:string;country:string;timezone:string;locale:string;description:string};
+const blankCompanyProfile:CompanyProfile={legalName:'',tradingName:'',website:'',phone:'',email:'',addressLine1:'',addressLine2:'',city:'',postcode:'',country:'',timezone:'Europe/London',locale:'en-GB',description:''};
+const companyFields:ReadonlyArray<{key:keyof CompanyProfile;label:string}>= [
+{key:'legalName',label:'Legal company name'},{key:'tradingName',label:'Trading name'},
+{key:'description',label:'Description'},{key:'website',label:'Website'},
+{key:'email',label:'Contact email'},{key:'phone',label:'Contact phone'},
+{key:'addressLine1',label:'Address line 1'},{key:'addressLine2',label:'Address line 2'},
+{key:'city',label:'Town / City'},{key:'postcode',label:'Postcode'},
+{key:'country',label:'Country'},{key:'timezone',label:'Time zone'},{key:'locale',label:'Locale'}];
+
 function CompanySettings({ canManage }: { canManage: boolean }) {
+  const [company,setCompany]=useState<CompanyProfile>(blankCompanyProfile);
+  const [companyBeforeEdit,setCompanyBeforeEdit]=useState<CompanyProfile|null>(null);
+  const [companyEditing,setCompanyEditing]=useState(false);
+  const [companyLoading,setCompanyLoading]=useState(true);
+  const [companySaving,setCompanySaving]=useState(false);
+  const [companyError,setCompanyError]=useState('');
+  const [companyNotice,setCompanyNotice]=useState('');
+  useEffect(()=>{let active=true;void apiRequest<{profile:CompanyProfile|null}>('/tenant/company-profile')
+   .then(value=>{if(active)setCompany({...blankCompanyProfile,...(value.profile??{})});})
+   .catch(error=>{if(active)setCompanyError(error instanceof Error?error.message:String(error));})
+   .finally(()=>{if(active)setCompanyLoading(false)});return()=>{active=false}},[]);
+  const saveCompany=async()=>{if(!canManage||companySaving)return;
+    setCompanySaving(true);setCompanyError('');setCompanyNotice('');
+    try{const saved=await apiRequest<{profile:CompanyProfile}>('/tenant/company-profile',{method:'PUT',body:JSON.stringify(company)});
+      setCompany(saved.profile);setCompanyEditing(false);setCompanyBeforeEdit(null);setCompanyNotice('Company details saved.');}
+    catch(error){setCompanyError(error instanceof Error?error.message:String(error));}
+    finally{setCompanySaving(false)}
+  };
   const [draft, setDraft] = useState<CurrencySettingsMetadata>({
     corporateCurrency: 'USD',
     standardVatRate: 20,
@@ -614,11 +642,25 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
   };
 
   return <div className="home-content settings-read-first-page company-settings-page">
-    <PageHeading eyebrow="Company Settings" title="Company Information"
-      description="View your corporate currency and active conversion rates used by currency formulas." />
+    <PageHeading eyebrow="Company Settings" title="Company Settings"
+      description="Manage your organisation settings, base currency, VAT and exchange rates in one workspace." />
+    <PlatformPageSlot slotKey="company-info"><section className="surface permission-section company-profile-section" aria-label="Company details">
+      <div className="section-toolbar"><div><h2>Company details</h2><p>Organisation, contact and regional information.</p></div>
+      {canManage&&!companyEditing&&!companyLoading&&<button type="button" className="btn" onClick={()=>{setCompanyBeforeEdit({...company});setCompanyEditing(true);}}>Edit details</button>}</div>
+      {companyLoading?<p>Loading company details…</p>:<div className="company-profile-grid">
+      {companyFields.map(field=><div className="company-profile-field" key={field.key}><label htmlFor={'company-'+field.key}>{field.label}</label>
+        {companyEditing?<input id={'company-'+field.key} className="form-control" value={company[field.key]}
+          onChange={event=>setCompany(previous=>({...previous,[field.key]:event.target.value}))}/>
+        :<p>{company[field.key]||'Not provided'}</p>}</div>)}</div>}
+      {companyEditing&&<div className="settings-read-first-toolbar">
+        <button type="button" className="btn" disabled={companySaving} onClick={()=>{setCompany(companyBeforeEdit??blankCompanyProfile);setCompanyEditing(false);setCompanyBeforeEdit(null);}}>Cancel</button>
+        <button type="button" className="btn btn-brand" disabled={companySaving} onClick={()=>void saveCompany()}>{companySaving?'Saving…':'Save details'}</button></div>}
+      {companyError&&<p className="form-error" role="alert">{companyError}</p>}
+      {companyNotice&&<p className="form-success" role="status">{companyNotice}</p>}
+    </section></PlatformPageSlot>
     <section className="surface permission-section">
       <div className="section-toolbar">
-        <div><h2>Currency Settings</h2>
+        <div><h2>Currency & Tax</h2>
           <p>Rates express units of corporate currency per one unit of the active currency.</p></div>
       </div>
       {loading ? <p className="permission-help">Loading currency settings…</p> : loaded ? <>

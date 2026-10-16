@@ -1373,3 +1373,12 @@
  .scheduled-flows-page .flow-trigger-explorer-filters { display:flex; align-items:flex-start; }
  .scheduled-flows-page .flow-trigger-explorer-filters .scheduled-flows-search { flex:1 0 100%; }
 }
+
+/* Company details section: same protected Setup workspace and One-Component slots. */
+.company-profile-section{margin-bottom:16px}
+.company-profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 22px}
+.company-profile-field{min-width:0;padding:8px 0;border-bottom:1px solid var(--border-color,#e5e9f0)}
+.company-profile-field label{display:block;margin-bottom:6px;font-size:12px;font-weight:600;color:var(--text-secondary,#657185)}
+.company-profile-field p{font-size:14px;font-weight:500;margin:0;overflow-wrap:anywhere;min-height:22px}
+.company-profile-field input{width:100%;max-width:100%}
+@media(max-width:650px){.company-profile-grid{grid-template-columns:minmax(0,1fr)}}

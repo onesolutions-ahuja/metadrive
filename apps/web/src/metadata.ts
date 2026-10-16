@@ -967,14 +967,14 @@ export const workspaces: WorkspaceMetadata[] = [
   { id: 'app-manager', label: 'App Manager', icon: LayoutTemplate },
   { id: 'app-exchange', label: 'AppExchange', icon: Store },
   { id: 'named-credentials', label: 'Named Credentials', icon: Database }, { id: 'connector-settings', label: 'Connector Settings', icon: Puzzle },
-  { id: 'company-settings', label: 'Company Information', icon: Building2 },
+  { id: 'company-settings', label: 'Company Settings', icon: Building2 },
   { id: 'tenant-management', label: 'Tenant Management', icon: Building2 },
   { id: 'rbac', label: 'Users & Permissions', icon: ShieldCheck }
 ];
 
 export const setupNavigation = [
   { group: 'Platform Administration', items: ['Tenant Management'] },
-  { group: 'Company Settings', items: ['Company Information', 'Currencies'] },
+  { group: 'Company Settings', items: ['Company Settings'] },
   { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Lightning App Builder', 'App Manager', 'Component Library', 'AppExchange'] },
   { group: 'Integrations', items: ['Named Credentials', 'Named Devices', 'Connector Settings'] },
   { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Failed Flow Logs', 'Approval Processes', 'Process Automation Settings'] },
@@ -1144,7 +1144,7 @@ export const setupShortcuts = [
   { title: 'Reports', description: 'Create, customize, and run reports', workspace: 'report-builder' as const, icon: FileText },
   { title: 'Dashboards', description: 'Visualize key business metrics', workspace: 'dashboard-builder' as const, icon: BarChart3 },
   { title: 'AppExchange', description: 'Discover and manage organization apps', workspace: 'app-exchange' as const, icon: Store },
-  { title: 'Company Information', description: 'Manage corporate currency and exchange rates', workspace: 'company-settings' as const, icon: Building2 },
+  { title: 'Company Settings', description: 'Manage company settings, tax and currencies', workspace: 'company-settings' as const, icon: Building2 },
   { title: 'Permission Sets', description: 'Manage access to apps and data', workspace: 'rbac' as const, icon: ShieldCheck }
 ];
 

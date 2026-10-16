@@ -12,6 +12,7 @@ export type PlatformWorkspaceDescriptor={
 const restricted:Readonly<Record<string,PlatformWorkspaceDescriptor['permission']>>={
  'Tenant Management':'platform:superadmin',
  'Object Manager':'metadata:read',
+ 'Company Settings':'metadata:read',
  'Company Information':'metadata:read',
  'Currencies':'metadata:read',
  'Named Credentials':'metadata:write',
