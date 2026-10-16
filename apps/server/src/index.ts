@@ -1,3 +1,4 @@
+import { createDashboardRunningUserHelpers } from './modules/dashboards/running-users.js';
 import { dashboardComponentSchema, dashboardFilterSchema, dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardSnapshotSchema, dashboardSubscriptionSchema, dashboardTimeZoneSchema, type DashboardFolder, type DashboardTerritory, type DashboardMetadata, type DashboardFilterMetadata, type DashboardSnapshot, type DashboardSubscription } from './modules/dashboards/schemas.js';
 import { folderAccessLevelForUser, folderAccessLevelFromFolders, folderForUser, dashboardForUser, validateDashboardFolderReferences } from './modules/dashboards/folder-access.js';
 import { createFlowExecutionEngine } from './modules/flows/execution-engine.js';
@@ -3410,64 +3411,11 @@ function principalForUser(user: LocalUser, tenant: TenantData): Principal {
     permissions: effectivePermissions(user, tenant)
   };
 }
-function canSelectDashboardRunningUser(viewer: Principal, tenant: TenantData, targetUserId: string): boolean {
-  if (targetUserId === viewer.userId
-    || viewer.permissions.includes('dashboards:manage')) return true;
-  if (viewer.permissions.includes('data:viewAll')) return true;
-  if (!viewer.permissions.includes('dashboards:viewTeam')) return false;
-  const viewerMetadata = tenant.accessControl.users.find((item) => item.id === viewer.userId);
-  const targetMetadata = tenant.accessControl.users.find((item) => item.id === targetUserId);
-  const viewerRoleId = viewerMetadata?.roleId ?? roleIdForName(viewerMetadata?.role ?? '', tenant.accessControl.roles);
-  const targetRoleId = targetMetadata?.roleId ?? roleIdForName(targetMetadata?.role ?? '', tenant.accessControl.roles);
-  return Boolean(viewerRoleId && targetRoleId
-    && targetRoleId !== viewerRoleId
-    && roleIsAtOrBelow(targetRoleId, viewerRoleId, tenant.accessControl.roles));
-}
-function dashboardRunningUserChoices(viewer: Principal, tenant: TenantData): string[] {
-  return platformStore.state.users
-    .filter((user) => user.tenantId === viewer.tenantId && !user.disabled
-      && canSelectDashboardRunningUser(viewer, tenant, user.id))
-    .map((user) => user.id);
-}
-function dashboardRunningPrincipal(
-  viewer: Principal,
-  tenant: TenantData,
-  dashboard: DashboardMetadata,
-  selectedRunningUserId?: string
-): Principal | undefined {
-  if (dashboard.allowViewerToSelectRunningUser) {
-    if (!selectedRunningUserId || selectedRunningUserId === viewer.userId) return viewer;
-    if (!canSelectDashboardRunningUser(viewer, tenant, selectedRunningUserId)) return undefined;
-    const selectedUser = platformStore.state.users.find((item) =>
-      item.id === selectedRunningUserId && item.tenantId === viewer.tenantId && !item.disabled);
-    return selectedUser ? principalForUser(selectedUser, tenant) : undefined;
-  }
-  if (selectedRunningUserId && selectedRunningUserId !== dashboard.runningUserId) return undefined;
-  if (!dashboard.runningUserId) return viewer;
-  const user = platformStore.state.users.find((item) =>
-    item.id === dashboard.runningUserId && item.tenantId === viewer.tenantId && !item.disabled);
-  return user ? principalForUser(user, tenant) : undefined;
-}
-function dashboardRunningUserSelectionError(
-  viewer: Principal,
-  tenant: TenantData,
-  dashboard: DashboardMetadata,
-  selectedRunningUserId?: string
-): string | undefined {
-  if (!selectedRunningUserId) return undefined;
-  if (!dashboard.allowViewerToSelectRunningUser) {
-    return selectedRunningUserId === dashboard.runningUserId
-      ? undefined
-      : 'This dashboard does not allow choosing a running user';
-  }
-  if (!canSelectDashboardRunningUser(viewer, tenant, selectedRunningUserId)) {
-    return 'You do not have permission to choose this running user';
-  }
-  const selectedUser = platformStore.state.users.find((item) =>
-    item.id === selectedRunningUserId && item.tenantId === viewer.tenantId && !item.disabled);
-  if (!selectedUser) return 'The selected running user must be active and belong to this tenant';
-  return undefined;
-}
+const { canSelectDashboardRunningUser, dashboardRunningUserChoices, dashboardRunningPrincipal, dashboardRunningUserSelectionError } = createDashboardRunningUserHelpers({
+  getUsers: () => platformStore.state.users,
+  toPrincipal: principalForUser,
+  isRoleAtOrBelow: roleIsAtOrBelow
+});
 function reportFolderAccessLevelForUser(
   tenant: TenantData,
   folderId: string | null | undefined,
