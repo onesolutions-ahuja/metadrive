@@ -1,3 +1,4 @@
+import { sharedTimeZoneSchema as dashboardTimeZoneSchema } from '../../core/time-zone-schema.js';
 import { z } from 'zod';
 
 export const dashboardComponentSchema = z.object({
@@ -252,9 +253,7 @@ export const dashboardSnapshotSchema = z.object({
   })).optional(),
   components: z.array(dashboardSnapshotComponentSchema)
 });
-export const dashboardTimeZoneSchema = z.string().min(1).refine((value) => {
-  try { new Intl.DateTimeFormat('en-US', { timeZone: value }); return true; } catch { return false; }
-}, 'A valid IANA time zone is required');
+export { dashboardTimeZoneSchema };
 export const dashboardSubscriptionSchema = z.object({
   id: z.string().uuid(),
   dashboardApiName: z.string().min(1),
