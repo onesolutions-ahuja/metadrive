@@ -2601,7 +2601,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 5,
+      "version": 6,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
@@ -2640,6 +2640,10 @@
             {
               "key": "display",
               "label": "Paired customer display"
+            },
+            {
+              "key": "basket",
+              "label": "Basket only"
             }
           ]
         },
