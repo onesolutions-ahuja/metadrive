@@ -1,8 +1,9 @@
 import {resolveScreenText} from './flowScreenRuntimeUtils';
 import {findRegisteredComponent, findRegisteredComponentForInstance} from './componentRegistryLookup';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
-import FlowScreenAdvancedField from './FlowScreenAdvancedField';
+// Lookup, upload and table implementations load only when the screen contains them.
+const FlowScreenAdvancedField = lazy(() => import('./FlowScreenAdvancedField'));
 import RegisteredComponent from './RegisteredComponent';
 import type { LibraryComponentMetadata } from './metadata';
 
@@ -142,9 +143,11 @@ export default function FlowScreenContent({
       </figure>;
     }
     if (['Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater'].includes(type)) {
-      return <FlowScreenAdvancedField key={name} libraryComponents={libraryComponents} field={field} label={label} inputId={inputId}
-        helpId={helpId} helpText={helpText} value={value} values={values} setValue={setValue}
-        loadRecords={loadRecords} onError={onError} />;
+      return <Suspense key={name} fallback={<div className="records-loading" role="status">Loading field…</div>}>
+        <FlowScreenAdvancedField libraryComponents={libraryComponents} field={field} label={label} inputId={inputId}
+          helpId={helpId} helpText={helpText} value={value} values={values} setValue={setValue}
+          loadRecords={loadRecords} onError={onError} />
+      </Suspense>;
     }
     // Use the existing registered controls only when they preserve the Flow field contract.
     const inputTypes: Record<string, string> = {
