@@ -1206,7 +1206,8 @@ function PageBuilder({
       onAction: previewProperties.onAction,
       onChange: previewProperties.onChange,
       onNavigate: previewProperties.onNavigate,
-      children: nestedChildren
+      children: nestedChildren,
+      ...(customDefinition?.apiName === 'OneSplitPane' ? {left:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),right:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))} : {})
     };
     const accordionContent = typeof component.properties.content === 'string' && component.properties.content.trim()
       ? component.properties.content
@@ -1322,7 +1323,8 @@ function PageBuilder({
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
                       device,
-                      children: nestedChildren
+                      children: nestedChildren,
+                      ...(customDefinition.apiName === 'OneSplitPane' ? {left:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),right:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))} : {})
                     }} />
                     : libraryPreview
                       ? <div className="component-demo-fallback"><strong>{component.label}</strong><span>{selectedComponentDescription || 'Preview of a reusable page component.'}</span><div><i /><i /><i /></div></div>
@@ -1840,7 +1842,6 @@ function PageBuilder({
             </div>}
             <p className="properties-help">Device, dimensions and orientation are selected when creating a page. Create another page for a different layout size.</p>
             <div className="page-property-summary"><strong>{page.components.length}</strong> components</div>
-
           </>}
         </aside>
       </div>
@@ -1961,6 +1962,5 @@ function PageBuilder({
     </div>
   );
 }
-
 return PageBuilder;
 }
