@@ -5487,6 +5487,7 @@ registerDashboardSnapshotRoutes({
  app, dashboardFilterSchema, reportFilterMatches, dashboardSnapshotSchema, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText, tenantData, getPrincipal, dashboardRunningPrincipal, dashboardRunningUserSelectionError, reportFolderAccessLevelForUser, dashboardForUser, requirePermission, hasObjectPermission, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, resolveDashboardCrossFilters, calculateFormulaFields, pickDashboardSnapshotProperties, libraryComponentVisible, randomUUID, sanitizeHtml, canAccessDashboard, matchesDashboardFilters,
  getState: () => platformStore.state, setState: (next) => { platformStore.state = next; }
 });
+const resolveReportCrossFilters = createReportCrossFilterResolver({hasObjectPermission, hasFieldPermission, hasRecordAccess, calculateFormulaFields, formulaContextForUser});
 registerReportRoutes({
  app, runtimeRecordSchema, dashboardFilterSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFilterMatches, dashboardFolderShareSchema, reportFolderSchema, isNumericField, reportFilterOperatorAllowed, dashboardFilterOperatorAllowed, dashboardFilterValueError, reportFilterValueError, persistState, tenantData, getPrincipal, dashboardRunningPrincipal, dashboardRunningUserSelectionError, reportFolderAccessLevelForUser, reportFolderForUser, validateReportFolderReferences, dashboardForUser, requirePermission, accessAuthentication, hasObjectPermission, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, persistTenantRecords, routeParam, formulaContextForUser, resolveReportCrossFilters, resolveDashboardCrossFilters, canManageReportFolders, calculateFormulaFields, randomUUID, canAccessDashboard, matchesDashboardFilters,
  getState: () => platformStore.state, setState: (next) => { platformStore.state = next; }
@@ -8273,7 +8274,7 @@ function dashboardEmailFilterMatches(record: RuntimeRecord, filter: DashboardFil
 type DashboardCrossFilterResolution =
   | { recordIds: Set<string> }
   | { error: string; status: 400 | 403 };
-const resolveReportCrossFilters = createReportCrossFilterResolver({hasObjectPermission, hasFieldPermission, hasRecordAccess, calculateFormulaFields, formulaContextForUser});
+
 type DashboardRelationshipStep = {
   sourceObjectApiName: string;
   targetObjectApiName: string;
