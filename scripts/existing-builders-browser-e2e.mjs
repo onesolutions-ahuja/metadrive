@@ -157,6 +157,7 @@ try {
   });
   // Authenticated Dashboard Builder: edit, save through UI, then reload and compare SQL/API metadata.
   await page.goto('http://127.0.0.1:5173/une/setup/dashboard-builder');
+  await page.locator('#dashboard-select').selectOption(dashboardApiName);
   const dashboardName=page.getByLabel('Dashboard name');
   await dashboardName.waitFor({state:'visible'});
   const dashboardEdited='MD07 Dashboard Builder Saved';
@@ -169,6 +170,7 @@ try {
     if(attempt===29)throw Error('Dashboard Builder UI did not save edited dashboard label');
   }
   await page.reload();
+  await page.locator('#dashboard-select').selectOption(dashboardApiName);
   await dashboardName.waitFor();
   if(await dashboardName.inputValue()!==dashboardEdited)throw Error('Dashboard Builder reopen lost saved label');
   await page.goto('http://127.0.0.1:5173/une/dashboards/'+dashboardApiName);
@@ -233,6 +235,7 @@ try {
     rowLimit:{limit:null,sortFieldApiName:null,sortDirection:'Ascending'}
   });
   await page.goto('http://127.0.0.1:5173/une/setup/report-builder');
+  await page.getByRole('button',{name:'MD07 Browser Report',exact:true}).click();
   const reportName=page.locator('#report-name');
   await reportName.waitFor();
   const reportEdited='MD07 Report Builder Saved';
@@ -245,6 +248,7 @@ try {
     if(attempt===29)throw Error('Report Builder UI did not save report label');
   }
   await page.reload();
+  await page.getByRole('button',{name:reportEdited,exact:true}).click();
   await reportName.waitFor();
   if(await reportName.inputValue()!==reportEdited)throw Error('Report Builder reopen lost saved label');
 
