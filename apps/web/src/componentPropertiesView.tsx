@@ -211,6 +211,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   onChange: (next: ComponentPropertyRecord) => void;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [newEventName, setNewEventName] = useState('');
   const [advancedDraft, setAdvancedDraft] = useState('');
   const [advancedError, setAdvancedError] = useState('');
   const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
@@ -342,11 +343,18 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
         </div>}
       </div>;
     })}
-    <button type="button" className="btn btn-small" onClick={() => {
-      const key=window.prompt('Component event API name (e.g. submitted, itemSelected)');
-      if(!key||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)||(actionFlows??{})[key])return;
-      update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
-    }}>Add event action</button>
+    <label className="form-label">New event API name
+      <input className="form-control" type="text" value={newEventName}
+        placeholder="e.g. tabChange or itemSelect"
+        onChange={(event) => setNewEventName(event.target.value)} />
+    </label>
+    <button type="button" className="btn btn-small" disabled={!/^[A-Za-z][A-Za-z0-9_]*$/.test(newEventName.trim()) || Object.prototype.hasOwnProperty.call(actionFlows ?? {},newEventName.trim())}
+      onClick={() => {
+        const key=newEventName.trim();
+        if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key) || Object.prototype.hasOwnProperty.call(actionFlows ?? {},key)) return;
+        update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
+        setNewEventName('');
+      }}>Add event action</button>
     {!actionFlows && <label className="form-label">Flow API Name
       <select className="form-control" value={String(properties.flowApiName ?? '')}
         onChange={(event) => update('flowApiName', event.target.value)}>
