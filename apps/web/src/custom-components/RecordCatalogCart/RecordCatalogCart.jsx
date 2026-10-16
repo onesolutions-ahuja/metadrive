@@ -287,8 +287,19 @@ export default function RecordCatalogCart(props) {
     setSearch('');
   };
 
+  React.useEffect(() => {
+    if (!p.pageSessionKey || !p.componentId) return undefined;
+    const onToolbarAction = event => {
+      const detail = event.detail;
+      if (detail?.pageSessionKey === p.pageSessionKey && detail?.componentId === p.componentId && detail?.action === 'openDisplay') openCustomerDisplay();
+    };
+    window.addEventListener('metadrive:page-toolbar-action', onToolbarAction);
+    return () => window.removeEventListener('metadrive:page-toolbar-action', onToolbarAction);
+  }, [p.pageSessionKey, p.componentId, openCustomerDisplay]);
+  const pageToolbarOwnsHeader = typeof document !== 'undefined' &&
+    document.querySelector('.header-page-context')?.getAttribute('data-page-session-key') === p.pageSessionKey;
   return <section className="md-record-cart" style={{ '--cart-accent': p.accentColor || '#1677d2' }}>
-    <header className="md-record-cart-header">
+    {!pageToolbarOwnsHeader && <header className="md-record-cart-header">
       <div><small>{p.eyebrow || 'SALES'}</small><h1>{p.title || 'Till'}</h1></div>
       <button type="button" onClick={openCustomerDisplay}>{p.displayButtonLabel || 'Open customer display'}</button>
     </header>
