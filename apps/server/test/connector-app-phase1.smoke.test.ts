@@ -64,6 +64,18 @@ test('connector licence and flow uninstall guard are enforced independently of U
   const uninstalled = applyConnectorLifecycle(activated, { ...activated, Installed__c:false }, credentials, [], now);
   assert.equal(connectorEntitlement([uninstalled], credentials[0], now).allowed, false);
 });
+test('dynamic named credential scope protects only matching AppExchange owner', () => {
+  const xero={Name:'Xero',AppKey__c:'xero',CredentialName__c:'XERO',Installed__c:true,TrialUsed__c:false,TrialRequested__c:false};
+  const whatsapp={Name:'WhatsApp',AppKey__c:'whatsapp',CredentialName__c:'META',Installed__c:true,TrialUsed__c:false,TrialRequested__c:false};
+  const scoped=[{apiName:'CHATTER_SEND_MESSAGE',label:'Chatter Send WhatsApp Message',status:'Active',elements:[{type:'HTTP Callout',config:{namedCredentialResource:'{!AuthorisedCredentialId}',allowedCredentialAppKeys:['whatsapp']}}]}];
+  assert.deepEqual(activeConnectorFlowReferences(xero,[],scoped),[]);
+  assert.deepEqual(activeConnectorFlowReferences(whatsapp,[],scoped),['Chatter Send WhatsApp Message']);
+  assert.doesNotThrow(()=>applyConnectorLifecycle(xero,{...xero,Installed__c:false},[],scoped));
+  assert.throws(()=>applyConnectorLifecycle(whatsapp,{...whatsapp,Installed__c:false},[],scoped),/Chatter Send WhatsApp Message/);
+  const unscoped=[{...scoped[0],elements:[{type:'HTTP Callout',config:{namedCredentialResource:'{!dynamic}'}}]}];
+  assert.deepEqual(activeConnectorFlowReferences(xero,[],unscoped),['Chatter Send WhatsApp Message']);
+});
+
 test('AppExchange installation and trial run using stored metadata flows', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'metadrive-connector-phase1-'));
   const portNumber = await port();
