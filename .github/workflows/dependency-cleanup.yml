@@ -19,6 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -29,7 +30,8 @@ jobs:
           npm dedupe
           npm ci
       - name: Validate current project checks
-        run: npm run check
+        run: |
+          POLICY_BASE_SHA="$(git rev-parse HEAD^)" POLICY_HEAD_SHA="$(git rev-parse HEAD)" npm run check
       - name: Commit only validated manifest and lockfile changes
         run: |
           git add apps/server/package.json apps/web/package.json package.json package-lock.json
