@@ -1,4 +1,5 @@
 import { relatedListRelationships } from './builders/relatedListRelationships';
+import { standaloneTemplateCanvasStyle } from './builders/standaloneTemplateCanvasStyle';
 import { pageTemplates, pageStringList } from './builders/pageEditorMetadata';
 import BuilderTemplatePreviewLayout from './BuilderTemplatePreviewLayout';import { reconcileNavigationOrder } from './appNavigation';
 import { createObjectManager } from './objectManagerView';
@@ -1538,18 +1539,7 @@ function PageBuilder({
                 overflow: 'hidden'
               } : page.layoutMode === 'template' && page.components.some(
                 component => component.visible && component.properties?.standalonePresentation === true
-              ) ? {
-                // A portrait app page must retain its design height inside the builder.
-                // Without this, the embedded runtime inherits the short editor viewport,
-                // clipping sandboxed components and making the lower regions uneditable.
-                minHeight: page.canvasHeight > page.canvasWidth
-                  ? Math.max(640, page.canvasHeight)
-                  : Math.max(480, Math.min(page.canvasHeight, 1080)),
-                height: page.canvasHeight > page.canvasWidth
-                  ? Math.max(640, page.canvasHeight)
-                  : Math.max(480, Math.min(page.canvasHeight, 1080)),
-                overflow: 'visible'
-              } : undefined}
+              ) ? standaloneTemplateCanvasStyle(page.canvasWidth, page.canvasHeight) : undefined}
             >
               {page.layoutMode === 'free-canvas' ? <div
                 className={`free-canvas-stage ${canvasSnap && !previewMode ? 'canvas-grid-on' : ''}`}
