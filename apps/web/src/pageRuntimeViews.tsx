@@ -75,6 +75,7 @@ import {
   PanelRight
 } from 'lucide-react';
 import RegisteredComponent from './RegisteredComponent';
+import { findRegisteredComponent } from './componentRegistryLookup';
 import PageRouteDirectory from './PageRouteDirectory';
 import { isComponentVisible } from './componentVisibility';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
@@ -597,8 +598,7 @@ function LightningAppRuntime({
     if (!isAppComponentVisible(component)) return null;
     if (isLayoutType(component.type)) return <div key={component.id} className="page-nested-layout" style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>{childrenOf(page.components, component.id).map((child) => renderComponent(child))}</div>;
     if (component.type.startsWith('Custom:')) {
-      const definition = libraryComponents.find((item) =>
-        item.apiName === component.type.slice('Custom:'.length) && item.surfaces.includes('page'));
+      const definition = findRegisteredComponent(libraryComponents, component.type.slice('Custom:'.length), 'page');
       const nestedChildren = isLayoutContainer(component)
         ? childrenOf(page.components, component.id).filter(isAppComponentVisible).map((child) => page.layoutMode === 'free-canvas'
             ? renderCanvasComponent(child, true) : renderComponent(child))
