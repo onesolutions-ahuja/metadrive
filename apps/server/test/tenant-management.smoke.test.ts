@@ -117,7 +117,7 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
       'Cannot suspend the only platform-superadmin tenant');
     const body = { tenantId: 'studio-beta', tenantName: 'Studio Beta', adminName: 'Studio Administrator',
       email: 'tenant-portal-admin@example.test', password: tenantPassword,
-      developerDomain: 'studio-beta.test' };
+      developerDomain: 'studio-beta.test', grantTenantDeveloperPolicyToAdmin: true };
     assert.equal((await api('/platform/tenants', operatorToken, 'POST', { ...body, superadmin: true })).status, 400,
       'Unknown privilege escalation fields must fail validation');
     const idem = 'md03-2-create-studio-beta-retry';
@@ -164,6 +164,16 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     login = await api('/auth/login', '', 'POST', { email: body.email, password: tenantPassword });
     assert.equal(login.status, 200);
     const tenantToken = String(login.data.access_token);
+
+    const tenantPermissions = await api('/metadata/permissions', tenantToken);
+    assert.equal(tenantPermissions.status, 200);
+    const initialAdmin = tenantPermissions.data.users.find((user: { username: string }) => user.username === body.email);
+    assert.ok(initialAdmin?.permissionSetIds.includes('oneengine-tenant-developer'),
+      'Explicit Tenant Developer grant must be assigned through tenant OneEngine RBAC');
+    assert.ok(tenantPermissions.data.permissionSets.some((set: { id: string }) => set.id === 'oneengine-tenant-developer'),
+      'The tenant must own a real developer policy');
+    assert.equal((await api('/platform/tenants', tenantToken)).status, 403,
+      'Tenant Developer policy cannot give platform administration');
 
     // Component source belongs to its tenant even when both administrators
     // hold the same RBAC permission. Never reveal private code cross-tenant.
@@ -368,6 +378,14 @@ test('MD-03.1: platform-only tenant directory, edit, suspension, sessions, react
     });
     assert.equal(createdSecond.status, 201, JSON.stringify(createdSecond.data));
     assert.equal((await api('/auth/login', '', 'POST', { email: 'gamma-admin@example.test', password: tenantPassword })).status, 200);
+    const gammaSession = await api('/auth/login', '', 'POST', { email: 'gamma-admin@example.test', password: tenantPassword });
+    const gammaPermissions = await api('/metadata/permissions', String(gammaSession.data.access_token));
+    assert.equal(gammaPermissions.status, 200);
+    const gammaAdmin = gammaPermissions.data.users.find((user: { username: string }) => user.username === 'gamma-admin@example.test');
+    assert.ok(gammaAdmin);
+    assert.equal(gammaAdmin.permissionSetIds.includes('oneengine-tenant-developer'), false,
+      'The optional initial-admin developer grant must never leak to other tenants');
+
     // Same tenant and request key concurrently must yield exactly one creation.
     const concurrentBody = {
       tenantId: 'parallel-studio', tenantName: 'Parallel Studio', adminName: 'Parallel Admin',
