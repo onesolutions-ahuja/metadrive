@@ -235,7 +235,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -276,6 +276,13 @@
               "label": "Column"
             }
           ]
+        },
+        {
+          "propertyKey": "layoutContainer",
+          "label": "Accept nested components",
+          "kind": "BOOLEAN",
+          "defaultValue": true,
+          "displayOrder": 390
         }
       ]
     },
@@ -289,7 +296,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -330,6 +337,13 @@
               "label": "Column"
             }
           ]
+        },
+        {
+          "propertyKey": "layoutContainer",
+          "label": "Accept nested components",
+          "kind": "BOOLEAN",
+          "defaultValue": true,
+          "displayOrder": 390
         }
       ]
     },
@@ -343,7 +357,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -374,6 +388,13 @@
           "kind": "NUMBER",
           "displayOrder": 300,
           "defaultValue": 3
+        },
+        {
+          "propertyKey": "layoutContainer",
+          "label": "Accept nested components",
+          "kind": "BOOLEAN",
+          "defaultValue": true,
+          "displayOrder": 390
         }
       ]
     },
@@ -387,7 +408,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -418,6 +439,13 @@
           "kind": "NUMBER",
           "displayOrder": 300,
           "defaultValue": 50
+        },
+        {
+          "propertyKey": "layoutContainer",
+          "label": "Accept nested components",
+          "kind": "BOOLEAN",
+          "defaultValue": true,
+          "displayOrder": 390
         }
       ]
     },
@@ -431,7 +459,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -476,6 +504,13 @@
           "kind": "TEXT",
           "displayOrder": 320,
           "defaultValue": ""
+        },
+        {
+          "propertyKey": "layoutContainer",
+          "label": "Accept nested components",
+          "kind": "BOOLEAN",
+          "defaultValue": true,
+          "displayOrder": 390
         }
       ]
     },
@@ -489,7 +524,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -520,6 +555,27 @@
           "kind": "TEXT",
           "displayOrder": 300,
           "defaultValue": "Overview,Details"
+        },
+        {
+          "propertyKey": "dynamicTabs",
+          "label": "Load tab labels from bound records",
+          "kind": "BOOLEAN",
+          "defaultValue": false,
+          "displayOrder": 320
+        },
+        {
+          "propertyKey": "categoryFieldApiName",
+          "label": "Category field API name",
+          "kind": "TEXT",
+          "defaultValue": "",
+          "displayOrder": 330
+        },
+        {
+          "propertyKey": "filterKey",
+          "label": "Shared filter key",
+          "kind": "TEXT",
+          "defaultValue": "category",
+          "displayOrder": 370
         }
       ]
     },
@@ -2226,7 +2282,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2257,6 +2313,27 @@
           "kind": "TEXT",
           "displayOrder": 300,
           "defaultValue": "Items"
+        },
+        {
+          "propertyKey": "categoryFieldApiName",
+          "label": "Category field API name",
+          "kind": "TEXT",
+          "defaultValue": "",
+          "displayOrder": 340
+        },
+        {
+          "propertyKey": "selectedCategory",
+          "label": "Selected category",
+          "kind": "TEXT",
+          "defaultValue": "",
+          "displayOrder": 350
+        },
+        {
+          "propertyKey": "filterKey",
+          "label": "Shared filter key",
+          "kind": "TEXT",
+          "defaultValue": "category",
+          "displayOrder": 370
         }
       ]
     },
@@ -2404,8 +2481,14 @@
           "displayOrder": 310,
           "defaultValue": "thread",
           "choices": [
-            {"key":"thread","label":"Message thread"},
-            {"key":"inbox","label":"Conversation inbox"}
+            {
+              "key": "thread",
+              "label": "Message thread"
+            },
+            {
+              "key": "inbox",
+              "label": "Conversation inbox"
+            }
           ]
         },
         {
@@ -2511,7 +2594,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 3,
+      "version": 4,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
@@ -2543,8 +2626,14 @@
           "displayOrder": 300,
           "defaultValue": "till",
           "choices": [
-            {"key":"till","label":"Product catalogue and basket"},
-            {"key":"display","label":"Paired customer display"}
+            {
+              "key": "till",
+              "label": "Product catalogue and basket"
+            },
+            {
+              "key": "display",
+              "label": "Paired customer display"
+            }
           ]
         },
         {
@@ -2763,6 +2852,20 @@
           "kind": "TEXT",
           "displayOrder": 590,
           "defaultValue": "customerDisplayUrl"
+        },
+        {
+          "propertyKey": "catalogueWidthPercent",
+          "label": "Catalogue width percentage",
+          "kind": "NUMBER",
+          "defaultValue": 60,
+          "displayOrder": 450
+        },
+        {
+          "propertyKey": "productCardMinWidth",
+          "label": "Minimum product card width",
+          "kind": "NUMBER",
+          "defaultValue": 170,
+          "displayOrder": 460
         }
       ]
     },

@@ -211,6 +211,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   onChange: (next: ComponentPropertyRecord) => void;
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [newEventName, setNewEventName] = useState('');
   const [advancedDraft, setAdvancedDraft] = useState('');
   const [advancedError, setAdvancedError] = useState('');
   const objectApiName = String(properties.objectApiName ?? properties.targetObject ?? '');
@@ -264,7 +265,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
       const map = binding.inputs && typeof binding.inputs === 'object' && !Array.isArray(binding.inputs) ? binding.inputs as Record<string, unknown> : {};
       const selectedFlow = flows.find(flow => flow.apiName === binding.flowApiName);
       const setBinding = (next: Record<string, unknown>) => update('actionFlows', {...(actionFlows ?? {}), [eventName]:next});
-      const actionType = binding.actionType === 'Navigate' ? 'Navigate' : 'Flow';
+      const actionType = binding.actionType === 'Navigate' ? 'Navigate' : binding.actionType === 'SetFilter' ? 'SetFilter' : 'Flow';
       const navigationTargetType = binding.navigationTargetType === 'App Home' || binding.navigationTargetType === 'App Page'
         ? binding.navigationTargetType : 'Record List';
       const navigationAppId = String(binding.navigationAppId || (navigationTargetType === 'Record List' ? 'Records' : currentAppId));
@@ -284,9 +285,13 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
         <button type="button" className="btn btn-small" onClick={() => {const next={...(actionFlows ?? {})};delete next[eventName];update('actionFlows',next);}}>Remove event</button>
         <label className="form-label">Action type<select className="form-control" value={actionType}
           onChange={(e) => setBinding({...binding,actionType:e.target.value})}>
-          <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option>
+          <option value="Flow">Execute Flow</option><option value="Navigate">Navigate to records</option><option value="SetFilter">Filter sibling components</option>
         </select></label>
-        {actionType==='Flow' ? <>
+        {actionType==='SetFilter' ? <label className="form-label">Shared filter key
+          <input className="form-control" value={String(binding.filterKey ?? 'category')}
+            onChange={(e) => setBinding({...binding,filterKey:e.target.value})}
+            placeholder="category" pattern="[A-Za-z][A-Za-z0-9_]*" />
+        </label> : actionType==='Flow' ? <>
           <label className="form-label">Flow
             <select className="form-control" value={String(binding.flowApiName ?? '')}
               onChange={(e) => setBinding({ ...binding, flowApiName: e.target.value })}>
@@ -342,11 +347,18 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
         </div>}
       </div>;
     })}
-    <button type="button" className="btn btn-small" onClick={() => {
-      const key=window.prompt('Component event API name (e.g. submitted, itemSelected)');
-      if(!key||!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)||(actionFlows??{})[key])return;
-      update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
-    }}>Add event action</button>
+    <label className="form-label">New event API name
+      <input className="form-control" type="text" value={newEventName}
+        placeholder="e.g. tabChange or itemSelect"
+        onChange={(event) => setNewEventName(event.target.value)} />
+    </label>
+    <button type="button" className="btn btn-small" disabled={!/^[A-Za-z][A-Za-z0-9_]*$/.test(newEventName.trim()) || Object.prototype.hasOwnProperty.call(actionFlows ?? {},newEventName.trim())}
+      onClick={() => {
+        const key=newEventName.trim();
+        if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key) || Object.prototype.hasOwnProperty.call(actionFlows ?? {},key)) return;
+        update('actionFlows',{...(actionFlows??{}),[key]:{actionType:'Flow',flowApiName:'',inputs:{}}});
+        setNewEventName('');
+      }}>Add event action</button>
     {!actionFlows && <label className="form-label">Flow API Name
       <select className="form-control" value={String(properties.flowApiName ?? '')}
         onChange={(event) => update('flowApiName', event.target.value)}>
