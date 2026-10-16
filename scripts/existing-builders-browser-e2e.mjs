@@ -1,6 +1,6 @@
 // Real Module 7 Chromium acceptance on a disposable local tenant.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
@@ -100,8 +100,10 @@ try {
   await page.getByRole('button',{name:'Back to page list'}).waitFor();
   await page.locator('iframe[sandbox="allow-scripts"]').first().contentFrame().getByText('MD07 isolated component ready:',{exact:false}).waitFor();
   const coreRegistry=await request('/component-library',token);
-  const core=coreRegistry.components.filter(item=>/^One[A-Za-z]+$/.test(item.apiName));
-  if(core.length!==40 || new Set(core.map(item=>item.apiName)).size!==40 ||
+  const coreCatalog=JSON.parse(readFileSync(new URL('../apps/web/src/custom-components/one/manifest.json',import.meta.url),'utf8'));
+  const expectedCore=new Set(coreCatalog.components.map(item=>item.apiName));
+  const core=coreRegistry.components.filter(item=>expectedCore.has(item.apiName));
+  if(core.length!==expectedCore.size || new Set(core.map(item=>item.apiName)).size!==expectedCore.size ||
     core.some(item=>item.status!=='Published'||item.trustedBundled!==true||
       !['page','dashboard','flow'].every(surface=>item.surfaces.includes(surface))))
     throw Error('One Core registered-component contract failed in authenticated tenant');
