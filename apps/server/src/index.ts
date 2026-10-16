@@ -1,3 +1,7 @@
+import { createRecordTriggerHandlers } from './modules/flows/record-trigger-handlers.js';
+import { createFlowInterview as buildFlowInterview } from './modules/flows/interview-factory.js';
+import { activeFlowDefinition, flowVersionSnapshot, uniqueFlowHistory } from './modules/flows/versioning.js';
+import { isValidFlowTime, validateFlowInputValues, flowNeedsRollbackSnapshot, orderedRecordTriggeredFlows } from './modules/flows/runtime-helpers.js';
 import { createDashboardRunningUserHelpers } from './modules/dashboards/running-users.js';
 import { dashboardComponentSchema, dashboardFilterSchema, dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardSnapshotSchema, dashboardSubscriptionSchema, dashboardTimeZoneSchema, type DashboardFolder, type DashboardTerritory, type DashboardMetadata, type DashboardFilterMetadata, type DashboardSnapshot, type DashboardSubscription } from './modules/dashboards/schemas.js';
 import { folderAccessLevelForUser, folderAccessLevelFromFolders, folderForUser, dashboardForUser, validateDashboardFolderReferences } from './modules/dashboards/folder-access.js';
@@ -5,7 +9,7 @@ import { createFlowSchedulingRuntime } from './scheduler/flow-scheduling.js';
 import { createIntegrationDeliveryHandler } from './scheduler/integration-delivery.js';
 import { createPlatformScheduler } from './scheduler/platform-scheduler.js';
 
-import { createFlowExecutionEngine } from './modules/flows/execution-engine.js';
+import { bindFlowExecution, wrapFlowExecution } from './modules/flows/execution-binding.js';
 import { parseSubflowMappings } from './modules/flows/subflow-mappings.js';
 import { createFlowScheduleCalculations } from './scheduler/flow-schedule-calculations.js';
 import { createTenantProvisioning } from './core/state/tenant-provisioning.js';
@@ -1732,53 +1736,7 @@ function reportFilterValueError(
   return null;
 }
 export type FlowMetadata = z.infer<typeof flowSchema>;
-/** The draft in Flow Builder is not necessarily the published executable version. */
-function activeFlowDefinition(candidate: FlowMetadata | undefined): FlowMetadata | undefined {
-  if (!candidate || candidate.activeVersion === null) return undefined;
-  if (candidate.status === 'Active' && candidate.versionNumber === candidate.activeVersion) return candidate;
-  const published = candidate.versions.find((version) => version.versionNumber === candidate.activeVersion);
-  if (!published) return undefined;
-  return {
-    ...candidate,
-    ...published,
-    versionNumber: candidate.activeVersion,
-    activeVersion: candidate.activeVersion,
-    status: 'Active',
-    versions: candidate.versions
-  };
-}
-function flowVersionSnapshot(flow: FlowMetadata, savedAt: string): FlowMetadata['versions'][number] {
-  return {
-    versionNumber: flow.versionNumber,
-    status: flow.status,
-    savedAt,
-    label: flow.label,
-    description: flow.description,
-    flowType: flow.flowType,
-    triggerObject: flow.triggerObject,
-    startConfig: flow.startConfig,
-    elements: flow.elements,
-    connectors: flow.connectors,
-    resources: flow.resources,
-    tests: flow.tests
-  };
-}
-function uniqueFlowHistory(flow: FlowMetadata | undefined, savedAt: string): FlowMetadata['versions'] {
-  if (!flow) return [];
-  const snapshots = new Map<number, FlowMetadata['versions'][number]>();
-  for (const version of flow.versions) snapshots.set(version.versionNumber, version);
-  // The editable current version is authoritative when both it and a history entry exist.
-  snapshots.set(flow.versionNumber, flowVersionSnapshot(flow, savedAt));
-  return [...snapshots.values()]
-    .map((version) => ({
-      ...version,
-      status: version.versionNumber === flow.activeVersion
-        ? 'Active' as const
-        : version.status === 'Draft' ? 'Draft' as const : 'Obsolete' as const
-    }))
-    .sort((left, right) => left.versionNumber - right.versionNumber);
-}
-type FlowInterview = z.infer<typeof flowInterviewSchema>;
+export type FlowInterview = z.infer<typeof flowInterviewSchema>;
 type PageMetadata = z.infer<typeof pageSchema>;
 
 type ReportMetadata = z.infer<typeof reportSchema>;
@@ -4735,41 +4693,6 @@ const registerChatterAccessRoutesContext = {
 };
 export type ChatterAccessRoutesDependencies = typeof registerChatterAccessRoutesContext;
 registerChatterAccessRoutes(registerChatterAccessRoutesContext);
-function validateFlowInputValues(flow: FlowMetadata, values: Record<string, unknown>): string | undefined {
-  const inputResources = flow.resources.filter((resource) => resource.availableForInput);
-  for (const [name, value] of Object.entries(values)) {
-    const resource = inputResources.find((candidate) => candidate.name === name);
-    if (!resource) return `Resource "${name}" is not available for input`;
-    const dataType = resource.dataType.toLowerCase();
-    const invalid = (): string => `Input "${resource.label}" must be a valid ${resource.dataType} value`;
-    if (['number', 'currency', 'percent'].some((type) => dataType.startsWith(type))) {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return invalid();
-    } else if (['boolean', 'checkbox'].includes(dataType)) {
-      if (typeof value !== 'boolean') return invalid();
-    } else if (dataType === 'date') {
-      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)
-        || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`))
-        || new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value) return invalid();
-    } else if (dataType === 'date/time' || dataType === 'datetime') {
-      if (typeof value !== 'string' || !isValidFlowDateTime(value)) return invalid();
-    } else if (dataType === 'time') {
-      if (typeof value !== 'string' || !isValidFlowTime(value)) return invalid();
-    } else if (['text', 'string', 'email', 'phone', 'url', 'id', 'picklist', 'multi-select picklist'].includes(dataType)) {
-      if (dataType === 'multi-select picklist'
-        ? (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))
-        : typeof value !== 'string') return invalid();
-    } else if (resource.type === 'Record') {
-      if (typeof value !== 'object' || value === null || Array.isArray(value)) return invalid();
-    } else if (resource.type === 'Record Collection') {
-      if (!Array.isArray(value) || value.some((item) => typeof item !== 'object' || item === null || Array.isArray(item))) {
-        return invalid();
-      }
-    } else {
-      return `Input "${resource.label}" uses unsupported data type "${resource.dataType}"`;
-    }
-  }
-  return undefined;
-}
 const registerFlowsExecutionRoutesContext = {
   get accessAuthentication() { return accessAuthentication; },
   get app() { return app; },
@@ -4981,7 +4904,7 @@ registerSecurityMetadataRoutes({
 });
 registerFlowElementRoutes(app, requirePermission);
 
-type FlowRuntimeContext = {
+export type FlowRuntimeContext = {
   record?: RuntimeRecord;
   prior?: RuntimeRecord;
   recordEvent?: RecordEvent;
@@ -5004,8 +4927,8 @@ type FlowRuntimeContext = {
   userCurrencyIsoCode?: string;
   currencyIsoCode?: string;
 };
-type FlowDebugTraceEntry = { flowApiName: string; elementId: number; type: string; label: string };
-type RecordEvent = 'created' | 'updated' | 'deleted';
+export type FlowDebugTraceEntry = { flowApiName: string; elementId: number; type: string; label: string };
+export type RecordEvent = 'created' | 'updated' | 'deleted';
 const namedCredentialPayloadSchema = z.object({
   username: z.string().optional(),
   secret: z.string().optional(),
@@ -5017,11 +4940,6 @@ function asConfigRows(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value)
     ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object' && !Array.isArray(item))
     : [];
-}
-
-function isValidFlowTime(value: string): boolean {
-  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value);
-  return match !== null;
 }
 
 function flowVariablesForUser(
@@ -5729,7 +5647,7 @@ function validateRuntimeRecord(tenantId: string, tenant: TenantData, object: Obj
   validateMetadataRecord(tenantId, tenant, object, values, current, platformStore.state.users);
 }
 
-type FlowExecutionResult =
+export type FlowExecutionResult =
   | { status: 'completed'; outputs: Record<string, unknown>; variables: Record<string, unknown>; debugTrace: FlowDebugTraceEntry[] }
   | { status: 'waiting'; kind: 'screen'; screen: FlowMetadata['elements'][number]; nextElementId: number | null; outcomes: Array<{ name: string; label: string }>; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] }
   | { status: 'waiting'; kind: 'orchestration'; stage: FlowMetadata['elements'][number]; waitUntil: string; nextElementId: null; variables: Record<string, unknown>; interviewGuid: string; interviewStartTime: string; record?: RuntimeRecord; prior?: RuntimeRecord; recordEvent?: RecordEvent; isClone?: boolean; debugTrace: FlowDebugTraceEntry[] }
@@ -5775,39 +5693,10 @@ function scheduledPathTimestamp(
 }
 
 function createFlowInterview(flow: FlowMetadata, userId: string, result: Extract<FlowExecutionResult, { status: 'waiting' }>): FlowInterview {
-  const createdAt = result.interviewStartTime;
-  const tenantId = platformStore.state.users.find(user => user.id === userId)?.tenantId;
-  const idleMinutes = (tenantId ? tenantData(tenantId)?.automationSettings.conversationIdleMinutes : undefined)
-    ?? defaultAutomationSettings.conversationIdleMinutes;
-  const conversationExpiry = ['screen', 'wait'].includes(result.kind) && typeof result.record?.Conversation_Key__c === 'string' && result.record.Conversation_Key__c
-    ? new Date(Date.parse(createdAt) + idleMinutes * 60_000).toISOString()
-    : null;
-  const expiresAt = conversationExpiry ?? (result.kind === 'screen'
-    ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
-    : (result.kind === 'scheduled' || result.kind === 'async' || result.kind === 'orchestration')
-      ? '9999-12-31T23:59:59.999Z'
-      : new Date(Date.parse(result.waitUntil) + 7 * 24 * 60 * 60 * 1000).toISOString());
-  return {
-    id: result.interviewGuid,
-    flowApiName: flow.apiName,
-    versionNumber: flow.status === 'Active' ? flow.activeVersion ?? flow.versionNumber : flow.versionNumber,
-    userId,
-    allowDraft: flow.status === 'Draft',
-    kind: result.kind,
-    recordEvent: result.recordEvent ?? null,
-    isClone: result.isClone ?? false,
-    screenElementId: result.kind === 'screen' ? result.screen.id : result.kind === 'orchestration' ? result.stage.id : null,
-    waitUntil: result.kind === 'screen' ? null : result.waitUntil,
-    nextElementId: result.nextElementId,
-    variables: result.variables,
-    record: result.record ?? null,
-    prior: result.prior ?? null,
-    createdAt,
-    expiresAt,
-    history: [],
-    retryAt: null,
-    attempts: 0
-  };
+  return buildFlowInterview(flow, userId, result, {
+    getTenantIdForUser: (id) => platformStore.state.users.find(user => user.id === id)?.tenantId,
+    tenantData
+  });
 }
 
 function flowRetryDelayMs(attempt: number): number {
@@ -6088,151 +5977,21 @@ function performSubmitForApproval(
   return groupId;
 }
 
-function flowNeedsRollbackSnapshot(
-  flow: FlowMetadata,
-  knownFlows: FlowMetadata[],
-  visited: Set<string> = new Set()
-): boolean {
-  if (visited.has(flow.apiName)) return false;
-  visited.add(flow.apiName);
-  return flow.elements.some(element => {
-    if (element.type === 'Roll Back Records') return true;
-    if (element.type !== 'Subflow') return false;
-    const target = element.config.flowApiName;
-    if (typeof target !== 'string') return false;
-    const subflow = knownFlows.find(candidate => candidate.apiName === target);
-    return Boolean(subflow && flowNeedsRollbackSnapshot(subflow, knownFlows, visited));
-  });
-}
-
-async function executeFlow(...args: Parameters<typeof executeFlowImplementation>): Promise<FlowExecutionResult> {
-  return withFlowRecordWriteContext(args[0].apiName, args[2], args[3], () => executeFlowImplementation(...args));
-}
-const executeFlowImplementation = createFlowExecutionEngine({ activeFlowDefinition, appendFieldHistory, applyConnectorLifecycle, applyFlowCollectionAssignment, applyRecordDefaults, asConfigRows, assertConnectorLifecycleAccess, assertFieldEditPermissions, assertFlowRuntimeAdmission, calculateFormulaFields, createFlowInterview, deleteRecordCascade, disableOnConnectorUninstall, effectivePermissions, executeFlow, flowConditionsMatch, flowFieldValues, flowInterviewIdentity, flowLocalDateTimeToInstant, flowNeedsRollbackSnapshot, flowPackageAdmission, flowVariablesForUser, formulaContextForUser, hasFieldPermission, hasObjectPermission, hasRecordAccess, hasRecordTypeAccessForUser, isValidFlowDateTime, mapHttpCalloutResponse, normalizeFlowRecordAssignments, normalizeRuntimeValues, numericFieldValueError, parseSubflowMappings, performCustomNotification, performEmailAlert, performHttpCallout, performPostToChatter, performSendEmail, performSubmitForApproval, prepareFlowCreateCollection, principalForUser, resolveFlowValue, runBeforeSaveRecordTriggeredFlows, runRecordTriggeredFlows, sanitizeRecordForRead, scheduledPathTimestamp, stampRecordAuditFields, validateRelationshipReparenting, validateRuntimeRecord, platformStore, installableAppCatalog, randomUUID, dashboardTimeZoneSchema, platformEventMessageSchema });
+const executeFlow = wrapFlowExecution(() => executeFlowImplementation, withFlowRecordWriteContext);
+const flowExecutionDependencies = {  activeFlowDefinition, appendFieldHistory, applyConnectorLifecycle, applyFlowCollectionAssignment, applyRecordDefaults, asConfigRows, assertConnectorLifecycleAccess, assertFieldEditPermissions, assertFlowRuntimeAdmission, calculateFormulaFields, createFlowInterview, deleteRecordCascade, disableOnConnectorUninstall, effectivePermissions, executeFlow, flowConditionsMatch, flowFieldValues, flowInterviewIdentity, flowLocalDateTimeToInstant, flowNeedsRollbackSnapshot, flowPackageAdmission, flowVariablesForUser, formulaContextForUser, hasFieldPermission, hasObjectPermission, hasRecordAccess, hasRecordTypeAccessForUser, isValidFlowDateTime, mapHttpCalloutResponse, normalizeFlowRecordAssignments, normalizeRuntimeValues, numericFieldValueError, parseSubflowMappings, performCustomNotification, performEmailAlert, performHttpCallout, performPostToChatter, performSendEmail, performSubmitForApproval, prepareFlowCreateCollection, principalForUser, resolveFlowValue, runBeforeSaveRecordTriggeredFlows, runRecordTriggeredFlows, sanitizeRecordForRead, scheduledPathTimestamp, stampRecordAuditFields, validateRelationshipReparenting, validateRuntimeRecord, platformStore, installableAppCatalog, randomUUID, dashboardTimeZoneSchema, platformEventMessageSchema  };
+export type FlowExecutionDependencies = typeof flowExecutionDependencies;
+const executeFlowImplementation = bindFlowExecution(() => flowExecutionDependencies);
 
 
-async function runRecordTriggeredFlows(
-  tenantId: string,
-  tenant: TenantData,
-  userId: string,
-  objectName: string,
-  event: RecordEvent,
-  record: RuntimeRecord,
-  prior?: RuntimeRecord,
-  depth = 0,
-  isClone = false,
-  debugExecution = false,
-  debugTrace: FlowDebugTraceEntry[] = [],
-  rollbackSnapshot?: TenantData
-): Promise<void> {
-  if (depth > 10) throw new Error('Record-triggered flow recursion exceeded the 10-level limit.');
-  for (const flow of orderedRecordTriggeredFlows(tenant, objectName, 'after-save')) {
-    const trigger = String(flow.startConfig.trigger ?? 'created-or-updated');
-    if (event === 'deleted') {
-      tenant.interviews = tenant.interviews.filter((interview) =>
-        interview.kind !== 'scheduled'
-        || interview.flowApiName !== flow.apiName
-        || interview.record?.Id !== (prior ?? record).Id);
-    }
-    if (trigger !== event && trigger !== 'created-or-updated') continue;
-    const conditions = asConfigRows(flow.startConfig.entryConditions);
-    const source = event === 'deleted' ? prior ?? record : record;
-    const context: FlowRuntimeContext = {
-      record: source, prior, recordEvent: event, isClone, resourceDefinitions: flow.resources,
-      formulaStack: new Set(), variables: {}, currentUserId: userId, debug: debugExecution, debugTrace,
-      ...formulaContextForUser(tenant, userId), flowVariables: flowVariablesForUser(tenant, userId)
-    };
-    const matchesCurrentRecord = flowConditionsMatch(conditions, source, context, flow.startConfig.conditionLogic);
-    const transitionAlreadyMatched = event === 'updated'
-      && flow.startConfig.updatedRecordBehavior === 'transition'
-      && prior
-      && flowConditionsMatch(conditions, prior, { ...context, record: prior, prior: undefined }, flow.startConfig.conditionLogic);
-    if (!transitionAlreadyMatched && !matchesCurrentRecord) {
-      tenant.interviews = tenant.interviews.filter((interview) =>
-        interview.kind !== 'scheduled'
-        || interview.flowApiName !== flow.apiName
-        || interview.record?.Id !== source.Id);
-    }
-    if (!matchesCurrentRecord || transitionAlreadyMatched) continue;
-    try {
-      const result = await executeFlow(
-        flow, tenant, tenantId, userId, {}, source, prior, 0, undefined, depth, event, isClone,
-        flowInterviewIdentity(context), false, debugExecution, debugTrace, rollbackSnapshot
-      );
-      if (result.status === 'waiting') {
-        if (result.kind !== 'wait' && result.kind !== 'orchestration') throw new Error(`Record-triggered flow "${flow.label}" cannot pause for screen input.`);
-        tenant.interviews.push(createFlowInterview(flow, userId, result));
-      }
-    } catch (error) {
-      if (!debugExecution) persistFlowFailure(tenantId, flow, 'Record-Triggered', error, userId);
-      throw error;
-    }
-  }
+async function runRecordTriggeredFlows(...args: Parameters<typeof recordTriggerHandlers.runRecordTriggeredFlows>) {
+  return recordTriggerHandlers.runRecordTriggeredFlows(...args);
 }
-
-async function runBeforeSaveRecordTriggeredFlows(
-  tenantId: string,
-  tenant: TenantData,
-  userId: string,
-  objectName: string,
-  event: 'created' | 'updated',
-  record: RuntimeRecord,
-  prior?: RuntimeRecord,
-  depth = 0,
-  isClone = false,
-  debugExecution = false,
-  debugTrace: FlowDebugTraceEntry[] = [],
-  rollbackSnapshot?: TenantData
-): Promise<void> {
-  if (depth > 10) throw new Error('Before-save flow recursion exceeded the 10-level limit.');
-  const object = tenant.objects.find((item) => item.apiName === objectName);
-  if (!object) throw new Error(`Before-save flow trigger object "${objectName}" does not exist.`);
-  for (const flow of orderedRecordTriggeredFlows(tenant, objectName, 'before-save')) {
-    const trigger = String(flow.startConfig.trigger ?? 'created-or-updated');
-    if (trigger !== event && trigger !== 'created-or-updated') continue;
-    const conditions = asConfigRows(flow.startConfig.entryConditions);
-    const context: FlowRuntimeContext = {
-      record, prior, recordEvent: event, isClone, resourceDefinitions: flow.resources, formulaStack: new Set(),
-      debug: debugExecution, debugTrace,
-      variables: {}, currentUserId: userId, ...formulaContextForUser(tenant, userId),
-      flowVariables: flowVariablesForUser(tenant, userId)
-    };
-    if (!flowConditionsMatch(conditions, record, context, flow.startConfig.conditionLogic)) continue;
-    if (event === 'updated' && flow.startConfig.updatedRecordBehavior === 'transition' && prior
-      && flowConditionsMatch(conditions, prior, { ...context, record: prior, prior: undefined }, flow.startConfig.conditionLogic)) continue;
-    try {
-      const result = await executeFlow(
-        flow, tenant, tenantId, userId, {}, record, prior, 0, undefined, depth, event, isClone,
-        flowInterviewIdentity(context), false, debugExecution, debugTrace, rollbackSnapshot
-      );
-      if (result.status !== 'completed') {
-        throw new Error(`Before-save flow "${flow.label}" cannot pause for user or scheduled input.`);
-      }
-      Object.assign(record, calculateFormulaFields(object, record, { ...formulaContextForUser(tenant, userId), isClone }));
-    } catch (error) {
-      if (!debugExecution) persistFlowFailure(tenantId, flow, 'Record-Triggered', error, userId);
-      throw error;
-    }
-  }
+async function runBeforeSaveRecordTriggeredFlows(...args: Parameters<typeof recordTriggerHandlers.runBeforeSaveRecordTriggeredFlows>) {
+  return recordTriggerHandlers.runBeforeSaveRecordTriggeredFlows(...args);
 }
-
-function orderedRecordTriggeredFlows(
-  tenant: TenantData,
-  objectName: string,
-  runWhen: 'before-save' | 'after-save'
-): FlowMetadata[] {
-  return tenant.flows
-    .map(activeFlowDefinition)
-    .filter((flow): flow is FlowMetadata => flow !== undefined
-      && flow.flowType === 'Record-Triggered Flow'
-      && flow.triggerObject === objectName
-      && String(flow.startConfig.runWhen ?? 'after-save') === runWhen)
-    .sort((left, right) => {
-      const leftOrder = typeof left.startConfig.triggerOrder === 'number' ? left.startConfig.triggerOrder : Number.MAX_SAFE_INTEGER;
-      const rightOrder = typeof right.startConfig.triggerOrder === 'number' ? right.startConfig.triggerOrder : Number.MAX_SAFE_INTEGER;
-      return leftOrder - rightOrder || left.apiName.localeCompare(right.apiName);
-    });
-}
+const recordTriggerDependencies = { orderedRecordTriggeredFlows, asConfigRows, flowConditionsMatch, formulaContextForUser, flowVariablesForUser, flowInterviewIdentity, executeFlow, createFlowInterview, persistFlowFailure, calculateFormulaFields };
+export type RecordTriggerDependencies = typeof recordTriggerDependencies;
+const recordTriggerHandlers = createRecordTriggerHandlers(recordTriggerDependencies);
 
 const { scheduledOccurrence, nextScheduledOccurrence } = createFlowScheduleCalculations(flowLocalDateTimeToInstant, dashboardLocalParts);
 
@@ -7949,9 +7708,9 @@ export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySc
 export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
 export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
 export type { DashboardMetadata, ReportMetadata };
-export type { FlowDebugTraceEntry, FlowRuntimeContext };
 
-export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowInterview, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };
+
+export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };
 
 export type FlowSchedulerDependencies = {
   getState: () => typeof platformStore.state;
