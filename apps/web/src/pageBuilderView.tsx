@@ -1545,7 +1545,9 @@ function PageBuilder({
                 minHeight: page.canvasHeight > page.canvasWidth
                   ? Math.max(640, page.canvasHeight)
                   : Math.max(480, Math.min(page.canvasHeight, 1080)),
-                height: 'auto',
+                height: page.canvasHeight > page.canvasWidth
+                  ? Math.max(640, page.canvasHeight)
+                  : Math.max(480, Math.min(page.canvasHeight, 1080)),
                 overflow: 'visible'
               } : undefined}
             >
