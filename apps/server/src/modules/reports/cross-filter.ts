@@ -12,7 +12,7 @@ export function createReportCrossFilterResolver(deps: {
  formulaContextForUser: typeof import('../../index.js')['formulaContextForUser'];
 }) {
  const {hasObjectPermission,hasFieldPermission,hasRecordAccess,calculateFormulaFields,formulaContextForUser}=deps;
-export type ReportCrossFilterResolution =
+type ReportCrossFilterResolution =
   | { matchesRecord: (record: RuntimeRecord) => boolean }
   | { error: string; status: 400 | 403 };
 
