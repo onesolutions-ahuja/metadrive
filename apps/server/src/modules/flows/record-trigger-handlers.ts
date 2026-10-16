@@ -1,4 +1,4 @@
-import type { RecordTriggerDependencies } from '../../index.js';
+import type { RecordTriggerDependencies, TenantData, RuntimeRecord, FlowDebugTraceEntry, FlowRuntimeContext, RecordEvent } from '../../index.js';
 
 export function createRecordTriggerHandlers(dependencies: RecordTriggerDependencies) {
   const { orderedRecordTriggeredFlows, asConfigRows, flowConditionsMatch, formulaContextForUser, flowVariablesForUser, flowInterviewIdentity, executeFlow, createFlowInterview, persistFlowFailure, calculateFormulaFields } = dependencies;
