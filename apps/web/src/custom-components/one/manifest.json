@@ -2282,7 +2282,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 3,
+      "version": 4,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2334,6 +2334,13 @@
           "kind": "TEXT",
           "defaultValue": "category",
           "displayOrder": 370
+        },
+        {
+          "propertyKey": "cartTargetKey",
+          "label": "Add items to shared basket key",
+          "kind": "TEXT",
+          "defaultValue": "",
+          "displayOrder": 390
         }
       ]
     },
@@ -2594,7 +2601,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 4,
+      "version": 6,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
@@ -2633,6 +2640,10 @@
             {
               "key": "display",
               "label": "Paired customer display"
+            },
+            {
+              "key": "basket",
+              "label": "Basket only"
             }
           ]
         },
@@ -2866,6 +2877,13 @@
           "kind": "NUMBER",
           "defaultValue": 170,
           "displayOrder": 460
+        },
+        {
+          "propertyKey": "cartTargetKey",
+          "label": "Shared basket key",
+          "kind": "TEXT",
+          "defaultValue": "cashier",
+          "displayOrder": 480
         }
       ]
     },
