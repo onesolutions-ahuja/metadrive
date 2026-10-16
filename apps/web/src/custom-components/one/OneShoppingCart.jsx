@@ -209,6 +209,15 @@ function ShoppingCartTill({props}) {
   }];
   setError('');updateCart(next);
  };
+ React.useEffect(()=>{
+  if(!props.cartTargetKey||!props.pageSessionKey)return undefined;
+  const receive=event=>{
+   const detail=event.detail;
+   if(detail?.pageSessionKey===props.pageSessionKey&&detail.cartTargetKey===props.cartTargetKey&&detail.record)add(detail.record);
+  };
+  window.addEventListener('metadrive:page-cart-add',receive);
+  return()=>window.removeEventListener('metadrive:page-cart-add',receive);
+ },[props.pageSessionKey,props.cartTargetKey,cart,locked,sessionReady]);
  const changeQuantity=(id,amount)=>{
   if(locked||!sessionReady)return;
   updateCart(cart.map(item=>item.productId===id?{...item,quantity:item.quantity+amount}:item)
@@ -270,13 +279,13 @@ function ShoppingCartTill({props}) {
  },[props.pageSessionKey,props.componentId,openDisplay]);
  const pageToolbarOwnsHeader=typeof document!=='undefined'&&
   document.querySelector('.header-page-context')?.getAttribute('data-page-session-key')===props.pageSessionKey;
- return <section className="one-shopping-till">
-  {!pageToolbarOwnsHeader&&<header className="one-row" style={{justifyContent:'space-between'}}>
+ return <section className={"one-shopping-till"+(props.viewMode==="basket"?" one-shopping-basket-only":"")}>
+  {props.viewMode!=='basket'&&!pageToolbarOwnsHeader&&<header className="one-row" style={{justifyContent:'space-between'}}>
    <div><small>{props.eyebrow||'SALES'}</small><h2 className="one-heading">{props.title||'Till'}</h2></div>
    <button className="one-btn" type="button" onClick={openDisplay}>{props.displayButtonLabel||'Open customer display'}</button>
   </header>}
   {operationError&&<p role="alert">{operationError}</p>}
-  {operations.length>0&&<nav className="one-row" aria-label={props.operationsLabel||'Operations'}>
+  {props.viewMode!=='basket'&&operations.length>0&&<nav className="one-row" aria-label={props.operationsLabel||'Operations'}>
    {operations.map(operation=><button className="one-btn" type="button" key={operation.event}
     disabled={busy||paymentStatus==='pending'||(operation.requiresSession===true&&!sessionReady)||
      (operation.requiresNoSession===true&&channel?.exists)||(operation.requiresCart===true&&!cart.length)||
@@ -287,7 +296,7 @@ function ShoppingCartTill({props}) {
   {channel&&channel.ready&&!channel.exists&&<p role="status">{props.sessionRequiredText||'Start a session to begin.'}</p>}
   {channel?.error&&<p role="alert">{channel.error}</p>}
   <div className="one-shopping-layout">
-   <section aria-label={props.productsLabel||'Products'}>
+   {props.viewMode!=='basket'&&<section aria-label={props.productsLabel||'Products'}>
     <label className="one-label">{props.searchLabel||'Search or scan a product'}
      <input className="one-control" aria-label="Search products" value={search} onChange={event=>setSearch(event.target.value)}
       onKeyDown={scan} placeholder={props.searchPlaceholder||'Search or scan a product'}/>
@@ -300,7 +309,7 @@ function ShoppingCartTill({props}) {
       src={String(product[props.imageFieldApiName||'ImageURL'])}/>}
      <strong>{name(product)}</strong><span>{currency(price(product),props.currencyCode)}</span>
     </button>)}</div>
-   </section>
+   </section>}
    <aside className="one-surface" aria-label={props.basketLabel||'Current sale'}>
     <h3 className="one-heading">{props.basketTitle||'Current sale'}</h3>
     <div aria-live="polite">{!cart.length&&<p className="one-empty">{props.emptyBasketText||'Scan or select products to start.'}</p>}
