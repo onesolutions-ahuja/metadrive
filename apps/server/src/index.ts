@@ -1,3 +1,6 @@
+import { createFlowExecutionEngine } from './modules/flows/execution-engine.js';
+import { parseSubflowMappings } from './modules/flows/subflow-mappings.js';
+import { createFlowScheduleCalculations } from './scheduler/flow-schedule-calculations.js';
 import { createTenantProvisioning } from './core/state/tenant-provisioning.js';
 import { createPersistenceResponseBarrier } from './core/state/response-barrier.js';
 import { createPersistedMetadataReadMode } from './core/state/metadata-read-mode.js';
@@ -7050,769 +7053,2236 @@ function flowNeedsRollbackSnapshot(
 async function executeFlow(...args: Parameters<typeof executeFlowImplementation>): Promise<FlowExecutionResult> {
   return withFlowRecordWriteContext(args[0].apiName, args[2], args[3], () => executeFlowImplementation(...args));
 }
-async function executeFlowImplementation(
-  flow: FlowMetadata,
-  tenant: TenantData,
+const executeFlowImplementation = createFlowExecutionEngine({ activeFlowDefinition, appendFieldHistory, applyConnectorLifecycle, applyFlowCollectionAssignment, applyRecordDefaults, asConfigRows, assertConnectorLifecycleAccess, assertFieldEditPermissions, assertFlowRuntimeAdmission, calculateFormulaFields, createFlowInterview, deleteRecordCascade, disableOnConnectorUninstall, effectivePermissions, executeFlow, flowConditionsMatch, flowFieldValues, flowInterviewIdentity, flowLocalDateTimeToInstant, flowNeedsRollbackSnapshot, flowPackageAdmission, flowVariablesForUser, formulaContextForUser, hasFieldPermission, hasObjectPermission, hasRecordAccess, hasRecordTypeAccessForUser, isValidFlowDateTime, mapHttpCalloutResponse, normalizeFlowRecordAssignments, normalizeRuntimeValues, numericFieldValueError, parseSubflowMappings, performCustomNotification, performEmailAlert, performHttpCallout, performPostToChatter, performSendEmail, performSubmitForApproval, prepareFlowCreateCollection, principalForUser, resolveFlowValue, runBeforeSaveRecordTriggeredFlows, runRecordTriggeredFlows, sanitizeRecordForRead, scheduledPathTimestamp, stampRecordAuditFields, validateRelationshipReparenting, validateRuntimeRecord, state, installableAppCatalog, randomUUID, dashboardTimeZoneSchema, platformEventMessageSchema });
+
+async function runRecordTriggeredFlows(
   tenantId: string,
-  currentUserId: string,
-  input: Record<string, unknown> = {},
-  record?: RuntimeRecord,
+  tenant: TenantData,
+  userId: string,
+  objectName: string,
+  event: RecordEvent,
+  record: RuntimeRecord,
   prior?: RuntimeRecord,
   depth = 0,
-  resume?: { startAt: number; variables: Record<string, unknown>; interviewGuid?: string; interviewStartTime?: string },
-  triggerDepth = 0,
-  recordEvent?: RecordEvent,
   isClone = false,
-  parentInterview?: { interviewGuid: string; interviewStartTime: string },
-  allowDraftExecution = false,
   debugExecution = false,
   debugTrace: FlowDebugTraceEntry[] = [],
-  // Rollback inside a subflow must restore parent DML, so take a single snapshot
-  // when the executed flow or any referenced child contains Roll Back Records.
-  rollbackSnapshot: TenantData | undefined = flowNeedsRollbackSnapshot(flow, tenant.flows)
-    ? structuredClone(tenant) : undefined
-): Promise<FlowExecutionResult> {
-  if (depth > 10) throw new Error('Flow subflow nesting exceeded the 10-level limit.');
-  if (flow.status !== 'Active' && !allowDraftExecution) throw new Error(`Flow "${flow.label}" is not active.`);
-  const runningUser = platformStore.state.users.find((user) => user.id === currentUserId
-    && user.tenantId === tenantId && !user.disabled);
-  if (!runningUser) throw new Error('The Flow running user is not available in this tenant.');
-  const runningPrincipal = principalForUser(runningUser, tenant);
-  // All dispatchers converge here: manual, scheduled, trigger, subflow and resume.
-  // The running identity must already be a live tenant member (checked above).
-  // Action/record permissions continue to be checked by OneEngine at each step.
-  const appAdmission = flowPackageAdmission(
-    flow.apiName, installableAppCatalog.packages,
-    tenant.records.Connector_App__c ?? []
-  );
-  assertFlowRuntimeAdmission({
-    tenantId, principalTenantId: runningPrincipal.tenantId,
-    principalId: runningPrincipal.userId,
-    status: flow.status, allowDraftExecution,
-    ...appAdmission
-  });
-  const interviewGuid = resume?.interviewGuid ?? parentInterview?.interviewGuid ?? randomUUID();
-  const interviewStartTime = resume?.interviewStartTime ?? parentInterview?.interviewStartTime ?? new Date().toISOString();
+  rollbackSnapshot?: TenantData
+): Promise<void> {
+  if (depth > 10) throw new Error('Record-triggered flow recursion exceeded the 10-level limit.');
+  for (const flow of orderedRecordTriggeredFlows(tenant, objectName, 'after-save')) {
+    const trigger = String(flow.startConfig.trigger ?? 'created-or-updated');
+    if (event === 'deleted') {
+      tenant.interviews = tenant.interviews.filter((interview) =>
+        interview.kind !== 'scheduled'
+        || interview.flowApiName !== flow.apiName
+        || interview.record?.Id !== (prior ?? record).Id);
+    }
+    if (trigger !== event && trigger !== 'created-or-updated') continue;
+    const conditions = asConfigRows(flow.startConfig.entryConditions);
+    const source = event === 'deleted' ? prior ?? record : record;
+    const context: FlowRuntimeContext = {
+      record: source, prior, recordEvent: event, isClone, resourceDefinitions: flow.resources,
+      formulaStack: new Set(), variables: {}, currentUserId: userId, debug: debugExecution, debugTrace,
+      ...formulaContextForUser(tenant, userId), flowVariables: flowVariablesForUser(tenant, userId)
+    };
+    const matchesCurrentRecord = flowConditionsMatch(conditions, source, context, flow.startConfig.conditionLogic);
+    const transitionAlreadyMatched = event === 'updated'
+      && flow.startConfig.updatedRecordBehavior === 'transition'
+      && prior
+      && flowConditionsMatch(conditions, prior, { ...context, record: prior, prior: undefined }, flow.startConfig.conditionLogic);
+    if (!transitionAlreadyMatched && !matchesCurrentRecord) {
+      tenant.interviews = tenant.interviews.filter((interview) =>
+        interview.kind !== 'scheduled'
+        || interview.flowApiName !== flow.apiName
+        || interview.record?.Id !== source.Id);
+    }
+    if (!matchesCurrentRecord || transitionAlreadyMatched) continue;
+    try {
+      const result = await executeFlow(
+        flow, tenant, tenantId, userId, {}, source, prior, 0, undefined, depth, event, isClone,
+        flowInterviewIdentity(context), false, debugExecution, debugTrace, rollbackSnapshot
+      );
+      if (result.status === 'waiting') {
+        if (result.kind !== 'wait' && result.kind !== 'orchestration') throw new Error(`Record-triggered flow "${flow.label}" cannot pause for screen input.`);
+        tenant.interviews.push(createFlowInterview(flow, userId, result));
+      }
+    } catch (error) {
+      if (!debugExecution) persistFlowFailure(tenantId, flow, 'Record-Triggered', error, userId);
+      throw error;
+    }
+  }
+}
+
+async function runBeforeSaveRecordTriggeredFlows(
+  tenantId: string,
+  tenant: TenantData,
+  userId: string,
+  objectName: string,
+  event: 'created' | 'updated',
+  record: RuntimeRecord,
+  prior?: RuntimeRecord,
+  depth = 0,
+  isClone = false,
+  debugExecution = false,
+  debugTrace: FlowDebugTraceEntry[] = [],
+  rollbackSnapshot?: TenantData
+): Promise<void> {
+  if (depth > 10) throw new Error('Before-save flow recursion exceeded the 10-level limit.');
+  const object = tenant.objects.find((item) => item.apiName === objectName);
+  if (!object) throw new Error(`Before-save flow trigger object "${objectName}" does not exist.`);
+  for (const flow of orderedRecordTriggeredFlows(tenant, objectName, 'before-save')) {
+    const trigger = String(flow.startConfig.trigger ?? 'created-or-updated');
+    if (trigger !== event && trigger !== 'created-or-updated') continue;
+    const conditions = asConfigRows(flow.startConfig.entryConditions);
+    const context: FlowRuntimeContext = {
+      record, prior, recordEvent: event, isClone, resourceDefinitions: flow.resources, formulaStack: new Set(),
+      debug: debugExecution, debugTrace,
+      variables: {}, currentUserId: userId, ...formulaContextForUser(tenant, userId),
+      flowVariables: flowVariablesForUser(tenant, userId)
+    };
+    if (!flowConditionsMatch(conditions, record, context, flow.startConfig.conditionLogic)) continue;
+    if (event === 'updated' && flow.startConfig.updatedRecordBehavior === 'transition' && prior
+      && flowConditionsMatch(conditions, prior, { ...context, record: prior, prior: undefined }, flow.startConfig.conditionLogic)) continue;
+    try {
+      const result = await executeFlow(
+        flow, tenant, tenantId, userId, {}, record, prior, 0, undefined, depth, event, isClone,
+        flowInterviewIdentity(context), false, debugExecution, debugTrace, rollbackSnapshot
+      );
+      if (result.status !== 'completed') {
+        throw new Error(`Before-save flow "${flow.label}" cannot pause for user or scheduled input.`);
+      }
+      Object.assign(record, calculateFormulaFields(object, record, { ...formulaContextForUser(tenant, userId), isClone }));
+    } catch (error) {
+      if (!debugExecution) persistFlowFailure(tenantId, flow, 'Record-Triggered', error, userId);
+      throw error;
+    }
+  }
+}
+
+function orderedRecordTriggeredFlows(
+  tenant: TenantData,
+  objectName: string,
+  runWhen: 'before-save' | 'after-save'
+): FlowMetadata[] {
+  return tenant.flows
+    .map(activeFlowDefinition)
+    .filter((flow): flow is FlowMetadata => flow !== undefined
+      && flow.flowType === 'Record-Triggered Flow'
+      && flow.triggerObject === objectName
+      && String(flow.startConfig.runWhen ?? 'after-save') === runWhen)
+    .sort((left, right) => {
+      const leftOrder = typeof left.startConfig.triggerOrder === 'number' ? left.startConfig.triggerOrder : Number.MAX_SAFE_INTEGER;
+      const rightOrder = typeof right.startConfig.triggerOrder === 'number' ? right.startConfig.triggerOrder : Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder || left.apiName.localeCompare(right.apiName);
+    });
+}
+
+const { scheduledOccurrence, nextScheduledOccurrence } = createFlowScheduleCalculations(flowLocalDateTimeToInstant, dashboardLocalParts);
+
+async function resumeDueFlowInterviews(now: Date): Promise<void> {
+  for (const [tenantId, tenant] of Object.entries(platformStore.state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
+    for (const interview of [...tenant.interviews]) {
+      if (!['wait', 'scheduled', 'async'].includes(interview.kind) || !interview.waitUntil) continue;
+      const settings = tenant.automationSettings ?? defaultAutomationSettings;
+      const conversationKey = interview.record?.Conversation_Key__c;
+      const conversational = interview.kind !== 'async' && typeof conversationKey === 'string' && Boolean(conversationKey);
+      const owningFlow = conversational ? tenant.flows.find(flow => flow.apiName === interview.flowApiName) : undefined;
+      const sessionRecords = owningFlow?.triggerObject ? (tenant.records[owningFlow.triggerObject] ?? []) : [];
+      const lastActivityAt = sessionRecords.reduce((latest, item) => {
+        if (item.Conversation_Key__c !== conversationKey || item.Direction__c !== 'Incoming') return latest;
+        const timestamp = typeof item.CreatedDate === 'string' ? Date.parse(item.CreatedDate) : NaN;
+        return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+      }, Date.parse(interview.createdAt));
+      const expired = conversational
+        ? expiredConversationInterview(interview.record, new Date(lastActivityAt).toISOString(), now.getTime(), settings.conversationIdleMinutes)
+        : Date.parse(interview.expiresAt) <= now.getTime();
+      if (expired || (!settings.autoRetryFailedFlows && interview.attempts > 0)
+        || (interview.attempts > 0 && retryBudgetExhausted(interview.attempts, settings.maxRetryAttempts))) {
+        const current = tenantData(tenantId);
+        if (current) persistTenantRecords(tenantId, {
+          ...current, interviews: current.interviews.filter(item => item.id !== interview.id)
+        });
+        continue;
+      }
+      if (Date.parse(interview.waitUntil) > now.getTime()
+        || (interview.retryAt && Date.parse(interview.retryAt) > now.getTime())) continue;
+      const currentTenant = tenantData(tenantId);
+      if (!currentTenant) continue;
+      const savedFlow = currentTenant.flows.find((item) => item.apiName === interview.flowApiName);
+      const activeInterviewFlow = activeFlowDefinition(savedFlow);
+      const archivedAsyncVersion = interview.kind === 'async' && savedFlow?.activeVersion !== null
+        ? savedFlow?.versions.find((version) => version.versionNumber === interview.versionNumber)
+        : undefined;
+      const flow = interview.allowDraft && savedFlow?.status === 'Draft'
+        && savedFlow.versionNumber === interview.versionNumber
+        ? savedFlow
+        : activeInterviewFlow?.versionNumber === interview.versionNumber
+          ? activeInterviewFlow
+          : savedFlow && archivedAsyncVersion
+            ? { ...savedFlow, ...archivedAsyncVersion, status: 'Active' as const,
+              activeVersion: archivedAsyncVersion.versionNumber, versionNumber: archivedAsyncVersion.versionNumber }
+            : undefined;
+      const working = structuredClone(currentTenant);
+      try {
+        if (interview.kind === 'wait' && !conversational && Date.parse(interview.expiresAt) <= now.getTime()) {
+          throw new Error('Wait interview expired before it could resume.');
+        }
+        if (!flow) throw new Error('Wait interview flow version is no longer active.');
+        if (interview.nextElementId === null) {
+          working.interviews = working.interviews.filter((item) => item.id !== interview.id);
+          persistTenantRecords(tenantId, working);
+          continue;
+        }
+        const result = await executeFlow(flow, working, tenantId, interview.userId, {}, interview.record ?? undefined, interview.prior ?? undefined, 0, {
+          startAt: interview.nextElementId,
+          variables: interview.variables,
+          interviewGuid: interview.id,
+          interviewStartTime: interview.createdAt
+        }, 0, interview.recordEvent ?? undefined, interview.isClone, undefined, interview.allowDraft);
+        if (result.status === 'waiting') {
+          const updated = createFlowInterview(flow, interview.userId, result);
+          working.interviews = working.interviews.map((item) => item.id === interview.id ? updated : item);
+        } else {
+          working.interviews = working.interviews.filter((item) => item.id !== interview.id);
+        }
+        persistTenantRecords(tenantId, working);
+      } catch (error) {
+        console.error(`Wait interview "${interview.id}" failed: ${error instanceof Error ? error.message : String(error)}`);
+        const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
+        const failedInterview = failedTenant.interviews.find((item) => item.id === interview.id);
+        const expired = Date.parse(interview.expiresAt) <= now.getTime();
+        if (expired || !settings.autoRetryFailedFlows
+          || retryBudgetExhausted((failedInterview?.attempts ?? 0) + 1, settings.maxRetryAttempts)) {
+          failedTenant.interviews = failedTenant.interviews.filter((item) => item.id !== interview.id);
+        } else if (failedInterview) {
+          failedInterview.attempts += 1;
+          failedInterview.retryAt = new Date(now.getTime() + flowRetryDelayMs(failedInterview.attempts)).toISOString();
+        }
+        failedTenant.flowLogs.push(createFlowFailureLog(
+          flow ?? { apiName: interview.flowApiName, label: interview.flowApiName },
+          interview.kind === 'scheduled' ? 'Scheduled Path' : interview.kind === 'async' ? 'Async Path' : 'Wait Interview',
+          error,
+          interview.userId
+        ));
+        persistTenantRecords(tenantId, failedTenant);
+      }
+    }
+  }
+}
+
+async function executeDueScheduledFlows(now = new Date()): Promise<void> {
+  await resumeDueFlowInterviews(now);
+  for (const [tenantId, tenant] of Object.entries(platformStore.state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
+    for (const candidate of [...tenant.flows]) {
+      const currentTenant = tenantData(tenantId);
+      if (!currentTenant) continue;
+      const flow = activeFlowDefinition(candidate);
+      if (!flow || flow.flowType !== 'Schedule-Triggered Flow' || !flow.triggerObject) continue;
+      const runKey = `${flow.apiName}@${flow.activeVersion ?? flow.versionNumber}`;
+      const latestOccurrence = scheduledOccurrence(flow, now);
+      const pendingRetry = currentTenant.scheduleRetries[runKey];
+      const settings = currentTenant.automationSettings ?? defaultAutomationSettings;
+      const autoRetry = settings.autoRetryFailedFlows;
+      if (pendingRetry && (!autoRetry
+        || retryBudgetExhausted(pendingRetry.attempts, settings.maxRetryAttempts))) {
+        const updated = structuredClone(currentTenant);
+        updated.scheduleRuns[runKey] = pendingRetry.occurrenceAt;
+        delete updated.scheduleRetries[runKey];
+        persistTenantRecords(tenantId, updated);
+        continue;
+      }
+      const lastRun = currentTenant.scheduleRuns[runKey];
+      const pendingOccurrence = pendingRetry && (!lastRun || Date.parse(pendingRetry.occurrenceAt) > Date.parse(lastRun))
+        ? new Date(pendingRetry.occurrenceAt)
+        : undefined;
+      const occurrence = pendingOccurrence ?? (lastRun
+        ? nextScheduledOccurrence(flow, new Date(lastRun), now)
+        : latestOccurrence);
+      if (pendingRetry && occurrence?.toISOString() === pendingRetry.occurrenceAt
+        && Date.parse(pendingRetry.retryAt) > now.getTime()) continue;
+      if (!occurrence || (currentTenant.scheduleRuns[runKey] && Date.parse(currentTenant.scheduleRuns[runKey]) >= occurrence.getTime())) continue;
+      const working = structuredClone(currentTenant);
+      try {
+        const objectName = flow.triggerObject;
+        const conditions = asConfigRows(flow.startConfig.entryConditions);
+        const candidates = working.records[objectName] ?? [];
+        if (candidates.length > 2000) throw new Error(`Scheduled flow "${flow.label}" exceeded the 2,000-record execution limit.`);
+        for (const record of candidates) {
+          const scheduledUserId = platformStore.state.users.find((user) => user.tenantId === tenantId && !user.disabled)?.id ?? 'scheduled-system';
+          const context: FlowRuntimeContext = {
+            record,
+            resourceDefinitions: flow.resources,
+            formulaStack: new Set(),
+            variables: {},
+            currentUserId: scheduledUserId,
+            ...formulaContextForUser(working, scheduledUserId),
+            flowVariables: flowVariablesForUser(working, scheduledUserId)
+          };
+          if (flowConditionsMatch(conditions, record, context, flow.startConfig.conditionLogic)) {
+            const result = await executeFlow(flow, working, tenantId, context.currentUserId, {}, record, undefined, 0, undefined, 0, undefined, false, flowInterviewIdentity(context));
+            if (result.status === 'waiting') {
+              if (result.kind !== 'wait') throw new Error('Scheduled flows cannot pause for screen input.');
+              working.interviews.push(createFlowInterview(flow, context.currentUserId, result));
+            }
+          }
+        }
+        working.scheduleRuns[runKey] = occurrence.toISOString();
+        delete working.scheduleRetries[runKey];
+        persistTenantRecords(tenantId, working);
+      } catch (error) {
+        console.error(`Scheduled flow "${flow.apiName}" failed for tenant "${tenantId}": ${error instanceof Error ? error.message : String(error)}`);
+        const failedTenant = structuredClone(tenantData(tenantId) ?? currentTenant);
+        const attempts = (pendingRetry?.occurrenceAt === occurrence.toISOString() ? pendingRetry.attempts : 0) + 1;
+        if (autoRetry && !retryBudgetExhausted(attempts, settings.maxRetryAttempts)) {
+          failedTenant.scheduleRetries[runKey] = {
+            occurrenceAt: occurrence.toISOString(),
+            attempts,
+            retryAt: new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString()
+          };
+        } else {
+          // Mark the failed occurrence handled; a later scheduled occurrence may still run.
+          failedTenant.scheduleRuns[runKey] = occurrence.toISOString();
+          delete failedTenant.scheduleRetries[runKey];
+        }
+        failedTenant.flowLogs.push(createFlowFailureLog(flow, 'Scheduled', error, null));
+        persistTenantRecords(tenantId, failedTenant);
+      }
+    }
+  }
+}
+
+function platformEventFlowMatches(
+  flow: FlowMetadata,
+  tenant: TenantData,
+  userId: string,
+  payload: RuntimeRecord
+): boolean {
   const context: FlowRuntimeContext = {
-    record, prior, recordEvent, isClone, triggerObjectName: flow.triggerObject ?? undefined,
-    currentUserId, resourceDefinitions: flow.resources, formulaStack: new Set(),
-    debug: debugExecution, debugTrace, rollbackSnapshot,
-    ...formulaContextForUser(tenant, currentUserId),
-    flowVariables: flowVariablesForUser(tenant, currentUserId, interviewGuid, interviewStartTime),
-    variables: { ...Object.fromEntries(flow.resources.map((resource) => [resource.name, resource.value])), ...resume?.variables }
+    record: payload,
+    triggerObjectName: flow.triggerObject ?? undefined,
+    currentUserId: userId,
+    resourceDefinitions: flow.resources,
+    formulaStack: new Set(),
+    variables: Object.fromEntries(flow.resources.map((resource) => [resource.name, resource.value])),
+    flowVariables: flowVariablesForUser(tenant, userId),
+    ...formulaContextForUser(tenant, userId)
   };
+  return flowConditionsMatch(
+    asConfigRows(flow.startConfig.entryConditions),
+    payload,
+    context,
+    flow.startConfig.conditionLogic
+  );
+}
+
+async function deliverPendingPlatformEvents(now = new Date()): Promise<void> {
+  const nowIso = now.toISOString();
+  for (const tenantId of Object.keys(platformStore.state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
+    const snapshot = tenantData(tenantId);
+    if (!snapshot) continue;
+    const dueMessages = snapshot.platformEventMessages.filter((message) =>
+      !message.processedAt && !message.deadLettered
+      && (!message.retryAt || Date.parse(message.retryAt) <= now.getTime()));
+    for (const queuedMessage of dueMessages) {
+      let currentTenant = tenantData(tenantId);
+      let message = currentTenant?.platformEventMessages.find((item) => item.id === queuedMessage.id);
+      if (!currentTenant || !message || message.processedAt || message.deadLettered) continue;
+      const settings = currentTenant.automationSettings ?? defaultAutomationSettings;
+      const autoRetry = settings.autoRetryFailedFlows;
+      if ((!autoRetry && message.attempts > 0)
+        || (message.attempts > 0 && retryBudgetExhausted(message.attempts, settings.maxRetryAttempts))) {
+        persistTenantRecords(tenantId, {
+          ...currentTenant,
+          platformEventMessages: currentTenant.platformEventMessages.map(item =>
+            item.id === message?.id ? { ...item, deadLettered: true, retryAt: null } : item)
+        });
+        continue;
+      }
+      const subscriberTenant = currentTenant;
+      const eventMessage = message;
+      const subscribers = subscriberTenant.flows.map(activeFlowDefinition)
+        .filter((flow): flow is FlowMetadata => flow !== undefined
+        && flow.flowType === 'Platform Event-Triggered Flow'
+        && flow.triggerObject === eventMessage.eventApiName
+        && platformEventFlowMatches(flow, subscriberTenant, eventMessage.publishedBy, eventMessage.payload as RuntimeRecord));
+      if (!subscribers.length) {
+        persistTenantRecords(tenantId, {
+          ...currentTenant,
+          platformEventMessages: currentTenant.platformEventMessages.map((item) => item.id === message?.id
+            ? { ...item, processedAt: nowIso, retryAt: null, lastError: '' }
+            : item)
+        });
+        continue;
+      }
+      for (const subscriber of subscribers) {
+        currentTenant = tenantData(tenantId);
+        message = currentTenant?.platformEventMessages.find((item) => item.id === queuedMessage.id);
+        if (!currentTenant || !message || message.deliveredFlowApiNames.includes(subscriber.apiName)) continue;
+        try {
+          const working = structuredClone(currentTenant);
+          const activeFlow = activeFlowDefinition(working.flows.find((flow) => flow.apiName === subscriber.apiName
+            && flow.flowType === 'Platform Event-Triggered Flow'));
+          if (!activeFlow) continue;
+          const result = await executeFlow(
+            activeFlow, working, tenantId, message.publishedBy, {},
+            message.payload as RuntimeRecord
+          );
+          if (result.status === 'waiting') {
+            if (result.kind === 'screen') throw new Error('Platform Event-Triggered Flows cannot pause for screen input.');
+            working.interviews.push(createFlowInterview(activeFlow, message.publishedBy, result));
+          }
+          working.platformEventMessages = working.platformEventMessages.map((item) => item.id === message?.id
+            ? {
+              ...item,
+              deliveredFlowApiNames: [...item.deliveredFlowApiNames, activeFlow.apiName],
+              attempts: 0,
+              retryAt: null,
+              lastError: ''
+            }
+            : item);
+          const updatedMessage = working.platformEventMessages.find((item) => item.id === message?.id);
+          const allDelivered = subscribers.every((flow) =>
+            updatedMessage?.deliveredFlowApiNames.includes(flow.apiName));
+          if (allDelivered && updatedMessage) {
+            working.platformEventMessages = working.platformEventMessages.map((item) => item.id === updatedMessage.id
+              ? { ...item, processedAt: nowIso }
+              : item);
+          }
+          persistTenantRecords(tenantId, working);
+        } catch (error) {
+          const failedTenant = tenantData(tenantId);
+          if (!failedTenant) continue;
+          const failedMessage = failedTenant.platformEventMessages.find((item) => item.id === queuedMessage.id);
+          if (!failedMessage) continue;
+          const attempts = failedMessage.attempts + 1;
+          const deadLettered = !autoRetry || retryBudgetExhausted(attempts, settings.maxRetryAttempts);
+          const retryAt = deadLettered ? null : new Date(now.getTime() + flowRetryDelayMs(attempts)).toISOString();
+          const failure = error instanceof Error ? error.message : String(error);
+          persistTenantRecords(tenantId, {
+            ...failedTenant,
+            platformEventMessages: failedTenant.platformEventMessages.map((item) => item.id === failedMessage.id
+              ? { ...item, attempts, retryAt, lastError: failure.slice(0, 1000), deadLettered }
+              : item),
+            flowLogs: [...failedTenant.flowLogs, createFlowFailureLog(subscriber, 'Platform Event', failure, failedMessage.publishedBy)]
+          });
+          break;
+        }
+      }
+    }
+  }
+}
+
+function validateFlow(
+  flow: FlowMetadata,
+  objects: ObjectMetadata[] = [],
+  credentials: StoredNamedCredential[] = [],
+  integrationConnections: IntegrationConnection[] = [],
+  connectorDefinitions: ConnectorDefinition[] = [],
+  emailAlerts: EmailAlert[] = [],
+  formulaContext: { timeZone?: string; locale?: string; corporateCurrency?: string; currencyRates?: Record<string, number> } = {},
+  allFlows: FlowMetadata[] = [],
+  approvalProcesses: ApprovalProcess[] = [],
+  platformEvents: z.infer<typeof platformEventSchema>[] = [],
+  tenantId = ''
+): { valid: boolean; errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const starts = flow.elements.filter((element) => element.type === 'Start');
+  if (starts.length !== 1) errors.push('A flow must have exactly one Start element.');
+  else if (flow.elements[0]?.id !== starts[0].id) errors.push('Move the Start element to the beginning of the flow.');
+  const requiresObject = ['Record-Triggered Flow', 'Schedule-Triggered Flow', 'Platform Event-Triggered Flow'].includes(flow.flowType);
+  if (flow.flowType === 'Flow Orchestration' && !flow.elements.some((element) => element.type === 'Orchestration Stage')) {
+    errors.push('Flow Orchestration must contain at least one Orchestration Stage.');
+  }
+  if (requiresObject && !flow.triggerObject) errors.push('Select an object for the flow trigger.');
+  if (!requiresObject && flow.triggerObject) errors.push('Only triggered flows can select a trigger object.');
+  const eventTriggered = flow.flowType === 'Platform Event-Triggered Flow';
+  if (eventTriggered && flow.triggerObject && !platformEvents.some((event) => event.apiName === flow.triggerObject)) {
+    errors.push(`Platform event "${flow.triggerObject}" does not exist.`);
+  } else if (flow.triggerObject && !eventTriggered && !objects.some((object) => object.apiName === flow.triggerObject)) {
+    errors.push(`Trigger object "${flow.triggerObject}" does not exist.`);
+  }
+  if (flow.flowType === 'Record-Triggered Flow') {
+    if (!['created', 'updated', 'created-or-updated', 'deleted'].includes(String(flow.startConfig.trigger ?? 'created-or-updated'))) {
+      errors.push('Record-triggered flow trigger must be created, updated, created-or-updated, or deleted.');
+    }
+    if (!['before-save', 'after-save'].includes(String(flow.startConfig.runWhen ?? 'after-save'))) {
+      errors.push('Record-triggered flow optimization must be before-save or after-save.');
+    }
+    if (flow.startConfig.runWhen === 'before-save' && flow.startConfig.trigger === 'deleted') {
+      errors.push('Before-save record-triggered flows cannot run when a record is deleted.');
+    }
+    if (flow.startConfig.updatedRecordBehavior !== undefined
+      && !['every-time', 'transition'].includes(String(flow.startConfig.updatedRecordBehavior))) {
+      errors.push('Updated-record behavior must be every-time or transition.');
+    }
+    const triggerOrder = flow.startConfig.triggerOrder;
+    if (triggerOrder !== undefined
+      && (!Number.isInteger(triggerOrder) || Number(triggerOrder) < 1 || Number(triggerOrder) > 2000)) {
+      errors.push('Record-triggered flow trigger order must be an integer from 1 through 2000.');
+    }
+  }
+  if (flow.flowType === 'Schedule-Triggered Flow' && (!flow.startConfig.startDate || !flow.startConfig.startTime || !flow.startConfig.frequency)) {
+    errors.push('Configure a start date, start time, and frequency for the schedule.');
+  }
+  if (flow.flowType === 'Schedule-Triggered Flow') {
+    const startDate = String(flow.startConfig.startDate ?? '');
+    const startTime = String(flow.startConfig.startTime ?? '');
+    const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(startDate);
+    const timeMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(startTime);
+    if (!dateMatch || !timeMatch) {
+      errors.push('The schedule start date or time is invalid.');
+    } else {
+      const [year, month, day] = dateMatch.slice(1).map(Number);
+      const civilDate = new Date(Date.UTC(year, month - 1, day));
+      if (civilDate.getUTCFullYear() !== year || civilDate.getUTCMonth() !== month - 1 || civilDate.getUTCDate() !== day) {
+        errors.push('The schedule start date or time is invalid.');
+      } else {
+        const timeZone = String(flow.startConfig.timeZone ?? 'UTC');
+        if (!dashboardTimeZoneSchema.safeParse(timeZone).success) {
+          errors.push('The schedule time zone must be a valid IANA time zone.');
+        } else {
+          const [hour, minute] = timeMatch.slice(1).map(Number);
+          if (!flowLocalDateTimeToInstant(civilDate, hour, minute, timeZone)) {
+            errors.push(`The schedule start time does not exist in time zone "${timeZone}" because of a daylight-saving transition.`);
+          }
+        }
+      }
+    }
+  }
+  if (flow.flowType === 'Schedule-Triggered Flow' && flow.startConfig.frequency && !['Once', 'Daily', 'Weekly'].includes(String(flow.startConfig.frequency))) {
+    errors.push('Schedule frequency must be Once, Daily, or Weekly.');
+  }
+  const triggerObject = objects.find((object) => object.apiName === flow.triggerObject);
+  const triggerPlatformEvent = platformEvents.find((event) => event.apiName === flow.triggerObject);
+  const validateConditions = (conditions: unknown, object: { apiName: string; fields: Array<{ apiName: string }> } | undefined, elementLabel: string) => {
+    for (const condition of asConfigRows(conditions)) {
+      const fieldName = typeof condition.field === 'string' ? condition.field : '';
+      const resourceReference = /^\{!?([A-Za-z_$][A-Za-z0-9_.$]*)\}$/.exec(fieldName);
+      if (!fieldName) errors.push(`A condition on "${elementLabel}" is missing its field.`);
+      else if (!resourceReference && fieldName !== 'Id' && object && !object.fields.some((field) => field.apiName === fieldName)) errors.push(`Field "${fieldName}" on "${elementLabel}" does not exist on "${object.apiName}".`);
+      const operator = String(condition.operator ?? 'Equals');
+      if (!['Equals', 'Not Equals', 'Not Equal To', 'Is Null', 'Is Not Null', 'Greater Than', 'Less Than', 'Contains', 'Starts With'].includes(operator)) {
+        errors.push(`Condition operator "${operator}" on "${elementLabel}" is not supported.`);
+      }
+      if (resourceReference) {
+        const rootName = resourceReference[1].split('.')[0];
+        if (!['$Record', '$Prior', '$Record__Prior', '$User', '$Flow'].includes(rootName)
+          && !flow.resources.some((resource) => resource.name === rootName)) {
+          errors.push(`Resource "${rootName}" on "${elementLabel}" does not exist.`);
+        }
+      }
+    }
+  };
+  const validateConditionLogic = (logic: unknown, elementLabel: string, conditionCount = 0) => {
+    if (logic === undefined || ['All', 'Any'].includes(String(logic))) return;
+    try {
+      evaluateCustomConditionLogic(String(logic), Array.from({ length: conditionCount }, () => false));
+    } catch (error) {
+      errors.push(`Condition logic on "${elementLabel}" is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  for (const connector of flow.connectors) {
+    if (connector.kind === 'async') {
+      const source = flow.elements.find((element) => element.id === connector.from);
+      if (flow.flowType !== 'Record-Triggered Flow' || source?.type !== 'Start') {
+        errors.push(`Async path "${connector.id}" must start at a record-triggered flow's Start element.`);
+      }
+      if (flow.startConfig.runWhen === 'before-save') {
+        errors.push(`Async path "${connector.id}" requires an after-save flow.`);
+      }
+      if (flow.startConfig.trigger === 'deleted') {
+        errors.push(`Async path "${connector.id}" cannot be used with a delete trigger.`);
+      }
+      if (connector.scheduledPath) errors.push(`Async path "${connector.id}" cannot define scheduled-path settings.`);
+    } else if (connector.kind === 'scheduled') {
+      const source = flow.elements.find((element) => element.id === connector.from);
+      if (flow.flowType !== 'Record-Triggered Flow' || source?.type !== 'Start') {
+        errors.push(`Scheduled path "${connector.id}" must start at a record-triggered flow's Start element.`);
+      }
+      if (flow.startConfig.runWhen === 'before-save') {
+        errors.push(`Scheduled path "${connector.id}" is only available for after-save flows.`);
+      }
+      if (flow.startConfig.trigger === 'deleted') {
+        errors.push(`Scheduled path "${connector.id}" cannot be used with a delete trigger.`);
+      }
+      const scheduledPath = connector.scheduledPath;
+      if (!scheduledPath) {
+        errors.push(`Scheduled path "${connector.id}" requires a time source field and offset.`);
+      } else {
+        const timeSource = triggerObject?.fields.find((field) => field.apiName === scheduledPath.timeSourceFieldApiName);
+        if (!timeSource || !['Date', 'DateTime'].includes(timeSource.dataType)) {
+          errors.push(`Scheduled path "${connector.id}" requires a Date or DateTime field on "${flow.triggerObject ?? 'the trigger object'}".`);
+        }
+      }
+    } else if (connector.scheduledPath) {
+      errors.push(`Connector "${connector.id}" can only define scheduled-path settings when its type is scheduled.`);
+    }
+    if (connector.kind === 'fault' && flow.elements.find((element) => element.id === connector.from)?.type === 'Start') {
+      errors.push(`Fault connector "${connector.id}" cannot originate from Start.`);
+    }
+  }
+  if (flow.connectors.filter((connector) => connector.kind === 'async').length > 1) {
+    errors.push('A record-triggered flow may have only one asynchronous path.');
+  }
+  const faultConnectorSources = new Set(flow.connectors.filter((connector) => connector.kind === 'fault').map((connector) => connector.from));
+  for (const sourceId of faultConnectorSources) {
+    if (flow.connectors.filter((connector) => connector.from === sourceId && connector.kind === 'fault').length > 1) {
+      errors.push(`Element "${flow.elements.find((element) => element.id === sourceId)?.label ?? sourceId}" can have only one fault connector.`);
+    }
+  }
   for (const resource of flow.resources) {
     if (resource.availableForInput && !['Variable', 'Record', 'Record Collection'].includes(resource.type)) {
-      throw new Error(`${resource.type} resource "${resource.label}" cannot be available for input.`);
+      errors.push(`${resource.type} resource "${resource.label}" cannot be available for input.`);
     }
-    if (resource.availableForInput && Object.hasOwn(input, resource.name)) context.variables[resource.name] = input[resource.name];
-  }
-  const unexpectedInput = Object.keys(input).find((name) => !flow.resources.some((resource) => resource.name === name && resource.availableForInput));
-  if (unexpectedInput) throw new Error(`Resource "${unexpectedInput}" is not available for input in flow "${flow.label}".`);
-  const loopPositions = new Map<number, { items: unknown[]; index: number }>();
-  const starts = flow.elements.filter((element) => element.type === 'Start');
-  if (starts.length !== 1) throw new Error(`Flow "${flow.label}" must have exactly one Start element.`);
-  let currentId: number | undefined = resume?.startAt ?? starts[0].id;
-  let steps = 0;
-  while (currentId !== undefined) {
-    if (++steps > 1000) throw new Error(`Flow "${flow.label}" exceeded the 1,000-step execution limit.`);
-    const element = flow.elements.find((candidate) => candidate.id === currentId);
-    if (!element) throw new Error(`Flow "${flow.label}" references missing element ${currentId}.`);
-    if (debugExecution) debugTrace.push({ flowApiName: flow.apiName, elementId: element.id, type: element.type, label: element.label });
-    const config = element.config;
-    let nextConnectors = flow.connectors.filter((connector) => connector.from === element.id && connector.kind === 'normal');
+    if (resource.availableForInput && resource.type === 'Variable') {
+      const dataType = resource.dataType.toLowerCase();
+      const supportedInputType = ['number', 'currency', 'percent'].some((type) => dataType.startsWith(type))
+        || ['boolean', 'checkbox', 'date', 'date/time', 'datetime', 'time', 'text', 'string', 'email', 'phone', 'url', 'id', 'picklist', 'multi-select picklist'].includes(dataType);
+      if (!supportedInputType) {
+        errors.push(`Input variable "${resource.label}" uses unsupported data type "${resource.dataType}".`);
+      }
+    }
+    if (resource.type !== 'Formula') continue;
+    if (resource.availableForInput) errors.push(`Formula resource "${resource.label}" cannot be available for input.`);
+    if (typeof resource.value !== 'string' || !resource.value.trim()) {
+      errors.push(`Formula resource "${resource.label}" requires an expression.`);
+      continue;
+    }
     try {
-      switch (element.type) {
-      case 'Start':
-        if (flow.flowType === 'Record-Triggered Flow' && context.record) {
-          for (const connector of flow.connectors.filter((item) => item.from === element.id && ['scheduled', 'async'].includes(item.kind))) {
-            let waitUntil = new Date();
-            if (connector.kind === 'scheduled') {
-              const schedule = connector.scheduledPath;
-              if (!schedule) throw new Error(`Scheduled path "${connector.id}" is missing its configuration.`);
-              const field = tenant.objects.find((object) => object.apiName === flow.triggerObject)
-                ?.fields.find((item) => item.apiName === schedule.timeSourceFieldApiName);
-              const scheduledAt = scheduledPathTimestamp(
-                field, context.record[schedule.timeSourceFieldApiName], context.timeZone ?? 'UTC',
-                schedule.offsetAmount, schedule.offsetUnit
-              );
-              if (!scheduledAt) continue;
-              waitUntil = scheduledAt;
+      const syntax = validateFlowFormulaSyntax(resource.value);
+      // A formula that references a live record, variable or global cannot be
+      // executed against fake null inputs during activation. For a constant
+      // expression preserve eager value/type checks from the runtime evaluator.
+      if (!syntax.hasReferences) evaluateFormula(resource.value, () => null, {
+        isNew: false, hasPrior: true, resolvePriorField: () => null,
+        timeZone: formulaContext.timeZone,
+        locale: formulaContext.locale,
+        corporateCurrency: formulaContext.corporateCurrency,
+        currencyRates: formulaContext.currencyRates
+      });
+    } catch (error) {
+      errors.push(`Formula resource "${resource.label}" is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  validateConditionLogic(flow.startConfig.conditionLogic, 'Start', asConfigRows(flow.startConfig.entryConditions).length);
+  validateConditions(flow.startConfig.entryConditions, triggerObject ?? triggerPlatformEvent, 'Start');
+  const elementIds = new Set(flow.elements.map((element) => element.id));
+  const adjacency = new Map<number, number[]>();
+  for (const connector of flow.connectors) {
+    if (!elementIds.has(connector.from) || !elementIds.has(connector.to)) errors.push(`Connector ${connector.id} references a missing element.`);
+    if (flow.elements.find((element) => element.id === connector.to)?.type === 'Start') errors.push(`Connector ${connector.id} cannot point to the Start element.`);
+    adjacency.set(connector.from, [...(adjacency.get(connector.from) ?? []), connector.to]);
+  }
+  const reachable = new Set<number>();
+  const pending = starts.length === 1 ? [starts[0].id] : [];
+  while (pending.length) {
+    const id = pending.pop();
+    if (id === undefined) continue;
+    if (reachable.has(id)) continue;
+    reachable.add(id);
+    pending.push(...(adjacency.get(id) ?? []));
+  }
+  for (const element of flow.elements) {
+    if (element.type !== 'Start' && !reachable.has(element.id)) warnings.push(`Element "${element.label}" cannot be reached from Start.`);
+  }
+  if (flow.elements.length > 1 && flow.connectors.length === 0) warnings.push('Flow has multiple elements but no connectors.');
+  for (const element of flow.elements) {
+    if (!['Start', 'End', 'Assignment', 'Decision', 'Loop', 'Collection Filter', 'Collection Sort', 'Transform', 'Get Records', 'Create Records', 'Update Records', 'Delete Records', 'Roll Back Records', 'Publish Platform Event', 'Subflow', 'Screen', 'Wait', 'Action', 'HTTP Callout', 'Orchestration Stage'].includes(element.type)) {
+      errors.push(`Flow element type "${element.type}" is not supported.`);
+    }
+    if (element.type === 'Create Records') {
+      const recordSource = element.config.recordSource ?? 'fields';
+      if (!['fields', 'collection'].includes(String(recordSource))) {
+        errors.push(`Create Records "${element.label}" has an unsupported record source.`);
+      }
+      if (recordSource === 'collection') {
+        const objectName = typeof element.config.object === 'string' ? element.config.object : '';
+        const collectionName = typeof element.config.sourceCollection === 'string'
+          ? element.config.sourceCollection : '';
+        if (!flow.resources.some((resource) => resource.name === collectionName
+          && resource.type === 'Record Collection' && resource.isCollection && resource.dataType === objectName)) {
+          errors.push(`Create Records "${element.label}" requires a Record Collection of the selected object.`);
+        }
+        if (asConfigRows(element.config.fieldValues).length
+          || (typeof element.config.field === 'string' && element.config.field)) {
+          errors.push(`Create Records "${element.label}" cannot mix collection input with individual field assignments.`);
+        }
+        const outputName = typeof element.config.outputCollection === 'string'
+          ? element.config.outputCollection : '';
+        if (outputName && !flow.resources.some((resource) => resource.name === outputName
+          && resource.type === 'Record Collection' && resource.isCollection
+          && resource.dataType === objectName && resource.name !== collectionName)) {
+          errors.push(`Create Records "${element.label}" requires a different writable output Record Collection of the same object.`);
+        }
+      }
+    }
+    // Validate literal picklist writes against Object Manager metadata before activation.
+    if (element.type === 'Create Records' || element.type === 'Update Records') {
+      const targetObject = objects.find((object) => object.apiName === element.config.object);
+      for (const assignment of asConfigRows(element.config.fieldValues)) {
+        const fieldName = typeof assignment.field === 'string' ? assignment.field : '';
+        const field = targetObject?.fields.find((candidate) => candidate.apiName === fieldName);
+        const value = assignment.value;
+        if (field?.dataType === 'Picklist' && Array.isArray(field.picklistValues)
+          && field.picklistValues.length > 0 && typeof value === 'string'
+          && !value.includes('{!') && !value.startsWith('$')
+          && !field.picklistValues.includes(value)) {
+          errors.push(`"${element.label}" sets "${fieldName}" to inactive picklist value "${value}" on "${targetObject?.apiName}".`);
+        }
+      }
+    }
+    if (element.type === 'Publish Platform Event') {
+      const eventApiName = typeof element.config.eventApiName === 'string' ? element.config.eventApiName : '';
+      const event = platformEvents.find((candidate) => candidate.apiName === eventApiName);
+      if (!event) errors.push(`Publish Platform Event "${element.label}" requires a valid platform event.`);
+      const fieldValues = asConfigRows(element.config.fieldValues);
+      const fieldNames = fieldValues.map((item) => typeof item.field === 'string' ? item.field : '');
+      if (new Set(fieldNames).size !== fieldNames.length) {
+        errors.push(`Publish Platform Event "${element.label}" cannot assign the same event field more than once.`);
+      }
+      for (const fieldName of fieldNames) {
+        if (!event?.fields.some((field) => field.apiName === fieldName)) {
+          errors.push(`Publish Platform Event "${element.label}" references unknown field "${fieldName}".`);
+        }
+      }
+      if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') {
+        errors.push(`Publish Platform Event "${element.label}" is not available in before-save record-triggered flows.`);
+      }
+    }
+    if (flow.flowType === 'Platform Event-Triggered Flow' && element.type === 'Screen') {
+      errors.push(`Screen element "${element.label}" cannot be used in Platform Event-Triggered Flows.`);
+    }
+    if (element.type === 'Roll Back Records' && !['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType)) {
+      errors.push(`Roll Back Records element "${element.label}" is only available in Screen and Autolaunched Flows.`);
+    }
+    if (element.type === 'Screen' && flow.flowType !== 'Screen Flow') errors.push(`Screen element "${element.label}" is only supported in Screen Flows.`);
+    if (element.type === 'Screen') {
+      if (element.config.layout !== undefined && !['One Column', 'Two Columns'].includes(String(element.config.layout))) {
+        errors.push(`Screen "${element.label}" layout must be One Column or Two Columns.`);
+      }
+      const outcomes = asConfigRows(element.config.outcomes);
+      const labels = outcomes.map((outcome) => typeof outcome.label === 'string' ? outcome.label.trim() : '');
+      const names = outcomes.map((outcome) => typeof outcome.name === 'string' ? outcome.name.trim() : '');
+      const connectors = flow.connectors.filter((connector) => connector.from === element.id && connector.kind !== 'fault');
+      if (outcomes.some((outcome) => typeof outcome.label !== 'string' || !outcome.label.trim())) {
+        errors.push(`Screen "${element.label}" outcomes must have labels.`);
+      }
+      if (new Set(labels.map((label) => label.toLowerCase())).size !== labels.length
+        || new Set(names.map((name) => name.toLowerCase())).size !== names.length) {
+        errors.push(`Screen "${element.label}" outcome labels and API names must be unique.`);
+      }
+      const routeKeys = new Set<string>();
+      for (const connector of connectors) {
+        if (!outcomes.length) {
+          if (connectors.length > 1) errors.push(`Screen "${element.label}" has multiple paths but no configured outcomes.`);
+          continue;
+        }
+        if (!connector.label) {
+          if (connectors.length > 1) errors.push(`Screen "${element.label}" has multiple paths but a connector is missing its outcome label.`);
+          continue;
+        }
+        const key = connector.label.toLowerCase();
+        if (!outcomes.some((outcome) =>
+          String(outcome.label ?? '').toLowerCase() === key || String(outcome.name ?? '').toLowerCase() === key)) {
+          errors.push(`Screen connector "${connector.id}" does not match an outcome on "${element.label}".`);
+        }
+        if (routeKeys.has(key)) errors.push(`Screen "${element.label}" has more than one connector for outcome "${connector.label}".`);
+        routeKeys.add(key);
+      }
+      for (const outcome of outcomes) {
+        const label = String(outcome.label ?? '').trim().toLowerCase();
+        const name = String(outcome.name ?? '').trim().toLowerCase();
+        const matchingConnectors = connectors.filter((connector) => {
+          const connectorLabel = connector.label.trim().toLowerCase();
+          return connectorLabel && (connectorLabel === label || connectorLabel === name);
+        });
+        const implicitDefaultPath = outcomes.length === 1 && connectors.length === 1
+          && !connectors[0].label && String(outcome.name ?? '').toLowerCase() === 'default';
+        if (!implicitDefaultPath && matchingConnectors.length !== 1) {
+          errors.push(`Screen "${element.label}" outcome "${String(outcome.label ?? outcome.name ?? '')}" must have exactly one connector.`);
+        }
+      }
+      const fields = asConfigRows(element.config.fields);
+      const displayFields = fields.filter((field) => ['Display Text', 'Display Image', 'Section'].includes(String(field.type)));
+      for (const field of displayFields) {
+        if (field.type === 'Display Text' && (typeof field.text !== 'string' || !field.text.trim())) {
+          errors.push(`Display Text component "${String(field.label ?? '')}" on "${element.label}" requires text content.`);
+        }
+        if (field.type === 'Display Image') {
+          const imageUrl = typeof field.imageUrl === 'string' ? field.imageUrl.trim() : '';
+          let validHttpsImage = false;
+          try {
+            const imageAddress = new URL(imageUrl);
+            validHttpsImage = imageAddress.protocol === 'https:'
+              && Boolean(imageAddress.hostname)
+              && !imageAddress.username
+              && !imageAddress.password;
+          } catch {
+            validHttpsImage = false;
+          }
+          if (!validHttpsImage) errors.push(`Display Image component "${String(field.label ?? '')}" on "${element.label}" requires an HTTPS image URL.`);
+          if (typeof field.imageAltText !== 'string' || !field.imageAltText.trim()) {
+            errors.push(`Display Image component "${String(field.label ?? '')}" on "${element.label}" requires alternative text.`);
+          }
+        }
+        if (field.type === 'Section') {
+          if (typeof field.label !== 'string' || !field.label.trim()) {
+            errors.push(`Section component on "${element.label}" requires a label.`);
+          }
+          if (field.description !== undefined
+            && (typeof field.description !== 'string' || field.description.length > 255)) {
+            errors.push(`Description on Section component "${String(field.label ?? '')}" must be no longer than 255 characters.`);
+          }
+          if (field.columns !== undefined && ![1, 2].includes(Number(field.columns))) {
+            errors.push(`Section component "${String(field.label ?? '')}" must contain one or two columns.`);
+          }
+        }
+      }
+      const inputFields = fields.filter((field) => !['Display Text', 'Display Image', 'Section'].includes(String(field.type)));
+      const fieldNames = inputFields.map((field) => typeof field.apiName === 'string'
+        ? field.apiName.trim()
+        : String(field.label ?? '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, ''));
+      if (new Set(fieldNames.map((name) => name.toLowerCase())).size !== fieldNames.length
+        || fieldNames.some((name) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(name))) {
+        errors.push(`Screen "${element.label}" fields must have unique, valid API names.`);
+      }
+      for (const field of inputFields) {
+        if (typeof field.helpText === 'string' && field.helpText.length > 255) {
+          errors.push(`Help text on screen field "${String(field.label ?? '')}" exceeds 255 characters.`);
+        }
+        const type = String(field.type ?? 'Text');
+        const supportedTypes = ['Text', 'Password', 'Number', 'Currency', 'Date', 'Time', 'Date/Time', 'Email', 'URL', 'Phone', 'Checkbox', 'Toggle', 'Slider', 'Picklist', 'Multi-Select Picklist', 'Long Text Area', 'Address', 'Name', 'Lookup', 'Choice Lookup', 'Data Table', 'File Upload', 'Repeater', 'Custom Component'];
+        if (!supportedTypes.includes(type)) {
+          errors.push(`Screen field "${String(field.label ?? '')}" on "${element.label}" uses unsupported data type "${type}".`);
+        }
+        if (type === 'Custom Component') {
+          const apiName = typeof field.componentApiName === 'string' ? field.componentApiName.trim() : '';
+          const definition = platformStore.state.libraryComponents.find((component) =>
+            component.apiName === apiName && component.surfaces.includes('flow') && component.status !== 'Draft'
+            && libraryComponentVisible(component, tenantId, Object.keys(platformStore.state.tenants)));
+          if (!definition) {
+            errors.push(`Custom screen component "${apiName}" on "${element.label}" must reference a published Flow-enabled registry component.`);
+          }
+          if (field.componentPropsJson !== undefined) {
+            try {
+              const parsed = typeof field.componentPropsJson === 'string' && field.componentPropsJson.length <= 32768
+                ? JSON.parse(field.componentPropsJson) : null;
+              if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+                || ['__proto__', 'constructor', 'prototype'].some((key) => Object.prototype.hasOwnProperty.call(parsed,key))) {
+                throw new Error('Component properties must be a safe object');
+              }
+            } catch {
+              errors.push(`Custom screen component "${apiName}" on "${element.label}" has invalid component properties.`);
             }
-            // Each queued branch is a separate durable execution. Reusing the triggering
-            // interview identity causes duplicate IDs when a Start has multiple paths.
-            tenant.interviews.push(createFlowInterview(flow, currentUserId, {
-              status: 'waiting',
-              kind: connector.kind === 'async' ? 'async' : 'scheduled',
-              waitUntil: waitUntil.toISOString(),
-              nextElementId: connector.to,
-              variables: structuredClone(context.variables),
-              interviewGuid: randomUUID(),
-              interviewStartTime: new Date().toISOString(),
-              record: structuredClone(context.record),
-              prior: context.prior ? structuredClone(context.prior) : undefined,
-              recordEvent: context.recordEvent,
-              isClone: context.isClone,
-              debugTrace: context.debugTrace ?? []
-            }));
           }
         }
-        break;
-      case 'End':
-      case 'Assignment': {
-        if (element.type === 'Assignment') {
-          const variable = typeof config.variable === 'string' ? config.variable : '';
-          const recordFieldName = /^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(variable)?.[1];
-          const recordField = recordFieldName ? tenant.objects.find((item) => item.apiName === flow.triggerObject)?.fields.find((item) => item.apiName === recordFieldName) : undefined;
-          if (recordFieldName && (flow.flowType !== 'Record-Triggered Flow' || flow.startConfig.runWhen !== 'before-save'
-            || !context.record || !recordField || recordField.formula || ['AutoNumber', 'Auto Number'].includes(recordField.dataType))) {
-            throw new Error(`Assignment "${element.label}" cannot modify record field "${recordFieldName}" in this flow.`);
+        if (['Lookup', 'Choice Lookup'].includes(type) && !objects.some((object) => object.apiName === field.objectApiName)) {
+          errors.push(`${type} screen field "${String(field.label ?? '')}" on "${element.label}" requires a valid target object.`);
+        }
+        if (type === 'Choice Lookup' && field.displayField !== undefined
+          && !objects.find((object) => object.apiName === field.objectApiName)?.fields.some((item) => item.apiName === field.displayField)) {
+          errors.push(`Choice Lookup screen field "${String(field.label ?? '')}" on "${element.label}" requires a valid choice label field.`);
+        }
+        if (type === 'Choice Lookup' && field.multipleSelections !== undefined
+          && typeof field.multipleSelections !== 'boolean') {
+          errors.push(`Choice Lookup screen field "${String(field.label ?? '')}" on "${element.label}" must configure multiple selections as true or false.`);
+        }
+        if (type === 'Data Table') {
+          const collectionName = typeof field.collection === 'string' ? field.collection : '';
+          const collection = flow.resources.find((resource) => resource.name === collectionName && resource.type === 'Record Collection');
+          if (!collection) errors.push(`Data Table screen field "${String(field.label ?? '')}" on "${element.label}" requires a Record Collection resource.`);
+          const columnNames = Array.isArray(field.columns) ? field.columns.filter((column): column is string => typeof column === 'string') : [];
+          if (!columnNames.length || new Set(columnNames).size !== columnNames.length) {
+            errors.push(`Data Table screen field "${String(field.label ?? '')}" on "${element.label}" requires unique columns.`);
+          } else if (collection && !objects.find((object) => object.apiName === collection.dataType)?.fields.some((item) => columnNames.includes(item.apiName))) {
+            errors.push(`Data Table screen field "${String(field.label ?? '')}" on "${element.label}" has columns that are not fields on its collection object.`);
           }
-          if (!recordFieldName && (!variable || !Object.hasOwn(context.variables, variable))) {
-            throw new Error(`Assignment "${element.label}" references an unknown variable.`);
+        }
+        if (type === 'File Upload') {
+          const maxFiles = field.maxFiles === undefined ? 1 : field.maxFiles;
+          const maxFileSize = field.maxFileSize === undefined ? 512 : field.maxFileSize;
+          const allowedTypes = Array.isArray(field.allowedTypes) ? field.allowedTypes : [];
+          if (!Number.isInteger(maxFiles) || Number(maxFiles) < 1 || Number(maxFiles) > 10) {
+            errors.push(`File Upload screen field "${String(field.label ?? '')}" must allow between 1 and 10 files.`);
           }
-          const variableResource = flow.resources.find((resource) => resource.name === variable);
-          if (!recordFieldName && variableResource && ['Formula', 'Constant', 'Choice', 'Text Template'].includes(variableResource.type)) {
-            throw new Error(`Assignment "${element.label}" cannot modify a ${variableResource.type} resource.`);
+          if (!Number.isInteger(maxFileSize) || Number(maxFileSize) < 1 || Number(maxFileSize) > 512) {
+            errors.push(`File Upload screen field "${String(field.label ?? '')}" must limit each file to 1 through 512 KB.`);
           }
-          const previous = recordFieldName ? context.record?.[recordFieldName] : context.variables[variable];
-          const value = resolveFlowValue(config.value, context);
-          const assign = (next: unknown) => {
-            if (recordFieldName && context.record) context.record[recordFieldName] = next;
-            else context.variables[variable] = next;
+          if (allowedTypes.some((mime) => typeof mime !== 'string' || !/^[\w.+-]+\/[\w.+-]+$/.test(mime))) {
+            errors.push(`File Upload screen field "${String(field.label ?? '')}" has an invalid allowed MIME type.`);
+          }
+        }
+        if (type === 'Repeater') {
+          const subfields = asConfigRows(field.subfields);
+          if (!subfields.length || subfields.length > 20) {
+            errors.push(`Repeater screen field "${String(field.label ?? '')}" must define between 1 and 20 subfields.`);
+          }
+          const subfieldNames = subfields.map((subfield) => typeof subfield.apiName === 'string' ? subfield.apiName.trim() : '');
+          if (subfieldNames.some((name) => !/^[A-Za-z][A-Za-z0-9_]*$/.test(name))
+            || new Set(subfieldNames.map((name) => name.toLowerCase())).size !== subfieldNames.length) {
+            errors.push(`Repeater screen field "${String(field.label ?? '')}" subfields must have unique, valid API names.`);
+          }
+          const allowedSubfieldTypes = ['Text', 'Number', 'Date', 'Email', 'Checkbox'];
+          if (subfields.some((subfield) => !allowedSubfieldTypes.includes(String(subfield.type ?? 'Text')))) {
+            errors.push(`Repeater screen field "${String(field.label ?? '')}" uses an unsupported subfield type.`);
+          }
+          const minimumRows = field.minimumRows === undefined ? 0 : field.minimumRows;
+          const maximumRows = field.maximumRows === undefined ? 10 : field.maximumRows;
+          if (!Number.isInteger(minimumRows) || Number(minimumRows) < 0 || Number(minimumRows) > 50
+            || !Number.isInteger(maximumRows) || Number(maximumRows) < 1 || Number(maximumRows) > 50
+            || Number(minimumRows) > Number(maximumRows)) {
+            errors.push(`Repeater screen field "${String(field.label ?? '')}" requires valid row limits from 0 to 50.`);
+          }
+        }
+        const displayAs = field.displayAs;
+        if (displayAs !== undefined) {
+          const supportedDisplays: Record<string, string[]> = {
+            Picklist: ['Dropdown', 'Radio Buttons'],
+            'Multi-Select Picklist': ['Multi-Select Dropdown', 'Checkbox Group']
           };
-          if (variableResource?.isCollection) {
-            assign(applyFlowCollectionAssignment(previous, value, String(config.operator ?? 'Assign'), variableResource.type));
+          if (!supportedDisplays[type]?.includes(String(displayAs))) {
+            errors.push(`Display mode "${String(displayAs)}" is not supported for ${type} screen field "${String(field.label ?? '')}".`);
+          }
+        }
+        const minLength = field.minLength;
+        const maxLength = field.maxLength;
+        const min = field.min;
+        const max = field.max;
+        const step = field.step;
+        if (minLength !== undefined && (!Number.isInteger(minLength) || Number(minLength) < 0)) {
+          errors.push(`Minimum length on screen field "${String(field.label ?? '')}" must be a non-negative integer.`);
+        }
+        if (maxLength !== undefined && (!Number.isInteger(maxLength) || Number(maxLength) < 0)) {
+          errors.push(`Maximum length on screen field "${String(field.label ?? '')}" must be a non-negative integer.`);
+        }
+        if (typeof minLength === 'number' && typeof maxLength === 'number' && minLength > maxLength) {
+          errors.push(`Minimum length exceeds maximum length on screen field "${String(field.label ?? '')}".`);
+        }
+        if (minLength !== undefined || maxLength !== undefined) {
+          if (!['Text', 'Password', 'Long Text Area', 'Email', 'URL', 'Phone'].includes(type)) {
+            errors.push(`Length limits are only supported on text screen fields ("${String(field.label ?? '')}").`);
+          }
+        }
+        if (min !== undefined && (typeof min !== 'number' || !Number.isFinite(min))) {
+          errors.push(`Minimum value on screen field "${String(field.label ?? '')}" must be a finite number.`);
+        }
+        if (max !== undefined && (typeof max !== 'number' || !Number.isFinite(max))) {
+          errors.push(`Maximum value on screen field "${String(field.label ?? '')}" must be a finite number.`);
+        }
+        if (typeof min === 'number' && typeof max === 'number' && min > max) {
+          errors.push(`Minimum value exceeds maximum value on screen field "${String(field.label ?? '')}".`);
+        }
+        if (min !== undefined || max !== undefined) {
+          if (!['Number', 'Currency', 'Slider'].includes(type)) {
+            errors.push(`Numeric limits are only supported on Number, Currency, and Slider screen fields ("${String(field.label ?? '')}").`);
+          }
+          if (step !== undefined && (typeof step !== 'number' || !Number.isFinite(step) || step <= 0)) {
+            errors.push(`Step on screen field "${String(field.label ?? '')}" must be a positive finite number.`);
+          }
+          if (step !== undefined && !['Number', 'Currency', 'Slider'].includes(type)) {
+            errors.push(`Step is only supported on numeric and Slider screen fields ("${String(field.label ?? '')}").`);
+          }
+        }
+        if (field.pattern !== undefined) {
+          if (typeof field.pattern !== 'string' || !isSafeFlowRegex(field.pattern) || !['Text', 'Long Text Area', 'Email', 'URL', 'Phone'].includes(type)) {
+            errors.push(`Validation pattern on screen field "${String(field.label ?? '')}" uses unsupported syntax or is not on a text field.`);
           } else {
-          switch (String(config.operator ?? 'Assign')) {
-            case 'Assign': assign(value); break;
-            case 'Add': assign(Number(previous ?? 0) + Number(value)); break;
-            case 'Subtract': assign(Number(previous ?? 0) - Number(value)); break;
-            case 'Multiply': assign(Number(previous ?? 0) * Number(value)); break;
-            case 'Divide':
-              if (Number(value) === 0) throw new Error(`Assignment "${element.label}" cannot divide by zero.`);
-              assign(Number(previous ?? 0) / Number(value));
-              break;
-            case 'Add At Beginning': assign(`${String(value ?? '')}${String(previous ?? '')}`); break;
-            case 'Add At End': assign(`${String(previous ?? '')}${String(value ?? '')}`); break;
-            case 'Remove All': assign(''); break;
-            default: throw new Error(`Unsupported assignment operator "${String(config.operator)}".`);
+            try {
+              new RegExp(`^(?:${field.pattern})$`);
+            } catch {
+              errors.push(`Validation pattern on screen field "${String(field.label ?? '')}" is invalid.`);
+            }
           }
+        }
+        if (field.validationMessage !== undefined
+          && (typeof field.validationMessage !== 'string' || field.validationMessage.length > 255)) {
+          errors.push(`Validation message on screen field "${String(field.label ?? '')}" must be at most 255 characters.`);
+        }
+        const visibilityConditions = asConfigRows(field.visibilityConditions);
+        if (visibilityConditions.length) {
+          validateConditions(field.visibilityConditions, undefined, `visibility rule for "${String(field.label ?? '')}" on "${element.label}"`);
+          validateConditionLogic(field.visibilityLogic, `visibility rule for "${String(field.label ?? '')}" on "${element.label}"`, visibilityConditions.length);
+          for (const condition of visibilityConditions) {
+            if (typeof condition.field === 'string' && !fieldNames.includes(condition.field)
+              && !flow.resources.some((resource) => resource.name === condition.field)) {
+              errors.push(`Visibility condition on "${String(field.label ?? '')}" references unknown screen field "${condition.field}".`);
+            }
           }
-
         }
-        break;
+        const defaultValue = field.defaultValue;
+        const choices = field.choices;
+        if (defaultValue !== undefined && defaultValue !== null && defaultValue !== '') {
+          const validType = type === 'Multi-Select Picklist'
+            ? Array.isArray(defaultValue) && defaultValue.every((value) => typeof value === 'string')
+            : ['Checkbox', 'Toggle'].includes(type)
+              ? typeof defaultValue === 'boolean'
+              : ['Number', 'Currency', 'Slider'].includes(type)
+                ? typeof defaultValue === 'number' && Number.isFinite(defaultValue)
+                : typeof defaultValue === 'string';
+          if (!validType) errors.push(`Default value on ${type} screen field "${String(field.label ?? '')}" has an incompatible value type.`);
+          if (type === 'Picklist' && (!Array.isArray(choices) || !choices.includes(defaultValue))) {
+            errors.push(`Default value on picklist screen field "${String(field.label ?? '')}" must be one of its configured choices.`);
+          }
+          if (type === 'Multi-Select Picklist' && Array.isArray(choices)
+            && Array.isArray(defaultValue) && defaultValue.some((value) => !choices.includes(value))) {
+            errors.push(`Default value on multi-select screen field "${String(field.label ?? '')}" must contain only configured choices.`);
+          }
+          if (type === 'Date' && typeof defaultValue === 'string'
+            && (!/^\d{4}-\d{2}-\d{2}$/.test(defaultValue)
+              || !Number.isFinite(Date.parse(`${defaultValue}T00:00:00.000Z`))
+              || new Date(`${defaultValue}T00:00:00.000Z`).toISOString().slice(0, 10) !== defaultValue)) {
+            errors.push(`Default value on date screen field "${String(field.label ?? '')}" must be a valid date.`);
+          }
+          if (type === 'Date/Time' && typeof defaultValue === 'string' && !isValidFlowDateTime(defaultValue)) {
+            errors.push(`Default value on date/time screen field "${String(field.label ?? '')}" must be a valid date and time.`);
+          }
+          if (type === 'Time' && typeof defaultValue === 'string' && !isValidFlowTime(defaultValue)) {
+            errors.push(`Default value on time screen field "${String(field.label ?? '')}" must be a valid time.`);
+          }
+          if (type === 'Email' && typeof defaultValue === 'string' && !z.string().email().safeParse(defaultValue).success) {
+            errors.push(`Default value on email screen field "${String(field.label ?? '')}" must be a valid email address.`);
+          }
+          if (type === 'URL' && typeof defaultValue === 'string' && !z.string().url().safeParse(defaultValue).success) {
+            errors.push(`Default value on URL screen field "${String(field.label ?? '')}" must be a valid URL.`);
+          }
+        }
       }
-      case 'Roll Back Records': {
-        Object.assign(tenant, structuredClone(context.rollbackSnapshot ?? tenant));
-        const findRestoredRecord = (id: string): RuntimeRecord | undefined =>
-          Object.values(tenant.records).flat().find((item) => item.Id === id);
-        if (context.record?.Id) {
-          context.record = findRestoredRecord(context.record.Id);
+      const choices = inputFields.filter((field) => ['Picklist', 'Multi-Select Picklist'].includes(String(field.type)));
+      for (const field of choices) {
+        if (!Array.isArray(field.choices) || !field.choices.length || field.choices.some((choice) => typeof choice !== 'string' || !choice.trim())) {
+          errors.push(`${String(field.type)} screen field "${String(field.label ?? '')}" on "${element.label}" requires one or more choices.`);
+        } else if (new Set(field.choices).size !== field.choices.length) {
+          errors.push(`${String(field.type)} screen field "${String(field.label ?? '')}" on "${element.label}" has duplicate choices.`);
         }
-        if (context.prior?.Id) {
-          context.prior = findRestoredRecord(context.prior.Id);
-        }
-        break;
       }
-      case 'Decision': {
-        const outcomes = asConfigRows(config.outcomes);
-        let selected: Record<string, unknown> | undefined;
-        const source = context.record ?? {};
-        for (const outcome of outcomes.filter((item) => item.name !== 'Default')) {
-          if (flowConditionsMatch(asConfigRows(outcome.conditions), source, context, outcome.conditionLogic)) {
-            selected = outcome;
+    }
+    if (element.type === 'Orchestration Stage') {
+      const objectApiName = String(element.config.objectApiName ?? '');
+      if (!objects.some((object) => object.apiName === objectApiName)) {
+        errors.push(`Orchestration Stage "${element.label}" requires an existing target object.`);
+      }
+      const processApiName = String(element.config.approvalProcessApiName ?? '');
+      const process = approvalProcesses.find((item) => item.apiName === processApiName);
+      if (processApiName && (!process || !process.active || process.objectApiName !== objectApiName)) {
+        errors.push(`Orchestration Stage "${element.label}" requires an active matching approval process.`);
+      }
+      if (typeof element.config.recordId !== 'string' || !element.config.recordId.trim()) {
+        errors.push(`Orchestration Stage "${element.label}" requires a target record ID or Flow reference.`);
+      }
+      if (!processApiName && (typeof element.config.approverIds !== 'string' || !element.config.approverIds.trim())) {
+        errors.push(`Orchestration Stage "${element.label}" requires approvers or an approval process.`);
+      }
+      if (element.config.approvalMode !== undefined && !['ANY', 'ALL'].includes(String(element.config.approvalMode))) {
+        errors.push(`Orchestration Stage "${element.label}" requires ANY or ALL approval mode.`);
+      }
+      const statusVariable = String(element.config.statusVariable ?? '');
+      if (statusVariable && !flow.resources.some((resource) => resource.name === statusVariable
+        && resource.type === 'Variable' && resource.dataType === 'Text' && !resource.isCollection)) {
+        errors.push(`Orchestration Stage "${element.label}" requires a Text variable for its result.`);
+      }
+      const routes = flow.connectors.filter((connector) => connector.from === element.id && connector.kind === 'normal');
+      for (const decision of ['Approved', 'Rejected']) {
+        if (routes.filter((connector) => connector.label.toLowerCase() === decision.toLowerCase()).length !== 1) {
+          errors.push(`Orchestration Stage "${element.label}" requires exactly one ${decision} connector.`);
+        }
+      }
+      if (routes.length !== 2 || flow.connectors.some((connector) => connector.from === element.id && connector.kind === 'scheduled')) {
+        errors.push(`Orchestration Stage "${element.label}" supports only Approved and Rejected normal paths.`);
+      }
+      if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') {
+        errors.push(`Orchestration Stage "${element.label}" is not available before save.`);
+      }
+    }
+    if (element.type === 'Action') {
+      const actionType = String(element.config.actionType ?? '');
+      if (actionType.toLowerCase().includes('apex')) {
+        errors.push(`Apex actions are excluded from this platform's Flow Builder scope.`);
+      } else if (!['Send Email', 'Email Alert', 'Post to Chatter', 'Custom Notification', 'Outbound Message', 'Submit for Approval'].includes(actionType)) {
+        errors.push(`Action "${element.label}" uses unsupported action type "${actionType || '(not selected)'}".`);
+      } else if (actionType === 'Send Email') {
+        const credentialId = typeof element.config.namedCredentialId === 'string' ? element.config.namedCredentialId : '';
+        if (!credentials.some((credential) => credential.id === credentialId && credential.protocol === 'SMTP')) {
+          errors.push(`Send Email action "${element.label}" requires an SMTP Named Credential.`);
+        } else {
+          const credential = credentials.find((item) => item.id === credentialId)!;
+          const smtpHost = new URL(credential.baseUrl).hostname.replace(/^\[|\]$/g, '');
+          if (!isTestLoopbackSmtpUrl(new URL(credential.baseUrl))
+            && (isReservedHostname(smtpHost) || (isIP(smtpHost) && !isPublicAddress(smtpHost)))) {
+            errors.push(`Send Email action "${element.label}" cannot use a local, private, or reserved SMTP host.`);
+          }
+        }
+        const fromEmail = typeof element.config.fromEmail === 'string' ? element.config.fromEmail.trim() : '';
+        if (!fromEmail || fromEmail.includes('{') || !z.string().email().safeParse(fromEmail).success) {
+          errors.push(`Send Email action "${element.label}" requires a valid From email address.`);
+        }
+        const recipients = typeof element.config.recipients === 'string' ? element.config.recipients.trim() : '';
+        if (!recipients) errors.push(`Send Email action "${element.label}" requires at least one recipient.`);
+        else if (!recipients.includes('{') && recipients.split(/[;,]/).some((recipient) => !z.string().email().safeParse(recipient.trim()).success)) {
+          errors.push(`Send Email action "${element.label}" contains an invalid recipient email address.`);
+        }
+        if (typeof element.config.subject !== 'string' || !element.config.subject.trim()) {
+          errors.push(`Send Email action "${element.label}" requires a subject.`);
+        }
+        if (typeof element.config.body !== 'string' || !element.config.body.trim()) {
+          errors.push(`Send Email action "${element.label}" requires a message body.`);
+        }
+      } else if (actionType === 'Outbound Message') {
+        const credentialId = typeof element.config.namedCredentialId === 'string' ? element.config.namedCredentialId : '';
+        if (!credentials.some((credential) => credential.id === credentialId && credential.protocol === 'HTTPS')) {
+          errors.push(`Outbound Message "${element.label}" requires an HTTPS Named Credential.`);
+        }
+        const path = typeof element.config.path === 'string' ? element.config.path.trim() : '';
+        if (!path) {
+          errors.push(`Outbound Message "${element.label}" requires a relative endpoint path.`);
+        } else if (path.startsWith('\\') || path.includes('\\') || /^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('/')) {
+          errors.push(`Outbound Message "${element.label}" path must be relative to its HTTPS Named Credential.`);
+        }
+        if (typeof element.config.messageBody !== 'string' || !element.config.messageBody.trim()) {
+          errors.push(`Outbound Message "${element.label}" requires a JSON message body.`);
+        } else {
+          try {
+            const parsedBody: unknown = JSON.parse(element.config.messageBody);
+            if (!parsedBody || typeof parsedBody !== 'object') {
+              errors.push(`Outbound Message "${element.label}" message body must be a JSON object or array.`);
+            }
+          } catch {
+            errors.push(`Outbound Message "${element.label}" message body must be valid JSON.`);
+          }
+        }
+      } else if (actionType === 'Custom Notification') {
+        const recipientIds = typeof element.config.recipientIds === 'string' ? element.config.recipientIds.trim() : '';
+        if (!recipientIds) errors.push(`Custom Notification "${element.label}" requires at least one recipient user ID or Flow reference.`);
+        if (typeof element.config.title !== 'string' || !element.config.title.trim()) {
+          errors.push(`Custom Notification "${element.label}" requires a title.`);
+        } else if (element.config.title.length > 120) {
+          errors.push(`Custom Notification "${element.label}" title cannot exceed 120 characters.`);
+        }
+        if (typeof element.config.messageBody !== 'string' || !element.config.messageBody.trim()) {
+          errors.push(`Custom Notification "${element.label}" requires a message.`);
+        } else if (element.config.messageBody.length > 2000) {
+          errors.push(`Custom Notification "${element.label}" message cannot exceed 2000 characters.`);
+        }
+      } else if (actionType === 'Submit for Approval') {
+        const objectApiName = typeof element.config.objectApiName === 'string' ? element.config.objectApiName.trim() : '';
+        if (!objects.some((object) => object.apiName === objectApiName)) {
+          errors.push(`Submit for Approval "${element.label}" requires a valid target object.`);
+        }
+        const approvalProcessApiName = typeof element.config.approvalProcessApiName === 'string'
+          ? element.config.approvalProcessApiName.trim() : '';
+        const approvalProcess = approvalProcesses.find((process) => process.apiName === approvalProcessApiName);
+        if (approvalProcessApiName && !approvalProcess) {
+          errors.push(`Submit for Approval "${element.label}" references an unknown approval process.`);
+        } else if (approvalProcess && !approvalProcess.active) {
+          errors.push(`Submit for Approval "${element.label}" requires an active approval process.`);
+        } else if (approvalProcess && approvalProcess.objectApiName !== objectApiName) {
+          errors.push(`Approval process "${approvalProcess.label}" is for "${approvalProcess.objectApiName}", not "${objectApiName}".`);
+        }
+        if (typeof element.config.recordId !== 'string' || !element.config.recordId.trim()) {
+          errors.push(`Submit for Approval "${element.label}" requires a target record ID or Flow reference.`);
+        }
+        if (!approvalProcessApiName && (typeof element.config.approverIds !== 'string' || !element.config.approverIds.trim())) {
+          errors.push(`Submit for Approval "${element.label}" requires at least one approver user ID or Flow reference.`);
+        }
+        if (element.config.comments !== undefined
+          && (typeof element.config.comments !== 'string' || element.config.comments.length > 2000)) {
+          errors.push(`Submit for Approval "${element.label}" comments must be at most 2000 characters.`);
+        }
+      } else if (actionType === 'Email Alert') {
+        const emailAlertId = typeof element.config.emailAlertId === 'string' ? element.config.emailAlertId : '';
+        const emailAlert = emailAlerts.find((candidate) => candidate.id === emailAlertId);
+        if (!emailAlert) {
+          errors.push(`Email Alert action "${element.label}" requires a saved Email Alert.`);
+        } else if (flow.flowType !== 'Record-Triggered Flow' || flow.triggerObject !== emailAlert.objectApiName) {
+          errors.push(`Email Alert action "${element.label}" requires a record-triggered flow on "${emailAlert.objectApiName}".`);
+        }
+      } else {
+        const objectApiName = typeof element.config.objectApiName === 'string' ? element.config.objectApiName.trim() : '';
+        const object = objects.find((candidate) => candidate.apiName === objectApiName);
+        if (!object) {
+          errors.push(`Post to Chatter action "${element.label}" requires a valid target object.`);
+        } else if (!object.settings?.allowInChatter) {
+          errors.push(`Post to Chatter action "${element.label}" requires Chatter to be enabled for "${object.label}".`);
+        }
+        if (typeof element.config.recordId !== 'string' || !element.config.recordId.trim()) {
+          errors.push(`Post to Chatter action "${element.label}" requires a target record ID or Flow reference.`);
+        }
+        if (typeof element.config.message !== 'string' || !element.config.message.trim()) {
+          errors.push(`Post to Chatter action "${element.label}" requires a message.`);
+        } else if (element.config.message.length > 4000) {
+          errors.push(`Post to Chatter action "${element.label}" message cannot exceed 4000 characters.`);
+        }
+      }
+    }
+    if (element.type === 'HTTP Callout' && flow.startConfig.runWhen === 'before-save') errors.push('HTTP Callouts are not available in before-save record-triggered flows.');
+    if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save' && !['Start', 'Assignment', 'Decision'].includes(element.type)) {
+      errors.push(`${element.type} element "${element.label}" is not available in before-save record-triggered flows.`);
+    }
+    if (element.type === 'Assignment') {
+      const target = typeof element.config.variable === 'string' ? element.config.variable : '';
+      const operator = String(element.config.operator ?? 'Assign');
+      if (!['Assign', 'Add', 'Subtract', 'Multiply', 'Divide', 'Add At Beginning', 'Add At End', 'Remove', 'Remove All'].includes(operator)) {
+        errors.push(`Assignment "${element.label}" uses unsupported operator "${operator}".`);
+      }
+      const recordFieldName = /^\$Record\.([A-Za-z][A-Za-z0-9_]*)$/.exec(target)?.[1];
+      if (recordFieldName) {
+        const field = triggerObject?.fields.find((item) => item.apiName === recordFieldName);
+        if (flow.flowType !== 'Record-Triggered Flow' || flow.startConfig.runWhen !== 'before-save') {
+          errors.push(`Assignment "${element.label}" can target $Record fields only in before-save record-triggered flows.`);
+        } else if (!field) {
+          errors.push(`Assignment "${element.label}" references unknown trigger field "${recordFieldName}".`);
+        } else if (field.formula || ['AutoNumber', 'Auto Number'].includes(field.dataType)) {
+          errors.push(`Assignment "${element.label}" cannot target read-only field "${recordFieldName}".`);
+        }
+      } else if (!flow.resources.some((resource) => resource.name === target)) {
+        errors.push(`Assignment "${element.label}" references unknown variable "${target || '(not selected)'}".`);
+      } else {
+        const resource = flow.resources.find((item) => item.name === target);
+        if (resource?.isCollection && !['Assign', 'Add', 'Add At Beginning', 'Add At End', 'Remove', 'Remove All'].includes(operator)) {
+          errors.push(`Assignment "${element.label}" uses an operator unavailable for collection resource "${target}".`);
+        }
+        if (operator === 'Remove' && !resource?.isCollection) {
+          errors.push(`Assignment "${element.label}" uses Remove on a non-collection resource.`);
+        }
+        if (resource && ['Formula', 'Constant', 'Choice', 'Text Template'].includes(resource.type)) {
+          errors.push(`Assignment "${element.label}" cannot target ${resource.type} resource "${target}".`);
+        }
+      }
+    }
+    if (element.type === 'Wait') {
+      const waitType = String(element.config.waitType ?? 'Duration');
+      if (waitType === 'Specific Time') {
+        const rawDateTime = typeof element.config.dateTime === 'string' ? element.config.dateTime : '';
+        const timeZone = String(element.config.timeZone ?? 'UTC');
+        const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/.test(rawDateTime);
+        if (explicitZone) {
+          if (!isValidFlowDateTime(rawDateTime)) {
+            errors.push(`Wait "${element.label}" requires a valid resume date and time.`);
+          }
+        } else {
+          const match = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(rawDateTime);
+          if (!match) {
+            errors.push(`Wait "${element.label}" requires a valid resume date and time.`);
+          } else if (!dashboardTimeZoneSchema.safeParse(timeZone).success) {
+            errors.push(`Wait "${element.label}" requires a valid IANA time zone.`);
+          } else {
+            const [, yearText, monthText, dayText, hourText, minuteText] = match;
+            const year = Number(yearText);
+            const month = Number(monthText);
+            const day = Number(dayText);
+            const civilDate = new Date(Date.UTC(year, month - 1, day));
+            if (civilDate.getUTCFullYear() !== year || civilDate.getUTCMonth() !== month - 1 || civilDate.getUTCDate() !== day
+              || !flowLocalDateTimeToInstant(civilDate, Number(hourText), Number(minuteText), timeZone)) {
+              errors.push(`Wait "${element.label}" requires a valid local resume date and time in "${timeZone}".`);
+            }
+          }
+        }
+      } else {
+        const amount = Number(element.config.amount ?? 1);
+        if (!Number.isFinite(amount) || amount <= 0 || !['Minutes', 'Hours', 'Days'].includes(String(element.config.unit ?? 'Hours'))) {
+          errors.push(`Wait "${element.label}" requires a positive duration and supported unit.`);
+        }
+      }
+    }
+    if (element.type === 'Decision' && (!Array.isArray(element.config.outcomes) || element.config.outcomes.length === 0)) warnings.push(`Decision "${element.label}" has no configured outcomes.`);
+    if (['Get Records', 'Create Records', 'Update Records', 'Delete Records'].includes(element.type) && !element.config.object) {
+      errors.push(`Select an object for ${element.type} element "${element.label}".`);
+    }
+    const sourceCollectionName = typeof element.config.collection === 'string' ? element.config.collection : '';
+    const sourceCollection = flow.resources.find((resource) => resource.name === sourceCollectionName);
+    const elementObjectName = typeof element.config.object === 'string'
+      ? element.config.object
+      : ['Collection Filter', 'Collection Sort', 'Transform', 'Loop'].includes(element.type) && sourceCollection?.type === 'Record Collection'
+        ? sourceCollection.dataType
+        : undefined;
+    const elementObject = elementObjectName ? objects.find((object) => object.apiName === elementObjectName) : undefined;
+    if (elementObjectName && !elementObject) {
+      errors.push(`Object "${elementObjectName}" on element "${element.label}" does not exist.`);
+    }
+    if (element.type === 'Loop') {
+      const loopVariable = typeof element.config.loopVariable === 'string' ? element.config.loopVariable.trim() : '';
+      const loopResource = flow.resources.find((resource) => resource.name === loopVariable);
+      if (!sourceCollection || sourceCollection.type !== 'Record Collection' || !sourceCollection.isCollection || !elementObject) {
+        errors.push(`Loop "${element.label}" requires a record collection with a valid object type.`);
+      }
+      if (!loopResource || loopResource.type !== 'Record' || loopResource.isCollection
+        || loopResource.dataType !== sourceCollection?.dataType) {
+        errors.push(`Loop "${element.label}" requires a record loop variable with the same object type as its collection.`);
+      }
+      if (element.config.direction !== undefined
+        && !['First to last', 'Last to first'].includes(String(element.config.direction))) {
+        errors.push(`Loop "${element.label}" direction must be First to last or Last to first.`);
+      }
+      const loopConnectors = flow.connectors.filter((connector) =>
+        connector.from === element.id && connector.kind === 'normal');
+      const forEachConnectors = loopConnectors.filter((connector) =>
+        ['for each', 'next'].includes(connector.label.trim().toLowerCase()));
+      const afterLastConnectors = loopConnectors.filter((connector) =>
+        connector.label.trim().toLowerCase() === 'after last');
+      if (loopConnectors.length !== 2 || forEachConnectors.length !== 1 || afterLastConnectors.length !== 1) {
+        errors.push(`Loop "${element.label}" must have exactly one For Each and one After Last connector.`);
+      }
+    }
+    validateConditionLogic(element.config.conditionLogic, element.label, asConfigRows(element.config.conditions).length);
+    validateConditions(element.config.conditions, elementObject, element.label);
+    if (element.type === 'Decision') {
+      const decisionObject = objects.find((object) => object.apiName === elementObjectName) ?? triggerObject;
+      for (const outcome of asConfigRows(element.config.outcomes)) {
+        validateConditionLogic(outcome.conditionLogic ?? asConfigRows(outcome.conditions)[0]?.logic, `${element.label} / ${String(outcome.label ?? outcome.name ?? 'Outcome')}`, asConfigRows(outcome.conditions).length);
+        validateConditions(outcome.conditions, decisionObject, `${element.label} / ${String(outcome.label ?? outcome.name ?? 'Outcome')}`);
+      }
+    }
+    if (['Create Records', 'Update Records'].includes(element.type)) {
+      for (const fieldValue of asConfigRows(element.config.fieldValues)) {
+        const fieldName = typeof fieldValue.field === 'string' ? fieldValue.field : '';
+        if (!fieldName) errors.push(`A field assignment on "${element.label}" is missing its field.`);
+        else if (elementObject && !elementObject.fields.some((field) => field.apiName === fieldName)) errors.push(`Field "${fieldName}" on "${element.label}" does not exist on "${elementObject.apiName}".`);
+      }
+    }
+    if (element.type === 'Get Records' && element.config.sortField && elementObject && !elementObject.fields.some((field) => field.apiName === element.config.sortField)) {
+      errors.push(`Sort field "${String(element.config.sortField)}" on "${element.label}" does not exist on "${elementObject.apiName}".`);
+    }
+    if (element.type === 'Get Records') {
+      const limit = String(element.config.recordLimit ?? '1');
+      if (limit !== 'all' && (!/^[1-9][0-9]*$/.test(limit) || Number(limit) > 200)) {
+        errors.push(`Get Records "${element.label}" limit must be all or an integer from 1 through 200.`);
+      }
+    }
+    if (element.type === 'Get Records' && element.config.sortOrder !== undefined && !['Ascending', 'Descending'].includes(String(element.config.sortOrder))) {
+      errors.push(`Sort order on "${element.label}" must be Ascending or Descending.`);
+    }
+    if (element.type === 'Get Records' && Array.isArray(element.config.fields)) {
+      if (!element.config.fields.length) errors.push(`Select at least one field to store on "${element.label}".`);
+      const selectedFields = element.config.fields.filter((field): field is string => typeof field === 'string');
+      if (selectedFields.length !== element.config.fields.length || new Set(selectedFields).size !== selectedFields.length) {
+        errors.push(`Fields to store on "${element.label}" must be unique field API names.`);
+      }
+      for (const fieldName of selectedFields) {
+        if (elementObject && !elementObject.fields.some((field) => field.apiName === fieldName)) {
+          errors.push(`Field "${fieldName}" on "${element.label}" does not exist on "${elementObject.apiName}".`);
+        }
+      }
+    } else if (element.type === 'Get Records' && element.config.fields !== undefined && typeof element.config.fields !== 'string') {
+      errors.push(`Fields to store on "${element.label}" must be "all" or a list of field API names.`);
+    }
+    if (element.type === 'Get Records' && typeof element.config.outputVariable === 'string' && element.config.outputVariable) {
+      const resource = flow.resources.find((item) => item.name === element.config.outputVariable);
+      const expectedType = element.config.recordLimit === 'all' || Number(element.config.recordLimit ?? 1) > 1 ? 'Record Collection' : 'Record';
+      if (!resource || resource.type !== expectedType || resource.dataType !== elementObjectName) {
+        errors.push(`Output variable "${element.config.outputVariable}" on "${element.label}" must be a ${expectedType} resource.`);
+      }
+    }
+    if (element.type === 'Subflow') {
+      const childApiName = typeof element.config.flowApiName === 'string' ? element.config.flowApiName : '';
+      const childFlow = activeFlowDefinition(allFlows.find((candidate) => candidate.apiName === childApiName));
+      if (!childFlow || childFlow.status !== 'Active' || childFlow.flowType !== 'Autolaunched Flow') {
+        errors.push(`Subflow "${element.label}" must reference an active autolaunched flow.`);
+      } else {
+        try {
+          for (const mapping of parseSubflowMappings(element.config.inputValues, element.label, 'input')) {
+            const childInput = childFlow.resources.find((resource) => resource.name === mapping.source && resource.availableForInput);
+            if (!childInput) {
+              errors.push(`Subflow "${element.label}" input "${mapping.source}" is not an available input on "${childFlow.label}".`);
+            }
+            const reference = /^\{!?([A-Za-z_$][A-Za-z0-9_.$]*)\}$/.exec(mapping.target);
+            const parentResourceName = reference?.[1].split('.')[0];
+            if (parentResourceName && !parentResourceName.startsWith('$')
+              && !flow.resources.some((resource) => resource.name === parentResourceName)) {
+              errors.push(`Subflow "${element.label}" input mapping references undefined parent resource "${parentResourceName}".`);
+            }
+          }
+          for (const mapping of parseSubflowMappings(element.config.outputValues, element.label, 'output')) {
+            const childOutput = childFlow.resources.find((resource) => resource.name === mapping.source && resource.availableForOutput);
+            if (!childOutput) {
+              errors.push(`Subflow "${element.label}" output "${mapping.source}" is not an available output on "${childFlow.label}".`);
+              continue;
+            }
+            const parentOutput = flow.resources.find((resource) => resource.name === mapping.target);
+            if (!parentOutput || ['Formula', 'Constant', 'Choice', 'Text Template'].includes(parentOutput.type)) {
+              errors.push(`Subflow "${element.label}" output mapping target "${mapping.target}" must be a writable parent resource.`);
+            } else if (parentOutput.dataType !== childOutput.dataType || parentOutput.isCollection !== childOutput.isCollection) {
+              errors.push(`Subflow "${element.label}" output "${mapping.source}" is incompatible with parent resource "${mapping.target}".`);
+            }
+          }
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : `Subflow "${element.label}" has invalid mappings.`);
+        }
+      }
+    }
+    if (element.type === 'Collection Filter' || element.type === 'Collection Sort') {
+      const outputName = typeof element.config.outputCollection === 'string' ? element.config.outputCollection : '';
+      const output = flow.resources.find((resource) => resource.name === outputName);
+      if (!sourceCollection || sourceCollection.type !== 'Record Collection' || !elementObject) {
+        errors.push(`${element.type} "${element.label}" requires a record collection whose data type is an existing object.`);
+      }
+      if (!output || output.type !== 'Record Collection' || output.name === sourceCollectionName
+        || output.dataType !== sourceCollection?.dataType) {
+        errors.push(`${element.type} "${element.label}" requires a different output collection with the same record type.`);
+      }
+      if (element.type === 'Collection Filter' && !asConfigRows(element.config.conditions).length) {
+        errors.push(`Collection Filter "${element.label}" requires at least one condition.`);
+      }
+      if (element.type === 'Collection Sort') {
+        const sortField = typeof element.config.sortField === 'string' ? element.config.sortField : '';
+        if (!sortField) {
+          errors.push(`Collection Sort "${element.label}" requires a sort field.`);
+        } else if (elementObject && !elementObject.fields.some((field) => field.apiName === sortField)) {
+          errors.push(`Sort field "${sortField}" on "${element.label}" does not exist on "${elementObject.apiName}".`);
+        }
+        if (element.config.sortOrder !== undefined && !['Ascending', 'Descending'].includes(String(element.config.sortOrder))) {
+          errors.push(`Collection Sort "${element.label}" sort order must be Ascending or Descending.`);
+        }
+      }
+    }
+    if (String(element.type) === 'Transform') {
+      const outputName = typeof element.config.outputCollection === 'string' ? element.config.outputCollection : '';
+      const output = flow.resources.find((resource) => resource.name === outputName);
+      const sourceObject = objects.find((object) => object.apiName === sourceCollection?.dataType);
+      const targetObject = objects.find((object) => object.apiName === output?.dataType);
+      if (!sourceCollection || sourceCollection.type !== 'Record Collection' || !sourceObject) {
+        errors.push(`Transform "${element.label}" requires a source record collection with a valid object type.`);
+      }
+      if (!output || output.type !== 'Record Collection' || output.name === sourceCollectionName || !targetObject) {
+        errors.push(`Transform "${element.label}" requires a different output record collection with a valid object type.`);
+      }
+      const mappings = asConfigRows(element.config.mappings);
+      if (!mappings.length) errors.push(`Transform "${element.label}" requires at least one field mapping.`);
+      const mappedTargets = new Set<string>();
+      for (const mapping of mappings) {
+        const sourceField = typeof mapping.sourceField === 'string' ? mapping.sourceField : '';
+        const targetField = typeof mapping.targetField === 'string' ? mapping.targetField : '';
+        if (!sourceField || (sourceObject && !sourceObject.fields.some((field) => field.apiName === sourceField))) {
+          errors.push(`Transform "${element.label}" references a missing source field "${sourceField}".`);
+        }
+        if (!targetField || (targetObject && !targetObject.fields.some((field) => field.apiName === targetField))) {
+          errors.push(`Transform "${element.label}" references a missing target field "${targetField}".`);
+        }
+        if (targetField && mappedTargets.has(targetField)) {
+          errors.push(`Transform "${element.label}" maps more than one source field to "${targetField}".`);
+        }
+        if (targetField) mappedTargets.add(targetField);
+      }
+    }
+    if (element.type === 'Decision') {
+      const outcomes = asConfigRows(element.config.outcomes);
+      const outcomeLabels = outcomes.map((outcome) => String(outcome.label ?? '').trim().toLowerCase());
+      const outcomeNames = outcomes.map((outcome) => String(outcome.name ?? '').trim().toLowerCase());
+      if (outcomeLabels.some((label) => !label)
+        || new Set(outcomeLabels).size !== outcomeLabels.length
+        || new Set(outcomeNames).size !== outcomeNames.length) {
+        errors.push(`Decision "${element.label}" outcomes must have unique, non-empty labels and API names.`);
+      }
+      const defaultOutcomes = outcomes.filter((outcome) => outcome.name === 'Default');
+      if (defaultOutcomes.length !== 1) {
+        errors.push(`Decision "${element.label}" must have exactly one default outcome.`);
+      }
+      const decisionConnectors = flow.connectors.filter((connector) =>
+        connector.from === element.id && connector.kind === 'normal');
+      for (const outcome of outcomes) {
+        const label = String(outcome.label ?? '').trim().toLowerCase();
+        const name = String(outcome.name ?? '').trim().toLowerCase();
+        const matchingConnectors = decisionConnectors.filter((connector) => {
+          const connectorLabel = connector.label.trim().toLowerCase();
+          return connectorLabel && (connectorLabel === label || connectorLabel === name);
+        });
+        if (matchingConnectors.length !== 1) {
+          errors.push(`Decision "${element.label}" outcome "${String(outcome.label ?? outcome.name ?? '')}" must have exactly one connector.`);
+        }
+      }
+      for (const connector of decisionConnectors) {
+        const connectorLabel = connector.label.trim().toLowerCase();
+        const matchingOutcomes = outcomes.filter((outcome) =>
+          connectorLabel && (connectorLabel === String(outcome.label ?? '').trim().toLowerCase()
+            || connectorLabel === String(outcome.name ?? '').trim().toLowerCase()));
+        if (matchingOutcomes.length !== 1) {
+          errors.push(`Decision connector "${connector.id}" does not match exactly one outcome on "${element.label}".`);
+        }
+      }
+      for (const outcome of outcomes.filter((candidate) => candidate.name !== 'Default')) {
+        const conditions = asConfigRows(outcome.conditions);
+        if (!conditions.length) errors.push(`Decision outcome "${String(outcome.label ?? 'Unknown')}" on "${element.label}" requires at least one condition.`);
+      }
+    }
+    if (element.type === 'HTTP Callout') {
+      const connectionId = typeof element.config.integrationConnectionId === 'string' ? element.config.integrationConnectionId : '';
+      const credentialId = typeof element.config.namedCredentialId === 'string' ? element.config.namedCredentialId : '';
+      const connectionResource = typeof element.config.integrationConnectionResource === 'string' ? element.config.integrationConnectionResource.trim() : '';
+      const credentialResource = typeof element.config.namedCredentialResource === 'string' ? element.config.namedCredentialResource.trim() : '';
+      const resourceBindingPattern = /^\{!?[A-Za-z_$][A-Za-z0-9_$.]*\}$/;
+      if (connectionResource && !resourceBindingPattern.test(connectionResource)) {
+        errors.push(`Integration Connection resource on HTTP Callout "${element.label}" must be a Flow resource reference.`);
+      }
+      if (credentialResource && !resourceBindingPattern.test(credentialResource)) {
+        errors.push(`Named Credential resource on HTTP Callout "${element.label}" must be a Flow resource reference.`);
+      }
+      if (connectionResource && credentialResource) {
+        errors.push(`HTTP Callout "${element.label}" cannot use both dynamic Integration Connection and Named Credential resources.`);
+      }
+      const selectedConnection = connectionResource ? undefined : integrationConnections.find((connection) => connection.id === connectionId && connection.status === 'ACTIVE');
+      const selectedDefinition = selectedConnection
+        ? connectorDefinitions.find((definition) => definition.connectorKey === selectedConnection.connectorKey && definition.status === 'ACTIVE')
+        : undefined;
+      if (!connectionResource && connectionId && (!selectedConnection || !selectedDefinition)) {
+        errors.push(`Select an active Integration Connection for HTTP Callout "${element.label}".`);
+      } else if (!connectionResource && !credentialResource && !connectionId && !credentials.some((credential) => credential.id === credentialId)) {
+        errors.push(`Select an existing Named Credential or bind a credential resource for HTTP Callout "${element.label}".`);
+      }
+      const operationName = typeof element.config.operation === 'string' ? element.config.operation : '';
+      const operation = operationName && selectedDefinition ? selectedDefinition.operations[operationName] : undefined;
+      if (operationName && !operation) errors.push(`HTTP Callout "${element.label}" selects an operation not defined by its provider.`);
+      const calloutPath = typeof element.config.path === 'string' && element.config.path.trim()
+        ? element.config.path.trim()
+        : operation?.path ?? '';
+      if (!calloutPath) errors.push(`Set a relative resource path or choose a provider operation for HTTP Callout "${element.label}".`);
+      else if (calloutPath.startsWith('\\') || calloutPath.includes('\\') || /^[a-z][a-z0-9+.-]*:/i.test(calloutPath)
+        || (calloutPath.startsWith('/') && calloutPath !== operation?.path)) {
+        errors.push(`HTTP Callout "${element.label}" path must remain a relative provider path.`);
+      }
+      if (element.config.url !== undefined) errors.push(`HTTP Callout "${element.label}" cannot store a raw URL; select a Named Credential or Integration Connection.`);
+      if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(String(element.config.method ?? 'GET'))) {
+        errors.push(`HTTP Callout "${element.label}" uses an unsupported HTTP method.`);
+      }
+      if (element.config.timeoutMs !== undefined && element.config.timeoutMs !== '' && (!Number.isInteger(Number(element.config.timeoutMs)) || Number(element.config.timeoutMs) < 1000 || Number(element.config.timeoutMs) > 120000)) {
+        errors.push(`HTTP Callout "${element.label}" timeout must be between 1,000 and 120,000 milliseconds.`);
+      }
+      if (element.config.onError !== undefined && !['FAULT_PATH', 'FAIL', 'CONTINUE'].includes(String(element.config.onError))) {
+        errors.push(`HTTP Callout "${element.label}" has an unsupported On Error behavior.`);
+      }
+      if (element.config.queryParameters !== undefined && typeof element.config.queryParameters !== 'string') {
+        errors.push(`HTTP Callout "${element.label}" query parameters must be configured as JSON text.`);
+      } else if (typeof element.config.queryParameters === 'string' && element.config.queryParameters.trim()) {
+        try {
+          const queryParameters: unknown = JSON.parse(element.config.queryParameters);
+          if (!queryParameters || typeof queryParameters !== 'object' || Array.isArray(queryParameters)) {
+            errors.push(`HTTP Callout "${element.label}" query parameters must be a JSON object.`);
+          }
+        } catch {
+          errors.push(`HTTP Callout "${element.label}" query parameters must be valid JSON.`);
+        }
+      }
+      if (element.config.responseMapping !== undefined && typeof element.config.responseMapping !== 'string') {
+        errors.push(`HTTP Callout "${element.label}" response mapping must be configured as JSON text.`);
+      } else if (typeof element.config.responseMapping === 'string' && element.config.responseMapping.trim()) {
+        try {
+          const responseMapping: unknown = JSON.parse(element.config.responseMapping);
+          if (!responseMapping || typeof responseMapping !== 'object' || Array.isArray(responseMapping)
+            || Object.values(responseMapping).some((path) => typeof path !== 'string')) {
+            errors.push(`HTTP Callout "${element.label}" response mapping must be a JSON object of output names to response paths.`);
+          }
+        } catch {
+          errors.push(`HTTP Callout "${element.label}" response mapping must be valid JSON.`);
+        }
+      }
+      if (element.config.headers !== undefined && typeof element.config.headers !== 'string') {
+        errors.push(`HTTP Callout "${element.label}" headers must be configured as header-name: value lines.`);
+      }
+      if (typeof element.config.headers === 'string') {
+        for (const line of element.config.headers.split(/\r?\n/).map((item) => item.trim()).filter(Boolean)) {
+          const separator = line.indexOf(':');
+          const name = separator > 0 ? line.slice(0, separator).trim() : '';
+          if (!name || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name)
+            || ['authorization', 'proxy-authorization', 'host', 'cookie', 'content-length', 'transfer-encoding', 'connection'].includes(name.toLowerCase())) {
+            errors.push(`HTTP Callout "${element.label}" contains an invalid or restricted request header.`);
             break;
           }
         }
-        selected ??= outcomes.find((item) => item.name === 'Default');
-        if (selected) {
-          const routeLabels = [selected.label, selected.name]
-            .filter((value): value is string => typeof value === 'string')
-            .map((value) => value.trim().toLowerCase());
-          nextConnectors = nextConnectors.filter((connector) => routeLabels.includes(connector.label.trim().toLowerCase()));
-        } else {
-          nextConnectors = [];
-        }
-        break;
       }
-      case 'Collection Filter':
-      case 'Collection Sort': {
-        const collectionName = typeof config.collection === 'string' ? config.collection : '';
-        const outputName = typeof config.outputCollection === 'string' ? config.outputCollection : '';
-        const sourceResource = flow.resources.find((resource) => resource.name === collectionName);
-        const outputResource = flow.resources.find((resource) => resource.name === outputName);
-        const source = context.variables[collectionName];
-        if (!sourceResource || sourceResource.type !== 'Record Collection' || !Array.isArray(source)) {
-          throw new Error(`${element.type} "${element.label}" requires a record collection variable.`);
+      for (const variableKey of ['responseVariable', 'statusVariable']) {
+        const variableName = typeof element.config[variableKey] === 'string' ? element.config[variableKey] as string : '';
+        if (variableName && !flow.resources.some((resource) => resource.name === variableName && resource.type !== 'Constant')) {
+          errors.push(`Output variable "${variableName}" on HTTP Callout "${element.label}" must be a non-constant resource defined in Manager.`);
         }
-        if (!outputResource || outputResource.type !== 'Record Collection' || outputName === collectionName
-          || outputResource.dataType !== sourceResource.dataType) {
-          throw new Error(`${element.type} "${element.label}" requires a different output record collection of the same object type.`);
-        }
-        if (source.some((item) => !item || typeof item !== 'object' || Array.isArray(item))) {
-          throw new Error(`${element.type} "${element.label}" can only process collections of records.`);
-        }
-        if (element.type === 'Collection Filter') {
-          const conditions = asConfigRows(config.conditions);
-          if (!conditions.length) throw new Error(`Collection Filter "${element.label}" requires at least one condition.`);
-          context.variables[outputName] = source.filter((item) =>
-            flowConditionsMatch(conditions, item as Record<string, unknown>, context, config.conditionLogic));
-        } else {
-          const field = typeof config.sortField === 'string' ? config.sortField : '';
-          if (!field) throw new Error(`Collection Sort "${element.label}" requires a sort field.`);
-          const direction = String(config.sortOrder ?? 'Ascending');
-          if (!['Ascending', 'Descending'].includes(direction)) throw new Error(`Collection Sort "${element.label}" has an unsupported sort order.`);
-          const descending = direction === 'Descending';
-          context.variables[outputName] = source.map((item, index) => ({ item: item as Record<string, unknown>, index }))
-            .sort((left, right) => {
-              const leftValue = left.item[field];
-              const rightValue = right.item[field];
-              if (leftValue === null || leftValue === undefined || leftValue === '') {
-                return rightValue === null || rightValue === undefined || rightValue === '' ? left.index - right.index : 1;
-              }
-              if (rightValue === null || rightValue === undefined || rightValue === '') return -1;
-              const leftNumber = typeof leftValue === 'number' ? leftValue : Number(leftValue);
-              const rightNumber = typeof rightValue === 'number' ? rightValue : Number(rightValue);
-              const comparison = Number.isFinite(leftNumber) && Number.isFinite(rightNumber)
-                ? leftNumber - rightNumber
-                : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' });
-              return (descending ? -comparison : comparison) || left.index - right.index;
-            })
-            .map(({ item }) => item);
-        }
-        break;
       }
-      case 'Transform': {
-        const collectionName = typeof config.collection === 'string' ? config.collection : '';
-        const outputName = typeof config.outputCollection === 'string' ? config.outputCollection : '';
-        const sourceResource = flow.resources.find((resource) => resource.name === collectionName);
-        const outputResource = flow.resources.find((resource) => resource.name === outputName);
-        const source = context.variables[collectionName];
-        const sourceObject = tenant.objects.find((object) => object.apiName === sourceResource?.dataType);
-        const targetObject = tenant.objects.find((object) => object.apiName === outputResource?.dataType);
-        if (!sourceResource || sourceResource.type !== 'Record Collection' || !sourceObject || !Array.isArray(source)) {
-          throw new Error(`Transform "${element.label}" requires a source record collection.`);
-        }
-        if (!outputResource || outputResource.type !== 'Record Collection' || outputName === collectionName || !targetObject) {
-          throw new Error(`Transform "${element.label}" requires a different output record collection with a valid object type.`);
-        }
-        if (source.some((item) => !item || typeof item !== 'object' || Array.isArray(item))) {
-          throw new Error(`Transform "${element.label}" can only process collections of records.`);
-        }
-        const mappings = asConfigRows(config.mappings);
-        if (!mappings.length) throw new Error(`Transform "${element.label}" requires at least one field mapping.`);
-        const targetFields = new Set<string>();
-        for (const mapping of mappings) {
-          const sourceField = typeof mapping.sourceField === 'string' ? mapping.sourceField : '';
-          const targetField = typeof mapping.targetField === 'string' ? mapping.targetField : '';
-          if (!sourceField || !sourceObject.fields.some((field) => field.apiName === sourceField)) {
-            throw new Error(`Transform "${element.label}" references an unavailable source field.`);
-          }
-          if (!targetField || !targetObject.fields.some((field) => field.apiName === targetField) || targetFields.has(targetField)) {
-            throw new Error(`Transform "${element.label}" has a missing, invalid, or duplicate target field.`);
-          }
-          targetFields.add(targetField);
-        }
-        context.variables[outputName] = source.map((item) => Object.fromEntries(mappings.map((mapping) => {
-          const sourceField = String(mapping.sourceField);
-          const targetField = String(mapping.targetField);
-          return [targetField, (item as Record<string, unknown>)[sourceField] ?? null];
-        })));
-        break;
-      }
-      case 'Loop': {
-        const collectionName = typeof config.collection === 'string' ? config.collection : '';
-        const loopVariable = typeof config.loopVariable === 'string' ? config.loopVariable.trim() : '';
-        const collection = context.variables[collectionName];
-        if (!collectionName || !loopVariable || !Array.isArray(collection)) {
-          throw new Error(`Loop "${element.label}" requires a collection variable and a loop variable.`);
-        }
-        let position = loopPositions.get(element.id);
-        if (!position) {
-          const items = String(config.direction ?? 'First to last') === 'Last to first' ? [...collection].reverse() : [...collection];
-          position = { items, index: 0 };
-        } else {
-          position.index += 1;
-        }
-        if (position.index >= position.items.length) {
-          loopPositions.delete(element.id);
-          nextConnectors = nextConnectors.filter((connector) => connector.label.toLowerCase().includes('after last'));
-        } else {
-          loopPositions.set(element.id, position);
-          context.variables[loopVariable] = position.items[position.index];
-          nextConnectors = nextConnectors.filter((connector) =>
-            connector.label.toLowerCase().includes('for each') || connector.label.toLowerCase().includes('next'));
-        }
-        break;
-      }
-      case 'Publish Platform Event': {
-        const eventApiName = typeof config.eventApiName === 'string' ? config.eventApiName : '';
-        const event = tenant.platformEvents.find((candidate) => candidate.apiName === eventApiName);
-        if (!event) throw new Error(`Publish Platform Event "${element.label}" references an unknown platform event.`);
-        const assignments = flowFieldValues(config, context);
-        const fieldsByName = new Map(event.fields.map((field) => [field.apiName, field]));
-        for (const [fieldName, value] of Object.entries(assignments)) {
-          const field = fieldsByName.get(fieldName);
-          if (!field) throw new Error(`Platform event "${event.label}" does not contain field "${fieldName}".`);
-          if (value === undefined || value === null || value === '') continue;
-          if (/^(Number|Currency|Percent)(\(|$)/.test(field.dataType)) {
-            const numeric = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
-            if (!Number.isFinite(numeric)) throw new Error(`Platform event field "${fieldName}" must contain a valid number.`);
-            const numericError = numericFieldValueError(field.dataType, numeric);
-            if (numericError) throw new Error(`Platform event field "${fieldName}" ${numericError.toLocaleLowerCase()}`);
-            assignments[fieldName] = numeric;
-          } else if (field.dataType === 'Checkbox' && typeof value !== 'boolean') {
-            throw new Error(`Platform event field "${fieldName}" must be true or false.`);
-          } else if (['Text', 'Long Text Area', 'Picklist'].includes(field.dataType.split('(')[0])) {
-            if (typeof value !== 'string') throw new Error(`Platform event field "${fieldName}" must contain text.`);
-            const limit = Number(field.dataType.match(/^Text\((\d+)\)$/)?.[1]
-              ?? (field.dataType.startsWith('Long Text Area') ? 131072 : 255));
-            if (value.length > limit) throw new Error(`Platform event field "${fieldName}" exceeds its ${limit} character limit.`);
-            if (field.dataType === 'Picklist' && field.picklistRestricted
-              && field.picklistValues && !field.picklistValues.includes(value)) {
-              throw new Error(`Platform event field "${fieldName}" must use a configured picklist value.`);
-            }
-          } else if (field.dataType === 'Date' && (typeof value !== 'string'
-            || !/^\d{4}-\d{2}-\d{2}$/.test(value)
-            || !Number.isFinite(Date.parse(`${value}T00:00:00.000Z`))
-            || new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value)) {
-            throw new Error(`Platform event field "${fieldName}" must contain a valid date.`);
-          } else if (field.dataType === 'DateTime' && (typeof value !== 'string' || !isValidFlowDateTime(value))) {
-            throw new Error(`Platform event field "${fieldName}" must contain a valid date and time.`);
-          }
-        }
-        if (tenant.platformEventMessages.filter((message) =>
-          message.createdAt > new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).length >= 10_000) {
-          throw new Error('Platform event delivery queue is full; retry after pending events are processed.');
-        }
-        const now = new Date().toISOString();
-        const eventUuid = randomUUID();
-        const payload: RuntimeRecord = {
-          ...assignments,
-          Id: eventUuid,
-          EventUuid: eventUuid,
-          ReplayId: String(tenant.platformEventMessages.length + 1),
-          CreatedDate: now,
-          LastModifiedDate: now
-        };
-        tenant.platformEventMessages.push(platformEventMessageSchema.parse({
-          id: eventUuid,
-          eventApiName,
-          payload,
-          createdAt: now,
-          publishedBy: currentUserId,
-          deliveredFlowApiNames: [],
-          attempts: 0,
-          retryAt: null,
-          lastError: '',
-          processedAt: null,
-          deadLettered: false
-        }));
-        break;
-      }
-      case 'Get Records':
-      case 'Create Records':
-      case 'Update Records':
-      case 'Delete Records': {
-        const objectName = typeof config.object === 'string' ? config.object : '';
-        const object = tenant.objects.find((candidate) => candidate.apiName === objectName);
-        if (!object) throw new Error(`${element.type} "${element.label}" references an unknown object.`);
-        if (objectName === 'Connector_App__c'
-          && (element.type === 'Create Records' || element.type === 'Delete Records')
-          && !runningPrincipal.permissions.includes('licence:manage')) {
-          throw new Error('Creating or deleting app catalogue records requires the platform licence permission.');
-        }
-        const objectAction = element.type === 'Get Records' ? 'read'
-          : element.type === 'Create Records' ? 'create'
-            : element.type === 'Update Records' ? 'edit' : 'delete';
-        if (!hasObjectPermission(runningPrincipal, tenant, objectName, objectAction)) {
-          throw new Error(`The running user does not have ${objectAction} access to "${objectName}" for "${element.label}".`);
-        }
-        const records = tenant.records[objectName] ?? [];
-        const conditions = asConfigRows(config.conditions);
-        const requestedFields = [
-          ...conditions.map((condition) => typeof condition.field === 'string' ? condition.field : ''),
-          ...(typeof config.sortField === 'string' ? [config.sortField] : []),
-          ...(Array.isArray(config.fields) ? config.fields.filter((field): field is string => typeof field === 'string') : [])
-        ];
-        for (const requestedField of requestedFields) {
-          const fieldName = requestedField.split('.')[0];
-          if (object.fields.some((field) => field.apiName === fieldName)
-            && !hasFieldPermission(runningPrincipal, tenant, objectName, fieldName, 'read')) {
-            throw new Error(`The running user does not have read permission for field "${objectName}.${fieldName}" used by "${element.label}".`);
-          }
-        }
-        const matching = records.filter((item) => flowConditionsMatch(conditions, item, context, config.conditionLogic));
-        if (element.type === 'Get Records') {
-          const readableRecords = matching.filter((item) =>
-            hasRecordAccess(runningPrincipal, tenant, objectName, item, 'Read'));
-          const sorted = typeof config.sortField === 'string' && config.sortField
-            ? [...readableRecords].sort((a, b) => {
-                const left = a[config.sortField as string];
-                const right = b[config.sortField as string];
-                const leftNumber = Number(left);
-                const rightNumber = Number(right);
-                const comparison = left !== undefined && right !== undefined && Number.isFinite(leftNumber) && Number.isFinite(rightNumber)
-                  ? leftNumber - rightNumber
-                  : String(left ?? '').localeCompare(String(right ?? ''));
-                return String(config.sortOrder ?? 'Ascending') === 'Descending' ? -comparison : comparison;
-              })
-            : readableRecords;
-          const project = (item: RuntimeRecord): RuntimeRecord => {
-            if (!Array.isArray(config.fields)) return sanitizeRecordForRead(runningPrincipal, tenant, object, item);
-            const selectedFields = new Set(config.fields.filter((name): name is string => typeof name === 'string'));
-            const projected: RuntimeRecord = {
-              Id: item.Id,
-              CreatedDate: item.CreatedDate,
-              LastModifiedDate: item.LastModifiedDate
-            };
-            for (const name of selectedFields) {
-              if (Object.hasOwn(item, name)) {
-                projected[name] = sanitizeRecordForRead(runningPrincipal, tenant, object, item)[name];
-              }
-            }
-            return projected;
-          };
-          const recordLimit = String(config.recordLimit ?? '1');
-          const result = recordLimit === 'all' ? sorted.map(project)
-            : recordLimit === '1' ? sorted[0] ? project(sorted[0]) : null
-              : sorted.slice(0, Number(recordLimit)).map(project);
-          const variableName = typeof config.outputVariable === 'string' && config.outputVariable ? config.outputVariable : `element${element.id}`;
-          context.variables[variableName] = result;
-        } else if (element.type === 'Create Records') {
-          const fromCollection = config.recordSource === 'collection';
-          const collectionName = typeof config.sourceCollection === 'string' ? config.sourceCollection : '';
-          const configuredBatch = fromCollection
-            ? prepareFlowCreateCollection(flow.resources, collectionName, object, context.variables[collectionName])
-            : [flowFieldValues(config, context)];
-          // Validate the whole input collection first; the same tenant transaction
-          // and current-user permissions apply to every DML operation.
-          const normalizedBatch = configuredBatch.map((values) => {
-            const normalized = normalizeRuntimeValues(object, values);
-            assertFieldEditPermissions(runningPrincipal, tenant, object, normalized);
-            return normalized;
-          });
-          const createdRecords: RuntimeRecord[] = [];
-          for (const configuredValues of normalizedBatch) {
-            const values = applyRecordDefaults(tenantId, tenant, object, configuredValues, currentUserId);
-            validateRuntimeRecord(tenantId, tenant, object, values);
-            const now = new Date().toISOString();
-            let created = calculateFormulaFields(object, stampRecordAuditFields({ ...values, Id: randomUUID(), CreatedDate: now, LastModifiedDate: now }, currentUserId, now), context);
-            await runBeforeSaveRecordTriggeredFlows(
-              tenantId, tenant, currentUserId, objectName, 'created', created, undefined,
-              triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
-            );
-            const beforeSaveValues = normalizeFlowRecordAssignments(object, created, values);
-            created = calculateFormulaFields(object, created, context);
-            validateRuntimeRecord(tenantId, tenant, object, { ...values, ...beforeSaveValues }, created);
-            tenant.records[objectName] = [...(tenant.records[objectName] ?? []), created];
-            await runRecordTriggeredFlows(
-              tenantId, tenant, currentUserId, objectName, 'created', created, undefined,
-              triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
-            );
-            createdRecords.push(created);
-          }
-          if (fromCollection) {
-            const outputCollection = typeof config.outputCollection === 'string' ? config.outputCollection : '';
-            if (outputCollection) {
-              const output = flow.resources.find((resource) => resource.name === outputCollection
-                && resource.type === 'Record Collection' && resource.dataType === objectName && resource.isCollection);
-              if (!output) throw new Error(`Create Records "${element.label}" has an invalid output Record Collection resource.`);
-              context.variables[outputCollection] = createdRecords;
-            }
-            context.variables[`record${element.id}`] = createdRecords;
-          } else {
-            context.variables[`record${element.id}`] = createdRecords[0];
-          }
-        } else if (element.type === 'Update Records') {
-          const values = normalizeRuntimeValues(object, flowFieldValues(config, context));
-          assertFieldEditPermissions(runningPrincipal, tenant, object, values);
-          const candidates = context.record && objectName === flow.triggerObject && !conditions.length
-            ? records.filter((item) => item.Id === context.record?.Id)
-            : matching;
-          const editableCandidates = candidates.filter((item) =>
-            hasRecordAccess(runningPrincipal, tenant, objectName, item, 'Edit'));
-          if (editableCandidates.length > 200) throw new Error(`Update Records "${element.label}" exceeded the 200-record transaction limit.`);
-          const selectedRecordTypeId = values.RecordTypeId;
-          if (typeof selectedRecordTypeId === 'string' && editableCandidates.some((item) =>
-            item.RecordTypeId !== selectedRecordTypeId
-            && !hasRecordTypeAccessForUser(currentUserId, tenant, objectName, selectedRecordTypeId))) {
-            throw new Error(`Record type "${selectedRecordTypeId}" is not assigned to this user for "${objectName}".`);
-          }
-          const updates = new Map<string, RuntimeRecord>();
-          for (const previous of editableCandidates) {
-            const now = new Date().toISOString();
-            if (objectName === 'Connector_App__c')
-              assertConnectorLifecycleAccess(previous, { ...previous, ...values }, runningPrincipal);
-            const nextRecord = objectName === 'Connector_App__c'
-              ? applyConnectorLifecycle(previous, { ...previous, ...values }, tenant.namedCredentials, tenant.flows,
-                  new Date(now), runningPrincipal.permissions.includes('licence:manage'))
-              : { ...previous, ...values };
-            let updated = calculateFormulaFields(object, stampRecordAuditFields({ ...nextRecord, LastModifiedDate: now }, currentUserId, now, previous), context);
-            await runBeforeSaveRecordTriggeredFlows(
-              tenantId, tenant, currentUserId, objectName, 'updated', updated, previous,
-              triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
-            );
-            const beforeSaveValues = normalizeFlowRecordAssignments(object, updated, previous);
-            updated = calculateFormulaFields(object, updated, context);
-            validateRelationshipReparenting(object, previous, updated);
-            validateRuntimeRecord(tenantId, tenant, object, { ...values, ...beforeSaveValues }, updated);
-            updates.set(previous.Id, updated);
-          }
-          for (const previous of editableCandidates) {
-            const updated = updates.get(previous.Id);
-            if (updated) appendFieldHistory(tenant, object, previous, updated, currentUserId);
-          }
-          tenant.records[objectName] = records.map((item) => updates.get(item.Id) ?? item);
-          if (objectName === 'Connector_App__c') {
-            for (const previous of editableCandidates) {
-              const updated = updates.get(previous.Id);
-              if (updated) disableOnConnectorUninstall(tenant, previous, updated);
-            }
-          }
-          for (const previous of editableCandidates) {
-            const updated = updates.get(previous.Id);
-            if (updated) {
-              await runRecordTriggeredFlows(
-                tenantId, tenant, currentUserId, objectName, 'updated', updated, previous,
-                triggerDepth + 1, context.isClone, context.debug, context.debugTrace, context.rollbackSnapshot
-              );
-            }
-          }
-          if (context.record && updates.has(context.record.Id)) context.record = updates.get(context.record.Id);
-        } else {
-          const deletableRecords = matching.filter((item) =>
-            hasRecordAccess(runningPrincipal, tenant, objectName, item, 'Delete'));
-          if (deletableRecords.length > 200) throw new Error(`Delete Records "${element.label}" exceeded the 200-record transaction limit.`);
-          for (const removed of deletableRecords) {
-            if ((tenant.records[objectName] ?? []).some((item) => item.Id === removed.Id)) {
-              await deleteRecordCascade(
-                tenantId, tenant, currentUserId, objectName, removed, triggerDepth + 1, context.debug, context.debugTrace,
-                context.rollbackSnapshot
-              );
-            }
-          }
-        }
-        break;
-      }
-      case 'Orchestration Stage': {
-        // The approval work item and paused interview commit together with the
-        // parent Flow transaction. No external orchestration engine is required.
-        if (flow.flowType === 'Record-Triggered Flow' && flow.startConfig.runWhen === 'before-save') {
-          throw new Error('Orchestration stages cannot execute before record save.');
-        }
-        const interviewGuid = randomUUID();
-        performSubmitForApproval(tenantId, tenant, flow, {
-          ...config,
-          approvalMode: config.approvalMode === 'ALL' ? 'ALL' : 'ANY',
-          orchestrationInterviewId: interviewGuid
-        }, context, element.label);
-        return {
-          status: 'waiting', kind: 'orchestration', stage: element,
-          waitUntil: '9999-12-31T23:59:59.999Z', nextElementId: null,
-          variables: structuredClone(context.variables),
-          interviewGuid, interviewStartTime: new Date().toISOString(),
-          record: context.record, prior: context.prior,
-          recordEvent: context.recordEvent, isClone: context.isClone,
-          debugTrace: context.debugTrace ?? []
-        };
-      }
-      case 'Subflow': {
-        const apiName = typeof config.flowApiName === 'string' ? config.flowApiName : '';
-        const childFlow = activeFlowDefinition(tenant.flows.find((candidate) => candidate.apiName === apiName));
-        if (!childFlow || childFlow.status !== 'Active' || childFlow.flowType !== 'Autolaunched Flow') {
-          throw new Error(`Subflow "${element.label}" must reference an active autolaunched flow.`);
-        }
-        const childInput: Record<string, unknown> = {};
-        for (const mapping of parseSubflowMappings(config.inputValues, element.label, 'input')) {
-          childInput[mapping.source] = resolveFlowValue(mapping.target, context);
-        }
-        const childResult = await executeFlow(
-          childFlow, tenant, tenantId, currentUserId, childInput, record, prior, depth + 1, undefined, triggerDepth, recordEvent, isClone,
-          flowInterviewIdentity(context), false, context.debug === true, context.debugTrace, context.rollbackSnapshot
-        );
-        if (childResult.status !== 'completed') throw new Error(`Subflow "${element.label}" cannot pause for screen input.`);
-        const outputMappings = parseSubflowMappings(config.outputValues, element.label, 'output');
-        if (outputMappings.length) {
-          for (const mapping of outputMappings) {
-            if (!Object.hasOwn(childResult.outputs, mapping.source)) {
-              throw new Error(`Subflow "${element.label}" output "${mapping.source}" is not available.`);
-            }
-            if (!Object.hasOwn(context.variables, mapping.target)) {
-              throw new Error(`Subflow "${element.label}" cannot assign output to undefined parent resource "${mapping.target}".`);
-            }
-            context.variables[mapping.target] = childResult.outputs[mapping.source];
-          }
-        } else {
-          for (const [name, value] of Object.entries(childResult.outputs)) {
-            if (Object.hasOwn(context.variables, name)) context.variables[name] = value;
-          }
-        }
-        break;
-      }
-      case 'Screen':
-        if (flow.flowType !== 'Screen Flow') throw new Error(`Screen "${element.label}" can only be used in a Screen Flow.`);
-        {
-          const configuredOutcomes = asConfigRows(element.config.outcomes).map((outcome, index) => ({
-            name: typeof outcome.name === 'string' ? outcome.name : `Outcome_${index + 1}`,
-            label: typeof outcome.label === 'string' ? outcome.label : `Outcome ${index + 1}`
-          }));
-          return {
-            status: 'waiting', kind: 'screen', screen: element,
-            nextElementId: nextConnectors.length === 1 ? nextConnectors[0].to : null,
-            outcomes: configuredOutcomes.length ? configuredOutcomes : [{ name: 'Default', label: 'Next' }],
-            variables: context.variables,
-            ...flowInterviewIdentity(context),
-            record: context.record, prior: context.prior,
-            recordEvent: context.recordEvent, isClone: context.isClone,
-            debugTrace: context.debugTrace ?? []
-          };
-        }
-      case 'Wait': {
-        if (nextConnectors.length > 1) throw new Error(`Wait "${element.label}" has multiple outgoing paths.`);
-        let waitUntil: Date;
-        if (String(config.waitType ?? 'Duration') === 'Specific Time') {
-          const rawDateTime = typeof config.dateTime === 'string' ? config.dateTime : '';
-          const timeZone = String(config.timeZone ?? 'UTC');
-          const explicitZone = /(?:Z|[+-]\d{2}:\d{2})$/.test(rawDateTime);
-          let dateTime: Date | undefined;
-          if (explicitZone) {
-            if (isValidFlowDateTime(rawDateTime)) dateTime = new Date(rawDateTime);
-          } else {
-            const match = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(rawDateTime);
-            if (match && dashboardTimeZoneSchema.safeParse(timeZone).success) {
-              const [, yearText, monthText, dayText, hourText, minuteText] = match;
-              const civilDate = new Date(Date.UTC(Number(yearText), Number(monthText) - 1, Number(dayText)));
-              if (civilDate.getUTCFullYear() === Number(yearText)
-                && civilDate.getUTCMonth() === Number(monthText) - 1
-                && civilDate.getUTCDate() === Number(dayText)) {
-                dateTime = flowLocalDateTimeToInstant(civilDate, Number(hourText), Number(minuteText), timeZone);
-              }
-            }
-          }
-          if (!dateTime || !Number.isFinite(dateTime.getTime())) throw new Error(`Wait "${element.label}" requires a valid date and time.`);
-          waitUntil = dateTime;
-        } else {
-          const amount = Number(config.amount ?? 1);
-          const unit = String(config.unit ?? 'Hours');
-          const unitMilliseconds: Record<string, number> = { Minutes: 60_000, Hours: 3_600_000, Days: 86_400_000 };
-          if (!Number.isFinite(amount) || amount <= 0 || !unitMilliseconds[unit]) throw new Error(`Wait "${element.label}" requires a positive duration and supported unit.`);
-          waitUntil = new Date(Date.now() + amount * unitMilliseconds[unit]);
-        }
-        if (waitUntil.getTime() <= Date.now()) throw new Error(`Wait "${element.label}" must be scheduled for a future time.`);
-        return {
-          status: 'waiting', kind: 'wait', waitUntil: waitUntil.toISOString(),
-          nextElementId: nextConnectors[0]?.to ?? null, variables: context.variables,
-          ...flowInterviewIdentity(context),
-          record: context.record, prior: context.prior,
-          recordEvent: context.recordEvent, isClone: context.isClone,
-          debugTrace: context.debugTrace ?? []
-        };
-      }
-      case 'Action':
-        if (String(config.actionType ?? '') === 'Send Email') {
-          await performSendEmail(tenantId, tenant, config, context, element.label);
-        } else if (String(config.actionType ?? '') === 'Email Alert') {
-          await performEmailAlert(tenantId, tenant, config, context, element.label);
-        } else if (String(config.actionType ?? '') === 'Post to Chatter') {
-          performPostToChatter(tenantId, tenant, config, context, element.label);
-        } else if (String(config.actionType ?? '') === 'Custom Notification') {
-          performCustomNotification(tenantId, tenant, flow, config, context, element.label);
-        } else if (String(config.actionType ?? '') === 'Outbound Message') {
-          const runningUser = platformStore.state.users.find((user) =>
-            user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
-          if (!runningUser || !effectivePermissions(runningUser, tenant).includes('callouts:execute')) {
-            throw new Error('The running user does not have permission to send outbound messages.');
-          }
-          const result = await performHttpCallout(tenantId, tenant, {
-            namedCredentialId: config.namedCredentialId,
-            method: 'POST',
-            path: config.path,
-            body: config.messageBody,
-            headers: 'Content-Type: application/json'
-          }, context, element.label);
-          if (result.status < 200 || result.status >= 300) {
-            throw new Error(`Outbound Message "${element.label}" received HTTP status ${result.status}.`);
-          }
-        } else if (String(config.actionType ?? '') === 'Submit for Approval') {
-          performSubmitForApproval(tenantId, tenant, flow, config, context, element.label);
-        } else {
-          throw new Error(`Action "${element.label}" has unsupported action type "${String(config.actionType ?? '')}".`);
-        }
-        break;
-      case 'HTTP Callout': {
-        const runningUser = platformStore.state.users.find((user) =>
-          user.id === context.currentUserId && user.tenantId === tenantId && !user.disabled);
-        if (!runningUser || !effectivePermissions(runningUser, tenant).includes('callouts:execute')) {
-          throw new Error('The running user does not have permission to execute HTTP callouts.');
-        }
-        let result: { body: unknown; status: number };
-        try {
-          result = await performHttpCallout(tenantId, tenant, config, context, element.label);
-        } catch (error) {
-          if (config.onError !== 'CONTINUE') throw error;
-          result = { body: { error: error instanceof Error ? error.message : String(error) }, status: 0 };
-        }
-        const responseVariable = typeof config.responseVariable === 'string' ? config.responseVariable : '';
-        const statusVariable = typeof config.statusVariable === 'string' ? config.statusVariable : '';
-        if (responseVariable) {
-          if (!Object.hasOwn(context.variables, responseVariable)) throw new Error(`HTTP Callout "${element.label}" response variable is not defined in Manager.`);
-          context.variables[responseVariable] = mapHttpCalloutResponse(result.body, config.responseMapping, element.label);
-        }
-        if (statusVariable) {
-          if (!Object.hasOwn(context.variables, statusVariable)) throw new Error(`HTTP Callout "${element.label}" status variable is not defined in Manager.`);
-          context.variables[statusVariable] = result.status;
-        }
-        break;
-      }
-      default:
-        throw new Error(`Unknown flow element type "${element.type}".`);
-      }
-    } catch (error) {
-      if (element.type === 'HTTP Callout' && config.onError === 'FAIL') throw error;
-      const faultConnectors = flow.connectors.filter((connector) => connector.from === element.id && connector.kind === 'fault');
-      if (!faultConnectors.length) throw error;
-      if (faultConnectors.length > 1) {
-        throw new Error(`Element "${element.label}" has multiple fault connectors.`);
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      context.flow = { FaultMessage: message, FaultCode: 'FLOW_ELEMENT_ERROR' };
-      currentId = faultConnectors[0].to;
-      continue;
     }
-    if (!nextConnectors.length) break;
-    if (nextConnectors.length > 1) throw new Error(`Element "${element.label}" has multiple outgoing paths with no deterministic route.`);
-    currentId = nextConnectors[0].to;
+  }
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+function dashboardEmailFilterMatches(record: RuntimeRecord, filter: DashboardFilterMetadata): boolean {
+  return reportFilterMatches(record, filter);
+}
+
+type DashboardCrossFilterResolution =
+  | { recordIds: Set<string> }
+  | { error: string; status: 400 | 403 };
+type ReportCrossFilterResolution =
+  | { matchesRecord: (record: RuntimeRecord) => boolean }
+  | { error: string; status: 400 | 403 };
+
+function resolveReportCrossFilters(
+  principal: Principal,
+  tenant: TenantData,
+  parentObject: ObjectMetadata,
+  crossFilters: z.infer<typeof reportCrossFilterSchema>[],
+  matchesFilter: (record: RuntimeRecord, filter: z.infer<typeof reportFilterSchema>) => boolean
+): ReportCrossFilterResolution {
+  const configured: Array<{
+    mode: 'With' | 'Without';
+    childRecords: RuntimeRecord[];
+    relationshipFieldApiName: string;
+    filters: z.infer<typeof reportFilterSchema>[];
+  }> = [];
+  for (const crossFilter of crossFilters) {
+    const childObject = tenant.objects.find((item) => item.apiName === crossFilter.childObjectApiName);
+    const relationshipField = childObject?.fields.find((field) =>
+      field.relationship?.targetObject === parentObject.apiName);
+    if (!childObject || !relationshipField) {
+      return { error: `Cross-filter object "${crossFilter.childObjectApiName}" is not a child of "${parentObject.apiName}"`, status: 400 };
+    }
+    if (!hasObjectPermission(principal, tenant, childObject.apiName, 'read')) {
+      return { error: `Missing read permission for cross-filter object "${childObject.apiName}"`, status: 403 };
+    }
+    if (!hasFieldPermission(principal, tenant, childObject.apiName, relationshipField.apiName, 'read')) {
+      return { error: `Missing read permission for relationship field "${childObject.apiName}.${relationshipField.apiName}"`, status: 403 };
+    }
+    for (const filter of crossFilter.filters) {
+      if (!childObject.fields.some((field) => field.apiName === filter.fieldApiName)) {
+        return { error: `Cross-filter field "${filter.fieldApiName}" is unavailable on "${childObject.apiName}"`, status: 400 };
+      }
+      if (!hasFieldPermission(principal, tenant, childObject.apiName, filter.fieldApiName, 'read')) {
+        return { error: `Missing read permission for cross-filter field "${childObject.apiName}.${filter.fieldApiName}"`, status: 403 };
+      }
+    }
+    configured.push({
+      mode: crossFilter.mode,
+      relationshipFieldApiName: relationshipField.apiName,
+      filters: crossFilter.filters,
+      childRecords: (tenant.records[childObject.apiName] ?? []).filter((record) =>
+        hasRecordAccess(principal, tenant, childObject.apiName, record, 'Read'))
+        .map((record) => calculateFormulaFields(childObject, record, formulaContextForUser(tenant, principal.userId)))
+    });
   }
   return {
-    status: 'completed',
-    outputs: Object.fromEntries(flow.resources.filter((resource) => resource.availableForOutput).map((resource) => [resource.name, resolveFlowValue(`{${resource.name}}`, context)])),
-    variables: context.variables,
-    debugTrace: context.debugTrace ?? []
+    matchesRecord: (record) => configured.every((crossFilter) => {
+      const hasMatchingChild = crossFilter.childRecords.some((childRecord) =>
+        String(childRecord[crossFilter.relationshipFieldApiName] ?? '') === record.Id
+        && crossFilter.filters.every((filter) => matchesFilter(childRecord, filter)));
+      return crossFilter.mode === 'With' ? hasMatchingChild : !hasMatchingChild;
+    })
   };
 }
 
-function parseSubflowMappings(value: unknown, elementLabel: string, mappingType: 'input' | 'output'): Array<{ source: string; target: string }> {
-  if (value === undefined || value === null || value === '') return [];
-  if (typeof value !== 'string') throw new Error(`Subflow "${elementLabel}" ${mappingType} mappings must be text assignments.`);
-  const mappings: Array<{ source: string; target: string }> = [];
-  const sources = new Set<string>();
-  for (const entry of value.split(/[\r\n,]+/).map((item) => item.trim()).filter(Boolean)) {
-    const separator = entry.indexOf('=');
-    if (separator < 1) throw new Error(`Subflow "${elementLabel}" has an invalid ${mappingType} assignment "${entry}".`);
-    const source = entry.slice(0, separator).trim();
-    const target = entry.slice(separator + 1).trim();
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(source) || !target) {
-      throw new Error(`Subflow "${elementLabel}" has an invalid ${mappingType} assignment "${entry}".`);
+type DashboardRelationshipStep = {
+  sourceObjectApiName: string;
+  targetObjectApiName: string;
+  fieldApiName: string;
+  direction: 'forward' | 'reverse';
+};
+
+function dashboardRelationshipPaths(
+  tenant: TenantData,
+  sourceObjectApiName: string,
+  targetObjectApiName: string,
+  maxDepth = 3
+): DashboardRelationshipStep[][] {
+  if (sourceObjectApiName === targetObjectApiName) return [[]];
+  const paths: DashboardRelationshipStep[][] = [];
+  const queue: Array<{ objectApiName: string; path: DashboardRelationshipStep[]; visited: Set<string> }> = [
+    { objectApiName: sourceObjectApiName, path: [], visited: new Set([sourceObjectApiName]) }
+  ];
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (current.path.length >= maxDepth) continue;
+    const object = tenant.objects.find((item) => item.apiName === current.objectApiName);
+    if (!object) continue;
+    const edges: DashboardRelationshipStep[] = [
+      ...object.fields.filter((field) => field.relationship).map((field) => ({
+        sourceObjectApiName: object.apiName,
+        targetObjectApiName: field.relationship!.targetObject,
+        fieldApiName: field.apiName,
+        direction: 'forward' as const
+      })),
+      ...tenant.objects.flatMap((relatedObject) => relatedObject.fields
+        .filter((field) => field.relationship?.targetObject === object.apiName)
+        .map((field) => ({
+          sourceObjectApiName: object.apiName,
+          targetObjectApiName: relatedObject.apiName,
+          fieldApiName: field.apiName,
+          direction: 'reverse' as const
+        })))
+    ];
+    for (const edge of edges) {
+      if (current.visited.has(edge.targetObjectApiName)) continue;
+      const path = [...current.path, edge];
+      if (edge.targetObjectApiName === targetObjectApiName) paths.push(path);
+      else queue.push({ objectApiName: edge.targetObjectApiName, path, visited: new Set([...current.visited, edge.targetObjectApiName]) });
     }
-    if (sources.has(source)) throw new Error(`Subflow "${elementLabel}" maps "${source}" more than once.`);
-    sources.add(source);
-    mappings.push({ source, target });
   }
-  return mappings;
+  return paths;
 }
 
+function resolveDashboardCrossFilters(
+  principal: Principal,
+  tenant: TenantData,
+  sourceObjectApiName: string,
+  crossFilters: DashboardFilterMetadata[],
+  matchesFilter: (record: RuntimeRecord, filter: DashboardFilterMetadata) => boolean
+): DashboardCrossFilterResolution {
+  const sourceObject = tenant.objects.find((item) => item.apiName === sourceObjectApiName);
+  if (!sourceObject) return { error: `Dashboard object "${sourceObjectApiName}" is unavailable`, status: 400 };
+  const groups = new Map<string, DashboardFilterMetadata[]>();
+  for (const filter of crossFilters) {
+    const targetObject = tenant.objects.find((item) => item.apiName === filter.objectApiName);
+    if (!targetObject || !targetObject.fields.some((field) => field.apiName === filter.fieldApiName)) {
+      return { error: `Dashboard cross-filter field "${filter.objectApiName}.${filter.fieldApiName}" is unavailable`, status: 400 };
+    }
+    if (!hasObjectPermission(principal, tenant, filter.objectApiName, 'read')
+      || !hasFieldPermission(principal, tenant, filter.objectApiName, filter.fieldApiName, 'read')) {
+      return { error: `Missing read permission for dashboard cross-filter "${filter.objectApiName}.${filter.fieldApiName}"`, status: 403 };
+    }
+    const key = `${filter.objectApiName}\0${filter.fieldApiName}\0${filter.operator}`;
+    groups.set(key, [...(groups.get(key) ?? []), filter]);
+  }
+  const visibleRecordsByObject = new Map<string, RuntimeRecord[]>();
+  const visibleRecords = (objectApiName: string) => {
+    let records = visibleRecordsByObject.get(objectApiName);
+    if (!records) {
+      const object = tenant.objects.find((item) => item.apiName === objectApiName);
+      records = (tenant.records[objectApiName] ?? []).filter((record) =>
+        hasRecordAccess(principal, tenant, objectApiName, record, 'Read'))
+        .map((record) => object
+          ? calculateFormulaFields(object, record, formulaContextForUser(tenant, principal.userId))
+          : record);
+      visibleRecordsByObject.set(objectApiName, records);
+    }
+    return records;
+  };
+  for (const objectApiName of new Set([sourceObjectApiName, ...[...groups.values()].map((filters) => filters[0].objectApiName)])) {
+    if (!hasObjectPermission(principal, tenant, objectApiName, 'read')) {
+      return { error: `Missing read permission for dashboard cross-filter object "${objectApiName}"`, status: 403 };
+    }
+  }
+  const compiledGroups = [...groups.values()].map((filters) => {
+    const targetObjectApiName = filters[0].objectApiName;
+    const paths = dashboardRelationshipPaths(tenant, sourceObjectApiName, targetObjectApiName);
+    const accessiblePaths: DashboardRelationshipStep[][] = [];
+    for (const path of paths) {
+      let inaccessible: DashboardRelationshipStep | undefined;
+      for (const step of path) {
+        const fieldObjectApiName = step.direction === 'forward' ? step.sourceObjectApiName : step.targetObjectApiName;
+        const field = tenant.objects.find((item) => item.apiName === fieldObjectApiName)?.fields
+          .find((item) => item.apiName === step.fieldApiName);
+        if (!field || !hasFieldPermission(principal, tenant, fieldObjectApiName, step.fieldApiName, 'read')) {
+          inaccessible = step;
+          break;
+        }
+      }
+      if (inaccessible) {
+        const fieldObjectApiName = inaccessible.direction === 'forward'
+          ? inaccessible.sourceObjectApiName : inaccessible.targetObjectApiName;
+        return { error: `Missing read permission for relationship field "${fieldObjectApiName}.${inaccessible.fieldApiName}"`, status: 403 as const };
+      }
+      for (const objectApiName of path.flatMap((step) => [step.sourceObjectApiName, step.targetObjectApiName])) {
+        if (!hasObjectPermission(principal, tenant, objectApiName, 'read')) {
+          return { error: `Missing read permission for dashboard cross-filter object "${objectApiName}"`, status: 403 as const };
+        }
+      }
+      accessiblePaths.push(path);
+    }
+    return { filters, targetObjectApiName, paths: accessiblePaths };
+  });
+  const sourceRecords = visibleRecords(sourceObjectApiName);
+  const matchesPath = (record: RuntimeRecord, path: DashboardRelationshipStep[], targetFilters: DashboardFilterMetadata[]) => {
+    let currentRecords = [record];
+    for (const step of path) {
+      if (step.direction === 'forward') {
+        const targetIds = new Set(currentRecords.map((item) => String(item[step.fieldApiName] ?? '')).filter(Boolean));
+        currentRecords = visibleRecords(step.targetObjectApiName).filter((item) => targetIds.has(item.Id));
+      } else {
+        const sourceIds = new Set(currentRecords.map((item) => item.Id));
+        currentRecords = visibleRecords(step.targetObjectApiName).filter((item) => sourceIds.has(String(item[step.fieldApiName] ?? '')));
+      }
+      if (!currentRecords.length) return false;
+    }
+    return currentRecords.some((item) => targetFilters.some((filter) => matchesFilter(item, filter)));
+  };
+  const recordIds = new Set<string>();
+  for (const record of sourceRecords) {
+    const matchesAllGroups = compiledGroups.every((group) => {
+      if ('error' in group) return false;
+      if (group.targetObjectApiName === sourceObjectApiName) {
+        return group.filters.some((filter) => matchesFilter(record, filter));
+      }
+      if (!group.paths.length) return true;
+      return group.paths.some((path) => matchesPath(record, path, group.filters));
+    });
+    if (matchesAllGroups) recordIds.add(record.Id);
+  }
+  const compiledError = compiledGroups.find((group) => 'error' in group);
+  if (compiledError && 'error' in compiledError && typeof compiledError.error === 'string'
+    && compiledError.status === 403) {
+    return { error: compiledError.error, status: 403 };
+  }
+  return { recordIds };
+}
+
+function scheduledDashboardEmailBody(
+  dashboard: DashboardMetadata,
+  tenant: TenantData,
+  recipient: LocalUser,
+  subscription: DashboardSubscription,
+  runAt: Date
+): { text: string; html: string; snapshot: DashboardSnapshot } {
+  const recipientAccess = tenant.accessControl.users.find((user) => user.id === recipient.id);
+  if (!recipientAccess || !canAccessDashboard(dashboardForUser(tenant, dashboard, recipient.id), recipient.id, recipientAccess.permissionSetGroupIds, false)) {
+    throw new Error(`Recipient "${recipient.email}" no longer has dashboard access.`);
+  }
+  const principal: Principal = {
+    userId: recipient.id,
+    tenantId: recipient.tenantId,
+    email: recipient.email,
+    roles: [recipient.role],
+    permissions: effectivePermissions(recipient, tenant)
+  };
+  const lines = [
+    `${dashboard.label} — scheduled dashboard snapshot`,
+    `Run time: ${runAt.toLocaleString('en-US', { timeZone: 'UTC', timeZoneName: 'short' })}`,
+    `Data is evaluated using ${recipient.name}'s current access permissions.`,
+    ''
+  ];
+  const htmlSections: string[] = [];
+  const snapshotComponents: DashboardSnapshot['components'] = [];
+  const sourceRecordAccess = new Map<string, { objectApiName: string; recordId: string }>();
+  const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]!);
+  const formatNumber = (value: number) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
+  const baseSnapshotComponent = (component: DashboardMetadata['components'][number], unavailableReason: string | null = null) => ({
+    componentId: component.id,
+    title: component.title,
+    subtitle: component.subtitle,
+    footer: component.footer,
+    type: component.type,
+    width: component.width,
+    height: component.height,
+    customHtml: null,
+    richTextContent: component.type === 'Rich Text' ? sanitizeDashboardRichText(component.richTextContent) : '',
+    imageUrl: component.type === 'Image' ? component.imageUrl : '',
+    imageAltText: component.type === 'Image' ? component.imageAltText : '',
+    unavailableReason,
+    chartType: component.type === 'Chart' ? component.chartType : null,
+    chartSortOrder: component.chartSortOrder,
+    chartColorPalette: component.chartColorPalette,
+    chartLimit: component.chartLimit,
+    chartXAxisMinimum: component.chartXAxisMinimum,
+    chartXAxisMaximum: component.chartXAxisMaximum,
+    chartYAxisMinimum: component.chartYAxisMinimum,
+    chartYAxisMaximum: component.chartYAxisMaximum,
+    chartValueFormat: component.chartValueFormat,
+    chartCurrencyCode: component.chartCurrencyCode,
+    chartDecimalPlaces: component.chartDecimalPlaces,
+    xAxisFieldApiName: component.xAxisFieldApiName,
+    xAxisTitle: component.xAxisTitle,
+    yAxisTitle: component.yAxisTitle,
+    showGridlines: component.showGridlines,
+    legendPosition: component.legendPosition,
+    aggregation: component.aggregation,
+    gaugeMin: component.gaugeMin,
+    gaugeMax: component.gaugeMax,
+    gaugeRange1EndPercent: component.gaugeRange1EndPercent,
+    gaugeRange2EndPercent: component.gaugeRange2EndPercent,
+    showLegend: component.showLegend,
+    showValues: component.showValues,
+    chartDataLabelPosition: component.chartDataLabelPosition,
+    objectApiName: component.objectApiName,
+    groupByLabel: null,
+    totalRows: 0,
+    metricValue: null,
+    columns: [],
+    buckets: [],
+    rows: []
+  });
+  for (const component of dashboard.components) {
+    lines.push(`${component.title} (${component.type})`);
+    if (component.type === 'Rich Text') {
+      const richTextContent = sanitizeDashboardRichText(component.richTextContent);
+      const plainText = sanitizeHtml(richTextContent, { allowedTags: [], allowedAttributes: {} });
+      lines.push(plainText, '');
+      htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><div>${richTextContent}</div></section>`);
+      snapshotComponents.push({
+        ...baseSnapshotComponent(component),
+        type: 'Rich Text',
+        richTextContent
+      });
+      continue;
+    }
+    if (component.type === 'Image') {
+      const imageUrl = component.imageUrl;
+      lines.push(`${component.imageAltText || 'Image'}${imageUrl ? `: ${imageUrl}` : ''}`, '');
+      htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2>${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(component.imageAltText)}" style="display:block;max-width:100%;height:auto">` : '<p>Image URL is not configured.</p>'}</section>`);
+      snapshotComponents.push({
+        ...baseSnapshotComponent(component),
+        type: 'Image',
+        imageUrl,
+        imageAltText: component.imageAltText
+      });
+      continue;
+    }
+    if (component.type === 'Custom') {
+      lines.push('Open the dashboard to view this custom component.', '');
+      htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><p style="margin:0;color:#5c5c5c">Open the dashboard to view this registered custom component.</p></section>`);
+      snapshotComponents.push({
+        ...baseSnapshotComponent(component, 'Registered custom components are not executed during scheduled runs.'),
+        type: 'Custom'
+      });
+      continue;
+    }
+    const object = tenant.objects.find((item) => item.apiName === component.objectApiName);
+    const report = component.reportApiName
+      ? tenant.reports.find((item) => item.apiName === component.reportApiName)
+      : undefined;
+    if (!object || (component.reportApiName && !report)
+      || (report && (report.objectApiName !== component.objectApiName
+        || reportFolderAccessLevelForUser(tenant, report.folderId, recipient.id) === null))
+      || !hasObjectPermission(principal, tenant, component.objectApiName, 'read')) {
+      lines.push('This component is unavailable under your current access permissions.', '');
+      htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><p style="margin:0;color:#5c5c5c">Unavailable under your current access permissions.</p></section>`);
+      snapshotComponents.push(baseSnapshotComponent(component, 'Unavailable under the recipient current access permissions.'));
+      continue;
+    }
+    const activeDashboardFilters = dashboard.filters.filter((filter) =>
+      filter.objectApiName === object.apiName
+      && (filter.value.trim() || filter.operator === 'Is Null' || filter.operator === 'Is Not Null'));
+    const neededFields = [
+      ...(component.aggregation !== 'Count' && component.measureFieldApiName ? [component.measureFieldApiName] : []),
+      ...(component.type === 'Chart' && component.chartType !== 'Gauge' && component.groupByFieldApiName ? [component.groupByFieldApiName] : []),
+      ...(component.type === 'Chart' && component.chartType === 'Scatter' && component.xAxisFieldApiName ? [component.xAxisFieldApiName] : []),
+      ...(component.type === 'Chart' && component.seriesFieldApiName ? [component.seriesFieldApiName] : []),
+      ...(component.type === 'Table' ? component.displayFieldApiNames : []),
+      ...(report?.fieldApiNames ?? []),
+      ...(report?.groupByFieldApiNames ?? []),
+      ...(report?.columnGroupByFieldApiName ? [report.columnGroupByFieldApiName] : []),
+      ...(report?.filters.map((filter) => filter.fieldApiName) ?? []),
+      ...activeDashboardFilters.map((filter) => filter.fieldApiName)
+    ];
+    const unreadableField = neededFields.find((fieldApiName) =>
+      !object.fields.some((field) => field.apiName === fieldApiName)
+      || !hasFieldPermission(principal, tenant, object.apiName, fieldApiName, 'read'));
+    if (unreadableField) {
+      lines.push('This component is unavailable under your current field permissions.', '');
+      htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><p style="margin:0;color:#5c5c5c">Unavailable under your current field permissions.</p></section>`);
+      snapshotComponents.push(baseSnapshotComponent(component, 'Unavailable under the recipient current field permissions.'));
+      continue;
+    }
+    const records = (tenant.records[object.apiName] ?? []).filter((record) =>
+      hasRecordAccess(principal, tenant, object.apiName, record, 'Read'))
+      .map((record) => calculateFormulaFields(object, record, formulaContextForUser(tenant, principal.userId)))
+      .filter((record) =>
+        (report?.filters ?? []).every((filter) => reportFilterMatches(record, filter))
+        && matchesDashboardFilters(activeDashboardFilters, dashboard.filterLogic, (filter) => dashboardEmailFilterMatches(record, filter)));
+    for (const record of records) {
+      sourceRecordAccess.set(`${object.apiName}:${record.Id}`, { objectApiName: object.apiName, recordId: record.Id });
+    }
+    const aggregateValue = (items: RuntimeRecord[]) => {
+      if (component.aggregation === 'Count') return items.length;
+      const values = items.map((record) => Number(record[component.measureFieldApiName ?? '']))
+        .filter(Number.isFinite);
+      if (!values.length) return 0;
+      if (component.aggregation === 'Sum') return values.reduce((sum, value) => sum + value, 0);
+      if (component.aggregation === 'Average') return values.reduce((sum, value) => sum + value, 0) / values.length;
+      return component.aggregation === 'Minimum' ? Math.min(...values) : Math.max(...values);
+    };
+    if (component.type === 'Metric') {
+      const aggregate = aggregateValue(records);
+      const value = formatNumber(aggregate);
+      lines.push(`Value: ${value}`, `${records.length.toLocaleString()} matching records`, '');
+      htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><strong style="display:block;color:#0176d3;font-size:30px">${escapeHtml(value)}</strong><p style="margin:6px 0 0;color:#5c5c5c">${records.length.toLocaleString()} matching records</p></section>`);
+      snapshotComponents.push({
+        ...baseSnapshotComponent(component),
+        totalRows: records.length,
+        metricValue: aggregate
+      });
+    } else if (component.type === 'Chart') {
+      if (component.chartType === 'Gauge') {
+        const value = aggregateValue(records);
+        lines.push(`Value: ${formatNumber(value)} / ${formatNumber(component.gaugeMin)}-${formatNumber(component.gaugeMax)}`,
+          `${records.length.toLocaleString()} matching records`, '');
+        const percent = Math.max(0, Math.min(100, (value - component.gaugeMin) / (component.gaugeMax - component.gaugeMin) * 100));
+        htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><strong style="font-size:24px">${escapeHtml(formatNumber(value))} / ${escapeHtml(formatNumber(component.gaugeMin))}-${escapeHtml(formatNumber(component.gaugeMax))}</strong><div style="position:relative;height:10px;margin:10px 0;background:linear-gradient(to right,#c23934 0 ${component.gaugeRange1EndPercent}%,#fe9339 ${component.gaugeRange1EndPercent}% ${component.gaugeRange2EndPercent}%,#2e844a ${component.gaugeRange2EndPercent}% 100%);border-radius:6px"><div style="position:absolute;left:calc(${percent}% - 1px);top:-4px;width:2px;height:18px;background:#181818;border:1px solid #fff"></div></div><p style="margin:0;color:#5c5c5c">${records.length.toLocaleString()} matching records</p></section>`);
+        snapshotComponents.push({
+          ...baseSnapshotComponent(component),
+          totalRows: records.length,
+          groupByLabel: null,
+          buckets: [{ label: component.title, value }]
+        });
+      } else {
+        const groupFieldApiName = component.chartType === 'Scatter'
+          ? component.xAxisFieldApiName
+          : component.groupByFieldApiName;
+        const groups = new Map<string, RuntimeRecord[]>();
+        for (const record of records) {
+          const label = String(record[groupFieldApiName ?? ''] ?? '—');
+          groups.set(label, [...(groups.get(label) ?? []), record]);
+        }
+        const buckets = [...groups].map(([label, items]) => ({
+          label,
+          value: aggregateValue(items),
+          ...(component.seriesFieldApiName ? {
+            series: Object.fromEntries([...new Set(items.map((record) => String(record[component.seriesFieldApiName!] ?? '—')))]
+              .map((seriesName) => [seriesName, aggregateValue(items.filter((record) =>
+                String(record[component.seriesFieldApiName!] ?? '—') === seriesName))]))
+          } : {})
+        }))
+          .sort((left, right) => component.chartSortOrder === 'Ascending' ? left.value - right.value : right.value - left.value)
+          .slice(0, component.chartLimit);
+        const maxValue = Math.max(1, ...buckets.map((bucket) => Math.abs(bucket.value)));
+        const bucketRows = buckets.map((bucket) =>
+          `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">${escapeHtml(bucket.label)}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${escapeHtml(formatNumber(bucket.value))}</td><td style="width:40% ;padding:6px 8px;border-bottom:1px solid #eee"><div style="height:10px;width:${Math.min(100, Math.abs(bucket.value) / maxValue * 100)}%;background:#0176d3;border-radius:5px"></div></td></tr>`).join('');
+        const bucketLines = buckets.map(({ label, value }) => `${label}: ${formatNumber(value)}`);
+        lines.push(...(bucketLines.length ? bucketLines : ['No matching records.']), '');
+        htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><p style="margin:0 0 10px;color:#5c5c5c">${escapeHtml(component.chartType)}${component.groupByFieldApiName ? ` · ${escapeHtml(object.fields.find((field) => field.apiName === component.groupByFieldApiName)?.label ?? component.groupByFieldApiName)}` : ''}</p>${bucketRows ? `<table role="presentation" style="width:100%;border-collapse:collapse">${bucketRows}</table>` : '<p>No matching records.</p>'}</section>`);
+        snapshotComponents.push({
+          ...baseSnapshotComponent(component),
+          totalRows: records.length,
+          groupByLabel: groupFieldApiName
+            ? object.fields.find((field) => field.apiName === groupFieldApiName)?.label ?? groupFieldApiName
+            : null,
+          buckets
+        });
+      }
+    } else {
+      const columns = component.displayFieldApiNames.flatMap((fieldApiName) => {
+        const field = object.fields.find((candidate) => candidate.apiName === fieldApiName);
+        return field ? [field] : [];
+      });
+      const tableRows = records.slice(0, 10).map((record) => `<tr>${columns.map((field) => `<td style="padding:6px 8px;border-bottom:1px solid #eee">${escapeHtml(record[field.apiName])}</td>`).join('')}</tr>`).join('');
+      lines.push(`${records.length.toLocaleString()} matching records. First ${Math.min(10, records.length)} shown.`, '');
+      htmlSections.push(`<section style="background:#fff;border:1px solid #d8dde6;border-radius:8px;padding:16px;margin:12px 0"><h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2><p style="margin:0 0 10px;color:#5c5c5c">${records.length.toLocaleString()} matching records; first ${Math.min(10, records.length)} shown.</p>${tableRows ? `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>${columns.map((field) => `<th scope="col" style="padding:6px 8px;border-bottom:1px solid #d8dde6;text-align:left">${escapeHtml(field.label)}</th>`).join('')}</tr></thead><tbody>${tableRows}</tbody></table></div>` : '<p>No matching records.</p>'}</section>`);
+      snapshotComponents.push({
+        ...baseSnapshotComponent(component),
+        totalRows: records.length,
+        columns: columns.map((field) => ({ apiName: field.apiName, label: field.label })),
+        rows: records.slice(0, 10).map((record) => {
+          const readable = sanitizeRecordForRead(principal, tenant, object, record);
+          return Object.fromEntries(columns.map((field) => [field.apiName, readable[field.apiName] ?? null]));
+        })
+      });
+    }
+  }
+  const dashboardUrl = new URL(`/une/setup/dashboard-builder/${encodeURIComponent(dashboard.apiName)}`,
+    process.env.WEB_APP_URL ?? 'http://localhost:5174').toString();
+  lines.push('Open dashboard:', dashboardUrl);
+  const text = lines.join('\n').slice(0, 100_000);
+  dashboard.components.forEach((component, index) => {
+    const section = htmlSections[index];
+    if (!section) return;
+    const heading = `<h2 style="margin:0 0 8px;font-size:16px">${escapeHtml(component.title)}</h2>`;
+    const subtitle = component.subtitle
+      ? `<p style="margin:0 0 10px;color:#5c5c5c">${escapeHtml(component.subtitle)}</p>`
+      : '';
+    const footer = component.footer
+      ? `<p style="margin:10px 0 0;color:#5c5c5c">${escapeHtml(component.footer)}</p>`
+      : '';
+    htmlSections[index] = section
+      .replace(heading, `${heading}${subtitle}`)
+      .replace('</section>', `${footer}</section>`);
+    if (component.subtitle) lines.push(`Subtitle: ${component.subtitle}`);
+    if (component.footer) lines.push(`Footer: ${component.footer}`);
+  });
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f3f3f3;font-family:Arial,sans-serif;color:#181818"><main style="max-width:760px;margin:0 auto"><header style="padding:20px;background:#0176d3;color:#fff;border-radius:8px"><h1 style="margin:0;font-size:22px">${escapeHtml(dashboard.label)}</h1><p style="margin:8px 0 0">Scheduled dashboard snapshot · ${escapeHtml(runAt.toLocaleString('en-US', { timeZone: 'UTC', timeZoneName: 'short' }))}</p><p style="margin:8px 0 0">Data evaluated with ${escapeHtml(recipient.name)}'s current permissions.</p></header>${htmlSections.join('')}<p style="margin:20px 0;text-align:center"><a href="${escapeHtml(dashboardUrl)}" style="display:inline-block;padding:12px 18px;background:#0176d3;color:#fff;text-decoration:none;border-radius:5px">Open dashboard</a></p></main></body></html>`;
+  const snapshot = dashboardSnapshotSchema.parse({
+    id: randomUUID(),
+    dashboardApiName: dashboard.apiName,
+    label: `${subscription.label.slice(0, 45)} · ${runAt.toISOString()}`,
+    createdAt: runAt.toISOString(),
+    createdBy: recipient.id,
+    runningUserId: recipient.id,
+    subscriptionId: subscription.id,
+    filters: dashboard.filters,
+    sourceRecordAccess: [...sourceRecordAccess.values()],
+    components: snapshotComponents
+  });
+  return { text, html: html.slice(0, 100_000), snapshot };
+}
+
+const dashboardSubscriptionDispatches = new Set<string>();
+async function dispatchDashboardSubscription(tenantId: string, subscriptionId: string, manual = false): Promise<void> {
+  const key = `${tenantId}:${subscriptionId}`;
+  if (dashboardSubscriptionDispatches.has(key)) throw new Error('This dashboard subscription is already being delivered.');
+  dashboardSubscriptionDispatches.add(key);
+  try {
+    const tenant = tenantData(tenantId);
+    const subscription = tenant?.dashboardSubscriptions.find((item) => item.id === subscriptionId);
+    if (!tenant || !subscription || (!manual && !subscription.active)) return;
+    const runAt = new Date();
+    if (!manual && Date.parse(subscription.nextRunAt) > runAt.getTime()) return;
+    const dashboard = tenant.dashboards.find((item) => item.apiName === subscription.dashboardApiName && item.status === 'Deployed');
+    const creator = platformStore.state.users.find((item) => item.id === subscription.createdBy && item.tenantId === tenantId && !item.disabled);
+    if (!dashboard) throw new Error('The subscribed dashboard is no longer deployed.');
+    if (!creator || !effectivePermissions(creator, tenant).includes('email:send')) {
+      throw new Error('The subscription owner is no longer active or lacks email:send permission.');
+    }
+    const failures: string[] = [];
+    for (const userId of subscription.recipientUserIds) {
+      const recipient = platformStore.state.users.find((item) => item.id === userId && item.tenantId === tenantId && !item.disabled);
+      if (!recipient) {
+        failures.push('A scheduled recipient is no longer active.');
+        continue;
+      }
+      try {
+        const body = scheduledDashboardEmailBody(dashboard, tenant, recipient, subscription, runAt);
+        if (subscription.saveSnapshots) {
+          const snapshotTenant = tenantData(tenantId);
+          if (!snapshotTenant) throw new Error('The tenant is no longer available for scheduled snapshot storage.');
+          const recipientSnapshots = [
+            ...snapshotTenant.dashboardSnapshots.filter((snapshot) =>
+              snapshot.subscriptionId === subscription.id && snapshot.createdBy === recipient.id),
+            body.snapshot
+          ].slice(-30);
+          const retainedIds = new Set(recipientSnapshots.map((snapshot) => snapshot.id));
+          persistTenantRecords(tenantId, {
+            ...snapshotTenant,
+            dashboardSnapshots: [
+              ...snapshotTenant.dashboardSnapshots.filter((snapshot) =>
+                snapshot.subscriptionId !== subscription.id || snapshot.createdBy !== recipient.id),
+              ...recipientSnapshots.filter((snapshot) => retainedIds.has(snapshot.id))
+            ]
+          });
+        }
+        await sendTenantEmail(
+          tenantId,
+          tenant,
+          subscription.namedCredentialId,
+          subscription.fromEmail,
+          [recipient.email],
+          `${dashboard.label} — scheduled dashboard`,
+          body.text,
+          body.html
+        );
+      } catch (error) {
+        failures.push(`${recipient.email}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    const currentTenant = tenantData(tenantId);
+    if (!currentTenant) return;
+    const latest = currentTenant.dashboardSubscriptions.find((item) => item.id === subscriptionId);
+    if (!latest) return;
+    const lastRunAt = runAt.toISOString();
+    const failed = failures.length > 0;
+    const updated: DashboardSubscription = {
+      ...latest,
+      ...(manual ? {} : { nextRunAt: nextDashboardSubscriptionRunAt(latest, runAt) }),
+      lastRunAt,
+      lastRunStatus: failed ? 'Failed' : 'Success',
+      lastRunError: failed ? failures.join('; ').slice(0, 500) : null,
+      updatedAt: lastRunAt
+    };
+    persistTenantRecords(tenantId, {
+      ...currentTenant,
+      dashboardSubscriptions: currentTenant.dashboardSubscriptions.map((item) => item.id === subscriptionId ? updated : item)
+    });
+  } catch (error) {
+    const tenant = tenantData(tenantId);
+    const subscription = tenant?.dashboardSubscriptions.find((item) => item.id === subscriptionId);
+    if (tenant && subscription) {
+      const now = new Date().toISOString();
+      persistTenantRecords(tenantId, {
+        ...tenant,
+        dashboardSubscriptions: tenant.dashboardSubscriptions.map((item) => item.id === subscriptionId ? {
+          ...item,
+          ...(manual ? {} : { nextRunAt: nextDashboardSubscriptionRunAt(item, new Date(now)) }),
+          lastRunAt: now,
+          lastRunStatus: 'Failed',
+          lastRunError: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+          updatedAt: now
+        } : item)
+      });
+    }
+    if (manual) throw error;
+    console.error(`Dashboard subscription "${subscriptionId}" failed for tenant "${tenantId}": ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    dashboardSubscriptionDispatches.delete(key);
+  }
+}
+async function dispatchDueIntegrationJobs(): Promise<void> {
+  if (persistenceMode === 'jsonb') return;
+  const pool = getRouteAliasPool();
+  if (!pool) return;
+  const outbox = new IntegrationOutbox(pool);
+  // Keep the core scheduler running if an additive Module 11 migration has not yet been applied.
+  // Enqueueing remains fail-closed until the outbox schema is installed.
+  if (!await outbox.ready()) return;
+  const workerId = 'metadrive-outbox-' + process.pid;
+  for (const tenantId of Object.keys(platformStore.state.tenants)) {
+    if (!tenantIsActive(tenantId)) continue;
+    await dispatchIntegrationDeliveries({
+      outbox, tenantId, workerId, limit: 1,
+      dispatch: async delivery => {
+        const value = openIntegrationEnvelope(tenantId, delivery.operationKey,
+          delivery.encryptedRequest, credentialKeyRing());
+        const decoded = z.object({
+          label: z.string().min(1).max(255),
+          config: z.record(z.unknown()),
+          context: z.object({
+            currentUserId: z.string().min(1),
+            variables: z.record(z.unknown())
+          }).passthrough()
+        }).parse(value);
+        const credentialRef = decoded.config.integrationConnectionId || decoded.config.namedCredentialId;
+        if (credentialRef !== delivery.credentialId ||
+            decoded.config.idempotencyKey !== delivery.operationKey ||
+            decoded.config.deliveryMode !== 'SYNC') {
+          throw new CalloutFault('OUTBOX_IDENTITY_MISMATCH', undefined, 1, false);
+        }
+        const currentTenant = tenantData(tenantId);
+        const user = platformStore.state.users.find(item => item.id === decoded.context.currentUserId &&
+          item.tenantId === tenantId && !item.disabled);
+        if (!currentTenant || !user ||
+            !effectivePermissions(user,currentTenant).includes('callouts:execute')) {
+          throw new CalloutFault('OUTBOX_PERMISSION_DENIED', undefined, 1, false);
+        }
+        const restored = { ...decoded.context,
+          formulaStack: new Set<string>(), currentUserId:user.id, debug:false,
+          rollbackSnapshot:undefined } as FlowRuntimeContext;
+        const response = await performHttpCallout(tenantId, currentTenant,
+          { ...decoded.config, maxAttempts: 1, deliveryMode:'SYNC' },
+          restored, decoded.label);
+        return { status: response.status };
+      }
+    });
+  }
+}
+const dispatchScheduledFlows = createScheduledDispatcher({
+  maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
+  refresh: createSqlStateRefresh({
+    persistenceMode, store: platformStore,
+    authRevision: () => platformInitialization.authOverlayRevision,
+    readPersistedState, waitForPersistedState, parsePersistedPlatformState,
+    restoreDurableAuthOverlay: platformInitialization.restoreDurableAuthOverlay
+  }),
+  events: () => deliverPendingPlatformEvents(),
+  flows: () => executeDueScheduledFlows(),
+  integrations: () => dispatchDueIntegrationJobs(),
+  subscriptions: async () => {
+    const now = Date.now();
+    const dueSubscriptions = Object.entries(platformStore.state.tenants).flatMap(([tenantId, tenant]) =>
+      tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
+        subscription.active && Date.parse(subscription.nextRunAt) <= now)
+        .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
+    for (const due of dueSubscriptions) await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
+  }
+});
+// Register static frontend and final error handling after API routes.
+const frontendDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
+registerProductionFrontend(app, frontendDist);
+registerPlatformErrorHandler(app);
+startPlatformServer({
+  app, port, issuer: jwtService.config.issuer, maintenanceMode, schedulePollInterval,
+  hooks: { syncComponents: syncBundledLibraryComponents, dispatchScheduledFlows }
+});
+export { app, libraryComponentInputSchema, persistState, tenantData, getPrincipal, requirePermission, canOpenApp, canOpenTab, routeParam, findLibraryComponentUsages, ownedComponentIndex, componentNameTaken, usageBlockerDetails, syncBundledLibraryComponents };
+export type { LibraryComponent, LibraryComponentRevision };
+export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySchema, dashboardSchema, dashboardTimeZoneSchema, dashboardSubscriptionSchema, isNumericField, dashboardFilterOperatorAllowed, dashboardFilterValueError, sanitizeDashboardRichText, principalUser, effectivePermissions, dashboardRunningUserChoices, dashboardRunningPrincipal, dashboardRunningUserSelectionError, folderAccessLevelForUser, folderForUser, dashboardForUser, validateDashboardFolderReferences, requireAnyPermission, hasObjectPermission, hasRecordAccess, sanitizeRecordForRead, persistTenantRecords, formulaContextForUser, dashboardRelationshipPaths, dispatchDashboardSubscription, nextDashboardSubscriptionRunAt, calculateFormulaFields, libraryComponentVisible, randomUUID, canAccessDashboard, canEditDashboard, dashboardFilterSchema, reportFilterMatches, dashboardSnapshotSchema, reportFolderAccessLevelForUser, hasFieldPermission, resolveDashboardCrossFilters, pickDashboardSnapshotProperties, sanitizeHtml, matchesDashboardFilters };
+export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
+export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
+export type { DashboardMetadata, ReportMetadata };
+export type { FlowDebugTraceEntry, FlowRuntimeContext };
+
+export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowInterview, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };
 async function runRecordTriggeredFlows(
   tenantId: string,
   tenant: TenantData,
