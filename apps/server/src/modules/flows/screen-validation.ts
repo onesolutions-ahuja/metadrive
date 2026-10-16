@@ -13,7 +13,7 @@ type ScreenValidationContext = {
 
 export function validateScreenElement(context: ScreenValidationContext): void {
   const { flow, element, objects, tenantId, errors, validateConditions, validateConditionLogic, deps } = context;
-  const { asConfigRows, libraryComponentVisible, isValidFlowDateTime, isValidFlowTime, z, getState } = deps;
+  const { asConfigRows, libraryComponentVisible, isValidFlowDateTime, isValidFlowTime, z, getState, isSafeFlowRegex } = deps;
     if (element.type === 'Screen') {
       if (element.config.layout !== undefined && !['One Column', 'Two Columns'].includes(String(element.config.layout))) {
         errors.push(`Screen "${element.label}" layout must be One Column or Two Columns.`);
