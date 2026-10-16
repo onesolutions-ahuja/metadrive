@@ -156,17 +156,18 @@ export function renderSetupShell(ctx: any) {
                           || (workspace === 'app-manager' && item === 'App Manager')
                           || (workspace === 'component-library' && item === 'Component Library')
                           || (workspace === 'app-exchange' && item === 'AppExchange')
+                          || (workspace === 'tenant-management' && item === 'Tenant Management')
                           || (workspace === 'named-credentials' && item === 'Named Credentials')
                           || (workspace === 'connector-settings' && item === 'Une Connectors')
                           || (workspace === 'flow-interviews' && item === 'Paused and Waiting Interviews')
                           || (workspace === 'scheduled-flows' && item === 'Scheduled Flows')
                           || (workspace === 'flow-logs' && item === 'Failed Flow Logs')) ? 'tree-item selected' : 'tree-item'}
-                        aria-label={`Open ${item}`}
+                        aria-label={item === "Tenant Management" && !canManagePlatformTenants ? "Tenant Management (platform policy required)" : `Open ${item}`}
                         title={item}
                         data-short-label={item.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('')}
                         onClick={() => navigateSetupItem(item)}
                       >
-                        <span>{item}</span>
+                        <span>{item}{item === 'Tenant Management' && !canManagePlatformTenants ? ' · Restricted' : ''}</span>
                         <ChevronRight size={13} />
                       </button>
 
