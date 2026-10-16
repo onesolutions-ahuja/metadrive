@@ -44,7 +44,13 @@ export default function ChatterInbox(props) {
   const selected = scoped.find(c => String(c.id) === String(selectedId)) || null;
   const selectableAgents = (Array.isArray(p.eligibleAssignees) ? p.eligibleAssignees : [])
     .filter(a => selected && a.channelAccountId === selected.channelAccountId);
-  const canSendSelected = newChat ? assignedAccounts.some(a => String(a.id) === selectedAccount && a.canSend !== false) && !!selectedAccount : selected?.canSend === true && p.canSend === true;
+  const selectedGrant = assignedAccounts.find(a=>String(a.id)===String(newChat?selectedAccount:selected?.channelAccountId));
+  const sendDenialReason = !selectedGrant ? 'No readable channel grant exists for this account.'
+    : selectedGrant.canSend !== true ? 'This account needs an active channel grant with Can_Send__c enabled.'
+    : selected?.canSend !== true && !newChat ? 'Conversation send access is not granted.'
+    : p.canSend !== true && !newChat ? 'No send grant is available for the current user.'
+    : 'Sending is unavailable.';
+  const canSendSelected = newChat ? assignedAccounts.some(a => String(a.id) === selectedAccount && a.canSend === true) && !!selectedAccount : selected?.canSend === true && p.canSend === true;
   const canAssignSelected = selected?.canAssign === true && p.enableAssignment === true;
   const thread = selected ? messages.filter(m => String(m.conversationId) === String(selected.id))
     .sort((a,b) => String(a.sentAt || '').localeCompare(String(b.sentAt || ''))) : [];
@@ -81,7 +87,7 @@ export default function ChatterInbox(props) {
     style={{'--chatter-accent': p.accentColor || '#168657', '--chatter-background': p.backgroundColor || '#f7f8f7'}}>
     <aside className="md-chatter-list">
       <header><div className="md-chatter-heading"><h2>{p.title || 'Chatter'}</h2><span>{scoped.length} chats</span></div>
-      <button type="button" className="md-chatter-new" disabled={!assignedAccounts.some(a=>a.canSend!==false)} onClick={()=>{setNewChat(true);select(null);setError('');setSentNotice('');setSelectedAccount(id=>id||String(assignedAccounts.find(a=>a.canSend!==false)?.id||''));}}>+ New Chat</button>
+      <button type="button" className="md-chatter-new" disabled={!assignedAccounts.some(a=>a.canSend===true)} onClick={()=>{setNewChat(true);select(null);setError('');setSentNotice('');setSelectedAccount(id=>id||String(assignedAccounts.find(a=>a.canSend!==false)?.id||''));}}>+ New Chat</button>
       <label className="md-chatter-account-picker">Account <select aria-label="WhatsApp account" value={selectedAccount} onChange={e=>{setSelectedAccount(e.target.value);select(null);setNewChat(false);setAssigneeId('');}} disabled={!assignedAccounts.length}>
         <option value="">All assigned accounts</option>
         {assignedAccounts.map(a=><option key={a.id} value={String(a.id)}>{a.name || a.id}</option>)}
@@ -128,7 +134,7 @@ export default function ChatterInbox(props) {
           disabled={busy} maxLength={4096} placeholder={p.messagePlaceholder || 'Type a message'} />
           <button type="submit" disabled={!draft.trim() || busy || !canSendSelected}>Send</button></form>
         {!canSendSelected
-          ? <p className="md-chatter-help" role="status">You can type a message, but you do not have permission to send from this account.</p>
+          ? <p className="md-chatter-help" role="status">{sendDenialReason}</p>
           : p.composerHelpText && <p className="md-chatter-help">{p.composerHelpText}</p>}
       </> : <div className="md-chatter-welcome"><strong>{p.emptyTitle || 'Select a conversation'}</strong><p>Choose a customer to see their messages.</p></div>}
     </div>
