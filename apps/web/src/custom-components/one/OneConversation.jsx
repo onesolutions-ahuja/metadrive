@@ -33,8 +33,10 @@ function ConversationInbox({props}) {
  const selected=visible.find(item=>String(item.id)===selectedId);
  const thread=selected?messages.filter(item=>String(item.conversationId)===String(selected.id))
   .sort((left,right)=>String(left.sentAt||'').localeCompare(String(right.sentAt||''))):[];
+ const selectedAccountGrant=assignedAccounts.find(account=>String(account.id)===String(selected?.channelAccountId||selectedAccount));
+ const sendDenialReason=selected ? (!selectedAccountGrant?'No active readable grant for this conversation account.':selectedAccountGrant.canSend!==true?'This account needs an active channel grant with Can_Send__c enabled.':selected.canSend!==true?'Conversation send access was not granted by the server.':props.canSend!==true?'No send grant is available for the current user.':'') : (!selectedAccount?'Select a sending account.':!selectedAccountGrant?'No assigned channel account is available.':selectedAccountGrant.canSend!==true?'This account needs an active channel grant with Can_Send__c enabled.':'');
  const canSend=selected?selected.canSend===true&&props.canSend===true:
-  assignedAccounts.some(account=>String(account.id)===selectedAccount&&account.canSend!==false)&&Boolean(selectedAccount);
+  assignedAccounts.some(account=>String(account.id)===selectedAccount&&account.canSend===true)&&Boolean(selectedAccount);
  const assigned=Array.isArray(props.eligibleAssignees)?props.eligibleAssignees:[];
  const eligible=assigned.filter(item=>selected&&item.channelAccountId===selected.channelAccountId);
  const send=async event=>{
@@ -153,7 +155,7 @@ function ConversationInbox({props}) {
        onChange={event=>setDraft(event.target.value)}/>
       <button className="one-btn one-btn--primary" type="submit" disabled={busy||!canSend||!draft.trim()}>{props.sendLabel||'Send'}</button>
      </form>
-     {!canSend&&<p className="one-muted" role="status">{props.noSendPermissionText||'You do not have permission to send from this account.'}</p>}
+     {!canSend&&<p className="one-muted" role="status">{props.noSendPermissionText||sendDenialReason||'Sending is unavailable for this conversation.'}</p>}
     </div>:<div className="one-empty">{props.emptyTitle||'Select a conversation'}</div>}
    {error&&<p role="alert">{error}</p>}{notice&&<p role="status">{notice}</p>}
   </section>
