@@ -2125,6 +2125,34 @@
               "label": "Agenda"
             }
           ]
+        },
+        {
+          "propertyKey": "startFieldApiName",
+          "label": "Start date/time field",
+          "kind": "TEXT",
+          "displayOrder": 320,
+          "defaultValue": "StartDateTime"
+        },
+        {
+          "propertyKey": "endFieldApiName",
+          "label": "End date/time field",
+          "kind": "TEXT",
+          "displayOrder": 330,
+          "defaultValue": "EndDateTime"
+        },
+        {
+          "propertyKey": "titleFieldApiName",
+          "label": "Appointment title field",
+          "kind": "TEXT",
+          "displayOrder": 340,
+          "defaultValue": "Name"
+        },
+        {
+          "propertyKey": "timeZone",
+          "label": "IANA display timezone",
+          "kind": "TEXT",
+          "displayOrder": 350,
+          "defaultValue": "Europe/London"
         }
       ]
     },
@@ -2404,8 +2432,14 @@
           "displayOrder": 310,
           "defaultValue": "thread",
           "choices": [
-            {"key":"thread","label":"Message thread"},
-            {"key":"inbox","label":"Conversation inbox"}
+            {
+              "key": "thread",
+              "label": "Message thread"
+            },
+            {
+              "key": "inbox",
+              "label": "Conversation inbox"
+            }
           ]
         },
         {
@@ -2543,8 +2577,14 @@
           "displayOrder": 300,
           "defaultValue": "till",
           "choices": [
-            {"key":"till","label":"Product catalogue and basket"},
-            {"key":"display","label":"Paired customer display"}
+            {
+              "key": "till",
+              "label": "Product catalogue and basket"
+            },
+            {
+              "key": "display",
+              "label": "Paired customer display"
+            }
           ]
         },
         {
