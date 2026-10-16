@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {restoreMissingCoreAdministratorGrants} from '../../apps/server/src/seeders/repair-core-administrator-grants.mjs';
+import {restoreMissingCoreAdministratorGrants} from '../../apps/server/src/seeders/repair-core-administrator-grants.js';
 import {createCoreRecordAccess} from '../../apps/server/src/core/security/record-access.js';
 
 const seed=JSON.parse(readFileSync('apps/server/data/platform-metadata.json','utf8'));
