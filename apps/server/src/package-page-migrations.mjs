@@ -59,6 +59,14 @@ export function upgradePackagedFlow(flow, rules = []) {
     let next = element;
     for (const rule of rules) {
       if (next.type !== rule.elementType) continue;
+      if (rule.matchConfig && rule.addConfig) {
+        const exact = Object.entries(rule.matchConfig).every(([key,value]) => next.config?.[key] === value);
+        if (exact && Object.keys(rule.addConfig).every(key => next.config?.[key] === undefined)) {
+          next = {...next,config:{...next.config,...structuredClone(rule.addConfig)}};
+          changed = true;
+        }
+        continue;
+      }
       const outcomes = next.config?.outcomes ?? [];
       if (outcomes.some(outcome => outcome.name === rule.missingOutcomeName)) continue;
       const matches = (flow.connectors ?? []).filter(connector =>
