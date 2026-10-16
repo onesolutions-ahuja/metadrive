@@ -1,9 +1,0 @@
-.md-customer-display{min-height:100vh;display:flex;flex-direction:column;background:#fff;color:#17212b;padding:clamp(20px,5vw,64px);font:16px/1.45 system-ui,sans-serif}
-.md-customer-display header{display:grid;gap:8px;padding-bottom:24px;border-bottom:1px solid #e1e5e9}
-.md-customer-display header span{font-size:13px;color:#65717d}
-.md-customer-display header strong{font-size:clamp(25px,4vw,42px)}
-.md-customer-display-items{flex:1;padding:20px 0}
-.md-customer-display-item{display:flex;justify-content:space-between;gap:20px;padding:14px 0;border-bottom:1px solid #edf0f2;font-size:clamp(16px,2vw,22px)}
-.md-customer-display footer{border-top:2px solid #17212b;padding-top:16px}
-.md-customer-display-total{display:flex;justify-content:space-between;font-size:clamp(22px,3vw,32px);font-weight:700}
-.md-customer-display footer p{margin:14px 0 0;color:#65717d;text-align:center}
