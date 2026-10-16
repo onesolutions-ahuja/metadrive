@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import type { TenantRegistryRoutesDependencies, TenantRegistryEntry } from '../../index.js';
 
 /** Registers existing endpoints with live access to the shared platform services. */
@@ -26,7 +27,7 @@ export function registerTenantRegistryRoutes(deps: TenantRegistryRoutesDependenc
     const parsed=companyProfileSchema.safeParse(req.body);
     if(!parsed.success)return res.status(400).json({error:'Invalid company details',details:parsed.error.flatten()});
     deps.persistTenantRecords(principal.tenantId,{...tenant,companyProfile:parsed.data,
-      securityAudit:[...tenant.securityAudit,{id:crypto.randomUUID(),at:new Date().toISOString(),actorUserId:principal.userId,action:'COMPANY_PROFILE_UPDATED'}].slice(-5000)});
+      securityAudit:[...tenant.securityAudit,{id:randomUUID(),at:new Date().toISOString(),actorUserId:principal.userId,action:'COMPANY_PROFILE_UPDATED'}].slice(-5000)});
     res.setHeader('Cache-Control','no-store');
     return res.json({profile:parsed.data});
   });
