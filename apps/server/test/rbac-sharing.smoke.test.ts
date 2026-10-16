@@ -2248,12 +2248,8 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     const componentLibrary = await api.send('/component-library', adminToken);
     assert.equal(componentLibrary.status, 200, 'authenticated metadata readers can load the component library');
     const bundledCoreWidget = componentLibrary.data.components.find((component: { apiName: string }) => component.apiName === 'OneCard');
-    assert.ok(bundledCoreWidget, 'reading the shared library registers Core components');
-    assert.equal(bundledCoreWidget.trustedBundled, true);
-    assert.ok(bundledCoreWidget.surfaces.includes('flow'), 'Core components are available in Flow Builder screens');
-    assert.ok(bundledCoreWidget.resize?.defaultWidth > 0, 'Core component resize metadata is preserved');
-    assert.ok(!componentLibrary.data.components.some((component: { apiName: string }) => component.apiName === 'ChatterInbox'),
-      'uninstalled WhatsApp components must not initialise in the shared Core registry');
+    assert.ok(bundledCoreWidget?.trustedBundled && bundledCoreWidget.surfaces.includes('flow') && bundledCoreWidget.resize?.defaultWidth > 0, 'Core component must be published for Flow');
+    assert.ok(!componentLibrary.data.components.some((component: { apiName: string }) => component.apiName === 'ChatterInbox'), 'uninstalled app must not load ChatterInbox');
     let permissions = (await api.send('/metadata/permissions', adminToken)).data;
 
     const dashboardComponent = {
