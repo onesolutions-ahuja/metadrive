@@ -22,9 +22,7 @@ recovery:ReactNode;mfa:ReactNode;emailRecovery:ReactNode;locks:ReactNode;session
    <div className={"company-workspace-body company-workspace-section-"+active}>
      {/* CompanySettings currently contains both company details and currency sections.
          Render it once, avoiding duplicate state and network requests. */}
-     {(active==='general'||active==='currency'||active==='business'||active==='contacts')&&company}
-     {active==='branding'&&<section className="company-workspace-card"><h2>Branding</h2>
-       <p>Brand appearance is configured through the existing Page Builder and registered components.</p></section>}
+     {(active==='general'||active==='currency'||active==='business'||active==='contacts'||active==='branding')&&company}
      {active==='integrations'&&<section className="company-workspace-stack">{domains}{developer}</section>}
      {active==='security'&&<section className="company-workspace-stack">{mfa}{emailRecovery}{locks}{sessions}{recovery}{audit}</section>}
      {active==='business'&&<div className="company-workspace-secondary">{usage}</div>}
