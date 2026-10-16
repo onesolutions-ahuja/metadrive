@@ -2247,11 +2247,13 @@ test('record sharing smoke: OWD, hierarchy, shares, CRUD boundaries, reports, ro
     assert.equal((await api.send('/component-library')).status, 401, 'component library metadata must require authentication');
     const componentLibrary = await api.send('/component-library', adminToken);
     assert.equal(componentLibrary.status, 200, 'authenticated metadata readers can load the component library');
-    const bundledChatWidget = componentLibrary.data.components.find((component: { apiName: string }) => component.apiName === 'ChatterInbox');
-    assert.ok(bundledChatWidget, 'reading the shared library registers bundled custom components');
-    assert.ok(bundledChatWidget.surfaces.includes('flow'), 'bundled components are available in Flow Builder screens');
-    assert.deepEqual(bundledChatWidget.resize, { defaultWidth: 900, defaultHeight: 650, minWidth: 320, minHeight: 380 },
-      'bundled component resize metadata is preserved in the shared library');
+    const bundledCoreWidget = componentLibrary.data.components.find((component: { apiName: string }) => component.apiName === 'OneCard');
+    assert.ok(bundledCoreWidget, 'reading the shared library registers Core components');
+    assert.equal(bundledCoreWidget.trustedBundled, true);
+    assert.ok(bundledCoreWidget.surfaces.includes('flow'), 'Core components are available in Flow Builder screens');
+    assert.ok(bundledCoreWidget.resize?.defaultWidth > 0, 'Core component resize metadata is preserved');
+    assert.ok(!componentLibrary.data.components.some((component: { apiName: string }) => component.apiName === 'ChatterInbox'),
+      'uninstalled WhatsApp components must not initialise in the shared Core registry');
     let permissions = (await api.send('/metadata/permissions', adminToken)).data;
 
     const dashboardComponent = {
