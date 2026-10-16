@@ -1296,7 +1296,7 @@
           },
           "jsxFile": "RecordCatalogCart/RecordCatalogCart.jsx",
           "cssFile": "RecordCatalogCart/RecordCatalogCart.css",
-          "version": 3,
+          "version": 4,
           "propertyDefinitions": [
             {
               "propertyKey": "title",
