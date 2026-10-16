@@ -60,6 +60,14 @@ function canNavigate(principal: Principal, tenant: TenantData, type: 'app' | 'ta
     group[mutedField]?.[key] !== true && sets.some((set) => set[field]?.[key] === true));
 }
 function canOpenApp(principal: Principal, tenant: TenantData, appApiName: string): boolean {
+  const app=tenant.apps.find(item=>item.apiName===appApiName);
+  if(!app) return false;
+  // SQL-backed AppExchange installation is distinct from OneEngine navigation RBAC.
+  // Duplicate installation records fail closed; uninstall hides app routes and menus.
+  if(app.installationAppKey) {
+    const records=(tenant.records.Connector_App__c??[]).filter(row=>row.AppKey__c===app.installationAppKey);
+    if(records.length!==1 || records[0].Installed__c!==true)return false;
+  }
   return canNavigate(principal, tenant, 'app', appApiName);
 }
 function canOpenTab(principal: Principal, tenant: TenantData, objectApiName: string): boolean {

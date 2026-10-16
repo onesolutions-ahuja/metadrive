@@ -1,0 +1,5 @@
+/* Reusable installed-app launcher inside the shared authenticated top bar. */
+.header-installed-apps{display:inline-flex;align-items:center;gap:6px;padding:0 8px;min-width:120px;color:#506178;font-size:12px;white-space:nowrap}
+.header-installed-apps select{height:34px;min-width:100px;max-width:180px;border:1px solid #d5deec;border-radius:8px;background:var(--surface,#fff);color:inherit;padding:0 8px;font:inherit;cursor:pointer}
+.header-installed-apps select:focus-visible{outline:2px solid #2a6de8;outline-offset:2px}
+@media(max-width:800px){.header-installed-apps{min-width:0;padding:0 4px}.header-installed-apps>span{display:none}.header-installed-apps select{max-width:118px}}

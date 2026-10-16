@@ -69,9 +69,16 @@ export function applyInstallableAppPackages(tenant, catalog, tenantId = '') {
       if (upgraded !== flow) changed = true;
       return upgraded;
     });
-    const apps = mergeByApiName(next.apps, pkg.apps).map(app => {
-      const template = (pkg.apps ?? []).find(candidate => candidate.apiName === app.apiName);
+    const packageApps=(pkg.apps ?? []).map(app=>({...app,installationAppKey:pkg.appKey}));
+    const apps = mergeByApiName(next.apps, packageApps).map(app => {
+      const template = packageApps.find(candidate => candidate.apiName === app.apiName);
       if (!template) return app;
+      // Existing installed apps receive the same installation owner marker
+      // without rewriting administrator-customised navigation.
+      if (app.installationAppKey !== pkg.appKey) {
+        app={...app,installationAppKey:pkg.appKey};
+        changed=true;
+      }
       // Add package-provided pages without replacing tenant-owned navigation or order.
       const missing = (template.navigationPageApiNames ?? []).filter(name =>
         !(app.navigationPageApiNames ?? []).includes(name));

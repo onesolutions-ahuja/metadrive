@@ -34,6 +34,7 @@ export const lightningAppSchema = z.object({
   apiName: z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   label: z.string().trim().min(1).max(80),
   description: z.string().max(500).default(''),
+  installationAppKey: z.string().regex(/^[a-z0-9][a-z0-9-]{0,159}$/).optional(),
   navigationItems: z.array(z.string().min(1)).min(1),
   navigationPageApiNames: z.array(z.string().min(1)).default([]),
   navigationOrder: z.array(appNavigationEntrySchema).default([]),

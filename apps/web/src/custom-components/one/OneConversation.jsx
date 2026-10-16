@@ -10,6 +10,16 @@ function ConversationInbox({props}) {
  const [search,setSearch]=React.useState('');
  const [filter,setFilter]=React.useState('all');
  const [draft,setDraft]=React.useState('');
+ const editorRef=React.useRef(null);
+ // Page Builder may render this input across a document boundary. Native input
+ // events keep drafts editable even if the React synthetic event is unavailable.
+ React.useEffect(()=>{
+  const el=editorRef.current;
+  if(!el)return;
+  const sync=()=>setDraft(el.value);
+  el.addEventListener('input',sync);
+  return ()=>el.removeEventListener('input',sync);
+ },[selectedId,newConversation]);
  const [recipient,setRecipient]=React.useState('');
  const [contactSearch,setContactSearch]=React.useState('');
  const [assigneeId,setAssigneeId]=React.useState('');
@@ -39,8 +49,8 @@ function ConversationInbox({props}) {
  const eligible=assigned.filter(item=>selected&&item.channelAccountId===selected.channelAccountId);
  const send=async event=>{
   event.preventDefault();
-  const body=draft.trim();
-  if(!body||busy||!canSend)return;
+  const body=(editorRef.current?.value??draft).trim();
+  if(!body||busy)return;
   if(!selected&&!recipient.trim()){setError('Enter a recipient before sending.');return;}
   if(!selected&&!/^\+?[1-9]\d{5,14}$/.test(recipient.trim())){setError('Enter an international phone number including country code.');return;}
   setBusy(true);setError('');setNotice('');
@@ -52,7 +62,7 @@ function ConversationInbox({props}) {
    });
    if(result&&result.error)throw Error(String(result.error));
    if(result===null||result===false)return;
-   setDraft('');setNotice(props.sentNoticeText||'Message request submitted.');
+   setDraft('');if(editorRef.current)editorRef.current.value='';setNotice(props.sentNoticeText||'Message request submitted.');
   }catch(cause){setError(cause instanceof Error?cause.message:'Unable to send message.');}
   finally{setBusy(false);}
  };
@@ -73,7 +83,7 @@ function ConversationInbox({props}) {
      <h3 className="one-heading">{props.title||'Conversations'}</h3><span className="one-muted">{visible.length}</span>
     </div>
     {props.enableNewConversation===true&&<button className="one-btn" type="button"
-     disabled={!assignedAccounts.some(account=>account.canSend!==false)}
+     disabled={!assignedAccounts.length}
      onClick={()=>{setSelectedId('');setNewConversation(true);setError('');setNotice('');setSelectedAccount(value=>value||String(assignedAccounts.find(account=>account.canSend!==false)?.id||''));}}>
      {props.newConversationLabel||'New conversation'}
     </button>}
@@ -110,7 +120,7 @@ function ConversationInbox({props}) {
       <h3 className="one-heading">{props.newConversationLabel||'New conversation'}</h3></header>
      <label className="one-label">{props.accountLabel||'Account'}
       <select className="one-control" value={selectedAccount} onChange={event=>setSelectedAccount(event.target.value)}>
-       {assignedAccounts.filter(account=>account.canSend!==false).map(account=><option key={account.id} value={String(account.id)}>{account.name||account.id}</option>)}
+       {assignedAccounts.map(account=><option key={account.id} value={String(account.id)}>{account.name||account.id}</option>)}
       </select>
      </label>
      <label className="one-label">{props.contactSearchLabel||'Find contact'}
@@ -122,10 +132,10 @@ function ConversationInbox({props}) {
       <input className="one-control" type="tel" required value={recipient} onChange={event=>setRecipient(event.target.value)}/>
      </label>
      <label className="one-label">{props.messageLabel||'Message'}
-      <textarea className="one-control" required maxLength={Number(props.messageMaxLength)||4096} value={draft}
-       onChange={event=>setDraft(event.target.value)}/>
+      <textarea className="one-control" required maxLength={Number(props.messageMaxLength)||4096} defaultValue={draft} ref={editorRef}
+       onInput={event=>setDraft(event.currentTarget.value)}/>
      </label>
-     <button className="one-btn one-btn--primary" type="submit" disabled={busy||!canSend||!draft.trim()}>{props.sendLabel||'Send'}</button>
+     <button className="one-btn one-btn--primary" type="submit" disabled={busy||!draft.trim()}>{props.sendLabel||'Send'}</button>
     </form>
     :selected?<div className="one-conversation-active">
      <header className="one-conversation-header"><button className="one-btn one-btn--ghost one-conversation-back" type="button"
@@ -148,10 +158,10 @@ function ConversationInbox({props}) {
       {!thread.length&&<p className="one-empty">{props.emptyMessagesText||'No messages yet.'}</p>}
      </div>
      <form className="one-row one-conversation-compose" onSubmit={send}>
-      <input className="one-control" aria-label={props.messageLabel||'Message'} value={draft} disabled={busy}
+      <input className="one-control" aria-label={props.messageLabel||'Message'} defaultValue={draft} ref={editorRef}
        maxLength={Number(props.messageMaxLength)||4096} placeholder={props.placeholder||'Write a message…'}
-       onChange={event=>setDraft(event.target.value)}/>
-      <button className="one-btn one-btn--primary" type="submit" disabled={busy||!canSend||!draft.trim()}>{props.sendLabel||'Send'}</button>
+       onInput={event=>setDraft(event.currentTarget.value)}/>
+      <button className="one-btn one-btn--primary" type="submit" disabled={busy||!draft.trim()}>{props.sendLabel||'Send'}</button>
      </form>
      {!canSend&&<p className="one-muted" role="status">{props.noSendPermissionText||'You do not have permission to send from this account.'}</p>}
     </div>:<div className="one-empty">{props.emptyTitle||'Select a conversation'}</div>}

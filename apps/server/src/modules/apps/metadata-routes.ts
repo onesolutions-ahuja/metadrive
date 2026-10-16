@@ -82,6 +82,9 @@ export function registerAppsMetadataRoutes(deps: AppsMetadataRoutesDependencies)
     const invalidPage = parsed.data.navigationPageApiNames.find((pageApiName) =>
       !tenant.pages.some((page) => page.apiName === pageApiName && page.pageType === 'App Page' && page.status === 'Active'));
     if (invalidPage) return res.status(400).json({ error: `Navigation page "${invalidPage}" must be an active App Page` });
+    const previous=tenant.apps.find(item=>item.apiName===apiName);
+    if(previous?.installationAppKey!==parsed.data.installationAppKey)
+      return res.status(403).json({error:'AppExchange installation ownership cannot be changed by app editing'});
     const apps = tenant.apps.map((item) => item.apiName === apiName ? parsed.data : item);
     const nextState = { ...deps.state, tenants: { ...deps.state.tenants, [principal.tenantId]: { ...tenant, apps } } };
     deps.persistState(nextState);
