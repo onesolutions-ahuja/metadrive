@@ -66,9 +66,9 @@ export async function initializePlatformState(deps: {
   for (const tenant of Object.values(deps.platformStore.state.tenants)) {
     tenant.apps = tenant.apps.map((app) => {
       if (app.installationAppKey) return app;
-      if (app.apiName === 'SalesApp' && app.label === 'Sales')
+      if (app.apiName === 'SalesApp')
         return { ...app, installationAppKey: 'sales' };
-      if (app.apiName === 'ServiceApp' && app.label === 'Service')
+      if (app.apiName === 'ServiceApp')
         return { ...app, installationAppKey: 'service' };
       return app;
     });
