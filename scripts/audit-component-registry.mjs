@@ -14,7 +14,7 @@ const INPUT = Object.freeze({
   catalog: 'apps/web/src/componentCatalog.ts',
   manifest: 'apps/web/src/custom-components/manifest.json',
   metadata: 'apps/web/src/metadata.ts',
-  backend: 'apps/server/src/index.ts',
+  backend: 'apps/server/src/modules/components/library-schema.ts',
   sqlShadow: 'apps/server/sql/component-registry-v4.sql',
   libraryUi: 'apps/web/src/ComponentLibrary.tsx',
   palette: 'apps/web/src/pageBuilderPalette.ts',
@@ -62,7 +62,7 @@ export function declaredSurfaces(source) {
 }
 
 export function backendSurfaces(source) {
-  const schema = scopedSection(source, 'const libraryComponentSchema =', 'const libraryComponentInputSchema =');
+  const schema = scopedSection(source, 'export const libraryComponentSchema =', 'export const libraryComponentInputSchema =');
   const match = schema.match(/surfaces:\s*z\.array\(z\.enum\(\[([^\]]+)\]\)\)/);
   return match
     ? [...new Set(Array.from(match[1].matchAll(/'([^']+)'/g), (m) => m[1]))].sort() : [];
