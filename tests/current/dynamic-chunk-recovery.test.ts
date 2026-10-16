@@ -15,9 +15,10 @@ test('one automatic reload per route and version window, without loops', () => {
  const now=Date.UTC(2026,9,16,15,0,0);
  const page='https://unesolutions.co.uk/une/setup/app-exchange?tab=installed#search';
  assert.equal(canAutoRecoverChunk(page,now),true);
- assert.equal(canAutoRecoverChunk(page+'&_md_chunk_reload='+now,now),false);
+ const retried=new URL(page); retried.searchParams.set('_md_chunk_reload',String(now));
+ assert.equal(canAutoRecoverChunk(retried.toString(),now),false);
  assert.equal(canAutoRecoverChunk(page,now,'/une/setup/app-exchange|'+now),false);
  assert.equal(canAutoRecoverChunk(page,now,'/une/apps/ChatterApp/home|'+now),true);
  assert.equal(canAutoRecoverChunk(page,now+121000,'/une/setup/app-exchange|'+now),true);
- assert.equal(canAutoRecoverChunk(page+'&_md_chunk_reload='+now,now+121000),true);
+ assert.equal(canAutoRecoverChunk(retried.toString(),now+121000),true);
 });
