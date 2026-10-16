@@ -19,3 +19,11 @@
 .tenant-button-primary{background:#1d4ed8;border-color:#1d4ed8}
 .tenant-button-primary:hover:not(:disabled){background:#1e40af}
 @media(max-width:700px){.tenant-overview{grid-template-columns:repeat(2,minmax(0,1fr))}.tenant-toolbar{align-items:stretch}.tenant-filter{width:100%}}
+
+.tenant-detail-tabs{display:flex;align-items:center;gap:4px;overflow-x:auto;border-bottom:1px solid #e0e6eb;margin-bottom:22px}
+.tenant-detail-tabs button{background:transparent;border:0;border-bottom:2px solid transparent;min-height:44px;padding:10px 16px;color:#63718a;white-space:nowrap;font-weight:600;cursor:pointer}
+.tenant-detail-tabs button.active{color:#1d4ed8;border-bottom-color:#1d4ed8}
+.tenant-detail-tabs button:focus-visible{outline:2px solid #1d4ed8;outline-offset:-2px}
+.tenant-readonly-field{display:grid;grid-template-columns:minmax(130px,1fr) minmax(0,2fr);gap:12px;padding:14px 4px;border-bottom:1px solid #eef0f5}
+.tenant-readonly-field span{color:#65718a}.tenant-readonly-field strong{font-weight:600;overflow-wrap:anywhere}
+@media(max-width:600px){.tenant-readonly-field{grid-template-columns:1fr;gap:4px}}
