@@ -1,0 +1,31 @@
+name: AppExchange Live Recovery
+on:
+  pull_request:
+    paths:
+      - 'scripts/appexchange-live-recovery.mjs'
+      - '.github/workflows/appexchange-live-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.repository == 'onesolutions-ahuja/metadrive'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: appexchange-live-tenant-single-writer
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify script
+        run: node --check scripts/appexchange-live-recovery.mjs
+      - name: Check published Flow credential owner scope
+        env:
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/appexchange-live-recovery.mjs
