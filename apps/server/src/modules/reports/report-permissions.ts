@@ -15,7 +15,7 @@ function reportFolderAccessLevelForUser(
   tenant: TenantData,
   folderId: string | null | undefined,
   userId: string
-): DashboardFolderAccessLevel | null {
+): AccessLevel | null {
   const folder = tenant.reportFolders.find((item) => item.id === folderId);
   if (!folder) return null;
   const inheritedPublic = (() => {
@@ -38,7 +38,7 @@ function reportFolderForUser(
   folder: ReportFolder,
   userId: string,
   canManageAll: boolean
-): ReportFolder & { accessLevel: DashboardFolderAccessLevel | null } {
+): ReportFolder & { accessLevel: AccessLevel | null } {
   return {
     ...folder,
     accessLevel: canManageAll
