@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const load = (path) => readFileSync(new URL(path,import.meta.url),'utf8');
 const server=load('../apps/server/src/index.ts');
+const componentSchemas=load('../apps/server/src/modules/components/library-schema.ts');
 const componentRoutes=load('../apps/server/src/modules/components/routes.ts');
 const runtime=load('../apps/web/src/RegisteredComponent.tsx');
 const page=load('../apps/web/src/pageBuilderView.tsx');
@@ -14,7 +15,7 @@ const library=load('../apps/web/src/ComponentLibrary.tsx');
 test('existing central component registration keeps RBAC and accepts typed properties',()=>{
   assert.match(componentRoutes,/app\.post\('\/api\/component-library', requirePermission\('components:manage'\)/);
   assert.match(componentRoutes,/app\.put\('\/api\/component-library\/:apiName', requirePermission\('components:manage'\)/);
-  assert.match(server,/propertyDefinitions:z\.array\(propertyDefinitionSchema\)/);
+  assert.match(componentSchemas,/propertyDefinitions:z\.array\(propertyDefinitionSchema\)/);
   assert.match(componentRoutes,/propertyDefinitions: parsed\.data\.propertyDefinitions/);
 });
 test('trusted and sandboxed components share metadata default resolver',()=>{
