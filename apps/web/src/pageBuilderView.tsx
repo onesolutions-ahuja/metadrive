@@ -1070,10 +1070,6 @@ function PageBuilder({
   };
   const setPageLayoutMode = (layoutMode: LightningPageMetadata['layoutMode']) => {
     if (layoutMode === 'free-canvas') {
-      if (page.pageType !== 'Home Page') {
-        onNotify('Free Canvas is available on Home Pages. Create a Home Page to use it.');
-        return;
-      }
       if (page.components.some((component) => !component.type.startsWith('Custom:'))) {
         onNotify('Remove standard components before switching this page to Free Canvas');
         return;
