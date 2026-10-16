@@ -3,7 +3,7 @@ import { validateScreenElement } from './screen-validation.js';
 
 /** Metadata-only validation; never executes a Flow or performs business-data writes. */
 export function createFlowValidator(deps: FlowValidationDependencies) {
-  const { asConfigRows, validateFlowFormulaSyntax, evaluateFormula, flowLocalDateTimeToInstant, isValidFlowDateTime } = deps;
+  const { asConfigRows, validateFlowFormulaSyntax, evaluateFormula, flowLocalDateTimeToInstant, isValidFlowDateTime, dashboardTimeZoneSchema, evaluateCustomConditionLogic, isTestLoopbackSmtpUrl, isReservedHostname, isIP, isPublicAddress, z, activeFlowDefinition, parseSubflowMappings } = deps;
 function validateFlow(
   flow: FlowMetadata,
   objects: ObjectMetadata[] = [],
