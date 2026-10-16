@@ -122,10 +122,8 @@ import {
   canvasUnitsFromScreenDelta
 } from './pageCanvas';
 import {
-  createComponentPreviewProps,
-  getPageBuilderComponentCategories,
-  publishedPageLibraryComponents,
-  pageBuilderPaletteCategories
+  createComponentPreviewProps, getPageBuilderComponentCategories,
+  publishedPageLibraryComponents, pageBuilderPaletteCategories
 } from './pageBuilderPalette';
 import {
   defaultFlow,
