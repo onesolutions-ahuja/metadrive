@@ -1,5 +1,5 @@
 import type { TenantData } from '../../core/state/types.js';
-import type { DashboardFolder, DashboardMetadata } from '../../index.js';
+import type { DashboardFolder, DashboardMetadata } from './schemas.js';
 import { dashboardFolderAccessLevel, type DashboardFolderAccessLevel } from '../../dashboard-access.js';
 
 export function folderAccessLevelForUser(
