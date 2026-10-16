@@ -195,7 +195,6 @@ import {
   type WorkspaceId
 } from './metadata';
 
-
 export function createPageBuilder(MetadataComponentProperties: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
 function PageBuilder({
   page, pages, objects, apps, profiles, reports, dashboards, libraryComponents, flows, onChange, onSelectPage, onTargetObjectChange, onSave, onSaveApp, onDeleteApp, onExit, onNotify, onLaunchFlow,
@@ -398,10 +397,6 @@ function PageBuilder({
       description: 'Group selected record fields into a one- or two-column section.',
       categories: ['Layout'] as (typeof pageBuilderPaletteCategories)[number][]
     }] : []),
-    ...libraryComponents
-      .filter((component) => findRegisteredComponent(libraryComponents, component.apiName, 'page') === component)
-      .sort((a, b) => Number(b.apiName.startsWith('One')) - Number(a.apiName.startsWith('One')) || a.label.localeCompare(b.label))
-      .map((component) => ({
     ...publishedPageLibraryComponents(libraryComponents).map((component) => ({
       id: `Custom:${component.apiName}`,
       type: `Custom:${component.apiName}`,
@@ -1971,7 +1966,6 @@ function PageBuilder({
     </div>
   );
 }
-
 
 return PageBuilder;
 }
