@@ -7,15 +7,20 @@ import {sandboxPublicProps,sandboxSafeAction} from '../../apps/web/src/component
 test('RBAC separates tenant permissions from platform grants',()=>{
  const user:any={id:'u',tenantId:'a',role:'Staff',email:'a@tenant.test',permissionSetIds:[],permissionSetGroupIds:[]};
  const tenant:any={accessControl:{users:[{id:'u',profileId:'p',permissionSetIds:[],permissionSetGroupIds:[]}],
- profiles:[{id:'p',systemPermissions:['records:read','platform:superadmin','licence:manage']}],
+ profiles:[{id:'p',systemPermissions:['records:read','platform:superadmin','platform:tenants:manage','licence:manage']}],
  permissionSets:[],permissionSetGroups:[]}};
  const state:any={platformPolicies:{}};
  const runtime=createCorePermissionRuntime(()=>state);
  assert.deepEqual(runtime.effectivePermissions(user,tenant),['records:read']);
  state.platformPolicies['u']=['platform:superadmin'];
+ assert.ok(runtime.effectivePermissions(user,tenant).includes('platform:tenants:manage'));
  assert.ok(runtime.effectivePermissions(user,tenant).includes('platform:superadmin'));
  assert.ok(runtime.effectivePermissions(user,tenant).includes('licence:manage'));
  assert.equal(runtime.principalForUser(user,tenant).tenantId,'a');
+ state.platformPolicies['u']=['platform:tenants:manage'];
+ assert.ok(runtime.effectivePermissions(user,tenant).includes('platform:tenants:manage'));
+ state.platformPolicies['u']=[];
+ assert.equal(runtime.effectivePermissions(user,tenant).includes('platform:tenants:manage'),false);
 });
 test('component registry denies cross-tenant ownership and trusted edits',()=>{
  const tenants=['a','b'];
