@@ -30,6 +30,19 @@ const jsAssets = await Promise.all(assetNames.filter(name => name.endsWith('.js'
 const cssAssets = await Promise.all(assetNames.filter(name => name.endsWith('.css')).map(async name => ({
   name, content: (await read('assets/' + name)).toString('utf8')
 })));
+const emittedAssets = new Set(assetNames);
+// Vite splits app workspaces into content-hashed lazy modules. Validate the full
+// emitted dynamic import graph, not only the initial marketing JS/CSS.
+const dynamicImports = [...new Set(jsAssets.flatMap(asset =>
+  [...asset.content.matchAll(/\\bimport\\(\\s*["']\\.\\/([^"'?#]+\\.js)["']\\s*\\)/g)]
+    .map(match => match[1])))];
+assert(dynamicImports.length > 0, 'No dynamic modules found: unexpectedly eager Pages bundle');
+for (const name of dynamicImports)
+  assert(emittedAssets.has(name), 'Published build references missing lazy module: ' + name);
+const runtimeChunkName = assetNames.find(name => /^pageRuntimeViews-[A-Za-z0-9_-]+\\.js$/.test(name));
+assert(runtimeChunkName, 'Authenticated page runtime missing from Pages artifact');
+const runtimeChunk = await read('assets/' + runtimeChunkName);
+
 const appJs = jsAssets.find(asset => asset.content.includes('header-records-link'));
 const appCss = cssAssets.find(asset => asset.content.includes('.setup-sidebar') && asset.content.includes('position:sticky'));
 assert(appJs, 'Built app chunk is missing the global Records navigation');
@@ -90,6 +103,11 @@ if (live) {
       assert(publishedJs.includes('Software that makes'), 'Live marketing JavaScript missing');
       const publishedApp = await (await get('/assets/' + appJs.name)).text();
       assert(publishedApp.includes('header-records-link'), 'Live workspace chunk is missing');
+      // A missing lazy runtime chunk breaks AppExchange and every authenticated
+      // route even when index.html and the public landing page are healthy.
+      const servedRuntime = Buffer.from(await (await get('/assets/' + runtimeChunkName)).arrayBuffer());
+      assert(sha256(servedRuntime) === sha256(runtimeChunk),
+        'Published lazy pageRuntimeViews chunk differs from the current release');
       const publishedWorkspaceCss = await (await get('/assets/' + appCss.name)).text();
       assert(publishedWorkspaceCss.includes('.setup-sidebar'), 'Live workspace styles are missing');
       assert(publishedJs.includes('Software that makes') && publishedJs.includes('Client login'), 'Live UNE marketing site is missing');
