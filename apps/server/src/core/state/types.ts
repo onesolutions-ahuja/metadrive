@@ -148,7 +148,7 @@ export type PlatformState = {
     tenantRegistry: Record<string, TenantRegistryEntry>;
     tenantManagementAudit: TenantManagementAuditEvent[];
     // Platform policies are outside tenant-managed profiles and permission sets.
-    platformPolicies: Record<string, Array<'platform:superadmin' | 'licence:manage'>>;
+    platformPolicies: Record<string, Array<'platform:tenants:manage' | 'platform:superadmin' | 'licence:manage'>>;
     platformPolicyAudit: Array<{
         actorId: string;
         userId: string;
