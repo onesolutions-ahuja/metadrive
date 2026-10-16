@@ -1,3 +1,4 @@
+import { folderAccessLevelForUser, folderAccessLevelFromFolders, folderForUser, dashboardForUser, validateDashboardFolderReferences } from './modules/dashboards/folder-access.js';
 import { createFlowExecutionEngine } from './modules/flows/execution-engine.js';
 import { parseSubflowMappings } from './modules/flows/subflow-mappings.js';
 import { createFlowScheduleCalculations } from './scheduler/flow-schedule-calculations.js';
@@ -3751,18 +3752,9 @@ function dashboardRunningUserSelectionError(
   if (!selectedUser) return 'The selected running user must be active and belong to this tenant';
   return undefined;
 }
-function folderAccessLevelForUser(
-  tenant: TenantData,
-  folderId: string | null | undefined,
-  userId: string
 ): DashboardFolderAccessLevel | null {
   return folderAccessLevelFromFolders(tenant, tenant.dashboardFolders ?? [], folderId, userId);
 }
-function folderAccessLevelFromFolders(
-  tenant: TenantData,
-  folders: readonly DashboardFolder[],
-  folderId: string | null | undefined,
-  userId: string
 ): DashboardFolderAccessLevel | null {
   const accessUser = tenant.accessControl.users.find((user) => user.id === userId);
   const roleId = accessUser?.roleId
@@ -3817,30 +3809,18 @@ function validateReportFolderReferences(
 ): string | null {
   return validateDashboardFolderReferences(tenant, shares);
 }
-function folderForUser(
-  tenant: TenantData,
-  folder: DashboardFolder,
-  userId: string,
-  canManageAll = false
 ): DashboardFolder & { accessLevel: DashboardFolderAccessLevel | null } {
   return {
     ...folder,
     accessLevel: canManageAll ? 'Manager' : folderAccessLevelForUser(tenant, folder.id, userId)
   };
 }
-function dashboardForUser(
-  tenant: TenantData,
-  dashboard: DashboardMetadata,
-  userId: string
 ): DashboardMetadata & { folderAccessLevel: DashboardFolderAccessLevel | null } {
   return {
     ...dashboard,
     folderAccessLevel: folderAccessLevelForUser(tenant, dashboard.folderId, userId)
   };
 }
-function validateDashboardFolderReferences(
-  tenant: TenantData,
-  shares: DashboardFolder['shares']
 ): string | null {
   for (const share of shares) {
     const exists = share.targetType === 'User'
