@@ -1,5 +1,5 @@
-import CompanySettingsWorkspace from './CompanySettingsWorkspace';
 // @ts-nocheck
+import CompanySettingsWorkspace from './CompanySettingsWorkspace';
 // Shared shell presentation, composed from registered metadata-driven runtime and tools.
 import * as React from 'react';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from './metadata';
