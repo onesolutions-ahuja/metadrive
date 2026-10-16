@@ -16,7 +16,7 @@ export function createTenantProvisioning(deps: CreateTenantProvisioningDependenc
     constructor() { super('Tenant provisioning could not be durably committed. Retry after database recovery.'); }
   }
 
-  function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData, developer?: LocalUser): void {
+  function verifySeededTenant(tenantId: string, admin: LocalUser, data: TenantData, developer?: LocalUser, grantTenantDeveloperPolicyToAdmin = false): void {
     if (!data.accessControl.users.some((user) => user.id === admin.id && user.profileId === 'system-administrator'))
       throw new Error('Initial administrator permissions were not provisioned');
     for (const apiName of ['Account', 'Contact', 'User']) {
@@ -30,6 +30,10 @@ export function createTenantProvisioning(deps: CreateTenantProvisioningDependenc
       || data.accessControl.users.length !== expectedIds.size
       || data.accessControl.users.some((user) => !expectedIds.has(user.id)))
       throw new Error('Initial tenant user isolation check failed');
+    const initialAdmin = data.accessControl.users.find((user) => user.id === admin.id);
+    if (grantTenantDeveloperPolicyToAdmin && (!initialAdmin?.permissionSetIds.includes('oneengine-tenant-developer')
+      || !admin.permissionSetIds.includes('oneengine-tenant-developer')))
+      throw new Error('Requested initial administrator Tenant Developer grant was not provisioned');
     if (developer && !data.accessControl.users.some((user) =>
       user.id === developer.id && user.profileId === 'system-administrator'
       && user.permissionSetIds.includes('system-administrator')))
@@ -49,7 +53,8 @@ export function createTenantProvisioning(deps: CreateTenantProvisioningDependenc
   }
 
   async function createTenant(tenantId: string, name: string, adminName: string, email: string, password: string,
-    actorId = 'bootstrap', idempotencyKey?: string, developerDomain?: string): Promise<{ user: LocalUser; created: boolean }> {
+    actorId = 'bootstrap', idempotencyKey?: string, developerDomain?: string,
+    grantTenantDeveloperPolicyToAdmin = false): Promise<{ user: LocalUser; created: boolean }> {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,62}$/.test(tenantId))
       throw new Error('Tenant ID must be 2–63 characters using letters, numbers, underscores, or hyphens');
     const normalizedEmail = email.trim().toLowerCase();
@@ -95,7 +100,8 @@ export function createTenantProvisioning(deps: CreateTenantProvisioningDependenc
       const admin: LocalUser = {
         id: randomUUID(), tenantId, name: normalizedAdminName, email: normalizedEmail,
         passwordSalt: credentials.salt, passwordHash: credentials.hash,
-        role: 'System Administrator', permissionSetIds: ['system-administrator'],
+        role: 'System Administrator', permissionSetIds: ['system-administrator',
+          ...(grantTenantDeveloperPolicyToAdmin ? ['oneengine-tenant-developer'] : [])],
         permissionSetGroupIds: [], disabled: false, createdAt
       };
       const developer: LocalUser = {
@@ -128,7 +134,7 @@ export function createTenantProvisioning(deps: CreateTenantProvisioningDependenc
           users: [...tenantSeed.accessControl.users, developerAccess]
         }
       };
-      verifySeededTenant(tenantId, admin, data, developer);
+      verifySeededTenant(tenantId, admin, data, developer, grantTenantDeveloperPolicyToAdmin);
       const registryEntry: TenantRegistryEntry = {
         name: normalizedName, description: '', status: 'ACTIVE', createdAt, updatedAt: createdAt,
         provisioning: { status: 'READY', version: 1, completedAt: createdAt },
