@@ -857,7 +857,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       return;
     }
     if (item === 'Tenant Management') {
-      if (canManagePlatformTenants) openSetupWorkspace('tenant-management');
+      // Navigation visibility is not a grant: the protected workspace and API
+      // explain missing platform policy without concealing the menu entry.
+      openSetupWorkspace('tenant-management');
       return;
     }
     if (item === 'Named Credentials') {
