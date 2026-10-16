@@ -146,7 +146,7 @@ import { RECOVERY_FLOW_API, defaultRecoveryFlowDefinition, recoveryFlowActions }
 function tenantInfoForRecovery(tenant: TenantData, tenantId: string): string {
   return platformStore.state.tenantRegistry[tenantId]?.name ?? tenantId;
 }
-import { canAccessDashboard, canEditDashboard, dashboardFolderAccessLevel, matchesDashboardFilters, type DashboardFolderAccessLevel } from './dashboard-access.js';
+import { canAccessDashboard, canEditDashboard, matchesDashboardFilters, type DashboardFolderAccessLevel } from './dashboard-access.js';
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const schedulePollInterval = Number(process.env.METADRIVE_SCHEDULE_POLL_MS ?? 30_000);
