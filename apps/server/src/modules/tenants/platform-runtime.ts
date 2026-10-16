@@ -18,7 +18,7 @@ function activePlatformSuperadmins(): string[] {
   return getState().users.filter((user) => !user.disabled
     && (getState().platformPolicies[user.id] ?? []).some(permission=>permission==='platform:tenants:manage'||permission==='platform:superadmin')).map((user) => user.id);
 }
-function savePlatformPolicies(actorId: string, userId: string, policies: Array<'platform:tenants:manage' | 'licence:manage'>) {
+function savePlatformPolicies(actorId: string, userId: string, policies: Array<'platform:tenants:manage' | 'platform:superadmin' | 'licence:manage'>) {
   const previous = getState().platformPolicies[userId] ?? [];
   const next = [...new Set(policies)];
   const nextState: PlatformState = {
