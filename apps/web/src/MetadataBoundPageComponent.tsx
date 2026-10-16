@@ -130,8 +130,10 @@ export default function MetadataBoundPageComponent({
     if (binding.actionType === 'SetFilter') {
       const filterKey = String(binding.filterKey || 'category');
       if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(filterKey)) throw new Error('Invalid filter key');
-      const value = typeof action.value === 'object' && action.value !== null && 'label' in action.value
-        ? String((action.value as {label:unknown}).label ?? '') : String(action.value ?? '');
+      const value = typeof action.value === 'object' && action.value !== null
+        ? String(('value' in action.value ? (action.value as {value:unknown}).value : 'label' in action.value
+          ? (action.value as {label:unknown}).label : '') ?? '')
+        : String(action.value ?? '');
       window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected', {detail:{pageSessionKey,filterKey,value}}));
       return {selected:value};
     }
