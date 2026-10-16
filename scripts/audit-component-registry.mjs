@@ -62,7 +62,7 @@ export function declaredSurfaces(source) {
 }
 
 export function backendSurfaces(source) {
-  const schema = scopedSection(source, 'const libraryComponentSchema =', 'const libraryComponentInputSchema =');
+  const schema = scopedSection(source, /export const libraryComponentSchema =/.test(source) ? 'export const libraryComponentSchema =' : 'const libraryComponentSchema =', /export const libraryComponentInputSchema =/.test(source) ? 'export const libraryComponentInputSchema =' : 'const libraryComponentInputSchema =');
   const match = schema.match(/surfaces:\s*z\.array\(z\.enum\(\[([^\]]+)\]\)\)/);
   return match
     ? [...new Set(Array.from(match[1].matchAll(/'([^']+)'/g), (m) => m[1]))].sort() : [];
@@ -131,6 +131,15 @@ export function buildComponentRegistryAudit({ root = ROOT, paths = trackedPaths(
   if (missingInputs.length) {
     throw Error('Missing component audit source(s): ' + missingInputs.join(', '));
   }
+  // The extracted schemas/service remain audit inputs without forcing legacy fixtures
+  // to supply modules that did not exist before the refactor.
+  const backendSources = [
+    loaded.backend,
+    ...['apps/server/src/modules/components/library-schema.ts',
+      'apps/server/src/modules/components/library-service.ts']
+      .filter((path) => tracked.includes(path) && existsSync(join(root, path)))
+      .map((path) => readFileSync(join(root, path), 'utf8'))
+  ].join('\n');
   const catalogs = componentDefinitions(loaded.catalog, loaded.manifest);
   const manifests = describeManifest(JSON.parse(loaded.manifest), tracked);
   const catalogEntries = [
@@ -148,7 +157,7 @@ export function buildComponentRegistryAudit({ root = ROOT, paths = trackedPaths(
     a.apiName.localeCompare(b.apiName) || a.origin.localeCompare(b.origin));
   const surfaces = {
     frontendDefinition: declaredSurfaces(loaded.metadata),
-    backendRegistration: backendSurfaces(loaded.backend),
+    backendRegistration: backendSurfaces(backendSources),
     sqlShadow: sqlSurfaces(loaded.sqlShadow)
   };
   const consumers = [
@@ -196,7 +205,7 @@ export function buildComponentRegistryAudit({ root = ROOT, paths = trackedPaths(
       'Current published component registration does not support the platform surface',
       [INPUT.metadata, INPUT.backend]);
   }
-  if (!loaded.backend.includes('propertyDefinitions:') ||
+  if (!backendSources.includes('propertyDefinitions:') ||
       !loaded.metadata.includes('propertyDefinitions:')) {
     flag('TYPED_PROPERTIES_NOT_ON_REGISTRATION', 'migration-required',
       'Shared style/property controls exist, but registered library definitions have no typed property schema',
