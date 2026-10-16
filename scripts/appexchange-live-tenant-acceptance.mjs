@@ -24,7 +24,7 @@ assert.equal(app.Installed__c,false,'Refusing to modify an already installed app
 assert.equal(app.TrialUsed__c,false,'Refusing to modify previous trial history');
 assert(app.InstallFlow__c&&app.UninstallFlow__c,'Lifecycle Flow metadata not available');
 const allOther=before.filter(x=>x.AppKey__c!==key).map(x=>[x.AppKey__c,x.Installed__c,x.LicenceStatus__c,x.TrialUsed__c]);
-async function flow(name){const r=await req('/flows/'+encodeURIComponent(name)+'/execute',token,'POST',{AppKey:key});assert.equal(r.status,200,'Lifecycle action failed HTTP '+r.status);}
+async function flow(name){const r=await req('/flows/'+encodeURIComponent(name)+'/execute',token,'POST',{AppKey:key});assert.equal(r.status,200,'Lifecycle action failed HTTP '+r.status+' '+String(r.data.error||r.data.message||'unknown').slice(0,400));}
 let changed=false;
 try{
  await flow(app.InstallFlow__c);changed=true;
