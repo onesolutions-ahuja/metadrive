@@ -2511,7 +2511,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
@@ -2735,6 +2735,34 @@
           "kind": "TEXT",
           "displayOrder": 560,
           "defaultValue": "Welcome"
+        },
+        {
+          "propertyKey": "displayButtonLabel",
+          "label": "Customer display button",
+          "kind": "TEXT",
+          "displayOrder": 565,
+          "defaultValue": "Open customer display"
+        },
+        {
+          "propertyKey": "topbarActionEvent",
+          "label": "Topbar action event",
+          "kind": "TEXT",
+          "displayOrder": 570,
+          "defaultValue": "openDisplay"
+        },
+        {
+          "propertyKey": "topbarActionLabelProperty",
+          "label": "Topbar action label property",
+          "kind": "TEXT",
+          "displayOrder": 580,
+          "defaultValue": "displayButtonLabel"
+        },
+        {
+          "propertyKey": "topbarActionRequiresProperty",
+          "label": "Topbar action requires property",
+          "kind": "TEXT",
+          "displayOrder": 590,
+          "defaultValue": "customerDisplayUrl"
         }
       ]
     },
