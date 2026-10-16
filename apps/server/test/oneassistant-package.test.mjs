@@ -30,6 +30,11 @@ test('OneAssistant is an independent metadata-only AppExchange package',()=>{
  assert.ok(!('records' in oneAssistant),'do not seed tenant customer data');
  assert.equal(JSON.stringify(oneAssistant).includes('kingstonexterior.co.uk'),false,'keep the package tenant-neutral');
  assert.equal(JSON.stringify(oneAssistant).includes('tanha.ahuja2'),false,'no tenant identity in package');
+ for(const name of ['BookingService__c','BookingBusinessHours__c','BookingPolicy__c','Resource','ResourceAvailability']){
+  const grant=oneAssistant.profile.objectPermissions[name];
+  assert.deepEqual({read:grant.read,create:grant.create,edit:grant.edit,delete:grant.delete},
+   {read:true,create:false,edit:false,delete:false},'receptionist must not manage administration or availability');
+ }
  for (const page of oneAssistant.pages) for (const component of page.components) {
   assert.match(component.type,/^Custom:One[A-Za-z]+$/,'use shared registered One components');
   assert.equal(component.properties.libraryComponentId,component.type.slice('Custom:'.length));
