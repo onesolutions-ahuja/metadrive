@@ -6203,9 +6203,15 @@ export type FlowExecutionDependencies = typeof flowExecutionDependencies;
 const executeFlowImplementation = bindFlowExecution(() => flowExecutionDependencies);
 
 
+async function runRecordTriggeredFlows(...args: Parameters<typeof recordTriggerHandlers.runRecordTriggeredFlows>) {
+  return recordTriggerHandlers.runRecordTriggeredFlows(...args);
+}
+async function runBeforeSaveRecordTriggeredFlows(...args: Parameters<typeof recordTriggerHandlers.runBeforeSaveRecordTriggeredFlows>) {
+  return recordTriggerHandlers.runBeforeSaveRecordTriggeredFlows(...args);
+}
 const recordTriggerDependencies = { orderedRecordTriggeredFlows, asConfigRows, flowConditionsMatch, formulaContextForUser, flowVariablesForUser, flowInterviewIdentity, executeFlow, createFlowInterview, persistFlowFailure, calculateFormulaFields };
 export type RecordTriggerDependencies = typeof recordTriggerDependencies;
-const { runRecordTriggeredFlows, runBeforeSaveRecordTriggeredFlows } = createRecordTriggerHandlers(recordTriggerDependencies);
+const recordTriggerHandlers = createRecordTriggerHandlers(recordTriggerDependencies);
 
 const { scheduledOccurrence, nextScheduledOccurrence } = createFlowScheduleCalculations(flowLocalDateTimeToInstant, dashboardLocalParts);
 
@@ -7924,9 +7930,9 @@ export { dashboardFolderShareSchema, dashboardFolderSchema, dashboardTerritorySc
 export type { DashboardFolder, DashboardFilterMetadata, DashboardSnapshot };
 export { runtimeRecordSchema, parseReportFilterLogic, reportSchema, reportDateRangeBounds, evaluateReportFilterLogic, reportFolderSchema, reportFilterOperatorAllowed, reportFilterValueError, reportFolderForUser, validateReportFolderReferences, accessAuthentication, resolveReportCrossFilters, canManageReportFolders };
 export type { DashboardMetadata, ReportMetadata };
-export type { FlowDebugTraceEntry, FlowRuntimeContext };
 
-export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowInterview, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };
+
+export type { platformEventSchema, platformEventMessageSchema, PageMetadata, LightningApp, ReportFolder, DashboardTerritory, DashboardSubscription, AccessControl, SharingSetting, CurrencySettings, RecordShare, CampaignMember, RecordActivity, ChatterPost, CustomNotification, ApprovalRequest, ApprovalProcess, FieldHistoryEntry, FlowExecutionLog, scheduleRetrySchema, automationSettingsSchema, EmailAlert, ConnectorSettings, ConnectorDefinition, AccessProfile };
 
 export type FlowSchedulerDependencies = {
   getState: () => typeof platformStore.state;
