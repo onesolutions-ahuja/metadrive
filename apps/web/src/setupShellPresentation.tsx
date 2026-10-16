@@ -10,6 +10,12 @@ export function renderSetupShell(ctx: any) {
   const activeAppPage = route.kind === 'app-page'
     ? pages.find((candidate: LightningPageMetadata) => candidate.apiName === route.pageApiName && candidate.status === 'Active')
     : null;
+  const activeAppPages = route.kind === 'app-page' || route.kind === 'app-home'
+    ? currentAppNavigation.filter((entry: any) => entry.type === 'App Page')
+        .map((entry: any) => pages.find((page: LightningPageMetadata) =>
+          page.apiName === entry.apiName && page.pageType === 'App Page' && page.status === 'Active'))
+        .filter(Boolean)
+    : [];
   return (
     <div className={standalonePageMode || isStandaloneMetadataPage ? 'lightning standalone-page-mode' : route.kind === 'setup' && route.workspace === 'page-builder' && Boolean(route.resourceApiName) ? 'lightning page-builder-editing' : 'lightning'}>
       <header className="salesforce-header">
@@ -47,9 +53,17 @@ export function renderSetupShell(ctx: any) {
             })} />
 
         </div>
-        {activeAppPage && <div className="header-page-context" aria-label="Current page" data-page-session-key={route.appId + ':' + route.pageApiName}>
-          <span className="header-page-title">{activeAppPage.label}</span>
-          {activeAppPage.components.filter((component: any) => component.visible !== false && typeof component.properties?.customerDisplayUrl === 'string' && component.properties.customerDisplayUrl.trim()).map((component: any) =>
+        {(activeAppPages.length > 0 || activeAppPage) && <div className="header-page-context" aria-label="Current app pages"
+          data-page-session-key={activeAppPage ? route.appId + ':' + route.pageApiName : undefined}>
+          <nav className="header-page-tabs" aria-label="Workspace navigation">
+            {activeAppPages.map((appPage: LightningPageMetadata) =>
+              <button type="button" key={appPage.apiName}
+                className={route.kind === 'app-page' && route.pageApiName === appPage.apiName ? 'header-page-tab active' : 'header-page-tab'}
+                aria-current={route.kind === 'app-page' && route.pageApiName === appPage.apiName ? 'page' : undefined}
+                onClick={() => navigateRoute({kind:'app-page',appId:currentApp?.apiName ?? '',pageApiName:appPage.apiName})}>{appPage.label}</button>)}
+            {!activeAppPages.length && activeAppPage && <span className="header-page-title">{activeAppPage.label}</span>}
+          </nav>
+          {activeAppPage?.components.filter((component: any) => component.visible !== false && typeof component.properties?.customerDisplayUrl === 'string' && component.properties.customerDisplayUrl.trim()).map((component: any) =>
             <button key={component.id} type="button" className="btn header-page-action"
               onClick={() => window.dispatchEvent(new CustomEvent('metadrive:page-toolbar-action', {
                 detail: {pageSessionKey: route.appId + ':' + route.pageApiName, componentId: component.id, action: 'openDisplay'}
@@ -102,22 +116,6 @@ export function renderSetupShell(ctx: any) {
           <ProfilePasswordMenu onLogout={logout} onPasswordChanged={onLogout} />
         </div>
       </header>
-
-      {route.kind !== 'setup' && currentAppNavigation.filter((entry) => entry.type === 'App Page' && pages.some((page) => page.apiName === entry.apiName && page.pageType === 'App Page' && page.status === 'Active')).length > 1 && <div className="app-strip" style={{ '--brand': currentApp?.brandColor ?? '#0176d3' } as React.CSSProperties}>
-        <nav className="primary-tabs" aria-label="Workspace navigation">
-          {currentAppNavigation.filter((entry) => entry.type === 'App Page').map((entry) => {
-            const apiName = entry.apiName;
-            const appPage = pages.find((item) => item.apiName === apiName && item.pageType === 'App Page' && item.status === 'Active');
-            if (!appPage) return null;
-            return <button className={route.kind === 'app-page' && route.pageApiName === apiName ? 'primary-tab active' : 'primary-tab'}
-              key={apiName} onClick={() => navigateRoute({ kind: 'app-page', appId: currentApp?.apiName ?? '', pageApiName: apiName })}><Monitor className="rail-icon" size={17} />{appPage.label}</button>;
-          })}
-
-        </nav>
-
-      </div>
-
-      }
 
       <main className={route.kind === 'setup' ? 'setup-layout setup-no-tabs' : 'setup-layout'}>
         {route.kind === 'setup' && !route.dashboardView && workspace !== 'flow-builder' && !(workspace === 'page-builder' && Boolean(route.resourceApiName)) && (
