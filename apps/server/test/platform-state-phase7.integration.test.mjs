@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {applyInstallableAppPackages} from '../src/installable-app-packages.mjs';
 import {ensureBundledAppComponents} from '../src/bundled-app-components.mjs';
 import {projectState,restoreState,verifyProjection,stateDigest} from '../src/relational-projection.mjs';
@@ -36,7 +37,7 @@ test('Phase 7: app installation, component registry, state snapshot and restore 
   assert(installed.pages.every(page=>new Set(page.components.map(c=>c.id)).size===page.components.length));
   assert.equal(installed.accessControl.profiles.find(p=>p.id==='system-administrator').objectPermissions.Product.read,false);
 
-  const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
+  const root=fileURLToPath(new URL('../../web/src/custom-components/',import.meta.url));
   const library=ensureBundledAppComponents([{apiName:'ExampleWidget',trustedBundled:true,status:'Published',surfaces:['page'],version:1}],installed,catalog,root);
   assert.equal(library.length,1);
   assert.equal(new Set(library.map(c=>c.apiName)).size,library.length);

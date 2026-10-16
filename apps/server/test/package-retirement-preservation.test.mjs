@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {
   applyInstallableAppPackages, retireUninstalledPackageMetadata,
   repairHistoricPackageRecordAudits
@@ -119,7 +120,7 @@ test('UK off-licence POS installs its shared Flow, component metadata and least-
   assert.equal(cashier.objectPermissions.Invoice.delete,false);
   assert.equal(cashier.objectPermissions.InvoiceItem.create,true);
   assert.equal(cashier.objectPermissions.InvoiceItem.delete,false);
-  const root=new URL('../../web/src/custom-components/',import.meta.url).pathname;
+  const root=fileURLToPath(new URL('../../web/src/custom-components/',import.meta.url));
   const components=ensureBundledAppComponents([],installed,catalog,root);
   assert.deepEqual(components.map(item=>item.apiName),['RecordCatalogCart','CustomerBasketDisplay']);
   assert(components.every(item=>item.propertyDefinitions?.length));

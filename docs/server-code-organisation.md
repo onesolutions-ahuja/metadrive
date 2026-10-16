@@ -46,3 +46,12 @@ currency assignment conflicts and tenant-scoped persistence. Run them with
 `npm run pretest --workspace apps/server`; the normal server test command includes them.
 Existing path-filtered registry, completion, alias and relational CI workflows also
 watch `apps/server/src/modules/**`, preserving their coverage after extraction.
+
+Validation on Windows: production `npm run build` passed (189 build-contract tests,
+frontend bundles and server compilation). All server test groups passed: 87 workflow/
+security tests, 80 supporting contracts, 42 preservation/seeder tests, and five new
+route regressions. Server tests use `NODE_ENV=test` and `METADRIVE_TEST_MODE=true`.
+Preservation tests resolve asset directories with `fileURLToPath` so paths containing
+spaces and Windows drive letters work. The developer-policy guard reports
+`index.ts: 13243 -> 11063`; an AST comparison verified unchanged handler logic and
+middleware for all 88 extracted endpoints.
