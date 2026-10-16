@@ -4,6 +4,8 @@ import { transform } from 'esbuild';
 import { z } from 'zod';
 import { hasDefaultComponentExport, scopeLibraryCss } from './component-source.js';
 import { libraryComponentVisible, libraryComponentEditable } from '../../component-scope.mjs';
+import { pageDeletionBlockers } from '../metadata/page-deletion-route.mjs';
+import { isProtectedAdministrationPage } from '../metadata/platform-admin-pages.mjs';
 import { bundledLegacyMigrationDecision } from '../../bundled-component-migration.mjs';
 import type { PlatformState } from '../../core/state/types.js';
 
@@ -95,13 +97,45 @@ function retireConfiguredComponents(): void {
     console.warn('Component retirement skipped: no valid prefixes');
     return;
   }
-  const tenantIds = Object.keys(state.tenants);
+  // Retire explicitly named, unreferenced tenant Pages before checking component use.
+  // Shared Page deletion rules also protect App navigation, Flows and route aliases.
+  const pageLabels = (process.env.METADRIVE_PAGE_RETIRE_LABELS ?? '').split('|')
+    .map((value) => value.trim()).filter(Boolean);
+  const retiredPages: string[] = [];
+  const blockedPages: string[] = [];
+  let currentState = state;
+  if (pageLabels.length) {
+    const tenant = currentState.tenants[tenantId];
+    const pages = tenant.pages.filter((page) => {
+      if (!pageLabels.includes(page.label) && !pageLabels.includes(page.apiName)) return true;
+      if (isProtectedAdministrationPage(page)) {
+        blockedPages.push(page.apiName + ': protected administration Page');
+        return true;
+      }
+      const blockers = pageDeletionBlockers(tenant, page.apiName);
+      if (blockers.length) {
+        blockedPages.push(page.apiName + ': ' + blockers.join('; '));
+        return true;
+      }
+      retiredPages.push(page.apiName);
+      return false;
+    });
+    if (retiredPages.length) {
+      currentState = { ...currentState, tenants: {
+        ...currentState.tenants,
+        [tenantId]: { ...tenant, pages }
+      } };
+      console.info('Component retirement removed referenced legacy Pages:', retiredPages.join(', '));
+    }
+    if (blockedPages.length) console.warn('Component retirement retained dependent Pages:', blockedPages.join(' | '));
+  }
+  const tenantIds = Object.keys(currentState.tenants);
   const removed: string[] = [];
   const blocked: string[] = [];
-  const libraryComponents = state.libraryComponents.filter((component) => {
+  const libraryComponents = currentState.libraryComponents.filter((component) => {
     if (!prefixes.some((prefix) => component.apiName.toLowerCase().startsWith(prefix))) return true;
     if (!libraryComponentEditable(component, tenantId, tenantIds)) return true;
-    const usages = findLibraryComponentUsages(state, component.apiName, tenantId);
+    const usages = findLibraryComponentUsages(currentState, component.apiName, tenantId);
     if (usages.length) {
       blocked.push(component.apiName + ': ' + usageBlockerDetails(usages, tenantId).join('; '));
       return true;
@@ -109,12 +143,13 @@ function retireConfiguredComponents(): void {
     removed.push(component.apiName);
     return false;
   });
-  if (removed.length) {
-    const nextState = { ...state, libraryComponents };
+  if (removed.length || retiredPages.length) {
+    const nextState = { ...currentState, libraryComponents };
     persistState(nextState);
     setState(nextState);
-    console.info('Component retirement removed', removed.length, 'tenant-owned components:', removed.join(', '));
   }
+  if (removed.length)
+    console.info('Component retirement removed', removed.length, 'tenant-owned components:', removed.join(', '));
   if (blocked.length) console.warn('Component retirement blocked by dependencies:', blocked.join(' | '));
 }
 
