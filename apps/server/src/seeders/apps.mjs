@@ -81,26 +81,37 @@ export function applyDeveloperAppGrants(before, after, packages) {
 }
 
 /**
- * Reconcile the tenant-scoped developer policy for an existing Named Devices
- * object. Older tenants can contain this metadata without its initial grant.
- * Explicit policy entries (including denies) remain authoritative. This does
- * not change user assignments, other profiles, or tenant/platform isolation.
+ * Reconcile missing Object and Field grants on the tenant-scoped OneEngine
+ * Tenant Developer policy for ALL registered tenant objects. Run after metadata
+ * installation/reconciliation so newly added and pre-existing fields are
+ * covered. Respect explicit entries, including intentionally denied access,
+ * and never alter assignments or cross-tenant/platform permissions.
  */
 export function reconcileDeviceDeveloperGrant(tenant) {
-  const object=(tenant.objects??[]).find(item=>item.apiName==='NamedDevice__c');
-  if(!object)return tenant;
   const sets=tenant.accessControl?.permissionSets??[];
   const index=sets.findIndex(item=>item.id==='oneengine-tenant-developer');
   if(index<0)return tenant;
   const policy=sets[index];
-  if(Object.hasOwn(policy.objectPermissions??{},object.apiName))return tenant;
-  const objectPermissions={...(policy.objectPermissions??{}),
-    [object.apiName]:{read:true,create:true,edit:true,delete:true,viewAll:true,modifyAll:true}};
+  const objectPermissions={...(policy.objectPermissions??{})};
   const fieldPermissions={...(policy.fieldPermissions??{})};
-  for(const field of object.fields??[]){
-    const key=object.apiName+'.'+field.apiName;
-    if(!Object.hasOwn(fieldPermissions,key))fieldPermissions[key]={read:true,edit:true};
+  let changed=false;
+  for(const object of tenant.objects??[]) {
+    if(!object?.apiName)continue;
+    if(!Object.hasOwn(objectPermissions,object.apiName)) {
+      objectPermissions[object.apiName]={
+        read:true,create:true,edit:true,delete:true,viewAll:true,modifyAll:true
+      };
+      changed=true;
+    }
+    for(const field of object.fields??[]) {
+      if(!field?.apiName)continue;
+      const key=object.apiName+'.'+field.apiName;
+      if(Object.hasOwn(fieldPermissions,key))continue;
+      fieldPermissions[key]={read:true,edit:true};
+      changed=true;
+    }
   }
+  if(!changed)return tenant;
   const permissionSets=[...sets];
   permissionSets[index]={...policy,objectPermissions,fieldPermissions};
   return {...tenant,accessControl:{...tenant.accessControl,permissionSets}};
