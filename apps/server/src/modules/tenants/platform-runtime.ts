@@ -33,7 +33,9 @@ function savePlatformPolicies(actorId: string, userId: string, policies: Array<'
 }
 // MD-03.1: platform-only tenant directory and lifecycle. Tenant-editable
 // profiles/permission sets never confer this policy; no impersonation or secrets.
-const tenantManagementCreateSchema = provisioningSchema.strict();
+const tenantManagementCreateSchema = provisioningSchema.extend({
+  grantTenantDeveloperPolicyToAdmin: z.boolean().optional()
+}).strict();
 const tenantManagementUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(1000).optional()
