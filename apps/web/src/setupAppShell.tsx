@@ -844,7 +844,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
       openSetupWorkspace('named-credentials');
       return;
     }
-    if (item === 'Company Information' || item === 'Currencies') {
+    if (item === 'Company Settings' || item === 'Company Information' || item === 'Currencies') {
       openSetupWorkspace('company-settings');
       return;
     }
