@@ -3,7 +3,8 @@ import { dashboardComponentSchema, dashboardFilterSchema, dashboardFolderShareSc
 import { folderAccessLevelForUser, folderAccessLevelFromFolders, folderForUser, dashboardForUser, validateDashboardFolderReferences } from './modules/dashboards/folder-access.js';
 import { createFlowSchedulingRuntime } from './scheduler/flow-scheduling.js';
 import { createIntegrationDeliveryHandler } from './scheduler/integration-delivery.js';
-import { dispatchDueIntegrationJobsRuntime } from './scheduler/integration-dispatch.js';
+import { createPlatformScheduler } from './scheduler/platform-scheduler.js';
+
 import { createFlowExecutionEngine } from './modules/flows/execution-engine.js';
 import { parseSubflowMappings } from './modules/flows/subflow-mappings.js';
 import { createFlowScheduleCalculations } from './scheduler/flow-schedule-calculations.js';
@@ -52,7 +53,7 @@ import { registerNotificationRoutes } from './modules/notifications/routes.js';
 import { registerPlatformPolicyRoutes } from './modules/security/platform-policy-routes.js';
 import { registerHealthAndDiscoveryRoutes } from './modules/security/health-routes.js';
 import { roleApiNameForName, roleIdForName, profileIdForRole } from './modules/security/role-helpers.js';
-import { createScheduledDispatcher } from './scheduler/dispatcher.js';
+
 import { startPlatformServer } from './bootstrap/startup.js';
 import { registerProductionFrontend, registerPlatformErrorHandler } from './bootstrap/frontend.js';
 import { credentialKeyRing, sealCredentialPayload, openCredentialPayload, sealIntegrationCredentials, openIntegrationCredentials } from './core/credential-crypto.js';
@@ -8131,30 +8132,28 @@ async function dispatchDashboardSubscription(tenantId: string, subscriptionId: s
 const integrationDeliveryHandler = createIntegrationDeliveryHandler({
   getState: () => platformStore.state, tenantData, effectivePermissions, performHttpCallout
 });
-async function dispatchDueIntegrationJobs(): Promise<void> {
-  await dispatchDueIntegrationJobsRuntime({
-    persistenceMode, pool: getRouteAliasPool(), tenantIds: Object.keys(platformStore.state.tenants),
-    tenantIsActive, dispatch: integrationDeliveryHandler
-  });
-}
-const dispatchScheduledFlows = createScheduledDispatcher({
-  maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
+const dispatchScheduledFlows = createPlatformScheduler({
+  maintenance: maintenanceMode,
+  lease: withSchedulerLease,
+  flush: waitForPersistedState,
   refresh: createSqlStateRefresh({
     persistenceMode, store: platformStore,
     authRevision: () => platformInitialization.authOverlayRevision,
     readPersistedState, waitForPersistedState, parsePersistedPlatformState,
     restoreDurableAuthOverlay: platformInitialization.restoreDurableAuthOverlay
   }),
-  events: () => deliverPendingPlatformEvents(),
-  flows: () => executeDueScheduledFlows(),
-  integrations: () => dispatchDueIntegrationJobs(),
-  subscriptions: async () => {
-    const now = Date.now();
-    const dueSubscriptions = Object.entries(platformStore.state.tenants).flatMap(([tenantId, tenant]) =>
-      tenantIsActive(tenantId) ? tenant.dashboardSubscriptions.filter((subscription) =>
-        subscription.active && Date.parse(subscription.nextRunAt) <= now)
-        .map((subscription) => ({ tenantId, subscriptionId: subscription.id })) : []);
-    for (const due of dueSubscriptions) await dispatchDashboardSubscription(due.tenantId, due.subscriptionId);
+  events: deliverPendingPlatformEvents,
+  flows: executeDueScheduledFlows,
+  integration: {
+    persistenceMode, pool: getRouteAliasPool(),
+    tenantIds: () => Object.keys(platformStore.state.tenants),
+    tenantIsActive,
+    dispatch: integrationDeliveryHandler
+  },
+  subscriptions: {
+    tenants: () => platformStore.state.tenants,
+    tenantIsActive,
+    dispatch: dispatchDashboardSubscription
   }
 });
 // Register static frontend and final error handling after API routes.
