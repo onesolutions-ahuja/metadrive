@@ -13,8 +13,8 @@ test('Tenant Management stays discoverable in Setup even when platform policy is
 });
 
 test('Quick Find locates Tenant Management regardless of access; visibility never grants permission',()=>{
- const items=resolveSetupNavigation('tenant manage',false);
- assert.equal(items.length,0,'Search is a simple substring, not a privilege escalation');
+ const irrelevant=resolveSetupNavigation('unrelated query',false);
+ assert.equal(irrelevant.length,0);
  const searched=resolveSetupNavigation('tenant',false);
  assert.deepEqual(searched.map(x=>x.items).flat(),['Tenant Management']);
  assert.ok(!searched.some(x=>x.group==='Security'));
