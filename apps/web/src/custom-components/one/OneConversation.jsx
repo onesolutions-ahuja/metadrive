@@ -40,7 +40,7 @@ function ConversationInbox({props}) {
  const send=async event=>{
   event.preventDefault();
   const body=draft.trim();
-  if(!body||busy||!canSend)return;
+  if(!body||busy)return;
   if(!selected&&!recipient.trim()){setError('Enter a recipient before sending.');return;}
   if(!selected&&!/^\+?[1-9]\d{5,14}$/.test(recipient.trim())){setError('Enter an international phone number including country code.');return;}
   setBusy(true);setError('');setNotice('');
@@ -73,7 +73,7 @@ function ConversationInbox({props}) {
      <h3 className="one-heading">{props.title||'Conversations'}</h3><span className="one-muted">{visible.length}</span>
     </div>
     {props.enableNewConversation===true&&<button className="one-btn" type="button"
-     disabled={!assignedAccounts.some(account=>account.canSend!==false)}
+     disabled={!assignedAccounts.length}
      onClick={()=>{setSelectedId('');setNewConversation(true);setError('');setNotice('');setSelectedAccount(value=>value||String(assignedAccounts.find(account=>account.canSend!==false)?.id||''));}}>
      {props.newConversationLabel||'New conversation'}
     </button>}
@@ -125,7 +125,7 @@ function ConversationInbox({props}) {
       <textarea className="one-control" required maxLength={Number(props.messageMaxLength)||4096} value={draft}
        onChange={event=>setDraft(event.target.value)}/>
      </label>
-     <button className="one-btn one-btn--primary" type="submit" disabled={busy||!canSend||!draft.trim()}>{props.sendLabel||'Send'}</button>
+     <button className="one-btn one-btn--primary" type="submit" disabled={busy||!draft.trim()}>{props.sendLabel||'Send'}</button>
     </form>
     :selected?<div className="one-conversation-active">
      <header className="one-conversation-header"><button className="one-btn one-btn--ghost one-conversation-back" type="button"
@@ -151,7 +151,7 @@ function ConversationInbox({props}) {
       <input className="one-control" aria-label={props.messageLabel||'Message'} value={draft} disabled={busy}
        maxLength={Number(props.messageMaxLength)||4096} placeholder={props.placeholder||'Write a message…'}
        onChange={event=>setDraft(event.target.value)}/>
-      <button className="one-btn one-btn--primary" type="submit" disabled={busy||!canSend||!draft.trim()}>{props.sendLabel||'Send'}</button>
+      <button className="one-btn one-btn--primary" type="submit" disabled={busy||!draft.trim()}>{props.sendLabel||'Send'}</button>
      </form>
      {!canSend&&<p className="one-muted" role="status">{props.noSendPermissionText||'You do not have permission to send from this account.'}</p>}
     </div>:<div className="one-empty">{props.emptyTitle||'Select a conversation'}</div>}
