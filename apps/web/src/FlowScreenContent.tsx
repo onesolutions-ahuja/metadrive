@@ -146,6 +146,49 @@ export default function FlowScreenContent({
         helpId={helpId} helpText={helpText} value={value} values={values} setValue={setValue}
         loadRecords={loadRecords} onError={onError} />;
     }
+    // Use the existing registered controls only when they preserve the Flow field contract.
+    const inputTypes: Record<string, string> = {
+      Text: 'text', Password: 'password', Number: 'number', Currency: 'number',
+      Date: 'date', Time: 'time', 'Date/Time': 'datetime-local',
+      Email: 'email', URL: 'url', Phone: 'tel'
+    };
+    if (Object.prototype.hasOwnProperty.call(inputTypes, type)) {
+      const definition = findRegisteredComponent(libraryComponents, 'OneInput', 'flow');
+      // Browser-native constraints and stable IDs remain available through shared props.
+      if (definition) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Input', label, inputId, helpId: helpText ? helpId : undefined,
+        helpText, inputType: inputTypes[type], required: field.required === true,
+        min: field.min, max: field.max, step: field.step,
+        minLength: field.minLength, maxLength: field.maxLength,
+        pattern: field.pattern, validationMessage: field.validationMessage,
+        emptyNumberAsUndefined: true, value: value ?? '',
+        onChange: setValue,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+    }
+    if (type === 'Slider') {
+      const definition = findRegisteredComponent(libraryComponents, 'OneSlider', 'flow');
+      if (definition && field.required !== true) return <RegisteredComponent key={name} definition={definition} props={{
+        kind: 'Slider', label, inputId, helpId: helpText ? helpId : undefined,
+        helpText, min: field.min ?? 0, max: field.max ?? 100, step: field.step ?? 1,
+        value: typeof value === 'number' ? value : field.min ?? 0, onChange: setValue,
+        ...componentLayoutProps(field, layoutDevice)
+      }} />;
+    }
+    if (type === 'Picklist' || type === 'Multi-Select Picklist') {
+      const definition = findRegisteredComponent(libraryComponents, 'OneChoice', 'flow');
+      const mode = type === 'Multi-Select Picklist'
+        ? field.displayAs === 'Checkbox Group' ? 'checkbox' : 'multiple'
+        : field.displayAs === 'Radio Buttons' ? 'radio' : 'select';
+      if (definition && !(field.required === true && (mode === 'checkbox' || mode === 'multiple'))) {
+        return <RegisteredComponent key={name} definition={definition} props={{
+          kind: 'Choice', label, inputId, helpId: helpText ? helpId : undefined,
+          helpText, name: inputId, mode, choices, required: field.required === true,
+          value: type === 'Multi-Select Picklist' ? (Array.isArray(value) ? value : []) : (value ?? ''),
+          onChange: setValue, ...componentLayoutProps(field, layoutDevice)
+        }} />;
+      }
+    }
     if (type === 'Checkbox' || type === 'Toggle') return <div key={name}><label className="checkbox-row" htmlFor={inputId}><input id={inputId} type="checkbox" role={type === 'Toggle' ? 'switch' : undefined} required={field.required === true} aria-required={field.required === true} aria-describedby={helpText ? helpId : undefined} checked={value === true} onChange={(event) => setValue(event.target.checked)} />{label}{field.required === true ? ' *' : ''}</label>{help}</div>;
     if (type === 'Long Text Area') return <label className="form-label" htmlFor={inputId} key={name}>{label}<textarea id={inputId} className="form-control" value={typeof value === 'string' ? value : ''} required={field.required === true} minLength={typeof field.minLength === 'number' ? field.minLength : undefined} maxLength={typeof field.maxLength === 'number' ? field.maxLength : undefined} aria-describedby={helpText ? helpId : undefined} onChange={(event) => setValue(event.target.value)} />{help}</label>;
     if (type === 'Slider') return <label className="form-label" htmlFor={inputId} key={name}>{label}<input id={inputId} className="form-control" type="range" value={typeof value === 'number' ? value : typeof field.min === 'number' ? field.min : 0} min={typeof field.min === 'number' ? field.min : 0} max={typeof field.max === 'number' ? field.max : 100} step={typeof field.step === 'number' ? field.step : 1} aria-valuetext={String(value ?? '')} aria-describedby={helpText ? helpId : undefined} onChange={(event) => setValue(Number(event.target.value))} /><output htmlFor={inputId}>{String(value ?? '')}</output>{help}</label>;
