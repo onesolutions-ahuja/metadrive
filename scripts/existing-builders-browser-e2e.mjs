@@ -210,9 +210,13 @@ try {
   await page.waitForURL(/\/une\/o\/Account\/list/);
 
   await page.goto('http://127.0.0.1:5173/une/setup/flow-builder/'+flowApiName);
+  // Explicitly choose the target Flow after returning from the runtime navigation.
+  await page.getByRole('button',{name:'Manager',exact:true}).click();
+  await page.locator('.flow-manager-item').filter({hasText:'MD07 Browser Flow'}).first().click();
   // Authenticated Flow Builder: modify label and persist using the real Save button.
   const flowName=page.getByLabel('Flow label');
   await flowName.waitFor();
+  await page.waitForFunction(() => document.querySelector('input[aria-label="Flow label"]')?.value === 'MD07 Browser Flow');
   const flowEdited='MD07 Flow Builder Saved';
   await flowName.fill(flowEdited);
   await page.getByRole('button',{name:'Save',exact:true}).click();
