@@ -644,11 +644,11 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
   return <div className="home-content settings-read-first-page company-settings-page">
     <PageHeading eyebrow="Company Settings" title="Company Settings"
       description="Manage your organisation settings, base currency, VAT and exchange rates in one workspace." />
-    <PlatformPageSlot slotKey="company-info"><section className="surface permission-section company-profile-section" aria-label="Company details">
+    <section className="surface permission-section company-profile-section" aria-label="Company details">
       <div className="section-toolbar"><div><h2>Company details</h2><p>Organisation, contact and regional information.</p></div>
       {canManage&&!companyEditing&&!companyLoading&&<button type="button" className="btn" onClick={()=>{setCompanyBeforeEdit({...company});setCompanyEditing(true);}}>Edit details</button>}</div>
       {companyLoading?<p>Loading company details…</p>:<div className="company-profile-grid">
-      {companyFields.map(field=><div className="company-profile-field" key={field.key}><label htmlFor={'company-'+field.key}>{field.label}</label>
+      {companyFields.map(field=><div className="company-profile-field" data-company-field={field.key} key={field.key}><label htmlFor={'company-'+field.key}>{field.label}</label>
         {companyEditing?<input id={'company-'+field.key} className="form-control" value={company[field.key]}
           onChange={event=>setCompany(previous=>({...previous,[field.key]:event.target.value}))}/>
         :<p>{company[field.key]||'Not provided'}</p>}</div>)}</div>}
@@ -657,7 +657,7 @@ function CompanySettings({ canManage }: { canManage: boolean }) {
         <button type="button" className="btn btn-brand" disabled={companySaving} onClick={()=>void saveCompany()}>{companySaving?'Saving…':'Save details'}</button></div>}
       {companyError&&<p className="form-error" role="alert">{companyError}</p>}
       {companyNotice&&<p className="form-success" role="status">{companyNotice}</p>}
-    </section></PlatformPageSlot>
+    </section>
     <section className="surface permission-section">
       <div className="section-toolbar">
         <div><h2>Currency & Tax</h2>
