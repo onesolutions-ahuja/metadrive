@@ -112,6 +112,7 @@ import DeveloperAccountSettings from './DeveloperAccountSettings';
 import SettingsViewRow from './SettingsViewRow';
 import ApprovalProcessManager from './ApprovalProcessManager';
 import { standardPageComponents } from './componentCatalog';
+import { findRegisteredComponent } from './componentRegistryLookup';
 import EmbeddedDashboard from './EmbeddedDashboard';
 import { inspectPageDependencies } from './pageDependencies';
 import {
@@ -193,7 +194,6 @@ import {
   type UserMetadata,
   type WorkspaceId
 } from './metadata';
-
 
 export function createPageBuilder(MetadataComponentProperties: React.ComponentType<any>, MetadataBoundPageComponent: React.ComponentType<any>) {
 function PageBuilder({
@@ -370,7 +370,7 @@ function PageBuilder({
     }
   }, [page.apiName, page.components.length]);
   const selectedCustomDefinition = selected?.type.startsWith('Custom:')
-    ? libraryComponents.find((item) => item.apiName === selected.type.slice('Custom:'.length))
+    ? findRegisteredComponent(libraryComponents, selected.type.slice('Custom:'.length), 'page')
     : undefined;
   const selectedComponentDescription = selectedCustomDefinition?.description
     ?? standardPageComponents.find((component) => component.apiName === selected?.type)?.description
@@ -628,7 +628,7 @@ function PageBuilder({
     if (!start || start.pointerId !== event.pointerId) return;
     const component = page.components.find(item => item.id === start.id);
     if (!component?.position) return;
-    const definition = component.type.startsWith('Custom:') ? libraryComponents.find(item => item.apiName === component.type.slice('Custom:'.length)) : undefined;
+    const definition = component.type.startsWith('Custom:') ? findRegisteredComponent(libraryComponents, component.type.slice('Custom:'.length), 'page') : undefined;
     const minWidth = Math.min(start.width, definition?.resize?.minWidth ?? 20);
     const minHeight = Math.min(start.height, definition?.resize?.minHeight ?? 20);
     const dx = Math.round(canvasUnitsFromScreenDelta(event.clientX - start.pointerX, fitScale));
@@ -659,7 +659,7 @@ function PageBuilder({
       && existing.formFactors.some((factor) => assignment.formFactors.includes(factor)));
   const addComponent = (type: string, position = page.components.length, region: 'header' | 'main' | 'sidebar' = 'main', canvasPosition?: PageComponentMetadata['position'], parentId: string | null = null) => {
     const customApiName = type.startsWith('Custom:') ? type.slice('Custom:'.length) : '';
-    const custom = libraryComponents.find((item) => item.apiName === customApiName && item.surfaces.includes('page'));
+    const custom = findRegisteredComponent(libraryComponents, customApiName, 'page');
     const dynamicFormComponent = type === 'Field Section' && page.pageType === 'Record Page' && dynamicFormsEnabled;
     if (!availableComponents.includes(type) && !custom && !dynamicFormComponent && !isLayoutType(type)) {
       onNotify(`Enable the matching object feature before adding the ${type} component`);
@@ -1184,7 +1184,7 @@ function PageBuilder({
   const renderPageComponent = (component: LightningPageMetadata['components'][number], index: number, libraryPreview = false, interactivePreview = false) => {
     if (!component.visible) return null;
     const customDefinition = component.type.startsWith('Custom:')
-      ? libraryComponents.find((item) => item.apiName === component.type.slice('Custom:'.length))
+      ? findRegisteredComponent(libraryComponents, component.type.slice('Custom:'.length), 'page')
       : undefined;
     const inPage = page.components.some((item) => item.id === component.id);
     const nested = inPage && !childrenOf(page.components, null).some((item) => item.id === component.id);
@@ -1632,7 +1632,7 @@ function PageBuilder({
                   onClick={() => setSelectedId(child.id)}>{child.label}</button>)}
                 {!childrenOf(page.components, selected.id).length && <p className="properties-help">No children yet — drop components into this layout.</p>}
               </>}
-              <MetadataComponentProperties definitions={libraryComponents.find(component => selected.type === `Custom:${component.apiName}` && component.status !== 'Draft')?.propertyDefinitions} properties={selected.properties}
+              <MetadataComponentProperties definitions={findRegisteredComponent(libraryComponents, selected.type.startsWith('Custom:') ? selected.type.slice('Custom:'.length) : '', 'page')?.propertyDefinitions} properties={selected.properties}
                 objects={objects}
                 apps={apps}
                 pages={pages}
@@ -1966,7 +1966,6 @@ function PageBuilder({
     </div>
   );
 }
-
 
 return PageBuilder;
 }
