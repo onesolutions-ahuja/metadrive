@@ -58,7 +58,7 @@ export default function EmbeddedDashboard({
         if (!active) return;
         setDashboard(allowed);
         const values = await Promise.all(allowed.components.map(async component => {
-          if (['Rich Text', 'Image', 'Custom'].includes(component.type))
+          if (['Rich Text', 'Image'].includes(component.type))
             return [component.id, { value: null, error: '' }] as const;
           try {
             let value: TileData;
@@ -133,7 +133,14 @@ export default function EmbeddedDashboard({
             : component.type === 'Custom' ? (() => {
                 const definition = findRegisteredComponent(libraryComponents,component.customComponentApiName,'dashboard');
                 return definition ? <RegisteredComponent definition={definition} props={{
-                  ...component.properties, properties: component.properties ?? {}, label: component.title, disabled: false
+                  ...(component.properties ?? {}),
+                  properties: component.properties ?? {},
+                  title: component.title,
+                  label: component.title,
+                  object: undefined,
+                  records: values?.rows ?? [],
+                  filters: dashboard.filters.filter(filter => filter.objectApiName === component.objectApiName),
+                  disabled: false
                 }}/> : <p className="records-message">Published dashboard component is unavailable.</p>;
               })()
             : !values ? <p className="records-loading">Loading data…</p>
