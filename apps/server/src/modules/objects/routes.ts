@@ -7,6 +7,10 @@ import type { ObjectMetadata, ObjectMetadataChange, TenantData, ObjectMetadataRo
 
 export function registerObjectMetadataRoutes(deps: ObjectMetadataRoutesDependencies): void {
  const { app, fieldSchema, relatedLookupFilterSchema, objectSchema, validateObjectRelationships, validateRelatedLookupFilters, validateRelatedLists, containsFieldReference, flowUsesObject, findFieldDependencies, findObjectDependencies, fullObjectPermissions, withObjectDefaults, tenantData, getPrincipal, requirePermission, requireAnyPermission, metadataVersion, persistTenantRecords, routeParam, formulaContextForUser, validateFieldChange, validateExistingFieldValues, validateObjectLayoutProfileAssignments, evaluateFormula, z } = deps;
+// Auto-grants follow editable metadata administration privileges, never an identity or named-policy bypass.
+const grantsMetadataCrud = (entry: { systemPermissions: string[] }) =>
+  entry.systemPermissions.includes('metadata:write') && entry.systemPermissions.includes('objects:manage');
+const fullFieldMetadataPermissions = { read: true, edit: true, create: true, delete: true };
 const metadataPrecondition = (req: Request, res: Response, current: ObjectMetadata) =>
   checkMetadataPrecondition(req, res, current, metadataVersion);
 const commitObjectMetadata = (
@@ -70,19 +74,19 @@ app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'object
     accessControl: {
       ...tenant.accessControl,
       profiles: tenant.accessControl.profiles.map((profile) =>
-        profile.id === 'system-administrator'
+        grantsMetadataCrud(profile)
           ? {
             ...profile,
             objectPermissions: { ...profile.objectPermissions, [object.apiName]: { ...fullObjectPermissions } },
-            fieldPermissions: { ...profile.fieldPermissions, ...Object.fromEntries(object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }])) }
+            fieldPermissions: { ...profile.fieldPermissions, ...Object.fromEntries(object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { ...fullFieldMetadataPermissions }])) }
           }
           : profile),
       permissionSets: tenant.accessControl.permissionSets.map((permissionSet) =>
-        permissionSet.id === 'system-administrator'
+        grantsMetadataCrud(permissionSet)
           ? {
             ...permissionSet,
             objectPermissions: { ...permissionSet.objectPermissions, [object.apiName]: { ...fullObjectPermissions } },
-            fieldPermissions: { ...permissionSet.fieldPermissions, ...Object.fromEntries(object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }])) }
+            fieldPermissions: { ...permissionSet.fieldPermissions, ...Object.fromEntries(object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { ...fullFieldMetadataPermissions }])) }
           }
           : permissionSet)
     }
@@ -201,13 +205,13 @@ app.put('/api/metadata/objects/:apiName', requireAnyPermission('metadata:write',
   if (existingValuesError) return res.status(409).json({ error: existingValuesError });
   const addedFieldPermissions = Object.fromEntries(object.fields
     .filter((field) => !current.fields.some((currentField) => currentField.apiName === field.apiName))
-    .map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }]));
+    .map((field) => [`${object.apiName}.${field.apiName}`, { ...fullFieldMetadataPermissions }]));
   const updated = {
     ...tenant,
     objects: tenant.objects.map((item) => item.apiName === object.apiName ? object : item),
     accessControl: {
       ...tenant.accessControl,
-      permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
+      permissionSets: tenant.accessControl.permissionSets.map((set) => grantsMetadataCrud(set)
         ? { ...set, fieldPermissions: { ...set.fieldPermissions, ...addedFieldPermissions } }
         : set)
     }
@@ -345,8 +349,8 @@ app.post('/api/metadata/objects/:apiName/fields', requireAnyPermission('fields:c
     objects: tenant.objects.map((item) => item.apiName === object.apiName ? updatedObject : item),
     accessControl: {
       ...tenant.accessControl,
-      permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
-        ? { ...set, fieldPermissions: { ...set.fieldPermissions, [fieldKey]: { read: true, edit: true } } }
+      permissionSets: tenant.accessControl.permissionSets.map((set) => grantsMetadataCrud(set)
+        ? { ...set, fieldPermissions: { ...set.fieldPermissions, [fieldKey]: { ...fullFieldMetadataPermissions } } }
         : set)
     }
   };
