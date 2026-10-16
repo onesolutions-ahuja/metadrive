@@ -3,6 +3,13 @@
     {
       "appKey": "whatsapp",
       "installation": {
+        "flowMigrations": [
+          {
+            "elementType": "HTTP Callout",
+            "matchConfig": {"namedCredentialResource": "{!AuthorisedCredentialId}"},
+            "addConfig": {"allowedCredentialAppKeys": ["whatsapp"]}
+          }
+        ],
         "allowInstalledMetadataWithoutLicence": true,
         "repairMissingAdministratorPermissions": true,
         "administratorObjectPermissions": {
