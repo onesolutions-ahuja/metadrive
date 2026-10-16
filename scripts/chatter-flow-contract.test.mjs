@@ -3,12 +3,12 @@ import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
 const pkg=JSON.parse(readFileSync(new URL('../apps/server/data/installable-app-packages.json',import.meta.url),'utf8')).packages.find(p=>p.appKey==='whatsapp');
-const server=readFileSync(new URL('../apps/server/src/index.ts',import.meta.url),'utf8');
+const server=readFileSync(new URL('../apps/server/src/modules/flows/execution-routes.ts',import.meta.url),'utf8');
 test('Chatter validates public inputs before trusted authorization enriches resource values',()=>{
  const pos=server.indexOf("app.post('/api/flows/:apiName/execute'");
  assert.ok(pos>0);
  const route=server.slice(pos,pos+2600);
- const inputCheck=route.indexOf('validateFlowInputValues(flow, input.data)');
+ const inputCheck=route.indexOf('validateFlowInputValues(flow, deps.sanitizeChatterCallerInput(apiName, input.data))');
  const authorize=route.indexOf('authoriseChatterFlow(apiName');
  assert.ok(inputCheck>0 && authorize>inputCheck,'validate raw input before server-derived Flow resources');
  assert.ok(!route.includes('validateFlowInputValues(flow, authorisedInput)'), 'server-derived values must not be rejected as external input');

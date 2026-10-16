@@ -20,6 +20,7 @@ on:
       - 'apps/web/src/FlowScreenContent.tsx'
       - 'apps/web/package.json'
       - 'apps/server/src/index.ts'
+      - 'apps/server/src/modules/**'
       - 'apps/server/sql/component-registry-v4.sql'
       - 'apps/server/test/component-registry-sql.integration.test.mjs'
       - 'apps/server/test/rbac-sharing.smoke.test.ts'

@@ -123,9 +123,8 @@ import {
   canvasUnitsFromScreenDelta
 } from './pageCanvas';
 import {
-  createComponentPreviewProps,
-  getPageBuilderComponentCategories,
-  pageBuilderPaletteCategories
+  createComponentPreviewProps, getPageBuilderComponentCategories,
+  publishedPageLibraryComponents, pageBuilderPaletteCategories
 } from './pageBuilderPalette';
 import {
   defaultFlow,
@@ -403,6 +402,7 @@ function PageBuilder({
       .filter((component) => findRegisteredComponent(libraryComponents, component.apiName, 'page') === component)
       .sort((a, b) => Number(b.apiName.startsWith('One')) - Number(a.apiName.startsWith('One')) || a.label.localeCompare(b.label))
       .map((component) => ({
+    ...publishedPageLibraryComponents(libraryComponents).map((component) => ({
       id: `Custom:${component.apiName}`,
       type: `Custom:${component.apiName}`,
       label: component.label,
