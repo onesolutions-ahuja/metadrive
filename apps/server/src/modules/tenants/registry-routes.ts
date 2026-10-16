@@ -67,7 +67,7 @@ export function registerTenantRegistryRoutes(deps: TenantRegistryRoutesDependenc
       const key = deps.provisioningIdempotencyKey(req);
       const { user, created } = await deps.createTenant(parsed.data.tenantId, parsed.data.tenantName,
         parsed.data.adminName, parsed.data.email, parsed.data.password, deps.getPrincipal(res).userId, key,
-        parsed.data.developerDomain);
+        parsed.data.developerDomain, parsed.data.grantTenantDeveloperPolicyToAdmin === true);
       return res.status(created ? 201 : 200).json({ tenant: deps.tenantSummary(user.tenantId), replayed: !created });
     } catch (error) {
       return res.status(error instanceof deps.TenantProvisioningStoreError ? 503
