@@ -54,7 +54,7 @@ export function createPlatformStateSchema(deps: CreatePlatformStateSchemaDepende
   const stateSchema = z.object({
     tenantRegistry: z.record(tenantRegistryEntrySchema).default({}),
     tenantManagementAudit: z.array(tenantManagementAuditSchema).default([]),
-    platformPolicies: z.record(z.array(z.enum(['platform:superadmin', 'licence:manage']))).default({}),
+    platformPolicies: z.record(z.array(z.enum(['platform:tenants:manage', 'platform:superadmin', 'licence:manage']))).default({}),
     platformPolicyAudit: z.array(z.object({
       actorId: z.string(), userId: z.string(), previous: z.array(z.string()),
       next: z.array(z.string()), at: z.string().datetime()
