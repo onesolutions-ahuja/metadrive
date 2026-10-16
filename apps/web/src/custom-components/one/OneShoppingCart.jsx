@@ -336,7 +336,10 @@ export default function OneShoppingCart(props) {
  const p=props||{};
  const style={'--one-accent':p.accentColor||'#3176cc','--one-radius':Math.max(0,Number(p.radius??16))+'px',
   '--one-gap':Math.max(0,Number(p.gap??12))+'px','--one-pad':Math.max(0,Number(p.padding??16))+'px',
-  width:p.width||'100%'};
+  width:p.width||'100%',
+  '--one-catalogue-ratio':Math.min(85,Math.max(15,Number(p.catalogueWidthPercent??60)))+'fr',
+  '--one-basket-ratio':(100-Math.min(85,Math.max(15,Number(p.catalogueWidthPercent??60))))+'fr',
+  '--one-product-min-width':Math.min(400,Math.max(80,Number(p.productCardMinWidth??170)))+'px'};
  if(p.backgroundColor)style['--one-bg']=p.backgroundColor;
  if(p.textColor)style['--one-fg']=p.textColor;
  if(p.borderColor)style['--one-border']=p.borderColor;
