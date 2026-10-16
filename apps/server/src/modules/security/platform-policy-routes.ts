@@ -48,8 +48,8 @@ export function registerPlatformPolicyRoutes<User extends {id: string; email: st
   });
   app.put('/api/platform/policies/:userId', accessAuthentication, (req: Request, res: Response) => {
     const principal = getPrincipal(res);
-    if (!principal.permissions.includes('platform:superadmin'))
-      return res.status(403).json({ error: 'Platform administrator policy required.' });
+    if (!principal.permissions.includes('platform:tenants:manage'))
+      return res.status(403).json({ error: 'Platform Developer policy required.' });
     const parsed = platformPolicySchema.safeParse(req.body);
     if (!parsed.success || !parsed.data) return res.status(400).json({ error: 'Invalid platform policies.' });
     const userId = routeParam(req, 'userId');
