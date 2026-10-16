@@ -62,7 +62,7 @@ export function declaredSurfaces(source) {
 }
 
 export function backendSurfaces(source) {
-  const schema = scopedSection(source, 'export const libraryComponentSchema =', 'export const libraryComponentInputSchema =');
+  const schema = scopedSection(source, /export const libraryComponentSchema =/.test(source) ? 'export const libraryComponentSchema =' : 'const libraryComponentSchema =', /export const libraryComponentInputSchema =/.test(source) ? 'export const libraryComponentInputSchema =' : 'const libraryComponentInputSchema =');
   const match = schema.match(/surfaces:\s*z\.array\(z\.enum\(\[([^\]]+)\]\)\)/);
   return match
     ? [...new Set(Array.from(match[1].matchAll(/'([^']+)'/g), (m) => m[1]))].sort() : [];
