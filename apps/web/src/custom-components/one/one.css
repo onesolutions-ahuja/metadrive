@@ -83,3 +83,6 @@
 .one-shopping-display header,.one-shopping-display footer{display:grid;gap:var(--one-gap)}
 .one-shopping-display-item,.one-shopping-display-total{display:flex;justify-content:space-between;gap:var(--one-gap);padding:10px 0;border-bottom:1px solid var(--one-border)}
 @media(max-width:700px){.one-shopping-layout{grid-template-columns:minmax(0,1fr)}.one-shopping-line{grid-template-columns:minmax(0,1fr) auto}.one-shopping-line>strong{grid-column:2}.one-shopping-display{min-height:65vh}}
+
+.one-shopping-basket-only .one-shopping-layout{display:block;margin-top:0}
+.one-shopping-basket-only .one-shopping-layout>aside{width:100%;min-width:0}
