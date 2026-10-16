@@ -8,7 +8,7 @@ import { folderAccessLevelForUser, folderAccessLevelFromFolders, folderForUser, 
 import { createFlowSchedulingRuntime } from './scheduler/flow-scheduling.js';
 import { createIntegrationDeliveryHandler } from './scheduler/integration-delivery.js';
 import { dispatchDueIntegrationJobsRuntime } from './scheduler/integration-dispatch.js';
-import { bindFlowExecution } from './modules/flows/execution-binding.js';
+import { bindFlowExecution, wrapFlowExecution } from './modules/flows/execution-binding.js';
 import { parseSubflowMappings } from './modules/flows/subflow-mappings.js';
 import { createFlowScheduleCalculations } from './scheduler/flow-schedule-calculations.js';
 import { createTenantProvisioning } from './core/state/tenant-provisioning.js';
@@ -6197,9 +6197,7 @@ function performSubmitForApproval(
   return groupId;
 }
 
-async function executeFlow(...args: Parameters<typeof executeFlowImplementation>): Promise<FlowExecutionResult> {
-  return withFlowRecordWriteContext(args[0].apiName, args[2], args[3], () => executeFlowImplementation(...args));
-}
+const executeFlow = wrapFlowExecution(() => executeFlowImplementation, withFlowRecordWriteContext);
 const flowExecutionDependencies = { activeFlowDefinition, appendFieldHistory, applyConnectorLifecycle, applyFlowCollectionAssignment, applyRecordDefaults, asConfigRows, assertConnectorLifecycleAccess, assertFieldEditPermissions, assertFlowRuntimeAdmission, calculateFormulaFields, createFlowInterview, deleteRecordCascade, disableOnConnectorUninstall, effectivePermissions, executeFlow, flowConditionsMatch, flowFieldValues, flowInterviewIdentity, flowLocalDateTimeToInstant, flowNeedsRollbackSnapshot, flowPackageAdmission, flowVariablesForUser, formulaContextForUser, hasFieldPermission, hasObjectPermission, hasRecordAccess, hasRecordTypeAccessForUser, isValidFlowDateTime, mapHttpCalloutResponse, normalizeFlowRecordAssignments, normalizeRuntimeValues, numericFieldValueError, parseSubflowMappings, performCustomNotification, performEmailAlert, performHttpCallout, performPostToChatter, performSendEmail, performSubmitForApproval, prepareFlowCreateCollection, principalForUser, resolveFlowValue, runBeforeSaveRecordTriggeredFlows, runRecordTriggeredFlows, sanitizeRecordForRead, scheduledPathTimestamp, stampRecordAuditFields, validateRelationshipReparenting, validateRuntimeRecord, platformStore, installableAppCatalog, randomUUID, dashboardTimeZoneSchema, platformEventMessageSchema };
 export type FlowExecutionDependencies = typeof flowExecutionDependencies;
 const executeFlowImplementation = bindFlowExecution(flowExecutionDependencies);
