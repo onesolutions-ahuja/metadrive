@@ -1,7 +1,7 @@
-// Metadata-driven Flow executor, hosted by the shared Flow runtime.
-// @ts-nocheck - legacy runtime contracts must be migrated to typed shared interfaces.
+// Shared metadata-driven Flow executor.
+// @ts-nocheck - legacy Flow runtime types are to be migrated to shared contracts.
 export function createFlowExecutionEngine(dependencies: Record<string, any>) {
-  const { activeFlowDefinition, appendFieldHistory, applyConnectorLifecycle, applyFlowCollectionAssignment, applyRecordDefaults, asConfigRows, assertConnectorLifecycleAccess, assertFieldEditPermissions, assertFlowRuntimeAdmission, calculateFormulaFields, createFlowInterview, deleteRecordCascade, disableOnConnectorUninstall, effectivePermissions, executeFlow, flowConditionsMatch, flowFieldValues, flowInterviewIdentity, flowLocalDateTimeToInstant, flowNeedsRollbackSnapshot, flowPackageAdmission, flowVariablesForUser, formulaContextForUser, hasFieldPermission, hasObjectPermission, hasRecordAccess, hasRecordTypeAccessForUser, isValidFlowDateTime, mapHttpCalloutResponse, normalizeFlowRecordAssignments, normalizeRuntimeValues, numericFieldValueError, parseSubflowMappings, performCustomNotification, performEmailAlert, performHttpCallout, performPostToChatter, performSendEmail, performSubmitForApproval, prepareFlowCreateCollection, principalForUser, resolveFlowValue, runBeforeSaveRecordTriggeredFlows, runRecordTriggeredFlows, sanitizeRecordForRead, scheduledPathTimestamp, stampRecordAuditFields, validateRelationshipReparenting, validateRuntimeRecord, state, installableAppCatalog, randomUUID, dashboardTimeZoneSchema, platformEventMessageSchema } = dependencies;
+const { activeFlowDefinition, appendFieldHistory, applyConnectorLifecycle, applyFlowCollectionAssignment, applyRecordDefaults, asConfigRows, assertConnectorLifecycleAccess, assertFieldEditPermissions, assertFlowRuntimeAdmission, calculateFormulaFields, createFlowInterview, deleteRecordCascade, disableOnConnectorUninstall, effectivePermissions, executeFlow, flowConditionsMatch, flowFieldValues, flowInterviewIdentity, flowLocalDateTimeToInstant, flowNeedsRollbackSnapshot, flowPackageAdmission, flowVariablesForUser, formulaContextForUser, hasFieldPermission, hasObjectPermission, hasRecordAccess, hasRecordTypeAccessForUser, isValidFlowDateTime, mapHttpCalloutResponse, normalizeFlowRecordAssignments, normalizeRuntimeValues, numericFieldValueError, parseSubflowMappings, performCustomNotification, performEmailAlert, performHttpCallout, performPostToChatter, performSendEmail, performSubmitForApproval, prepareFlowCreateCollection, principalForUser, resolveFlowValue, runBeforeSaveRecordTriggeredFlows, runRecordTriggeredFlows, sanitizeRecordForRead, scheduledPathTimestamp, stampRecordAuditFields, validateRelationshipReparenting, validateRuntimeRecord, state, installableAppCatalog, randomUUID, dashboardTimeZoneSchema, platformEventMessageSchema } = dependencies;
 async function executeFlowImplementation(
   flow: FlowMetadata,
   tenant: TenantData,
@@ -745,25 +745,6 @@ async function executeFlowImplementation(
   };
 }
 
-function parseSubflowMappings(value: unknown, elementLabel: string, mappingType: 'input' | 'output'): Array<{ source: string; target: string }> {
-  if (value === undefined || value === null || value === '') return [];
-  if (typeof value !== 'string') throw new Error(`Subflow "${elementLabel}" ${mappingType} mappings must be text assignments.`);
-  const mappings: Array<{ source: string; target: string }> = [];
-  const sources = new Set<string>();
-  for (const entry of value.split(/[\r\n,]+/).map((item) => item.trim()).filter(Boolean)) {
-    const separator = entry.indexOf('=');
-    if (separator < 1) throw new Error(`Subflow "${elementLabel}" has an invalid ${mappingType} assignment "${entry}".`);
-    const source = entry.slice(0, separator).trim();
-    const target = entry.slice(separator + 1).trim();
-    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(source) || !target) {
-      throw new Error(`Subflow "${elementLabel}" has an invalid ${mappingType} assignment "${entry}".`);
-    }
-    if (sources.has(source)) throw new Error(`Subflow "${elementLabel}" maps "${source}" more than once.`);
-    sources.add(source);
-    mappings.push({ source, target });
-  }
-  return mappings;
-}
 
- return executeFlowImplementation;
+return executeFlowImplementation;
 }
