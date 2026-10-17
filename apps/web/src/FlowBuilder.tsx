@@ -1,3 +1,4 @@
+import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowPropertiesResizeHandle';
 import { layoutFlowGraph } from './builders/flowGraphLayout';
 import { flowTypeOptions, formulaFunctions, formulaOperators } from './builders/flowEditorCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './builders/flowEditorData';
@@ -175,18 +176,7 @@ export default function FlowBuilder({
     id: number; startClientX: number; startClientY: number;
     x: number; y: number; moved: boolean
   } | null>(null);
-  const [propertiesWidth, setPropertiesWidth] = useState(() => {
-    try {
-      const saved = Number(window.localStorage.getItem('metadrive.flowBuilder.propertiesWidth'));
-      return Number.isFinite(saved) && saved >= 280 ? saved : 285;
-    } catch { return 285; }
-  });
-  const workareaRef = useRef<HTMLDivElement>(null);
-  const propertiesResizeRef = useRef<{ x: number; width: number } | null>(null);
-  const clampPropertiesWidth = (width: number) => {
-    const available = workareaRef.current?.clientWidth ?? 1100;
-    return Math.round(Math.max(280, Math.min(width, Math.max(280, Math.min(available * 0.5, available - 560)))));
-  };
+  const {propertiesWidth, setPropertiesWidth, workareaRef, clampPropertiesWidth} = useFlowPropertiesWidth();
   const canvasRef = useRef<HTMLDivElement>(null);
   const formulaEditorRef = useRef<HTMLTextAreaElement>(null);
   const selected = flow.elements.find((element) => element.id === selectedId) ?? flow.elements[0];
@@ -1430,33 +1420,7 @@ export default function FlowBuilder({
         </div></div>
         <div className="flow-zoom"><button onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))} aria-label="Zoom in"><Plus size={15} /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))} aria-label="Zoom out"><span>−</span></button><button onClick={fitGraphToCanvas} aria-label="Fit to view"><MoveRight size={14} /></button></div>
       </section>
-      <div role="separator" aria-label="Resize Flow properties panel" aria-orientation="vertical"
-        tabIndex={0} title="Drag to resize the properties panel; use arrow keys for fine adjustment"
-        style={{ cursor: 'col-resize', touchAction: 'none', background: '#e3e7ed', borderLeft: '1px solid #ccd3dd', borderRight: '1px solid #ccd3dd' }}
-        onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          propertiesResizeRef.current = { x: event.clientX, width: propertiesWidth };
-          event.currentTarget.setPointerCapture(event.pointerId);
-          event.preventDefault();
-        }}
-        onPointerMove={(event) => {
-          const resize = propertiesResizeRef.current;
-          if (resize) setPropertiesWidth(clampPropertiesWidth(resize.width + resize.x - event.clientX));
-        }}
-        onPointerUp={(event) => {
-          if (!propertiesResizeRef.current) return;
-          propertiesResizeRef.current = null;
-          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-          try { window.localStorage.setItem('metadrive.flowBuilder.propertiesWidth', String(propertiesWidth)); } catch { /* Storage may be disabled. */ }
-        }}
-        onPointerCancel={() => { propertiesResizeRef.current = null; }}
-        onKeyDown={(event) => {
-          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-          event.preventDefault();
-          const next = clampPropertiesWidth(propertiesWidth + (event.key === 'ArrowLeft' ? 20 : -20));
-          setPropertiesWidth(next);
-          try { window.localStorage.setItem('metadrive.flowBuilder.propertiesWidth', String(next)); } catch { /* Storage may be disabled. */ }
-        }} />
+      <FlowPropertiesResizeHandle width={propertiesWidth} setWidth={setPropertiesWidth} clamp={clampPropertiesWidth} />
       <aside className="flow-settings">
         <div className="settings-header"><h2>{selected?.type === 'Start' ? 'Configure Start' : 'Set Up'}</h2><button className="icon-button subtle" onClick={() => selected && selected.type !== 'Start' && !flow.connectors.some((connector) => connector.from === selected.id) && onRemove(selected.id)} aria-label="Delete element" disabled={!selected || selected.type === 'Start' || flow.connectors.some((connector) => connector.from === selected.id)}><X size={16} /></button></div>
         <div className="settings-element-type"><span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === selected?.type)?.icon ?? '◉'}</span><div><small>{selected?.type}</small><strong>{selected?.label}</strong></div></div>
