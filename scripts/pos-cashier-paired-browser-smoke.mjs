@@ -59,7 +59,8 @@ try{
    const alerts=await cashier.getByRole('alert').allInnerTexts();
    throw Error('Display popup failed: '+error.message+'; alerts='+JSON.stringify(alerts)+
      '; pageErrors='+JSON.stringify(errors)+'; pageCount='+context.pages().length+
-     '; openAttempts='+JSON.stringify(await cashier.evaluate(()=>window.__displayOpenAttempts)));
+     '; openAttempts='+JSON.stringify(await cashier.evaluate(()=>window.__displayOpenAttempts))+
+     '; clickTrace='+JSON.stringify(await cashier.evaluate(()=>window.__displayClickTrace)));
  });
  await cashier.getByRole('button',{name:'Open customer display'}).click();
  const customer=await popupEvent;
