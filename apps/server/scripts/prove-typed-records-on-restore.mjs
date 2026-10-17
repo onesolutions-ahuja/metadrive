@@ -3,7 +3,7 @@
 import pg from 'pg';
 import {randomUUID} from 'node:crypto';
 import {readNormalizedState,writeNormalizedState} from '../src/normalized-state-runtime.mjs';
-import {verifyTypedRecords,synchronizeTypedRecords} from '../src/normalized-typed-records.mjs';
+import {verifyTypedRecords,synchronizeTypedRecords,definedObjects} from '../src/normalized-typed-records.mjs';
 import {stateDigest} from '../src/relational-projection.mjs';
 import {physicalObjectTable} from '../src/normalized-object-schema.mjs';
 
@@ -22,8 +22,12 @@ try{
   const tenants=Object.keys(initial.state.tenants??{});
   if(!tenants.length) throw Error('No tenant in restored SQL state');
   const tenantId=tenants[0],tenant=initial.state.tenants[tenantId];
-  const object=tenant.objects.find(o=>Array.isArray(o.fields)&&o.fields.some(f=>f.apiName==='Name'&&/^Text|Name/i.test(f.dataType))) ??
-     tenant.objects.find(o=>Array.isArray(o.fields));
+  // User is a dedicated authentication identity, not an ordinary Object CRUD
+  // candidate. Exercising User as business data could alter restored login
+  // identities and incorrectly require a redundant physical SQL User table.
+  const businessObjects=tenant.objects.filter(o=>o.apiName!=='User');
+  const object=businessObjects.find(o=>Array.isArray(o.fields)&&o.fields.some(f=>f.apiName==='Name'&&/^(Text|Name)/i.test(f.dataType))) ??
+     businessObjects.find(o=>Array.isArray(o.fields));
   if(!object) throw Error('No metadata object suitable for typed SQL CRUD testing');
   const objectId=object.apiName, id='SQL-MIGRATION-PROOF-'+randomUUID();
   const companionId='SQL-MIGRATION-PROOF-'+randomUUID();
@@ -65,7 +69,8 @@ try{
     throw Error('Record DELETE not durable in typed SQL');
   if(stateDigest(gone.state)!==original) throw Error('CRUD rollback did not exactly restore source snapshot');
   const sqlRecordRegistry=await pool.query('SELECT count(*)::int AS n FROM md_v2_object_registry WHERE active=true');
-  if(sqlRecordRegistry.rows[0].n!==tenant.objects.length) throw Error('Typed object registry count differs after CRUD');
+  if(sqlRecordRegistry.rows[0].n!==definedObjects(gone.state).size)
+    throw Error('Typed business Object registry count differs from canonical Object ownership after CRUD');
   // Metadata object retirement and reactivation must retain immutable typed
   // field column identities and existing values, without duplicate registry rows.
   const temporaryApi='SQL_Reactivation_Proof__c';

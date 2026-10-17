@@ -54,12 +54,19 @@ async function registry(client) {
   return byObject;
 }
 const key=(tenantId,apiName)=>JSON.stringify([tenantId,apiName]);
-function definedObjects(state){
+export function definedObjects(state){
   const expected=new Map();
   for(const [tenantId,t] of Object.entries(state?.tenants??{})){
     if(!Array.isArray(t.objects)||!t.records||typeof t.records!=='object') throw Error('Invalid metadata or record buckets');
     for(const object of t.objects){
       if(typeof object?.apiName!=='string'||!object.apiName) throw Error('Missing object API name');
+      // The SQL-only runtime serves User identities from its canonical state
+      // graph, not from the generic business-record bucket. Avoid creating an
+      // extra EMPTY md_obj_User table on new tenants or normal runtime writes.
+      // Old migration/restore snapshots can contain historical User records in
+      // tenant.records.User: preserve them as ordinary legacy records during
+      // isolated restore, never silently discard or merge them with logins.
+      if(object.apiName==='User' && !(t.records.User??[]).length) continue;
       const id=key(tenantId,object.apiName);
       if(expected.has(id)) throw Error('Duplicate object metadata');
       const records=t.records[object.apiName]??[];
@@ -72,6 +79,15 @@ function definedObjects(state){
     }
   }
   return expected;
+}
+async function assertRetiredSystemUserTableIsEmpty(client,sqlObject){
+  const table=tableName(sqlObject.object_id);
+  const [existing,fieldPresence]=await Promise.all([
+    client.query('SELECT 1 FROM '+table+' LIMIT 1'),
+    client.query('SELECT 1 FROM md_v2_field_presence WHERE object_id=$1 LIMIT 1',[sqlObject.object_id])
+  ]);
+  if(existing.rowCount||fieldPresence.rowCount)
+    throw Error('System User physical table contains records; an explicit lossless migration is required');
 }
 async function prepare(client,state){
   const expected=definedObjects(state);
@@ -88,6 +104,7 @@ async function prepare(client,state){
   // Retire removed objects without dropping their physical tables or values.
   for(const [identifier,saved] of [...mapping]) {
     if(expected.has(identifier)) continue;
+    if(saved.api_name==='User') await assertRetiredSystemUserTableIsEmpty(client,saved);
     await client.query('UPDATE md_v2_object_registry SET active=false WHERE object_id=$1',[saved.object_id]);
     mapping.delete(identifier);
   }
@@ -333,6 +350,16 @@ export async function synchronizeTypedRecords(client,state,previousState=null){
 /** Also use inside the same REPEATABLE READ snapshot as the normalized graph read. */
 export async function verifyTypedRecords(client,state){
   const expected=definedObjects(state),mapping=await registry(client);
+  // Backward-compatible, read-only bridge for deployments preceding the
+  // guarded empty-User-table cleanup. The runtime may already have an empty
+  // physical User object in its typed SQL registry; verify it is empty and
+  // ignore that duplicate representation until an approved migration retires
+  // its registry row and drops the physical table. Never auto-drop on startup.
+  for(const [identifier,saved] of [...mapping]){
+    if(saved.api_name!=='User'||expected.has(identifier)) continue;
+    await assertRetiredSystemUserTableIsEmpty(client,saved);
+    mapping.delete(identifier);
+  }
   // A named but weakened CHECK is not tenant isolation. Attest its actual
   // PostgreSQL definition on each SQL-only verified read, including restarts.
   const guards=await client.query(

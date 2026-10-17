@@ -62,7 +62,7 @@ PostgreSQL test database remain required prior to activation.
 
 ## Transactional package version API
 
-`src/seeders/sql-package-ledger.mjs` exports `packageChecksum`,
+`src/seeders/registry.mjs` exports `packageChecksum`,
 `assertSeedIdentity`, and `applyVersionedSeed(client, options)`.
 The caller **must** already hold an open SQL transaction and have completed
 app installation, licensing, entitlement, tenant and OneEngine checks. Pass
@@ -77,3 +77,11 @@ business records or automatic permission resets.
 Integration with the live SQL metadata repository and AppExchange transaction
 owner remains a separate agent handoff. This module does not run during startup
 unless explicitly invoked by the existing installer.
+
+## SQL-only table cleanup
+
+Do not infer that a SQL table is unused because a frontend file does not mention its name. Pages, published Flows and app modules call shared APIs; active physical Object tables are registered in `md_v2_object_registry` and cannot be removed by inspecting source literals alone.
+
+Run `node apps/server/scripts/audit-sql-table-lifecycle.mjs` with the verified SQL-only database configured to inspect all active SQL tables, their metadata Object ownership, app references and seeder imports. This is read-only. Seeder packages are applied through the single `src/seeders/registry.mjs` implementation and the existing AppExchange installation path. Do not install seeders from standalone scripts or duplicate schema definitions.
+
+The shared `remove-verified-sql-duplicates.mjs` cleanup operation is **dry-run by default** and exposes three narrowly allowlisted opt-in modes: duplicated historical backups; a zero-row system User physical table plus the stale relational `metadrive_rel_users` snapshot; and 11 obsolete `metadrive_rel_*` migration-stage tables. It preserves the shared `metadrive_rel_tenants` FK anchor, typed Object/Field metadata, the `md_seed_package_versions` app-seeder ledger, all canonical identities, published metadata, actual business records and the `md_v4_archive_*` recovery archive. Actual removal requires a fresh independently restored encrypted backup proof; User and staging retirement additionally require matching live backend commit/typed SQL runtime. The only production execution path is a manually opted-in SQL-only backup/restore workflow. Never auto-run on startup/install/uninstall or delete a zero-row Object solely because it is currently empty.
