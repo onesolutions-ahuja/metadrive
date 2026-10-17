@@ -43,6 +43,7 @@ export default function AppSetupGuide(props: Props) {
     const reportNeeded = components.some(component => component.type === 'Report Chart');
     const dashboardNeeded = components.some(component => component.type === 'Dashboard');
     let active = true;
+    setLoaded({error:''}); // Do not compare the next app against a previous app's optional metadata.
     const load = async () => {
       const [flows, reports, dashboards] = await Promise.allSettled([
         flowNeeded ? request<{flows: FlowDefinitionMetadata[]}>('/metadata/flows') : Promise.resolve({flows:[]}),
