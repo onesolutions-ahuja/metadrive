@@ -1,9 +1,10 @@
 /**
  * Owner-approved retirement of obsolete commerce Object metadata.
  * Runs OFFLINE against canonical SQL with a fresh, independently verified
- * encrypted backup. Dry run unless --apply is supplied. Never drops tables.
+ * encrypted backup. Dry run unless --apply is supplied. Product retirement
+ * drops only its verified physical table in the same SQL transaction.
  *
- * Historical SQL tables remain for separate, owner-controlled DROP TABLE.
+ * Other historical SQL tables remain untouched.
  * Uses the shared normalized SQL state CAS and typed synchronization engine.
  */
 import pg from 'pg';
@@ -307,11 +308,42 @@ function migrateTenant(t){
  });
  assertNoForeignReferences(t);
 }
+/** Delete the specifically retired Product table after independent backup.
+ * Executed inside the same guarded SQL transaction as metadata retirement.
+ */
+async function retireStandardProductPhysical(client,expectedRows){
+ const result=await client.query(
+  "SELECT object_id,physical_table,active FROM md_v2_object_registry "+
+  "WHERE tenant_id=$1 AND api_name='Product' FOR UPDATE",[target]);
+ if(result.rowCount!==1)throw Error('Missing legacy Product SQL registration');
+ const row=result.rows[0];
+ if(row.active!==false||!/^md_obj_[0-9a-f]{32}$/.test(row.physical_table))
+  throw Error('Legacy Product registry not safely retired');
+ const name='public.'+row.physical_table;
+ const exists=await client.query('SELECT to_regclass($1) AS table_ref',[name]);
+ if(!exists.rows[0].table_ref)throw Error('Legacy Product table missing');
+ const count=await client.query('SELECT count(*)::int AS n FROM '+name+
+  ' WHERE tenant_id=$1',[target]);
+ const foreign=await client.query('SELECT count(*)::int AS n FROM '+name+
+  ' WHERE tenant_id<>$1',[target]);
+ if(count.rows[0].n!==expectedRows||foreign.rows[0].n!==0)
+  throw Error('Product physical row count or tenant ownership mismatch');
+ const inbound=await client.query(
+  "SELECT count(*)::int AS n FROM pg_constraint WHERE contype='f' "+
+  'AND confrelid=to_regclass($1)',[name]);
+ if(inbound.rows[0].n!==0)throw Error('Dependent foreign keys prohibit Product retirement');
+ await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1',[row.object_id]);
+ await client.query('DELETE FROM md_v2_field_registry WHERE object_id=$1',[row.object_id]);
+ await client.query('DELETE FROM md_v2_object_registry WHERE object_id=$1',[row.object_id]);
+ await client.query('DROP TABLE '+name);
+}
 try{
  const snapshot=await readNormalizedState(pool);
  const next=structuredClone(snapshot.state);
  const tenant=next.tenants?.[target];
  if(!tenant)throw Error('Tenant not found: '+target);
+ const productRetiring=tenant.objects.some(o=>o.apiName==='Product');
+ const productDiscardCount=(tenant.records?.Product??[]).length;
  // Capture parent group links BEFORE stripping obsolete lookup fields.
  let productConsolidation;
  if(productOnly){
@@ -372,8 +404,11 @@ try{
       !/^[a-f0-9]{64}$/.test(proof.encryptedBackupSha256??''))
     throw Error('Fresh SQL restore proof does not match this revision');
   }
-  const result=await writeNormalizedState(pool,next,snapshot,synchronizeTypedRecords);
+  const beforeCommit=productRetiring
+   ?async(client)=>retireStandardProductPhysical(client,productDiscardCount)
+   :null;
+  const result=await writeNormalizedState(pool,next,snapshot,synchronizeTypedRecords,false,beforeCommit);
   console.log(JSON.stringify({mode:'committed',...summary,newRevision:result.version,
-    physicalTablesDropped:false}));
+    physicalTablesDropped:productRetiring}));
  }
 }finally{await pool.end();}
