@@ -91,7 +91,7 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
         });
         const objects = [
           ...storedObjects,
-          ...deps.baseObjects.filter((object) => (!consolidationReady ? ['Campaign', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'] : ['Campaign', 'Communication_Records__c', 'Connector_App__c']).includes(object.apiName)
+          ...deps.baseObjects.filter((object) => (!consolidationReady ? ['UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c', 'Communication_Records__c'] : ['Communication_Records__c', 'Connector_App__c']).includes(object.apiName)
             && !storedObjects.some((stored) => stored.apiName === object.apiName)).map(deps.withObjectDefaults)
         ];
         const records = migrateLegacyWhatsappRecords(tenant.records ?? {});
@@ -160,7 +160,7 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
             }
           }
           : profile.id === 'sales-manager'
-            ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
+            ? profile
             : profile);
         const roles = [
           ...defaultRoles().filter((role) => !tenant.accessControl.roles.some((existing) => existing.id === role.id)),
@@ -268,22 +268,22 @@ export function createStateHydration(deps: CreateStateHydrationDependencies) {
         accessControl: {
           ...tenant.accessControl,
           profiles: profiles.map((profile) => profile.id === 'system-administrator'
-            ? { ...profile, objectPermissions: restoreMissingCoreAdministratorGrants({ ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { ...deps.fullObjectPermissions } }, objects, deps.fullObjectPermissions) }
+            ? { ...profile, objectPermissions: restoreMissingCoreAdministratorGrants(profile.objectPermissions, objects, deps.fullObjectPermissions) }
             : profile.id === 'sales-manager'
-              ? { ...profile, objectPermissions: { ...profile.objectPermissions, Campaign: profile.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
+              ? profile
               : profile),
           roles,
           users: syncedAccessUsers,
           permissionSets: tenant.accessControl.permissionSets.map((set) => set.id === 'system-administrator'
             ? {
               ...set,
-              objectPermissions: restoreMissingCoreAdministratorGrants({ ...connectorObjectPermissions, ...set.objectPermissions, Campaign: set.objectPermissions.Campaign ?? { ...deps.fullObjectPermissions } }, objects, deps.fullObjectPermissions),
+              objectPermissions: restoreMissingCoreAdministratorGrants({ ...connectorObjectPermissions, ...set.objectPermissions }, objects, deps.fullObjectPermissions),
               fieldPermissions: { ...Object.fromEntries(objects.flatMap((object) => object.fields.map((field) => [`${object.apiName}.${field.apiName}`, { read: true, edit: true }]))), ...connectorFieldPermissions, ...set.fieldPermissions }
             }
             : (set.id === 'oneengine' || set.id === 'oneengine-tenant-developer')
               ? { ...set, objectPermissions: restoreMissingCoreAdministratorGrants(set.objectPermissions, objects, deps.fullObjectPermissions) }
             : set.id === 'sales-user'
-              ? { ...set, objectPermissions: { ...set.objectPermissions, Campaign: set.objectPermissions.Campaign ?? { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false } } }
+              ? set
               : set.id === 'support-agent'
                 ? { ...set, systemPermissions: [...new Set([...set.systemPermissions, ...deps.supportPermissions])] }
               : set),
