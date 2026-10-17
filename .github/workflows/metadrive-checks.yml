@@ -28,6 +28,6 @@ jobs:
       - name: Verify lazy loading
         run: node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist
       - name: Verify published Pages bundle
-        run: node scripts/verify-pages-release.mjs
+        run: node scripts/verify-pages-artifacts.mjs
       - name: Verify server output
         run: test -f apps/server/dist/index.js
