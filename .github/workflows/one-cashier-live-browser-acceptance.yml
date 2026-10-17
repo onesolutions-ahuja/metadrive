@@ -19,6 +19,14 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Build the matching GitHub Pages frontend
+        env:
+          GITHUB_PAGES: 'true'
+          GITHUB_PAGES_BASE_PATH: '/'
+          VITE_API_BASE_URL: https://metadrive-production.up.railway.app/api
+        run: npm run build --workspace apps/web
+      - name: Confirm branded site serves the exact merged build
+        run: node scripts/verify-pages-release.mjs --live
       - run: npm install --no-save --ignore-scripts playwright@1.56.1
       - run: npx playwright install --with-deps chromium
       - name: Verify saved cashier draft using live Product records; do not save, activate or checkout
