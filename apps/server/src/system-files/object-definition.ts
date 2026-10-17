@@ -10,6 +10,40 @@ export class ObjectDefinitionService {
       [tenantId,apiName,label,isSystem]);
     return rows[0];
   }
+  // Atomic tenant-scoped creation: no partially created Objects when a field is invalid.
+  async create(tenantId:string,apiName:string,label:string,fields:unknown=[]) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)||!label.trim())throw new Error('Invalid object definition');
+    if(!Array.isArray(fields))throw new Error('Invalid object fields');
+    const types:Record<string,string>={text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',datetime:'datetime',lookup:'reference',reference:'reference'};
+    const normalized=fields.map((raw:unknown)=>{
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('Invalid field definition');
+      const field=raw as Record<string,unknown>;
+      const name=field.apiName;
+      const dataType=typeof field.dataType==='string'?field.dataType:'';
+      const key=dataType.toLowerCase().replace(/\s+/g,'');
+      const type=/^text\([0-9]+\)$/.test(key)?'text':types[key];
+      if(typeof name!=='string'|| !/^[A-Za-z][A-Za-z0-9_]*$/.test(name)||!type)throw new Error('Invalid field definition');
+      const relationship=field.relationship as Record<string,unknown>|undefined;
+      const target=relationship?.targetObject??field.relatedObject;
+      if(type==='reference' && (typeof target!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(target)))
+        throw new Error('Invalid relationship target');
+      if(field.unique===true||field.formula||field.defaultValue!==undefined||field.valueSettings)
+        throw new Error('Unsupported field options cannot be saved');
+      return {apiName:name,dataType:type,relatedObject:type==='reference'?target as string:null,required:field.required===true};
+    });
+    if(new Set(normalized.map(x=>x.apiName.toLowerCase())).size!==normalized.length)
+      throw new Error('Duplicate field API name');
+    await this.db.transaction(async client=>{
+      const inserted=await client.query(
+        'INSERT INTO md_object_definitions (tenant_id,api_name,label,is_system) VALUES ($1,$2,$3,false) ON CONFLICT (tenant_id,api_name) DO NOTHING RETURNING id',
+        [tenantId,apiName,label]);
+      if(!inserted.rowCount)throw new Error('Object already exists');
+      for(const field of normalized)await client.query(
+        'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required) VALUES ($1,$2,$3,$4,$5,$6)',
+        [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required]);
+    });
+    return this.get(tenantId,apiName);
+  }
   async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     if(!['text','number','boolean','date','datetime','reference'].includes(dataType))throw new Error('Invalid field data type');

@@ -153,17 +153,18 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','create');
     const {apiName,label}=req.body??{};
     if(typeof apiName!=='string'||typeof label!=='string')throw new Error('Invalid object definition');
-    res.status(201).json(await definitions.register(actor.tenant_id,apiName,label,false));
+    const object=await definitions.create(actor.tenant_id,apiName,label,req.body?.fields??[]);
+    res.status(201).json({object});
   }));
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
-    const {apiName,dataType,relatedObject}=req.body??{};
+    const {apiName,dataType,relatedObject}=req.body?.field??req.body??{};
     if(typeof apiName!=='string'||typeof dataType!=='string'||
       (relatedObject!==undefined&&typeof relatedObject!=='string'))
       throw new Error('Invalid field definition');
     await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject);
-    res.status(201).json({apiName});
+    res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
   }));
   app.get('/api/metadata/components',route(async(req,res)=>{
     const actor=req.actor!;
