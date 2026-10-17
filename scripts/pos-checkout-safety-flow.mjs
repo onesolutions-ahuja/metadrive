@@ -119,7 +119,21 @@ export function planCashAgeStockFlow(source,objects){
  checkout.push(priorChange);
  const accepted=assignment(id++,'POS Safety - Accepted','CheckoutStatus','Assign','Accepted');checkout.push(accepted);
  const failed=assignment(id++,'POS Safety - Declined','CheckoutStatus','Assign','Declined');checkout.push(failed);
+ const cashRejected=assignment(id++,'POS Safety - Insufficient Cash','CheckoutStatus','Assign','InsufficientCash');
+ const ageRejected=assignment(id++,'POS Safety - Age Rejected','CheckoutStatus','Assign','AgeRejected');
+ const stockRejected=assignment(id++,'POS Safety - Out of Stock','CheckoutStatus','Assign','OutOfStock');
+ const invalidSale=assignment(id++,'POS Safety - Invalid Sale','CheckoutStatus','Assign','InvalidSale');
+ checkout.push(cashRejected,ageRejected,stockRejected,invalidSale);
  const finished=add('End','POS Safety - Finished',{});
+ // Original cash gate's End is retained for rejected cases, but every path
+ // now sets an explicit machine-readable result for the cashier display.
+ for(const edge of graph.filter(e=>e.from===gate.id&&e.to===reject.id)){
+  edge.to=edge.label==='InsufficientCash'?cashRejected.id:
+   edge.label==='MissingCash'?invalidSale.id:invalidSale.id;
+ }
+ graph.push(link(cashRejected.id,finished.id),
+  link(ageRejected.id,finished.id),link(stockRejected.id,finished.id),
+  link(invalidSale.id,finished.id));
  // Preflight checks authoritative Product and Stock records before any writes.
  const validationLoop=add('Loop','POS Safety - Validate Lines',{collection:'CurrentOrderLines',loopVariable:'ValidationLine'});
  const validationProduct=get(id++,'POS Safety - Trusted Product','Product__c',[
@@ -188,11 +202,11 @@ export function planCashAgeStockFlow(source,objects){
   link(validationLoop.id,validationProduct.id,'For Each'),
   link(validationProduct.id,age.id));
  for(const name of ['ProductMissing','InactiveProduct','InvalidLineQuantity','MissingID','AgeMissing','Underage','BelowProductMinimum','ImplausibleAge','AgeClassificationMissing'])
-  graph.push(link(age.id,failed.id,name));
+  graph.push(link(age.id,['MissingID','AgeMissing','Underage','BelowProductMinimum','ImplausibleAge','AgeClassificationMissing'].includes(name)?ageRejected.id:invalidSale.id,name));
  graph.push(link(age.id,validationStock.id,'Default'),
   link(validationStock.id,available.id));
  for(const name of ['NoBalance','InsufficientStock'])
-  graph.push(link(available.id,failed.id,name));
+  graph.push(link(available.id,stockRejected.id,name));
  graph.push(link(available.id,validationLoop.id,'Default'),
   link(validationLoop.id,changeFromCash.id,'After Last'),
   link(changeFromCash.id,changeLessTotal.id),
@@ -211,7 +225,7 @@ export function planCashAgeStockFlow(source,objects){
   link(cashPayment.id,accepted.id),
   link(accepted.id,finished.id),
   link(failed.id,finished.id),
-  link(rollback.id,failed.id));
+  link(rollback.id,stockRejected.id));
  next.description=(next.description??'')+' | POS safety v1: cash, age, inventory, idempotency';
  return next;
 }
