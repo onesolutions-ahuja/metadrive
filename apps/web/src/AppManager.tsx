@@ -39,6 +39,7 @@ export default function AppManager({
   reports = [],
   dashboards = [],
   onOpenWorkspace,
+  request,
   onSave,
   onDelete,
   embedded = false,
@@ -55,6 +56,7 @@ export default function AppManager({
   reports?: ReportMetadata[];
   dashboards?: DashboardMetadata[];
   onOpenWorkspace?: (destination: SetupDestination) => void;
+  request?: <T>(path: string) => Promise<T>;
   onSave: (app: LightningAppMetadata, updating: boolean) => Promise<void>;
   onDelete: (apiName: string) => Promise<void>;
   embedded?: boolean;
@@ -192,7 +194,7 @@ export default function AppManager({
     </div>
     <AppSetupGuide app={draft} apps={apps} objects={objects} pages={pages}
       flows={flows} libraryComponents={libraryComponents} reports={reports} dashboards={dashboards}
-      creating={creating} onOpenWorkspace={onOpenWorkspace}/>
+      creating={creating} onOpenWorkspace={onOpenWorkspace} request={request}/>
     <section className="surface permission-section app-manager">
       {!creating && <label className="form-label">Lightning App
         <select className="form-control" aria-label="Select app to edit" value={selectedApiName} onChange={(event) => {
