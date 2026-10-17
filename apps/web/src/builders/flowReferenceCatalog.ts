@@ -142,7 +142,10 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       const getSource=flow.elements.find(step=>step.type==='Get Records'
         &&String(step.config.outputVariable||`element${step.id}`)===collectionName
         &&String(step.config.recordLimit??'1')!=='1');
-      const objectName=collection?.dataType||String(getSource?.config.object||'');
+      const candidate=String(collection?.dataType||'');
+      const getObject=String(getSource?.config.object||'');
+      const objectName=objects.some(object=>object.apiName===candidate)?candidate
+        :objects.some(object=>object.apiName===getObject)?getObject:'';
       if(objectName)recordChoices(name,element.label,objectName,'Earlier steps');
     }
   }
