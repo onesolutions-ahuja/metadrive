@@ -120,7 +120,7 @@ function ShoppingCartTill({props}) {
   const target=new BroadcastChannel('metadrive:paired-display:'+displaySession);
   target.postMessage({type:'snapshot',payload:snapshot});target.close();
  };
- const updateCart=next=>{setCart(next);setPaymentStatus('');publish(next);};
+ const updateCart=next=>{request.current='';setCart(next);setPaymentStatus('');publish(next);};
  React.useEffect(()=>{if(channel){setCart([]);setPaymentStatus('');}},[channel?.key]);
  React.useEffect(()=>{
   const value=channel?.value;
@@ -225,7 +225,8 @@ function ShoppingCartTill({props}) {
    .filter(item=>item.quantity>0));
  };
  const checkoutValue=items=>{
-  request.current=crypto.randomUUID();
+  // Reuse the key on network retries; only basket edits start a new checkout.
+  if(!request.current)request.current=crypto.randomUUID();
   return {...saleValue(items),sessionKey:channel?.key||props.sessionId,requestId:request.current};
  };
  const checkout=async()=>{if(props.previewOnly===true)return;
@@ -281,7 +282,7 @@ function ShoppingCartTill({props}) {
   window.addEventListener('metadrive:page-toolbar-action',onToolbarAction);
   return ()=>window.removeEventListener('metadrive:page-toolbar-action',onToolbarAction);
  },[props.pageSessionKey,props.componentId,openDisplay]);
- const pageToolbarOwnsHeader=typeof document!=='undefined'&&
+ const pageToolbarOwnsHeader=Boolean(props.pageSessionKey)&&typeof document!=='undefined'&&
   document.querySelector('.header-page-context')?.getAttribute('data-page-session-key')===props.pageSessionKey;
  return <section className={"one-shopping-till"+(props.viewMode==="basket"?" one-shopping-basket-only":"")}>
   {props.viewMode!=='basket'&&!pageToolbarOwnsHeader&&<header className="one-row" style={{justifyContent:'space-between'}}>

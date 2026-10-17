@@ -1,0 +1,29 @@
+name: POS checkout draft repair (one-time approved)
+on:
+  push:
+    branches: [feature/pos-live-checkout-implementation]
+    paths:
+      - '.github/workflows/pos-draft-repair-once.yml'
+permissions:
+  contents: read
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate non-destructive repair planner
+        run: node --test tests/current/pos-checkout-draft-repair.test.mjs
+      - name: Repair tenant Draft Flow and missing age metadata only
+        env:
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+          METADRIVE_POS_DRAFT_REPAIR_APPROVED: 'true'
+        run: node scripts/pos-checkout-draft-repair.mjs
+# Trigger retry of guarded repair after fresh-state CAS conflict handling.
+# Apply verified session isolation and cashier Flow binding to Draft only.
