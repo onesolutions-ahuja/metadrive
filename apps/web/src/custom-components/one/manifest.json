@@ -3272,6 +3272,34 @@
           "kind": "TEXT",
           "defaultValue": "cashier",
           "displayOrder": 480
+        },
+        {
+          "propertyKey": "categoryFieldApiName",
+          "label": "Product category field",
+          "kind": "TEXT",
+          "displayOrder": 610,
+          "defaultValue": "Category"
+        },
+        {
+          "propertyKey": "showCategoryTabs",
+          "label": "Show category tabs",
+          "kind": "BOOLEAN",
+          "displayOrder": 620,
+          "defaultValue": true
+        },
+        {
+          "propertyKey": "categoryTabsLabel",
+          "label": "Category tabs accessibility label",
+          "kind": "TEXT",
+          "displayOrder": 630,
+          "defaultValue": "Product categories"
+        },
+        {
+          "propertyKey": "allCategoriesLabel",
+          "label": "All categories label",
+          "kind": "TEXT",
+          "displayOrder": 640,
+          "defaultValue": "All"
         }
       ]
     },
