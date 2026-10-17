@@ -81,6 +81,7 @@ import { isComponentVisible } from './componentVisibility';
 import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, isDescendantOf, layoutTypes } from './pageComponentLayout';
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
+import {resolveMentionProperties} from './smartFieldMentions';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
@@ -224,7 +225,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = ''
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -239,9 +240,10 @@ function MetadataBoundPageComponent({
   onNavigate: (route: AppRoute) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   disableActions?: boolean;
+  defaultObjectApiName?: string;
 }) {
   const properties = component.properties;
-  const objectApiName = String(properties.objectApiName ?? '');
+  const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
   // An application-independent session can be referenced by configured Flows.
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
@@ -388,6 +390,9 @@ function MetadataBoundPageComponent({
   })).filter(contact => contact.id && contact.phone);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const resolvedProperties = resolveMentionProperties(properties,
+    { [objectApiName]: visibleRecords[0] },
+    { [objectApiName]: fields.map(field => field.apiName) });
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
@@ -493,8 +498,8 @@ function MetadataBoundPageComponent({
   return <div style={properties.fillRegion === true ? {height:'100%',minHeight:0,minWidth:0,display:'flex',flexDirection:'column'} : undefined}>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
-      ...properties, ...componentLayoutProps(properties, formFactor),
-      label: component.label, properties, objects, reports, flows: availableFlows, pageState,
+      ...resolvedProperties, ...componentLayoutProps(properties, formFactor),
+      label: component.label, properties: resolvedProperties, objects, reports, flows: availableFlows, pageState,
        pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError, viewRevision: revision,
       onChange: (value: unknown) => {
@@ -608,7 +613,7 @@ function LightningAppRuntime({
         Component is no longer registered: {component.label}
       </div>;
       const content = !isLayoutContainer(component) && needsMetadataComponentRuntime(component.properties)
-        ? <MetadataBoundPageComponent definition={definition} component={component}
+        ? <MetadataBoundPageComponent definition={definition} component={component} defaultObjectApiName={page.targetObject}
             objects={objects} apps={apps} pages={pages} currentAppId={appId} pageSessionKey={appId + ':' + page.apiName} reports={reports} availableFlows={availableFlows} formFactor={formFactor}
             onNavigate={onNavigate} onLaunchFlow={onLaunchFlow} />
         : <RegisteredComponent definition={definition} props={{
