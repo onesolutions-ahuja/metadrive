@@ -1793,7 +1793,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneActions.jsx",
       "cssFile": "one/one.css",
@@ -1824,6 +1824,13 @@
           "kind": "TEXT",
           "displayOrder": 300,
           "defaultValue": "Search"
+        },
+        {
+          "propertyKey": "searchKey",
+          "label": "Shared search key",
+          "kind": "TEXT",
+          "defaultValue": "catalogue",
+          "displayOrder": 320
         }
       ]
     },
@@ -2289,7 +2296,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 4,
+      "version": 5,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2348,6 +2355,48 @@
           "kind": "TEXT",
           "defaultValue": "",
           "displayOrder": 390
+        },
+        {
+          "propertyKey": "imageFieldApiName",
+          "label": "Product image field",
+          "kind": "TEXT",
+          "defaultValue": "ImageURL",
+          "displayOrder": 400
+        },
+        {
+          "propertyKey": "titleFieldApiName",
+          "label": "Card title field",
+          "kind": "TEXT",
+          "defaultValue": "Name",
+          "displayOrder": 410
+        },
+        {
+          "propertyKey": "priceFieldApiName",
+          "label": "Card price field",
+          "kind": "TEXT",
+          "defaultValue": "DefaultPrice",
+          "displayOrder": 420
+        },
+        {
+          "propertyKey": "currencyCode",
+          "label": "Display currency code",
+          "kind": "TEXT",
+          "defaultValue": "GBP",
+          "displayOrder": 430
+        },
+        {
+          "propertyKey": "searchKey",
+          "label": "Shared search key",
+          "kind": "TEXT",
+          "defaultValue": "catalogue",
+          "displayOrder": 440
+        },
+        {
+          "propertyKey": "searchFieldApiNames",
+          "label": "Searchable fields (comma-separated)",
+          "kind": "TEXT",
+          "defaultValue": "Name,SKU,Barcode",
+          "displayOrder": 450
         }
       ]
     },
