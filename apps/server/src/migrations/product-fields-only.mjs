@@ -6,7 +6,7 @@ const legacy='Product',canonical='Product__c';
 const identityKeys=new Set(['object','objectApiName','targetObject','triggerObject',
  'relatedObject','childObjectApiName','primaryObjectApiName','rootObjectApiName',
  'recordObject','parentObject','dataType','objectName','objectApiNames',
- 'navigationItems','rootObjectApiName','targetObjectApiName']);
+ 'navigationItems','targetObjectApiName','apiName']);
 function rewrite(value,key=''){
  if(typeof value==='string'){
   if(value==='Lookup(Product)')return 'Lookup(Product__c)';
@@ -62,6 +62,12 @@ export function migrateProductFieldsOnly(tenant){
  for(const field of from.fields){
   if(to.fields.some(f=>f.apiName===field.apiName))continue;
   const copy=structuredClone(field);
+  // No record values are copied, so new fields must be optional for existing rows.
+  copy.required=false;
+  if(copy.relationship?.targetObject===legacy){
+   copy.relationship.targetObject=canonical;
+   if(copy.dataType==='Lookup(Product)')copy.dataType='Lookup(Product__c)';
+  }
   if(copy.relationship&&!tenant.objects.some(o=>o.apiName===copy.relationship.targetObject)){
    // A retired lookup target cannot be saved as a new relationship.
    // Preserve the field identity as text, rather than invent a target object.
@@ -72,7 +78,11 @@ export function migrateProductFieldsOnly(tenant){
    const observed=[...new Set(oldRecords.flatMap(r=>
     String(r[copy.apiName]??'').split(';').map(x=>x.trim()).filter(Boolean)))];
    if(observed.length)copy.picklistValues=observed;
-   else{copy.dataType='Text(255)';delete copy.picklistValues;}
+   else{
+    copy.dataType='Text(255)';delete copy.picklistValues;
+    delete copy.picklistRestricted;delete copy.controllerFieldApiName;
+    delete copy.valueSettings;
+   }
   }
   to.fields.push(copy);added++;
  }
@@ -82,7 +92,7 @@ export function migrateProductFieldsOnly(tenant){
    if(field.dataType==='Lookup(Product)')field.dataType='Lookup(Product__c)';
   }
  }
- tenant.objects=tenant.objects.filter(o=>o.apiName!==legacy);
+ tenant.objects=tenant.objects.filter(o=>o.apiName!==legacy).map(rewrite);
  for(const bucket of ['apps','pages','reports','dashboards','approvalProcesses',
   'emailAlerts','platformEvents']){
   if(Array.isArray(tenant[bucket]))tenant[bucket]=tenant[bucket].map(v=>rewrite(v));
@@ -113,6 +123,8 @@ export function migrateProductFieldsOnly(tenant){
   return next;
  });
  transferPermissions(tenant);
+ if(tenant.accessControl?.sharingRules)
+  tenant.accessControl.sharingRules=tenant.accessControl.sharingRules.map(rewrite);
  if(tenant.sharingSettings){
   if(tenant.sharingSettings[legacy]&&!tenant.sharingSettings[canonical])
    tenant.sharingSettings[canonical]=tenant.sharingSettings[legacy];
