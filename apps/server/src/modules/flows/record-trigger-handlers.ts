@@ -29,7 +29,7 @@ async function runRecordTriggeredFlows(
     const conditions = asConfigRows(flow.startConfig.entryConditions);
     const source = event === 'deleted' ? prior ?? record : record;
     const context: FlowRuntimeContext = {
-      record: source, prior, recordEvent: event, isClone, resourceDefinitions: flow.resources,
+      record: source, prior, recordEvent: event, isClone, triggerObjectName: objectName, resourceDefinitions: flow.resources,
       formulaStack: new Set(), variables: {}, currentUserId: userId, debug: debugExecution, debugTrace,
       ...formulaContextForUser(tenant, userId), flowVariables: flowVariablesForUser(tenant, userId)
     };
@@ -83,7 +83,7 @@ async function runBeforeSaveRecordTriggeredFlows(
     if (trigger !== event && trigger !== 'created-or-updated') continue;
     const conditions = asConfigRows(flow.startConfig.entryConditions);
     const context: FlowRuntimeContext = {
-      record, prior, recordEvent: event, isClone, resourceDefinitions: flow.resources, formulaStack: new Set(),
+      record, prior, recordEvent: event, isClone, triggerObjectName: objectName, resourceDefinitions: flow.resources, formulaStack: new Set(),
       debug: debugExecution, debugTrace,
       variables: {}, currentUserId: userId, ...formulaContextForUser(tenant, userId),
       flowVariables: flowVariablesForUser(tenant, userId)
