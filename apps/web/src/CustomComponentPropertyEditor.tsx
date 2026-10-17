@@ -49,7 +49,7 @@ export default function CustomComponentPropertyEditor({
     {(!addOnly || typedDefinitions.length > 0) && <>
       <div className="properties-section-title">Component settings</div>
       {!Object.keys(properties).length && <p className="properties-help">No settings yet. Add a property to configure this component.</p>}
-      {(addOnly ? visibleProperties.filter(([name]) => definitionByName.has(name)) : visibleProperties).map(([name, value]) => {
+      {(addOnly ? visibleProperties.filter(([name]) => definitionByName.has(name) && !Object.prototype.hasOwnProperty.call(properties,name)) : visibleProperties).map(([name, value]) => {
         const definition = definitionByName.get(name);
         const label = definition?.label ?? displayComponentPropertyName(name);
         const id = `component-property-${name}`;
@@ -71,7 +71,7 @@ export default function CustomComponentPropertyEditor({
               : typeof value === 'string'
                 ? <label className="form-label" htmlFor={id}>{label}
                     <input id={id} className="form-control" disabled={disabled}
-                      type={definition?.kind === 'COLOR' || (/color/i.test(name) && /^#[0-9a-f]{6}$/i.test(value)) ? 'color' : 'text'}
+                      type={definition?.kind === 'COLOR' ? 'text' : (/color/i.test(name) && /^#[0-9a-f]{6}$/i.test(value) ? 'color' : 'text')}
                       value={value} onChange={(event) => update(name, event.target.value)} />
                   </label>
                 : <div className="properties-help">{label} contains structured data; its existing value is preserved.</div>}
