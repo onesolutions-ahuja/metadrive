@@ -1,0 +1,26 @@
+name: Frontend visual contract
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'scripts/check-ui-design-tokens.mjs'
+      - '.github/workflows/frontend-visual-contract.yml'
+      - 'package-lock.json'
+      - 'package.json'
+  workflow_dispatch:
+jobs:
+  frontend-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check shared UI design contract
+        run: node scripts/check-ui-design-tokens.mjs
+      - name: Build frontend
+        run: npm run build --workspace apps/web
