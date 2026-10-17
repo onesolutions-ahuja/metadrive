@@ -62,7 +62,9 @@ export function compatibleFlowValue(source:Pick<FlowReferenceChoice,'dataType'|'
   if(!target)return true;
   const need=primitiveType(target.dataType);
   const got=primitiveType(source.dataType);
-  if(need==='lookup')return got==='id' && (!source.targetObject || target.relationship?.targetObject===source.targetObject);
+  if(need==='lookup')return (got==='id'||got==='lookup') && Boolean(target.relationship?.targetObject)
+    && (!source.targetObject || target.relationship?.targetObject===source.targetObject)
+    && (got!=='lookup'||Boolean(source.targetObject));
   if(need==='id')return got==='id';
   if(need==='number'||need==='boolean')return got===need;
   if(need==='Date'||need==='DateTime'||need==='Date/Time')return need===got;
@@ -78,7 +80,8 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
     for(const field of fields){
       const choice:FlowReferenceChoice={reference:`{!${root}.${field.apiName}}`,label:label+' → '+field.label,
         detail:root+'.'+field.apiName+' · '+obj.label,category,dataType:field.dataType,
-        ...(field.apiName==='Id'?{targetObject:objectName}:{})};
+        ...(field.apiName==='Id'?{targetObject:objectName}
+          : field.relationship?.targetObject?{targetObject:field.relationship.targetObject}:{})};
       if(compatibleFlowValue(choice,target))result.push(choice);
     }
   };
@@ -94,8 +97,34 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
     }
   }
   const earlier=precedingFlowSteps(flow,elementId);
+  const resourceNames=new Set(flow.resources.map(resource=>resource.name));
+  const screenFields=(element:FlowDefinitionMetadata['elements'][number])=>{
+    const fields=Array.isArray(element.config.fields)?element.config.fields:[];
+    for(const field of fields){
+      if(!field||typeof field!=='object'||Array.isArray(field))continue;
+      const item=field as Record<string,unknown>;
+      const name=typeof item.apiName==='string'?item.apiName
+        :String(item.label??'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'');
+      if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)||resourceNames.has(name))continue;
+      const type=String(item.type??'Text');
+      if(['Display Text','Display Image','Section','Address','Name','Data Table',
+        'File Upload','Repeater','Custom Component','Multi-Select Picklist'].includes(type)
+        ||(type==='Choice Lookup'&&item.multipleSelections===true))continue;
+      const lookup=type==='Lookup'||type==='Choice Lookup';
+      const targetObject=lookup?String(item.objectApiName??''):undefined;
+      if(lookup&&!objects.some(object=>object.apiName===targetObject))continue;
+      const choice:FlowReferenceChoice={
+        reference:`{!${name}}`,label:element.label+' → '+String(item.label||name),
+        detail:name+' · '+(lookup?'Record ID ('+targetObject+')':type)+' · Screen input',
+        category:'Earlier steps',dataType:lookup?'Id':type,
+        ...(targetObject?{targetObject}:{})
+      };
+      if(compatibleFlowValue(choice,target))result.push(choice);
+    }
+  };
   for(const element of flow.elements){
     if(!earlier.has(element.id))continue;
+    if(element.type==='Screen')screenFields(element);
     if(element.type==='Get Records'){
       const name=String(element.config.outputVariable||`element${element.id}`);
       const type=String(element.config.object||'');
