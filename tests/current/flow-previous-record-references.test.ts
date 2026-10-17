@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {flowReferenceChoices,precedingFlowSteps} from '../../apps/web/src/builders/flowReferenceCatalog.ts';
+import {flowReferenceBrowserGroups} from '../../apps/web/src/builders/flowReferenceBrowserModel.ts';
 import {flowReferenceErrors} from '../../apps/server/src/modules/flows/reference-validation.ts';
 import type {FlowDefinitionMetadata,ObjectMetadata} from '../../apps/web/src/metadata.ts';
 
@@ -203,6 +204,44 @@ test('Loop uses Get Records Object when collection resource stores generic datat
  assert(flowReferenceChoices(flow,4,objects,objects[2].fields[0])
   .some(choice=>choice.reference==='{!CurrentOrderLine.ProductId}'));
  assert.deepEqual(flowReferenceErrors(flow as any,objects),[]);
+});
+
+test('universal @ picker browses loop Object fields and marks non-stored fields unavailable',()=>{
+ const catalog=[
+  {apiName:'OrderLine__c',label:'Order Line',fields:[
+    field('ProductId','Lookup(Product)',{targetObject:'Product'}),field('Name')]},
+  {apiName:'SaleItem__c',label:'Sale Item',fields:[
+    field('ProductId','Lookup(Product)',{targetObject:'Product'})]},
+  {apiName:'Product',label:'Product',fields:[field('Name')]}
+ ] as ObjectMetadata[];
+ const flow=config();
+ flow.elements[1].config={object:'OrderLine__c',outputVariable:'OrderLines',recordLimit:'all',fields:['Name']};
+ flow.elements[2]={id:3,type:'Loop',label:'Each order line',
+  config:{collection:'OrderLines',loopVariable:'CurrentOrderLine'}} as any;
+ flow.elements.push({id:4,type:'Create Records',label:'Sale item',config:{object:'SaleItem__c'}} as any);
+ flow.connectors.push({id:'each',from:3,to:4,kind:'normal',label:'For Each'} as any);
+ const picker=flowReferenceBrowserGroups(flow,4,catalog,catalog[1].fields[0]);
+ const group=picker.groups.find(group=>group.path==='CurrentOrderLine');
+ assert(group, 'The Loop item is an available record even without a manual Record resource');
+ const product=group.options.find(item=>item.reference==='{!CurrentOrderLine.ProductId}');
+ assert.equal(product?.disabled,true,'Get Records must store ProductId before the value can run');
+ assert.match(product?.reason??'',/Fields to Store/);
+ assert.equal(group.options.find(item=>item.reference==='{!CurrentOrderLine.Name}')?.disabled,true);
+ flow.elements[1].config.fields=['Name','ProductId'];
+ const available=flowReferenceBrowserGroups(flow,4,catalog,catalog[1].fields[0]).groups
+  .find(group=>group.path==='CurrentOrderLine')?.options;
+ assert.equal(available?.find(item=>item.reference==='{!CurrentOrderLine.ProductId}')?.disabled,false);
+});
+
+test('universal @ picker exposes typed Screen outputs without an extra resource',()=>{
+ const catalog=[{apiName:'Payment',label:'Payment',fields:[field('Amount','Currency(18,2)')]}] as ObjectMetadata[];
+ const flow=config();
+ flow.elements[1]={id:2,label:'Cash Received',type:'Screen',
+  config:{fields:[{apiName:'CashReceived',label:'Cash Received',type:'Currency'}]}} as any;
+ flow.elements[2]={id:3,label:'Create Payment',type:'Create Records',
+  config:{object:'Payment'}} as any;
+ const choices=flowReferenceBrowserGroups(flow,3,catalog,catalog[0].fields[0]);
+ assert.equal(choices.directOptions.find(item=>item.reference==='{!CashReceived}')?.disabled,false);
 });
 
 test('ordinary JSON literals are not misread as broken Flow references',()=>{
