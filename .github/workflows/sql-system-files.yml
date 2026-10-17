@@ -24,6 +24,8 @@ jobs:
         run: npm run test:system --workspace apps/server
       - name: Assert standalone server output
         run: test -f apps/server/dist-system/system-files/entrypoint.js
+      - name: Audit missing repository dependencies (no omitted source folders)
+        run: node scripts/verify-project-references.mjs
       - name: Prevent legacy storage references in new services
         run: |
           if grep -nRE 'platform-state\.json|platform-metadata\.json|local-platform-seed|seeders/|core/state/|readFileSync|JSONB' apps/server/src/system-files/*.ts; then
