@@ -120,14 +120,29 @@ try {
   const tenantObjects=new Map(Object.entries(snapshot.state.tenants??{}).map(
     ([id,tenant])=>[id,new Set((tenant.objects??[]).map(item=>item.apiName))]));
   const sqlTables=(await pool.query(query)).rows;
+  const physicalNames=[...registry.keys()].filter(name=>/^md_obj_[0-9a-f]{32}$/.test(name));
+  const countsRow=physicalNames.length
+    ?(await pool.query('SELECT '+physicalNames.map((name,index)=>
+      '(SELECT count(*)::integer FROM public.'+name+') AS n'+index).join(','))).rows[0]
+    :{};
+  const physicalCounts=new Map(physicalNames.map((name,index)=>[name,Number(countsRow['n'+index])]));
   const tables=sqlTables.map(row=>{
     const info=classify(row.table_name,registry,tenantObjects);
+    const records=physicalCounts.get(row.table_name);
+    // A system User is served from canonical authentication state; its empty
+    // extra physical table is a verified clean-up candidate, unlike ordinary
+    // zero-row business Objects which remain configurable from Object Manager.
+    if(info.objectApiName==='User'&&records===0){
+      info.category='EMPTY_SYSTEM_USER_DUPLICATE';
+      info.protection='guarded-identity-de-duplication';
+    }
     const references=literalReferences(row.table_name);
     const owner=registry.get(row.table_name);
     const tenant=owner?snapshot.state.tenants?.[owner.tenant_id]:null;
     return {
       table:row.table_name,...info,
       bytes:Number(row.bytes),
+      ...(records!==undefined?{recordCount:records}:{}),
       historicalWrites:Number(row.inserts)+Number(row.updates)+Number(row.deletes),
       incomingForeignKeys:Number(row.referencing_fk_count),
       codeReferences:references,
@@ -151,6 +166,7 @@ try {
   const summary={
     mode:'read-only',database:target,revision:snapshot.version,
     totalTables:tables.length,trackedObjects:registry.size,
+    zeroRowPhysicalTables:tables.filter(item=>item.recordCount===0).length,
     tenantCount:tenantObjects.size,
     byCategory:Object.fromEntries([...new Set(tables.map(t=>t.category))].map(
       type=>[type,tables.filter(t=>t.category===type).length])),
