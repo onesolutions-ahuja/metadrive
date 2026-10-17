@@ -18,6 +18,7 @@ export type SetupCheck = {
 type AppSetupScope = {
   app: LightningAppMetadata;
   apps: LightningAppMetadata[];
+  creating?: boolean;
   objects: ObjectMetadata[];
   pages: LightningPageMetadata[];
   flows?: FlowDefinitionMetadata[];
@@ -45,11 +46,11 @@ export function suggestAppApiName(label: string, existing: readonly Pick<Lightni
 
 /** Metadata-level guidance only. Never equate this report with runtime, RBAC or payment certification. */
 export function assessApplicationSetup({
-  app, apps, objects, pages, flows = [], libraryComponents = [], reports = [], dashboards = []
+  app, apps, objects, pages, creating = false, flows = [], libraryComponents = [], reports = [], dashboards = []
 }: AppSetupScope): SetupCheck[] {
   const checks: SetupCheck[] = [];
   const add = (item: SetupCheck) => checks.push(item);
-  const exists = apps.some(item => item !== app && item.apiName.toLowerCase() === app.apiName.toLowerCase());
+  const exists = creating && apps.some(item => item.apiName.toLowerCase() === app.apiName.toLowerCase());
   const identityFindings = [
     ...(!/^[A-Za-z][A-Za-z0-9_]*$/.test(app.apiName) ? ['Choose a developer name using letters, digits or underscores, starting with a letter.'] : []),
     ...(!app.label.trim() ? ['Enter an application label.'] : []),
