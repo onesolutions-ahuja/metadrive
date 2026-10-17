@@ -4,10 +4,14 @@ on:
     paths:
       - 'apps/web/**'
       - 'scripts/check-ui-design-tokens.mjs'
+      - 'scripts/marketing-visual-smoke.mjs'
       - '.github/workflows/frontend-visual-contract.yml'
       - 'package-lock.json'
       - 'package.json'
   workflow_dispatch:
+concurrency:
+  group: frontend-ui-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   frontend-check:
     runs-on: ubuntu-latest
