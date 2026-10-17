@@ -13,6 +13,11 @@ on:
         type: boolean
         required: true
         default: false
+      cleanup_legacy_staging:
+        description: 'Remove 11 obsolete relational-stage tables; preserve metadrive_rel_tenants and all live metadata'
+        type: boolean
+        required: true
+        default: false
   push:
     branches: [main]
     paths:
@@ -120,7 +125,7 @@ jobs:
             "$RUNNER_TEMP/sql-target.enc" "$RUNNER_TEMP/sql-target.verified"
           cmp "$RUNNER_TEMP/sql-target.dump" "$RUNNER_TEMP/sql-target.verified"
       - name: Generate proof from independently restored encrypted SQL backup
-        if: github.event_name == 'workflow_dispatch' && (inputs.cleanup_verified_duplicates == true || inputs.cleanup_user_duplicates == true) && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && (inputs.cleanup_verified_duplicates == true || inputs.cleanup_user_duplicates == true || inputs.cleanup_legacy_staging == true) && github.ref == 'refs/heads/main'
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_proof
           PGSSLMODE: disable
@@ -167,6 +172,15 @@ jobs:
           METADRIVE_CLEANUP_EXPECTED_DEPLOY_SHA: ${{ github.sha }}
         run: |
           node apps/server/scripts/remove-verified-sql-duplicates.mjs --user-duplicates --apply
+      - name: Retire obsolete relational staging tables without touching tenant anchor
+        if: github.event_name == 'workflow_dispatch' && inputs.cleanup_legacy_staging == true && github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+          METADRIVE_SQL_CLEANUP_PROOF_FILE: ${{ runner.temp }}/sql-cleanup-restore-proof.json
+          METADRIVE_CLEANUP_EXPECTED_DEPLOY_SHA: ${{ github.sha }}
+        run: |
+          node apps/server/scripts/remove-verified-sql-duplicates.mjs --retire-legacy-staging --apply
       - name: Erase short-lived cleanup proof
         if: always()
         run: rm -f "$RUNNER_TEMP/sql-cleanup-restore-proof.json"
