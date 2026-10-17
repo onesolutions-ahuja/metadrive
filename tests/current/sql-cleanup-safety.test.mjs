@@ -88,3 +88,20 @@ test('SQL audit and cleanup executables parse without any live database access',
       stdio:'pipe',timeout:10000});
   }
 });
+
+test('obsolete relational staging cleanup preserves the FK anchor, active seed ledger and recovery archive',()=>{
+  const cleanup=source('apps/server/scripts/remove-verified-sql-duplicates.mjs');
+  const section=cleanup.match(/export const legacyStagingNames=Object\.freeze\(\[([\s\S]*?)\]\)/);
+  assert.ok(section);
+  const names=[...section[1].matchAll(/'([^']+)'/g)].map(match=>match[1]);
+  assert.equal(names.length,11);
+  assert.equal(new Set(names).size,11);
+  assert.ok(names.every(name=>name.startsWith('metadrive_rel_')));
+  assert.equal(names.includes('metadrive_rel_tenants'),false);
+  assert.equal(names.includes('metadrive_rel_users'),false);
+  assert.match(cleanup,/inspectLegacyStaging/);
+  assert.match(cleanup,/md_seed_package_versions/);
+  assert.match(cleanup,/requireCurrentDeployedUserRuntime/);
+  assert.match(cleanup,/DROP TABLE public\./);
+  assert.match(cleanup,/RESTRICT/);
+});
