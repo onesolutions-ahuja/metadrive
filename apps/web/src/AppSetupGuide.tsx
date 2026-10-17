@@ -27,13 +27,27 @@ export default function AppSetupGuide(props: Props) {
     error: string;
   }>({error:''});
   useEffect(() => {
-    if (!props.request) return;
+    const request = props.request;
+    if (!request) return;
+    const linked = new Set([
+      ...props.app.navigationPageApiNames,
+      ...props.pages.filter(page => page.activationAssignments?.some(rule => rule.appId === props.app.apiName))
+        .map(page => page.apiName)
+    ]);
+    const components = props.pages.filter(page => linked.has(page.apiName))
+      .flatMap(page => page.components);
+    const flowNeeded = components.some(component => {
+      const p = component.properties ?? {};
+      return Boolean(p.actionFlows || p.stateReadFlowApiName || p.stateWriteFlowApiName);
+    });
+    const reportNeeded = components.some(component => component.type === 'Report Chart');
+    const dashboardNeeded = components.some(component => component.type === 'Dashboard');
     let active = true;
     const load = async () => {
       const [flows, reports, dashboards] = await Promise.allSettled([
-        props.request!<{flows: FlowDefinitionMetadata[]}>('/metadata/flows'),
-        props.request!<{reports: ReportMetadata[]}>('/metadata/reports'),
-        props.request!<{dashboards: DashboardMetadata[]}>('/metadata/dashboards')
+        flowNeeded ? request<{flows: FlowDefinitionMetadata[]}>('/metadata/flows') : Promise.resolve({flows:[]}),
+        reportNeeded ? request<{reports: ReportMetadata[]}>('/metadata/reports') : Promise.resolve({reports:[]}),
+        dashboardNeeded ? request<{dashboards: DashboardMetadata[]}>('/metadata/dashboards') : Promise.resolve({dashboards:[]})
       ]);
       if (!active) return;
       setLoaded({
@@ -46,7 +60,7 @@ export default function AppSetupGuide(props: Props) {
     };
     void load();
     return () => { active = false; };
-  }, [props.request]);
+  }, [props.request, props.app.apiName, props.app.navigationPageApiNames, props.pages]);
   const knownFlows = props.request ? loaded.flows : props.flows;
   const knownReports = props.request ? loaded.reports : props.reports;
   const knownDashboards = props.request ? loaded.dashboards : props.dashboards;
