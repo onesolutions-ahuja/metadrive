@@ -104,6 +104,11 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
     }
     if(element.type==='Create Records' && element.config.recordSource!=='collection')
       recordChoices(`record${element.id}`,element.label,String(element.config.object||''),'Earlier steps');
+    if(element.type==='Loop'){
+      const name=String(element.config.loopVariable||'');
+      const record=flow.resources.find(resource=>resource.name===name&&resource.type==='Record');
+      if(record)recordChoices(name,record.label,record.dataType,'Earlier steps');
+    }
   }
   // Explicitly declared Record outputs are assigned by a preceding Get Records step.
   for(const element of flow.elements){
