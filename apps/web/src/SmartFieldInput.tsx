@@ -88,7 +88,7 @@ export default function SmartFieldInput({
     value, placeholder, disabled, maxLength,
     onChange: onInput,
     onClick: updateCursor,
-    onKeyUp: updateCursor,
+    onKeyUp: (event: KeyboardEvent<InputElement>) => { if (event.key !== 'Escape') updateCursor(); },
     onScroll: (event: UIEvent<InputElement>) => {
       if (mirrorRef.current) {
         mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
