@@ -62,7 +62,7 @@ PostgreSQL test database remain required prior to activation.
 
 ## Transactional package version API
 
-`src/seeders/sql-package-ledger.mjs` exports `packageChecksum`,
+`src/seeders/registry.mjs` exports `packageChecksum`,
 `assertSeedIdentity`, and `applyVersionedSeed(client, options)`.
 The caller **must** already hold an open SQL transaction and have completed
 app installation, licensing, entitlement, tenant and OneEngine checks. Pass
@@ -77,3 +77,11 @@ business records or automatic permission resets.
 Integration with the live SQL metadata repository and AppExchange transaction
 owner remains a separate agent handoff. This module does not run during startup
 unless explicitly invoked by the existing installer.
+
+## SQL-only table cleanup
+
+Do not infer that a SQL table is unused because a frontend file does not mention its name. Pages, published Flows and app modules call shared APIs; active physical Object tables are registered in `md_v2_object_registry` and cannot be removed by inspecting source literals alone.
+
+Run `node apps/server/scripts/audit-sql-table-lifecycle.mjs` with the verified SQL-only database configured to inspect all active SQL tables, their metadata Object ownership, app references and seeder imports. This is read-only. Seeder packages are applied through the single `src/seeders/registry.mjs` implementation and the existing AppExchange installation path. Do not install seeders from standalone scripts or duplicate schema definitions.
+
+The separate `remove-verified-sql-duplicates.mjs` operation is deliberately restricted to two identical historical backup copies; it requires an independently restored current encrypted backup proof, repeatable SQL state verification and a second checksum match under SQL locks before dropping anything. It is not a general-purpose table deletion mechanism. Never delete login, RBAC, tenant, published metadata, physical Object, history or archive tables just because a table has zero rows. Cleanup of older relational staging schemas requires a coordinated compatibility-removal migration, not a manual production `DROP`.
