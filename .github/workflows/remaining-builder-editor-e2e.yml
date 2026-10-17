@@ -26,7 +26,7 @@ jobs:
       - run: |
           npm install --no-save --ignore-scripts playwright@1.56.1
           npx playwright install --with-deps chromium
-      - name: Authenticated Flow Dashboard Report Builder save and reopen; published runtimes
-        run: node scripts/existing-builders-browser-e2e.mjs
       - name: Isolated cashier and customer display age/cash state acceptance
         run: node scripts/pos-cashier-paired-browser-smoke.mjs
+      - name: Authenticated Flow Dashboard Report Builder save and reopen; published runtimes
+        run: node scripts/existing-builders-browser-e2e.mjs
