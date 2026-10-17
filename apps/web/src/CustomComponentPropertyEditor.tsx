@@ -46,10 +46,10 @@ export default function CustomComponentPropertyEditor({
     ...Object.entries(properties).filter(([name]) => !definitionByName.has(name))
   ] : Object.entries(properties);
   return <div className="metadata-component-properties" aria-label="Custom component properties">
-    {(!addOnly || typedDefinitions.length > 0) && <>
-      <div className="properties-section-title">Component settings</div>
+    {(!addOnly || typedDefinitions.length > 0) && <details className="component-optional-settings" open={!addOnly}>
+      <summary className="properties-section-title">{addOnly ? 'Add optional appearance, card, image and responsive settings' : 'Component settings'}</summary>
       {!Object.keys(properties).length && <p className="properties-help">No settings yet. Add a property to configure this component.</p>}
-      {(addOnly ? visibleProperties.filter(([name]) => definitionByName.has(name)) : visibleProperties).map(([name, value]) => {
+      {(addOnly ? visibleProperties.filter(([name]) => definitionByName.has(name) && !Object.prototype.hasOwnProperty.call(properties,name)) : visibleProperties).map(([name, value]) => {
         const definition = definitionByName.get(name);
         const label = definition?.label ?? displayComponentPropertyName(name);
         const id = `component-property-${name}`;
@@ -59,19 +59,19 @@ export default function CustomComponentPropertyEditor({
               {!definition.required && <option value="">None</option>}
               {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
             </select></label> :
-          typeof value === 'boolean'
-            ? <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={value}
+          definition?.kind === 'BOOLEAN' || typeof value === 'boolean'
+            ? <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={value === true}
                 onChange={(event) => update(name, event.target.checked)} />{label}</label>
-            : typeof value === 'number'
+            : definition?.kind === 'NUMBER' || definition?.kind === 'CURRENCY' || typeof value === 'number'
               ? <label className="form-label" htmlFor={id}>{label}
                   <input id={id} className="form-control" type="number" disabled={disabled}
-                    value={Number.isFinite(value) ? value : 0}
-                    onChange={(event) => update(name, event.target.value === '' ? 0 : Number(event.target.value))} />
+                    value={typeof value === 'number' && Number.isFinite(value) ? value : ''}
+                    onChange={(event) => event.target.value === '' ? remove(name) : update(name, Number(event.target.value))} />
                 </label>
               : typeof value === 'string'
                 ? <label className="form-label" htmlFor={id}>{label}
                     <input id={id} className="form-control" disabled={disabled}
-                      type={definition?.kind === 'COLOR' || (/color/i.test(name) && /^#[0-9a-f]{6}$/i.test(value)) ? 'color' : 'text'}
+                      type={definition?.kind === 'COLOR' ? 'text' : (/color/i.test(name) && /^#[0-9a-f]{6}$/i.test(value) ? 'color' : 'text')}
                       value={value} onChange={(event) => update(name, event.target.value)} />
                   </label>
                 : <div className="properties-help">{label} contains structured data; its existing value is preserved.</div>}
@@ -80,7 +80,7 @@ export default function CustomComponentPropertyEditor({
             aria-label={`Remove ${label} property`} onClick={() => remove(name)}>Remove property</button>
         </div>;
       })}
-    </>}
+    </details>}
     <div className="properties-section-title">Add setting</div>
     <label className="form-label">Property API name
       <input className="form-control" disabled={disabled} value={propertyName}

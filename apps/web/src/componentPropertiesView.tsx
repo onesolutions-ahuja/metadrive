@@ -220,6 +220,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
   const update = (key: string, value: unknown) => onChange({ ...properties, [key]: value });
+  const definitionsByKey = new Map((definitions ?? []).map(definition => [definition.propertyKey, definition]));
   const listProperty = (key: string) => {
     const value = properties[key];
     return Array.isArray(value) ? value : [];
@@ -390,16 +391,27 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
     </>}
     <div className="properties-section-title">Appearance and Settings</div>
     {Object.entries(properties).filter(([key]) => !sourceKeys.has(key) && !isObjectBinding(key) && !isField(key) && !isFilter(key)).map(([key, value]) => {
-      if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
-        <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{labelFor(key)}
+      const definition = definitionsByKey.get(key);
+      const label = definition?.label ?? labelFor(key);
+      if (definition?.kind === 'SELECT' && definition.choices) return <label className="form-label" key={key}>{label}
+        <select className="form-control" value={String(value ?? '')}
+          onChange={(event) => update(key, event.target.value)}>
+          <option value="">Not configured / default</option>
+          {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
+        </select>
       </label>;
-      if (typeof value === 'number') return <label className="form-label" key={key}>{labelFor(key)}
-        <input className="form-control" type="number" value={value} onChange={(event) =>
-          update(key, Number(event.target.value))} /></label>;
-      if (typeof value === 'string' && !isField(key)) return <label className="form-label" key={key}>{labelFor(key)}
-        <input className="form-control" type={/color/i.test(key) ? 'color' : 'text'} value={value}
-          onChange={(event) => update(key, event.target.value)} /></label>;
-      if (typeof value === 'string') return fieldPicker(key, value);
+      if (typeof value === 'boolean') return <label className="checkbox-row" key={key}>
+        <input type="checkbox" checked={value} onChange={(event) => update(key, event.target.checked)} />{label}
+      </label>;
+      if (typeof value === 'number') return <label className="form-label" key={key}>{label}
+        <input className="form-control" type="number" value={value}
+          onChange={(event) => event.target.value === '' ? onChange(Object.fromEntries(Object.entries(properties).filter(([name])=>name!==key))) : update(key, Number(event.target.value))} />
+      </label>;
+      if (typeof value === 'string') return <label className="form-label" key={key}>{label}
+        <input className="form-control" type={definition?.kind === 'COLOR' ? 'text' : /color/i.test(key) ? 'color' : 'text'}
+          placeholder={definition?.kind === 'COLOR' ? '#ffffff or transparent' : undefined} value={value}
+          onChange={(event) => update(key, event.target.value)} />
+      </label>;
       return null;
     })}
     {Object.entries(properties).filter(([key, value]) => !sourceKeys.has(key) && !isFilter(key) && Array.isArray(value)).map(([key, value]) => {

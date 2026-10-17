@@ -5,6 +5,8 @@ import ComponentSandbox from './ComponentSandbox';
 import {resolveComponentSettings} from './componentSettingDefinitions';
 import {compileComponentModule} from './componentRuntimeModule';
 import {applyRecordViewAdapter} from './recordViewAdapterRegistry';
+import {registeredComponentAppearance, registeredComponentAppearanceClasses} from './registeredComponentAppearance';
+import './registeredComponentAppearance.css';
 import {validatePrimitiveMetadata, primitiveAccessibilityProps} from './sharedPrimitiveMetadata';
 
 type ComponentBoundaryState = { error?: string };
@@ -37,10 +39,13 @@ function resolveTrustedModule(source:string){
  trustedModules.set(source,compiled);
  return compiled;
 }
-function RegisteredComponentBody({ definition, props, layoutTransparent=false }: { definition: LibraryComponentMetadata; props: Record<string, unknown>; layoutTransparent?:boolean }) {
+function RegisteredComponentBody({ definition, props, appearanceProps, layoutTransparent=false }: { definition: LibraryComponentMetadata; props: Record<string, unknown>; appearanceProps: Record<string, unknown>; layoutTransparent?:boolean }) {
   const Component = useMemo(() => resolveTrustedModule(definition.compiledJs), [definition.compiledJs]);
 
-  return <div className={`registered-component metadrive-component-${definition.apiName.toLowerCase()}`} style={layoutTransparent?{display:'contents'}:undefined}>
+  const appearanceStyle = registeredComponentAppearance(appearanceProps);
+  const appearanceClass = registeredComponentAppearanceClasses(appearanceProps);
+  return <div className={`registered-component metadrive-component-${definition.apiName.toLowerCase()} ${appearanceClass}`}
+    style={layoutTransparent?{...appearanceStyle,display:'contents'}:appearanceStyle}>
     {definition.scopedCss && <style>{definition.scopedCss}</style>}
     <Component {...props} />
   </div>;
@@ -59,6 +64,6 @@ export default function RegisteredComponent({ definition, props, layoutTranspare
     <ComponentSandbox definition={definition} props={effectiveProps} />
   </div>;
   return <div {...accessibility} style={layoutTransparent?{display:'contents'}:undefined}><ComponentRenderBoundary key={`${definition.apiName}-${definition.version}`}>
-    <RegisteredComponentBody definition={definition} props={effectiveProps} layoutTransparent={layoutTransparent} />
+    <RegisteredComponentBody definition={definition} props={effectiveProps} appearanceProps={props} layoutTransparent={layoutTransparent} />
   </ComponentRenderBoundary></div>;
 }

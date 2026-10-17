@@ -18,8 +18,12 @@ export function loadAppSeedCatalog() {
     throw Error('Invalid One component catalog version');
   const coreComponents = coreCatalog.components?.map(component => ({
     ...component,
-    propertyDefinitions: [component.propertyDefinitions?.[0],
-      ...coreCatalog.commonProperties, ...(component.propertyDefinitions ?? []).slice(1)]
+    // One metadata key per property: component-specific settings override the
+    // universal defaults without duplicating SQL property definitions.
+    propertyDefinitions: [...new Map([
+      component.propertyDefinitions?.[0], ...coreCatalog.commonProperties,
+      ...(component.propertyDefinitions ?? []).slice(1)
+    ].filter(Boolean).map(definition => [definition.propertyKey, definition])).values()]
   }));
   if (!Array.isArray(coreComponents) || coreComponents.length !== 41)
     throw Error('Invalid One component catalog');

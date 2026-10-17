@@ -222,6 +222,338 @@
       "kind": "FLOW",
       "displayOrder": 220,
       "defaultValue": ""
+    },
+    {
+      "propertyKey": "fontFamily",
+      "label": "Font family",
+      "kind": "SELECT",
+      "displayOrder": 230,
+      "choices": [
+        {
+          "key": "system",
+          "label": "system"
+        },
+        {
+          "key": "sans",
+          "label": "sans"
+        },
+        {
+          "key": "serif",
+          "label": "serif"
+        },
+        {
+          "key": "mono",
+          "label": "mono"
+        }
+      ]
+    },
+    {
+      "propertyKey": "fontSize",
+      "label": "Font size (px)",
+      "kind": "NUMBER",
+      "displayOrder": 235
+    },
+    {
+      "propertyKey": "fontWeight",
+      "label": "Font weight",
+      "kind": "SELECT",
+      "displayOrder": 240,
+      "choices": [
+        {
+          "key": "400",
+          "label": "400"
+        },
+        {
+          "key": "500",
+          "label": "500"
+        },
+        {
+          "key": "600",
+          "label": "600"
+        },
+        {
+          "key": "700",
+          "label": "700"
+        },
+        {
+          "key": "800",
+          "label": "800"
+        }
+      ]
+    },
+    {
+      "propertyKey": "lineHeight",
+      "label": "Line height (ratio)",
+      "kind": "NUMBER",
+      "displayOrder": 245
+    },
+    {
+      "propertyKey": "letterSpacing",
+      "label": "Letter spacing (px)",
+      "kind": "NUMBER",
+      "displayOrder": 250
+    },
+    {
+      "propertyKey": "textAlign",
+      "label": "Text alignment",
+      "kind": "SELECT",
+      "displayOrder": 255,
+      "choices": [
+        {
+          "key": "left",
+          "label": "left"
+        },
+        {
+          "key": "center",
+          "label": "center"
+        },
+        {
+          "key": "right",
+          "label": "right"
+        },
+        {
+          "key": "start",
+          "label": "start"
+        },
+        {
+          "key": "end",
+          "label": "end"
+        }
+      ]
+    },
+    {
+      "propertyKey": "margin",
+      "label": "Outer margin (px)",
+      "kind": "NUMBER",
+      "displayOrder": 260
+    },
+    {
+      "propertyKey": "minWidth",
+      "label": "Minimum width (CSS length)",
+      "kind": "TEXT",
+      "displayOrder": 265
+    },
+    {
+      "propertyKey": "maxWidth",
+      "label": "Maximum width (CSS length)",
+      "kind": "TEXT",
+      "displayOrder": 270
+    },
+    {
+      "propertyKey": "minHeight",
+      "label": "Minimum height (CSS length)",
+      "kind": "TEXT",
+      "displayOrder": 275
+    },
+    {
+      "propertyKey": "maxHeight",
+      "label": "Maximum height (CSS length)",
+      "kind": "TEXT",
+      "displayOrder": 280
+    },
+    {
+      "propertyKey": "borderWidth",
+      "label": "Border width (px)",
+      "kind": "NUMBER",
+      "displayOrder": 285
+    },
+    {
+      "propertyKey": "hideOnTablet",
+      "label": "Hide on tablet",
+      "kind": "BOOLEAN",
+      "displayOrder": 290
+    },
+    {
+      "propertyKey": "hideOnDesktop",
+      "label": "Hide on desktop",
+      "kind": "BOOLEAN",
+      "displayOrder": 295
+    },
+    {
+      "propertyKey": "cardDensity",
+      "label": "Card density",
+      "kind": "SELECT",
+      "displayOrder": 300,
+      "choices": [
+        {
+          "key": "default",
+          "label": "default"
+        },
+        {
+          "key": "compact",
+          "label": "compact"
+        },
+        {
+          "key": "comfortable",
+          "label": "comfortable"
+        },
+        {
+          "key": "image-focused",
+          "label": "image focused"
+        }
+      ]
+    },
+    {
+      "propertyKey": "cardPadding",
+      "label": "Card padding (px)",
+      "kind": "NUMBER",
+      "displayOrder": 305
+    },
+    {
+      "propertyKey": "cardRadius",
+      "label": "Card radius (px)",
+      "kind": "NUMBER",
+      "displayOrder": 310
+    },
+    {
+      "propertyKey": "cardMinHeight",
+      "label": "Card minimum height (px)",
+      "kind": "NUMBER",
+      "displayOrder": 315
+    },
+    {
+      "propertyKey": "cardBackgroundColor",
+      "label": "Card background",
+      "kind": "COLOR",
+      "displayOrder": 320
+    },
+    {
+      "propertyKey": "cardBorderColor",
+      "label": "Card border colour",
+      "kind": "COLOR",
+      "displayOrder": 325
+    },
+    {
+      "propertyKey": "cardBorderWidth",
+      "label": "Card border width (px)",
+      "kind": "NUMBER",
+      "displayOrder": 330
+    },
+    {
+      "propertyKey": "cardShadow",
+      "label": "Card shadow",
+      "kind": "SELECT",
+      "displayOrder": 335,
+      "choices": [
+        {
+          "key": "none",
+          "label": "none"
+        },
+        {
+          "key": "small",
+          "label": "small"
+        },
+        {
+          "key": "medium",
+          "label": "medium"
+        },
+        {
+          "key": "large",
+          "label": "large"
+        }
+      ]
+    },
+    {
+      "propertyKey": "cardHover",
+      "label": "Card hover effect",
+      "kind": "SELECT",
+      "displayOrder": 340,
+      "choices": [
+        {
+          "key": "none",
+          "label": "none"
+        },
+        {
+          "key": "lift",
+          "label": "lift"
+        },
+        {
+          "key": "highlight",
+          "label": "highlight"
+        }
+      ]
+    },
+    {
+      "propertyKey": "imageHeight",
+      "label": "Image height (px)",
+      "kind": "NUMBER",
+      "displayOrder": 345
+    },
+    {
+      "propertyKey": "imageFit",
+      "label": "Image fit",
+      "kind": "SELECT",
+      "displayOrder": 350,
+      "choices": [
+        {
+          "key": "contain",
+          "label": "contain"
+        },
+        {
+          "key": "cover",
+          "label": "cover"
+        },
+        {
+          "key": "fill",
+          "label": "fill"
+        },
+        {
+          "key": "scale-down",
+          "label": "scale down"
+        }
+      ]
+    },
+    {
+      "propertyKey": "imageAspectRatio",
+      "label": "Image aspect ratio",
+      "kind": "SELECT",
+      "displayOrder": 355,
+      "choices": [
+        {
+          "key": "auto",
+          "label": "auto"
+        },
+        {
+          "key": "1/1",
+          "label": "1/1"
+        },
+        {
+          "key": "4/3",
+          "label": "4/3"
+        },
+        {
+          "key": "16/9",
+          "label": "16/9"
+        },
+        {
+          "key": "3/4",
+          "label": "3/4"
+        }
+      ]
+    },
+    {
+      "propertyKey": "showImage",
+      "label": "Show card images",
+      "kind": "BOOLEAN",
+      "displayOrder": 360
+    },
+    {
+      "propertyKey": "showTitle",
+      "label": "Show card titles",
+      "kind": "BOOLEAN",
+      "displayOrder": 365
+    },
+    {
+      "propertyKey": "showPrice",
+      "label": "Show card prices",
+      "kind": "BOOLEAN",
+      "displayOrder": 370
+    },
+    {
+      "propertyKey": "showAddIcon",
+      "label": "Show card add icon",
+      "kind": "BOOLEAN",
+      "displayOrder": 375
     }
   ],
   "components": [
@@ -235,7 +567,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -296,7 +628,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -357,7 +689,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -408,7 +740,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -459,7 +791,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 3,
+      "version": 4,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -524,7 +856,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 5,
+      "version": 6,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -596,7 +928,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -640,7 +972,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -712,7 +1044,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -763,7 +1095,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -814,7 +1146,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -858,7 +1190,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -909,7 +1241,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -978,7 +1310,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -1015,7 +1347,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -1091,7 +1423,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -1142,7 +1474,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneDisplay.jsx",
       "cssFile": "one/one.css",
@@ -1193,7 +1525,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1382,7 +1714,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1455,7 +1787,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1499,7 +1831,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1564,7 +1896,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1615,7 +1947,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1673,7 +2005,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneInputs.jsx",
       "cssFile": "one/one.css",
@@ -1717,7 +2049,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneActions.jsx",
       "cssFile": "one/one.css",
@@ -1793,7 +2125,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 2,
+      "version": 3,
       "scope": "platform-core",
       "jsxFile": "one/OneActions.jsx",
       "cssFile": "one/one.css",
@@ -1844,7 +2176,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneActions.jsx",
       "cssFile": "one/one.css",
@@ -1898,7 +2230,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneActions.jsx",
       "cssFile": "one/one.css",
@@ -1942,7 +2274,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneActions.jsx",
       "cssFile": "one/one.css",
@@ -1986,7 +2318,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2037,7 +2369,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2088,7 +2420,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2146,7 +2478,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2208,7 +2540,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2252,7 +2584,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2296,7 +2628,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 7,
+      "version": 8,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2410,7 +2742,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2454,7 +2786,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
@@ -2505,7 +2837,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 4,
+      "version": 5,
       "scope": "platform-core",
       "jsxFile": "one/OneConversation.jsx",
       "cssFile": "one/one.css",
@@ -2657,7 +2989,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 6,
+      "version": 8,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
@@ -2953,7 +3285,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 1,
+      "version": 2,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",

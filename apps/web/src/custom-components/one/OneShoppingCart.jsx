@@ -305,9 +305,11 @@ function ShoppingCartTill({props}) {
     {!props.loading&&!filtered.length&&<p className="one-empty">{props.emptyProductsText||'No products found.'}</p>}
     <div className="one-shopping-products">{filtered.map(product=><button className="one-item one-item--interactive"
      key={product.Id} type="button" disabled={locked||!sessionReady} onClick={()=>add(product)}>
-     {product[props.imageFieldApiName||'ImageURL']&&<img loading="lazy" alt=""
+     {props.showImage!==false&&product[props.imageFieldApiName||'ImageURL']&&<img loading="lazy" alt=""
       src={String(product[props.imageFieldApiName||'ImageURL'])}/>}
-     <strong>{name(product)}</strong><span>{currency(price(product),props.currencyCode)}</span>
+     {props.showTitle!==false&&<strong>{name(product)}</strong>}
+     {props.showPrice!==false&&<span>{currency(price(product),props.currencyCode)}</span>}
+     {props.showAddIcon===true&&<span className="md-card-add-icon" aria-hidden="true">＋</span>}
     </button>)}</div>
    </section>}
    <aside className="one-surface" aria-label={props.basketLabel||'Current sale'}>
