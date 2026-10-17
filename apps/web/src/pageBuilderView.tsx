@@ -1634,6 +1634,7 @@ function PageBuilder({
                 apps={apps}
                 pages={pages}
                 currentAppId={builderAppApiName || apps[0]?.apiName || 'Records'}
+                primaryObjectApiName={page.targetObject}
                 flows={flows}
                 onChange={(properties: Record<string, unknown>) => updateComponent(selected.id, { properties })}
               />
