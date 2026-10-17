@@ -313,7 +313,7 @@ async function drainStateWrites(): Promise<void> {
     } catch (error) {
       writeFailure = error;
       console.error('CRITICAL: MetaDrive PostgreSQL persistence failed', error);
-      if (persistenceMode !== 'jsonb') process.exitCode = 1;
+      if (persistenceMode !== 'jsonb' && !isSqlRevisionConflict(error)) process.exitCode = 1;
       for (const waiter of [...batch, ...waiting.splice(0)]) waiter.reject(error);
       newestPayload = null;
       break;
