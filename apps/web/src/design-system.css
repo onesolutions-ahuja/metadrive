@@ -36,12 +36,12 @@
 .lightning :is(.setup-tree,.notification-panel,.one-table-wrapper,.one-conversation-scroll,.one-conversation-messages,.one-conversation-new,.free-canvas-preview,.free-canvas-runtime-component,.md-chatter-scroll,.md-chatter-messages,.md-chatter-new-thread,.md-chatter-contact-choices){
  scrollbar-width:thin;scrollbar-color:var(--md-scroll-thumb) transparent;overscroll-behavior:contain;
 }
-.one-ui{--one-accent:var(--md-primary);--one-border:var(--md-border);--one-radius:var(--md-radius-lg);--one-gap:var(--md-space-3);--one-pad:var(--md-space-4);--one-fg:var(--md-text);font-family:var(--md-font)}
+.one-ui{--one-accent:var(--md-primary);--one-border:var(--md-border);--one-radius:var(--md-radius-xl);--one-gap:var(--md-space-3);--one-pad:var(--md-space-4);--one-fg:var(--md-text);font-family:var(--md-font)}
 .one-ui .one-btn,.one-ui .one-control{min-height:var(--md-control-height)}
 .one-ui .one-heading{font-weight:var(--md-weight-semibold)}
 .one-ui .one-metric{font-weight:var(--md-weight-bold)}
 .one-ui .one-muted{font-size:max(var(--md-fs-xs),.88em)}
-.md-chatter{--md-scroll-thumb:#abc2b4;color:var(--md-text);font-family:var(--md-font);line-height:var(--md-leading-body);border-color:var(--md-border)}
+.md-chatter{color:var(--md-text);font-family:var(--md-font);line-height:var(--md-leading-body);border-color:var(--md-border)}
 .md-chatter .md-chatter-heading h2{font-size:var(--md-fs-h2);font-weight:var(--md-weight-bold)}
 .md-chatter .md-chatter-list header{padding:var(--md-space-4)}
 .md-chatter .md-chatter-thread-head{padding:var(--md-space-4)}
