@@ -1,0 +1,26 @@
+name: POS checkout live read-only preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/pos-checkout-readiness.mjs'
+      - 'scripts/pos-live-readonly-preflight.mjs'
+      - '.github/workflows/pos-checkout-readonly-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspect configured tenant without changing metadata or records
+        env:
+          METADRIVE_API_BASE: https://metadrive-production.up.railway.app
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/pos-live-readonly-preflight.mjs
