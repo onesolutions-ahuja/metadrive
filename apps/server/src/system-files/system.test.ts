@@ -283,3 +283,20 @@ test('login does not misreport SQL session failure as bad credentials',async()=>
     if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
 });
+
+test('first-install reconciliation is opt-in and refuses multi-user databases',async()=>{
+  const {reconcileBootstrapPassword}=await import('./bootstrap-password-sync.js');
+  let writes=0;
+  const db={
+    query:async()=>({rows:[{tenants:1,users:2}]}),
+    transaction:async()=>{writes++;}
+  } as unknown as SqlPersistence;
+  assert.equal(await reconcileBootstrapPassword(db,{}),'disabled');
+  await assert.rejects(()=>reconcileBootstrapPassword(db,{
+    METADRIVE_SYNC_BOOTSTRAP_PASSWORD_ONCE:'true',
+    METADRIVE_BOOTSTRAP_ADMIN_EMAIL:'test@example.com',
+    METADRIVE_BOOTSTRAP_DOMAIN:'example.com',
+    METADRIVE_BOOTSTRAP_ADMIN_PASSWORD:'TestPasswordLong2026'
+  }),/single-user installation/);
+  assert.equal(writes,0);
+});
