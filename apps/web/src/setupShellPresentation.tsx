@@ -144,7 +144,7 @@ export function renderSetupShell(ctx: any) {
                     <React.Fragment key={item}>
                       <button
                         className={((workspace === 'object-manager' && item === 'Object Manager')
-                          || (workspace === 'page-builder' && item === 'Lightning App Builder')
+                          || (workspace === 'page-builder' && item === 'Page Builder')
                           || (workspace === 'app-manager' && item === 'App Manager')
                           || (workspace === 'component-library' && item === 'Component Library')
                           || (workspace === 'app-exchange' && item === 'AppExchange')
