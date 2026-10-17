@@ -254,3 +254,32 @@ test('Aiven SQL connection retains certificate verification and dedicated DB ove
   assert.match(config.ssl?.ca??'',/BEGIN CERTIFICATE/);
   assert.doesNotMatch(config.ssl?.ca??'',/\\\\n/);
 });
+
+
+test('login does not misreport SQL session failure as bad credentials',async()=>{
+  const {createSystemServer}=await import('./server.js');
+  const {AuthenticationService}=await import('./authentication.js');
+  const password='correct-password-123';
+  const hash=await new AuthenticationService({} as SqlPersistence).hashPassword(password);
+  const db={
+    query:async(sql:string)=>{
+      if(sql.includes('FROM md_tenant_domains'))return {rows:[{tenant_id:'tenant'}],rowCount:1};
+      if(sql.includes('FROM md_users WHERE tenant_id'))return {rows:[{id:'user',password_hash:hash,enabled:true}],rowCount:1};
+      throw Error('Unexpected SQL lookup');
+    },
+    transaction:async()=>{throw Error('Simulated SQL session persistence failure');}
+  } as unknown as SqlPersistence;
+  const app=createSystemServer(db),listener=app.listen(0,'127.0.0.1');
+  try{
+    if(!listener.listening)await import('node:events').then(({once})=>once(listener,'listening'));
+    const port=(listener.address() as import('node:net').AddressInfo).port;
+    const result=await fetch('http://127.0.0.1:'+port+'/api/auth/login',{
+      method:'POST',headers:{origin:'https://unesolutions.co.uk','content-type':'application/json'},
+      body:JSON.stringify({email:'support@unesolutions.co.uk',password})
+    });
+    assert.equal(result.status,503);
+    assert.deepEqual(await result.json(),{error:'SQL service unavailable'});
+  }finally{
+    if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+  }
+});
