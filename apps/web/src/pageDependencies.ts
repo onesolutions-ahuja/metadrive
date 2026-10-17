@@ -81,6 +81,7 @@ export function inspectPageDependencies(page: LightningPageMetadata, scope: Depe
     // Shared Flow-backed state bindings are ordinary metadata dependencies, too.
     // The host continues to enforce tenant/session and OneEngine permissions at execution.
     for (const key of ['stateReadFlowApiName', 'stateWriteFlowApiName'] as const) {
+      if (properties.stateSyncEnabled !== true) continue;
       const flowName = identifier(properties[key]);
       if (!flowName) continue;
       const flow = scope.flows.find(item => item.apiName === flowName);
