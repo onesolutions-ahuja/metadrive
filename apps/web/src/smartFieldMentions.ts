@@ -76,7 +76,8 @@ export function mentionGroups(
       return !q || [node.object.label, node.object.apiName, node.path, node.via, field.label, field.apiName]
         .some(value => value.toLowerCase().includes(q))
         || (pathQuery !== undefined && field.apiName.toLowerCase().startsWith(pathQuery))
-        || (q.includes('.') && pathLabel.includes(q.slice(0, q.lastIndexOf('.')))
+        || (q.includes('.') && pathLabel.split('.').length === q.split('.').length
+          && pathLabel.startsWith(q.slice(0, q.lastIndexOf('.')))
           && field.apiName.toLowerCase().startsWith(q.slice(q.lastIndexOf('.') + 1)));
     }).map(field => ({
       objectApiName: node.object.apiName, objectLabel: node.object.label,
@@ -99,15 +100,18 @@ export function validateMentionPath(
   if (!current) return null;
   const steps: MentionPath['steps'] = [], seen = new Set([rootObjectApiName]);
   for (const name of parts.slice(1, -1)) {
-    const options = current.fields.filter(field => field.relationship?.relationshipName === name);
+    if (!current) return null;
+    const source: ObjectMetadata = current;
+    const options: FieldMetadata[] = source.fields.filter(field => field.relationship?.relationshipName === name);
     if (options.length !== 1) return null;
-    const relation = options[0].relationship!;
-    const target = objects.find(object => object.apiName === relation.targetObject);
+    const relation: NonNullable<FieldMetadata['relationship']> = options[0].relationship!;
+    const target: ObjectMetadata | undefined = objects.find(object => object.apiName === relation.targetObject);
     if (!target || seen.has(target.apiName)) return null;
-    steps.push({ source: current.apiName, target: target.apiName, lookupField: options[0].apiName, name });
+    steps.push({ source: source.apiName, target: target.apiName, lookupField: options[0].apiName, name });
     current = target;
     seen.add(target.apiName);
   }
+  if (!current) return null;
   const field = current.fields.find(field => field.apiName === parts[parts.length - 1]);
   if (!field || field.relationship || !isCompatibleField(field.formula?.returnType ?? field.dataType, kind)) return null;
   return { path: parts.slice(0, -1).join('.'), root: rootObjectApiName, target: current, field, steps };
