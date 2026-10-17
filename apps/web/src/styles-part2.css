@@ -795,7 +795,7 @@
   margin-left: auto;
 }
 /* Contrast failures observed on warm backgrounds in the 114-screen audit. */
-:root { --muted: #535e5b; }
+:root { --muted: var(--md-muted,#64748b); }
 .component-group-label,
 .properties-section-title { color: #504e48; }
 .welcome-quick button,
