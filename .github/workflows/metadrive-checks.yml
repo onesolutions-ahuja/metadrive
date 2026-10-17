@@ -30,4 +30,4 @@ jobs:
       - name: Verify published Pages bundle
         run: node scripts/verify-pages-artifacts.mjs
       - name: Verify server output
-        run: test -f apps/server/dist/index.js
+        run: test -f apps/server/dist-system/system-files/entrypoint.js
