@@ -1377,3 +1377,13 @@ body, .workspace, .object-manager, .analytics-page, .home-content { background-c
 /* The shared history control remains available in compact and mobile headers. */
 .header-tools { position: relative; }
 .header-tools .icon-button.header-history-button:first-child { display: inline-flex; align-items: center; justify-content: center; }
+
+/* Flow Builder: keep the draggable inspector desktop-only and preserve the
+   existing stacked/narrow-screen behaviour despite the desktop inline grid. */
+@media (max-width: 820px) {
+  .flow-builder .flow-workarea { grid-template-columns: 185px minmax(0, 1fr) !important; }
+  .flow-builder .flow-workarea > [role="separator"] { display: none; }
+}
+@media (max-width: 540px) {
+  .flow-builder .flow-workarea { grid-template-columns: 140px minmax(0, 1fr) !important; }
+}
