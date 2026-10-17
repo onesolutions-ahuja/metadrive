@@ -220,26 +220,30 @@ export async function loadMentionContext(
 /** Unknown, mistyped or inaccessible references remain literal, never become dynamic. */
 export function resolveMentionValue(
   raw: unknown, recordsByPath: Readonly<Record<string, DataRecord | undefined>>,
-  fieldsByPath: Readonly<Record<string, readonly string[]>>
+  fieldsByPath: Readonly<Record<string, readonly string[]>>,
+  objects: readonly ObjectMetadata[] = [], root = ''
 ): unknown {
   if (typeof raw !== 'string' || !raw.includes('@')) return raw;
   const resolve = (rawPath: string) => {
     const parts = rawPath.split('.'), field = parts.pop()!, path = parts.join('.');
-    if (!fieldsByPath[path]?.includes(field) || !Object.hasOwn(recordsByPath[path] ?? {}, field)) return { found: false };
+    if (!fieldsByPath[path]?.includes(field) || !Object.hasOwn(recordsByPath[path] ?? {}, field)) {
+      return { found: false, known: Boolean(root && validateMentionPath(rawPath, objects, root)) };
+    }
     const value = recordsByPath[path]?.[field];
     return { found: true, value: ['string', 'number', 'boolean'].includes(typeof value) ? value : '' };
   };
   const exact = /^@([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*){1,4})$/.exec(raw);
-  if (exact) { const result = resolve(exact[1]); return result.found ? result.value : raw; }
+  if (exact) { const result = resolve(exact[1]); return result.found ? result.value : result.known ? '' : raw; }
   return raw.replace(REFERENCE, (whole, prefix: string, path: string) => {
     const result = resolve(path);
-    return result.found ? prefix + String(result.value ?? '') : whole;
+    return result.found ? prefix + String(result.value ?? '') : result.known ? prefix : whole;
   });
 }
 export function resolveMentionProperties(
   properties: Record<string, unknown>, recordsByPath: Readonly<Record<string, DataRecord | undefined>>,
-  fieldsByPath: Readonly<Record<string, readonly string[]>>
+  fieldsByPath: Readonly<Record<string, readonly string[]>>,
+  objects: readonly ObjectMetadata[] = [], root = ''
 ): Record<string, unknown> {
   return Object.fromEntries(Object.entries(properties).map(([key, value]) =>
-    [key, resolveMentionValue(value, recordsByPath, fieldsByPath)]));
+    [key, resolveMentionValue(value, recordsByPath, fieldsByPath, objects, root)]));
 }
