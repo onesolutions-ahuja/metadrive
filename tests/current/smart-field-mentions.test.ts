@@ -58,6 +58,8 @@ test('field is blue only for a valid, full path from the root object', () => {
     assert.deepEqual(mentionSegments(input, objects, 'text', 'Sale'),
       [{ text: input, reference: false }]);
   }
+  assert.equal(validateMentionPath('@Sale.Customer.Name', objects, 'Sale', 'formula'), null);
+  assert.deepEqual(mentionGroups(objects, 'Sale', [], '', 'formula').map(group => group.path), ['Sale']);
   assert.ok(validateMentionPath('@Customer.Name', objects, 'Customer'));
   assert.equal(validateMentionPath('@Sale.Customer.Name', objects, 'Sale')?.steps[0].lookupField, 'CustomerId');
   assert.equal(validateMentionPath('@Sale.Product.ImageUrl', objects, 'Sale'), null);
