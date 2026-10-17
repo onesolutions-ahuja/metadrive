@@ -993,7 +993,7 @@ export default function DashboardBuilder({
     }
     return values;
   };
-  const displayMentionText = (component: DashboardComponentMetadata, raw: string) => { const data = dashboardMentionContext(objects, component.objectApiName, recordsByObject, { text: raw }, String(component.properties?.recordId ?? '')); return String(resolveMentionValue(raw, data.records, data.fields) ?? ''); };
+  const displayMentionText = (component: DashboardComponentMetadata, raw: string) => { const data = dashboardMentionContext(objects, component.objectApiName, recordsByObject, { text: raw }, String(component.properties?.recordId ?? '')); return String(resolveMentionValue(raw, data.records, data.fields, objects, component.objectApiName) ?? ''); };
   const renderComponent = (component: DashboardComponentMetadata) => {
     const chartPalette = chartPaletteFor(component.chartColorPalette);
     const records = filteredRecords(component);
@@ -1003,13 +1003,13 @@ export default function DashboardBuilder({
       String(component.properties?.recordId ?? ''));
     const data = mentionData.records, visibleFields = mentionData.fields;
     const safeHtmlData = htmlSafeMentionContext(mentionData);
-    const resolve = (value: string) => resolveMentionValue(value, data, visibleFields);
+    const resolve = (value: string) => resolveMentionValue(value, data, visibleFields, objects, component.objectApiName);
     if (component.type === 'Rich Text') {
       return <iframe
         className="dashboard-rich-text-frame"
         title={component.title}
         sandbox=""
-        srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; img-src https: data:; font-src data:; style-src 'unsafe-inline'"></head><body>${resolveMentionValue(component.richTextContent ?? '', safeHtmlData.records, safeHtmlData.fields)}</body></html>`}
+        srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; img-src https: data:; font-src data:; style-src 'unsafe-inline'"></head><body>${resolveMentionValue(component.richTextContent ?? '', safeHtmlData.records, safeHtmlData.fields, objects, component.objectApiName)}</body></html>`}
       />;
     }
     if (component.type === 'Image') {
@@ -1024,10 +1024,10 @@ export default function DashboardBuilder({
         ? <div data-dashboard-custom-component-id={component.id}
             style={resolveLayoutStyle(component.properties ?? {}, layoutDevice)}>
             <RegisteredComponent definition={definition} props={{
-            ...resolveMentionProperties(component.properties ?? {}, data, visibleFields),
+            ...resolveMentionProperties(component.properties ?? {}, data, visibleFields, objects, component.objectApiName),
             ...componentLayoutProps(component.properties ?? {}, layoutDevice),
             title: component.title,
-            properties: resolveMentionProperties(component.properties ?? {}, data, visibleFields),
+            properties: resolveMentionProperties(component.properties ?? {}, data, visibleFields, objects, component.objectApiName),
             object: objectFor(component.objectApiName),
             records,
             filters: current?.filters.filter((filter) => filter.objectApiName === component.objectApiName) ?? []
