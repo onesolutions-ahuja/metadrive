@@ -8,25 +8,25 @@ const entity=(apiName,label,fields)=>({apiName,label,pluralLabel:label+'s',
   kind:'Custom Object',description:'Reusable product customisation metadata for commerce apps.',
   fields:[f('Name','Text(255)',{required:true}),...fields]
 });
-export const customisationObjects=[
-  entity('ModifierGroup__c','Modifier Group',[
+// Extend existing shared commerce objects; do not reseed duplicate modifier Objects.
+export const customisationObjects=[];
+export const customisationObjectExtensions={
+  ProductModifierGroup__c:[
     f('MinSelections','Number(9, 0)'),f('MaxSelections','Number(9, 0)'),
-    f('IsRequired','Checkbox'),f('IsActive','Checkbox'),f('SortOrder','Number(9, 0)')
-  ]),
-  entity('ModifierOption__c','Modifier Option',[
-    link('GroupId','ModifierGroup__c','ModifierOptions',true),
-    f('PriceAdjustment','Currency(18, 2)'),f('IsActive','Checkbox'),f('SortOrder','Number(9, 0)')
-  ]),
-  entity('ProductModifierGroup__c','Product Modifier Group',[
-    link('ProductId','Product__c','ProductModifierGroups',true),
-    link('GroupId','ModifierGroup__c','GroupAssignments',true),f('SortOrder','Number(9, 0)')
-  ]),
-  entity('OrderLineModifier__c','Order Line Modifier',[
-    link('OrderLineId','OrderLine__c','SelectedModifiers',true),
-    link('ModifierOptionId','ModifierOption__c','ModifierSelections',true),
-    f('PriceAdjustment','Currency(18, 2)'),f('Quantity','Number(9, 0)')
-  ])
-];
+    f('IsRequired','Checkbox'),f('IsActive','Checkbox'),
+    f('SortOrder','Number(9, 0)')
+  ],
+  ProductModifier__c:[
+    link('GroupId','ProductModifierGroup__c','ProductModifierOptions'),
+    f('IsActive','Checkbox'),f('SortOrder','Number(9, 0)')
+  ],
+  ProductCategory:[
+    f('ImageUrl','URL'),f('SortOrder','Number(18, 2)'),f('IsActive','Checkbox')
+  ],
+  Product__c:[
+    link('CategoryId','ProductCategory','ProductsByCategory')
+  ]
+};
 // Reuse Order__c (Draft) and OrderLine__c as durable basket state.
 // These optional fields enable anonymous session ownership and line recalculation.
 export const basketObjectExtensions={
@@ -38,7 +38,9 @@ export const basketObjectExtensions={
   OrderLine__c:[
     f('BaseUnitPrice','Currency(18, 2)'),
     f('ModifierTotal','Currency(18, 2)'),
-    f('SelectionFingerprint','Text(255)')
+    f('SelectionFingerprint','Text(255)'),
+    link('ParentOrderLineId','OrderLine__c','ModifierChildLines'),
+    link('ProductModifierId','ProductModifier__c','SelectedProductModifiers')
   ]
 };
 export const demoModifierGroups=[
