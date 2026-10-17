@@ -116,6 +116,24 @@ export async function checkDatabaseConnection(): Promise<'healthy' | 'unavailabl
 // Serialize scheduled SQL refreshes with local writes. An unlocked refresh could
 // replace normalizedSnapshot between selection of a CAS baseline and COMMIT.
 let stateSqlGate: Promise<void> = Promise.resolve();
+let verifiedRecoverySnapshot: NormalizedSnapshot | null = null;
+function isSqlRevisionConflict(error: unknown): boolean {
+  return error instanceof Error && error.message === 'Concurrent writer detected; no state was overwritten';
+}
+/** A failed write is never acknowledged. The scheduler may read SQL to recover,
+ * but API writes remain blocked until its verified snapshot is applied to memory. */
+export async function waitForSchedulerSqlRefresh(): Promise<void> {
+  if (drainActive) await new Promise<void>(resolve => idleWaiters.push(resolve));
+  if (writeFailure !== null && !isSqlRevisionConflict(writeFailure)) throw writeFailure;
+}
+export function acknowledgeVerifiedSqlRefresh(): void {
+  if (!verifiedRecoverySnapshot || normalizedSnapshot !== verifiedRecoverySnapshot)
+    throw new Error('A verified SQL refresh must complete before persistence recovery');
+  if (writeFailure !== null && !isSqlRevisionConflict(writeFailure))
+    throw writeFailure;
+  writeFailure = null;
+  verifiedRecoverySnapshot = null;
+}
 async function withStateSqlGate<T>(run: () => Promise<T>): Promise<T> {
   const predecessor = stateSqlGate;
   let release!: () => void;
@@ -138,13 +156,14 @@ export async function readPersistedState(): Promise<unknown | null> {
     // Serialize against the local writer, then discard any read whose CAS
     // baseline changed while SQL was being fetched. Never install stale state.
     for (let attempt = 0; attempt < 5; attempt++) {
-      await waitForPersistedState();
+      await waitForSchedulerSqlRefresh();
       const refreshed = await withStateSqlGate(async () => {
         const previousSnapshot = normalizedSnapshot;
         const next = await readNormalizedState(pool as unknown as Parameters<typeof readNormalizedState>[0],
           persistenceMode === 'typed' ? verifyTypedRecords : null);
         if (normalizedSnapshot !== previousSnapshot) return null;
         normalizedSnapshot = next;
+        if (isSqlRevisionConflict(writeFailure)) verifiedRecoverySnapshot = next;
         return next;
       });
       if (!refreshed) continue;
@@ -288,6 +307,7 @@ async function drainStateWrites(): Promise<void> {
       // On the first fresh-db snapshot the tenant table now exists. Attach FK.
       if (seedLedgerTenantConstraintPending) { seedLedgerReady = null; await ensureSeedLedger(); }
       writeFailure = null;
+      verifiedRecoverySnapshot = null;
       for (const waiter of batch) waiter.resolve();
     } catch (error) {
       writeFailure = error;
