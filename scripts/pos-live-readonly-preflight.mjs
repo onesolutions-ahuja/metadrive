@@ -78,7 +78,15 @@ const inspect={
      ?step.config.conditions.map(x=>({field:x.field,operator:x.operator,valueKind:
          typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?'reference':'literal'})):[],
    screenFieldTypes:Array.isArray(step.config?.fields)?step.config.fields.map(x=>({type:x.type,label:x.label})):[],
+   configuredFields:Array.isArray(step.config?.fieldValues)?step.config.fieldValues.map(x=>({
+      field:x.field,valueKind:typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?'reference':'literal',
+      sourceReference:typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?x.value:undefined
+   })):[],
+   conditionRefs:Array.isArray(step.config?.conditions)?step.config.conditions.map(x=>({
+      field:x.field,reference:typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?x.value:null
+   })):[],
  })),
+ checkoutConnectors:(checkout?.connectors??[]).map(x=>({from:x.from,to:x.to,label:x.label,kind:x.kind})),
  checkoutResources:(checkout?.resources??[]).map(x=>({name:x.name,type:x.type,dataType:x.dataType,isInput:x.availableForInput,isOutput:x.availableForOutput})),
  relevantPages:(p.pages??[]).filter(x=>/cashier|till|customer.*display/i.test(x.apiName+' '+x.label))
    .map(x=>({apiName:x.apiName,label:x.label,status:x.status,
