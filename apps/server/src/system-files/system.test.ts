@@ -239,3 +239,18 @@ test('Fresh bootstrap never touches existing tenants or runs without explicit op
   assert.equal(queries,1);
   assert.equal(transactions,0);
 });
+
+test('Aiven SQL connection retains certificate verification and dedicated DB override',async()=>{
+  const {resolveSqlConnection}=await import('./sql-persistence.js');
+  const config=resolveSqlConnection(
+    'postgres://user:password@db.example.net:12345/defaultdb?sslmode=require',
+    {METADRIVE_DB_NAME_OVERRIDE:'metadrive_sql_20261012',
+     METADRIVE_DB_CA_CERT:'-----BEGIN CERTIFICATE-----\\nmock-content\\n-----END CERTIFICATE-----'}
+  );
+  assert.equal(new URL(config.connectionString).pathname,'/metadrive_sql_20261012');
+  assert.equal(new URL(config.connectionString).searchParams.has('sslmode'),false);
+  assert.equal(config.ssl?.rejectUnauthorized,true);
+  assert.equal(config.ssl?.servername,'db.example.net');
+  assert.match(config.ssl?.ca??'',/BEGIN CERTIFICATE/);
+  assert.doesNotMatch(config.ssl?.ca??'',/\\\\n/);
+});
