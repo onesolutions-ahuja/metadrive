@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import SmartFieldInput from './SmartFieldInput';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import { sourceReportTitleUpdate } from './dashboardComponentTitle';
@@ -2311,17 +2312,18 @@ export default function DashboardBuilder({
               <button type="button" className="btn btn-small" disabled={!canEditCurrent} onClick={() => wrapRichTextSelection('<h2>', '</h2>')}>Heading</button>
               <button type="button" className="btn btn-small" disabled={!canEditCurrent} onClick={() => wrapRichTextSelection('<ul><li>', '</li></ul>')}>List</button>
             </div>
-            <textarea ref={richTextEditorRef} className="form-control dashboard-rich-text-editor" aria-label="Rich text HTML content"
-              disabled={!canEditCurrent} maxLength={20_000} value={selected.richTextContent ?? ''}
-              onChange={(event) => updateComponent(selected.id, { richTextContent: event.target.value })}
+            <SmartFieldInput multiline rows={6} ariaLabel="Rich text HTML content" textareaRef={richTextEditorRef}
+              objects={objects} primaryObjectApiName={selected.objectApiName} disabled={!canEditCurrent}
+              maxLength={20_000} value={selected.richTextContent ?? ''}
+              onChange={next => updateComponent(selected.id, { richTextContent: next })}
               placeholder="Add formatted text using safe HTML." />
             <small>Basic formatting is supported. Scripts, forms, and embedded content are removed when saved.</small>
           </>}
           {selected.type === 'Image' && <>
             <label className="form-label" htmlFor="dashboard-image-url">Image URL</label>
-            <input id="dashboard-image-url" className="form-control" type="url" inputMode="url" maxLength={2048}
-              disabled={!canEditCurrent} value={selected.imageUrl ?? ''}
-              onChange={(event) => updateComponent(selected.id, { imageUrl: event.target.value })}
+            <SmartFieldInput id="dashboard-image-url" kind="image" objects={objects} primaryObjectApiName={selected.objectApiName}
+              disabled={!canEditCurrent} maxLength={2048} value={selected.imageUrl ?? ''}
+              onChange={next => updateComponent(selected.id, { imageUrl: next })}
               placeholder="https://example.com/image.png" />
             <label className="form-label" htmlFor="dashboard-image-alt">Alternative text</label>
             <input id="dashboard-image-alt" className="form-control" maxLength={500}
@@ -2336,6 +2338,7 @@ export default function DashboardBuilder({
               onChange={(properties) => updateComponent(selected.id, { properties })}
             />
             <CustomComponentPropertyEditor definitions={libraryComponents.find(component => component.apiName === selected.customComponentApiName && component.status !== 'Draft')?.propertyDefinitions} properties={selected.properties ?? {}}
+              objects={objects} primaryObjectApiName={selected.objectApiName}
               disabled={!canEditCurrent}
               onChange={(properties) => updateComponent(selected.id, { properties })}
             />
