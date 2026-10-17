@@ -70,6 +70,9 @@ function replaceManagedFlows(tenant){
   const old=tenant.flows[index];
   if(!old.description?.startsWith('MetaDrive Commerce Phase 4:'))
     throw Error('Unverified tenant-owned Flow: '+old.apiName);
+  if(JSON.stringify({elements:old.elements,connectors:old.connectors,resources:old.resources})===
+     JSON.stringify({elements:desired.elements,connectors:desired.connectors,resources:desired.resources}))
+    continue; // Version-safe, repeatable migration: do not append duplicate history.
   if((tenant.interviews??[]).some(i=>i.flowApiName===old.apiName))
     throw Error('Cannot migrate Flow with pending interviews: '+old.apiName);
   const history=new Map((old.versions??[]).map(v=>[v.versionNumber,v]));
@@ -245,10 +248,11 @@ try{
  tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
    .map(row=>[row.Id,row.GroupId]));
  migrateTenant(tenant);
+ const noChanges=JSON.stringify(snapshot.state)===JSON.stringify(next);
  const summary={database:db,tenant:target,revision:snapshot.version,
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length};
- if(!apply){console.log(JSON.stringify({mode:'dry-run',...summary},null,2));}
+ if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
   if(!isolated){
    if(process.env.METADRIVE_COMMERCE_MIGRATION_APPROVED!=='true'||
