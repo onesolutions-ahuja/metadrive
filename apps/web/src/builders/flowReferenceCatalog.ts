@@ -7,6 +7,7 @@ export type FlowReferenceChoice = {
   category: 'Earlier steps' | 'Flow inputs and variables' | 'Trigger record';
   dataType: string;
   targetObject?: string;
+  unavailableReason?: string;
 };
 const specialFields = [{apiName:'Id',label:'Record ID',dataType:'Id'},
   {apiName:'CreatedDate',label:'Created Date',dataType:'DateTime'}];
@@ -74,7 +75,7 @@ export function compatibleFlowValue(source:Pick<FlowReferenceChoice,'dataType'|'
 
 export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:number,objects:readonly ObjectMetadata[],target?:FieldMetadata,targetObjectApiName?:string):FlowReferenceChoice[]{
   const result:FlowReferenceChoice[]=[];
-  const recordChoices=(root:string,label:string,objectName:string,category:FlowReferenceChoice['category'])=>{
+  const recordChoices=(root:string,label:string,objectName:string,category:FlowReferenceChoice['category'],storedFields?:readonly string[])=>{
     const obj=objects.find(item=>item.apiName===objectName);
     if(!obj)return;
     const fields=[...specialFields,...obj.fields.filter(field=>!specialFields.some(s=>s.apiName===field.apiName))];
@@ -83,7 +84,10 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       const choice:FlowReferenceChoice={reference:`{!${root}.${field.apiName}}`,label:label+' → '+field.label,
         detail:root+'.'+field.apiName+' · '+obj.label,category,dataType:field.dataType,
         ...(field.apiName==='Id'?{targetObject:objectName}
-          :linkedObject?{targetObject:linkedObject}:{})};
+          :linkedObject?{targetObject:linkedObject}:{}),
+        ...(storedFields && !specialFields.some(s=>s.apiName===field.apiName) &&
+          !storedFields.includes(field.apiName)
+          ?{unavailableReason:field.label+' is not in Get Records → Fields to Store. Add it to that step first.'}:{})};
       if(compatibleFlowValue(choice,target,targetObjectApiName))result.push(choice);
     }
   };
@@ -131,7 +135,8 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       const name=String(element.config.outputVariable||`element${element.id}`);
       const type=String(element.config.object||'');
       const limit=String(element.config.recordLimit||'1');
-      if(limit==='1')recordChoices(name,element.label,type,'Earlier steps');
+      if(limit==='1')recordChoices(name,element.label,type,'Earlier steps',
+        Array.isArray(element.config.fields)?element.config.fields.filter((f):f is string=>typeof f==='string'):undefined);
     }
     if(element.type==='Create Records' && element.config.recordSource!=='collection')
       recordChoices(`record${element.id}`,element.label,String(element.config.object||''),'Earlier steps');
@@ -146,7 +151,9 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       const getObject=String(getSource?.config.object||'');
       const objectName=objects.some(object=>object.apiName===candidate)?candidate
         :objects.some(object=>object.apiName===getObject)?getObject:'';
-      if(objectName)recordChoices(name,element.label,objectName,'Earlier steps');
+      if(objectName)recordChoices(name,element.label,objectName,'Earlier steps',
+        getSource&&Array.isArray(getSource.config.fields)
+          ?getSource.config.fields.filter((f):f is string=>typeof f==='string'):undefined);
     }
   }
   const unique=new Map<string,FlowReferenceChoice>();
