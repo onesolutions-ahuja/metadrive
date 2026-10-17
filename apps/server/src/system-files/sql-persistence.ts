@@ -1,20 +1,35 @@
 import { Pool, type PoolClient, type QueryResultRow } from 'pg';
+export function resolveSqlConnection(databaseUrl:string,env:NodeJS.ProcessEnv) {
+  if(!databaseUrl)throw new Error('DATABASE_URL is required');
+  const uri=new URL(databaseUrl);
+  if(!['postgres:','postgresql:'].includes(uri.protocol))throw new Error('Invalid PostgreSQL connection URL');
+  const override=env.METADRIVE_DB_NAME_OVERRIDE?.trim();
+  if(override) {
+    if(!/^[A-Za-z][A-Za-z0-9_]{0,62}$/.test(override))throw new Error('Invalid database name override');
+    uri.pathname='/'+override;
+  }
+  const raw=env.METADRIVE_DB_CA_CERT?.trim();
+  if(!raw)return {connectionString:uri.toString()};
+  const candidate=raw.includes('BEGIN CERTIFICATE')?raw.replace(/\\n/g,'\n'):Buffer.from(raw,'base64').toString('utf8');
+  if(!/-----BEGIN CERTIFICATE-----[\\s\\S]+-----END CERTIFICATE-----/.test(candidate))
+    throw new Error('Invalid configured PostgreSQL CA certificate');
+  // pg-connection-string gives sslmode precedence over explicit ssl options.
+  // Remove it so node TLS uses this CA and still verifies the server identity.
+  uri.searchParams.delete('sslmode');
+  uri.searchParams.delete('sslrootcert');
+  return {
+    connectionString:uri.toString(),
+    ssl:{ca:candidate,rejectUnauthorized:true,servername:uri.hostname}
+  };
+}
 export class SqlPersistence {
   readonly pool: Pool;
   constructor(databaseUrl: string) {
     if (!databaseUrl) throw new Error('DATABASE_URL is required; JSON fallback is forbidden');
     // Aiven's dedicated SQL database is selected by environment configuration.
     // Retain TLS and credential options from the original DATABASE_URL.
-    const override = process.env.METADRIVE_DB_NAME_OVERRIDE?.trim();
-    let resolvedUrl=databaseUrl;
-    if(override) {
-      if(!/^[A-Za-z][A-Za-z0-9_]{0,62}$/.test(override)) throw new Error('Invalid database name override');
-      const uri=new URL(databaseUrl);
-      if(!['postgres:','postgresql:'].includes(uri.protocol))throw new Error('Invalid PostgreSQL connection URL');
-      uri.pathname='/'+override;
-      resolvedUrl=uri.toString();
-    }
-    this.pool = new Pool({ connectionString: resolvedUrl, max: 10, connectionTimeoutMillis: 10000 });
+    const config=resolveSqlConnection(databaseUrl,process.env);
+    this.pool = new Pool({ ...config, max: 10, connectionTimeoutMillis: 10000 });
   }
   query<T extends QueryResultRow = QueryResultRow>(sql: string, params: readonly unknown[] = []) {
     return this.pool.query<T>(sql, [...params]);
