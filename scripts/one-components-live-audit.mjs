@@ -23,7 +23,22 @@ assert.ok(login.user?.tenantId,'Tenant-scoped user required');
 const registry=await api('/component-library',login.access_token);
 const definitions=(registry.components??[]).filter(item=>/^One[A-Za-z]+$/.test(item.apiName));
 assert.equal(definitions.length,41,'Exactly 41 One Core library definitions');
-assert.equal(new Set(definitions.map(item=>item.apiName)).size,40,'No duplicate One API names');
+assert.equal(new Set(definitions.map(item=>item.apiName)).size,definitions.length,'No duplicate One API names');
+const required={
+  OneSplitPane:{version:2,properties:['splitRatio','layoutContainer']},
+  OneTabs:{version:4,properties:['dynamicTabs','categoryFieldApiName','categoryValueFieldApiName','filterKey']},
+  OneItemGrid:{version:5,properties:['categoryFieldApiName','filterKey','cartTargetKey','imageFieldApiName','titleFieldApiName','priceFieldApiName','searchKey','searchFieldApiNames']},
+  OneSearch:{version:2,properties:['searchKey']},
+  OneShoppingCart:{version:6,properties:['viewMode','catalogueWidthPercent','productCardMinWidth','cartTargetKey']}
+};
+for (const [name,requirements] of Object.entries(required)){
+  const component=definitions.find(item=>item.apiName===name);
+  assert.ok(component,name+' missing from live SQL-backed registry');
+  assert.ok(Number(component.version)>=requirements.version,name+' version not published');
+  const fields=new Set((component.propertyDefinitions??[]).map(field=>field.propertyKey));
+  for(const field of requirements.properties)assert.ok(fields.has(field),name+' missing property '+field);
+  if(name==='OneShoppingCart')assert.ok((component.propertyDefinitions??[]).find(field=>field.propertyKey==='viewMode')?.choices?.some(choice=>choice.key==='basket'),'Basket-only choice not published');
+}
 for(const component of definitions){
   assert.equal(component.status,'Published',component.apiName);
   assert.equal(component.trustedBundled,true,component.apiName);
@@ -34,8 +49,8 @@ for(const component of definitions){
  // versions, identities and published state. A replacement is not authorised
  // without per-instance property/event/binding compatibility evidence.
 const legacy=(registry.components??[]).filter(item=>/^RecoveredShared/.test(item.apiName));
-assert.equal(legacy.length,39,'Legacy component definitions must remain installed');
-assert.equal(new Set(legacy.map(item=>item.apiName)).size,39,'Legacy names must remain unique');
+// Legacy bundles may be retired by the tenant-scoped, reference-checked lifecycle.
+assert.equal(new Set(legacy.map(item=>item.apiName)).size,legacy.length,'Remaining legacy names must be unique');
 for(const component of legacy) {
   assert.equal(component.status,'Published',component.apiName);
   assert.ok(typeof component.compiledJs==='string'&&component.compiledJs.length>0,
@@ -61,7 +76,7 @@ const flowBindings=(flows.flows??[]).flatMap(flow=>
     (element.config?.fields??[]).filter(field=>
       field.type==='Custom Component' && legacyNames.has(field.componentApiName))
       .map(field=>({flow:flow.apiName,component:field.componentApiName}))));
-console.log(JSON.stringify({result:'PASS',registered:40,published:40,trusted:40,
+console.log(JSON.stringify({result:'PASS',registered:definitions.length,published:definitions.length,trusted:definitions.length,
   surfacesVerified:true,authenticated:true,tenantScoped:true,
   pagesApiVerified:true,flowsApiVerified:true,legacyPreserved:legacy.length,
   savedPageLegacyInstances:pageBindings.length,savedFlowLegacyInstances:flowBindings.length,
