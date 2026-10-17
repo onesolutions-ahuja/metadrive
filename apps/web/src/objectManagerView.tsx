@@ -1152,7 +1152,6 @@ function ObjectManager({
       ...(draft.apiName === 'User' ? [] : ['New', 'Import', 'Bulk Update', 'Mass Delete']),
       ...(supportsOwnership ? ['Change Owner'] : []),
       'Printable View',
-      ...(draft.apiName === 'Contact' && objects.some((item) => item.apiName === 'Campaign') ? ['Add to Campaign'] : [])
     ];
     const selected = draft.listViewButtons ?? [];
     return <section className="surface object-setting-surface">
