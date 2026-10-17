@@ -14,7 +14,7 @@ export function mentionGroups(
   kind: MentionKind = 'text'
 ): MentionGroup[] {
   const allowed = new Set([primaryObjectApiName, ...appObjectApiNames].filter(Boolean));
-  const inScope = allowed.size ? objects.filter(object => allowed.has(object.apiName)) : objects;
+  const inScope = appObjectApiNames.length ? objects.filter(object => allowed.has(object.apiName)) : objects;
   const sorted = [...inScope].sort((a, b) =>
     (a.apiName === primaryObjectApiName ? -1 : b.apiName === primaryObjectApiName ? 1 : 0)
     || a.label.localeCompare(b.label));
