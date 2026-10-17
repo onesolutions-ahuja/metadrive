@@ -29,8 +29,12 @@ if(isolated){
  if(process.env.GITHUB_ACTIONS!=='true'||url.hostname!=='127.0.0.1'||
     url.pathname!=='/metadrive_sql_proof')
    throw Error('Isolated SQL restore may run only inside GitHub proof job');
-}else if(!url.hostname.toLowerCase().endsWith('.aivencloud.com')||
-   url.pathname!=='/'+db)throw Error('Live database connection target mismatch');
+}else{
+ if(!url.hostname.toLowerCase().endsWith('.aivencloud.com')||
+    !['/defaultdb','/'+db].includes(url.pathname))
+   throw Error('Live Aiven source database connection mismatch');
+ url.pathname='/'+db;
+}
 for(const k of ['sslmode','sslcert','sslkey','sslrootcert'])url.searchParams.delete(k);
 const ssl=isolated?false:{rejectUnauthorized:process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT!=='true',
   ...(process.env.METADRIVE_DB_CA_CERT?{ca:process.env.METADRIVE_DB_CA_CERT.replace(/\\n/g,'\n')}:{})};
