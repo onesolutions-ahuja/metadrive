@@ -42,7 +42,27 @@ function sourceFor(flow:FlowMetadata,root:string):Choice|undefined{
   const loop=flow.elements.find(element=>element.type==='Loop'&&element.config.loopVariable===root);
   const resource=flow.resources.find(r=>r.name===root);
   if(loop&&resource?.type==='Record')return {type:'Record',objectName:resource.dataType,origin:loop.id};
-  return resource?{type:resource.type,objectName:resource.dataType,isCollection:resource.isCollection}:undefined;
+  if(resource)return {type:resource.type==='Record'?'Record':resource.dataType,
+    objectName:resource.dataType,isCollection:resource.isCollection};
+  // Screen inputs are persisted as top-level Flow variables after the interview is submitted.
+  // Lookups contain validated record IDs, not whole objects.
+  for(const element of flow.elements){
+    if(element.type!=='Screen')continue;
+    const fields=rows(element.config.fields);
+    for(const field of fields){
+      const name=typeof field.apiName==='string'?field.apiName
+        :String(field.label??'').replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'');
+      if(name!==root)continue;
+      const type=String(field.type??'Text');
+      if(['Display Text','Display Image','Section','Address','Name','Data Table',
+        'File Upload','Repeater','Custom Component','Multi-Select Picklist'].includes(type)
+        ||(type==='Choice Lookup'&&field.multipleSelections===true))return undefined;
+      const lookup=type==='Lookup'||type==='Choice Lookup';
+      return {type:lookup?'Id':type,origin:element.id,
+        objectName:lookup?String(field.objectApiName??''):undefined};
+    }
+  }
+  return undefined;
 }
 
 /** On-save metadata validation only; the runtime separately enforces RBAC and record access. */
@@ -88,7 +108,13 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
       }
       if(target){
         const expected=typed(String(target.dataType??'')),actual=typed(type);
-        const valid=expected==='lookup'?actual==='id'&&(parts[0]!=='Id'||!source.objectName||String(target.relationshipTarget??'')===source.objectName)
+        const relatedObject=field?.relationship?.targetObject;
+        const sourceObject=actual==='lookup'?relatedObject
+          :parts[0]==='Id'?source.objectName:undefined;
+        const valid=expected==='lookup'
+          ?(actual==='id'||actual==='lookup')&&Boolean(target.relationshipTarget)
+            &&(actual!=='lookup'||Boolean(relatedObject))
+            &&(!sourceObject||sourceObject===target.relationshipTarget)
           :expected==='id'?actual==='id'
           :expected==='number'||expected==='boolean'||expected==='date'?actual===expected
           :actual==='text'||actual==='id';
@@ -96,6 +122,15 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
       }
     }else if(source.type==='Record'||source.isCollection){
       errors.push(`${element.label} / ${name}: select a field of "${root}", not the whole record.`);
+    }else if(target){
+      const expected=typed(String(target.dataType??'')),actual=typed(source.type);
+      const valid=expected==='lookup'
+        ?actual==='id'&&Boolean(target.relationshipTarget)
+          &&(!source.objectName||source.objectName===target.relationshipTarget)
+        :expected==='id'?actual==='id'
+        :expected==='number'||expected==='boolean'||expected==='date'?actual===expected
+        :actual==='text'||actual==='id';
+      if(!valid)errors.push(`${element.label} / ${name}: "${root}" is incompatible with the target field type.`);
     }
   };
   const conditionCheck=(element:{id:number;label:string},condition:Row,objectName:string|undefined)=>{
