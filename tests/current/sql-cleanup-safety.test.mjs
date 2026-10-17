@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
+import {execFileSync} from 'node:child_process';
 import {loadAppSeedCatalog} from '../../apps/server/src/seeders/catalog.mjs';
 import {assertMetadataOnlySeed} from '../../apps/server/src/seeders/metadata-only.mjs';
 import {definedObjects} from '../../apps/server/src/normalized-typed-records.mjs';
@@ -76,4 +77,14 @@ test('User Object metadata is served by the identity runtime, never an extra phy
   const code=source('apps/server/src/normalized-typed-records.mjs');
   assert.match(code,/assertRetiredSystemUserTableIsEmpty/);
   assert.match(code,/Never auto-drop on startup/);
+});
+
+test('SQL audit and cleanup executables parse without any live database access',()=>{
+  for(const path of [
+    'apps/server/scripts/audit-sql-table-lifecycle.mjs',
+    'apps/server/scripts/remove-verified-sql-duplicates.mjs'
+  ]){
+    execFileSync(process.execPath,['--check',resolve(root,path)],{
+      stdio:'pipe',timeout:10000});
+  }
 });
