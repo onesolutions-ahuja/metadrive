@@ -59,14 +59,14 @@ export default function CustomComponentPropertyEditor({
               {!definition.required && <option value="">None</option>}
               {definition.choices.map(choice => <option key={choice.key} value={choice.key}>{choice.label}</option>)}
             </select></label> :
-          typeof value === 'boolean'
-            ? <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={value}
+          definition?.kind === 'BOOLEAN' || typeof value === 'boolean'
+            ? <label className="checkbox-row"><input type="checkbox" disabled={disabled} checked={value === true}
                 onChange={(event) => update(name, event.target.checked)} />{label}</label>
-            : typeof value === 'number'
+            : definition?.kind === 'NUMBER' || definition?.kind === 'CURRENCY' || typeof value === 'number'
               ? <label className="form-label" htmlFor={id}>{label}
                   <input id={id} className="form-control" type="number" disabled={disabled}
-                    value={Number.isFinite(value) ? value : 0}
-                    onChange={(event) => update(name, event.target.value === '' ? 0 : Number(event.target.value))} />
+                    value={typeof value === 'number' && Number.isFinite(value) ? value : ''}
+                    onChange={(event) => event.target.value === '' ? remove(name) : update(name, Number(event.target.value))} />
                 </label>
               : typeof value === 'string'
                 ? <label className="form-label" htmlFor={id}>{label}
