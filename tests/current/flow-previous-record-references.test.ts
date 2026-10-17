@@ -127,6 +127,44 @@ test('lookup selection from a preceding Screen is a typed usable record ID',()=>
  assert.match(flowReferenceErrors(flow as any,catalog).join(' '),/not guaranteed/);
 });
 
+test('standard Product.Id condition accepts the matching prior Order Line lookup ID',()=>{
+ const catalogue=[
+  {apiName:'OrderLine__c',label:'Order Line',fields:[
+    field('ProductId','Lookup(Product)',{targetObject:'Product'})]},
+  {apiName:'Product',label:'Product',fields:[field('Name')]},
+  {apiName:'Contact',label:'Contact',fields:[field('Name')]}
+ ] as ObjectMetadata[];
+ const flow=config();
+ flow.elements[1].config={object:'OrderLine__c',outputVariable:'Line',recordLimit:'1'};
+ flow.elements[2].config={object:'Product',outputVariable:'SelectedProduct',recordLimit:'1',
+   conditions:[{field:'Id',operator:'Equals',value:'{!Line.ProductId}'}]};
+ const idField=field('Id','Id');
+ assert(flowReferenceChoices(flow,3,catalogue,idField,'Product')
+   .some(item=>item.reference==='{!Line.ProductId}'));
+ assert(!flowReferenceChoices(flow,3,catalogue,idField,'Contact')
+   .some(item=>item.reference==='{!Line.ProductId}'));
+ assert.deepEqual(flowReferenceErrors(flow as any,catalogue),[]);
+ flow.elements[2].config.object='Contact';
+ assert.match(flowReferenceErrors(flow as any,catalogue).join(' '),/incompatible/);
+});
+
+test('cash Screen currency output can populate downstream numeric fields',()=>{
+ const catalogue=[{apiName:'Payment',label:'Payment',fields:[
+  field('Amount','Currency(18,2)')]}] as ObjectMetadata[];
+ const flow=config();
+ flow.elements.splice(1,2,
+  {id:2,label:'Cash Received',type:'Screen',config:{
+    fields:[{apiName:'CashReceived',label:'Cash Received',type:'Currency'}]
+  }} as any,
+  {id:3,label:'Create Payment',type:'Create Records',config:{
+    object:'Payment',fieldValues:[{field:'Amount',value:'{!CashReceived}'}]
+  }} as any
+ );
+ assert(flowReferenceChoices(flow,3,catalogue,catalogue[0].fields[0])
+  .some(item=>item.reference==='{!CashReceived}'));
+ assert.deepEqual(flowReferenceErrors(flow as any,catalogue),[]);
+});
+
 test('ordinary JSON literals are not misread as broken Flow references',()=>{
  const flow=config();
  flow.elements.push({id:4,type:'Assignment',label:'Keep JSON',config:{variable:'SessionKey',value:'{"example":1}'}} as any);
