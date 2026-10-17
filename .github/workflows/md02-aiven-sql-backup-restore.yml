@@ -2,6 +2,12 @@ name: SQL-only Aiven encrypted backup and restore proof
 
 on:
   workflow_dispatch:
+    inputs:
+      cleanup_verified_duplicates:
+        description: 'After successful independent restore, remove only two proven duplicate backup copies'
+        type: boolean
+        required: true
+        default: false
   push:
     branches: [main]
     paths:
@@ -108,6 +114,48 @@ jobs:
           node apps/server/scripts/secure-relational-backup.mjs decrypt \
             "$RUNNER_TEMP/sql-target.enc" "$RUNNER_TEMP/sql-target.verified"
           cmp "$RUNNER_TEMP/sql-target.dump" "$RUNNER_TEMP/sql-target.verified"
+      - name: Generate proof from independently restored encrypted SQL backup
+        if: github.event_name == 'workflow_dispatch' && inputs.cleanup_verified_duplicates == true && github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_proof
+          PGSSLMODE: disable
+        run: |
+          node --input-type=module <<'NODE'
+          import {createHash} from 'node:crypto';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import pg from 'pg';
+          import {readNormalizedState} from './apps/server/src/normalized-state-runtime.mjs';
+          import {verifyTypedRecords} from './apps/server/src/normalized-typed-records.mjs';
+          const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false,max:1});
+          try {
+            const restored=await readNormalizedState(pool,verifyTypedRecords);
+            if(restored.version<1)throw Error('Restored SQL revision not valid');
+            const encrypted=readFileSync(process.env.RUNNER_TEMP+'/sql-target.enc');
+            const decrypted=readFileSync(process.env.RUNNER_TEMP+'/sql-target.verified');
+            if(!encrypted.length||!decrypted.length)throw Error('Encrypted backup proof incomplete');
+            const proof={
+              database:'metadrive_sql_20261012',
+              revision:restored.version,
+              stateDigest:restored.digest,
+              restoredDatabaseVerified:true,
+              encryptedBackupSha256:createHash('sha256').update(encrypted).digest('hex'),
+              verifiedAt:new Date().toISOString()
+            };
+            writeFileSync(process.env.RUNNER_TEMP+'/sql-cleanup-restore-proof.json',JSON.stringify(proof),{mode:0o600,flag:'wx'});
+            console.log('PASS: independently restored current SQL snapshot and encrypted backup proof');
+          } finally {await pool.end();}
+          NODE
+      - name: Remove identical unused historical backup copies only
+        if: github.event_name == 'workflow_dispatch' && inputs.cleanup_verified_duplicates == true && github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+          METADRIVE_SQL_CLEANUP_PROOF_FILE: ${{ runner.temp }}/sql-cleanup-restore-proof.json
+        run: |
+          node apps/server/scripts/remove-verified-sql-duplicates.mjs --apply
+      - name: Erase short-lived cleanup proof
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sql-cleanup-restore-proof.json"
       - name: Retain encrypted verified SQL-only snapshot
         uses: actions/upload-artifact@v4
         with:
