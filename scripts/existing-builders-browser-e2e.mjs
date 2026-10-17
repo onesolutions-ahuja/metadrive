@@ -53,6 +53,26 @@ try {
   await page.locator('#login-password').fill(login.password);
   await page.locator('button.auth-submit').click();
   await page.locator('.auth-screen').waitFor({state:'hidden'});
+  // Guided App Manager: interactive UI smoke in this disposable authenticated tenant.
+  await page.goto('http://127.0.0.1:5173/une/setup/app-manager');
+  await page.getByRole('heading',{name:'App Manager',exact:true}).waitFor();
+  await page.getByRole('button',{name:'New App'}).click();
+  await page.getByRole('heading',{name:'Create New App'}).waitFor();
+  await page.getByLabel('App Label').fill('MD07 Guided UI');
+  const suggestedName=await page.getByLabel('Developer Name').inputValue();
+  if(suggestedName!=='MD07GuidedUI')throw Error('App Manager did not suggest a valid developer name: '+suggestedName);
+  await page.getByRole('button',{name:/Select navigation items/}).click();
+  const accountRow=page.locator('.md-checklist-option').filter({hasText:'Accounts'}).first();
+  await accountRow.locator('input[type="checkbox"]').check();
+  await page.getByRole('button',{name:'Done',exact:true}).click();
+  await page.getByRole('button',{name:/Select App Pages/}).click();
+  await page.getByRole('button',{name:'Done',exact:true}).click();
+  await page.locator('.app-manager-selection-summary').getByText('1 navigation items').waitFor();
+  await page.getByRole('button',{name:'Create App'}).click();
+  await page.getByRole('status').filter({hasText:'App saved.'}).waitFor();
+  const apiToken=(await request('/auth/login',undefined,'POST',{email:login.email,password:login.password})).access_token;
+  const newApp=(await request('/metadata/apps',apiToken)).apps.find(item=>item.apiName===suggestedName);
+  if(!newApp || !newApp.navigationItems.includes('Account'))throw Error('Guided UI did not preserve existing app save semantics');
   await page.goto('http://127.0.0.1:5173/une/setup/component-library');
   await page.getByRole('heading',{name:'Global Component Library'}).waitFor();
   await page.getByRole('button',{name:'Register component'}).click();
