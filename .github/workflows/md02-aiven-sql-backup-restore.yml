@@ -180,6 +180,73 @@ jobs:
             console.log('PASS: independently restored current SQL snapshot and encrypted backup proof');
           } finally {await pool.end();}
           NODE
+      - name: Preflight guarded commerce retirement
+        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        env:
+          COMMERCE_TENANT: ${{ inputs.commerce_tenant_id }}
+          API_OFFLINE: ${{ inputs.confirm_backend_offline }}
+          ALSO_BACKUPS: ${{ inputs.cleanup_verified_duplicates }}
+          ALSO_USERS: ${{ inputs.cleanup_user_duplicates }}
+          ALSO_STAGING: ${{ inputs.cleanup_legacy_staging }}
+        run: |
+          test -n "$COMMERCE_TENANT"
+          test "$API_OFFLINE" = 'true'
+          test "$ALSO_BACKUPS" = 'false'
+          test "$ALSO_USERS" = 'false'
+          test "$ALSO_STAGING" = 'false'
+      - name: Prove commerce migration on independent restored SQL database
+        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_proof
+          PGSSLMODE: disable
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+          METADRIVE_EXPECTED_TENANT_ID: ${{ inputs.commerce_tenant_id }}
+          METADRIVE_ISOLATED_SQL_RESTORE: 'true'
+        run: |
+          node apps/server/scripts/migrate-retired-commerce-typed-sql.mjs --apply
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          import {readNormalizedState} from './apps/server/src/normalized-state-runtime.mjs';
+          import {verifyTypedRecords} from './apps/server/src/normalized-typed-records.mjs';
+          const pool=new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false,max:1});
+          try {
+            const verified=await readNormalizedState(pool,verifyTypedRecords);
+            if(verified.version<2)throw Error('Commerce SQL restore migration revision absent');
+            console.log('PASS: commerce migration verified against independently restored typed SQL');
+          } finally {await pool.end();}
+          NODE
+      - name: Apply independently proven commerce migration to offline live SQL
+        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+          METADRIVE_EXPECTED_TENANT_ID: ${{ inputs.commerce_tenant_id }}
+          METADRIVE_COMMERCE_MIGRATION_APPROVED: 'true'
+          METADRIVE_BACKEND_MAINTENANCE_CONFIRMED: ${{ inputs.confirm_backend_offline }}
+          METADRIVE_SQL_CLEANUP_PROOF_FILE: ${{ runner.temp }}/sql-cleanup-restore-proof.json
+        run: node apps/server/scripts/migrate-retired-commerce-typed-sql.mjs --apply
+      - name: Verify live typed SQL integrity after commerce migration
+        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
+          METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
+          METADRIVE_EXPECTED_TENANT_ID: ${{ inputs.commerce_tenant_id }}
+        run: |
+          node --input-type=module <<'NODE'
+          import pg from 'pg';
+          import {readNormalizedState} from './apps/server/src/normalized-state-runtime.mjs';
+          import {verifyTypedRecords} from './apps/server/src/normalized-typed-records.mjs';
+          const u=new URL(process.env.DATABASE_URL);
+          u.pathname='/'+process.env.METADRIVE_SQL_TARGET_DB;
+          for(const key of ['sslmode','sslcert','sslkey','sslrootcert'])u.searchParams.delete(key);
+          const pool=new pg.Pool({connectionString:u.toString(),ssl:{rejectUnauthorized:true},max:1});
+          try{
+            const state=await readNormalizedState(pool,verifyTypedRecords);
+            if(!state.state.tenants?.[process.env.METADRIVE_EXPECTED_TENANT_ID])
+              throw Error('Tenant not found after SQL commerce migration');
+            console.log('PASS: live typed SQL normalized state and registered physical records verified');
+          } finally {await pool.end();}
+          NODE
       - name: Remove identical unused historical backup copies only
         if: github.event_name == 'workflow_dispatch' && inputs.cleanup_verified_duplicates == true && github.ref == 'refs/heads/main'
         env:
