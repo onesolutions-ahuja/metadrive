@@ -1,4 +1,4 @@
-import type { LocalUser, TenantData } from '../../core/state/types.js';
+
 import type { ObjectMetadata, RuntimeRecord } from '../../index.js';
 import { stampRecordAuditFields } from '../records/record-actions.js';
 import { randomUUID } from 'node:crypto';
@@ -115,7 +115,6 @@ function appendCommunicationRecord(
     }
   });
 }
-
 
  return { redactCommunicationValue, communicationPayload, communicationSafeUrl,
   supportedCommunicationMethod, communicationError, appendCommunicationRecord };

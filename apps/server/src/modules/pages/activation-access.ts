@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { TenantData } from '../../core/state/types.js';
+
 import { pageSchema } from './schemas.js';
 import { resolvePageAssignment } from './page-assignment.js';
 import { profileIdForRole } from '../security/role-helpers.js';

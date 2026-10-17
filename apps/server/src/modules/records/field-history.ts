@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { TenantData } from '../../core/state/types.js';
+
 import type { ObjectMetadata, RuntimeRecord } from '../../index.js';
 
 export function appendFieldHistory(tenant: TenantData, object: ObjectMetadata, previous: RuntimeRecord, updated: RuntimeRecord, userId: string): void {

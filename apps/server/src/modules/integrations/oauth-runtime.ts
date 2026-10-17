@@ -5,7 +5,7 @@ import { SqlOAuthChallengeStore, type ChallengeCipher } from '../../connector-oa
 import { credentialKeyRing, openCredentialPayload, sealCredentialPayload } from '../../core/credential-crypto.js';
 import { getRouteAliasPool } from '../../postgres-state.js';
 import { assertCalloutHostAllowed } from '../../outbound-callout-policy.js';
-import type { TenantData } from '../../core/state/types.js';
+
 import type { StoredNamedCredential } from '../../index.js';
 
 /** Tenant-scoped OAuth lifecycle, SQL PKCE challenges and DNS-pinned token transport. */

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { Principal } from '../../auth.js';
-import type { TenantData } from '../../core/state/types.js';
+
 import type { RuntimeRecord, ObjectMetadata } from '../../index.js';
 import { reportCrossFilterSchema, reportFilterSchema } from './report-metadata.js';
 

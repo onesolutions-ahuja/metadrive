@@ -3,7 +3,7 @@ import nodemailer from 'nodemailer';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { openCredentialPayload } from '../../core/credential-crypto.js';
-import type { TenantData, PlatformState, LocalUser } from '../../core/state/types.js';
+
 import type { NamedCredentialPayload, FlowRuntimeContext } from '../../index.js';
 
 /** Shared SMTP and email Alert execution. No independent communication engine. */

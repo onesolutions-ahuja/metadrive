@@ -1,5 +1,5 @@
 import type { FlowMetadata, FlowExecutionResult, FlowInterview } from '../../index.js';
-import type { TenantData } from '../../core/state/types.js';
+
 import { defaultAutomationSettings } from '../../automation-policy.js';
 
 type InterviewDependencies = {

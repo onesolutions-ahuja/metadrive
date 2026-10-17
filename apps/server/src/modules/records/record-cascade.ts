@@ -1,5 +1,5 @@
 import type { Principal } from '../../auth.js';
-import type { TenantData, LocalUser } from '../../core/state/types.js';
+
 import type { RuntimeRecord, ObjectMetadata, FlowDebugTraceEntry } from '../../index.js';
 import { stampRecordAuditFields } from './record-actions.js';
 import type { createRecordTriggerHandlers } from '../flows/record-trigger-handlers.js';

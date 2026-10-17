@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { lookup } from 'node:dns/promises';
 import { request as httpsRequest } from 'node:https';
-import type { TenantData } from '../../core/state/types.js';
+
 import type { FlowRuntimeContext, StoredNamedCredential, NamedCredentialPayload } from '../../index.js';
 import { credentialKeyRing, openCredentialPayload, openIntegrationCredentials } from '../../core/credential-crypto.js';
 import { assertCalloutHostAllowed } from '../../outbound-callout-policy.js';

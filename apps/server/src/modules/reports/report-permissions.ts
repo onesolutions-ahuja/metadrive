@@ -1,4 +1,4 @@
-import type { TenantData } from '../../core/state/types.js';
+
 import type { ReportFolder } from '../../index.js';
 import type { Principal } from '../../auth.js';
 

@@ -1,5 +1,5 @@
 import type { Principal } from '../../auth.js';
-import type { TenantData } from '../../core/state/types.js';
+
 import type { RuntimeRecord } from '../../index.js';
 
 type ConnectorRight = 'view' | 'edit' | 'secrets' | 'test' | 'install';
