@@ -193,7 +193,7 @@ import cors from 'cors';
 import { validateFlowFormulaSyntax } from './flow-formula-syntax.mjs';
 import { prepareFlowCreateCollection } from './flow-create-collection.mjs';
 import { applyFlowCollectionAssignment } from './flow-collection-assignment.mjs';
-import { readPersistedState, persistToPostgres, waitForPersistedState, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation, readDurableAuthLogins, persistDurableAuthLogin, type DurableAuthLogin } from './postgres-state.js';
+import { readPersistedState, persistToPostgres, waitForPersistedState, waitForSchedulerSqlRefresh, acknowledgeVerifiedSqlRefresh, persistenceMode, checkDatabaseConnection, withSchedulerLease, getRouteAliasPool, readAuthLogoutRevocations, persistAuthLogoutRevocation, readDurableAuthLogins, persistDurableAuthLogin, type DurableAuthLogin } from './postgres-state.js';
 
 import { validateRouteAliasInput, routeAliasDestination, rowToRouteAlias, validAliasSlug, validRouteIdentifier } from './route-aliases.mjs';
 import { libraryComponentVisible, libraryComponentEditable } from './component-scope.mjs';
@@ -1499,11 +1499,11 @@ const dashboardRuntime = createDashboardRuntime({
   formulaContextForUser, sanitizeDashboardRichText, reportFolderAccessLevelForUser, sanitizeRecordForRead
 });
 const dispatchScheduledFlows = createSchedulerRuntime({
- maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForPersistedState,
+ maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForSchedulerSqlRefresh,
  refresh: {
   persistenceMode, store: platformStore, authRevision: () => platformInitialization.authOverlayRevision,
-  readPersistedState, waitForPersistedState, parsePersistedPlatformState,
-  restoreDurableAuthOverlay: platformInitialization.restoreDurableAuthOverlay
+  readPersistedState, waitForPersistedState, parsePersistedPlatformState, restoreDurableAuthOverlay: platformInitialization.restoreDurableAuthOverlay,
+  acknowledgeVerifiedSqlRefresh
  },
  events: deliverPendingPlatformEvents, flows: executeDueScheduledFlows,
  integrationHandler: { getState: () => platformStore.state, tenantData, effectivePermissions, performHttpCallout },
