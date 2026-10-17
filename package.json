@@ -15,7 +15,7 @@
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
     "audit:architecture": "node scripts/verify-project-references.mjs",
-    "test:login": "tsx --test apps/web/src/readSubmittedLogin.test.ts"
+    "test:login": "tsx --test apps/web/src/readSubmittedLogin.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
