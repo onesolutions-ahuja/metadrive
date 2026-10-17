@@ -47,10 +47,7 @@ export default function SmartFieldInput({
   const options = useMemo(() =>
     mentionGroups(objects, primaryObjectApiName, appObjectApiNames, query, kind),
     [objects, primaryObjectApiName, appObjectApiNames, query, kind]);
-  const visibleObjects = appObjectApiNames.length
-    ? objects.filter(object => object.apiName === primaryObjectApiName || appObjectApiNames.includes(object.apiName))
-    : objects;
-  const segments = mentionSegments(value, visibleObjects, kind);
+  const segments = mentionSegments(value, objects, kind, primaryObjectApiName);
 
   const putCursor = (next: number) => {
     cursorRef.current = next;
@@ -70,12 +67,11 @@ export default function SmartFieldInput({
     cursorRef.current = inputRef.current?.selectionStart ?? value.length;
     if (!forced) setOpen(Boolean(tokenAtCursor(value, cursorRef.current)));
   };
-  const insert = (objectApiName: string, fieldApiName: string) => {
+  const insert = (reference: string) => {
     const position = inputRef.current?.selectionStart ?? cursorRef.current;
     const end = inputRef.current?.selectionEnd ?? position;
     const active = !forced ? tokenAtCursor(value, position) : null;
     const from = active?.start ?? position;
-    const reference = '@' + objectApiName + '.' + fieldApiName;
     onChange(value.slice(0, from) + reference + value.slice(end));
     setOpen(false);
     setForced(false);
@@ -120,13 +116,13 @@ export default function SmartFieldInput({
           }} className="form-control smart-field-control" rows={rows} />
         : <input {...common} ref={node => { inputRef.current = node; }} className="form-control smart-field-control" type="text" />}
       <button className="smart-field-trigger" type="button" aria-label="Insert dynamic field"
-        title="Insert dynamic field (@)" disabled={disabled || objects.length === 0}
+        title="Insert dynamic field (@)" disabled={disabled || !primaryObjectApiName || objects.length === 0}
         onMouseDown={event => event.preventDefault()}
         onClick={() => { cursorRef.current = inputRef.current?.selectionStart ?? value.length; setForced(true); setSearch(''); setOpen(true); }}>
         <AtSign size={15} />
       </button>
     </div>
-    {open && !disabled && objects.length > 0 && <div className="smart-field-picker" id={resultId}
+    {open && !disabled && primaryObjectApiName && objects.length > 0 && <div className="smart-field-picker" id={resultId}
       role="listbox" aria-label="Dynamic fields">
       <div className="smart-field-search">
         <Search size={13} />
@@ -139,18 +135,18 @@ export default function SmartFieldInput({
           : <span>Search: {query || 'All fields'} </span>}
       </div>
       <div className="smart-field-results">
-        {options.map(group => <div key={group.objectApiName}>
+        {options.map(group => <div key={group.path}>
           <div className="smart-field-group"><Database size={13} /> {group.label}
-            {group.primary && <small>Current page</small>}
+            <small>{group.primary ? 'Current Object' : group.via}</small>
           </div>
           {group.fields.map(field => <button key={field.fieldApiName} type="button" role="option" aria-selected={false}
             onMouseDown={event => event.preventDefault()}
-            onClick={() => insert(field.objectApiName, field.fieldApiName)}>
+            onClick={() => insert(field.reference)}>
             <AtSign size={12} /> <span>{field.fieldLabel}</span>
-            <small>{field.fieldApiName}</small>
+            <small>{field.reference}</small>
           </button>)}
         </div>)}
-        {!options.length && <p className="smart-field-empty">No matching fields</p>}
+        {!options.length && <p className="smart-field-empty">No matching fields. Create a Lookup relationship in Object Manager to access another Object.</p>}
       </div>
     </div>}
   </div>;
