@@ -1,3 +1,4 @@
+import { cloneReportForEditing } from './reportBuilderSelection';
 import { createObjectManager } from './objectManagerView';
 import { createSetupHome } from './setupHomeView';
 import { createSettingsViews } from './settingsWorkspaceViews';
@@ -713,26 +714,11 @@ export function ReportBuilder({
   const filteredReports = reports.filter((report) => `${report.label} ${report.apiName}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   // A report must remain discoverable when optional folder metadata is loading,
   // unavailable to this user, or refers to a deleted folder.
-  const knownFolderIds = new Set(reportFolders.map(folder => folder.id));
-  const otherReports = filteredReports.filter(report => !report.folderId || !knownFolderIds.has(report.folderId));
+  const otherReports = filteredReports.filter(report => !report.folderId || !reportFolders.some(folder => folder.id === report.folderId));
   const openExistingReport = (report: ReportMetadata) => {
-    setDraft({
-      ...report,
-      fieldApiNames: [...report.fieldApiNames],
-      groupByFieldApiNames: [...report.groupByFieldApiNames],
-      filters: report.filters.map(filter => ({...filter, values:[...filter.values]})),
-      standardFilters: {...report.standardFilters},
-      crossFilters: report.crossFilters.map(filter => ({...filter, filters:filter.filters.map(subfilter => ({
-        ...subfilter, values:[...subfilter.values]
-      }))})),
-      rowLimit: {...report.rowLimit}
-    });
-    setSelectedApiName(report.apiName);
-    setResult(null);
-    setError('');
-    setRunPage(false);
+    setDraft(cloneReportForEditing(report)); setSelectedApiName(report.apiName);
+    setResult(null); setError(''); setRunPage(false);
   };
-
   const reportFilterValueControl = (
     fieldApiName: string,
     value: string,
