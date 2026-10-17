@@ -11,7 +11,7 @@
 .smart-field-picker { position: absolute; z-index: 80; top: calc(100% + 4px); left: 0; right: 0; width: max(100%, 255px); min-width: 0; max-width: min(440px, 90vw); background: var(--surface, #fff); color: var(--text-primary, #1c2430); border: 1px solid var(--border-color, #d9e1eb); border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.12); overflow: hidden; }
 .smart-field-search { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border-color, #d9e1eb); color: var(--text-muted, #657186); font-size: 12px; }
 .smart-field-search input { flex: 1; width: 100%; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; }
-.smart-field-results { max-height: 300px; overflow-y: auto; }
+.smart-field-results { max-height: 300px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--md-scroll-thumb,#abb8c8) transparent; overscroll-behavior: contain; }
 .smart-field-group { display: flex; align-items: center; gap: 7px; padding: 8px 12px; background: var(--surface-secondary, #f4f7fa); font-weight: 600; font-size: 12px; }
 .smart-field-group small { margin-left: auto; font-weight: 400; opacity: .72; }
 .smart-field-results button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; padding: 8px 14px; text-align: left; background: transparent; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
