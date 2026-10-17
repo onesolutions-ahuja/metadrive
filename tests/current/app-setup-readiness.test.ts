@@ -73,3 +73,18 @@ test('identifies inactive pages, missing component bindings, missing Flow, and m
   assert.match(dependencies?.findings.join(' ')??'',/NotAField/);
   assert.match(dependencies?.findings.join(' ')??'',/NonexistentCheckout/);
 });
+
+test('inspects Flow-backed shared state only when a component binds a Flow', () => {
+  const shared=page({components:[{
+    id:'state',type:'Text',label:'Shared display',visible:true,
+    properties:{stateReadFlowApiName:'ReadSharedState',stateWriteFlowApiName:'WriteSharedState'}
+  }]});
+  const scope={app:app({navigationPageApiNames:['Checkout'],navigationOrder:[]}),
+    apps:[app()],objects:[product()],pages:[shared]};
+  const unloaded=assessApplicationSetup(scope);
+  assert.equal(unloaded.find(item=>item.id==='bindings')?.level,'review');
+  assert.match(unloaded.find(item=>item.id==='bindings')?.findings.join(' ')??'',/not been checked/);
+  const checked=assessApplicationSetup({...scope,flows:[]});
+  assert.equal(checked.find(item=>item.id==='bindings')?.level,'action');
+  assert.match(checked.find(item=>item.id==='bindings')?.findings.join(' ')??'',/ReadSharedState/);
+});
