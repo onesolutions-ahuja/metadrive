@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type Ref, type UIEvent } from 'react';
+import { useId, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent, type Ref, type UIEvent } from 'react';
 import { AtSign, Database, Search } from 'lucide-react';
 import type { ObjectMetadata } from './metadata';
 import { mentionGroups, mentionSegments, type MentionKind } from './smartFieldMentions';
@@ -98,7 +98,7 @@ export default function SmartFieldInput({
     onKeyDown: (event: KeyboardEvent<InputElement>) => {
       if (event.key === 'Escape') { setOpen(false); setForced(false); }
     },
-    onBlur: (event: React.FocusEvent<InputElement>) => {
+    onBlur: (event: FocusEvent<InputElement>) => {
       if (event.relatedTarget instanceof Node && editorRef.current?.contains(event.relatedTarget)) return;
       setOpen(false); setForced(false);
     }
@@ -115,7 +115,7 @@ export default function SmartFieldInput({
             if (typeof textareaRef === 'function') textareaRef(node);
             else if (textareaRef) (textareaRef as { current: HTMLTextAreaElement | null }).current = node;
           }} className="form-control smart-field-control" rows={rows} />
-        : <input {...common} ref={inputRef as React.RefObject<HTMLInputElement>} className="form-control smart-field-control" type="text" />}
+        : <input {...common} ref={node => { inputRef.current = node; }} className="form-control smart-field-control" type="text" />}
       <button className="smart-field-trigger" type="button" aria-label="Insert dynamic field"
         title="Insert dynamic field (@)" disabled={disabled || objects.length === 0}
         onMouseDown={event => event.preventDefault()}
