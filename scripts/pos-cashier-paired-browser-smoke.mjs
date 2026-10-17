@@ -43,13 +43,19 @@ try{
  const errors=[];
  cashier.on('pageerror',error=>errors.push(error.message));
  await cashier.goto(url);
+ await cashier.evaluate(()=>{
+   window.__displayOpenAttempts=[];
+   const original=window.open.bind(window);
+   window.open=(...args)=>{window.__displayOpenAttempts.push(args[0]);return original(...args)};
+ });
  await cashier.getByRole('button',{name:'Demo Lager'}).click();
  await cashier.getByRole('button',{name:'Water'}).click();
  assert.match(await cashier.locator('aside[aria-label="Current sale"]').innerText(),/£4\.75/);
  const popupEvent=cashier.waitForEvent('popup',{timeout:5500}).catch(async error=>{
    const alerts=await cashier.getByRole('alert').allInnerTexts();
    throw Error('Display popup failed: '+error.message+'; alerts='+JSON.stringify(alerts)+
-     '; pageErrors='+JSON.stringify(errors)+'; pageCount='+context.pages().length);
+     '; pageErrors='+JSON.stringify(errors)+'; pageCount='+context.pages().length+
+     '; openAttempts='+JSON.stringify(await cashier.evaluate(()=>window.__displayOpenAttempts)));
  });
  await cashier.getByRole('button',{name:'Open customer display'}).click();
  const customer=await popupEvent;
