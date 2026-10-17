@@ -1502,8 +1502,7 @@ const dispatchScheduledFlows = createSchedulerRuntime({
  maintenance: maintenanceMode, lease: withSchedulerLease, flush: waitForSchedulerSqlRefresh,
  refresh: {
   persistenceMode, store: platformStore, authRevision: () => platformInitialization.authOverlayRevision,
-  readPersistedState, waitForPersistedState, parsePersistedPlatformState,
-  restoreDurableAuthOverlay: platformInitialization.restoreDurableAuthOverlay,
+  readPersistedState, waitForPersistedState, parsePersistedPlatformState, restoreDurableAuthOverlay: platformInitialization.restoreDurableAuthOverlay,
   acknowledgeVerifiedSqlRefresh
  },
  events: deliverPendingPlatformEvents, flows: executeDueScheduledFlows,
