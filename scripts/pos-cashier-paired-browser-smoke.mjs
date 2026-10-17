@@ -51,6 +51,10 @@ try{
  await cashier.getByRole('button',{name:'Demo Lager'}).click();
  await cashier.getByRole('button',{name:'Water'}).click();
  assert.match(await cashier.locator('aside[aria-label="Current sale"]').innerText(),/£4\.75/);
+ await cashier.evaluate(()=>{window.__displayClickTrace=[];document.addEventListener('click',event=>{
+   if(event.target?.closest?.('button')?.textContent?.includes('Open customer display'))
+     window.__displayClickTrace.push('captured display button click');
+ },true)});
  const popupEvent=cashier.waitForEvent('popup',{timeout:15000}).catch(async error=>{
    const alerts=await cashier.getByRole('alert').allInnerTexts();
    throw Error('Display popup failed: '+error.message+'; alerts='+JSON.stringify(alerts)+
