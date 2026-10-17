@@ -129,7 +129,7 @@ export default function FlowScreenContent({
       return <p className="settings-panel-copy" key={`display-${index}`} style={{ whiteSpace: 'pre-wrap' }}>{text}</p>;
     }
     if (type === 'Display Image') {
-      const src = String(field.imageUrl ?? '');
+      const src = resolveScreenText(field.imageUrl, values);
       const alt = String(field.imageAltText ?? '');
       const definition = findRegisteredComponent(libraryComponents, 'OneImage', 'flow');
       // OneImage currently accepts HTTPS assets only; preserve existing legacy URLs.
