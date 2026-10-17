@@ -26,6 +26,29 @@ const [o,f,p]=await Promise.all([
  request('/metadata/pages',token)
 ]);
 const result=assessCheckoutReadiness({objects:o.objects??[],flows:f.flows??[],pages:p.pages??[]});
+async function aggregateRecords(objectName){
+ try{
+  let rows=[],total=0;
+  for(let offset=0;offset<2000;offset+=200){
+   const data=await request('/records/'+encodeURIComponent(objectName)+'?limit=200&offset='+offset,token);
+   total=Number(data.total??0);
+   rows.push(...(data.records??[]));
+   if(rows.length>=total||!(data.records??[]).length)break;
+  }
+  const populated=fieldNames=>Object.fromEntries(fieldNames.map(name=>[name,rows.filter(record=>record[name]!==null
+    &&record[name]!==undefined&&record[name]!=='').length]));
+  return {total,scanned:rows.length,complete:rows.length===total,
+   populated:populated(objectName==='Product'?['Type','UnitId','TaxId','AgeRestricted','MinimumAge']
+    :objectName==='Invoice'?['OrderId','BillingAddressId','Direction','Status']:['BasketSessionKey','Status']),
+   ...(objectName==='Product'?{ageRestrictedTrue:rows.filter(x=>x.AgeRestricted===true).length,
+      demoLagerMatches:rows.filter(x=>/demo lager/i.test(String(x.Name??''))).length,
+      demoLagerAgeRestricted:rows.filter(x=>/demo lager/i.test(String(x.Name??''))&&x.AgeRestricted===true).length}: {})
+  };
+ }catch{return {accessible:false};}
+}
+const recordAggregates=Object.fromEntries(await Promise.all(['Product','Invoice','Order__c']
+ .map(async key=>[key,await aggregateRecords(key)])));
+
 const empty=!result.checkoutFlow.found||!result.checks.find(c=>c.id==='product:available')?.pass;
 const relevantObjects=(o.objects??[]).filter(item=>/product|order|invoice|payment|stock|inventory|sale|unit|tax|address|age|location/i.test(item.apiName));
 const checkout=(f.flows??[]).find(item=>/COPILOT POS - Cash Checkout/i.test(item.label));
@@ -61,7 +84,7 @@ const inspect={
 console.log(JSON.stringify({status:empty?'TEST_IDENTITY_IS_NOT_CHECKOUT_TENANT':'READ_ONLY_CHECKOUT_PREFLIGHT',
   readOnly:true,source:'authenticated tenant-scoped API',checks:result.checks,issues:result.issues,
   checkoutFlow:result.checkoutFlow,tillPage:result.tillPage,customerPage:result.customerPage,
-  runtimeAssertionsPending:result.runtimeAssertions,inspection:inspect},null,2));
+  runtimeAssertionsPending:result.runtimeAssertions,inspection:inspect,recordAggregates},null,2));
 // Distinguish an absent production test tenant from a complete POS.
 if(empty)process.exitCode=2;
 else if(result.issues.length)process.exitCode=1;
