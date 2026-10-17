@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
+import AppManagerList from './AppManagerList';
+import { cloneAppConfiguration } from './appCloneConfiguration';
 import ChecklistMultiSelect, { type ChecklistChoice } from './ChecklistMultiSelect';
 import './AppManagerLayout.css';
 import AppSetupGuide from './AppSetupGuide';
@@ -71,6 +73,7 @@ export default function AppManager({
   const [selectedApiName, setSelectedApiName] = useState(initialApp?.apiName ?? '');
   const [draft, setDraft] = useState<AppDraft>(initialApp ? appDraftFromMetadata(initialApp) : emptyApp());
   const [creating, setCreating] = useState(false);
+  const [view, setView] = useState<'list' | 'form'>(embedded ? 'form' : 'list');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -171,6 +174,7 @@ export default function AppManager({
       await onSave({ ...draft, apiName, label, navigationOrder }, !creating);
       setCreating(false);
       setSelectedApiName(apiName);
+      if (!embedded) setView('list');
       setNotice('App saved.');
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unable to save app.');
@@ -188,6 +192,7 @@ export default function AppManager({
       await onDelete(selectedApiName);
       const remaining = apps.find((app) => app.apiName !== selectedApiName);
       setCreating(false);
+      if (!embedded) setView('list');
       setSelectedApiName(remaining?.apiName ?? '');
       setDraft(remaining ? appDraftFromMetadata(remaining) : emptyApp());
       setNotice('App deleted.');
@@ -200,6 +205,7 @@ export default function AppManager({
 
   const cancel = () => {
     setCreating(false);
+    if (!embedded) setView('list');
     const previous = apps.find(app => app.apiName === selectedApiName) ?? apps[0];
     setSelectedApiName(previous?.apiName ?? '');
     setDraft(previous ? appDraftFromMetadata(previous) : emptyApp());
@@ -209,8 +215,47 @@ export default function AppManager({
     const original = apps.find(app => app.apiName === selectedApiName);
     if (original && JSON.stringify(appDraftFromMetadata(original)) !== JSON.stringify(draft)
       && !window.confirm('Discard unsaved app changes?')) return;
-    setCreating(true); setSelectedApiName(''); setDraft(emptyApp());
+    setCreating(true); setView('form'); setSelectedApiName(''); setDraft(emptyApp());
     setError(''); setNotice('');
+  };
+  const editApp = (app: AppDraft) => {
+    setCreating(false);
+    setSelectedApiName(app.apiName);
+    setDraft(appDraftFromMetadata(app));
+    setView('form');
+    setError(''); setNotice('');
+  };
+  const returnToList = () => {
+    const original = apps.find(app => app.apiName === selectedApiName);
+    const changed = creating
+      ? Boolean(draft.label || draft.apiName || draft.description ||
+          draft.navigationItems.length || draft.navigationPageApiNames.length)
+      : Boolean(original && JSON.stringify(appDraftFromMetadata(original)) !== JSON.stringify(draft));
+    if (changed && !window.confirm('Discard unsaved app changes and return to the app list?')) return;
+    cancel();
+  };
+  const cloneApp = async (source: AppDraft) => {
+    if (busy) return;
+    const copy = cloneAppConfiguration(source, apps);
+    if (!window.confirm(
+      'Clone "' + source.label + '" as "' + copy.label + '" (' + copy.apiName + ')?\n\n' +
+      'Only app settings and navigation references are copied. Pages, business records, ' +
+      'licences, AppExchange ownership and permissions are not copied.'
+    )) return;
+    setBusy(true);
+    setError(''); setNotice('');
+    try {
+      await onSave(copy, false);
+      setSelectedApiName(copy.apiName);
+      setDraft(appDraftFromMetadata(copy));
+      setCreating(false);
+      setView('list');
+      setNotice('App cloned as ' + copy.label + '.');
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unable to clone app.');
+    } finally {
+      setBusy(false);
+    }
   };
   const openSetupWorkspace = (destination: SetupDestination) => {
     const original = apps.find(app => app.apiName === selectedApiName);
@@ -234,9 +279,16 @@ export default function AppManager({
       </div>
       {embedded
         ? <button className="btn" type="button" onClick={onClose}>Back to Page Builder</button>
-        : !creating && <button className="btn btn-brand" type="button" onClick={startNewApp}><Plus size={14}/>New App</button>}
+        : view === 'list'
+          ? <button className="btn btn-brand" type="button" onClick={startNewApp} disabled={busy}><Plus size={14}/>New App</button>
+          : <button className="btn" type="button" onClick={returnToList} disabled={busy}><ArrowLeft size={14}/> All Apps</button>}
     </header>
 
+    {!embedded && view === 'list' ? <>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {notice && <p className="form-success" role="status">{notice}</p>}
+      <AppManagerList apps={apps} busy={busy} onEdit={editApp} onClone={app => void cloneApp(app)}/>
+    </> : <>
     <nav className="app-manager-stepper" aria-label="Application setup steps">
       {steps.map((step, index) => <a href={'#' + step.id} key={step.id} className={'app-manager-step' + (index === 0 ? ' is-first' : '')}
         onClick={event => {
@@ -254,7 +306,7 @@ export default function AppManager({
           <h2>{creating ? 'Create New App' : 'App Details'}</h2>
           <p>{creating ? 'Enter the details and select what to include. All steps are on this page.' : 'Edit this app without changing its existing settings until you save.'}</p>
         </div>
-        {!creating && <label className="form-label app-manager-switcher">App
+        {!creating && embedded && <label className="form-label app-manager-switcher">App
           <select className="form-control" aria-label="Select app to edit" value={selectedApiName}
             onChange={event => {
               const original = apps.find(app => app.apiName === selectedApiName);
@@ -421,5 +473,6 @@ export default function AppManager({
         </details>
       </aside>
     </div>
+    </>}
   </div>;
 }
