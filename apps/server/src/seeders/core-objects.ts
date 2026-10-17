@@ -62,7 +62,7 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'Email', label: 'Email', dataType: 'Email', required: false, unique: false },
     { apiName: 'Phone', label: 'Phone', dataType: 'Phone', required: false, unique: false },
     { apiName: 'OwnerId', label: 'Contact Owner', dataType: 'Lookup(User)', required: true, unique: false, relationship: { type: 'Lookup', targetObject: 'User', relationshipName: 'Owner', childRelationshipName: 'OwnedContacts' } }
-  ], listViewButtons: ['New', 'Change Owner', 'Import', 'Add to Campaign'] },
+  ], listViewButtons: ['New', 'Change Owner', 'Import'] },
   { apiName: 'Lead', label: 'Lead', pluralLabel: 'Leads', kind: 'Standard Object', description: 'Prospective customers and the sources that introduced them.', fields: [
     { apiName: 'FirstName', label: 'First Name', dataType: 'Text(40)', required: false, unique: false },
     { apiName: 'LastName', label: 'Last Name', dataType: 'Text(80)', required: true, unique: false },
