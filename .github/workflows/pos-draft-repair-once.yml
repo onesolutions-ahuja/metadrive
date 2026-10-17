@@ -26,3 +26,4 @@ jobs:
           METADRIVE_POS_DRAFT_REPAIR_APPROVED: 'true'
         run: node scripts/pos-checkout-draft-repair.mjs
 # Trigger retry of guarded repair after fresh-state CAS conflict handling.
+# Apply verified session isolation and cashier Flow binding to Draft only.
