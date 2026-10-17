@@ -11,8 +11,8 @@ function rewrite(value,key=''){
  if(typeof value==='string'){
   if(value==='Lookup(Product)')return 'Lookup(Product__c)';
   if(value===legacy&&identityKeys.has(key))return canonical;
-  if(value.startsWith('@Product.'))return '@Product__c.'+value.slice(9);
-  if(value.startsWith('{!Product.'))return '{!Product__c.'+value.slice(10);
+  if(value.includes('@Product.')||value.includes('{!Product.'))
+   return value.replaceAll('@Product.','@Product__c.').replaceAll('{!Product.','{!Product__c.');
   return value;
  }
  if(Array.isArray(value))return value.map(item=>rewrite(item,key));
@@ -92,6 +92,9 @@ export function migrateProductFieldsOnly(tenant){
    if(field.dataType==='Lookup(Product)')field.dataType='Lookup(Product__c)';
   }
  }
+ if((tenant.interviews??[]).some(i=>i.flowApiName &&
+  JSON.stringify((tenant.flows??[]).find(f=>f.apiName===i.flowApiName)??{}).includes('"Product"')))
+  throw Error('Pending Flow interview blocks Product retirement');
  tenant.objects=tenant.objects.filter(o=>o.apiName!==legacy).map(rewrite);
  for(const bucket of ['apps','pages','reports','dashboards','approvalProcesses',
   'emailAlerts','platformEvents']){
@@ -134,7 +137,9 @@ export function migrateProductFieldsOnly(tenant){
  const consumers=JSON.stringify([tenant.objects,tenant.apps,tenant.pages,tenant.flows.map(f=>({
    startConfig:f.startConfig,triggerObject:f.triggerObject,elements:f.elements,
    connectors:f.connectors,resources:f.resources})),tenant.reports,tenant.dashboards]);
- if(/"(?:targetObject|object|objectApiName|triggerObject|dataType)":"(?:Product|Lookup\\(Product\\))"/.test(consumers))
+ if(['"targetObject":"Product"','"object":"Product"',
+   '"objectApiName":"Product"','"triggerObject":"Product"',
+   '"Lookup(Product)"'].some(part=>consumers.includes(part)))
   throw Error('Unresolved Product references in live metadata');
  tenant.fieldHistory=(tenant.fieldHistory??[]).filter(r=>r.objectApiName!==legacy);
  tenant.recordShares=(tenant.recordShares??[]).filter(r=>r.objectApiName!==legacy);
