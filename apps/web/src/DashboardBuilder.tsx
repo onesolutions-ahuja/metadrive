@@ -30,6 +30,7 @@ import {
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import SmartFieldInput from './SmartFieldInput';
+import { resolveMentionValue, resolveMentionProperties } from './smartFieldMentions';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import { sourceReportTitleUpdate } from './dashboardComponentTitle';
@@ -1001,17 +1002,26 @@ export default function DashboardBuilder({
     const chartPalette = chartPaletteFor(component.chartColorPalette);
     const records = filteredRecords(component);
     const reportRun = component.reportApiName ? reportRuns[component.reportApiName] : undefined;
+    const fields = objectFor(component.objectApiName)?.fields.map(field => field.apiName) ?? [];
+    const contextRecord = records[0];
+    const data = { [component.objectApiName]: contextRecord };
+    const visibleFields = { [component.objectApiName]: fields };
+    const resolve = (value: string) => resolveMentionValue(value, data, visibleFields);
+    const safeHtmlRecord = contextRecord ? Object.fromEntries(Object.entries(contextRecord).map(([key, value]) =>
+      [key, typeof value === 'string' ? value.replace(/[&<>"']/g, character =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string,string>)[character]) : value])) : undefined;
     if (component.type === 'Rich Text') {
       return <iframe
         className="dashboard-rich-text-frame"
         title={component.title}
         sandbox=""
-        srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; img-src https: data:; font-src data:; style-src 'unsafe-inline'"></head><body>${component.richTextContent ?? ''}</body></html>`}
+        srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; img-src https: data:; font-src data:; style-src 'unsafe-inline'"></head><body>${resolveMentionValue(component.richTextContent ?? '', { [component.objectApiName]: safeHtmlRecord }, visibleFields)}</body></html>`}
       />;
     }
     if (component.type === 'Image') {
-      return component.imageUrl?.startsWith('https://')
-        ? <img className="dashboard-image-widget" src={component.imageUrl} alt={component.imageAltText ?? ''} loading="lazy" referrerPolicy="no-referrer" />
+      const imageUrl = resolve(component.imageUrl ?? '');
+      return typeof imageUrl === 'string' && imageUrl.startsWith('https://')
+        ? <img className="dashboard-image-widget" src={imageUrl} alt={component.imageAltText ?? ''} loading="lazy" referrerPolicy="no-referrer" />
         : <p className="dashboard-no-data">Set an HTTPS image URL in component properties.</p>;
     }
     if (component.type === 'Custom') {
@@ -1020,10 +1030,10 @@ export default function DashboardBuilder({
         ? <div data-dashboard-custom-component-id={component.id}
             style={resolveLayoutStyle(component.properties ?? {}, layoutDevice)}>
             <RegisteredComponent definition={definition} props={{
-            ...(component.properties ?? {}),
+            ...resolveMentionProperties(component.properties ?? {}, data, visibleFields),
             ...componentLayoutProps(component.properties ?? {}, layoutDevice),
             title: component.title,
-            properties: component.properties ?? {},
+            properties: resolveMentionProperties(component.properties ?? {}, data, visibleFields),
             object: objectFor(component.objectApiName),
             records,
             filters: current?.filters.filter((filter) => filter.objectApiName === component.objectApiName) ?? []
