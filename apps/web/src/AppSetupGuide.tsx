@@ -22,7 +22,7 @@ type Props = {
 
 export default function AppSetupGuide(props: Props) {
   const checks = useMemo(() => assessApplicationSetup({
-    app: props.app, apps: props.creating ? props.apps : props.apps.filter(item => item.apiName !== props.app.apiName),
+    app: props.app, apps: props.apps, creating: props.creating,
     objects: props.objects, pages: props.pages,
     flows: props.flows, libraryComponents: props.libraryComponents,
     reports: props.reports, dashboards: props.dashboards
