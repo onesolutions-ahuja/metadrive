@@ -107,7 +107,6 @@ type FlowBuilderProps = {
   onSavePlatformEvent: (event: PlatformEventMetadata) => Promise<void>;
   onDeletePlatformEvent: (apiName: string) => Promise<void>;
 };
-
 export default function FlowBuilder({
   landing = false, flow, flows, onListFlows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
@@ -224,7 +223,6 @@ export default function FlowBuilder({
     const verticalFit = (canvas.clientHeight - 48) / graphHeight;
     setZoom(Math.max(0.35, Math.min(1.5, horizontalFit, verticalFit)));
   };
-
   const setConfig = (key: string, value: unknown) => {
     if (selected) onUpdateConfig(selected.id, key, value);
   };
@@ -1057,7 +1055,6 @@ export default function FlowBuilder({
     </>;
     return <label className="form-label">Configuration<textarea className="form-control" rows={4} value={JSON.stringify(selected.config, null, 2)} readOnly /></label>;
   };
-
   if (landing) return <div className="flow-start-page flow-start-page-split">
     <div className="flow-start-heading">
       <div className="eyebrow">AUTOMATION</div>
@@ -1135,7 +1132,6 @@ export default function FlowBuilder({
     </section>
     </div>
   </div>;
-
   return <div className="flow-builder">
     <div className="flow-topbar">
       <button className="icon-button subtle" aria-label="Back to setup" onClick={onExit}><ArrowLeft size={17} /></button>
