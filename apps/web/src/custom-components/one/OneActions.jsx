@@ -1,5 +1,5 @@
 
-function css(p){const s={'--one-accent':p.accentColor||'#3176cc','--one-radius':Math.max(0,Number(p.radius??16))+'px','--one-pad':Math.max(0,Number(p.padding??16))+'px','--one-gap':Math.max(0,Number(p.gap??12))+'px',width:p.width||'100%'};if(p.backgroundColor)s['--one-bg']=p.backgroundColor;if(p.textColor)s['--one-fg']=p.textColor;if(p.borderColor)s['--one-border']=p.borderColor;return {className:'one-ui one-ui--'+(p.theme||'glass')+' one-ui--'+(p.size||'medium')+(p.hideOnPhone?' one-hidden-mobile':''),style:s};}
+function css(p){const s={'--one-accent':p.accentColor||'var(--md-primary, #1d4ed8)','--one-radius':Math.max(0,Number(p.radius??16))+'px','--one-pad':Math.max(0,Number(p.padding??16))+'px','--one-gap':Math.max(0,Number(p.gap??12))+'px',width:p.width||'100%'};if(p.backgroundColor)s['--one-bg']=p.backgroundColor;if(p.textColor)s['--one-fg']=p.textColor;if(p.borderColor)s['--one-border']=p.borderColor;return {className:'one-ui one-ui--'+(p.theme||'glass')+' one-ui--'+(p.size||'medium')+(p.hideOnPhone?' one-hidden-mobile':''),style:s};}
 const arr=v=>Array.isArray(v)?v:typeof v==='string'?v.split(',').map(s=>s.trim()).filter(Boolean):[];
 function label(o){return typeof o==='object'&&o!==null?String(o.label??o.name??o.title??o.value??''):String(o)}
 function value(o){return typeof o==='object'&&o!==null?o.value??o.id??o.apiName??label(o):o}
