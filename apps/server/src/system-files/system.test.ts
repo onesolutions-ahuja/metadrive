@@ -69,6 +69,7 @@ test('registered browser origin cannot select another tenant by slug', async () 
   const app=createSystemServer(db);
   const listener=app.listen(0,'127.0.0.1');
   try {
+    if(!listener.listening) await import('node:events').then(({once})=>once(listener,'listening'));
     const port=(listener.address() as import('node:net').AddressInfo).port;
     const response=await fetch(`http://127.0.0.1:${port}/api/auth/login`,{
       method:'POST',
@@ -78,6 +79,6 @@ test('registered browser origin cannot select another tenant by slug', async () 
     assert.equal(response.status,401);
     assert.equal(touched.some(sql=>sql.includes('FROM md_users')),false);
   } finally {
-    await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+    if(listener.listening) await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
 });
