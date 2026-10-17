@@ -12,7 +12,7 @@ only PostgreSQL; no legacy snapshot or JSONB runtime is imported.
 - `system-files/record-engine.ts`: typed field validation, SQL record storage
 - `system-files/component-runtime.ts`: registered component lookup
 - `system-files/page-runtime.ts`: page/component SQL lookup
-- `system-files/flow-runtime.ts`: active flow metadata and run tracking (executor not yet implemented)
+- `system-files/flow-runtime.ts`: restricted transactional Flow execution (Start, Assignment, Decision, CreateRecord, End)
 - `system-files/app-runtime.ts`: licensed tenant installations
 - `system-files/tenant-provisioning.ts`: tenant data creation
 
@@ -23,6 +23,7 @@ production or used to overwrite existing business records.
 Use `npm run build --workspace apps/server` and
 `npm run test:system --workspace apps/server` to validate the new backend.
 Use `npm run check` for the repository-wide reference scan and build.
+Use `npm run preflight:sql --workspace apps/server` to inspect the existing SQL schema without modifying it.
 
 ## Compatibility and release gate
 
