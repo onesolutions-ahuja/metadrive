@@ -77,7 +77,7 @@ const inspect={
    filterFields:Array.isArray(step.config?.conditions)
      ?step.config.conditions.map(x=>({field:x.field,operator:x.operator,valueKind:
          typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?'reference':'literal'})):[],
-   screenFieldTypes:Array.isArray(step.config?.fields)?step.config.fields.map(x=>({type:x.type,label:x.label})):[],
+   screenFieldTypes:Array.isArray(step.config?.fields)?step.config.fields.map(x=>({type:x.type,label:x.label,apiName:x.apiName??null,objectApiName:x.type==='Lookup'?x.objectApiName:null})):[],
    configuredFields:Array.isArray(step.config?.fieldValues)?step.config.fieldValues.map(x=>({
       field:x.field,valueKind:typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?'reference':'literal',
       sourceReference:typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?x.value:undefined
