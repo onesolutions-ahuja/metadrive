@@ -8,7 +8,7 @@ import {chromium} from 'playwright';
 import {kioskPresentationComponents} from './kiosk-phase4-components.mjs';
 import {commercePages,commerceApp} from './kiosk-phase4-pages.mjs';
 import {kioskObjectDefinitions,demoCategories,demoProducts} from './kiosk-demo-fixtures.mjs';
-import {customisationObjects,basketObjectExtensions,demoModifierGroups,demoModifierOptions,demoModifierAssignments} from './kiosk-commerce-capabilities.mjs';
+import {customisationObjects,customisationObjectExtensions,basketObjectExtensions,demoModifierGroups,demoModifierOptions,demoModifierAssignments} from './kiosk-commerce-capabilities.mjs';
 import {commerceFlows} from './kiosk-phase4-flows.mjs';
 
 const temp=mkdtempSync(join(tmpdir(),'kiosk-visual-'));
@@ -52,7 +52,7 @@ try{
  for(const obj of [...kioskObjectDefinitions,...customisationObjects])
   if(!existing.has(obj.apiName) && obj.apiName!=='SaleLine__c')await request('/metadata/objects','POST',obj);
  const latest=(await request('/metadata/objects')).objects;
- for(const [name,fields] of Object.entries(basketObjectExtensions)){
+ for(const [name,fields] of Object.entries({...customisationObjectExtensions,...basketObjectExtensions})){
   const obj=latest.find(o=>o.apiName===name);
   assert.ok(obj,'Missing '+name);
   const missing=fields.filter(f=>!obj.fields.some(x=>x.apiName===f.apiName));
@@ -60,7 +60,7 @@ try{
  }
  const categoryIds=new Map();
  for(const record of demoCategories){
-  const result=await request('/records/ProductCategory__c','POST',record);
+  const result=await request('/records/ProductCategory','POST',record);
   categoryIds.set(record.Name,String(result.record?.Id||result.Id));
  }
  const productIds=new Map();
@@ -68,12 +68,23 @@ try{
   Name:p.Name,DefaultPrice:p.DefaultPrice,Description:p.Description,ImageUrl:p.ImageUrl,
   CategoryId:categoryIds.get(p.category),IsActive:true
  });productIds.set(p.Name,made.record?.Id||made.Id)}
- const groupIds=new Map();
- for(const group of demoModifierGroups){const made=await request('/records/ModifierGroup__c','POST',group);groupIds.set(group.Name,made.record?.Id||made.Id)}
- for(const option of demoModifierOptions){const {group,...values}=option;await request('/records/ModifierOption__c','POST',{...values,GroupId:groupIds.get(group)})}
- for(const a of demoModifierAssignments)await request('/records/ProductModifierGroup__c','POST',{
-  Name:'Demo assignment '+a.product+' '+a.group,ProductId:productIds.get(a.product),GroupId:groupIds.get(a.group)
- });
+ for(const assignment of demoModifierAssignments){
+  const productId=productIds.get(assignment.product);
+  const group=demoModifierGroups.find(x=>x.Name===assignment.group);
+  assert.ok(productId&&group);
+  const created=await request('/records/ProductModifierGroup__c','POST',{
+   Name:'Demo assignment '+assignment.product+' '+assignment.group,
+   ProductId:productId,MinSelections:group.MinSelections,MaxSelections:group.MaxSelections,
+   IsRequired:group.IsRequired,IsActive:true
+  });
+  const groupId=created.record?.Id||created.Id;
+  for(const opt of demoModifierOptions.filter(x=>x.group===assignment.group)){
+   await request('/records/ProductModifier__c','POST',{
+    Name:opt.Name,GroupId:groupId,Product__c:String(productId),
+    Price__c:opt.PriceAdjustment,IsActive:true
+   });
+  }
+ }
  for(const comp of kioskPresentationComponents){
   await request('/component-library','POST',{...comp,publicationStatus:'Draft'});
   await request('/component-library/'+encodeURIComponent(comp.apiName)+'/publish','POST');
