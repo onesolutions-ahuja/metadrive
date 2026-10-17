@@ -50,7 +50,13 @@ function resolveFlowResource(name: string, context: FlowRuntimeContext): unknown
     return String(resource.value ?? '').replace(/\{!?([A-Za-z_$][A-Za-z0-9_$.]*)\}/g, (_match, reference: string) => {
       const resolved = resolveFlowValue(`{${reference}}`, context);
       return resolved === undefined || resolved === null ? '' : String(resolved);
-    });
+    }).replace(/(^|[^A-Za-z0-9_@])@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_.])/g,
+      (_match, prefix: string, object: string, field: string) => {
+        if (!context.record || object !== context.triggerObjectName || !Object.hasOwn(context.record, field)) {
+          throw new Error('Text template field mention is not available in this Flow record context.');
+        }
+        return prefix + String(context.record[field] ?? '');
+      });
   }
   if (resource.type !== 'Formula') return context.variables[name];
   if (context.formulaStack.has(name)) throw new Error(`Flow formula dependency cycle detected at "${name}".`);
@@ -66,6 +72,7 @@ function resolveFlowResource(name: string, context: FlowRuntimeContext): unknown
       ...(context.recordEvent ? { isNew: context.recordEvent === 'created' } : {}),
         isClone: context.isClone,
       hasPrior: context.prior !== undefined,
+      sourceObjectApiName: context.triggerObjectName,
       timeZone: context.timeZone,
       locale: context.locale,
       currentUser: context.currentUser,
