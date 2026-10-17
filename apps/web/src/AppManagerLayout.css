@@ -1,7 +1,7 @@
 /* Guided App Manager presentation only; all metadata and save behaviour stays in AppManager. */
 .app-manager-workspace{max-width:none;min-width:0}
 .app-manager-workspace .app-manager-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px}
-.app-manager-workspace .app-manager-top h1{margin:2px 0 3px;font-size:var(--md-fs-h2,24px)}
+.app-manager-workspace .app-manager-top h1{margin:var(--md-space-1,4px) 0;font-size:var(--md-fs-h1,30px)}
 .app-manager-workspace .app-manager-top p{margin:0;font-size:var(--md-fs-md,13px);color:var(--muted,#64748b)}
 .app-manager-stepper{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;background:var(--surface,#fff);border:1px solid var(--md-border,#e0e5eb);border-radius:10px;padding:var(--md-space-3,12px) var(--md-space-4,16px);margin:12px 0}
 .app-manager-step{display:flex;align-items:center;gap:10px;min-width:0;text-decoration:none;color:var(--text,#192230);font-size:var(--md-fs-sm,12px);border-radius:8px;padding:5px}
