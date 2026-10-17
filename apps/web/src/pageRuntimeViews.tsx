@@ -245,6 +245,7 @@ function MetadataBoundPageComponent({
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
+  const mentionRootObjectApiName = defaultObjectApiName || objectApiName;
   // An application-independent session can be referenced by configured Flows.
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
@@ -391,7 +392,7 @@ function MetadataBoundPageComponent({
   })).filter(contact => contact.id && contact.phone);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
-  const mentionContext = useRelationshipMentionContext(objects, objectApiName,
+  const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     explicitMentionRecordId(properties), properties, apiRequest, revision);
   const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields);
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
@@ -408,7 +409,7 @@ function MetadataBoundPageComponent({
     }
     if (typeof source === 'string' && source.startsWith('$record.')) {
       const fieldName = source.slice(8);
-      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? mentionContext.records[objectApiName]?.[fieldName] : undefined;
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? mentionContext.records[mentionRootObjectApiName]?.[fieldName] : undefined;
     }
     return source;
   };
