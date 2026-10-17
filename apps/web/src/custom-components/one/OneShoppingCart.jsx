@@ -277,7 +277,7 @@ function ShoppingCartTill({props}) {
   window.addEventListener('metadrive:page-toolbar-action',onToolbarAction);
   return ()=>window.removeEventListener('metadrive:page-toolbar-action',onToolbarAction);
  },[props.pageSessionKey,props.componentId,openDisplay]);
- const pageToolbarOwnsHeader=typeof document!=='undefined'&&
+ const pageToolbarOwnsHeader=Boolean(props.pageSessionKey)&&typeof document!=='undefined'&&
   document.querySelector('.header-page-context')?.getAttribute('data-page-session-key')===props.pageSessionKey;
  return <section className={"one-shopping-till"+(props.viewMode==="basket"?" one-shopping-basket-only":"")}>
   {props.viewMode!=='basket'&&!pageToolbarOwnsHeader&&<header className="one-row" style={{justifyContent:'space-between'}}>
