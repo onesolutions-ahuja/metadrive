@@ -4,7 +4,7 @@ export class RecordEngine {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
   private async validate(tenantId:string,objectApi:string,values:Record<string,unknown>) {
     const {rows}=await this.db.query<{api_name:string}>('SELECT api_name FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
-    const valid=new Set(rows.map(row=>row.api_name));
+    const valid=new Set(rows.map((row: { api_name: string }) => row.api_name));
     for(const key of Object.keys(values)) if(!valid.has(key)) throw new Error('Unknown field: '+key);
   }
   async create(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
