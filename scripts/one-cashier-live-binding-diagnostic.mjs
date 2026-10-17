@@ -16,7 +16,13 @@ const [pagesResult,objectsResult]=await Promise.all([
 ]);
 const pages=pagesResult.pages??[];
 const objects=objectsResult.objects??[];
-const page=pages.find(p=>/cashier/i.test(p.label+' '+p.apiName)&&p.status==='Draft');
+const cashierCandidates=pages.filter(p=>/cashier|till/i.test(p.label+' '+p.apiName)&&p.status==='Draft');
+const draftWithOneComponents=pages.filter(p=>p.status==='Draft'&&(p.components??[]).some(c=>/One(SplitPane|Tabs|ItemGrid|ShoppingCart)/i.test(c.type)));
+const page=[...cashierCandidates].sort((a,b)=>(b.components?.length??0)-(a.components?.length??0))[0]??null;
+console.log(JSON.stringify({result:'DRAFT_INVENTORY',candidateCount:cashierCandidates.length,
+ candidates:cashierCandidates.map(p=>({apiName:p.apiName,componentCount:p.components?.length??0,
+ types:(p.components??[]).map(c=>c.type).filter(t=>/One(SplitPane|Tabs|ItemGrid|ShoppingCart)/.test(t))})),
+ otherDraftsWithOneComponents:draftWithOneComponents.length}));
 if(!page){
  console.log(JSON.stringify({result:'NO_CASHIER_DRAFT_IN_TEST_TENANT',authenticated:true,readOnly:true,
   note:'The configured test identity cannot verify the actual saved cashier draft.'}));
