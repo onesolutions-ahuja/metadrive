@@ -165,6 +165,26 @@ test('cash Screen currency output can populate downstream numeric fields',()=>{
  assert.deepEqual(flowReferenceErrors(flow as any,catalogue),[]);
 });
 
+test('Loop item references derive their Object from Get Records collection without an extra Record resource',()=>{
+ const objects=[
+  {apiName:'Product',label:'Product',fields:[field('Name')]},
+  {apiName:'OrderLine__c',label:'Order Line',fields:[field('ProductId','Lookup(Product)',{targetObject:'Product'})]},
+  {apiName:'SaleItem__c',label:'Sale Item',fields:[field('ProductId','Lookup(Product)',{targetObject:'Product'})]}
+ ] as ObjectMetadata[];
+ const flow=config();
+ flow.elements[1].config={object:'OrderLine__c',outputVariable:'OrderLines',recordLimit:'all'};
+ flow.elements[2]={id:3,type:'Loop',label:'Each line',config:{collection:'OrderLines',loopVariable:'CurrentOrderLine'}} as any;
+ flow.elements.push({id:4,type:'Create Records',label:'Create Sale Item',config:{
+  object:'SaleItem__c',fieldValues:[{field:'ProductId',value:'{!CurrentOrderLine.ProductId}'}]
+ }} as any);
+ flow.connectors.push({id:'loopbody',from:3,to:4,kind:'normal',label:'For Each'} as any);
+ flow.connectors.push({id:'loopreturn',from:4,to:3,kind:'normal',label:''} as any);
+ assert(!flow.resources.some(item=>item.name==='CurrentOrderLine'));
+ assert(flowReferenceChoices(flow,4,objects,objects[2].fields[0])
+   .some(choice=>choice.reference==='{!CurrentOrderLine.ProductId}'));
+ assert.deepEqual(flowReferenceErrors(flow as any,objects),[]);
+});
+
 test('ordinary JSON literals are not misread as broken Flow references',()=>{
  const flow=config();
  flow.elements.push({id:4,type:'Assignment',label:'Keep JSON',config:{variable:'SessionKey',value:'{"example":1}'}} as any);
