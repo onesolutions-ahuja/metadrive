@@ -16,7 +16,7 @@ import {readNormalizedState} from '../src/normalized-state-runtime.mjs';
 import {verifyTypedRecords} from '../src/normalized-typed-records.mjs';
 import {loadAppSeedCatalog} from '../src/seeders/catalog.mjs';
 
-const root=resolve(fileURLToPath(new URL('../../../..',import.meta.url)));
+const root=resolve(fileURLToPath(new URL('../../..',import.meta.url)));
 const sqlUrl=process.env.DATABASE_URL;
 const target=process.env.METADRIVE_SQL_TARGET_DB;
 if(!sqlUrl||!/^[a-z][a-z0-9_]{2,61}$/.test(target??''))
@@ -140,7 +140,7 @@ try {
   const seeders=seederFiles.map(item=>{
     const base=item.path.split('/').pop();
     const importers=sources.filter(source=>
-      source.path!==item.path&&source.contents.includes(base)).map(source=>source.path);
+      source.path!==item.path&&(source.contents.includes(base)||source.contents.includes(base.replace(/\.ts$/,'.js')))).map(source=>source.path);
     return {path:item.path,referenceCount:importers.length,importedBy:importers};
   });
   const packageSummary=(catalog.packages??[]).map(pkg=>({
