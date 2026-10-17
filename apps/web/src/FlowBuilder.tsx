@@ -528,12 +528,12 @@ export default function FlowBuilder({
           {outcome.name !== 'Default' && <>
             {renderConditionLogic('Condition Requirements', outcome.conditionLogic ?? 'All', outcome.conditions.length, (logic) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditionLogic: logic } : item)))}
             {outcome.conditions.map((condition, conditionIndex) => <div className="flow-config-row" key={`outcome-${index}-condition-${conditionIndex}`}>
-              <select className="form-control" aria-label="Outcome condition field" value={displayValue(condition.field)} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, field: event.target.value } : entry) } : item))}><option value="">Select field or resource</option>{decisionObject && <optgroup label="Record Fields">{decisionObject.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}<optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={`{${resource.name}}`}>{resource.label}</option>)}</optgroup></select>
+              <select className="form-control" aria-label="Outcome condition field" value={displayValue(condition.field)} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, field: event.target.value } : entry) } : item))}><option value="">Select field or resource</option>{decisionObject && <optgroup label="Record Fields">{!decisionObject.fields.some(field=>field.apiName==='Id')&&<option value="Id">Record ID</option>}{decisionObject.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>}<optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={`{${resource.name}}`}>{resource.label}</option>)}</optgroup></select>
               <select className="form-control" aria-label="Outcome condition operator" value={displayValue(condition.operator) || 'Equals'} onChange={(event) => setOutcomes(outcomes.map((item, itemIndex) => itemIndex === index ? { ...item, conditions: item.conditions.map((entry, entryIndex) => entryIndex === conditionIndex ? { ...entry, operator: event.target.value } : entry) } : item))}>{['Equals', 'Not Equals', 'Is Null', 'Is Not Null', 'Greater Than', 'Less Than', 'Contains', 'Starts With'].map((operator) => <option key={operator}>{operator}</option>)}</select>
               {condition.operator !== 'Is Null' && condition.operator !== 'Is Not Null' && <FlowReferenceInput
                 ariaLabel="Outcome condition value" value={displayValue(condition.value)}
                 flow={flow} elementId={selected.id} objects={objects}
-                field={decisionObject?.fields.find(field=>field.apiName===condition.field)}
+                field={decisionObject?.fields.find(field=>field.apiName===condition.field)??(condition.field==='Id'?{apiName:'Id',label:'Record ID',dataType:'Id',required:true,unique:true}:undefined)} targetObjectApiName={decisionObject?.apiName}
                 onChange={value=>setOutcomes(outcomes.map((item,itemIndex)=>itemIndex===index
                   ? {...item,conditions:item.conditions.map((entry,entryIndex)=>
                     entryIndex===conditionIndex?{...entry,value}:entry)}:item))} />}
@@ -753,7 +753,6 @@ export default function FlowBuilder({
                         itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
                     />
                   </>}
-
               <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>
             </>
             : field.type === 'Display Text'

@@ -11,18 +11,19 @@ type Props = {
   elementId: number;
   objects: readonly ObjectMetadata[];
   field?: FieldMetadata;
+  targetObjectApiName?: string;
   ariaLabel: string;
   placeholder?: string;
   multiline?: boolean;
 };
 
 /** Shared no-code value editor for Flow conditions, assignments and record filters. */
-export default function FlowReferenceInput({value,onChange,flow,elementId,objects,field,ariaLabel,placeholder,multiline=false}:Props) {
+export default function FlowReferenceInput({value,onChange,flow,elementId,objects,field,targetObjectApiName,ariaLabel,placeholder,multiline=false}:Props) {
   const [open,setOpen]=useState(false);
   const [search,setSearch]=useState('');
   const id=useId();
   const container=useRef<HTMLDivElement>(null);
-  const choices=flowReferenceChoices(flow,elementId,objects,field);
+  const choices=flowReferenceChoices(flow,elementId,objects,field,targetObjectApiName);
   const selected=choices.find(choice=>choice.reference===value);
   const path=referenceName(value);
   const badReference=Boolean(path&&!selected)

@@ -115,7 +115,10 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
           ?(actual==='id'||actual==='lookup')&&Boolean(target.relationshipTarget)
             &&(actual!=='lookup'||Boolean(relatedObject))
             &&(!sourceObject||sourceObject===target.relationshipTarget)
-          :expected==='id'?actual==='id'
+          :expected==='id'
+            ? actual==='lookup'
+              ?Boolean(relatedObject)&&relatedObject===target.relationshipTarget
+              :actual==='id'&&(!target.relationshipTarget||!sourceObject||sourceObject===target.relationshipTarget)
           :expected==='number'||expected==='boolean'||expected==='date'?actual===expected
           :actual==='text'||actual==='id';
         if(!valid)errors.push(`${element.label} / ${name}: "${root}.${parts[0]}" is incompatible with the filter field type.`);
@@ -127,7 +130,7 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
       const valid=expected==='lookup'
         ?actual==='id'&&Boolean(target.relationshipTarget)
           &&(!source.objectName||source.objectName===target.relationshipTarget)
-        :expected==='id'?actual==='id'
+        :expected==='id'?actual==='id'&&(!target.relationshipTarget||!source.objectName||source.objectName===target.relationshipTarget)
         :expected==='number'||expected==='boolean'||expected==='date'?actual===expected
         :actual==='text'||actual==='id';
       if(!valid)errors.push(`${element.label} / ${name}: "${root}" is incompatible with the target field type.`);
@@ -136,7 +139,8 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
   const conditionCheck=(element:{id:number;label:string},condition:Row,objectName:string|undefined)=>{
     if(['Is Null','Is Not Null'].includes(String(condition.operator)))return;
     const fld=object(objectName)?.fields.find(x=>x.apiName===condition.field);
-    const target=fld?{dataType:fld.dataType,relationshipTarget:fld.relationship?.targetObject}:undefined;
+    const target=fld?{dataType:fld.dataType,relationshipTarget:fld.relationship?.targetObject}
+      :condition.field==='Id'&&object(objectName)?{dataType:'Id',relationshipTarget:objectName}:undefined;
     validate(condition.value,target,element,'condition '+String(condition.field||'?'));
   };
   for(const element of flow.elements){
