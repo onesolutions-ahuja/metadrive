@@ -3,7 +3,7 @@ import type { FlowMetadata, ObjectMetadata } from '../../index.js';
 type Row = Record<string, unknown>;
 type Choice = { type:string; objectName?:string; origin?:number; fields?:readonly string[]; isCollection?:boolean };
 const expression=/^\{!?([A-Za-z_$][A-Za-z0-9_$.]*)\}$/;
-const invalidExpression=/^\\{!?[A-Za-z_$]|^@[A-Za-z_$][A-Za-z0-9_$]*(?:\\.[A-Za-z_$][A-Za-z0-9_$]*)?$/;
+const invalidExpression=/^\{!?[A-Za-z_$]|^@[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)?$/;
 const specialFields=new Map([['Id','Id'],['CreatedDate','DateTime'],['LastModifiedDate','DateTime']]);
 const rows=(value:unknown):Row[]=>Array.isArray(value)?value.filter((x):x is Row=>x!==null&&typeof x==='object'&&!Array.isArray(x)):[];
 const typed=(dataType:string):string=>
