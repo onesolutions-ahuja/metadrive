@@ -20,7 +20,7 @@ export function assessCheckoutReadiness({objects=[],flows=[],pages=[]}={}){
  const inventory=get(objects,'InventoryTransaction');
  const allNames=new Set(objects.map(o=>o.apiName));
  for(const obj of objects){
-   if(obj.apiName!=='Product'&&obj.apiName!=='Order'&&obj.apiName!=='OrderItem'&&obj.apiName!=='Invoice'&&obj.apiName!=='InvoiceItem')continue;
+   if(!new Set([products,order,lines,invoice,invoiceItems].filter(Boolean)).has(obj))continue;
    const invalid=(obj.fields??[]).filter(f=>/^(Lookup|Master-Detail)\(/.test(f.dataType)&&
       (!f.relationship||!allNames.has(f.relationship.targetObject)));
    check('relationships:'+obj.apiName,!invalid.length,
@@ -39,9 +39,9 @@ export function assessCheckoutReadiness({objects=[],flows=[],pages=[]}={}){
  check('lines:parent-lookup',Boolean(field(lines,'OrderId')?.relationship?.targetObject==='Order'
    ||field(lines,'OrderId')?.relationship?.targetObject==='Order__c'), 'Order line must link to Order');
  check('invoice:available',Boolean(invoice),'Invoice object exists');
- check('invoice:order-link',Boolean(field(invoice,'OrderId')),'Invoice must link to source Order');
+ check('invoice:order-link',Boolean(field(invoice,'OrderId')?.relationship?.targetObject===order?.apiName),'Invoice must link to source Order');
  check('invoice-items:available',Boolean(invoiceItems),'InvoiceItem object exists');
- check('invoice-items:invoice-link',Boolean(field(invoiceItems,'InvoiceId')),'InvoiceItem must link to Invoice');
+ check('invoice-items:invoice-link',Boolean(field(invoiceItems,'InvoiceId')?.relationship?.targetObject===invoice?.apiName),'InvoiceItem must link to Invoice');
  check('payment:available',Boolean(payment),'Payment object exists');
  check('stock:available',Boolean(stocks&&inventory),
    'StockBalance and InventoryTransaction objects required for controlled stock updates');
