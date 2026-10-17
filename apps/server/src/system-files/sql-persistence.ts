@@ -11,7 +11,7 @@ export function resolveSqlConnection(databaseUrl:string,env:NodeJS.ProcessEnv) {
   const raw=env.METADRIVE_DB_CA_CERT?.trim();
   if(!raw)return {connectionString:uri.toString()};
   const candidate=raw.includes('BEGIN CERTIFICATE')?raw.replace(/\\n/g,'\n'):Buffer.from(raw,'base64').toString('utf8');
-  if(!/-----BEGIN CERTIFICATE-----[\\s\\S]+-----END CERTIFICATE-----/.test(candidate))
+  if(!candidate.includes('-----BEGIN CERTIFICATE-----')||!candidate.includes('-----END CERTIFICATE-----'))
     throw new Error('Invalid configured PostgreSQL CA certificate');
   // pg-connection-string gives sslmode precedence over explicit ssl options.
   // Remove it so node TLS uses this CA and still verifies the server identity.
