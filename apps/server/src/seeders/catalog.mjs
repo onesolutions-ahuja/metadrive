@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import { retiredObjectApiNames, isRetiredObject } from '../retired-object-names.mjs';
 import {assertMetadataOnlySeed} from './metadata-only.mjs';
 
 /**
@@ -45,6 +46,17 @@ export function loadAppSeedCatalog() {
     seen.add(pkg.appKey);
     // A package can declare record Objects but never tenant customer rows.
     assertMetadataOnlySeed(pkg, 'AppExchange package ' + pkg.appKey);
+    for (const definition of [...(pkg.objects ?? []), ...(pkg.extendObjects ?? [])]) {
+      if (isRetiredObject(definition.apiName))
+        throw Error('AppExchange package may not recreate retired Object: ' + definition.apiName);
+    }
+    // Page/Flow packages must not reinstall stale relationships to removed Objects.
+    for (const definition of [...(pkg.pages ?? []), ...(pkg.flows ?? [])]) {
+      const encoded = JSON.stringify(definition);
+      const obsolete = retiredObjectApiNames.find(name => encoded.includes(JSON.stringify(name)));
+      if (obsolete) throw Error('AppExchange package ' + pkg.appKey +
+        ' references retired Object ' + obsolete);
+    }
   }
   return catalog;
 }
