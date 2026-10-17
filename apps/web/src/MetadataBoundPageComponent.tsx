@@ -4,6 +4,7 @@ import {useState,useEffect,useRef} from 'react';
 import {presentPageRecords,type ChannelGrant} from './recordPresentationAdapters';
 import {filterPageComponentRecords} from './pageComponentBindings';
 import {resolveMentionProperties} from './smartFieldMentions';
+import { explicitMentionRecordId, useRelationshipMentionContext } from './useRelationshipMentionContext';
 import {resolvePageActionRoute} from './pageActionRouting';
 import {componentLayoutProps} from './pageComponentLayout';
 import RegisteredComponent from './RegisteredComponent';
@@ -112,9 +113,9 @@ export default function MetadataBoundPageComponent({
   }, [properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
-  const resolvedProperties = resolveMentionProperties(properties,
-    { [objectApiName]: visibleRecords[0] },
-    { [objectApiName]: fields.map(field => field.apiName) });
+  const mentionContext = useRelationshipMentionContext(objects, objectApiName,
+    explicitMentionRecordId(properties), properties, apiRequest, revision);
+  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields);
   const categoryFilterKey = typeof properties.filterKey === 'string' ? properties.filterKey : 'category';
   const categorySource = selectedFilterRecords[categoryFilterKey];
   const configuredCategoryField = String(properties.categoryFieldApiName??'').trim();
@@ -136,7 +137,7 @@ export default function MetadataBoundPageComponent({
     }
     if (typeof source === 'string' && source.startsWith('$record.')) {
       const fieldName = source.slice(8);
-      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? mentionContext.records[objectApiName]?.[fieldName] : undefined;
     }
     return source;
   };
