@@ -323,10 +323,10 @@ await updateSecurity(access=>{
 const readOnly={read:true,create:false,edit:false,delete:false,viewAll:false,modifyAll:false};
 const transaction={read:true,create:true,edit:true,delete:true,viewAll:false,modifyAll:false};
 const grants=Object.fromEntries(usedObjects.map(name=>[name,
- ['Order__c','OrderLine__c','OrderLineModifier__c'].includes(name)
+ ['Order__c','OrderLine__c'].includes(name)
   ?{...transaction,delete:name!=='Order__c'}:readOnly]));
 const fields=Object.fromEntries(usedObjects.flatMap(name=>objectMap.get(name).fields.map(f=>
- [name+'.'+f.apiName,{read:true,edit:['Order__c','OrderLine__c','OrderLineModifier__c'].includes(name)}])));
+ [name+'.'+f.apiName,{read:true,edit:['Order__c','OrderLine__c'].includes(name)}])));
 const id='md-commerce-kiosk-operator';
 await updateSecurity(access=>{
  const existingSet=(access.permissionSets??[]).find(p=>p.id===id);
