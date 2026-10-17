@@ -194,7 +194,13 @@ export default function AppManager({
     </div>
     <AppSetupGuide app={draft} apps={apps} objects={objects} pages={pages}
       flows={flows} libraryComponents={libraryComponents} reports={reports} dashboards={dashboards}
-      creating={creating} onOpenWorkspace={onOpenWorkspace} request={request}/>
+      creating={creating} request={request}
+      onOpenWorkspace={(destination) => {
+        const original = apps.find(app => app.apiName === selectedApiName);
+        const unsaved = creating || (original && JSON.stringify(appDraftFromMetadata(original)) !== JSON.stringify(draft));
+        if (unsaved && !window.confirm('You have unsaved app changes. Leave App Manager without saving them?')) return;
+        onOpenWorkspace?.(destination);
+      }}/>
     <section className="surface permission-section app-manager">
       {!creating && <label className="form-label">Lightning App
         <select className="form-control" aria-label="Select app to edit" value={selectedApiName} onChange={(event) => {
