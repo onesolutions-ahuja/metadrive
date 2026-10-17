@@ -353,7 +353,7 @@ function ShoppingCartTill({props}) {
 
 export default function OneShoppingCart(props) {
  const p=props||{};
- const style={'--one-accent':p.accentColor||'#3176cc','--one-radius':Math.max(0,Number(p.radius??16))+'px',
+ const style={'--one-accent':p.accentColor||'var(--md-primary, #1d4ed8)','--one-radius':Math.max(0,Number(p.radius??16))+'px',
   '--one-gap':Math.max(0,Number(p.gap??12))+'px','--one-pad':Math.max(0,Number(p.padding??16))+'px',
   width:p.width||'100%',
   '--one-catalogue-ratio':Math.min(85,Math.max(15,Number(p.catalogueWidthPercent??60)))+'fr',
