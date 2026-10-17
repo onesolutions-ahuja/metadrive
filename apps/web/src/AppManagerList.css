@@ -1,0 +1,23 @@
+.app-manager-list{border:1px solid #e0e5eb;border-radius:10px;background:var(--surface,#fff);overflow:hidden;padding:0;max-width:none;width:100%;box-sizing:border-box}
+.app-manager-list-head{padding:18px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.app-manager-list-head h2{font-size:17px;font-weight:650;margin:0 0 4px}
+.app-manager-list-head h2 span{color:#687789;background:#eef1f5;border-radius:12px;padding:3px 8px;font-size:12px;font-weight:500}
+.app-manager-list-head p{font-size:12px;color:#687789;margin:0}
+.app-manager-list-search{display:flex;align-items:center;gap:9px;min-height:37px;min-width:180px;width:min(100%,300px);padding:0 11px;border:1px solid #d6dce5;border-radius:7px;color:#617189}
+.app-manager-list-search:focus-within{outline:2px solid #1672dc;outline-offset:1px}
+.app-manager-list-search input{width:100%;border:0;background:transparent;outline:none;min-width:0;font-size:13px;color:inherit}
+.app-manager-list-scroll{overflow-x:auto}
+.app-manager-list-table{width:100%;border-collapse:collapse;text-align:left;min-width:690px;font-size:13px}
+.app-manager-list-table thead{background:#f8fafc}
+.app-manager-list-table th{font-weight:600;color:#475569;font-size:12px;padding:13px 16px;white-space:nowrap}
+.app-manager-list-table td{padding:14px 16px;border-top:1px solid #eef0f3;vertical-align:middle}
+.app-manager-list-table td code{font-size:12px;color:#44556c;overflow-wrap:anywhere}
+.app-manager-list-table tbody tr:hover{background:#f8fbff}
+.app-manager-list-name{display:flex;gap:10px;align-items:flex-start}
+.app-manager-list-name strong{font-size:13px;display:block}
+.app-manager-list-name small{display:block;font-size:11px;color:#6d7888;line-height:1.45;margin-top:3px}
+.app-manager-list-color{width:5px;min-height:31px;border-radius:4px;flex:none}
+.app-manager-list-actions{display:flex;gap:8px;align-items:center}
+.app-manager-list-actions .btn{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.app-manager-list-empty{text-align:center;padding:36px 16px;color:#64748b;font-size:13px}
+@media(max-width:670px){.app-manager-list-head{align-items:stretch;flex-direction:column}.app-manager-list-search{width:100%}}
