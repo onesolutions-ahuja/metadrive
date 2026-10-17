@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import {readSubmittedLogin} from './readSubmittedLogin';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from './metadata';
 import { apiRequest, setAccessToken } from './authClient';
 type LandingBootstrap = {
@@ -21,6 +22,7 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
   const recoveryQuery = new URLSearchParams(window.location.search);
   const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [resetToken, setResetToken] = useState(recoveryQuery.get('resetToken') ?? '');
   const [resetRequested, setResetRequested] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -41,6 +43,7 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const {email:submittedEmail,password:submittedPassword}=readSubmittedLogin(new FormData(event.currentTarget));
     onStart?.();
     const startedAt = performance.now();
     const controller = new AbortController();
@@ -51,7 +54,7 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
       const session = await apiRequest<{ access_token?: string; landing?: LandingBootstrap; mfa_required?: boolean; challenge_token?: string; enrollment_required?: boolean; setup_secret?: string }>('/auth/login?landing=1', {
         method: 'POST',
         signal: controller.signal,
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: submittedEmail, password: submittedPassword })
       });
       if (session.mfa_required && session.challenge_token) {
         setMfaChallenge({ challenge_token: session.challenge_token, enrollment_required: Boolean(session.enrollment_required), setup_secret: session.setup_secret });
@@ -173,9 +176,14 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
       <p>Sign in to manage your organization’s metadata and workflows.</p>
       {message && <div className="auth-error" role="alert">{message}{onRetry && <button type="button" className="text-action" onClick={onRetry}>Retry connection</button>}</div>}
       <label className="form-label" htmlFor="login-email">Email</label>
-      <input className="form-control" id="login-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
+      <input className="form-control" id="login-email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
       <label className="form-label" htmlFor="login-password">Password</label>
-      <input className="form-control" id="login-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+      <input className="form-control" id="login-password" name="password" type={passwordVisible ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+      <button className="text-action" type="button" aria-controls="login-password" onClick={(event) => {
+        const field = event.currentTarget.form?.elements.namedItem('password');
+        if (field instanceof HTMLInputElement) setPassword(field.value);
+        setPasswordVisible(value => !value);
+      }}>{passwordVisible ? 'Hide password' : 'Show password'}</button>
       <button className="text-action auth-forgot" type="button" onClick={() => { setMessage(''); setShowPasswordReset(true); }}>Forgot password?</button>
       <button className="btn btn-brand auth-submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
     </form>

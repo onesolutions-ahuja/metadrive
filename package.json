@@ -11,10 +11,11 @@
     "build": "npm run build --workspace apps/web && npm run build --workspace apps/server",
     "test": "npm run test:unit",
     "test:unit": "npm run test:system --workspace apps/server",
-    "check": "node scripts/verify-project-references.mjs && npm run test:unit && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist",
+    "check": "node scripts/verify-project-references.mjs && npm run test:unit && npm run test:login && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
-    "audit:architecture": "node scripts/verify-project-references.mjs"
+    "audit:architecture": "node scripts/verify-project-references.mjs",
+    "test:login": "tsx --test apps/web/src/readSubmittedLogin.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
