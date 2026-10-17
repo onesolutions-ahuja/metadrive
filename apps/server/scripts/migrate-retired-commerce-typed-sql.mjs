@@ -28,7 +28,7 @@ const isolated=process.env.METADRIVE_ISOLATED_SQL_RESTORE==='true';
 if(!['postgres:','postgresql:'].includes(url.protocol))throw Error('Invalid SQL URL');
 if(isolated){
  if(process.env.GITHUB_ACTIONS!=='true'||url.hostname!=='127.0.0.1'||
-    url.pathname!=='/metadrive_sql_proof')
+    !['/metadrive_sql_proof','/metadrive_restored'].includes(url.pathname))
    throw Error('Isolated SQL restore may run only inside GitHub proof job');
 }else{
  if(!url.hostname.toLowerCase().endsWith('.aivencloud.com')||
