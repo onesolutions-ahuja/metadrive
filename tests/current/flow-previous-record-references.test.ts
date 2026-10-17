@@ -103,6 +103,7 @@ test('lookup selection from a preceding Screen is a typed usable record ID',()=>
   {apiName:'Contact',label:'Contact',fields:[field('Name')]},
   {apiName:'Sale__c',label:'Sale',fields:[
     field('ContactId','Lookup(Contact)',{targetObject:'Contact'}),
+    field('OtherRecordId','Lookup(Sale__c)',{targetObject:'Sale__c'}),
     field('Notes','Text(255)')]}
  ] as ObjectMetadata[];
  const flow=config();
@@ -114,11 +115,11 @@ test('lookup selection from a preceding Screen is a typed usable record ID',()=>
     object:'Sale__c',fieldValues:[{field:'ContactId',value:'{!Customer}'}]
   }} as any
  );
- const contactField=catalog[1].fields[0],textField=catalog[1].fields[1];
+ const contactField=catalog[1].fields[0],unrelatedField=catalog[1].fields[1];
  assert(flowReferenceChoices(flow,3,catalog,contactField).some(x=>x.reference==='{!Customer}'));
- assert(!flowReferenceChoices(flow,3,catalog,textField).some(x=>x.reference==='{!Customer}'));
+ assert(!flowReferenceChoices(flow,3,catalog,unrelatedField).some(x=>x.reference==='{!Customer}'));
  assert.deepEqual(flowReferenceErrors(flow as any,catalog),[]);
- (flow.elements[2].config.fieldValues as any[])[0].field='Notes';
+ (flow.elements[2].config.fieldValues as any[])[0].field='OtherRecordId';
  assert.match(flowReferenceErrors(flow as any,catalog).join(' '),/incompatible/);
  (flow.elements[2].config.fieldValues as any[])[0].field='ContactId';
  flow.connectors.push({id:'skip-screen',from:1,to:3,kind:'normal',label:''} as any);
