@@ -87,7 +87,7 @@ function ShoppingCartTill({props}) {
  const [settingsReady,setSettingsReady]=React.useState(typeof props.loadCompanySettings!=='function');
  const request=React.useRef('');
  const channel=props.stateChannel;
- const sessionReady=channel?channel.ready&&channel.exists&&!channel.error:props.stateSyncEnabled!==true;
+ const sessionReady=props.previewOnly===true||(channel?channel.ready&&channel.exists&&!channel.error:props.stateSyncEnabled!==true);
  const locked=busy||paymentStatus==='pending'||paymentStatus==='complete';
  let operations=[],operationError='';
  try{operations=JSON.parse(String(props.operationEvents||'[]'));if(!Array.isArray(operations))throw Error('Expected a list.');}
@@ -112,7 +112,7 @@ function ShoppingCartTill({props}) {
   })),total:total/100,vatTotal:tax/100,standardVatRate:vatRate,
    hasAgeRestricted:items.some(item=>item.ageRestricted)};
  };
- const publish=(items,status='basket',changeDueMinor=0)=>{
+ const publish=(items,status='basket',changeDueMinor=0)=>{if(props.previewOnly===true)return;
   const snapshot=makeSnapshot(items,status,changeDueMinor);
   if(channel){channel.publish({cart:items,paymentStatus:status,display:snapshot});return;}
   if(props.stateSyncEnabled===true||!displaySession||typeof BroadcastChannel==='undefined')return;
@@ -227,7 +227,7 @@ function ShoppingCartTill({props}) {
   request.current=crypto.randomUUID();
   return {...saleValue(items),sessionKey:channel?.key||props.sessionId,requestId:request.current};
  };
- const checkout=async()=>{
+ const checkout=async()=>{if(props.previewOnly===true)return;
   if(!cart.length||locked||!sessionReady||channel?.error||!settingsReady)return;
   setBusy(true);setError('');
   try{
@@ -263,7 +263,7 @@ function ShoppingCartTill({props}) {
    .some(value=>String(value||'').trim().toLowerCase()===needle));
   if(match){event.preventDefault();add(match);setSearch('');}
  };
- const runOperation=operation=>{
+ const runOperation=operation=>{if(props.previewOnly===true)return;
   setError('');
   void flowAction(props,operation.event,{...saleValue(cart),sessionKey:channel?.key||props.sessionId})
    .catch(cause=>setError(cause instanceof Error?cause.message:'Unable to start operation.'));
@@ -332,7 +332,7 @@ function ShoppingCartTill({props}) {
     {ageRestricted&&<button className="one-btn" type="button" disabled={locked||!sessionReady}
      onClick={()=>updateCart(cart.filter(item=>!item.ageRestricted))}>{props.removeRestrictedLabel||'Remove age-restricted items'}</button>}
     {error&&<p role="alert">{error}</p>}
-    <button className="one-btn one-btn--primary" type="button" disabled={!cart.length||locked||!sessionReady||
+    <button className="one-btn one-btn--primary" type="button" disabled={props.previewOnly===true||!cart.length||locked||!sessionReady||
      !settingsReady||Boolean(channel?.error)} onClick={()=>void checkout()}>{busy?'Starting checkout…':props.checkoutLabel||'Payment'}</button>
     <button className="one-btn" type="button" disabled={!cart.length||busy||paymentStatus==='pending'||!sessionReady}
      onClick={()=>updateCart([])}>{props.clearLabel||'Clear sale'}</button>
