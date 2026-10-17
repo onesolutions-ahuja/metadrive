@@ -11,29 +11,28 @@ import OneData from './apps/web/src/custom-components/one/OneData.jsx';
 import OneLayout from './apps/web/src/custom-components/one/OneLayout.jsx';
 import OneShoppingCart from './apps/web/src/custom-components/one/OneShoppingCart.jsx';
 globalThis.React=React;
-const categories=['Fruit','Bakery','Dairy','Drinks'].map(Name=>({Name}));
+const categories=['Burgers','Chicken','Sides','Drinks'].map((Name,i)=>({Id:'cat-'+i,Name}));
 const products=[
- {Id:'product-1',Name:'Apple',Category:'Fruit',DefaultPrice:1.4,ImageURL:'https://example.com/apple.jpg'},
- {Id:'product-2',Name:'Banana',Category:'Fruit',DefaultPrice:1.8},
- {Id:'product-3',Name:'Bread',Category:'Bakery',DefaultPrice:2.2},
- {Id:'product-4',Name:'Milk',Category:'Dairy',DefaultPrice:1.2},
- {Id:'product-5',Name:'Water',Category:'Drinks',DefaultPrice:0.75}
+ {Id:'product-1',Name:'Cheeseburger',CategoryId:'cat-0',DefaultPrice:4.5,ImageURL:'https://example.com/burger.jpg'},
+ {Id:'product-2',Name:'Chicken Wrap',CategoryId:'cat-1',DefaultPrice:4.2},
+ {Id:'product-3',Name:'Chicken Nuggets',CategoryId:'cat-1',DefaultPrice:3.8},
+ {Id:'product-4',Name:'Fries',CategoryId:'cat-2',DefaultPrice:1.2},
+ {Id:'product-5',Name:'Water',CategoryId:'cat-3',DefaultPrice:0.75}
 ];
 const session='isolated-cashier-test',basketKey='cashier';
 function Harness(){
- const [filters,setFilters]=React.useState({});
+ const [filters,setFilters]=React.useState({}),[selectedIds,setSelectedIds]=React.useState({});
  React.useEffect(()=>{
-  const listener=e=>{if(e.detail?.pageSessionKey===session)setFilters(old=>({...old,[e.detail.filterKey]:e.detail.value}));};
+  const listener=e=>{if(e.detail?.pageSessionKey===session){setFilters(old=>({...old,[e.detail.filterKey]:e.detail.value}));if(e.detail.recordId)setSelectedIds(old=>({...old,[e.detail.filterKey]:e.detail.recordId}));}};
   window.addEventListener('metadrive:page-filter-selected',listener);
   return()=>window.removeEventListener('metadrive:page-filter-selected',listener);
  },[]);
  return <div>
-  <OneLayout kind="Tabs" label="Categories" dynamicTabs={true} records={categories} onAction={({event,value})=>{
-   if(event==='tabChange')window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected',{detail:{pageSessionKey:session,filterKey:'category',value:value.value}}));
-  }}/>
+  <OneLayout kind="Tabs" label="Categories" dynamicTabs={true} records={categories}
+    objectApiName="ProductCategory" filterKey="category" pageSessionKey={session} previewOnly={true}/>
   <OneActions kind="Search" label="Find product" searchKey="catalogue" pageSessionKey={session}/>
   <OneData kind="ItemGrid" title="Products" records={products} imageFieldApiName="ImageURL" titleFieldApiName="Name"
-    priceFieldApiName="DefaultPrice" categoryFieldApiName="Category" selectedCategory={filters.category||''}
+    priceFieldApiName="DefaultPrice" categoryFieldApiName="CategoryId" selectedCategory={filters.category||''} selectedCategoryRecordId={selectedIds.category||''}
     searchQuery={filters.catalogue||''} cartTargetKey={basketKey} pageSessionKey={session}/>
   <OneShoppingCart viewMode="basket" title="Basket" previewOnly={true} cartTargetKey={basketKey}
     pageSessionKey={session} nameFieldApiName="Name" priceFieldApiName="DefaultPrice"/>
@@ -50,26 +49,26 @@ try {
  page.on('pageerror',error=>errors.push(error.message));
  await page.setContent('<main id="root"></main><script>'+bundle.outputFiles[0].text+'</script>');
  const items=page.locator('.one-grid .one-item--interactive');
- await page.getByRole('tab',{name:'Fruit'}).waitFor();
+ await page.getByRole('tab',{name:'Chicken'}).waitFor();
  assert.equal(await page.getByRole('tab').count(),4,'Categories are generated dynamically');
  assert.equal(await items.count(),5,'All five product records are initially present');
- assert.equal(await page.locator('img[src="https://example.com/apple.jpg"]').count(),1,'Configured image field is rendered');
- await page.getByRole('tab',{name:'Fruit'}).click();
- await page.getByText('Apple',{exact:true}).first().waitFor();
+ assert.equal(await page.locator('img[src="https://example.com/burger.jpg"]').count(),1,'Configured image field is rendered');
+ await page.getByRole('tab',{name:'Chicken'}).click();
+ await page.getByText('Chicken Wrap',{exact:true}).first().waitFor();
  assert.equal(await items.count(),2,'Category selection filters product grid');
- await page.getByRole('searchbox',{name:'Find product'}).fill('app');
+ await page.getByRole('searchbox',{name:'Find product'}).fill('wrap');
  assert.equal(await items.count(),1,'Shared search filters the selected category');
  await items.first().click();
  const basket=page.locator('aside[aria-label="Current sale"]');
- await basket.getByText('Apple',{exact:true}).waitFor();
- assert.match(await basket.innerText(),/£1\.40/,'Basket uses real product price');
+ await basket.getByText('Chicken Wrap',{exact:true}).waitFor();
+ assert.match(await basket.innerText(),/£4\.20/,'Basket uses real product price');
  assert.equal(await page.getByRole('button',{name:'Payment'}).isDisabled(),true,'Checkout cannot run in draft preview');
  await page.getByRole('searchbox',{name:'Find product'}).fill('');
- await page.getByRole('tab',{name:'Bakery'}).click();
+ await page.getByRole('tab',{name:'Burgers'}).click();
  assert.equal(await items.count(),1,'Switching tabs updates product filter');
- await items.first().getByText('Bread').waitFor();
+ await items.first().getByText('Cheeseburger').waitFor();
  assert.deepEqual(errors,[],'No browser script errors');
- console.log(JSON.stringify({result:'PASS',readOnly:true,tabs:4,products:5,categoryFilter:true,searchFilter:true,imageBinding:true,localBasket:true,checkoutDisabled:true}));
+ console.log(JSON.stringify({result:'PASS',readOnly:true,tabs:4,products:5,categoryFilter:true,categoryLookupById:true,automaticTabEvent:true,searchFilter:true,imageBinding:true,localBasket:true,checkoutDisabled:true}));
 } finally {
  await browser?.close();
 }
