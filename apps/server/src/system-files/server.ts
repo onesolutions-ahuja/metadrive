@@ -269,7 +269,7 @@ export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessE
 }
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  try { await db.verifySchema(); await bootstrapFreshTenant(db); await reconcileBootstrapPassword(db); }
+  try { await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status); }
   catch(error) { await db.close(); throw error; }
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');
