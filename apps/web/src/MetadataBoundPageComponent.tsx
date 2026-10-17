@@ -3,6 +3,7 @@ import {useState,useEffect,useRef} from 'react';
 // Load the browser API client only during the mounted effect, not on SSR import.
 import {presentPageRecords,type ChannelGrant} from './recordPresentationAdapters';
 import {filterPageComponentRecords} from './pageComponentBindings';
+import {resolveMentionProperties} from './smartFieldMentions';
 import {resolvePageActionRoute} from './pageActionRouting';
 import {componentLayoutProps} from './pageComponentLayout';
 import RegisteredComponent from './RegisteredComponent';
@@ -10,7 +11,7 @@ import type {LibraryComponentMetadata,PageComponentMetadata,ObjectMetadata,Light
 import type {AppRoute} from './appRouting';
 
 export default function MetadataBoundPageComponent({
-  apiRequest, definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false
+  apiRequest, definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = ''
 }: {
   apiRequest:<T>(path:string,init?:RequestInit)=>Promise<T>;
   definition: LibraryComponentMetadata;
@@ -26,9 +27,10 @@ export default function MetadataBoundPageComponent({
   onNavigate: (route: AppRoute) => void;
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   disableActions?: boolean;
+  defaultObjectApiName?: string;
 }) {
   const properties = component.properties;
-  const objectApiName = String(properties.objectApiName ?? '');
+  const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
   // An application-independent session can be referenced by configured Flows.
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
@@ -110,6 +112,9 @@ export default function MetadataBoundPageComponent({
   }, [properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const resolvedProperties = resolveMentionProperties(properties,
+    { [objectApiName]: visibleRecords[0] },
+    { [objectApiName]: fields.map(field => field.apiName) });
   const categoryFilterKey = typeof properties.filterKey === 'string' ? properties.filterKey : 'category';
   const categorySource = selectedFilterRecords[categoryFilterKey];
   const configuredCategoryField = String(properties.categoryFieldApiName??'').trim();
@@ -222,14 +227,14 @@ export default function MetadataBoundPageComponent({
   return <div>
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
-      ...properties, ...componentLayoutProps(properties, formFactor),
+      ...resolvedProperties, ...componentLayoutProps(properties, formFactor),
       ...(categoryFilterKey ? {
         selectedCategory:selectedCategories[categoryFilterKey] ?? String(properties.selectedCategory ?? ''),
         selectedCategoryLabel:categorySource?.label ?? '',selectedCategoryRecordId:categorySource?.recordId ?? '',
         categoryFieldApiName:configuredCategoryField||inferredCategoryField||''
       } : {}),
       ...(typeof properties.searchKey === 'string' && properties.searchKey ? {searchQuery:selectedCategories[properties.searchKey] ?? ''} : {}),
-      label: component.label, properties, objects, reports, flows: availableFlows,
+      label: component.label, properties: resolvedProperties, objects, reports, flows: availableFlows,
        pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
       loadCompanySettings: () => apiRequest('/metadata/currencies'),

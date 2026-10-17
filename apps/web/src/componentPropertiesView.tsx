@@ -90,6 +90,7 @@ import DashboardBuilder from './DashboardBuilder';
 import ComponentLibrary from './ComponentLibrary';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import SmartFieldInput from './SmartFieldInput';
 import FlowInputBindingEditor from './FlowInputBindingEditor';
 import RecordFilterEditor from './RecordFilterEditor';
 import ComponentVisibilityEditor from './ComponentVisibilityEditor';
@@ -201,7 +202,8 @@ import {
 
 type ComponentPropertyRecord = Record<string, unknown>;
 
-export function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, definitions }: { definitions?: LibraryComponentMetadata['propertyDefinitions'];
+export function MetadataComponentProperties({ properties, objects, apps, pages, currentAppId, flows, onChange, definitions, primaryObjectApiName = '' }: { definitions?: LibraryComponentMetadata['propertyDefinitions'];
+  primaryObjectApiName?: string;
   properties: ComponentPropertyRecord;
   objects: ObjectMetadata[];
   apps: LightningAppMetadata[];
@@ -219,6 +221,12 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   const actionFlows = properties.actionFlows && typeof properties.actionFlows === 'object' && !Array.isArray(properties.actionFlows)
     ? properties.actionFlows as Record<string, unknown> : null;
   const fields = selectedObject?.fields ?? [];
+  const app = apps.find(candidate => candidate.apiName === currentAppId);
+  const appObjectApiNames = Array.from(new Set([
+    ...(app?.navigationItems ?? []),
+    ...(app?.navigationOrder ?? []).filter(entry => entry.type === 'Object').map(entry => entry.apiName),
+    objectApiName, primaryObjectApiName
+  ].filter(Boolean)));
   const update = (key: string, value: unknown) => onChange({ ...properties, [key]: value });
   const definitionsByKey = new Map((definitions ?? []).map(definition => [definition.propertyKey, definition]));
   const listProperty = (key: string) => {
@@ -407,11 +415,16 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
         <input className="form-control" type="number" value={value}
           onChange={(event) => event.target.value === '' ? onChange(Object.fromEntries(Object.entries(properties).filter(([name])=>name!==key))) : update(key, Number(event.target.value))} />
       </label>;
-      if (typeof value === 'string') return <label className="form-label" key={key}>{label}
-        <input className="form-control" type={definition?.kind === 'COLOR' ? 'text' : /color/i.test(key) ? 'color' : 'text'}
-          placeholder={definition?.kind === 'COLOR' ? '#ffffff or transparent' : undefined} value={value}
-          onChange={(event) => update(key, event.target.value)} />
-      </label>;
+      if (typeof value === 'string') return <div className="form-label" key={key}>
+        <label>{label}</label>
+        {definition?.kind === 'COLOR' || /color/i.test(key)
+          ? <input className="form-control" type="text" value={value} onChange={event => update(key, event.target.value)} />
+          : <SmartFieldInput value={value} onChange={next => update(key, next)}
+              objects={objects} primaryObjectApiName={primaryObjectApiName || objectApiName}
+              appObjectApiNames={appObjectApiNames}
+              kind={/image|src/i.test(key) ? 'image' : /url|link/i.test(key) ? 'url' : /formula|expression/i.test(key) ? 'formula' : 'text'}
+              multiline={/text|description|body|content|formula|expression/i.test(key) && value.length > 90} />}
+      </div>;
       return null;
     })}
     {Object.entries(properties).filter(([key, value]) => !sourceKeys.has(key) && !isFilter(key) && Array.isArray(value)).map(([key, value]) => {
@@ -439,7 +452,8 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
           [fieldKey, typeof (template as ComponentPropertyRecord)[fieldKey] === 'number' ? 0 : '']))])}>Add {labelFor(key)}</button>}
       </div>;
     })}
-    <CustomComponentPropertyEditor properties={properties} onChange={onChange} definitions={definitions} addOnly />
+    <CustomComponentPropertyEditor properties={properties} onChange={onChange} definitions={definitions} addOnly
+      objects={objects} primaryObjectApiName={primaryObjectApiName || objectApiName} appObjectApiNames={appObjectApiNames} />
     {false && <><button className="btn" type="button" onClick={() => {
       if (!advancedOpen) { setAdvancedDraft(JSON.stringify(properties, null, 2)); setAdvancedError(''); }
       setAdvancedOpen(!advancedOpen);

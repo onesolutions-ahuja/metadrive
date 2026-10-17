@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import RegisteredComponent from './RegisteredComponent';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import SmartFieldInput from './SmartFieldInput';
+import { resolveMentionValue, resolveMentionProperties } from './smartFieldMentions';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { componentLayoutProps, resolveLayoutStyle, type LayoutDevice } from './pageComponentLayout';
 import { sourceReportTitleUpdate } from './dashboardComponentTitle';
@@ -59,7 +61,6 @@ import type {
   ReportMetadata,
   ReportRunMetadata
 } from './metadata';
-
 type DashboardBuilderProps = {
   dashboards: DashboardMetadata[];
   dashboardFolders: DashboardFolderMetadata[];
@@ -101,7 +102,6 @@ type DashboardBuilderProps = {
   onSaveTerritories: (territories: Array<Pick<DashboardTerritoryMetadata, 'id' | 'label' | 'parentTerritoryId' | 'userIds'>>) => Promise<DashboardTerritoryMetadata[]>;
   onNotify: (message: string) => void;
 };
-
 export default function DashboardBuilder({
   dashboards, dashboardFolders, objects, libraryComponents, reports, shareUsers, shareGroups, folderPublicGroups, folderPermissionSetGroups, folderRoles, dashboardTerritories, canManageTerritories, subscriptionUsers, runningUserIds, smtpCredentials, canSchedule, userId, canCreate, canManageAll, viewerMode = false, selectedApiName, onSelect, onOpenViewer, onExitViewer, onLoadRecords, onRunReport, onLoadSnapshots, onCreateSnapshot, onDeleteSnapshot, onLoadSubscriptions, onSaveSubscription, onDeleteSubscription, onRunSubscription, onSave, onDelete, onSaveFolder, onDeleteFolder, onSaveTerritories, onNotify
 }: DashboardBuilderProps) {
@@ -162,7 +162,6 @@ export default function DashboardBuilder({
   const [editingSubscriptionId, setEditingSubscriptionId] = useState('');
   const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState('');
-
   const current = draft ?? dashboards.find((dashboard) => dashboard.apiName === selectedApiName)
     ?? (viewerMode ? null : dashboards[0] ?? null);
   const dashboardRunningUserId = current?.allowViewerToSelectRunningUser
@@ -249,7 +248,6 @@ export default function DashboardBuilder({
     field.formula
       ? /^(Number|Currency|Percent)$/.test(field.formula.returnType)
       : /^(Number|Currency|Percent)(\(|$)/.test(field.dataType)) ?? [];
-
   useEffect(() => {
     if (!selectedApiName) {
       if (!draft) setDraft(dashboards[0] ?? null);
@@ -263,11 +261,9 @@ export default function DashboardBuilder({
       setCrossFilters([]);
     }
   }, [selectedApiName, dashboards, viewerMode]);
-
   useEffect(() => {
     setViewFilterValues(Object.fromEntries((current?.filters ?? []).map((filter) => [filter.id, filter.value])));
   }, [current?.apiName, current?.filters]);
-
   useEffect(() => {
     let active = true;
     setActiveSnapshotId('');
@@ -996,21 +992,30 @@ export default function DashboardBuilder({
     }
     return values;
   };
+  const displayMentionText = (component: DashboardComponentMetadata, raw: string) => { const object = objectFor(component.objectApiName); const record = filteredRecords(component)[0]; return String(resolveMentionValue(raw, { [component.objectApiName]: record }, { [component.objectApiName]: object?.fields.map(field => field.apiName) ?? [] }) ?? ''); };
   const renderComponent = (component: DashboardComponentMetadata) => {
     const chartPalette = chartPaletteFor(component.chartColorPalette);
     const records = filteredRecords(component);
     const reportRun = component.reportApiName ? reportRuns[component.reportApiName] : undefined;
+    const fields = objectFor(component.objectApiName)?.fields.map(field => field.apiName) ?? [];
+    const contextRecord = records[0];
+    const data = { [component.objectApiName]: contextRecord };
+    const visibleFields = { [component.objectApiName]: fields };
+    const resolve = (value: string) => resolveMentionValue(value, data, visibleFields);
+    const escapeHtml = (text: string) => text.replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'} as Record<string,string>)[char]);
+    const safeHtmlRecord = contextRecord ? Object.fromEntries(Object.entries(contextRecord).map(([key, val]) => [key, typeof val === 'string' ? escapeHtml(val) : val])) : undefined;
     if (component.type === 'Rich Text') {
       return <iframe
         className="dashboard-rich-text-frame"
         title={component.title}
         sandbox=""
-        srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; img-src https: data:; font-src data:; style-src 'unsafe-inline'"></head><body>${component.richTextContent ?? ''}</body></html>`}
+        srcDoc={`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; connect-src 'none'; img-src https: data:; font-src data:; style-src 'unsafe-inline'"></head><body>${resolveMentionValue(component.richTextContent ?? '', { [component.objectApiName]: safeHtmlRecord }, visibleFields)}</body></html>`}
       />;
     }
     if (component.type === 'Image') {
-      return component.imageUrl?.startsWith('https://')
-        ? <img className="dashboard-image-widget" src={component.imageUrl} alt={component.imageAltText ?? ''} loading="lazy" referrerPolicy="no-referrer" />
+      const imageUrl = resolve(component.imageUrl ?? '');
+      return typeof imageUrl === 'string' && imageUrl.startsWith('https://')
+        ? <img className="dashboard-image-widget" src={imageUrl} alt={component.imageAltText ?? ''} loading="lazy" referrerPolicy="no-referrer" />
         : <p className="dashboard-no-data">Set an HTTPS image URL in component properties.</p>;
     }
     if (component.type === 'Custom') {
@@ -1019,10 +1024,10 @@ export default function DashboardBuilder({
         ? <div data-dashboard-custom-component-id={component.id}
             style={resolveLayoutStyle(component.properties ?? {}, layoutDevice)}>
             <RegisteredComponent definition={definition} props={{
-            ...(component.properties ?? {}),
+            ...resolveMentionProperties(component.properties ?? {}, data, visibleFields),
             ...componentLayoutProps(component.properties ?? {}, layoutDevice),
             title: component.title,
-            properties: component.properties ?? {},
+            properties: resolveMentionProperties(component.properties ?? {}, data, visibleFields),
             object: objectFor(component.objectApiName),
             records,
             filters: current?.filters.filter((filter) => filter.objectApiName === component.objectApiName) ?? []
@@ -2216,12 +2221,12 @@ export default function DashboardBuilder({
               onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedComponentId; moveComponentBefore(sourceId, component.id); setDraggedComponentId(''); }}
               onDragEnd={() => setDraggedComponentId('')}
               onClick={() => { if (!previewMode) setSelectedComponentId(component.id); }}>
-              <header><div><h2>{component.title}</h2><p>{component.subtitle || `${['Metric', 'Chart', 'Table'].includes(component.type) ? objectFor(component.objectApiName)?.label ?? component.objectApiName : 'Content'} · ${component.type}`}</p></div>
+              <header><div><h2>{displayMentionText(component, component.title)}</h2><p>{(component.subtitle && displayMentionText(component, component.subtitle)) || `${['Metric', 'Chart', 'Table'].includes(component.type) ? objectFor(component.objectApiName)?.label ?? component.objectApiName : 'Content'} · ${component.type}`}</p></div>
                 {previewMode && component.type === 'Table' && <button className="btn btn-small dashboard-export-button" disabled={Boolean(exportingComponentId)} onClick={(event) => { event.stopPropagation(); void exportTable(component); }}><Download size={13} />{exportingComponentId === component.id ? 'Exporting…' : 'Export CSV'}</button>}
                 {!previewMode && <button className="icon-button" aria-label={`Select ${component.title}`}><GripVertical size={15} /></button>}
               </header>
               {!recordsError && renderComponent(component)}
-              {component.footer && <p className="dashboard-widget-footer">{component.footer}</p>}
+              {component.footer && <p className="dashboard-widget-footer">{displayMentionText(component, component.footer)}</p>}
               {!previewMode && canEditCurrent && <button type="button" className="dashboard-resize-handle"
                 aria-label={`Resize ${component.title}`} title="Drag to resize; use arrow keys to adjust size"
                 onPointerDown={(event) => startDashboardResize(event, component)}
@@ -2241,11 +2246,11 @@ export default function DashboardBuilder({
         <div className="dashboard-panel-heading"><strong>{selected ? 'Component Properties' : 'Dashboard Properties'}</strong></div>
         {selected ? <>
           <label className="form-label" htmlFor="dashboard-component-title">Title</label>
-          <input id="dashboard-component-title" className="form-control" disabled={!canEditCurrent} maxLength={80} value={selected.title} onChange={(event) => updateComponent(selected.id, { title: event.target.value })} />
+          <SmartFieldInput id="dashboard-component-title" disabled={!canEditCurrent} maxLength={80} value={selected.title} objects={objects} primaryObjectApiName={selected.objectApiName} onChange={next => updateComponent(selected.id, { title: next })} />
           <label className="form-label" htmlFor="dashboard-component-subtitle">Subtitle</label>
-          <input id="dashboard-component-subtitle" className="form-control" disabled={!canEditCurrent} maxLength={250} value={selected.subtitle ?? ''} onChange={(event) => updateComponent(selected.id, { subtitle: event.target.value })} />
+          <SmartFieldInput id="dashboard-component-subtitle" disabled={!canEditCurrent} maxLength={250} value={selected.subtitle ?? ''} objects={objects} primaryObjectApiName={selected.objectApiName} onChange={next => updateComponent(selected.id, { subtitle: next })} />
           <label className="form-label" htmlFor="dashboard-component-footer">Footer</label>
-          <input id="dashboard-component-footer" className="form-control" disabled={!canEditCurrent} maxLength={250} value={selected.footer ?? ''} onChange={(event) => updateComponent(selected.id, { footer: event.target.value })} />
+          <SmartFieldInput id="dashboard-component-footer" disabled={!canEditCurrent} maxLength={250} value={selected.footer ?? ''} objects={objects} primaryObjectApiName={selected.objectApiName} onChange={next => updateComponent(selected.id, { footer: next })} />
           <label className="form-label" htmlFor="dashboard-component-width">Width</label>
           <select id="dashboard-component-width" className="form-control" disabled={!canEditCurrent} value={selected.width ?? (selected.type === 'Table' ? 'Full' : 'Half')} onChange={(event) => updateComponent(selected.id, { width: event.target.value as DashboardComponentMetadata['width'] })}>
             <option>Quarter</option><option>Half</option><option>ThreeQuarter</option><option>Full</option>
@@ -2311,18 +2316,12 @@ export default function DashboardBuilder({
               <button type="button" className="btn btn-small" disabled={!canEditCurrent} onClick={() => wrapRichTextSelection('<h2>', '</h2>')}>Heading</button>
               <button type="button" className="btn btn-small" disabled={!canEditCurrent} onClick={() => wrapRichTextSelection('<ul><li>', '</li></ul>')}>List</button>
             </div>
-            <textarea ref={richTextEditorRef} className="form-control dashboard-rich-text-editor" aria-label="Rich text HTML content"
-              disabled={!canEditCurrent} maxLength={20_000} value={selected.richTextContent ?? ''}
-              onChange={(event) => updateComponent(selected.id, { richTextContent: event.target.value })}
-              placeholder="Add formatted text using safe HTML." />
+            <SmartFieldInput multiline rows={6} ariaLabel="Rich text HTML content" textareaRef={richTextEditorRef} objects={objects} primaryObjectApiName={selected.objectApiName} disabled={!canEditCurrent} maxLength={20_000} value={selected.richTextContent ?? ''} onChange={next => updateComponent(selected.id, { richTextContent: next })} placeholder="Add formatted text using safe HTML." />
             <small>Basic formatting is supported. Scripts, forms, and embedded content are removed when saved.</small>
           </>}
           {selected.type === 'Image' && <>
             <label className="form-label" htmlFor="dashboard-image-url">Image URL</label>
-            <input id="dashboard-image-url" className="form-control" type="url" inputMode="url" maxLength={2048}
-              disabled={!canEditCurrent} value={selected.imageUrl ?? ''}
-              onChange={(event) => updateComponent(selected.id, { imageUrl: event.target.value })}
-              placeholder="https://example.com/image.png" />
+            <SmartFieldInput id="dashboard-image-url" kind="image" objects={objects} primaryObjectApiName={selected.objectApiName} disabled={!canEditCurrent} maxLength={2048} value={selected.imageUrl ?? ''} onChange={next => updateComponent(selected.id, { imageUrl: next })} placeholder="https://example.com/image.png" />
             <label className="form-label" htmlFor="dashboard-image-alt">Alternative text</label>
             <input id="dashboard-image-alt" className="form-control" maxLength={500}
               disabled={!canEditCurrent} value={selected.imageAltText ?? ''}
@@ -2336,6 +2335,7 @@ export default function DashboardBuilder({
               onChange={(properties) => updateComponent(selected.id, { properties })}
             />
             <CustomComponentPropertyEditor definitions={libraryComponents.find(component => component.apiName === selected.customComponentApiName && component.status !== 'Draft')?.propertyDefinitions} properties={selected.properties ?? {}}
+              objects={objects} primaryObjectApiName={selected.objectApiName}
               disabled={!canEditCurrent}
               onChange={(properties) => updateComponent(selected.id, { properties })}
             />

@@ -1,6 +1,6 @@
 import { evaluateFormula } from '../flows/formula-evaluator.js';
 type FormulaField = { apiName: string; formula?: { expression: string; returnType: string } | null };
-type FormulaObject = { fields: readonly FormulaField[] };
+type FormulaObject = { fields: readonly FormulaField[]; apiName?: string };
 export function calculateFormulaFields<T extends Record<string, unknown>>(
   object: FormulaObject,
   record: T,
@@ -27,6 +27,7 @@ export function calculateFormulaFields<T extends Record<string, unknown>>(
       return referencedField?.formula ? calculateField(reference) : result[reference];
     }, {
       ...formulaContext,
+      sourceObjectApiName: object.apiName,
       currencyIsoCode: typeof result.CurrencyIsoCode === 'string'
         ? result.CurrencyIsoCode
         : formulaContext.corporateCurrency

@@ -268,7 +268,8 @@ app.post('/api/metadata/objects/:apiName/formulas/validate', requireAnyPermissio
       isNew: false,
       isClone: false,
       hasPrior: true,
-      resolvePriorField: resolveField
+      resolvePriorField: resolveField,
+      sourceObjectApiName: object.apiName
     });
     if (['Number', 'Currency', 'Percent'].includes(parsed.data.returnType) && !Number.isFinite(Number(result))) {
       throw new Error(`Formula does not produce a valid ${parsed.data.returnType} value.`);

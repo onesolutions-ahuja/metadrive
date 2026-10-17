@@ -5,6 +5,7 @@ import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
 import { flowCanvasBounds, moveFlowPosition, storedFlowPosition } from './flowCanvasLayout.mjs';
 import FlowTestsPanel from './FlowTestsPanel';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
+import SmartFieldInput from './SmartFieldInput';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { parseComponentProperties } from './componentProperties';
 import { Fragment, useEffect, useRef, useState } from 'react';
@@ -41,10 +42,8 @@ import {
   type ApprovalProcessMetadata,
   type LibraryComponentMetadata
 } from './metadata';
-
 type FlowListRow = Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status' | 'versionNumber' | 'activeVersion' | 'createdAt' | 'createdBy' | 'lastModifiedAt' | 'lastModifiedBy'>;
 type FlowListResponse = { flows: FlowListRow[]; total: number; page: number; pageSize: number };
-
 type FlowBuilderProps = {
   landing?: boolean;
   flow: FlowDefinitionMetadata;
@@ -774,6 +773,7 @@ export default function FlowBuilder({
                         itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
                     />
                     <CustomComponentPropertyEditor definitions={libraryComponents.find(component => component.apiName === field.componentApiName && component.status !== 'Draft')?.propertyDefinitions} properties={parseComponentProperties(field.componentPropsJson).properties}
+                      objects={objects} primaryObjectApiName={flow.triggerObject ?? ''}
                       onChange={(properties) => setConfig('fields', screenFields.map((item, itemIndex) =>
                         itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
                     />
@@ -782,10 +782,10 @@ export default function FlowBuilder({
               <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>
             </>
             : field.type === 'Display Text'
-            ? <label className="form-label">Text Content<textarea className="form-control" rows={4} value={displayValue(field.text)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, text: event.target.value } : item))} /></label>
+            ? <div className="form-label">Text Content<SmartFieldInput multiline rows={4} objects={objects} primaryObjectApiName={flow.triggerObject ?? ''} value={displayValue(field.text)} onChange={next => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, text: next } : item))} /></div>
             : field.type === 'Display Image'
               ? <>
-                <label className="form-label">Image URL<input className="form-control" type="url" value={displayValue(field.imageUrl)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, imageUrl: event.target.value } : item))} placeholder="https://example.com/image.png" /></label>
+                <div className="form-label">Image URL<SmartFieldInput objects={objects} primaryObjectApiName={flow.triggerObject ?? ''} kind="image" value={displayValue(field.imageUrl)} onChange={next => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, imageUrl: next } : item))} placeholder="https://example.com/image.png" /></div>
                 <label className="form-label">Alternative Text<input className="form-control" value={displayValue(field.imageAltText)} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, imageAltText: event.target.value } : item))} /></label>
               </>
               : field.type === 'Section'
@@ -1306,13 +1306,13 @@ export default function FlowBuilder({
               <p className="settings-panel-copy">Insert controls add text at the cursor. Use Check to validate the expression and the rest of the Flow.</p>
             </div>}
             <label className="form-label">{resourceType === 'Formula' ? 'Formula Expression' : resourceType === 'Text Template' ? 'Template' : 'Default Value'}{resourceType === 'Formula' || resourceType === 'Text Template'
-              ? <textarea ref={resourceType === 'Formula' ? formulaEditorRef : undefined} className="form-control" rows={resourceType === 'Text Template' ? 9 : 5} style={resourceType === 'Text Template' ? { resize: 'vertical', whiteSpace: 'pre-wrap' } : undefined} placeholder={resourceType === 'Text Template' ? 'Write your message here. Press Enter for a new line.' : undefined} value={resourceValue} onChange={(event) => setResourceValue(event.target.value)} />
+              ? <SmartFieldInput multiline rows={resourceType === 'Text Template' ? 9 : 5} textareaRef={resourceType === 'Formula' ? formulaEditorRef : undefined} kind={resourceType === 'Formula' ? 'formula' : 'text'} objects={objects} primaryObjectApiName={flow.triggerObject ?? ''} placeholder={resourceType === 'Text Template' ? 'Write your message here. Press Enter for a new line.' : undefined} value={resourceValue} onChange={setResourceValue} />
               : <input className="form-control" value={resourceValue} onChange={(event) => setResourceValue(event.target.value)} />}</label>
             <button className="btn" disabled={!resourceLabel.trim()} onClick={addResource}><Plus size={13} />New Resource</button>
             {flow.resources.map((resource) => <div className="flow-resource-card" key={resource.name}>
               <strong>{resource.label}</strong><small>{resource.name} · {resource.type} · {resource.dataType}</small>
               <label className="form-label">{resource.type === 'Formula' ? 'Formula Expression' : resource.type === 'Text Template' ? 'Template' : 'Default Value'}{resource.type === 'Formula' || resource.type === 'Text Template'
-                ? <textarea className="form-control" rows={resource.type === 'Text Template' ? 9 : 4} style={resource.type === 'Text Template' ? { resize: 'vertical', whiteSpace: 'pre-wrap' } : undefined} value={displayValue(resource.value)} onChange={(event) => updateResource(resource.name, { value: event.target.value })} />
+                ? <SmartFieldInput multiline rows={resource.type === 'Text Template' ? 9 : 4} kind={resource.type === 'Formula' ? 'formula' : 'text'} objects={objects} primaryObjectApiName={flow.triggerObject ?? ''} value={displayValue(resource.value)} onChange={next => updateResource(resource.name, { value: next })} />
                 : <input className="form-control" value={displayValue(resource.value)} onChange={(event) => updateResource(resource.name, { value: event.target.value })} />}</label>
               <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={resource.availableForInput} disabled={!['Variable', 'Record', 'Record Collection'].includes(resource.type)} onChange={(event) => updateResource(resource.name, { availableForInput: event.target.checked })} />Available for input</label><label className="checkbox-row"><input type="checkbox" checked={resource.availableForOutput} onChange={(event) => updateResource(resource.name, { availableForOutput: event.target.checked })} />Available for output</label></div>
               <button className="text-action" onClick={() => onFlowChange({ ...flow, resources: flow.resources.filter((item) => item.name !== resource.name) })}><X size={13} />Delete Resource</button>

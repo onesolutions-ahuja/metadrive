@@ -1,5 +1,4 @@
 import { flowLocalDateTimeToInstant } from '../../core/local-time.js';
-
 /** Declarative formula runtime shared by record fields and Flow expressions. */
 function parseFormulaDate(value: unknown, functionName: string): Date {
   const text = String(value ?? '').trim();
@@ -24,14 +23,12 @@ function parseFormulaDate(value: unknown, functionName: string): Date {
   }
   return date;
 }
-
 function formulaUtcDate(year: number, month: number, day: number): Date {
   const date = new Date(0);
   date.setUTCHours(0, 0, 0, 0);
   date.setUTCFullYear(year, month, day);
   return date;
 }
-
 function formulaDateParts(date: Date, timeZone: string): Record<string, string> {
   const parts = new Intl.DateTimeFormat('en-US-u-ca-gregory-nu-latn', {
     timeZone,
@@ -45,24 +42,20 @@ function formulaDateParts(date: Date, timeZone: string): Record<string, string> 
   }).formatToParts(date);
   return Object.fromEntries(parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
 }
-
 export function formulaLocalDate(date: Date, timeZone: string): string {
   const parts = formulaDateParts(date, timeZone);
   return `${parts.year.padStart(4, '0')}-${parts.month}-${parts.day}`;
 }
-
 function formulaLocalTime(date: Date, timeZone: string): string {
   const parts = formulaDateParts(date, timeZone);
   return `${parts.hour}:${parts.minute}:${parts.second}.${String(date.getUTCMilliseconds()).padStart(3, '0')}`;
 }
-
 function formulaTimezoneOffset(date: Date, timeZone: string): number {
   const parts = formulaDateParts(date, timeZone);
   const localAsUtc = formulaUtcDate(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
   localAsUtc.setUTCHours(Number(parts.hour), Number(parts.minute), Number(parts.second), 0);
   return localAsUtc.getTime() - Math.floor(date.getTime() / 1000) * 1000;
 }
-
 function parseFormulaDateTime(value: unknown, timeZone: string, functionName: string): Date {
   const text = String(value ?? '').trim();
   const localMatch = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(text);
@@ -238,14 +231,14 @@ export function evaluateFormula(
     corporateCurrency?: string;
     currencyRates?: Record<string, number>;
     userCurrencyIsoCode?: string;
-    currencyIsoCode?: string;
+    currencyIsoCode?: string; sourceObjectApiName?: string;
   } = {}
 ): unknown {
   const timeZone = formulaContext.timeZone ?? 'UTC';
   const locale = formulaContext.locale ?? 'en-US';
   if (expression.length > 10_000) throw new Error('Formula exceeds the 10,000-character limit.');
   const tokens: string[] = [];
-  const tokenPattern = /\s*(<=|>=|<>|!=|==|&&|\|\||\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}|[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
+  const tokenPattern = /\s*(<=|>=|<>|!=|==|&&|\|\||\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}|@[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*|[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
   let offset = 0;
   while (offset < expression.length) {
     tokenPattern.lastIndex = offset;
@@ -445,6 +438,13 @@ export function evaluateFormula(
     if (token.startsWith("'") || token.startsWith('"')) {
       consume();
       return token.slice(1, -1).replace(/\\(['"\\])/g, '$1');
+    }
+    const mentionReference = /^@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)$/.exec(token);
+    if (mentionReference) {
+      consume();
+      if (!formulaContext.sourceObjectApiName || mentionReference[1] !== formulaContext.sourceObjectApiName)
+        throw new Error('Formula field mentions require the active object record context.');
+      return resolveField(mentionReference[2]);
     }
     const mergeReference = /^\{!?([A-Za-z_$][A-Za-z0-9_.$]*)\}$/.exec(token);
     const identifier = mergeReference?.[1] ?? token;

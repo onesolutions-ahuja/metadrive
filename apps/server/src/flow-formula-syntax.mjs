@@ -24,10 +24,11 @@ const FUNCTIONS = new Set((
 ).split(' '));
 const GLOBAL_CONSTANTS = new Set(['TRUE', 'FALSE', 'NULL']);
 const REF = /^[A-Za-z_$][A-Za-z0-9_.$]*$/;
+const MENTION = /^@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)$/;
 const MERGE_REF = /^\{!?([A-Za-z_$][A-Za-z0-9_.$]*)\}$/;
 const NUM = /^(?:\d+(?:\.\d+)?|\.\d+)$/;
 const STRING = /^(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")$/;
-const TOKEN = /\s*(<=|>=|<>|!=|==|&&|\|\||\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}|[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
+const TOKEN = /\s*(<=|>=|<>|!=|==|&&|\|\||\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}|@[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*|[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
 
 function tokenize(expression) {
   if (typeof expression !== 'string' || !expression.trim()) throw new Error('Formula requires an expression.');
@@ -127,6 +128,7 @@ export function validateFlowFormulaSyntax(expression) {
     if (!token) throw new Error('Formula ended unexpectedly.');
     if (token === '(') { nested(or); expect(')'); return; }
     if (NUM.test(token) || STRING.test(token)) return;
+    if (MENTION.test(token)) { references.add(token); return; }
     const bracketReference = MERGE_REF.exec(token);
     const name = bracketReference?.[1] ?? token;
     if (!REF.test(name)) throw new Error('Unexpected "' + token + '" in formula.');
