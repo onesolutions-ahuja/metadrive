@@ -2,6 +2,7 @@
 // No business object, field or action is hardcoded into SQL identifiers.
 // Registry UUIDs are durable; removed schema is retained for lossless rollback.
 import {randomUUID} from 'node:crypto';
+import {isRetiredObject} from './retired-object-names.mjs';
 import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn,canWidenPhysicalFieldType,physicalTenantOwnerConstraint,validPhysicalTenantOwnerConstraint} from './normalized-object-schema.mjs';
 
 const platformFields=[
@@ -82,11 +83,17 @@ export function definedObjects(state){
 }
 async function assertRetiredSystemUserTableIsEmpty(client,sqlObject){
   const table=tableName(sqlObject.object_id);
-  const [existing,fieldPresence]=await Promise.all([
-    client.query('SELECT 1 FROM '+table+' LIMIT 1'),
+  // An operator may already have retired an empty physical User table manually.
+  // Permit a verified absent table ONLY if no typed field-presence rows remain.
+  const [relation,fieldPresence]=await Promise.all([
+    client.query('SELECT to_regclass($1)::text AS name',['public.'+table]),
     client.query('SELECT 1 FROM md_v2_field_presence WHERE object_id=$1 LIMIT 1',[sqlObject.object_id])
   ]);
-  if(existing.rowCount||fieldPresence.rowCount)
+  if(fieldPresence.rowCount)
+    throw Error('System User typed field presence still contains records; refusing retirement');
+  if(!relation.rows[0]?.name) return;
+  const existing=await client.query('SELECT 1 FROM '+table+' LIMIT 1');
+  if(existing.rowCount)
     throw Error('System User physical table contains records; an explicit lossless migration is required');
 }
 async function prepare(client,state){
@@ -109,6 +116,10 @@ async function prepare(client,state){
     mapping.delete(identifier);
   }
   for(const item of expected.values()){
+    // Last line of defence against deleted physical SQL tables being recreated
+    // by a stale seed, installer, API caller or restored metadata snapshot.
+    if(isRetiredObject(item.object.apiName))
+      throw Error('Retired Object cannot be re-registered or recreated: '+item.object.apiName);
     let current=mapping.get(key(item.tenantId,item.object.apiName));
     if(!current){
       const dormant=await client.query('SELECT object_id,tenant_id,api_name,object_label,physical_table FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=false',[item.tenantId,item.object.apiName]);

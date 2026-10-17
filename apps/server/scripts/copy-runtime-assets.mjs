@@ -21,6 +21,7 @@ for(const name of [
   'normalized-state-delta.mjs',
   'normalized-object-schema.mjs',
   'normalized-typed-records.mjs',
+  'retired-object-names.mjs',
   'tenant-identity-isolation.mjs',
   'tenant-domains.mjs',
   'tenant-recovery-policy.mjs',

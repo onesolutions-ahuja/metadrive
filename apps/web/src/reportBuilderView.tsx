@@ -217,7 +217,6 @@ export function ReportBuilder({
     const categories: Record<string, string> = {
       Account: 'Accounts & Contacts',
       Contact: 'Accounts & Contacts',
-      Campaign: 'Campaigns',
       Case: 'Customer Support Reports',
       Lead: 'Leads',
       Opportunity: 'Opportunities',

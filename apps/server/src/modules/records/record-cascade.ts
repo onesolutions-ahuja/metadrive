@@ -83,7 +83,6 @@ async function deleteRecordCascade(
   tenant.records[objectName] = (tenant.records[objectName] ?? []).filter((item) => item.Id !== record.Id);
   tenant.recordShares = tenant.recordShares.filter((share) =>
     share.objectApiName !== objectName || share.recordId !== record.Id);
-  if (objectName === 'Campaign') tenant.campaignMembers = tenant.campaignMembers.filter((member) => member.campaignId !== record.Id);
   if (objectName === 'Contact') tenant.campaignMembers = tenant.campaignMembers.filter((member) => member.contactId !== record.Id);
 }
 

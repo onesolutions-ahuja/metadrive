@@ -5,7 +5,7 @@ import type { PlatformState } from './core/state/types.js';
 // the local JSON compatibility cache/seed. The three connector definitions have now been verified in SQL.
 const sqlMigratedSeedObjects = new Set([
   'User', 'Account', 'Contact', 'Opportunity', 'Case', 'Renewal__c',
-  'Sale__c', 'Campaign', 'Tenant__c', 'Global_Settings__c',
+  'Sale__c', 'Tenant__c', 'Global_Settings__c',
   'Communication_Records__c', 'UneConnector__c', 'ConnectorProvider__c', 'IntegrationConnection__c'
 ]);
 export function localStateWithoutSqlObjectDefinitions(snapshot: PlatformState): PlatformState {

@@ -315,12 +315,6 @@ function RecordWorkspace({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
-  const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
-  const [campaignOptions, setCampaignOptions] = useState<RecordData[]>([]);
-  const [campaignId, setCampaignId] = useState('');
-  const [campaignError, setCampaignError] = useState('');
-  const [campaignLoading, setCampaignLoading] = useState(false);
-  const [campaignSaving, setCampaignSaving] = useState(false);
   const [listNotice, setListNotice] = useState('');
 
   const [offlineOwner, setOfflineOwner] = useState<OfflineQueueOwner | null>(null);
@@ -707,8 +701,6 @@ function RecordWorkspace({
   const canChangeOwner = Boolean(ownerField && canEdit && fieldAccess[`${object?.apiName}.OwnerId`]?.edit && object?.listViewButtons?.includes('Change Owner'));
   const canImport = object?.apiName !== 'User' && object?.listViewButtons?.includes('Import') === true
     && object?.actions?.some((action) => action.label === 'New' && action.enabled) !== false;
-  const canAddToCampaign = object?.apiName === 'Contact' && objects.some((item) => item.apiName === 'Campaign')
-    && object.listViewButtons?.includes('Add to Campaign') === true;
   const openCreateForm = () => {
     setEditingId(null);
     setEditingTimestamp('');
@@ -1106,40 +1098,6 @@ function RecordWorkspace({
       setExporting(false);
     }
   };
-  const openAddToCampaign = async () => {
-    setCampaignDialogOpen(true);
-    setCampaignOptions([]);
-    setCampaignId('');
-    setCampaignError('');
-    setCampaignLoading(true);
-    try {
-      const result = await apiRequest<{ records: RecordData[] }>('/records/Campaign');
-      setCampaignOptions(result.records.filter((campaign) => campaign.IsActive !== false));
-    } catch (failure) {
-      setCampaignError(failure instanceof Error ? failure.message : 'Unable to load campaigns');
-    } finally {
-      setCampaignLoading(false);
-    }
-  };
-  const addSelectedContactsToCampaign = async () => {
-    if (!campaignId || !selectedRecordIds.length) return;
-    setCampaignSaving(true);
-    setCampaignError('');
-    try {
-      const result = await apiRequest<{ addedCount: number; alreadyMemberCount: number }>(`/campaigns/${encodeURIComponent(campaignId)}/members`, {
-        method: 'POST',
-        body: JSON.stringify({ contactIds: selectedRecordIds })
-      });
-      const campaignName = String(campaignOptions.find((campaign) => campaign.Id === campaignId)?.Name ?? 'campaign');
-      setListNotice(`${result.addedCount} contact${result.addedCount === 1 ? '' : 's'} added to ${campaignName}${result.alreadyMemberCount ? `; ${result.alreadyMemberCount} were already members` : ''}.`);
-      setSelectedRecordIds([]);
-      setCampaignDialogOpen(false);
-    } catch (failure) {
-      setCampaignError(failure instanceof Error ? failure.message : 'Unable to add contacts to campaign');
-    } finally {
-      setCampaignSaving(false);
-    }
-  };
   if (!object && !metadataLoaded) return <div className="records-loading">Loading object metadata…</div>;
   if (!object) return <div className="records-page"><div className="records-message" role="alert">Object “{route.objectApiName}” was not found.</div></div>;
   if (route.kind === 'record-detail') {
@@ -1487,11 +1445,10 @@ function RecordWorkspace({
     ? configuredListFields ?? []
     : [...readableFields].sort((left, right) => Number(right.apiName === 'Name') - Number(left.apiName === 'Name'))
       .filter((field) => records.length === 0 || records.some((item) => field.apiName in item));
-  const selectableRecordIds = (canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) ? visibleRecords.flatMap((item) => {
+  const selectableRecordIds = (canMassDelete || canBulkUpdate || canChangeOwner) ? visibleRecords.flatMap((item) => {
     const recordTypeId = String(item.RecordTypeId ?? defaultRecordTypeId);
     const recordLayout = pageLayoutForRecord(object, recordTypeId, profileId);
-    return canAddToCampaign
-      || canMassDelete && (!recordLayout || recordLayout.actions.includes('Delete'))
+    return canMassDelete && (!recordLayout || recordLayout.actions.includes('Delete'))
       || (canBulkUpdate || canChangeOwner) && (!recordLayout || recordLayout.actions.includes('Edit'))
       ? [item.Id] : [];
   }) : [];
@@ -1528,7 +1485,6 @@ function RecordWorkspace({
           {canCreate && <button className="btn btn-brand" onClick={openCreateForm}><Plus size={14} />New</button>}
           {canImport && <button className="btn" onClick={() => importInputRef.current?.click()}>Import</button>}
           {listFields.length > 0 && <button className="btn" disabled={exporting} onClick={() => void exportFilteredRecords()}>{exporting ? 'Exporting…' : 'Export CSV'}</button>}
-          {canAddToCampaign && selectedRecordIds.length > 0 && <button className="btn" onClick={() => void openAddToCampaign()}>Add to Campaign ({selectedRecordIds.length})</button>}
           {object.listViewButtons?.includes('Printable View') && <button className="btn" onClick={() => window.print()}>Printable View</button>}
           {canChangeOwner && selectedOwnerChangeIds.length > 0 && <button type="button" className="btn"
             onClick={() => { setBulkOwnerError(''); setBulkOwnerValue(''); setBulkOwnerDialogOpen(true); }}>
@@ -1553,7 +1509,7 @@ function RecordWorkspace({
       {!error && !loading && listTotal === 0 && !debouncedSearch && <div className="records-empty records-empty-action"><strong>No {object.pluralLabel.toLocaleLowerCase()} found.</strong>{canCreate && <button className="btn btn-brand" type="button" onClick={openCreateForm}>New {object.label}</button>}</div>}
       {!error && !loading && records.length === 0 && Boolean(debouncedSearch) && <div className="records-empty">No records match “{search}”.</div>}
       {!error && (loading || records.length > 0) && <div className="records-table-wrap records-responsive-list" role="region" aria-label={`${object.pluralLabel} records`} tabIndex={0} style={{ maxHeight: '65vh', overflowX: 'auto', overflowY: 'auto', maxWidth: '100%' }}><table className="slds-table records-table" style={{ minWidth: 'max-content' }}>
-        <thead><tr>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <thead><tr>{(canMassDelete || canBulkUpdate || canChangeOwner) && <th><input type="checkbox" aria-label="Select all selectable records" checked={selectableRecordIds.length > 0 && selectableRecordIds.every((id) => selectedRecordIds.includes(id))} onChange={(event) => setSelectedRecordIds(event.target.checked ? selectableRecordIds : [])} /></th>}{listFields.map((field) => <th key={field.apiName} aria-sort={listSort?.field === field.apiName ? (listSort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
           <button type="button" className="text-action" aria-label={`Sort by ${field.label}${listSort?.field === field.apiName ? ', currently ' + listSort.direction : ''}`}
             onClick={() => { setListOffset(0); setListSort((current) => ({ field: field.apiName, direction: current?.field === field.apiName && current.direction === 'asc' ? 'desc' : 'asc' })); }}>
             {field.label} {listSort?.field === field.apiName ? (listSort.direction === 'asc' ? '▲' : '▼') : '↕'}
@@ -1563,8 +1519,8 @@ function RecordWorkspace({
           const rowLayout = pageLayoutForRecord(object, recordTypeId, profileId);
           const rowAllowsEdit = !rowLayout || rowLayout.actions.includes('Edit');
           const rowAllowsDelete = !rowLayout || rowLayout.actions.includes('Delete');
-          const selectable = canAddToCampaign || canMassDelete && rowAllowsDelete || (canBulkUpdate || canChangeOwner) && rowAllowsEdit;
-          return <tr key={item.Id}>{(canMassDelete || canAddToCampaign || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName} data-label={field.label}>
+          const selectable = canMassDelete && rowAllowsDelete || (canBulkUpdate || canChangeOwner) && rowAllowsEdit;
+          return <tr key={item.Id}>{(canMassDelete || canBulkUpdate || canChangeOwner) && <td>{selectable && <input type="checkbox" aria-label={`Select ${String(item.Name ?? item.Id)}`} checked={selectedRecordIds.includes(item.Id)} onChange={() => setSelectedRecordIds((current) => current.includes(item.Id) ? current.filter((id) => id !== item.Id) : [...current, item.Id])} />}</td>}{listFields.map((field, index) => <td key={field.apiName} data-label={field.label}>
             {index === 0
               ? <a href={appRoutePath({ kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })} onClick={(event) => navigateLink(event, { kind: 'record-detail', objectApiName: object.apiName, recordId: item.Id, appId: route.appId })}>{formatFieldValue(field, item[field.apiName] ?? item.Id)}</a>
               : formatFieldValue(field, item[field.apiName])}
@@ -1662,21 +1618,6 @@ function RecordWorkspace({
           </table></div>}
           {importError && <div className="records-message" role="alert">{importError}</div>}
           <footer><button type="button" className="btn" disabled={importSaving} onClick={() => { setImportFileName(''); setImportRows([]); setImportError(''); }}>Cancel</button><button type="submit" className="btn btn-brand" disabled={importSaving || !importRows.length}>{importSaving ? 'Importing…' : `Import ${importRows.length} Records`}</button></footer>
-        </form>
-      </section>
-    </div>}
-    {campaignDialogOpen && <div className="record-form-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !campaignSaving) setCampaignDialogOpen(false); }}>
-      <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="add-to-campaign-title">
-        <header><div><div className="eyebrow">CONTACTS</div><h2 id="add-to-campaign-title">Add to Campaign</h2></div><button className="icon-button" aria-label="Close" disabled={campaignSaving} onClick={() => setCampaignDialogOpen(false)}><X size={16} /></button></header>
-        <form onSubmit={(event) => { event.preventDefault(); void addSelectedContactsToCampaign(); }}>
-          <p className="modal-copy">Add {selectedRecordIds.length} selected contact{selectedRecordIds.length === 1 ? '' : 's'} to an active campaign.</p>
-          <label className="form-label" htmlFor="record-campaign">Campaign<select className="form-control" id="record-campaign" value={campaignId} required disabled={campaignLoading || campaignSaving} onChange={(event) => setCampaignId(event.target.value)}>
-            <option value="">{campaignLoading ? 'Loading campaigns…' : 'Select a campaign…'}</option>
-            {campaignOptions.map((campaign) => <option key={campaign.Id} value={campaign.Id}>{String(campaign.Name ?? campaign.Id)}</option>)}
-          </select></label>
-          {!campaignLoading && !campaignOptions.length && <p className="permission-help">No active campaigns are available. Create a campaign in the Campaigns object first.</p>}
-          {campaignError && <div className="records-message" role="alert">{campaignError}</div>}
-          <footer><button type="button" className="btn" disabled={campaignSaving} onClick={() => setCampaignDialogOpen(false)}>Cancel</button><button type="submit" className="btn btn-brand" disabled={campaignSaving || campaignLoading || !campaignId}>{campaignSaving ? 'Adding…' : 'Add Contacts'}</button></footer>
         </form>
       </section>
     </div>}

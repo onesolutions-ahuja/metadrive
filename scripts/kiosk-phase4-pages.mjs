@@ -24,7 +24,7 @@ export const commercePages=[
   activationAssignments:[],
   components:[
    block('menu-nav','MD_CommerceNavigationV2','Editable category rail','header',{
-    objectApiName:'ProductCategory__c',title:'MENU',nameField:'Name',imageField:'ImageUrl',
+    objectApiName:'ProductCategory',title:'MENU',nameField:'Name',imageField:'ImageUrl',
     brandLabel:'YOUR BRAND',brandLogoUrl:'',accentColor:'#ed002d',backgroundColor:'#fff',fillRegion:true,
     standalonePresentation:true,presentationLayout:'rail-checkout',presentationVariant:'portrait',
     actionFlows:{selectCategory:setPageState('selectedCategory','$event')}

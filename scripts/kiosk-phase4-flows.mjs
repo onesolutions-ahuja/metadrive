@@ -32,12 +32,12 @@ export const commerceFlows=[
  flow('MD_Commerce_ModifierCatalog','Load Product Modifier Choices',[
   e(1,'Start','Start'),
   get(2,'Get assigned groups','ProductModifierGroup__c',[cond('ProductId','Equals','{!ProductId}')],'Assignments','all'),
-  get(3,'Get enabled groups','ModifierGroup__c',[cond('IsActive','Equals',true)],'Groups','all'),
-  get(4,'Get enabled options','ModifierOption__c',[cond('IsActive','Equals',true)],'Options','all'),
+  get(3,'Get enabled groups','ProductModifierGroup__c',[cond('ProductId','Equals','{!ProductId}'),cond('IsActive','Equals',true)],'Groups','all'),
+  get(4,'Get enabled options','ProductModifier__c',[cond('IsActive','Equals',true)],'Options','all'),
   e(5,'End','End')
  ],[edge(1,2),edge(2,3),edge(3,4),edge(4,5)],[
   input('ProductId'),collection('Assignments','ProductModifierGroup__c',true),
-  collection('Groups','ModifierGroup__c',true),collection('Options','ModifierOption__c',true)
+  collection('Groups','ProductModifierGroup__c',true),collection('Options','ProductModifier__c',true)
  ],'Read live assigned modifier groups/options for product editor.'),
  flow('MD_Commerce_LoadBasket','Load Draft Basket',[
   e(1,'Start','Start'),
@@ -56,17 +56,17 @@ export const commerceFlows=[
   ])]),
   get(4,'Read product group assignments','ProductModifierGroup__c',[cond('ProductId','Equals','{!ProductId}')],'Assignments','all'),
   loop(5,'Validate each requested option','Selections','Candidate'),
-  get(6,'Read trusted option','ModifierOption__c',[cond('Id','Equals','{!Candidate.Id}'),cond('IsActive','Equals',true)],'Option'),
+  get(6,'Read trusted option','ProductModifier__c',[cond('Id','Equals','{!Candidate.Id}'),cond('IsActive','Equals',true)],'Option'),
   get(7,'Check option belongs to product','ProductModifierGroup__c',[
-   cond('ProductId','Equals','{!ProductId}'),cond('GroupId','Equals','{!Option.GroupId}')
+   cond('ProductId','Equals','{!ProductId}'),cond('Id','Equals','{!Option.GroupId}')
   ],'OptionAssignment'),
   decision(8,'Reject invalid or unassigned options',[yes('Allowed',[
    cond('{!Option.Id}','Is Not Null',''),cond('{!OptionAssignment.Id}','Is Not Null','')
   ])]),
   assign(9,'Collect verified option','VerifiedOptions','Add','{!Option}'),
-  assign(10,'Accumulate verified option price','ModifierAmount','Add','{!Option.PriceAdjustment}'),
+  assign(10,'Accumulate verified option price','ModifierAmount','Add','{!Option.Price__c}'),
   loop(11,'Validate group selection rules','Assignments','Assignment'),
-  get(12,'Get product modifier group','ModifierGroup__c',[cond('Id','Equals','{!Assignment.GroupId}')],'CurrentGroup'),
+  get(12,'Get product modifier group','ProductModifierGroup__c',[cond('Id','Equals','{!Assignment.Id}')],'CurrentGroup'),
   e(13,'Collection Filter','Only selected options in current group',{collection:'VerifiedOptions',outputCollection:'GroupSelections',
    conditions:[cond('GroupId','Equals','{!CurrentGroup.Id}')]}),
   decision(14,'Enforce modifier minimum and maximum',[
@@ -83,8 +83,9 @@ export const commerceFlows=[
    ProductId:'{!ProductId}',Quantity:'{!Quantity}',BaseUnitPrice:'{!Product.DefaultPrice}',
    ModifierTotal:'{!ModifierAmount}',UnitPrice:'{!UnitAmount}',LineTotal:'{!LineAmount}'}),
   loop(21,'Save validated options','VerifiedOptions','SavedOption'),
-  create(22,'Store line option','OrderLineModifier__c',{Name:'{!SavedOption.Name}',OrderLineId:'{!record20.Id}',
-   ModifierOptionId:'{!SavedOption.Id}',PriceAdjustment:'{!SavedOption.PriceAdjustment}',Quantity:1}),
+  create(22,'Store line option','OrderLine__c',{Name:'{!SavedOption.Name}',OrderId:'{!BasketId}',
+   ParentOrderLineId:'{!record20.Id}',ProductModifierId:'{!SavedOption.Id}',
+   Quantity:1,UnitPrice:0,LineTotal:0}),
   assign(23,'Use new basket','BasketId','Assign','{!record18.Id}'),
   assign(24,'Include modifier prices','UnitAmount','Add','{!ModifierAmount}'),
   assign(25,'Set extended price','LineAmount','Assign','{!UnitAmount}'),
@@ -111,19 +112,19 @@ export const commerceFlows=[
   edge(29,28),edge(30,31),edge(31,32)
  ],[
   input('SessionKey'),input('ProductId'),input('Quantity','Number'),
-  resource('Selections','Record Collection','ModifierOption__c',true,true,false,[]),
+  resource('Selections','Record Collection','ProductModifier__c',true,true,false,[]),
   record('Product','Product__c'),collection('Assignments','ProductModifierGroup__c'),
-  resource('Candidate','Record','ModifierOption__c',false,false,false,null),
-  record('Option','ModifierOption__c'),record('OptionAssignment','ProductModifierGroup__c'),
-  collection('VerifiedOptions','ModifierOption__c',false,[]),
+  resource('Candidate','Record','ProductModifier__c',false,false,false,null),
+  record('Option','ProductModifier__c'),record('OptionAssignment','ProductModifierGroup__c'),
+  collection('VerifiedOptions','ProductModifier__c',false,[]),
   resource('ModifierAmount','Variable','Number',false,false,false,0),
   resource('Assignment','Record','ProductModifierGroup__c'),
-  record('CurrentGroup','ModifierGroup__c'),
-  collection('GroupSelections','ModifierOption__c',false,[]),
+  record('CurrentGroup','ProductModifierGroup__c'),
+  collection('GroupSelections','ProductModifier__c',false,[]),
   record('Basket','Order__c'),output('BasketId','Text',''),
   resource('UnitAmount','Variable','Currency',false,false,false,0),
   resource('LineAmount','Variable','Currency',false,false,false,0),
-  resource('SavedOption','Record','ModifierOption__c'),
+  resource('SavedOption','Record','ProductModifier__c'),
   collection('BasketLines','OrderLine__c'),
   resource('RunningLine','Record','OrderLine__c'),
   resource('BasketAmount','Variable','Currency',false,false,false,0),
@@ -136,7 +137,7 @@ export const commerceFlows=[
    cond('Id','Equals','{!LineId}'),cond('OrderId','Equals','{!Basket.Id}')],'Line'),
   decision(4,'Validate line ownership',[yes('Found',[
    cond('{!Basket.Id}','Is Not Null',''),cond('{!Line.Id}','Is Not Null','')])]),
-  remove(5,'Remove line modifiers','OrderLineModifier__c',[cond('OrderLineId','Equals','{!Line.Id}')]),
+  remove(5,'Remove line modifiers','OrderLine__c',[cond('ParentOrderLineId','Equals','{!Line.Id}')]),
   remove(6,'Remove line','OrderLine__c',[
    cond('Id','Equals','{!Line.Id}'),cond('OrderId','Equals','{!Basket.Id}')]),
   get(7,'Load remaining lines','OrderLine__c',[cond('OrderId','Equals','{!Basket.Id}')],'Lines','all'),

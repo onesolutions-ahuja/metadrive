@@ -1,3 +1,5 @@
+import { isRetiredObject, retiredObjectApiNames } from '../retired-object-names.mjs';
+
 /**
  * MetaDrive Core metadata seeder. Accepts the existing canonical Core template
  * rather than copying Object, Field, Component, Flow or RBAC definitions.
@@ -7,7 +9,7 @@ export function coreMetadataSeed(template) {
   if (!template || typeof template !== 'object') throw Error('Core metadata template required');
   const source = structuredClone(template);
   return {
-    objects: source.objects ?? [],
+    objects: (source.objects ?? []).filter(object => !isRetiredObject(object.apiName)),
     pages: source.pages ?? [],
     flows: source.flows ?? [],
     // Required tenant runtime/metadata collections must exist even in a fresh tenant.
@@ -66,6 +68,9 @@ export function mergeCoreMetadata(tenant, seed) {
       const key = definition?.apiName;
       if (typeof key !== 'string' || !key.trim())
         throw Error('Core ' + name + ' seed entry requires a stable apiName');
+      if (name === 'objects' && isRetiredObject(key)) continue;
+      if (['pages','flows'].includes(name) && retiredObjectApiNames.some(retired =>
+          JSON.stringify(definition).includes(JSON.stringify(retired)))) continue;
       if (existing.has(key)) continue;
       existing.add(key);
       additions.push(structuredClone(definition));
@@ -150,6 +155,11 @@ export function initializeTenantCore(template, {authorizedUserIds=[], trustedPro
       .map(([apiName, rows])=>[apiName,structuredClone(rows)]))
     : {};
   return {...seed,...provisioned,
+    objects:(provisioned.objects ?? seed.objects).filter(object => !isRetiredObject(object.apiName)),
+    flows:(provisioned.flows ?? seed.flows).filter(flow => !retiredObjectApiNames.some(name =>
+      JSON.stringify(flow).includes(JSON.stringify(name)))),
+    pages:(provisioned.pages ?? seed.pages).filter(page => !retiredObjectApiNames.some(name =>
+      JSON.stringify(page).includes(JSON.stringify(name)))),
     records:connectorSeedRecords,
     namedCredentials:placeholders,
     users:[],
@@ -190,6 +200,9 @@ export function mergeSharedDependency(tenant, dependency) {
     for(const item of dependency[name]??[]) {
       const id=KEY_FIELDS.map(key=>item?.[key]).find(value=>typeof value==='string'&&value.trim());
       if(!id)throw Error('Shared '+name+' definition requires stable API identity');
+      if(name === 'objects' && isRetiredObject(id))continue;
+      if(retiredObjectApiNames.some(retired =>
+          JSON.stringify(item).includes(JSON.stringify(retired))))continue;
       if(seen.has(id))continue;
       seen.add(id);added.push(structuredClone(item));
     }

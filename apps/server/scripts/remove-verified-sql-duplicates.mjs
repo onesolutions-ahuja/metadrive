@@ -48,7 +48,7 @@ const input=process.env.DATABASE_URL;
 const applying=process.argv.includes('--apply');
 const removeSystemUser=process.argv.includes('--user-duplicates');
 const retireLegacyStaging=process.argv.includes('--retire-legacy-staging');
-if(process.argv.some(arg=>!['--apply','--user-duplicates','--retire-legacy-staging'].includes(arg)))
+if(process.argv.slice(2).some(arg=>!['--apply','--user-duplicates','--retire-legacy-staging'].includes(arg)))
   throw Error('Unknown argument');
 if(!input||target!=='metadrive_sql_20261012')
   throw Error('Expected explicit SQL-only database and DATABASE_URL');

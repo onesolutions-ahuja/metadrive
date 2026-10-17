@@ -401,42 +401,6 @@ app.get('/api/records/:objectName/:recordId/history', accessAuthentication, (req
     }));
   return res.json({ history });
 });
-app.post('/api/campaigns/:campaignId/members', accessAuthentication, (req: Request, res: Response) => {
-  const principal = getPrincipal(res);
-  const tenant = tenantData(principal.tenantId)!;
-  const campaignObject = tenant.objects.find((object) => object.apiName === 'Campaign');
-  const contactObject = tenant.objects.find((object) => object.apiName === 'Contact');
-  if (!campaignObject || !contactObject) return res.status(404).json({ error: 'Campaign or Contact object is unavailable' });
-  if (!contactObject.listViewButtons?.includes('Add to Campaign')) return res.status(403).json({ error: 'Add to Campaign is not enabled for Contact list views' });
-  if (!hasObjectPermission(principal, tenant, 'Campaign', 'edit') || !hasObjectPermission(principal, tenant, 'Contact', 'read')) {
-    return res.status(403).json({ error: 'Adding contacts requires Campaign edit and Contact read permissions' });
-  }
-  const campaignId = routeParam(req, 'campaignId');
-  const campaign = (tenant.records.Campaign ?? []).find((record) => record.Id === campaignId);
-  if (!campaign || !hasRecordAccess(principal, tenant, 'Campaign', campaign, 'Edit')) return res.status(404).json({ error: 'Campaign was not found' });
-  if (campaign.IsActive === false) return res.status(422).json({ error: 'Contacts cannot be added to an inactive campaign' });
-  if (!recordActionEnabled(campaignObject, 'Edit', typeof campaign.RecordTypeId === 'string' ? campaign.RecordTypeId : undefined, profileIdForPrincipal(principal, tenant))) {
-    return res.status(403).json({ error: 'Edit is not enabled for Campaign' });
-  }
-  const parsed = z.object({ contactIds: z.array(z.string().min(1)).min(1) }).strict().safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Provide at least one Contact ID', details: parsed.error.flatten() });
-  const contactIds = [...new Set(parsed.data.contactIds)];
-  const contacts = tenant.records.Contact ?? [];
-  const accessibleContacts = contactIds.map((id) => contacts.find((record) => record.Id === id))
-    .filter((record): record is RuntimeRecord => Boolean(record && hasRecordAccess(principal, tenant, 'Contact', record, 'Read')));
-  if (accessibleContacts.length !== contactIds.length) return res.status(404).json({ error: 'One or more Contacts were not found or are not accessible' });
-  const existingContactIds = new Set(tenant.campaignMembers.filter((member) => member.campaignId === campaignId).map((member) => member.contactId));
-  const newMembers = accessibleContacts.filter((contact) => !existingContactIds.has(contact.Id)).map((contact) => ({
-    id: randomUUID(),
-    campaignId,
-    contactId: contact.Id,
-    status: 'Sent' as const,
-    createdBy: principal.userId,
-    createdAt: new Date().toISOString()
-  }));
-  persistTenantRecords(principal.tenantId, { ...tenant, campaignMembers: [...tenant.campaignMembers, ...newMembers] });
-  return res.status(201).json({ addedCount: newMembers.length, alreadyMemberCount: contactIds.length - newMembers.length });
-});
 /**
  * User is a security identity backed by getState().users and accessControl.users,
  * not an ordinary tenant record. Keep these identities in sync and never

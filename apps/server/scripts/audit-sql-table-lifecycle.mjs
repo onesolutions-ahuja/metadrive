@@ -120,7 +120,21 @@ try {
   const tenantObjects=new Map(Object.entries(snapshot.state.tenants??{}).map(
     ([id,tenant])=>[id,new Set((tenant.objects??[]).map(item=>item.apiName))]));
   const sqlTables=(await pool.query(query)).rows;
-  const physicalNames=[...registry.keys()].filter(name=>/^md_obj_[0-9a-f]{32}$/.test(name));
+  const existingSqlNames=new Set(sqlTables.map(row=>row.table_name));
+  // An operator may already have manually dropped a physical Object table.
+  // Never SELECT from it: report the stale Object Manager/SQL registry entry.
+  const missingPhysicalRegistrations=registryRows.rows
+    .filter(row=>/^md_obj_[0-9a-f]{32}$/.test(row.physical_table)
+      && !existingSqlNames.has(row.physical_table))
+    .map(row=>{
+      const tenant=snapshot.state.tenants?.[row.tenant_id];
+      return {table:row.physical_table,tenantId:row.tenant_id,
+        objectApiName:row.api_name,registryActive:row.active,
+        objectManagerDefined:!!tenant?.objects?.some(o=>o.apiName===row.api_name),
+        activeObjectSurfaces:tenant?objectUses(tenant,row.api_name):[]};
+    });
+  const physicalNames=[...registry.keys()].filter(name=>
+    /^md_obj_[0-9a-f]{32}$/.test(name)&&existingSqlNames.has(name));
   const countsRow=physicalNames.length
     ?(await pool.query('SELECT '+physicalNames.map((name,index)=>
       '(SELECT count(*)::integer FROM public.'+name+') AS n'+index).join(','))).rows[0]
@@ -168,6 +182,8 @@ try {
     totalTables:tables.length,trackedObjects:registry.size,
     zeroRowPhysicalTables:tables.filter(item=>item.recordCount===0).length,
     tenantCount:tenantObjects.size,
+    missingPhysicalRegistrationCount:missingPhysicalRegistrations.length,
+    missingPhysicalRegistrations,
     byCategory:Object.fromEntries([...new Set(tables.map(t=>t.category))].map(
       type=>[type,tables.filter(t=>t.category===type).length])),
     explicitDropAuthorizations:0,

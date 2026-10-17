@@ -2,6 +2,7 @@
 // Run: METADRIVE_PHASE4_INSTALL_APPROVED=true METADRIVE_API_URL=https://... etc
 import {commerceComponents as baselineComponents, kioskPresentationComponents as commerceComponents} from './kiosk-phase4-components.mjs';
 import {commerceFlows} from './kiosk-phase4-flows.mjs';
+import {customisationObjectExtensions,basketObjectExtensions} from './kiosk-commerce-capabilities.mjs';
 import {commercePages,commerceApp,obsoleteCommercePages} from './kiosk-phase4-pages.mjs';
 
 const approved=process.env.METADRIVE_PHASE4_INSTALL_APPROVED==='true';
@@ -48,17 +49,32 @@ token=login.access_token;
 if(!token)throw Error('No authenticated token returned');
 const objectList=(await api('/metadata/objects')).objects;
 const objectMap=new Map(objectList.map(o=>[o.apiName,o]));
-const usedObjects=['Product__c','ProductCategory__c','ModifierGroup__c','ModifierOption__c',
- 'ProductModifierGroup__c','Order__c','OrderLine__c','OrderLineModifier__c'];
-for(const name of usedObjects)if(!objectMap.has(name))throw Error('Missing commerce Object: '+name);
-for(const [name,fields] of Object.entries({
- Order__c:['BasketSessionKey','Status','Subtotal','TaxAmount','Total'],
- OrderLine__c:['OrderId','ProductId','Quantity','UnitPrice','LineTotal','ModifierTotal'],
- ModifierOption__c:['GroupId','PriceAdjustment','IsActive'],
- ProductModifierGroup__c:['ProductId','GroupId']
+const usedObjects=['Product__c','ProductCategory','ProductModifierGroup__c',
+ 'ProductModifier__c','Order__c','OrderLine__c','SaleLine__c'];
+for(const name of usedObjects)if(!objectMap.has(name))throw Error('Missing shared commerce Object: '+name);
+
+// Ordinary Object Manager metadata writes update both canonical state and typed SQL.
+// Do not append duplicates, and do not silently rewrite existing relationship
+// targets: those require a verified tenant migration and metadata dependency update.
+for(const [objectName,fields] of Object.entries({
+ ...customisationObjectExtensions,...basketObjectExtensions
 })){
- const found=new Set(objectMap.get(name).fields.map(f=>f.apiName));
- for(const field of fields)if(!found.has(field))throw Error('Missing commerce field: '+name+'.'+field);
+ const existing=objectMap.get(objectName);
+ if(!existing)throw Error('Required shared Object missing: '+objectName);
+ const missing=fields.filter(field=>!existing.fields.some(x=>x.apiName===field.apiName));
+ const conflicting=fields.filter(field=>existing.fields.some(x=>x.apiName===field.apiName
+   && (x.dataType!==field.dataType || (field.relationship &&
+     x.relationship?.targetObject!==field.relationship.targetObject))));
+ if(conflicting.length)throw Error('Existing field migration required via Object Manager: '+
+   objectName+'.'+conflicting.map(x=>x.apiName).join(','));
+ if(!missing.length)continue;
+ await api('/metadata/objects/'+encodeURIComponent(objectName),'PUT',{
+   ...existing,fields:[...existing.fields,...missing]
+ });
+ const fresh=(await api('/metadata/objects')).objects.find(x=>x.apiName===objectName);
+ if(!fresh||missing.some(x=>!fresh.fields.some(f=>f.apiName===x.apiName)))
+   throw Error('Field installation verification failed: '+objectName);
+ objectMap.set(objectName,fresh);
 }
 // Security updates are full snapshots. On optimistic-writer contention,
 // READ THE LATEST grants before retrying so concurrent RBAC edits are preserved.
@@ -307,10 +323,10 @@ await updateSecurity(access=>{
 const readOnly={read:true,create:false,edit:false,delete:false,viewAll:false,modifyAll:false};
 const transaction={read:true,create:true,edit:true,delete:true,viewAll:false,modifyAll:false};
 const grants=Object.fromEntries(usedObjects.map(name=>[name,
- ['Order__c','OrderLine__c','OrderLineModifier__c'].includes(name)
+ ['Order__c','OrderLine__c'].includes(name)
   ?{...transaction,delete:name!=='Order__c'}:readOnly]));
 const fields=Object.fromEntries(usedObjects.flatMap(name=>objectMap.get(name).fields.map(f=>
- [name+'.'+f.apiName,{read:true,edit:['Order__c','OrderLine__c','OrderLineModifier__c'].includes(name)}])));
+ [name+'.'+f.apiName,{read:true,edit:['Order__c','OrderLine__c'].includes(name)}])));
 const id='md-commerce-kiosk-operator';
 await updateSecurity(access=>{
  const existingSet=(access.permissionSets??[]).find(p=>p.id===id);
