@@ -47,11 +47,19 @@ export default function MetadataBoundPageComponent({
   const [dataError, setDataError] = useState('');
   const [actionError, setActionError] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<Record<string,string>>({});
+  const [selectedFilterRecords, setSelectedFilterRecords] = useState<Record<string,{
+    recordId:string;label:string;sourceObjectApiName:string
+  }>>({});
   useEffect(() => {
     const listener = (event: Event) => {
-      const data = (event as CustomEvent<{pageSessionKey:string;filterKey:string;value:string}>).detail;
+      const data = (event as CustomEvent<{pageSessionKey:string;filterKey:string;value:string;
+        recordId?:string;label?:string;sourceObjectApiName?:string}>).detail;
       if (data?.pageSessionKey !== pageSessionKey || !data.filterKey) return;
-      setSelectedCategories(previous => ({...previous,[data.filterKey]:data.value}));
+      setSelectedCategories(previous => ({...previous,[data.filterKey]:String(data.value??'')}));
+      setSelectedFilterRecords(previous => ({...previous,[data.filterKey]:{
+        recordId:String(data.recordId??''),label:String(data.label??data.value??''),
+        sourceObjectApiName:String(data.sourceObjectApiName??'')
+      }}));
     };
     window.addEventListener('metadrive:page-filter-selected',listener);
     return () => window.removeEventListener('metadrive:page-filter-selected',listener);
@@ -102,6 +110,13 @@ export default function MetadataBoundPageComponent({
   }, [properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
+  const categoryFilterKey = typeof properties.filterKey === 'string' ? properties.filterKey : 'category';
+  const categorySource = selectedFilterRecords[categoryFilterKey];
+  const configuredCategoryField = String(properties.categoryFieldApiName??'').trim();
+  const inferredCategoryField = !configuredCategoryField && categorySource?.sourceObjectApiName
+    ? fields.find(field=>field.relationship?.targetObject===categorySource.sourceObjectApiName
+      || field.dataType==='Lookup('+categorySource.sourceObjectApiName+')')?.apiName
+    : undefined;
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
@@ -133,7 +148,11 @@ export default function MetadataBoundPageComponent({
         ? String(('value' in action.value ? (action.value as {value:unknown}).value : 'label' in action.value
           ? (action.value as {label:unknown}).label : '') ?? '')
         : String(action.value ?? '');
-      window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected', {detail:{pageSessionKey,filterKey,value}}));
+      const source = action.value && typeof action.value === 'object' ? action.value as Record<string,unknown> : {};
+      window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected', {detail:{
+        pageSessionKey,filterKey,value,label:String(source.label??value),
+        recordId:String(source.recordId??''),sourceObjectApiName:String(source.sourceObjectApiName??'')
+      }}));
       return {selected:value};
     }
     if (disableActions) throw new Error('Builder preview permits local filters only. Publish the page to run Flows or navigation.');
@@ -204,7 +223,11 @@ export default function MetadataBoundPageComponent({
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
-      ...(typeof properties.filterKey === 'string' && properties.filterKey ? {selectedCategory:selectedCategories[properties.filterKey] ?? String(properties.selectedCategory ?? '')} : {}),
+      ...(categoryFilterKey ? {
+        selectedCategory:selectedCategories[categoryFilterKey] ?? String(properties.selectedCategory ?? ''),
+        selectedCategoryLabel:categorySource?.label ?? '',selectedCategoryRecordId:categorySource?.recordId ?? '',
+        categoryFieldApiName:configuredCategoryField||inferredCategoryField||''
+      } : {}),
       ...(typeof properties.searchKey === 'string' && properties.searchKey ? {searchQuery:selectedCategories[properties.searchKey] ?? ''} : {}),
       label: component.label, properties, objects, reports, flows: availableFlows,
        pageSessionKey, componentId: component.id,
