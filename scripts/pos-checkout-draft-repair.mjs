@@ -121,6 +121,8 @@ export function planPosDraftRepair(objects,flows,pages=[]){
  }
  const safetyReady=['POS_CashPayment__c','POS_StockBalance__c','POS_StockMovement__c']
   .every(name=>objects.some(object=>object.apiName===name));
+ if(process.env.METADRIVE_REQUIRE_POS_SAFETY==='true'&&!safetyReady)
+  throw Error('POS safety metadata not installed in this tenant; do not claim checkout repaired');
  if(safetyReady){
   const prepared=planCashAgeStockFlow(next,objects);
   if(prepared){
