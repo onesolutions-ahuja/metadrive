@@ -524,7 +524,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 4,
+      "version": 5,
       "scope": "platform-core",
       "jsxFile": "one/OneLayout.jsx",
       "cssFile": "one/one.css",
@@ -2296,7 +2296,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 5,
+      "version": 6,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
