@@ -76,7 +76,7 @@ export function mentionGroups(
       return !q || [node.object.label, node.object.apiName, node.path, node.via, field.label, field.apiName]
         .some(value => value.toLowerCase().includes(q))
         || (pathQuery !== undefined && field.apiName.toLowerCase().startsWith(pathQuery))
-        || (q.includes('.') && pathLabel.split('.').length === q.split('.').length
+        || (q.includes('.') && pathLabel.split('.').length === q.split('.').length - 1
           && pathLabel.startsWith(q.slice(0, q.lastIndexOf('.')))
           && field.apiName.toLowerCase().startsWith(q.slice(q.lastIndexOf('.') + 1)));
     }).map(field => ({
