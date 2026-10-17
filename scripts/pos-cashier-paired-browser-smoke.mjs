@@ -41,6 +41,8 @@ try{
  const context=await browser.newContext({viewport:{width:1280,height:900}});
  const cashier=await context.newPage();
  const errors=[];
+ const navigations=[];
+ cashier.on('framenavigated',frame=>{if(frame===cashier.mainFrame())navigations.push(frame.url())});
  cashier.on('pageerror',error=>errors.push(error.message));
  await cashier.goto(url);
  await cashier.evaluate(()=>{
@@ -60,7 +62,10 @@ try{
    throw Error('Display popup failed: '+error.message+'; alerts='+JSON.stringify(alerts)+
      '; pageErrors='+JSON.stringify(errors)+'; pageCount='+context.pages().length+
      '; openAttempts='+JSON.stringify(await cashier.evaluate(()=>window.__displayOpenAttempts))+
-     '; clickTrace='+JSON.stringify(await cashier.evaluate(()=>window.__displayClickTrace)));
+     '; clickTrace='+JSON.stringify(await cashier.evaluate(()=>window.__displayClickTrace))+
+     '; navigations='+JSON.stringify(navigations)+
+     '; pageUrl='+cashier.url()+
+     '; currentSale='+JSON.stringify(await cashier.locator('aside[aria-label="Current sale"]').allInnerTexts()));
  });
  await cashier.getByRole('button',{name:'Open customer display'}).click();
  const customer=await popupEvent;
