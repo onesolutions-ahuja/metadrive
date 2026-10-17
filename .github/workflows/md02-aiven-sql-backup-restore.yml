@@ -186,9 +186,9 @@ jobs:
         env:
           COMMERCE_TENANT: ${{ env.ONE_TIME_RETIRE == 'true' && 'unesolutions-dev' || inputs.commerce_tenant_id }}
           API_OFFLINE: ${{ inputs.confirm_backend_offline }}
-          ALSO_BACKUPS: ${{ inputs.cleanup_verified_duplicates }}
-          ALSO_USERS: ${{ inputs.cleanup_user_duplicates }}
-          ALSO_STAGING: ${{ inputs.cleanup_legacy_staging }}
+          ALSO_BACKUPS: ${{ inputs.cleanup_verified_duplicates || false }}
+          ALSO_USERS: ${{ inputs.cleanup_user_duplicates || false }}
+          ALSO_STAGING: ${{ inputs.cleanup_legacy_staging || false }}
         run: |
           test -n "$COMMERCE_TENANT"
           if [ "$ONE_TIME_RETIRE" != 'true' ]; then test "$API_OFFLINE" = 'true'; fi
