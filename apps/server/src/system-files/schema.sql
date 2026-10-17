@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS md_component_definitions (id uuid PRIMARY KEY DEFAULT
 CREATE TABLE IF NOT EXISTS md_page_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, title text NOT NULL, enabled boolean NOT NULL DEFAULT true, UNIQUE(tenant_id,api_name), UNIQUE(tenant_id,id));
 CREATE TABLE IF NOT EXISTS md_page_components (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), page_id uuid NOT NULL, component_api text NOT NULL, FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id), FOREIGN KEY(tenant_id,component_api) REFERENCES md_component_definitions(tenant_id,api_name), slot text NOT NULL, sort_order integer NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS md_flow_definitions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), api_name text NOT NULL, version integer NOT NULL, active boolean NOT NULL DEFAULT false, UNIQUE(tenant_id,api_name,version), UNIQUE(tenant_id,id));
-CREATE TABLE IF NOT EXISTS md_flow_runs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), flow_id uuid NOT NULL, started_by uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id), FOREIGN KEY(tenant_id,started_by) REFERENCES md_users(tenant_id,id), status text NOT NULL, started_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS md_flow_runs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id), flow_id uuid NOT NULL, started_by uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id), FOREIGN KEY(tenant_id,started_by) REFERENCES md_users(tenant_id,id), status text NOT NULL CHECK(status IN ('pending','completed','failed')), UNIQUE(tenant_id,id), started_at timestamptz NOT NULL DEFAULT now(),finished_at timestamptz,error_code text);
 CREATE TABLE IF NOT EXISTS md_apps (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), api_name text NOT NULL UNIQUE, label text NOT NULL, enabled boolean NOT NULL DEFAULT true);
 CREATE TABLE IF NOT EXISTS md_app_installations (tenant_id uuid NOT NULL REFERENCES md_tenants(id), app_id uuid NOT NULL REFERENCES md_apps(id), PRIMARY KEY(tenant_id,app_id));
 
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS md_page_properties (
 CREATE TABLE IF NOT EXISTS md_flow_nodes (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL REFERENCES md_tenants(id),
  flow_id uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id) ON DELETE CASCADE,
- api_name text NOT NULL,node_type text NOT NULL,sort_order integer NOT NULL DEFAULT 0, UNIQUE(tenant_id,flow_id,api_name)
+ api_name text NOT NULL,node_type text NOT NULL,sort_order integer NOT NULL DEFAULT 0, UNIQUE(tenant_id,id), UNIQUE(tenant_id,flow_id,api_name)
 );
 CREATE TABLE IF NOT EXISTS md_flow_edges (
  tenant_id uuid NOT NULL REFERENCES md_tenants(id),flow_id uuid NOT NULL, FOREIGN KEY(tenant_id,flow_id) REFERENCES md_flow_definitions(tenant_id,id) ON DELETE CASCADE,
@@ -58,4 +58,23 @@ CREATE TABLE IF NOT EXISTS md_app_home_pages (
   PRIMARY KEY (tenant_id,app_id,form_factor),
   FOREIGN KEY(tenant_id,app_id) REFERENCES md_app_installations(tenant_id,app_id),
   FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id)
+);
+
+CREATE TABLE IF NOT EXISTS md_flow_node_properties (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+  node_id uuid NOT NULL,
+  api_name text NOT NULL,
+  value_text text,
+  data_type text NOT NULL CHECK(data_type IN ('text','string','number','boolean','null')),
+  PRIMARY KEY(tenant_id,node_id,api_name),
+  FOREIGN KEY(tenant_id,node_id) REFERENCES md_flow_nodes(tenant_id,id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_flow_run_inputs (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+  run_id uuid NOT NULL,
+  api_name text NOT NULL,
+  value_text text,
+  data_type text NOT NULL CHECK(data_type IN ('text','string','number','boolean','null')),
+  PRIMARY KEY(tenant_id,run_id,api_name),
+  FOREIGN KEY(tenant_id,run_id) REFERENCES md_flow_runs(tenant_id,id) ON DELETE CASCADE
 );
