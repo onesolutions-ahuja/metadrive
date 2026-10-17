@@ -26,10 +26,20 @@ function Timeline({p,rows}){return <div className="one-surface">{rows.map((r,i)=
 function ItemGrid({p,rows}){
  const count=Math.max(1,Math.min(8,Number(p.desktopColumns)||3));
  const categoryField=String(p.categoryFieldApiName||'').trim(),selectedCategory=String(p.selectedCategory||'').trim();
+ const categoryValues=[selectedCategory,p.selectedCategoryLabel,p.selectedCategoryRecordId].filter(v=>v!==undefined&&v!==null&&String(v).trim()).map(v=>String(v).trim().toLowerCase());
+ const categorySelected=categoryValues.length>0;
+ const categoryFieldExists=Boolean(categoryField)&&rows.some(row=>Object.prototype.hasOwnProperty.call(row,categoryField));
+ const matchesCategory=row=>{
+  if(!categorySelected)return true;
+  if(!categoryFieldExists)return false;
+  const raw=row?.[categoryField],values=raw&&typeof raw==='object'
+   ? [raw.Id,raw.id,raw.Name,raw.name,raw.value,raw.label]:[raw];
+  return values.some(value=>value!==undefined&&value!==null&&categoryValues.includes(String(value).trim().toLowerCase()));
+ };
  const searchQuery=String(p.searchQuery||'').trim().toLocaleLowerCase();
  const searchFields=String(p.searchFieldApiNames||'Name,SKU,Barcode').split(',').map(x=>x.trim()).filter(Boolean);
  const titleField=String(p.titleFieldApiName||'Name'),imageField=String(p.imageFieldApiName||'ImageURL'),priceField=String(p.priceFieldApiName||'DefaultPrice');
- const visibleRows=rows.filter(row=>(!categoryField||!selectedCategory||String(row?.[categoryField]??'')===selectedCategory)
+ const visibleRows=rows.filter(row=>matchesCategory(row)
   &&(!searchQuery||searchFields.some(field=>String(row?.[field]??'').toLocaleLowerCase().includes(searchQuery))));
  const currency=value=>Number.isFinite(Number(value))?Number(value).toLocaleString(undefined,{style:'currency',currency:String(p.currencyCode||'GBP')}):view(value);
  return <section><h3 className="one-heading" style={{marginBottom:12}}>{p.title||'Items'}</h3>
@@ -47,7 +57,9 @@ function ItemGrid({p,rows}){
       <strong style={{display:'block'}}>{name}</strong>{price!=null&&<span>{currency(price)}</span>}
      </button>;
    })}
-  </div>{!visibleRows.length&&<div className="one-empty">{p.emptyText||'No matching items'}</div>}
+  </div>{categorySelected&&!categoryFieldExists&&<div className="one-empty" role="status">Select a category field on this grid to filter the records.</div>}
+  {!visibleRows.length&&categoryFieldExists&&<div className="one-empty">{p.emptyText||'No matching items'}</div>}
+  {!visibleRows.length&&!categorySelected&&<div className="one-empty">{p.emptyText||'No matching items'}</div>}
  </section>;
 }
 function TreeNode({node,p,depth=0}){const [open,setOpen]=React.useState(true);const kids=Array.isArray(node.children)?node.children:[];return <div style={{paddingLeft:depth?14:0}}><div className="one-row"><button type="button" className="one-btn one-btn--ghost" style={{minHeight:28,padding:2}} onClick={()=>{if(kids.length)setOpen(!open);else fire(p,'select',node)}} aria-expanded={kids.length?open:undefined}>{kids.length?(open?'▾':'▸'):'•'} {title(node)}</button></div>{open&&kids.map((kid,i)=><TreeNode key={kid.Id??kid.id??i} node={kid} p={p} depth={depth+1}/>)}</div>}
