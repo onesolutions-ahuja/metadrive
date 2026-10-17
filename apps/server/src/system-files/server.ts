@@ -9,6 +9,7 @@ import { PageRuntime } from './page-runtime.js';
 import { FlowRuntime } from './flow-runtime.js';
 import { AppRuntime } from './app-runtime.js';
 import { TenantProvisioning } from './tenant-provisioning.js';
+import {verifyLiveBootstrapLogin} from './live-login-self-check.js';
 import {reconcileBootstrapPassword} from './bootstrap-password-sync.js';
 
 type Actor={tenant_id:string;user_id:string};
@@ -273,5 +274,11 @@ export async function startSystemServer() {
   catch(error) { await db.close(); throw error; }
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');
-  return createSystemServer(db).listen(port,'0.0.0.0');
+  const listener=createSystemServer(db).listen(port,'0.0.0.0');
+  if(process.env.METADRIVE_LOGIN_SELF_CHECK==='true') {
+    listener.once('listening',()=>{
+      void verifyLiveBootstrapLogin(db,port).catch(()=>console.error('Bootstrap login self-check failed'));
+    });
+  }
+  return listener;
 }
