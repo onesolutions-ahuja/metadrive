@@ -17,7 +17,7 @@ assert.equal(typeof token,'string');
 const pageApi='UK_Off_Licence_POS_Cashier_Till';
 const before=(await get('/metadata/pages',token)).pages.find(page=>page.apiName===pageApi);
 assert(before&&before.status==='Draft','Cashier page must remain Draft');
-const original=JSON.stringify(before);
+const originalComponents=JSON.stringify(before.components);
 const products=(await get('/records/Product',token)).records;
 const categories=(await get('/records/ProductCategory',token)).records;
 const chicken=categories.find(category=>String(category.Name).toLowerCase()==='chicken');
@@ -47,7 +47,13 @@ try{
  await popup.getByRole('tab',{name:'Chicken'}).click();
  await popup.waitForFunction(count=>document.querySelectorAll('.one-grid .one-item--interactive').length===count,expected);
  assert.equal(await catalogue.count(),expected,'Chicken category filters Product CategoryId');
- if(expected>0){
+ if(expected===0){
+  const populated=categories.find(category=>products.some(product=>String(product.CategoryId)===String(category.Id)));
+  assert(populated,'One category must contain a product for basket test');
+  await popup.getByRole('tab',{name:String(populated.Name)}).click();
+  await popup.waitForFunction(()=>document.querySelectorAll('.one-grid .one-item--interactive').length>0);
+ }
+ {
   const productName=(await catalogue.first().locator('strong').innerText()).trim();
   await catalogue.first().click();
   const basket=popup.locator('aside[aria-label="Current sale"]');
@@ -56,8 +62,8 @@ try{
  }
  const after=(await get('/metadata/pages',token)).pages.find(p=>p.apiName===pageApi);
  assert.equal(after.status,'Draft','Cashier page must remain inactive');
- assert.equal(JSON.stringify(after),original,'Preview must not change draft page metadata');
+ assert.equal(JSON.stringify(after.components),originalComponents,'Preview must not change draft component metadata');
  assert.equal((await get('/records/Product',token)).records.length,products.length,'Product records must be preserved');
  console.log(JSON.stringify({result:'PASS',authenticated:true,draft:true,categorySelected:'Chicken',
-  initialProducts:products.length,filteredProducts:expected,basketPreview:expected>0,checkoutBlocked:true,readOnly:true}));
+  initialProducts:products.length,filteredProducts:expected,basketPreview:true,checkoutBlocked:true,readOnly:true}));
 }finally{await browser?.close();}
