@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist-system",
+    "noEmit": false
+  },
+  "include": [
+    "src/system-files/**/*.ts"
+  ],
+  "exclude": [
+    "src/system-files/**/*.test.ts"
+  ]
+}
