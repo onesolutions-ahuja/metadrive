@@ -107,15 +107,6 @@ const baseObjects: ObjectMetadata[] = [
     { apiName: 'AccountId', label: 'Account Name', dataType: 'Lookup(Account)', required: false, unique: false, relationship: { type: 'Lookup', targetObject: 'Account', relationshipName: 'Account', childRelationshipName: 'Cases' } },
     { apiName: 'OwnerId', label: 'Case Owner', dataType: 'Lookup(User)', required: true, unique: false, relationship: { type: 'Lookup', targetObject: 'User', relationshipName: 'Owner', childRelationshipName: 'OwnedCases' } }
   ] },
-  { apiName: 'Campaign', label: 'Campaign', pluralLabel: 'Campaigns', kind: 'Standard Object', description: 'Marketing initiatives and their associated contacts.', fields: [
-    { apiName: 'Name', label: 'Campaign Name', dataType: 'Text(80)', required: true, unique: false },
-    { apiName: 'Type', label: 'Type', dataType: 'Picklist', required: false, unique: false, picklistValues: ['Conference', 'Webinar', 'Email', 'Advertisement', 'Direct Mail', 'Other'], picklistRestricted: true },
-    { apiName: 'Status', label: 'Status', dataType: 'Picklist', required: true, unique: false, picklistValues: ['Planned', 'In Progress', 'Completed', 'Aborted'], picklistRestricted: true, defaultValue: 'Planned' },
-    { apiName: 'StartDate', label: 'Start Date', dataType: 'Date', required: false, unique: false },
-    { apiName: 'EndDate', label: 'End Date', dataType: 'Date', required: false, unique: false },
-    { apiName: 'IsActive', label: 'Active', dataType: 'Checkbox', required: true, unique: false, defaultValue: true },
-    { apiName: 'OwnerId', label: 'Campaign Owner', dataType: 'Lookup(User)', required: true, unique: false, relationship: { type: 'Lookup', targetObject: 'User', relationshipName: 'Owner', childRelationshipName: 'Campaigns' } }
-  ] },
   { apiName: 'Renewal__c', label: 'Renewal', pluralLabel: 'Renewals', kind: 'Custom Object', description: 'Tracks upcoming customer contract renewals.', fields: [
     { apiName: 'Name', label: 'Renewal Name', dataType: 'Text(80)', required: true, unique: false },
     { apiName: 'Account__c', label: 'Account', dataType: 'Lookup(Account)', required: true, unique: false, relationship: { type: 'Lookup', targetObject: 'Account', relationshipName: 'Account', childRelationshipName: 'Renewals' } },
