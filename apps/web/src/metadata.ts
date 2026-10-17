@@ -957,7 +957,7 @@ export type WorkspaceMetadata = {
 export const workspaces: WorkspaceMetadata[] = [
   { id: 'home', label: 'Setup Home', icon: LayoutTemplate },
   { id: 'object-manager', label: 'Object Manager', icon: Database },
-  { id: 'page-builder', label: 'Lightning App Builder', icon: LayoutTemplate },
+  { id: 'page-builder', label: 'Page Builder', icon: LayoutTemplate },
   { id: 'dashboard-builder', label: 'Dashboards', icon: BarChart3 },
   { id: 'report-builder', label: 'Reports', icon: FileText },
   { id: 'flow-builder', label: 'Flows', icon: Workflow },
@@ -975,7 +975,7 @@ export const workspaces: WorkspaceMetadata[] = [
 export const setupNavigation = [
   { group: 'Platform Administration', items: ['Tenant Management'] },
   { group: 'Company Settings', items: ['Company Settings'] },
-  { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Lightning App Builder', 'App Manager', 'Component Library', 'AppExchange'] },
+  { group: 'Platform Tools', items: ['Setup Home', 'Object Manager', 'Page Builder', 'App Manager', 'Component Library', 'AppExchange'] },
   { group: 'Integrations', items: ['Named Credentials', 'Named Devices', 'Connector Settings'] },
   { group: 'Automation', items: ['Flows', 'Paused and Waiting Interviews', 'Scheduled Flows', 'Failed Flow Logs', 'Approval Processes', 'Process Automation Settings'] },
   { group: 'Analytics', items: ['Reports', 'Dashboards'] },
@@ -1139,7 +1139,7 @@ export const objectMetadata: ObjectMetadata[] = [
 
 export const setupShortcuts = [
   { title: 'Object Manager', description: 'Manage objects, fields, and relationships', workspace: 'object-manager' as const, icon: Database },
-  { title: 'Lightning App Builder', description: 'Create and edit Lightning pages', workspace: 'page-builder' as const, icon: LayoutTemplate },
+  { title: 'Page Builder', description: 'Create and edit app pages', workspace: 'page-builder' as const, icon: LayoutTemplate },
   { title: 'Flows', description: 'Build automated business processes', workspace: 'flow-builder' as const, icon: Workflow },
   { title: 'Reports', description: 'Create, customize, and run reports', workspace: 'report-builder' as const, icon: FileText },
   { title: 'Dashboards', description: 'Visualize key business metrics', workspace: 'dashboard-builder' as const, icon: BarChart3 },
