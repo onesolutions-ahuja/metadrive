@@ -49,6 +49,11 @@ export function precedingFlowSteps(flow: FlowDefinitionMetadata, elementId: numb
   return earlier;
 }
 
+/** Relationship metadata may be represented by a typed Lookup(Target) field. */
+function lookupTarget(type:string):string|undefined {
+  return /^(?:Lookup|Master-Detail)\(([^)]+)\)$/i.exec(type.trim())?.[1]?.trim();
+}
+
 function primitiveType(type:string): string {
   if(type.startsWith('Lookup(')||type.startsWith('Master-Detail('))return 'lookup';
   if(/^(Number|Currency|Percent)(\(|$)/i.test(type))return 'number';
@@ -63,11 +68,13 @@ export function compatibleFlowValue(source:Pick<FlowReferenceChoice,'dataType'|'
   if(!target)return true;
   const need=primitiveType(target.dataType);
   const got=primitiveType(source.dataType);
-  if(need==='lookup')return (got==='id'||got==='lookup') && Boolean(target.relationship?.targetObject)
-    && (!source.targetObject || target.relationship?.targetObject===source.targetObject)
-    && (got!=='lookup'||Boolean(source.targetObject));
-  if(need==='id')return got==='id' ? (!targetObjectApiName||!source.targetObject||source.targetObject===targetObjectApiName)
-    : got==='lookup'&&Boolean(source.targetObject)&&source.targetObject===targetObjectApiName;
+  const destination=target.relationship?.targetObject||lookupTarget(target.dataType);
+  const sourceObject=source.targetObject||lookupTarget(source.dataType);
+  if(need==='lookup')return (got==='id'||got==='lookup') && Boolean(destination)
+    && (!sourceObject || destination===sourceObject)
+    && (got!=='lookup'||Boolean(sourceObject));
+  if(need==='id')return got==='id' ? (!targetObjectApiName||!sourceObject||sourceObject===targetObjectApiName)
+    : got==='lookup'&&Boolean(sourceObject)&&sourceObject===targetObjectApiName;
   if(need==='number'||need==='boolean')return got===need;
   if(need==='Date'||need==='DateTime'||need==='Date/Time')return need===got;
   return got==='text'||got==='id';
@@ -80,7 +87,7 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
     if(!obj)return;
     const fields=[...specialFields,...obj.fields.filter(field=>!specialFields.some(s=>s.apiName===field.apiName))];
     for(const field of fields){
-      const linkedObject=obj.fields.find(candidate=>candidate.apiName===field.apiName)?.relationship?.targetObject;
+      const linkedObject=obj.fields.find(candidate=>candidate.apiName===field.apiName)?.relationship?.targetObject||lookupTarget(field.dataType);
       const choice:FlowReferenceChoice={reference:`{!${root}.${field.apiName}}`,label:label+' → '+field.label,
         detail:root+'.'+field.apiName+' · '+obj.label,category,dataType:field.dataType,
         ...(field.apiName==='Id'?{targetObject:objectName}
