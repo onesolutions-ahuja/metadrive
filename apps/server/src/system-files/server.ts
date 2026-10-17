@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from './sql-persistence.js';
 import { AuthenticationService } from './authentication.js';
+import {sessionMetadata} from './session-metadata.js';
 import { ObjectDefinitionService } from './object-definition.js';
 import { RbacEngine } from './rbac-engine.js';
 import { RecordEngine } from './record-engine.js';
@@ -126,7 +127,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.use('/api',authorize);
   app.get('/api/auth/me',route(async(req,res)=>{
-    res.json({userId:req.actor!.user_id,tenantId:req.actor!.tenant_id});
+    res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
   }));
   app.post('/api/auth/logout',route(async(req,res)=>{
     await auth.signOut(req.get('authorization')!.slice(7),getCookie(req));
