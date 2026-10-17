@@ -34,9 +34,9 @@ body{background:#fff}
  .une-hero-chip{display:inline-flex;align-items:center;gap:var(--md-space-2,8px);border:1px solid #e2dafa;background:#f5f0ff;padding:9px 13px;color:#6947c6;border-radius:var(--md-radius-pill,999px);font-size:var(--md-fs-sm,12px);font-weight:700;letter-spacing:.06em}
 .une-hero h1{font-size:clamp(40px,5.25vw,64px);line-height:1.13;letter-spacing:-.03em;font-weight:700;margin:var(--md-space-6,24px) 0;max-width:610px}
 .une-hero h1 span{display:inline-block;background:var(--une-gradient);-webkit-background-clip:text;background-clip:text;color:transparent}
-.une-hero-description{color:#667089;font-size:17px;max-width:505px;line-height:1.8;margin:0}
+.une-hero-description{color:#667089;font-size:17px;max-width:505px;line-height:var(--md-leading-body,1.5);margin:0}
 .une-hero-actions{display:flex;gap:var(--md-space-3,12px);flex-wrap:wrap;margin-top:var(--md-space-8,32px)}
-.une-hero-promise{display:flex;flex-wrap:wrap;gap:var(--md-space-4,16px) var(--md-space-6,24px);margin-top:var(--md-space-8,32px);color:#667088;font-size:12px;font-weight:650}
+.une-hero-promise{display:flex;flex-wrap:wrap;gap:var(--md-space-4,16px) var(--md-space-6,24px);margin-top:var(--md-space-8,32px);color:#667088;font-size:12px;font-weight:600}
 .une-hero-promise span{display:inline-flex;align-items:center;gap:8px}
 .une-hero-promise svg{color:#30a384}
 .une-hero-art{height:530px;position:relative;display:grid;align-items:center;perspective:1000px}
@@ -46,7 +46,7 @@ body{background:#fff}
 .une-preview-toolbar{height:43px;background:#fff;border-bottom:1px solid #eceef5;display:flex;justify-content:space-between;align-items:center;padding:0 16px;gap:12px;font-size:10px;font-weight:700}
 .une-mini-logo{display:flex;align-items:center;gap:9px}
 .une-mini-mark{width:22px;height:22px;border-radius:7px;background:var(--une-gradient);display:grid;place-items:center;color:white;font-size:11px;font-weight:700}
-.une-toolbar-right{display:flex;align-items:center;gap:8px;color:#738097;font-size:9px;font-weight:650}
+.une-toolbar-right{display:flex;align-items:center;gap:8px;color:#738097;font-size:9px;font-weight:600}
 .une-live-dot{width:7px;height:7px;background:#34ba88;display:inline-block;flex:none;border-radius:50%;box-shadow:0 0 0 3px #daf7eb}
 .une-avatar{background:#ecedff;border-radius:50%;color:#6d5ed0;font-size:8px;font-weight:700;padding:5px}
 .une-preview-body{display:flex;min-height:298px;background:#f8faff}
@@ -83,7 +83,7 @@ body{background:#fff}
 .une-float-icon{display:grid;place-items:center;width:32px;height:32px;background:#e8f0ff;color:#3475e8;border-radius:10px}
 .une-float-icon.pink{background:#fff0f6;color:#e646a0}
 .une-hero-bottom{min-height:86px;display:grid;grid-template-columns:1.5fr repeat(3,1fr);gap:16px;align-items:center;border-top:1px solid #e6e9f1}
-.une-hero-bottom>div{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:730;color:#6c758c}
+.une-hero-bottom>div{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;color:#6c758c}
 .une-hero-bottom>div:first-child{display:block}
 .une-hero-bottom strong,.une-hero-bottom>div:first-child span{display:block}
 .une-hero-bottom strong{font-size:12px;color:#1d2540}
@@ -120,9 +120,9 @@ body{background:#fff}
 .une-showcase-device .une-preview-body{min-height:330px}
 .une-showcase-device .une-bars{height:110px}
 .une-showcase-copy h3{font-size:35px;line-height:1.22;margin:13px 0 18px}
-.une-showcase-copy>p{font-size:15px;line-height:1.85}
+.une-showcase-copy>p{font-size:15px;line-height:var(--md-leading-body,1.5)5}
 .une-showcase-copy ul{list-style:none;padding:0;margin:24px 0}
-.une-showcase-copy li{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:650;margin-bottom:12px}
+.une-showcase-copy li{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;margin-bottom:12px}
 .une-showcase-copy li svg{color:#36af84}
 .une-illustration-note{display:block;margin-top:26px;font-size:10px;color:#8a93aa;line-height:1.5}
 .une-kiosk-device{position:relative;width:210px;height:345px;border:9px solid #242b40;border-radius:19px;box-shadow:0 25px 40px rgba(32,36,78,.25);background:white;align-self:center}
@@ -173,7 +173,7 @@ body{background:#fff}
 .une-kds-ticket p{font-size:10px;color:#f6f7ff!important;margin:0 0 10px}
 .une-kds-ticket footer{margin-top:auto;background:rgba(255,255,255,.11);border-radius:7px;text-align:center;padding:7px;font-size:8px}
 .une-benefits-grid{display:grid;grid-template-columns:1fr 1fr;gap:100px;align-items:center}
-.une-benefits-grid>div:first-child>p{font-size:16px;max-width:420px;line-height:1.85}
+.une-benefits-grid>div:first-child>p{font-size:16px;max-width:420px;line-height:var(--md-leading-body,1.5)5}
 .une-benefits-grid h2 span{color:#7869e4}
 .une-benefits-grid .une-button{margin-top:21px}
 .une-benefits-list{display:grid;gap:8px}
@@ -183,7 +183,7 @@ body{background:#fff}
 .une-benefits-list p{font-size:12px;line-height:1.7;margin:5px 0 0}
 .une-integrations-section{background:#f9faff}
 .une-integrations-layout{display:grid;grid-template-columns:1.08fr .92fr;gap:var(--md-space-12,48px);align-items:center}
-.une-integrations-copy>p{max-width:560px;line-height:1.85}
+.une-integrations-copy>p{max-width:560px;line-height:var(--md-leading-body,1.5)5}
 .une-integration-pills{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:24px 0}
 .une-integration-pills span{display:flex;align-items:center;gap:11px;padding:13px 15px;border:1px solid #e5e9f3;background:white;border-radius:11px;font-size:12px;font-weight:700}
 .une-integration-pills svg{color:#7559e4;flex:none}
@@ -215,7 +215,7 @@ body{background:#fff}
 .une-engage-copy ul{list-style:none;padding:0;margin:24px 0}
 .une-engage-copy li{display:flex;align-items:center;gap:10px;margin:14px 0;font-weight:700;font-size:13px}
 .une-engage-copy li svg{color:#36b78f}
-.une-engage-copy>small{display:block;color:#8e98aa;font-size:10px;margin-top:22px}
+.une-engage-copy>small{display:block;color:#8e98aa;font-size:var(--md-fs-xs,11px);margin-top:22px}
 .une-reporting-section{background:#f8faff}
 .une-reporting-layout{display:grid;grid-template-columns:1fr 1fr;gap:95px;align-items:center}
 .une-reporting-copy>p{line-height:1.9}
@@ -226,7 +226,7 @@ body{background:#fff}
 .une-email-top{display:flex;align-items:center;gap:10px;padding:16px 22px;border-bottom:1px solid #e7eaf5;font-size:12px;font-weight:700}
 .une-email-top svg{color:#7770da}
 .une-email-new{margin-left:auto;color:#a2a8bd;font-size:8px}
-.une-email-inner{padding:29px}
+.une-email-inner{padding:var(--md-space-8,32px)}
 .une-email-inner>small{letter-spacing:.1em;color:#6857d8;font-weight:700;font-size:9px}
 .une-email-inner h3{font-size:24px;margin:8px 0 21px}
 .une-email-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
@@ -249,13 +249,13 @@ body{background:#fff}
 .une-industry-card>svg{position:absolute;right:22px;top:29px;color:#7f7ae6}
 .une-faq-section{background:#fafbff}
 .une-faq-layout{display:grid;grid-template-columns:.7fr 1.3fr;gap:110px}
-.une-faq-layout>div:first-child>p{line-height:1.8}
+.une-faq-layout>div:first-child>p{line-height:var(--md-leading-body,1.5)}
 .une-faq-list{border-top:1px solid #e0e4f0}
 .une-faq-item{border-bottom:1px solid #e0e4f0}
 .une-faq-item button{display:flex;justify-content:space-between;text-align:left;align-items:center;gap:18px;width:100%;padding:19px 0;background:transparent;border:none;font-size:14px;font-weight:700;color:#252d46;cursor:pointer}
 .une-faq-item button svg{flex:none;color:#636acd;transition:transform .2s}
 .une-faq-item button[aria-expanded=true] svg{transform:rotate(180deg)}
-.une-faq-item p{margin:0 0 20px;font-size:13px;line-height:1.8}
+.une-faq-item p{margin:0 0 20px;font-size:13px;line-height:var(--md-leading-body,1.5)}
 .une-final-cta{padding:85px 0}
 .une-cta-inner{position:relative;isolation:isolate;overflow:hidden;text-align:center;border-radius:28px;background:#131b3c;padding:76px 28px;color:white}
 .une-cta-color{pointer-events:none;position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at 4% 4%,rgba(40,91,252,.6),transparent 44%),radial-gradient(ellipse at 95% 80%,rgba(244,74,166,.44),transparent 40%),radial-gradient(ellipse at 86% 12%,rgba(254,150,52,.23),transparent 26%)}
@@ -270,7 +270,7 @@ body{background:#fff}
 .une-footer-main{display:grid;grid-template-columns:2fr 1fr 1fr 1.1fr;gap:60px;padding-bottom:50px}
 .une-footer-main>div{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
 .une-footer-main .une-brand img{width:152px}
-.une-footer-main p{color:#7c879d;font-size:12px;line-height:1.8;margin:0}
+.une-footer-main p{color:#7c879d;font-size:12px;line-height:var(--md-leading-body,1.5);margin:0}
 .une-footer-main strong{font-size:12px;margin-bottom:7px}
 .une-footer-main a:not(.une-brand){font-size:12px;color:#5b6882}
 .une-footer-main a:hover{text-decoration:underline}
@@ -279,7 +279,7 @@ body{background:#fff}
 .une-footer-bottom a{display:inline-flex;align-items:center;gap:4px}
 @media(max-width:1150px){.une-site-nav{gap:15px}.une-header-actions{gap:13px}.une-solutions-grid{grid-template-columns:repeat(3,1fr)}.une-hero h1{font-size:57px}.une-showcase-stage{gap:35px}.une-engage-layout{gap:65px}}
 @media(max-width:900px){.une-container{width:min(100% - 40px,720px)}.une-header-inner{height:72px}.une-brand img{width:125px}.une-nav-toggle{display:grid!important;place-items:center;border:0;background:transparent;padding:9px;color:#1c2540}.une-site-nav{display:none;position:absolute;left:0;right:0;top:100%;padding:20px 24px 25px;background:#fff;border-bottom:1px solid #e7eaf3;box-shadow:0 18px 25px rgba(20,30,70,.1);flex-direction:column;align-items:stretch;gap:0}.une-site-nav.is-open{display:flex}.une-site-nav a{font-size:15px;padding:12px 8px}.une-mobile-login{display:flex!important;align-items:center;gap:5px}.une-header-login{display:none}.une-header-demo{padding:13px 17px!important;min-height:42px!important}.une-hero-layout{grid-template-columns:1fr;gap:18px;padding-top:80px;padding-bottom:35px}.une-hero-content{text-align:center;padding:0}.une-hero h1{max-width:610px;margin-left:auto;margin-right:auto}.une-hero-description{margin:auto}.une-hero-actions,.une-hero-promise{justify-content:center}.une-hero-art{width:min(100%,690px);height:490px;margin:0 auto}.une-hero-bottom{grid-template-columns:repeat(2,1fr);padding:20px 0;gap:14px}.une-section{padding:calc(var(--md-space-12,48px) + var(--md-space-6,24px)) 0}.une-heading-row{align-items:start}.une-solutions-grid{grid-template-columns:repeat(2,1fr)}.une-showcase-stage{grid-template-columns:1fr;gap:25px}.une-showcase-copy{max-width:600px}.une-showcase-copy h3{font-size:30px}.une-benefits-grid,.une-integrations-layout,.une-engage-layout,.une-reporting-layout,.une-faq-layout{grid-template-columns:1fr;gap:45px}.une-integration-visual{width:450px;max-width:100%;margin:auto}.une-engage-phone{grid-row:2}.une-reporting-layout{gap:45px}.une-industry-grid{grid-template-columns:repeat(2,1fr)}.une-footer-main{grid-template-columns:repeat(2,1fr);gap:40px}}
-@media(max-width:520px){.une-container{width:calc(100% - 34px)}.une-header-inner{height:64px}.une-header-demo{font-size:11px!important;padding:10px 12px!important;min-height:39px!important}.une-header-demo svg{width:14px}.une-brand img{width:106px}.une-hero-layout{padding-top:64px}.une-hero h1{font-size:clamp(41px,12vw,59px);letter-spacing:-.03em}.une-hero-description{font-size:14px}.une-hero-chip{font-size:var(--md-fs-xs,11px);letter-spacing:.05em}.une-hero-actions{flex-direction:column;align-items:stretch}.une-marketing .une-button{width:100%}.une-hero-art{height:365px}.une-hero-dashboard{width:100%;transform:scale(.93) rotateZ(-2deg)}.une-hero-art .une-preview-toolbar{height:32px}.une-hero-art .une-preview-body{min-height:185px}.une-hero-art .une-preview-main{padding:10px}.une-hero-art .une-preview-heading{font-size:11px;margin-bottom:8px}.une-hero-art .une-metric-row>div{padding:5px}.une-hero-art .une-metric-row strong{font-size:12px}.une-hero-art .une-metric-row small,.une-hero-art .une-metric-row em{font-size:6px}.une-hero-art .une-bars{height:45px;margin-top:7px;gap:3px}.une-hero-art .une-preview-sidebar{flex-basis:27px;gap:10px}.une-hero-art .une-preview-sidebar svg{width:10px;height:10px}.une-hero-art .une-chart-card{padding:7px}.une-hero-phone{right:0;bottom:2px;width:105px;height:215px;border-width:5px;border-radius:18px;padding:14px 8px 7px}.une-phone-food{height:75px;font-size:43px}.une-phone-greeting{font-size:10px}.une-phone-top{font-size:8px}.une-float-card{padding:7px;gap:5px}.une-float-card small{font-size:7px}.une-float-card strong{font-size:8px}.une-float-icon{width:22px;height:22px}.une-float-sales{top:16px;left:0}.une-float-message{bottom:12px;left:0}.une-hero-bottom{grid-template-columns:1fr 1fr;gap:11px}.une-hero-bottom>div{font-size:10px}.une-hero-bottom>div:first-child span{font-size:9px}.une-heading-row{display:block}.une-heading-row .une-inline-link{margin-top:20px}.une-marketing h2{font-size:35px}.une-solutions-grid{gap:10px}.une-solution-card{padding:17px 14px;min-height:235px}.une-solution-card h3{font-size:14px}.une-solution-card p{font-size:11px}.une-showcase-tabs{overflow-x:auto;justify-content:flex-start;gap:var(--md-space-2,8px);padding:0 0 var(--md-space-2,8px);scrollbar-width:thin;scrollbar-color:var(--md-scroll-thumb,#abb8c8) transparent;overscroll-behavior:contain;mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 20px),transparent 100%)}.une-showcase-tabs:focus-within{mask-image:none}.une-showcase-tabs button{flex:none;font-size:11px;padding:9px 16px}.une-showcase-device{min-height:320px;padding:22px 12px}.une-showcase-device .une-preview-body{min-height:225px}.une-showcase-device .une-preview-main{padding:9px}.une-showcase-device .une-metric-row>div{padding:6px}.une-showcase-device .une-metric-row strong{font-size:12px}.une-showcase-device .une-metric-row small,.une-showcase-device .une-metric-row em{font-size:7px}.une-showcase-device .une-preview-sidebar{flex-basis:29px;gap:15px}.une-showcase-device .une-preview-sidebar svg{width:12px;height:12px}.une-showcase-device .une-bars{height:65px}.une-showcase-device .une-chart-card{padding:7px}.une-showcase-device .une-chart-label span{font-size:6px}.une-pos-products{padding:7px}.une-pos-grid{gap:4px}.une-pos-grid>div{padding:6px 2px}.une-pos-grid span{font-size:18px}.une-pos-grid strong,.une-pos-grid small{font-size:6px}.une-pos-cart{padding:9px}.une-pos-cart>strong{font-size:9px}.une-pos-line{font-size:7px}.une-kds-preview{padding:10px}.une-kds-ticket{padding:8px 5px;min-height:200px}.une-kds-ticket>div{font-size:9px;flex-wrap:wrap}.une-kds-ticket p{font-size:8px}.une-kiosk-device{transform:scale(.85)}.une-integration-pills{gap:8px}.une-integration-pills span{font-size:10px;padding:11px 9px}.une-integration-pills svg{width:15px}.une-integration-visual{height:315px}.une-integration-orbit{inset:12px}.une-integration-orbit.orbit-two{inset:48px}.une-integration-centre{width:125px;height:125px}.une-integration-centre img{width:90px}.une-orbit-item{width:62px;height:62px;border-radius:13px}.une-orbit-item svg{width:18px}.une-orbit-item small{font-size:7px}.une-engage-phone{min-height:510px}.une-industry-grid{gap:10px}.une-industry-card{padding:18px 14px;min-height:230px}.une-industry-card h3{font-size:15px}.une-industry-card p{font-size:11px}.une-industry-card>svg{right:12px;top:20px}.une-email-inner{padding:18px}.une-email-inner h3{font-size:19px}.une-email-stats{gap:5px}.une-email-stats div{padding:10px 6px}.une-email-stats b{font-size:14px}.une-cta-inner{padding:52px 18px}.une-cta-buttons{flex-direction:column;gap:10px}.une-footer-main{gap:32px 20px}.une-footer-bottom{flex-direction:column;align-items:flex-start;gap:9px}}
+@media(max-width:520px){.une-container{width:calc(100% - 34px)}.une-header-inner{height:64px}.une-header-demo{font-size:11px!important;padding:10px 12px!important;min-height:39px!important}.une-header-demo svg{width:14px}.une-brand img{width:106px}.une-hero-layout{padding-top:64px}.une-hero h1{font-size:clamp(41px,12vw,59px);letter-spacing:-.03em}.une-hero-description{font-size:14px}.une-hero-chip{font-size:var(--md-fs-xs,11px);letter-spacing:.05em}.une-hero-actions{flex-direction:column;align-items:stretch}.une-marketing .une-button{width:100%}.une-hero-art{height:365px}.une-hero-dashboard{width:100%;transform:scale(.93) rotateZ(-2deg)}.une-hero-art .une-preview-toolbar{height:32px}.une-hero-art .une-preview-body{min-height:185px}.une-hero-art .une-preview-main{padding:10px}.une-hero-art .une-preview-heading{font-size:11px;margin-bottom:8px}.une-hero-art .une-metric-row>div{padding:5px}.une-hero-art .une-metric-row strong{font-size:12px}.une-hero-art .une-metric-row small,.une-hero-art .une-metric-row em{font-size:6px}.une-hero-art .une-bars{height:45px;margin-top:7px;gap:3px}.une-hero-art .une-preview-sidebar{flex-basis:27px;gap:10px}.une-hero-art .une-preview-sidebar svg{width:10px;height:10px}.une-hero-art .une-chart-card{padding:7px}.une-hero-phone{right:0;bottom:2px;width:105px;height:215px;border-width:5px;border-radius:18px;padding:14px 8px 7px}.une-phone-food{height:75px;font-size:43px}.une-phone-greeting{font-size:10px}.une-phone-top{font-size:8px}.une-float-card{padding:7px;gap:5px}.une-float-card small{font-size:7px}.une-float-card strong{font-size:8px}.une-float-icon{width:22px;height:22px}.une-float-sales{top:16px;left:0}.une-float-message{bottom:12px;left:0}.une-hero-bottom{grid-template-columns:1fr 1fr;gap:11px}.une-hero-bottom>div{font-size:var(--md-fs-xs,11px)}.une-hero-bottom>div:first-child span{font-size:var(--md-fs-xs,11px)}.une-heading-row{display:block}.une-heading-row .une-inline-link{margin-top:20px}.une-marketing h2{font-size:35px}.une-solutions-grid{gap:10px}.une-solution-card{padding:17px 14px;min-height:235px}.une-solution-card h3{font-size:14px}.une-solution-card p{font-size:11px}.une-showcase-tabs{overflow-x:auto;justify-content:flex-start;gap:var(--md-space-2,8px);padding:0 0 var(--md-space-2,8px);scrollbar-width:thin;scrollbar-color:var(--md-scroll-thumb,#abb8c8) transparent;overscroll-behavior:contain;mask-image:linear-gradient(to right,#000 0%,#000 calc(100% - 20px),transparent 100%)}.une-showcase-tabs:focus-within{mask-image:none}.une-showcase-tabs button{flex:none;font-size:11px;padding:9px 16px}.une-showcase-device{min-height:320px;padding:22px 12px}.une-showcase-device .une-preview-body{min-height:225px}.une-showcase-device .une-preview-main{padding:9px}.une-showcase-device .une-metric-row>div{padding:6px}.une-showcase-device .une-metric-row strong{font-size:12px}.une-showcase-device .une-metric-row small,.une-showcase-device .une-metric-row em{font-size:7px}.une-showcase-device .une-preview-sidebar{flex-basis:29px;gap:15px}.une-showcase-device .une-preview-sidebar svg{width:12px;height:12px}.une-showcase-device .une-bars{height:65px}.une-showcase-device .une-chart-card{padding:7px}.une-showcase-device .une-chart-label span{font-size:6px}.une-pos-products{padding:7px}.une-pos-grid{gap:4px}.une-pos-grid>div{padding:6px 2px}.une-pos-grid span{font-size:18px}.une-pos-grid strong,.une-pos-grid small{font-size:6px}.une-pos-cart{padding:9px}.une-pos-cart>strong{font-size:9px}.une-pos-line{font-size:7px}.une-kds-preview{padding:10px}.une-kds-ticket{padding:8px 5px;min-height:200px}.une-kds-ticket>div{font-size:9px;flex-wrap:wrap}.une-kds-ticket p{font-size:8px}.une-kiosk-device{transform:scale(.85)}.une-integration-pills{gap:8px}.une-integration-pills span{font-size:var(--md-fs-xs,11px);padding:12px 8px}.une-integration-pills svg{width:15px}.une-integration-visual{height:315px}.une-integration-orbit{inset:12px}.une-integration-orbit.orbit-two{inset:48px}.une-integration-centre{width:125px;height:125px}.une-integration-centre img{width:90px}.une-orbit-item{width:62px;height:62px;border-radius:13px}.une-orbit-item svg{width:18px}.une-orbit-item small{font-size:7px}.une-engage-phone{min-height:510px}.une-industry-grid{gap:10px}.une-industry-card{padding:18px 14px;min-height:230px}.une-industry-card h3{font-size:15px}.une-industry-card p{font-size:11px}.une-industry-card>svg{right:12px;top:20px}.une-email-inner{padding:18px}.une-email-inner h3{font-size:19px}.une-email-stats{gap:5px}.une-email-stats div{padding:10px 6px}.une-email-stats b{font-size:14px}.une-cta-inner{padding:52px 18px}.une-cta-buttons{flex-direction:column;gap:10px}.une-footer-main{gap:32px 20px}.une-footer-bottom{flex-direction:column;align-items:flex-start;gap:9px}}
 @media(prefers-reduced-motion:reduce){.une-marketing *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 
 /* Shared visual rhythm for interactive marketing content; embedded product previews are illustrations. */
