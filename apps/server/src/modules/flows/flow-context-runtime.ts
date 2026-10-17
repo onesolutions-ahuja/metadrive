@@ -181,7 +181,13 @@ function flowConditionsMatch(conditions: Array<Record<string, unknown>>, source:
     const field = typeof condition.field === 'string' ? condition.field : '';
     if (!field) throw new Error('A flow condition is missing its field.');
     const left = /^\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}$/.test(field) ? resolveFlowValue(field, context) : source[field];
-    return compareFlowValue(left, String(condition.operator ?? 'Equals'), resolveFlowValue(condition.value, context));
+    const right = resolveFlowValue(condition.value, context);
+    if (typeof condition.value === 'string'
+      && /^\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}$/.test(condition.value.trim())
+      && right === undefined) {
+      throw new Error(`Flow condition reference "${condition.value}" has no value on this execution path.`);
+    }
+    return compareFlowValue(left, String(condition.operator ?? 'Equals'), right);
   });
   const rawLogic = String(logicOverride ?? conditions[0].logic ?? 'All');
   const logic = rawLogic.toLowerCase();
