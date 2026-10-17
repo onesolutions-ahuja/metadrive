@@ -28,7 +28,7 @@ function routeWithoutSource(flow:FlowMetadata,source:number,target:number):boole
   return false;
 }
 
-function sourceFor(flow:FlowMetadata,root:string):Choice|undefined{
+function sourceFor(flow:FlowMetadata,root:string,objects:ObjectMetadata[]):Choice|undefined{
   for(const element of flow.elements){
     const c=element.config;
     const outputName=element.type==='Get Records'?String(c.outputVariable||`element${element.id}`)
@@ -47,7 +47,10 @@ function sourceFor(flow:FlowMetadata,root:string):Choice|undefined{
     const getSource=flow.elements.find(item=>item.type==='Get Records'
       &&String(item.config.outputVariable||`element${item.id}`)===collectionName
       &&String(item.config.recordLimit??'1')!=='1');
-    const objectName=collection?.dataType||String(getSource?.config.object||'');
+    const candidate=String(collection?.dataType||'');
+    const getObject=String(getSource?.config.object||'');
+    const objectName=objects.some(object=>object.apiName===candidate)?candidate
+      :objects.some(object=>object.apiName===getObject)?getObject:'';
     if(objectName)return {type:'Record',objectName,origin:loop.id,
       fields:getSource&&Array.isArray(getSource.config.fields)
         ?getSource.config.fields.filter((f):f is string=>typeof f==='string'):undefined};
@@ -92,7 +95,7 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
     let source:Choice|undefined;
     if(['$Record','$Prior','$Record__Prior'].includes(root)){
       source={type:'Record',objectName:flow.triggerObject??undefined};
-    } else source=sourceFor(flow,root);
+    } else source=sourceFor(flow,root,objects);
     if(!source){errors.push(`${element.label} / ${name}: resource "${root}" does not exist.`);return;}
     if(source.origin!==undefined){
       if(source.origin===element.id||routeWithoutSource(flow,source.origin,element.id)){
