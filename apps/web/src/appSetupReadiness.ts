@@ -46,7 +46,7 @@ export function suggestAppApiName(label: string, existing: readonly Pick<Lightni
 
 /** Metadata-level guidance only. Never equate this report with runtime, RBAC or payment certification. */
 export function assessApplicationSetup({
-  app, apps, objects, pages, creating = false, flows = [], libraryComponents = [], reports = [], dashboards = []
+  app, apps, objects, pages, creating = false, flows, libraryComponents = [], reports, dashboards
 }: AppSetupScope): SetupCheck[] {
   const checks: SetupCheck[] = [];
   const add = (item: SetupCheck) => checks.push(item);
@@ -109,10 +109,21 @@ export function assessApplicationSetup({
     destination: 'page-builder'
   });
 
+  const flowsSourceUnavailable = flows === undefined;
+  const reportsSourceUnavailable = reports === undefined;
+  const dashboardsSourceUnavailable = dashboards === undefined;
   const dependencies = activePages.flatMap(page => inspectPageDependencies(page, {
-    apps, pages, objects, flows, libraryComponents, reports, dashboards, currentAppId: app.apiName
+    apps, pages, objects, flows: flows ?? [], libraryComponents,
+    reports: reports ?? [], dashboards: dashboards ?? [], currentAppId: app.apiName
   }).map(item => ({...item, pageName: page.label})));
-  const bad = dependencies.filter(item => item.status === 'Missing' || item.status === 'Inactive');
+  // Optional Builder metadata may be unavailable until the user opens this workspace.
+  // A missing lookup against an unloaded collection is unknown, not proof of a broken dependency.
+  const uncertain = dependencies.filter(item => item.status === 'Missing' &&
+    ((item.kind === 'Flow' && flowsSourceUnavailable) ||
+      (item.kind === 'Report' && reportsSourceUnavailable) ||
+      (item.kind === 'Dashboard' && dashboardsSourceUnavailable)));
+  const bad = dependencies.filter(item =>
+    (item.status === 'Missing' || item.status === 'Inactive') && !uncertain.includes(item));
   const contextual = dependencies.filter(item => item.status === 'Contextual');
   const missingFieldMappings: string[] = [];
   for (const page of activePages) for (const component of page.components) {
@@ -130,11 +141,13 @@ export function assessApplicationSetup({
   const dependencyFindings = [
     ...bad.map(item => item.pageName + ': ' + item.kind + ' ' + item.name + ' is ' + item.status.toLowerCase() + '.'),
     ...missingFieldMappings,
+    ...uncertain.map(item => item.pageName + ': ' + item.kind + ' ' + item.name + ' has not been checked because optional metadata could not be loaded.'),
     ...contextual.map(item => item.pageName + ': ' + item.name + ' requires runtime context.')
   ];
   add({
     id: 'bindings', title: 'Component and Flow bindings',
-    level: bad.length || missingFieldMappings.length ? 'action' : !dependencies.length || contextual.length ? 'review' : 'configured',
+    level: bad.length || missingFieldMappings.length ? 'action' :
+      !dependencies.length || contextual.length || uncertain.length ? 'review' : 'configured',
     detail: dependencies.length + ' page dependency reference(s) inspected; this does not execute a Flow.',
     findings: dependencyFindings.length ? dependencyFindings : ['No missing references detected in the inspected page metadata; verify Flow execution separately.'],
     destination: 'flow-builder'
