@@ -76,6 +76,57 @@ test('loop record variables remain usable inside an existing record collection l
  assert(flowReferenceChoices(flow,5,objects).some(x=>x.reference==='{!RunningLine.Quantity}'));
  assert.deepEqual(flowReferenceErrors(flow as any,objects),[]);
 });
+test('relationship field IDs can populate matching lookups but not unrelated objects',()=>{
+ const catalog=[
+  {apiName:'Product',label:'Product',fields:[field('Name')]},
+  {apiName:'Contact',label:'Contact',fields:[field('Name')]},
+  {apiName:'OrderLine__c',label:'Order Line',fields:[
+    field('ProductId','Lookup(Product)',{targetObject:'Product'}),field('Name')]},
+  {apiName:'SaleItem__c',label:'Sale Item',fields:[
+    field('ProductId','Lookup(Product)',{targetObject:'Product'}),
+    field('CustomerId','Lookup(Contact)',{targetObject:'Contact'})]}
+ ] as ObjectMetadata[];
+ const flow=config();
+ flow.elements[1].config={object:'OrderLine__c',outputVariable:'Line',recordLimit:'1'};
+ flow.elements[2]={id:3,label:'Add Sale Item',type:'Create Records',
+  config:{object:'SaleItem__c',fieldValues:[{field:'ProductId',value:'{!Line.ProductId}'}]}} as any;
+ const productField=catalog[3].fields[0],customerField=catalog[3].fields[1];
+ assert(flowReferenceChoices(flow,3,catalog,productField).some(x=>x.reference==='{!Line.ProductId}'));
+ assert(!flowReferenceChoices(flow,3,catalog,customerField).some(x=>x.reference==='{!Line.ProductId}'));
+ assert.deepEqual(flowReferenceErrors(flow as any,catalog),[]);
+ (flow.elements[2].config.fieldValues as any[])[0].field='CustomerId';
+ assert.match(flowReferenceErrors(flow as any,catalog).join(' '),/incompatible/);
+});
+
+test('lookup selection from a preceding Screen is a typed usable record ID',()=>{
+ const catalog=[
+  {apiName:'Contact',label:'Contact',fields:[field('Name')]},
+  {apiName:'Sale__c',label:'Sale',fields:[
+    field('ContactId','Lookup(Contact)',{targetObject:'Contact'}),
+    field('OtherRecordId','Lookup(Sale__c)',{targetObject:'Sale__c'}),
+    field('Notes','Text(255)')]}
+ ] as ObjectMetadata[];
+ const flow=config();
+ flow.elements.splice(1,2,
+  {id:2,label:'Customer Selection',type:'Screen',config:{
+    fields:[{apiName:'Customer',label:'Customer',type:'Lookup',objectApiName:'Contact'}]
+  }} as any,
+  {id:3,label:'Create Sale',type:'Create Records',config:{
+    object:'Sale__c',fieldValues:[{field:'ContactId',value:'{!Customer}'}]
+  }} as any
+ );
+ const contactField=catalog[1].fields[0],unrelatedField=catalog[1].fields[1];
+ assert(flowReferenceChoices(flow,3,catalog,contactField).some(x=>x.reference==='{!Customer}'));
+ assert(!flowReferenceChoices(flow,3,catalog,unrelatedField).some(x=>x.reference==='{!Customer}'));
+ assert.deepEqual(flowReferenceErrors(flow as any,catalog),[]);
+ (flow.elements[2].config.fieldValues as any[])[0].field='OtherRecordId';
+ assert.match(flowReferenceErrors(flow as any,catalog).join(' '),/incompatible/);
+ (flow.elements[2].config.fieldValues as any[])[0].field='ContactId';
+ flow.connectors.push({id:'skip-screen',from:1,to:3,kind:'normal',label:''} as any);
+ assert(!flowReferenceChoices(flow,3,catalog,contactField).some(x=>x.reference==='{!Customer}'));
+ assert.match(flowReferenceErrors(flow as any,catalog).join(' '),/not guaranteed/);
+});
+
 test('ordinary JSON literals are not misread as broken Flow references',()=>{
  const flow=config();
  flow.elements.push({id:4,type:'Assignment',label:'Keep JSON',config:{variable:'SessionKey',value:'{"example":1}'}} as any);
