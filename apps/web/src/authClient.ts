@@ -24,7 +24,7 @@ function refreshAccessToken() {
   if (!refreshInFlight) {
     const startedToken = accessToken;
     refreshInFlight = withAuthRefreshLock(() =>
-      fetch(`${apiBase}/auth/refresh`, { method: 'POST', credentials: 'include' })
+      fetch(`${apiBase}/auth/refresh`, { method: 'POST', credentials: 'include', signal: AbortSignal.timeout(15000) })
     )
       .then(async (response) => {
         if (!response.ok) {
@@ -55,9 +55,12 @@ function refreshAccessToken() {
 }
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const timeoutSignal = AbortSignal.timeout(15000);
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
   const send = (token: string | undefined) => fetch(`${apiBase}${path}`, {
     ...init,
     credentials: 'include',
+    signal,
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -66,7 +69,13 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     }
   });
   const sentToken = accessToken;
-  let response = await send(sentToken);
+  let response: Response;
+  try {
+    response = await send(sentToken);
+  } catch (error) {
+    if (timeoutSignal.aborted) throw new Error('The server did not respond within 15 seconds. Please try again.');
+    throw error;
+  }
   if (response.status === 401 && !path.startsWith('/auth/')) {
     // If another request already refreshed while we were in flight, reuse that token.
     // Otherwise join the single shared refresh instead of firing N parallel refreshes
