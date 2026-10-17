@@ -12,7 +12,7 @@ import type {LibraryComponentMetadata,PageComponentMetadata,ObjectMetadata,Light
 import type {AppRoute} from './appRouting';
 
 export default function MetadataBoundPageComponent({
-  apiRequest, definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = ''
+  apiRequest, definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = '', recordId = ''
 }: {
   apiRequest:<T>(path:string,init?:RequestInit)=>Promise<T>;
   definition: LibraryComponentMetadata;
@@ -29,6 +29,7 @@ export default function MetadataBoundPageComponent({
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   disableActions?: boolean;
   defaultObjectApiName?: string;
+  recordId?: string;
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
@@ -115,7 +116,7 @@ export default function MetadataBoundPageComponent({
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
-    explicitMentionRecordId(properties), properties, apiRequest, revision);
+    recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
   const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields);
   const categoryFilterKey = typeof properties.filterKey === 'string' ? properties.filterKey : 'category';
   const categorySource = selectedFilterRecords[categoryFilterKey];
