@@ -300,7 +300,8 @@ try {
   await page.goto('http://127.0.0.1:5173/une/setup/flow-builder/'+referenceFlow);
   await page.locator('.flow-graph-node').filter({hasText:'Find Contacts'}).click();
   await page.getByRole('button',{name:'Choose reference for Condition value'}).click();
-  await page.getByRole('button',{name:/Find Account.*Record ID/}).click();
+  await page.getByRole('button',{name:/FoundAccount.*Find Account/}).click();
+  await page.getByRole('button',{name:/Record ID.*FoundAccount.Id/}).click();
   if(await page.getByRole('textbox',{name:'Condition value',exact:true}).inputValue()!=='{!FoundAccount.Id}')
     throw Error('Previous-record Flow picker did not insert the correct runtime expression');
   await page.getByRole('button',{name:'Save',exact:true}).click();

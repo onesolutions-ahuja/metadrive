@@ -1,7 +1,8 @@
 import { useId, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent, type Ref, type UIEvent } from 'react';
-import { AtSign, Database, Search } from 'lucide-react';
+import { AtSign } from 'lucide-react';
 import type { ObjectMetadata } from './metadata';
 import { mentionGroups, mentionSegments, type MentionKind } from './smartFieldMentions';
+import ReferenceBrowser, { type ReferenceGroup } from './ReferenceBrowser';
 import './SmartFieldInput.css';
 
 type InputElement = HTMLInputElement | HTMLTextAreaElement;
@@ -42,11 +43,20 @@ export default function SmartFieldInput({
   const [open, setOpen] = useState(false);
   const [forced, setForced] = useState(false);
   const [search, setSearch] = useState('');
+  const [searchOverride, setSearchOverride] = useState(false);
   const token = tokenAtCursor(value, cursorRef.current);
-  const query = forced ? search : token?.query ?? '';
+  const query = forced || searchOverride ? search : token?.query ?? '';
   const options = useMemo(() =>
-    mentionGroups(objects, primaryObjectApiName, appObjectApiNames, query, kind),
-    [objects, primaryObjectApiName, appObjectApiNames, query, kind]);
+    mentionGroups(objects, primaryObjectApiName, appObjectApiNames, '', kind),
+    [objects, primaryObjectApiName, appObjectApiNames, kind]);
+  const browserGroups: ReferenceGroup[] = options.map(group => ({
+    path: group.path, label: group.primary ? group.label : group.path.split('.').at(-1) || group.label,
+    detail: group.primary ? 'Current Object' : group.via,
+    options: group.fields.map(field => ({
+      reference: field.reference, label: field.fieldLabel, detail: field.reference,
+      dataType: field.dataType
+    }))
+  }));
   const segments = mentionSegments(value, objects, kind, primaryObjectApiName);
 
   const putCursor = (next: number) => {
@@ -61,6 +71,7 @@ export default function SmartFieldInput({
     cursorRef.current = event.target.selectionStart ?? next.length;
     onChange(next);
     setForced(false);
+    setSearchOverride(false);
     setOpen(Boolean(tokenAtCursor(next, cursorRef.current)));
   };
   const updateCursor = () => {
@@ -76,6 +87,7 @@ export default function SmartFieldInput({
     setOpen(false);
     setForced(false);
     setSearch('');
+    setSearchOverride(false);
     putCursor(from + reference.length);
   };
   const common = {
@@ -95,11 +107,11 @@ export default function SmartFieldInput({
       }
     },
     onKeyDown: (event: KeyboardEvent<InputElement>) => {
-      if (event.key === 'Escape') { setOpen(false); setForced(false); }
+      if (event.key === 'Escape') { setOpen(false); setForced(false); setSearchOverride(false); }
     },
     onBlur: (event: FocusEvent<InputElement>) => {
       if (event.relatedTarget instanceof Node && editorRef.current?.contains(event.relatedTarget)) return;
-      setOpen(false); setForced(false);
+      setOpen(false); setForced(false); setSearchOverride(false);
     }
   };
   return <div className="smart-field-editor" ref={editorRef}>
@@ -118,36 +130,14 @@ export default function SmartFieldInput({
       <button className="smart-field-trigger" type="button" aria-label="Insert dynamic field"
         title="Insert dynamic field (@)" disabled={disabled || !primaryObjectApiName || objects.length === 0}
         onMouseDown={event => event.preventDefault()}
-        onClick={() => { cursorRef.current = inputRef.current?.selectionStart ?? value.length; setForced(true); setSearch(''); setOpen(true); }}>
+        onClick={() => { cursorRef.current = inputRef.current?.selectionStart ?? value.length; setForced(true); setSearchOverride(false); setSearch(''); setOpen(true); }}>
         <AtSign size={15} />
       </button>
     </div>
-    {open && !disabled && primaryObjectApiName && objects.length > 0 && <div className="smart-field-picker" id={resultId}
-      role="listbox" aria-label="Dynamic fields">
-      <div className="smart-field-search">
-        <Search size={13} />
-        {forced ? <input autoFocus aria-label="Search objects and fields" value={search}
-          placeholder="Search objects or fields" onChange={event => setSearch(event.target.value)}
-          onBlur={event => {
-            if (!(event.relatedTarget instanceof Node && editorRef.current?.contains(event.relatedTarget))) setOpen(false);
-          }}
-          onKeyDown={event => { if (event.key === 'Escape') { setOpen(false); setForced(false); inputRef.current?.focus(); } }} />
-          : <span>Search: {query || 'All fields'} </span>}
-      </div>
-      <div className="smart-field-results">
-        {options.map(group => <div key={group.path}>
-          <div className="smart-field-group"><Database size={13} /> {group.label}
-            <small>{group.primary ? 'Current Object' : group.via}</small>
-          </div>
-          {group.fields.map(field => <button key={field.fieldApiName} type="button" role="option" aria-selected={false}
-            onMouseDown={event => event.preventDefault()}
-            onClick={() => insert(field.reference)}>
-            <AtSign size={12} /> <span>{field.fieldLabel}</span>
-            <small>{field.reference}</small>
-          </button>)}
-        </div>)}
-        {!options.length && <p className="smart-field-empty">No matching fields. Create a Lookup relationship in Object Manager to access another Object.</p>}
-      </div>
-    </div>}
+    {open && !disabled && primaryObjectApiName && objects.length > 0 &&
+      <ReferenceBrowser id={resultId} groups={browserGroups} query={query}
+        onQueryChange={next => { setSearch(next); setSearchOverride(true); }}
+        onChoose={insert} onClose={() => { setOpen(false); setForced(false); }}
+        emptyHint="No matching field on this Object or its declared relationships. Create the relationship in Object Manager to navigate to a related Object."/>}
   </div>;
 }

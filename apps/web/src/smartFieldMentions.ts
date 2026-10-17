@@ -21,6 +21,9 @@ const REFERENCE = /(^|[^A-Za-z0-9_@])@([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z
 const MAX_HOPS = 3;
 const MAX_REFERENCES = 64;
 const emptyContext = (): MentionContext => ({ records: {}, fields: {} });
+const recordIdField: FieldMetadata = { apiName: 'Id', label: 'Record ID', dataType: 'Id', required: true, unique: true };
+const objectFields = (object: ObjectMetadata): FieldMetadata[] =>
+  object.fields.some(field => field.apiName === 'Id') ? object.fields : [recordIdField, ...object.fields];
 
 export function isCompatibleField(dataType: string, kind: MentionKind): boolean {
   if (kind === 'text' || kind === 'formula') return true;
@@ -68,8 +71,8 @@ export function mentionGroups(
   return mentionPaths(objects, primaryObjectApiName).filter(node => kind !== 'formula' || node.steps.length === 0).map(node => ({
     objectApiName: node.object.apiName, label: node.object.label,
     primary: node.path === primaryObjectApiName, path: node.path, via: node.via,
-    fields: node.object.fields.filter(field => {
-      if (field.relationship || !isCompatibleField(field.formula?.returnType ?? field.dataType, kind)) return false;
+    fields: objectFields(node.object).filter(field => {
+      if (!isCompatibleField(field.formula?.returnType ?? field.dataType, kind)) return false;
       const pathLabel = node.path.toLowerCase();
       const pathQuery = q.includes('.') && q.startsWith(pathLabel + '.')
         ? q.slice(pathLabel.length + 1) : undefined;
@@ -113,8 +116,8 @@ export function validateMentionPath(
   }
   if (!current) return null;
   if (kind === 'formula' && steps.length > 0) return null; // server formula runtime has no related-record context
-  const field = current.fields.find(field => field.apiName === parts[parts.length - 1]);
-  if (!field || field.relationship || !isCompatibleField(field.formula?.returnType ?? field.dataType, kind)) return null;
+  const field = objectFields(current).find(field => field.apiName === parts[parts.length - 1]);
+  if (!field || !isCompatibleField(field.formula?.returnType ?? field.dataType, kind)) return null;
   return { path: parts.slice(0, -1).join('.'), root: rootObjectApiName, target: current, field, steps };
 }
 
@@ -153,7 +156,7 @@ export function referencedMentionPaths(
 }
 function allowFields(context: MentionContext, path: string, record: DataRecord | undefined, object: ObjectMetadata) {
   context.records[path] = record;
-  context.fields[path] = record ? object.fields.filter(field => Object.hasOwn(record, field.apiName))
+  context.fields[path] = record ? objectFields(object).filter(field => Object.hasOwn(record, field.apiName))
     .map(field => field.apiName) : [];
 }
 
