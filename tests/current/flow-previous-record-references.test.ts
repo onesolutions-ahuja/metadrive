@@ -249,3 +249,27 @@ test('ordinary JSON literals are not misread as broken Flow references',()=>{
  flow.elements.push({id:4,type:'Assignment',label:'Keep JSON',config:{variable:'SessionKey',value:'{"example":1}'}} as any);
  assert.deepEqual(flowReferenceErrors(flow as any,objects),[]);
 });
+
+test('typed lookup fields remain selectable inside a Loop when relationship object is absent',()=>{
+ const catalog=[
+  {apiName:'Product',label:'Product',fields:[field('Name')]},
+  {apiName:'OrderLine__c',label:'Order Line',fields:[field('ProductId','Lookup(Product)')]},
+  {apiName:'SaleItem__c',label:'Sale Item',fields:[
+   field('ProductId','Lookup(Product)'),field('ContactId','Lookup(Contact)')]}
+ ] as ObjectMetadata[];
+ const flow=config();
+ flow.elements[1].config={object:'OrderLine__c',outputVariable:'Lines',recordLimit:'all'};
+ flow.elements[2]={id:3,type:'Loop',label:'Each line',config:{collection:'Lines',loopVariable:'CurrentOrderLine'}} as any;
+ flow.elements.push({id:4,type:'Create Records',label:'Create Sale Item',
+  config:{object:'SaleItem__c',fieldValues:[{field:'ProductId',value:'{!CurrentOrderLine.ProductId}'}]}} as any);
+ flow.connectors.push({id:'loop-body',from:3,to:4,kind:'normal',label:'For Each'} as any);
+ const product=flowReferenceBrowserGroups(flow,4,catalog,catalog[2].fields[0]).groups
+  .find(group=>group.path==='CurrentOrderLine')?.options
+  .find(option=>option.reference==='{!CurrentOrderLine.ProductId}');
+ assert.equal(product?.disabled,false);
+ assert.deepEqual(flowReferenceErrors(flow as any,catalog),[]);
+ const contact=flowReferenceBrowserGroups(flow,4,catalog,catalog[2].fields[1]).groups
+  .find(group=>group.path==='CurrentOrderLine')?.options
+  .find(option=>option.reference==='{!CurrentOrderLine.ProductId}');
+ assert.equal(contact?.disabled,true);
+});
