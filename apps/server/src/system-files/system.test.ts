@@ -300,3 +300,27 @@ test('first-install reconciliation is opt-in and refuses multi-user databases',a
   }),/single-user installation/);
   assert.equal(writes,0);
 });
+
+test('reconciliation repairs one matching account exactly once',async()=>{
+  const {reconcileBootstrapPassword}=await import('./bootstrap-password-sync.js');
+  const password='FreshDeveloperPassword2026';
+  const auth=new AuthenticationService({} as SqlPersistence);
+  let stored=await auth.hashPassword('OldDeveloperPassword2026'),marker=false,updates=0;
+  const client={query:async(sql:string,args:unknown[]=[])=>{
+    if(sql.includes('FROM md_users u JOIN'))return {rows:[{id:'u',tenant_id:'t',password_hash:stored}]};
+    if(sql.includes('FROM md_bootstrap_password_repairs'))return {rows:marker?[{}]:[]};
+    if(sql.startsWith('UPDATE md_users')){stored=String(args[0]);updates++;}
+    if(sql.startsWith('INSERT INTO md_bootstrap_password_repairs'))marker=true;
+    return {rows:[],rowCount:1};
+  }};
+  const db={query:async()=>({rows:[{tenants:1,users:1}]}),
+    transaction:async(fn:(c:typeof client)=>Promise<unknown>)=>fn(client)} as unknown as SqlPersistence;
+  const env={METADRIVE_SYNC_BOOTSTRAP_PASSWORD_ONCE:'true',
+    METADRIVE_BOOTSTRAP_ADMIN_EMAIL:'dev@example.com',
+    METADRIVE_BOOTSTRAP_DOMAIN:'example.com',
+    METADRIVE_BOOTSTRAP_ADMIN_PASSWORD:password};
+  assert.equal(await reconcileBootstrapPassword(db,env),'updated');
+  assert.equal(await auth.verifyPassword(password,stored),true);
+  assert.equal(await reconcileBootstrapPassword(db,env),'already-done');
+  assert.equal(updates,1);
+});
