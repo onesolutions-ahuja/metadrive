@@ -10,7 +10,9 @@ const output=(flow,name)=>flow?.resources?.find(x=>x.name===name);
 export function assessCheckoutReadiness({objects=[],flows=[],pages=[]}={}){
  const issues=[],checks=[];
  const check=(id,pass,note)=>{checks.push({id,pass,note});if(!pass)issues.push(id)};
- const products=get(objects,'Product__c')||get(objects,'Product');
+ const orderLineObject=get(objects,'OrderLine__c')||get(objects,'OrderItem');
+ const productTarget=field(orderLineObject,'ProductId')?.relationship?.targetObject;
+ const products=(productTarget&&get(objects,productTarget))||get(objects,'Product')||get(objects,'Product__c');
  const order=get(objects,'Order__c')||get(objects,'Order');
  const lines=get(objects,'OrderLine__c')||get(objects,'OrderItem');
  const sale=get(objects,'Sale__c');
@@ -40,8 +42,8 @@ export function assessCheckoutReadiness({objects=[],flows=[],pages=[]}={}){
  check('lines:available',Boolean(lines),'Order lines required');
  check('lines:parent-lookup',Boolean(field(lines,'OrderId')?.relationship?.targetObject==='Order'
    ||field(lines,'OrderId')?.relationship?.targetObject==='Order__c'), 'Order line must link to Order');
- check('sale:available',Boolean(sale),'Sale object exists for the current POS model');
- check('sale-lines:available',Boolean(saleLines),'Sale Line object exists for the current POS model');
+ check('sale:available',Boolean(sale||invoice),'Sale or Invoice object exists for checkout');
+ check('sale-lines:available',Boolean(saleLines||invoiceItems),'Sale Line or Invoice Item object exists for checkout');
  check('invoice:available',Boolean(invoice),'Invoice object exists');
  check('invoice:order-link',Boolean(field(invoice,'OrderId')?.relationship?.targetObject===order?.apiName),'Invoice must link to source Order');
  check('invoice-items:available',Boolean(invoiceItems),'InvoiceItem object exists');
