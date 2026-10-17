@@ -27,7 +27,7 @@ export default function OneLayout(p){
   const record=useRecordTabs?tabRecords.find(row=>String(row?.[categoryField||'Name']??row?.Name??row?.label)===name):null;
   const value=record?.[p.categoryValueFieldApiName||'Name']??name;
   const payload={index:i,label:name,value,recordId:record?.Id??record?.id??'',sourceObjectApiName:p.objectApiName||''};
-  if(p.filterKey&&p.pageSessionKey&&typeof window!=='undefined')
+  if(useRecordTabs&&p.filterKey&&p.pageSessionKey&&typeof window!=='undefined')
    window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected',{detail:{
     pageSessionKey:p.pageSessionKey,filterKey:p.filterKey,value:String(value),label:name,
     recordId:String(payload.recordId),sourceObjectApiName:payload.sourceObjectApiName
