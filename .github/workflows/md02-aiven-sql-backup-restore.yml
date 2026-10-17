@@ -225,6 +225,9 @@ jobs:
           METADRIVE_COMMERCE_MIGRATION_APPROVED: 'true'
           METADRIVE_BACKEND_MAINTENANCE_CONFIRMED: ${{ inputs.confirm_backend_offline }}
           METADRIVE_ONLINE_CAS_MIGRATION_APPROVED: ${{ env.ONE_TIME_RETIRE == 'true' }}
+          # Aiven's project-private CA is not yet installed on the runner;
+          # match the existing PostgreSQL sslmode=require transport until CA is configured.
+          METADRIVE_DB_ALLOW_SELF_SIGNED_CERT: 'true'
           METADRIVE_SQL_CLEANUP_PROOF_FILE: ${{ runner.temp }}/sql-cleanup-restore-proof.json
         run: node apps/server/scripts/migrate-retired-commerce-typed-sql.mjs --apply
       - name: Verify live typed SQL integrity after commerce migration
@@ -233,6 +236,7 @@ jobs:
           DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
           METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
           METADRIVE_EXPECTED_TENANT_ID: ${{ env.ONE_TIME_RETIRE == 'true' && 'unesolutions-dev' || inputs.commerce_tenant_id }}
+          METADRIVE_DB_ALLOW_SELF_SIGNED_CERT: 'true'
         run: |
           node --input-type=module <<'NODE'
           import pg from 'pg';
@@ -241,7 +245,7 @@ jobs:
           const u=new URL(process.env.DATABASE_URL);
           u.pathname='/'+process.env.METADRIVE_SQL_TARGET_DB;
           for(const key of ['sslmode','sslcert','sslkey','sslrootcert'])u.searchParams.delete(key);
-          const pool=new pg.Pool({connectionString:u.toString(),ssl:{rejectUnauthorized:true},max:1});
+          const pool=new pg.Pool({connectionString:u.toString(),ssl:{rejectUnauthorized:process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT!=='true'},max:1});
           try{
             const state=await readNormalizedState(pool,verifyTypedRecords);
             if(!state.state.tenants?.[process.env.METADRIVE_EXPECTED_TENANT_ID])
