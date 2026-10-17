@@ -51,7 +51,8 @@ export function createSystemServer(db:SqlPersistence) {
   const apps=new AppRuntime(db);
 
   // CORS is granted only to origins registered for a SQL tenant.
-  app.use(route(async (req,res)=>{
+  app.use(async (req,res,next)=>{
+    try {
     const origin=req.get('origin');
     if(origin) {
       let host:string;
@@ -66,11 +67,9 @@ export function createSystemServer(db:SqlPersistence) {
       res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,DELETE,OPTIONS');
     }
     if(req.method==='OPTIONS') {res.status(204).end();return;}
-    // route wrapper ends only for non-OPTIONS; Express must continue.
-    res.locals.originValidated=true;
-  }));
-  // The preceding route is middleware, not a terminating endpoint.
-  // It cannot use route() because middleware must call next after successful checks.
+    next();
+    } catch(error) {next(error);}
+  });
   const authorize=async (req:AuthenticatedRequest,res:Response,next:NextFunction)=>{
     try {
       const bearer=req.get('authorization')??'';
