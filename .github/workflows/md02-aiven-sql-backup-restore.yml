@@ -157,6 +157,7 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/sql-cleanup-restore-proof.json"
       - name: Retain encrypted verified SQL-only snapshot
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: metadrive-sql-only-verified-encrypted-backup
