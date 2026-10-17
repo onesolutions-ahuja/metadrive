@@ -7,6 +7,7 @@ import FlowTestsPanel from './FlowTestsPanel';
 import CustomComponentPropertyEditor from './CustomComponentPropertyEditor';
 import SmartFieldInput from './SmartFieldInput';
 import FlowReferenceInput from './FlowReferenceInput';
+import { FlowConditionRows, FlowFieldAssignments } from './FlowValueEditors';
 import PageComponentStyleEditor from './PageComponentStyleEditor';
 import { parseComponentProperties } from './componentProperties';
 import { Fragment, useEffect, useRef, useState } from 'react';
@@ -429,34 +430,10 @@ export default function FlowBuilder({
       editor?.setSelectionRange(start + caretOffset, start + caretOffset);
     });
   };
-  const addCondition = (key: string) => {
-    setConfig(key, [...rowsFrom(selected?.config[key]), { field: '', operator: 'Equals', value: '' }]);
-  };
-  const updateCondition = (key: string, index: number, update: Partial<ConfigRow>) => {
-    setConfig(key, rowsFrom(selected?.config[key]).map((row, rowIndex) => rowIndex === index ? { ...row, ...update } : row));
-  };
-  const renderConditions = (key: string, objectFields: ObjectMetadata['fields']) => (
-    <div className="flow-config-list">
-      {rowsFrom(selected?.config[key]).map((condition, index) => (
-        <div className="flow-config-row" key={`${key}-${index}`}>
-          <select className="form-control" aria-label="Condition field" value={displayValue(condition.field)} onChange={(event) => updateCondition(key, index, { field: event.target.value })}>
-            <option value="">Select field or resource</option>
-            <optgroup label="Record Fields">{objectFields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}</optgroup>
-            <optgroup label="Flow Resources">{flow.resources.map((resource) => <option key={resource.name} value={`{${resource.name}}`}>{resource.label}</option>)}</optgroup>
-          </select>
-          <select className="form-control" aria-label="Condition operator" value={displayValue(condition.operator) || 'Equals'} onChange={(event) => updateCondition(key, index, { operator: event.target.value })}>
-            {['Equals', 'Not Equals', 'Is Null', 'Is Not Null', 'Greater Than', 'Less Than', 'Contains', 'Starts With'].map((operator) => <option key={operator}>{operator}</option>)}
-          </select>
-          {condition.operator !== 'Is Null' && condition.operator !== 'Is Not Null' && <FlowReferenceInput
-            ariaLabel="Condition value" value={displayValue(condition.value)}
-            flow={flow} elementId={selected?.id ?? 0} objects={objects}
-            field={objectFields.find(field => field.apiName === condition.field)}
-            onChange={value => updateCondition(key,index,{value})} />}
-          <button className="row-menu" aria-label="Remove condition" onClick={() => setConfig(key, rowsFrom(selected?.config[key]).filter((_, rowIndex) => rowIndex !== index))}><X size={14} /></button>
-        </div>
-      ))}
-      <button className="text-action" onClick={() => addCondition(key)}><Plus size={13} />Add Condition</button>
-    </div>
+  const renderConditions = (key: string, fields: ObjectMetadata['fields']) => (
+    <FlowConditionRows flow={flow} elementId={selected?.id ?? 0} objects={objects}
+      rows={rowsFrom(selected?.config[key])} fields={fields}
+      onChange={rows => setConfig(key, rows)} />
   );
   const renderConditionLogic = (label: string, value: unknown, count: number, onChange: (logic: string) => void) => {
     const logic = displayValue(value);
@@ -473,31 +450,11 @@ export default function FlowBuilder({
       </>}
     </>;
   };
-  const renderFieldValues = () => {
-    const object = objects.find((item) => item.apiName === displayValue(selected?.config.object));
-    const savedValues = rowsFrom(selected?.config.fieldValues);
-    const values = savedValues.length
-      ? savedValues
-      : typeof selected?.config.field === 'string'
-        ? [{ field: selected.config.field, value: selected.config.value }]
-        : [];
-    return <div className="flow-config-list">
-      {values.map((fieldValue, index) => (
-        <div className="flow-config-row" key={`field-value-${index}`}>
-          <select className="form-control" aria-label="Field to assign" value={displayValue(fieldValue.field)} onChange={(event) => setConfig('fieldValues', values.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item))}>
-            <option value="">Select field</option>{object?.fields.map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
-          </select>
-          <FlowReferenceInput ariaLabel="Assigned value" placeholder="Value or reference"
-            value={displayValue(fieldValue.value)} flow={flow} elementId={selected?.id ?? 0} objects={objects}
-            field={object?.fields.find(field => field.apiName === fieldValue.field)}
-            onChange={value => setConfig('fieldValues', values.map((item,itemIndex) =>
-              itemIndex===index?{...item,value}:item))} />
-          <button className="row-menu" aria-label="Remove field value" onClick={() => setConfig('fieldValues', values.filter((_, itemIndex) => itemIndex !== index))}><X size={14} /></button>
-        </div>
-      ))}
-      <button className="text-action" onClick={() => setConfig('fieldValues', [...values, { field: '', value: '' }])}><Plus size={13} />Add Field</button>
-    </div>;
-  };
+  const renderFieldValues = () => (
+    <FlowFieldAssignments flow={flow} elementId={selected?.id ?? 0} objects={objects}
+      object={objects.find(obj=>obj.apiName===selected?.config.object)}
+      config={selected?.config ?? {}} onChange={rows=>setConfig('fieldValues',rows)} />
+  );
   const renderStartSettings = () => (
     <>
       {flow.flowType === 'Platform Event-Triggered Flow' && <>
