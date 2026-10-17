@@ -11,8 +11,11 @@ const create=(apiName,label,fields)=>({
   fields:[field('Name','Name','Text(255)',{required:true}),...fields]
 });
 export const kioskObjectDefinitions=[
+  create('ProductCategory__c','Product Category',[
+    field('ImageUrl','Category Image URL','URL'),number('SortOrder'),field('IsActive','Active','Checkbox'),lookup('ParentCategoryId','ProductCategory__c','Subcategory')
+  ]),
   create('Product__c','Product',[
-    text('SKU'),lookup('CategoryId','ProductCategory','ProductsByCategory'),money('DefaultPrice'),
+    text('SKU'),lookup('CategoryId','ProductCategory__c','ProductsByCategory'),money('DefaultPrice'),
     field('ImageUrl','Product Image URL','URL'),field('IsActive','Active','Checkbox'),text('Description')
   ]),
   create('Order__c','Order',[
