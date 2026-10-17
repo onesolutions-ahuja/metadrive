@@ -105,7 +105,13 @@ export function createSystemServer(db:SqlPersistence) {
       const session=await auth.signIn(tenantId,email,password);
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
-    } catch {res.status(401).json({error:'Invalid credentials'});}
+    } catch(error) {
+      // Distinguish rejected credentials from SQL/session failures. A successful
+      // password check followed by a failed database write must not become 401.
+      if(error instanceof Error&&error.message==='Invalid credentials')
+        res.status(401).json({error:'Invalid credentials'});
+      else throw error;
+    }
   }));
   app.post('/api/auth/refresh',route(async(req,res)=>{
     const token=getCookie(req);
