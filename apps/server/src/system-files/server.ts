@@ -129,6 +129,20 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
     res.json({objects:await definitions.list(actor.tenant_id)});
   }));
+  // Metadata lookups use the same tenant-scoped SQL registry as list/create.
+  app.get('/api/metadata/objects/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    res.json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
+  }));
+  app.get('/api/apps/:appId/home-page',route(async(req,res)=>{
+    const actor=req.actor!;
+    const factor=String(req.query.formFactor??'desktop');
+    if(!['desktop','tablet','phone'].includes(factor))throw new Error('Invalid form factor');
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
+    res.json({page:await apps.homePage(actor.tenant_id,req.params.appId,factor)});
+  }));
   app.get('/api/metadata/objects',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');

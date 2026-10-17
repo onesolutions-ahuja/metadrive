@@ -48,3 +48,14 @@ CREATE TABLE IF NOT EXISTS md_app_entitlements (
  active boolean NOT NULL DEFAULT false, expires_at timestamptz,
  PRIMARY KEY(tenant_id,app_id)
 );
+
+-- SQL app-specific Home Page assignment. Null assignment is represented by no row.
+CREATE TABLE IF NOT EXISTS md_app_home_pages (
+  tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+  app_id uuid NOT NULL REFERENCES md_apps(id),
+  form_factor text NOT NULL CHECK (form_factor IN ('desktop','tablet','phone')),
+  page_id uuid NOT NULL,
+  PRIMARY KEY (tenant_id,app_id,form_factor),
+  FOREIGN KEY(tenant_id,app_id) REFERENCES md_app_installations(tenant_id,app_id),
+  FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id)
+);

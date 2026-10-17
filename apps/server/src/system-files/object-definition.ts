@@ -21,6 +21,12 @@ export class ObjectDefinitionService {
       DO UPDATE SET data_type=EXCLUDED.data_type,related_object=EXCLUDED.related_object
     `,[tenantId,objectApi,fieldApi,dataType,relatedObject??null]);
   }
+  async get(tenantId:string,apiName:string) {
+    const objects=await this.list(tenantId);
+    const object=objects.find(item=>item.apiName===apiName);
+    if(!object)throw new Error('Object not found');
+    return object;
+  }
   async list(tenantId:string) {
     const {rows:objects}=await this.db.query<SqlObject>(
       'SELECT id,api_name,label,is_system FROM md_object_definitions WHERE tenant_id=$1 ORDER BY api_name',[tenantId]);

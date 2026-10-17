@@ -82,3 +82,18 @@ test('registered browser origin cannot select another tenant by slug', async () 
     if(listener.listening) await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
 });
+
+test('home page resolution rejects uninstalled apps and preserves empty home assignment', async () => {
+  const {AppRuntime}=await import('./app-runtime.js');
+  const db={query:async()=>({rows:[]})} as unknown as SqlPersistence;
+  await assert.rejects(()=>new AppRuntime(db).homePage('tenant','NotInstalled','desktop'),/Permission denied/);
+  const noHome={query:async()=>({rows:[{api_name:null}]})} as unknown as SqlPersistence;
+  assert.equal(await new AppRuntime(noHome).homePage('tenant','MyApp','desktop'),null);
+});
+test('tenant-specific object lookup cannot return an unregistered object', async () => {
+  const calls:string[]=[];
+  const db={query:async(sql:string)=>{calls.push(sql);return {rows:[]}}} as unknown as SqlPersistence;
+  const svc=new ObjectDefinitionService(db);
+  await assert.rejects(()=>svc.get('tenant','OtherTenant__c'),/Object not found/);
+  assert.ok(calls.every(sql=>sql.includes('tenant_id=$1')));
+});
