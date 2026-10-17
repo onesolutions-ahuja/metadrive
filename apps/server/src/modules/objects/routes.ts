@@ -1,4 +1,5 @@
 import { removeObjectMetadata } from './remove-object.js';
+import { isRetiredObject } from '../../retired-object-names.mjs';
 import { pageComponentFeatureEnabled } from './metadata-validation.js';
 import { metadataPrecondition as checkMetadataPrecondition, commitObjectMetadata as persistObjectMetadataRevision } from './metadata-revisions.js';
 /** All Object Manager metadata HTTP routes, kept as a cohesive module. */
@@ -50,6 +51,7 @@ app.get('/api/metadata/objects/:apiName', requirePermission('metadata:read'), (r
 app.post('/api/metadata/objects', requireAnyPermission('metadata:write', 'objects:manage'), (req: Request, res: Response) => {
   const parsed = objectSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid object metadata', details: parsed.error.flatten() });
+  if (isRetiredObject(parsed.data.apiName)) return res.status(409).json({ error: 'Object has been retired and cannot be recreated' });
   if (parsed.data.kind !== 'Custom Object' || !parsed.data.apiName.endsWith('__c')) {
     return res.status(400).json({ error: 'New objects must be custom objects with an API name ending in __c' });
   }
