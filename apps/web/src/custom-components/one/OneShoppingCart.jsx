@@ -79,6 +79,7 @@ function ShoppingCartDisplay({props}) {
 function ShoppingCartTill({props}) {
  const [cart,setCart]=React.useState([]);
  const [search,setSearch]=React.useState('');
+ const [selectedCategory,setSelectedCategory]=React.useState('');
  const [error,setError]=React.useState('');
  const [busy,setBusy]=React.useState(false);
  const [displaySession,setDisplaySession]=React.useState('');
@@ -254,7 +255,10 @@ function ShoppingCartTill({props}) {
  const products=Array.isArray(props.records)?props.records:[];
  const barcode=item=>item[props.barcodeFieldApiName||'Barcode'];
  const sku=item=>item[props.skuFieldApiName||'SKU'];
- const filtered=products.filter(item=>[name(item),barcode(item),sku(item)]
+ const categoryField=props.categoryFieldApiName||'Category';
+ const productCategory=item=>String(item[categoryField]??'').trim();
+ const categories=[...new Set(products.map(productCategory).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+ const filtered=products.filter(item=>(!selectedCategory||productCategory(item)===selectedCategory)&&[name(item),barcode(item),sku(item)]
   .some(value=>String(value||'').toLowerCase().includes(search.trim().toLowerCase())));
  const scan=event=>{
   if(event.key!=='Enter'||!search.trim())return;
@@ -301,6 +305,10 @@ function ShoppingCartTill({props}) {
      <input className="one-control" aria-label="Search products" value={search} onChange={event=>setSearch(event.target.value)}
       onKeyDown={scan} placeholder={props.searchPlaceholder||'Search or scan a product'}/>
     </label>
+    {props.showCategoryTabs!==false&&categories.length>0&&<nav className="one-shopping-categories" aria-label={props.categoryTabsLabel||'Product categories'}>
+     <button className="one-btn" type="button" aria-pressed={!selectedCategory} onClick={()=>setSelectedCategory('')}>{props.allCategoriesLabel||'All'}</button>
+     {categories.map(category=><button key={category} className="one-btn" type="button" aria-pressed={selectedCategory===category} onClick={()=>setSelectedCategory(category)}>{category}</button>)}
+    </nav>
     {props.loading&&<p role="status">Loading products…</p>}
     {!props.loading&&!filtered.length&&<p className="one-empty">{props.emptyProductsText||'No products found.'}</p>}
     <div className="one-shopping-products">{filtered.map(product=><button className="one-item one-item--interactive"

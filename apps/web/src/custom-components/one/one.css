@@ -74,6 +74,10 @@
 .one-conversation-back{display:none}
 @media(max-width:640px){.one-conversation-inbox{grid-template-columns:minmax(0,1fr);height:auto}.one-conversation-inbox--open .one-conversation-list{display:none}.one-conversation-list{max-height:44vh}.one-conversation-thread{min-height:320px}.one-conversation-back{display:inline-flex}}
 .one-shopping-layout{display:grid;grid-template-columns:minmax(0,var(--one-catalogue-ratio,3fr)) minmax(280px,var(--one-basket-ratio,2fr));gap:var(--one-gap);margin-top:var(--one-gap)}
+.one-shopping-layout>section,.one-shopping-layout>aside{min-width:0}
+.one-shopping-categories{display:flex;align-items:center;gap:var(--one-gap);overflow-x:auto;max-width:100%;padding:var(--one-gap) 0;scrollbar-width:thin}
+.one-shopping-categories .one-btn{flex:0 0 auto;white-space:nowrap}
+.one-shopping-categories .one-btn[aria-pressed="true"]{background:var(--one-accent);color:#fff}
 .one-shopping-products{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,var(--one-product-min-width,170px)),1fr));gap:var(--one-gap);margin-top:var(--one-gap)}
 .one-shopping-products img{width:100%;aspect-ratio:1;object-fit:contain}
 .one-shopping-line{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:var(--one-gap);padding:10px 0;border-bottom:1px solid var(--one-border)}
