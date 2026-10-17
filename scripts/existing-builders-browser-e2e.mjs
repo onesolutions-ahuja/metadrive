@@ -304,9 +304,13 @@ try {
   if(await page.getByLabel('Condition value').inputValue()!=='{!FoundAccount.Id}')
     throw Error('Previous-record Flow picker did not insert the correct runtime expression');
   await page.getByRole('button',{name:'Save',exact:true}).click();
-  const savedReference=(await request('/metadata/flows/'+referenceFlow,token)).flow;
-  if(savedReference?.elements?.find(item=>item.id===3)?.config?.conditions?.[0]?.value!=='{!FoundAccount.Id}')
-    throw Error('Previous-record reference was not persisted through the normal Flow save API');
+  let savedReference;
+  for(let attempt=0;attempt<30;attempt++){
+    savedReference=(await request('/metadata/flows',token)).flows.find(item=>item.apiName===referenceFlow);
+    if(savedReference?.elements?.find(item=>item.id===3)?.config?.conditions?.[0]?.value==='{!FoundAccount.Id}')break;
+    await pause(250);
+    if(attempt===29)throw Error('Previous-record reference was not persisted through the normal Flow save API');
+  }
 
   // Authenticated Report Builder: create metadata through shared Object API and
   // exercise the actual editor save/reopen path in this disposable tenant.
