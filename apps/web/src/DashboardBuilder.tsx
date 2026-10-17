@@ -1896,7 +1896,7 @@ export default function DashboardBuilder({
               {activeSnapshot.components.map((component) => {
                 const chartPalette = chartPaletteFor(component.chartColorPalette);
                 return <section className={`dashboard-preview-card surface ${component.type.toLocaleLowerCase().replace(/\s+/g, '-')} dashboard-width-${(component.width ?? (component.type === 'Table' ? 'Full' : 'Half')).toLocaleLowerCase()} dashboard-height-${(component.height ?? 'Medium').toLocaleLowerCase()}`} key={component.componentId}>
-                <header><div><h2>{displayMentionText(component, component.title)}</h2><p>{(component.subtitle && displayMentionText(component, component.subtitle)) || `${component.objectApiName} · Snapshot`}</p></div></header>
+                <header><div><h2>{component.title}</h2><p>{component.subtitle || `${component.objectApiName} · Snapshot`}</p></div></header>
                 {component.unavailableReason && <p className="dashboard-snapshot-unavailable" role="status">{component.unavailableReason}</p>}
                 {component.type === 'Rich Text' && !component.unavailableReason && <iframe
                   className="dashboard-rich-text-frame"
@@ -2221,7 +2221,7 @@ export default function DashboardBuilder({
               onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData('text/plain') || draggedComponentId; moveComponentBefore(sourceId, component.id); setDraggedComponentId(''); }}
               onDragEnd={() => setDraggedComponentId('')}
               onClick={() => { if (!previewMode) setSelectedComponentId(component.id); }}>
-              <header><div><h2>{component.title}</h2><p>{component.subtitle || `${['Metric', 'Chart', 'Table'].includes(component.type) ? objectFor(component.objectApiName)?.label ?? component.objectApiName : 'Content'} · ${component.type}`}</p></div>
+              <header><div><h2>{displayMentionText(component, component.title)}</h2><p>{(component.subtitle && displayMentionText(component, component.subtitle)) || `${['Metric', 'Chart', 'Table'].includes(component.type) ? objectFor(component.objectApiName)?.label ?? component.objectApiName : 'Content'} · ${component.type}`}</p></div>
                 {previewMode && component.type === 'Table' && <button className="btn btn-small dashboard-export-button" disabled={Boolean(exportingComponentId)} onClick={(event) => { event.stopPropagation(); void exportTable(component); }}><Download size={13} />{exportingComponentId === component.id ? 'Exporting…' : 'Export CSV'}</button>}
                 {!previewMode && <button className="icon-button" aria-label={`Select ${component.title}`}><GripVertical size={15} /></button>}
               </header>
