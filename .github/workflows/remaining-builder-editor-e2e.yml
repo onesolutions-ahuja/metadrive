@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'scripts/existing-builders-browser-e2e.mjs'
+      - 'scripts/pos-cashier-paired-browser-smoke.mjs'
       - '.github/workflows/remaining-builder-editor-e2e.yml'
       - 'apps/web/src/**'
       - 'apps/server/src/**'
@@ -27,3 +28,5 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Authenticated Flow Dashboard Report Builder save and reopen; published runtimes
         run: node scripts/existing-builders-browser-e2e.mjs
+      - name: Isolated cashier and customer display age/cash state acceptance
+        run: node scripts/pos-cashier-paired-browser-smoke.mjs
