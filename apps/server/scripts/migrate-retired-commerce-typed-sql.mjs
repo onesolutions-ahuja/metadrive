@@ -248,7 +248,9 @@ try{
  tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
    .map(row=>[row.Id,row.GroupId]));
  migrateTenant(tenant);
- const noChanges=JSON.stringify(snapshot.state)===JSON.stringify(next);
+ const missingSql=await pool.query(
+  "SELECT count(*)::int AS n FROM md_v2_object_registry WHERE active=true AND to_regclass('public.'||physical_table) IS NULL");
+ const noChanges=missingSql.rows[0]?.n===0&&JSON.stringify(snapshot.state)===JSON.stringify(next);
  const summary={database:db,tenant:target,revision:snapshot.version,
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length};
