@@ -1,6 +1,5 @@
 import { createPlatformScheduler } from './platform-scheduler.js';
 import { createIntegrationDeliveryHandler } from './integration-delivery.js';
-import { createSqlStateRefresh } from '../core/state/refresh.js';
 
 type SchedulerDeps = Parameters<typeof createPlatformScheduler>[0];
 type IntegrationHandlerDeps = Parameters<typeof createIntegrationDeliveryHandler>[0];

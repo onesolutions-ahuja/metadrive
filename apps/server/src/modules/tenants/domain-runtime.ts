@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { resolveTxt } from 'node:dns/promises';
 import type { Request, Response } from 'express';
 import type { Principal } from '../../auth.js';
-import type { PlatformState, TenantRegistryEntry, TenantDomainRecord, TenantManagementAuditEvent } from '../../core/state/types.js';
+
 import { normalizeTenantDomain, domainChallenge, matchesDomainChallenge, reservedDomain } from '../../tenant-domains.mjs';
 
 /** Single tenant-domain lifecycle, DNS verification and failure-safe SQL updates. */

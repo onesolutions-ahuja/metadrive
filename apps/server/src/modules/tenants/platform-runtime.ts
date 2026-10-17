@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Request, Response, NextFunction } from 'express';
 import type { Principal } from '../../auth.js';
-import type { PlatformState, TenantRegistryEntry, TenantManagementAuditEvent } from '../../core/state/types.js';
+
 import { tenantUsageSnapshot } from '../../tenant-usage.mjs';
 export function createPlatformTenantRuntime(deps: {
  getState: () => PlatformState;

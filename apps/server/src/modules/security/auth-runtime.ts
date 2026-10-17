@@ -7,9 +7,6 @@ import { randomUUID, randomBytes, createCipheriv, createDecipheriv } from 'node:
 import { createRefreshToken, hashToken, type JwtService } from '../../auth.js';
 import { credentialKeyRing } from '../../core/credential-crypto.js';
 import { persistenceMode, persistDurableAuthLogin, type DurableAuthLogin } from '../../postgres-state.js';
-import type { TenantData, LocalUser, SecurityAuditEvent, MfaEncryptedSecret, RefreshSession, PlatformState } from '../../core/state/types.js';
-import type { createPlatformStateStore } from '../../core/state/store.js';
-import type { initializePlatformState } from '../../core/state/initialization.js';
 
 /** Single secure tenant login, refresh, MFA and session state runtime. */
 export function createAuthenticationRuntime(deps: {
