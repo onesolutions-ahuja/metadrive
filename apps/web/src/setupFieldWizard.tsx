@@ -2,6 +2,7 @@
 // Shared metadata-driven field creation wizard. View-only; actions remain in the object engine.
 import type { RelatedLookupFilterMetadata } from './metadata';
 import { Plus } from 'lucide-react';
+import SmartFieldInput from './SmartFieldInput';
 type NewFieldLookupFilterDraft = {
   id: string;
   relatedFieldApiName: string;
@@ -170,7 +171,10 @@ export default function FieldWizardModal({ context }: { context: any }) {
               <label className="form-label" htmlFor="new-field-return-type">Formula Return Type</label>
               <select className="form-control" id="new-field-return-type" value={newFieldReturnType} onChange={(event) => { setNewFieldReturnType(event.target.value); setNewFieldFormulaValidation({ status: 'idle', message: '' }); }}>{['Number', 'Currency', 'Percent', 'Text', 'Date', 'Checkbox'].map((type) => <option key={type}>{type}</option>)}</select>
               <label className="form-label" htmlFor="new-field-formula">Formula</label>
-              <textarea ref={formulaEditorRef} className="form-control" id="new-field-formula" value={newFieldFormula} onChange={(event) => { setNewFieldFormula(event.target.value); setNewFieldFormulaValidation({ status: 'idle', message: '' }); }} placeholder="For example: Amount__c * Probability__c" rows={4} />
+              <SmartFieldInput textareaRef={formulaEditorRef} id="new-field-formula" multiline rows={4} kind="formula"
+                value={newFieldFormula} objects={objects} primaryObjectApiName={object.apiName}
+                onChange={next => { setNewFieldFormula(next); setNewFieldFormulaValidation({ status: 'idle', message: '' }); }}
+                placeholder="For example: @Sale.Amount * @Sale.Probability" />
               <div className="formula-builder-tools">
                 <label className="form-label">Insert Field
                   <select className="form-control" value="" onChange={(event) => { if (event.target.value) insertFormulaText(event.target.value); }}>
