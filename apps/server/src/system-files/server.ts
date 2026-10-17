@@ -55,7 +55,7 @@ export function createSystemServer(db:SqlPersistence) {
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
-  const flows=new FlowRuntime(db);
+  const flows=new FlowRuntime(db,rbac,records);
   const apps=new AppRuntime(db);
 
   // CORS is granted only to origins registered for a SQL tenant.
@@ -192,6 +192,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json(await pages.load(actor.tenant_id,req.params.apiName));
+  }));
+  app.post('/api/flows/:apiName/execute',route(async(req,res)=>{
+    const actor=req.actor!;
+    const inputs=req.body?.inputs??{};
+    if(!inputs||typeof inputs!=='object'||Array.isArray(inputs))throw new Error('Invalid Flow inputs');
+    res.json(await flows.execute(actor.tenant_id,req.params.apiName,actor.user_id,inputs));
   }));
   app.get('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
