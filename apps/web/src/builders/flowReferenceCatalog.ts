@@ -81,7 +81,8 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       const choice:FlowReferenceChoice={reference:`{!${root}.${field.apiName}}`,label:label+' → '+field.label,
         detail:root+'.'+field.apiName+' · '+obj.label,category,dataType:field.dataType,
         ...(field.apiName==='Id'?{targetObject:objectName}
-          : field.relationship?.targetObject?{targetObject:field.relationship.targetObject}:{})};
+          : 'relationship' in field && field.relationship?.targetObject
+            ?{targetObject:field.relationship.targetObject}:{})};
       if(compatibleFlowValue(choice,target))result.push(choice);
     }
   };
