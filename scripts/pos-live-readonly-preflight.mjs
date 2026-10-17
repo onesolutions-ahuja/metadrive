@@ -69,7 +69,7 @@ const inspect={
    resource:typeof step.config?.outputVariable==='string'?step.config.outputVariable:null,
    filterFields:Array.isArray(step.config?.conditions)
      ?step.config.conditions.map(x=>({field:x.field,operator:x.operator,valueKind:
-         typeof x.value==='string'&&/^\\{!?[A-Za-z_$]/.test(x.value)?'reference':'literal'})):[],
+         typeof x.value==='string'&&/^\{!?[A-Za-z_$]/.test(x.value)?'reference':'literal'})):[],
    screenFieldTypes:Array.isArray(step.config?.fields)?step.config.fields.map(x=>({type:x.type,label:x.label})):[],
  })),
  checkoutResources:(checkout?.resources??[]).map(x=>({name:x.name,type:x.type,dataType:x.dataType,isInput:x.availableForInput,isOutput:x.availableForOutput})),
