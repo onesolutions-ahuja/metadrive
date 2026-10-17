@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mentionGroups, mentionSegments, validateMentionPath, resolveMentionValue,
   resolveMentionProperties, loadedMentionContext, loadMentionContext } from '../../apps/web/src/smartFieldMentions';
 import { explicitMentionRecordId } from '../../apps/web/src/useRelationshipMentionContext';
+import { dashboardMentionContext, htmlSafeMentionContext } from '../../apps/web/src/builders/dashboardMentionContext';
 import { evaluateFormula } from '../../apps/server/src/modules/flows/formula-evaluator';
 import { validateFlowFormulaSyntax } from '../../apps/server/src/flow-formula-syntax.mjs';
 import type { ObjectMetadata } from '../../apps/web/src/metadata';
@@ -110,4 +111,21 @@ test('direct same-object formulas still work via the existing evaluator', () => 
     { sourceObjectApiName: 'Sale' }), 30);
   assert.throws(() => evaluateFormula('@Customer.Name', () => 'x',
     { sourceObjectApiName: 'Sale' }), /active object record context/);
+});
+
+
+test('Dashboard relationship fields need one source record and escape dynamic HTML safely', () => {
+  const rows = { Sale: [
+    { Id: 's-1', CustomerId: 'c-1' }, { Id: 's-2', CustomerId: 'c-2' }
+  ], Customer: [
+    { Id: 'c-1', Name: 'Wrong record' }, { Id: 'c-2', Name: '<script>alert(1)</script>' }
+  ] };
+  const props = { heading: '@Sale.Customer.Name' };
+  const unspecified = dashboardMentionContext(objects, 'Sale', rows, props);
+  assert.equal(resolveMentionValue(props.heading, unspecified.records, unspecified.fields), props.heading);
+  const explicit = dashboardMentionContext(objects, 'Sale', rows, props, 's-2');
+  assert.equal(resolveMentionValue(props.heading, explicit.records, explicit.fields), '<script>alert(1)</script>');
+  const escaped = htmlSafeMentionContext(explicit);
+  assert.equal(resolveMentionValue(props.heading, escaped.records, escaped.fields),
+    '&lt;script&gt;alert(1)&lt;/script&gt;');
 });
