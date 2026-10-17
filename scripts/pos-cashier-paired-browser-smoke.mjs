@@ -46,13 +46,13 @@ try{
  await cashier.getByRole('button',{name:'Demo Lager'}).click();
  await cashier.getByRole('button',{name:'Water'}).click();
  assert.match(await cashier.locator('aside[aria-label="Current sale"]').innerText(),/£4\.75/);
- const popupEvent=cashier.waitForEvent('popup',{timeout:5500});
- await cashier.getByRole('button',{name:'Open customer display'}).click();
- const customer=await popupEvent.catch(async error=>{
+ const popupEvent=cashier.waitForEvent('popup',{timeout:5500}).catch(async error=>{
    const alerts=await cashier.getByRole('alert').allInnerTexts();
    throw Error('Display popup failed: '+error.message+'; alerts='+JSON.stringify(alerts)+
      '; pageErrors='+JSON.stringify(errors)+'; pageCount='+context.pages().length);
  });
+ await cashier.getByRole('button',{name:'Open customer display'}).click();
+ const customer=await popupEvent;
  customer.on('pageerror',error=>errors.push(error.message));
  await customer.waitForLoadState('domcontentloaded');
  await customer.getByText('Staff approval required').first().waitFor();
