@@ -11,6 +11,7 @@ export function createSqlStateRefresh(deps: {
   waitForPersistedState: () => Promise<unknown>;
   parsePersistedPlatformState: (raw: unknown) => PlatformState;
   restoreDurableAuthOverlay: (snapshot: PlatformState) => PlatformState;
+  acknowledgeVerifiedSqlRefresh: () => void;
 }) {
   return async (): Promise<boolean> => {
     if (deps.persistenceMode === 'jsonb') return true;
@@ -25,6 +26,7 @@ export function createSqlStateRefresh(deps: {
     const restored = deps.restoreDurableAuthOverlay(deps.parsePersistedPlatformState(committed));
     assertTenantIdentityIsolation(restored);
     deps.store.state = restored;
+    deps.acknowledgeVerifiedSqlRefresh();
     return true;
   };
 }
