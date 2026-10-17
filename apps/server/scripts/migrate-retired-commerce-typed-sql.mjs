@@ -203,6 +203,28 @@ function removeAccessGrants(tenant){
  for(const key of Object.keys(tenant.sharingSettings??{}))if(retired.has(key))
   delete tenant.sharingSettings[key];
 }
+function repairMigratedRecordAuditFields(tenant) {
+ // Previously migrated commerce rows were created without the required
+ // Record timestamps, preventing Zod state hydration and server startup.
+ // Preserve existing historical audit values; fill only missing ones.
+ // Missing timestamps reflect the time of the original migration, not NOW
+ // on every restart. The migration is explicitly one-time and idempotent.
+ const repaired = {};
+ for (const apiName of ['ProductCategory','ProductModifier__c']) {
+   const rows = tenant.records?.[apiName] ?? [];
+   let changed = 0;
+   for (const row of rows) {
+     if (row.CreatedDate && row.LastModifiedDate) continue;
+     const timestamp = row.CreatedDate || row.LastModifiedDate ||
+       process.env.METADRIVE_COMMERCE_AUDIT_TIMESTAMP || '2026-10-17T15:05:00.000Z';
+     if (!row.CreatedDate) row.CreatedDate = timestamp;
+     if (!row.LastModifiedDate) row.LastModifiedDate = timestamp;
+     changed++;
+   }
+   repaired[apiName]=changed;
+ }
+ return repaired;
+}
 function migrateTenant(t){
  if(!t||!Array.isArray(t.objects)||!t.records)throw Error('Tenant metadata unavailable');
  const objects=new Map(t.objects.map(o=>[o.apiName,o]));
@@ -224,6 +246,9 @@ function migrateTenant(t){
     ...(old.SortOrder!==undefined?{SortOrder:old.SortOrder}:{}),
     ...(old.CreatedById?{CreatedById:old.CreatedById}:{})};
   if(categories.some(x=>x.Id===cloned.Id))cloned.Id=randomUUID();
+  const stamped=old.CreatedDate || old.LastModifiedDate || new Date().toISOString();
+  cloned.CreatedDate=stamped;
+  cloned.LastModifiedDate=old.LastModifiedDate || stamped;
   categories.push(cloned);existing.set(label.toLowerCase(),cloned);
   categoryIds.set(old.Id,cloned.Id);
  }
@@ -252,6 +277,8 @@ function migrateTenant(t){
   for(const option of (t.records.ModifierOption__c??[]).filter(x=>x.GroupId===groupId)){
    if(alternatives.some(x=>x.GroupId===a.Id&&x.Name===option.Name))continue;
    alternatives.push({Id:randomUUID(),Name:option.Name,GroupId:a.Id,
+     CreatedDate:option.CreatedDate||option.LastModifiedDate||new Date().toISOString(),
+     LastModifiedDate:option.LastModifiedDate||option.CreatedDate||new Date().toISOString(),
      Product__c:String(a.ProductId??''),Price__c:Number(option.PriceAdjustment??0),
      IsActive:option.IsActive!==false,Available__c:option.IsActive!==false,
      ...(option.SortOrder!==undefined?{SortOrder:option.SortOrder}:{})});
@@ -284,6 +311,7 @@ try{
  tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
    .map(row=>[row.Id,row.GroupId]));
  migrateTenant(tenant);
+ const repairedRecordAudits=repairMigratedRecordAuditFields(tenant);
  const missingSql=await pool.query(
   "SELECT o.tenant_id,o.api_name,o.physical_table,count(p.record_id)::int AS presence "+
   "FROM md_v2_object_registry o LEFT JOIN md_v2_field_presence p ON p.object_id=o.object_id "+
@@ -300,6 +328,7 @@ try{
  const summary={database:db,tenant:target,revision:snapshot.version,
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
+   repairedRecordAudits,
    missingPhysicalObjects:missingSql.rows.map(({tenant_id,api_name,physical_table})=>({tenantId:tenant_id,apiName:api_name,table:physical_table}))};
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
