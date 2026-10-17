@@ -15,6 +15,9 @@ function fixtures(){
   apiName:'COPILOT_POS_Cash_Checkout',status:'Draft',activeVersion:null,
   elements:[
    {id:1,type:'Loop',label:'Order line loop',config:{loopVariable:'CurrentOrderLine',collection:'CurrentOrderLines'}},
+   {id:4,type:'Get Records',label:'Find Current Draft Order',config:{object:'Order__c',
+    conditions:[{field:'BasketSessionKey',operator:'Equals',value:'cashier-cart'},
+      {field:'Status',operator:'Equals',value:'Draft'}]}},
    {id:2,type:'Get Records',label:'Find Product for Order Line',config:{object:'Product',conditions:[]}},
    {id:3,type:'Create Records',label:'Create Sale Item',config:{object:'SaleItem__c',
     fieldValues:[
@@ -38,8 +41,10 @@ test('POS draft repair only extends age metadata and maps loop product into Sale
  assert.equal(writer.config.object,'SaleLine__c');
  assert.equal(writer.config.fieldValues.find(x=>x.field==='ProductId').value,'{!CurrentOrderLine.ProductId}');
  assert.equal(writer.config.fieldValues.find(x=>x.field==='SaleId').value,'{!record7.Id}');
- assert.equal(result.flow.elements[1].config.object,'Product__c');
- assert.deepEqual(result.flow.elements[1].config.conditions,[
+ assert.equal(result.flow.elements[2].config.object,'Product__c');
+ assert.equal(result.flow.elements[1].config.conditions[0].value,'{!SessionKey}');
+ assert(result.flow.resources.some(r=>r.name==='SessionKey'&&r.availableForInput===true));
+ assert.deepEqual(result.flow.elements[2].config.conditions,[
   {field:'Id',operator:'Equals',value:'{!CurrentOrderLine.ProductId}'}]);
  assert.equal(result.flow.resources[0].dataType,'Product__c');
  assert.equal(JSON.stringify({objects,flows}),original,'Planner must not mutate tenant state');
