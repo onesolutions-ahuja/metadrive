@@ -117,7 +117,7 @@ export default function MetadataBoundPageComponent({
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
-  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields);
+  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
   const categoryFilterKey = typeof properties.filterKey === 'string' ? properties.filterKey : 'category';
   const categorySource = selectedFilterRecords[categoryFilterKey];
   const configuredCategoryField = String(properties.categoryFieldApiName??'').trim();
