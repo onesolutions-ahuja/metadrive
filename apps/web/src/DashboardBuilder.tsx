@@ -2206,7 +2206,7 @@ export default function DashboardBuilder({
                     {component.columns.map((column) => <td key={column.apiName}>{formatValue(row[column.apiName])}</td>)}
                   </tr>)}</tbody>
                 </table><p className="dashboard-snapshot-table-count">First {component.rows.length} of {component.totalRows.toLocaleString()} matching records captured.</p></div>}
-                {component.footer && <p className="dashboard-widget-footer">{displayMentionText(component, component.footer)}</p>}
+                {component.footer && <p className="dashboard-widget-footer">{component.footer}</p>}
                 </section>;
               })}
             </div>
@@ -2226,7 +2226,7 @@ export default function DashboardBuilder({
                 {!previewMode && <button className="icon-button" aria-label={`Select ${component.title}`}><GripVertical size={15} /></button>}
               </header>
               {!recordsError && renderComponent(component)}
-              {component.footer && <p className="dashboard-widget-footer">{component.footer}</p>}
+              {component.footer && <p className="dashboard-widget-footer">{displayMentionText(component, component.footer)}</p>}
               {!previewMode && canEditCurrent && <button type="button" className="dashboard-resize-handle"
                 aria-label={`Resize ${component.title}`} title="Drag to resize; use arrow keys to adjust size"
                 onPointerDown={(event) => startDashboardResize(event, component)}
