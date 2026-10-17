@@ -9,6 +9,7 @@ import { PageRuntime } from './page-runtime.js';
 import { FlowRuntime } from './flow-runtime.js';
 import { AppRuntime } from './app-runtime.js';
 import { TenantProvisioning } from './tenant-provisioning.js';
+import {reconcileBootstrapPassword} from './bootstrap-password-sync.js';
 
 type Actor={tenant_id:string;user_id:string};
 type AuthenticatedRequest=Request & {actor?:Actor};
@@ -268,7 +269,7 @@ export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessE
 }
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  try { await db.verifySchema(); await bootstrapFreshTenant(db); }
+  try { await db.verifySchema(); await bootstrapFreshTenant(db); await reconcileBootstrapPassword(db); }
   catch(error) { await db.close(); throw error; }
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');
