@@ -225,6 +225,15 @@ jobs:
                   for(const field of ['CreatedDate','LastModifiedDate'])
                     if(typeof row[field]!=='string'||!Number.isFinite(Date.parse(row[field])))
                       throw Error('Hydration would fail: invalid '+field+' in '+tenantId+'/'+object);
+            for(const tenant of Object.values(verified.state.tenants??{}))
+              for(const object of tenant.objects??[]){
+                const names=new Set();
+                for(const field of object.fields??[]){
+                  const key=field.apiName.toLowerCase();
+                  if(names.has(key))throw Error('Restored SQL metadata has case-colliding fields on '+object.apiName);
+                  names.add(key);
+                }
+              }
             console.log('PASS: commerce migration verified against independently restored typed SQL');
           } finally {await pool.end();}
           NODE
@@ -273,6 +282,15 @@ jobs:
                   for(const field of ['CreatedDate','LastModifiedDate'])
                     if(typeof row[field]!=='string'||!Number.isFinite(Date.parse(row[field])))
                       throw Error('Live runtime record hydration invalid: '+tenantId+'/'+object+'/'+field);
+            for(const tenant of Object.values(state.state.tenants??{}))
+              for(const object of tenant.objects??[]){
+                const names=new Set();
+                for(const field of object.fields??[]){
+                  const key=field.apiName.toLowerCase();
+                  if(names.has(key))throw Error('Live SQL metadata has case-colliding fields on '+object.apiName);
+                  names.add(key);
+                }
+              }
             console.log('PASS: live typed SQL normalized state, record timestamps and registry verified');
           } finally {await pool.end();}
           NODE
