@@ -90,10 +90,13 @@ export function resolveMentionValue(
     const value = record[field];
     return ['string', 'number', 'boolean'].includes(typeof value) ? value : undefined;
   };
+  const allowed = (object: string, field: string) =>
+    Object.prototype.hasOwnProperty.call(fieldsByObject, object) && fieldsByObject[object].includes(field);
   const exact = /^@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)$/.exec(raw);
-  if (exact) return resolve(exact[1], exact[2]) ?? '';
+  if (exact) return allowed(exact[1], exact[2]) ? resolve(exact[1], exact[2]) ?? '' : raw;
   return raw.replace(/(^|[^A-Za-z0-9_@])@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)(?![A-Za-z0-9_.])/g,
-    (_whole, prefix: string, object: string, field: string) => prefix + String(resolve(object, field) ?? ''));
+    (whole, prefix: string, object: string, field: string) =>
+      allowed(object, field) ? prefix + String(resolve(object, field) ?? '') : whole);
 }
 
 export function resolveMentionProperties(
