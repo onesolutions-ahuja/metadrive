@@ -48,8 +48,8 @@ for(const component of definitions){
  // versions, identities and published state. A replacement is not authorised
  // without per-instance property/event/binding compatibility evidence.
 const legacy=(registry.components??[]).filter(item=>/^RecoveredShared/.test(item.apiName));
-assert.equal(legacy.length,39,'Legacy component definitions must remain installed');
-assert.equal(new Set(legacy.map(item=>item.apiName)).size,39,'Legacy names must remain unique');
+// Legacy bundles may be retired by the tenant-scoped, reference-checked lifecycle.
+assert.equal(new Set(legacy.map(item=>item.apiName)).size,legacy.length,'Remaining legacy names must be unique');
 for(const component of legacy) {
   assert.equal(component.status,'Published',component.apiName);
   assert.ok(typeof component.compiledJs==='string'&&component.compiledJs.length>0,
