@@ -41,6 +41,9 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const submitted = new FormData(event.currentTarget);
+    const submittedEmail = String(submitted.get('email') ?? '').trim();
+    const submittedPassword = String(submitted.get('password') ?? '');
     onStart?.();
     const startedAt = performance.now();
     const controller = new AbortController();
@@ -51,7 +54,7 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
       const session = await apiRequest<{ access_token?: string; landing?: LandingBootstrap; mfa_required?: boolean; challenge_token?: string; enrollment_required?: boolean; setup_secret?: string }>('/auth/login?landing=1', {
         method: 'POST',
         signal: controller.signal,
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email: submittedEmail, password: submittedPassword })
       });
       if (session.mfa_required && session.challenge_token) {
         setMfaChallenge({ challenge_token: session.challenge_token, enrollment_required: Boolean(session.enrollment_required), setup_secret: session.setup_secret });
