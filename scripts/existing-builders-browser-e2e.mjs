@@ -301,7 +301,7 @@ try {
   await page.locator('.flow-graph-node').filter({hasText:'Find Contacts'}).click();
   await page.getByRole('button',{name:'Choose reference for Condition value'}).click();
   await page.getByRole('button',{name:/Find Account.*Record ID/}).click();
-  if(await page.getByLabel('Condition value').inputValue()!=='{!FoundAccount.Id}')
+  if(await page.getByRole('textbox',{name:'Condition value',exact:true}).inputValue()!=='{!FoundAccount.Id}')
     throw Error('Previous-record Flow picker did not insert the correct runtime expression');
   await page.getByRole('button',{name:'Save',exact:true}).click();
   let savedReference;
