@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {loadAppSeedCatalog} from '../../apps/server/src/seeders/catalog.mjs';
 import {assertMetadataOnlySeed} from '../../apps/server/src/seeders/metadata-only.mjs';
+import {definedObjects} from '../../apps/server/src/normalized-typed-records.mjs';
 
 const root=resolve(import.meta.dirname,'../..');
 const source=path=>readFileSync(resolve(root,path),'utf8');
@@ -53,4 +54,22 @@ test('the registered seeder only marks an app version after installed metadata i
   assert.match(registry,/if \(!complete\) continue/);
   assert.match(registry,/kind:'app',key:pkg\.appKey/);
   assert.match(registry,/Package version reused with different metadata/);
+});
+
+test('User Object metadata is served by the identity runtime, never an extra physical business table',()=>{
+  const state={tenants:{tenantA:{
+    objects:[{apiName:'User',fields:[]},{apiName:'Product',fields:[]}],
+    records:{User:[],Product:[]}
+  }}};
+  const defined=definedObjects(state);
+  assert.equal(defined.size,1);
+  assert.equal(defined.has(JSON.stringify(['tenantA','User'])),false);
+  assert.equal(defined.has(JSON.stringify(['tenantA','Product'])),true);
+  assert.throws(()=>definedObjects({tenants:{tenantA:{
+    ...state.tenants.tenantA,
+    records:{User:[{Id:'must-not-be-business-record'}],Product:[]}
+  }}}),/User identity records unexpectedly exist/);
+  const code=source('apps/server/src/normalized-typed-records.mjs');
+  assert.match(code,/assertRetiredSystemUserTableIsEmpty/);
+  assert.match(code,/Never auto-drop on startup/);
 });
