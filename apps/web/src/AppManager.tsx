@@ -1,10 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowDown, ArrowUp, Plus, Save, Trash2 } from 'lucide-react';
+import AppSetupGuide from './AppSetupGuide';
+import { suggestAppApiName, type SetupDestination } from './appSetupReadiness';
 import { moveNavigationEntry, reconcileNavigationOrder } from './appNavigation';
 import {PlatformPageSlot} from './PlatformPageSlot';
 import {appManagerFieldDefinitions,validateAppManagerField,type AppManagerFieldKey} from './adminAppFieldMetadata';
 import AdminPropertyControl from './AdminPropertyControl';
-import type { LightningAppMetadata, LightningPageMetadata, ObjectMetadata } from './metadata';
+import type { DashboardMetadata, FlowDefinitionMetadata, LibraryComponentMetadata, LightningAppMetadata, LightningPageMetadata, ObjectMetadata, ReportMetadata } from './metadata';
 
 type AppDraft = LightningAppMetadata;
 
@@ -32,6 +34,12 @@ export default function AppManager({
   apps,
   objects,
   pages,
+  flows = [],
+  libraryComponents = [],
+  reports = [],
+  dashboards = [],
+  onOpenWorkspace,
+  request,
   onSave,
   onDelete,
   embedded = false,
@@ -43,6 +51,12 @@ export default function AppManager({
   apps: LightningAppMetadata[];
   objects: ObjectMetadata[];
   pages: LightningPageMetadata[];
+  flows?: FlowDefinitionMetadata[];
+  libraryComponents?: LibraryComponentMetadata[];
+  reports?: ReportMetadata[];
+  dashboards?: DashboardMetadata[];
+  onOpenWorkspace?: (destination: SetupDestination) => void;
+  request?: <T>(path: string) => Promise<T>;
   onSave: (app: LightningAppMetadata, updating: boolean) => Promise<void>;
   onDelete: (apiName: string) => Promise<void>;
   embedded?: boolean;
@@ -123,6 +137,9 @@ export default function AppManager({
       const apiName = creating
         ? (draft.apiName.trim() || label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, ''))
         : draft.apiName;
+      if (creating && apps.some((app) => app.apiName.toLowerCase() === apiName.toLowerCase())) {
+        throw new Error('This Developer Name is already in use. Choose another name.');
+      }
       for (const field of appManagerFieldDefinitions) {
         const key = field.propertyKey as AppManagerFieldKey;
         const validation = validateAppManagerField(key,key==='apiName'?apiName:key==='label'?label:draft[key]);
@@ -175,6 +192,15 @@ export default function AppManager({
         setNotice('');
       }}><Plus size={14} />New App</button>}
     </div>
+    <AppSetupGuide app={draft} apps={apps} objects={objects} pages={pages}
+      flows={flows} libraryComponents={libraryComponents} reports={reports} dashboards={dashboards}
+      creating={creating} request={request}
+      onOpenWorkspace={(destination) => {
+        const original = apps.find(app => app.apiName === selectedApiName);
+        const unsaved = creating || (original && JSON.stringify(appDraftFromMetadata(original)) !== JSON.stringify(draft));
+        if (unsaved && !window.confirm('You have unsaved app changes. Leave App Manager without saving them?')) return;
+        onOpenWorkspace?.(destination);
+      }}/>
     <section className="surface permission-section app-manager">
       {!creating && <label className="form-label">Lightning App
         <select className="form-control" aria-label="Select app to edit" value={selectedApiName} onChange={(event) => {
@@ -199,15 +225,17 @@ export default function AppManager({
               if (field === 'label') {
                 setDraft((current) => ({
                   ...current,label:next,
-                  apiName:creating && current.apiName === current.label.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '')
-                    ? next.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') : current.apiName
+                  apiName: creating && (!current.apiName || current.apiName === suggestAppApiName(current.label, apps))
+                    ? suggestAppApiName(next, apps) : current.apiName
                 }));
                 setError('');
                 setNotice('');
               } else update(field,next);
             };
-            return <AdminPropertyControl key={field} definition={definition}
-              value={value} disabled={disabled} onChange={change}/>;
+            return <div key={field}>
+              <AdminPropertyControl definition={definition} value={value} disabled={disabled} onChange={change}/>
+              {field === 'apiName' && <small className="permission-help">Lightning App developer names start with a letter and contain only letters, digits and underscores. An AppExchange installation key has separate rules.</small>}
+            </div>;
           })}
         </div></PlatformPageSlot>
         <label className="form-label">Find navigation items
@@ -217,11 +245,12 @@ export default function AppManager({
           <legend>Lightning Pages</legend>
           <p>Active App Pages are available as navigation tabs in this app.</p>
           <div className="app-manager-checks">
-            {pages.filter((page) => page.pageType === 'App Page' && page.status === 'Active'
+            {pages.filter((page) => page.pageType === 'App Page'
               && navigationMatches(page.label, page.apiName)).map((page) => <label key={page.apiName}>
               <input type="checkbox" checked={draft.navigationPageApiNames.includes(page.apiName)}
+                disabled={page.status !== 'Active'}
                 onChange={(event) => toggleNavigation('App Page', page.apiName, event.target.checked)} />
-              {page.label}
+              <span>{page.label} <small className="permission-help">{page.apiName} · {page.pageType} · {page.status}</small></span>
             </label>)}
             {!pages.some((page) => page.pageType === 'App Page' && page.status === 'Active') && <span className="permission-help">Activate an App Page in Lightning App Builder to add it here.</span>}
           </div>
@@ -247,7 +276,7 @@ export default function AppManager({
             {objects.filter((object) => navigationMatches(object.pluralLabel, object.apiName)).map((object) => <label key={object.apiName}>
               <input type="checkbox" checked={draft.navigationItems.includes(object.apiName)}
                 onChange={(event) => toggleNavigation('Object', object.apiName, event.target.checked)} />
-              {object.pluralLabel}
+              <span>{object.pluralLabel} <small className="permission-help">{object.apiName} · {object.kind}{objects.filter(item => item.label === object.label).length > 1 ? ' · Same label used by another object' : ''}</small></span>
             </label>)}
           </div>
         </fieldset></PlatformPageSlot>

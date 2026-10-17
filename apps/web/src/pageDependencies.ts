@@ -78,6 +78,18 @@ export function inspectPageDependencies(page: LightningPageMetadata, scope: Depe
     if (objectName) add('Object', objectName, component.id,
       knownObject(objectName) ? 'Ready' : 'Missing', 'Component data binding');
 
+    // Shared Flow-backed state bindings are ordinary metadata dependencies, too.
+    // The host continues to enforce tenant/session and OneEngine permissions at execution.
+    for (const key of ['stateReadFlowApiName', 'stateWriteFlowApiName'] as const) {
+      if (properties.stateSyncEnabled !== true) continue;
+      const flowName = identifier(properties[key]);
+      if (!flowName) continue;
+      const flow = scope.flows.find(item => item.apiName === flowName);
+      add('Flow', flowName, component.id,
+        !flow ? 'Missing' : flow.status === 'Active' && flow.flowType === 'Autolaunched Flow'
+          ? 'Ready' : 'Inactive', key === 'stateReadFlowApiName' ? 'Shared state read' : 'Shared state write');
+    }
+
     const rawEvents = properties.actionFlows;
     if (!rawEvents || typeof rawEvents !== 'object' || Array.isArray(rawEvents)) continue;
     for (const [event, raw] of Object.entries(rawEvents)) {
