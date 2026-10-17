@@ -6,7 +6,7 @@
   border-radius:var(--md-card-radius,calc(var(--one-radius,16px)*.75));
   background:var(--md-card-background,var(--one-bg,#fff));
   border-color:var(--md-card-border,var(--one-border,#d0d5dd));
-  border-width:var(--md-card-border-width,1px);
+  border-width:var(--md-card-border-width,var(--md-border-width,1px));
   box-shadow:var(--md-card-shadow,none);
 }
 .registered-component.md-component-appearance .one-item--interactive:hover {
@@ -27,4 +27,27 @@
 @media(min-width:1025px){.registered-component.md-hide-desktop{display:none!important}}
 @media(min-width:641px) and (max-width:1024px){
   .registered-component.md-hide-tablet{display:none!important}
+}
+
+/* Product cards retain generic metadata bindings; the same image and card
+   tokens also apply to other One-Components that render .one-item. */
+.registered-component .md-product-card .md-product-image {
+  display:block;
+  width:100%;
+  aspect-ratio:var(--md-image-ratio,1);
+  height:var(--md-image-height,auto);
+  object-fit:var(--md-image-fit,contain);
+}
+.registered-component .md-product-card .md-product-name{display:block}
+.registered-component .md-product-card .md-product-price{display:inline-block}
+.registered-component .md-product-card .md-card-add-icon{
+  display:inline-grid;place-items:center;vertical-align:middle;
+  min-width:1.5rem;min-height:1.5rem;border-radius:50%;
+  background:var(--one-accent,#3176cc);color:#fff;
+}
+@media(max-width:1024px){
+ .registered-component .md-product-grid{grid-template-columns:repeat(var(--one-grid-tablet,2),minmax(0,1fr))}
+}
+@media(max-width:640px){
+ .registered-component .md-product-grid{grid-template-columns:repeat(var(--one-grid-mobile,1),minmax(0,1fr))}
 }
