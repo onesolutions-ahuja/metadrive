@@ -25,11 +25,30 @@ export const duplicateBackupNames=Object.freeze([
   'md_wa_router_backup_20261011',
   'metadrive_connector_backup_20261011'
 ]);
+// These are old source-database projections. In typed SQL-only mode, the
+// normalized graph and physical md_obj_* tables are canonical. Keep
+// metadrive_rel_tenants: md_v2 Object/Field and app-seed FKs still reference it.
+// User and system User physical de-duplication use a separate guarded switch.
+export const legacyStagingNames=Object.freeze([
+  'metadrive_rel_records',
+  'metadrive_rel_record_buckets',
+  'metadrive_rel_tenant_collection_items',
+  'metadrive_rel_tenant_collections',
+  'metadrive_rel_library_components',
+  'metadrive_rel_migrations',
+  'metadrive_rel_objects',
+  'metadrive_rel_refresh_sessions',
+  'metadrive_rel_revoked_tokens',
+  'metadrive_rel_runtime',
+  'metadrive_rel_tenant_settings'
+]);
+
 const target=process.env.METADRIVE_SQL_TARGET_DB;
 const input=process.env.DATABASE_URL;
 const applying=process.argv.includes('--apply');
 const removeSystemUser=process.argv.includes('--user-duplicates');
-if(process.argv.some(arg=>!['--apply','--user-duplicates'].includes(arg)))
+const retireLegacyStaging=process.argv.includes('--retire-legacy-staging');
+if(process.argv.some(arg=>!['--apply','--user-duplicates','--retire-legacy-staging'].includes(arg)))
   throw Error('Unknown argument');
 if(!input||target!=='metadrive_sql_20261012')
   throw Error('Expected explicit SQL-only database and DATABASE_URL');
@@ -123,6 +142,36 @@ async function inspectSystemUserDuplicates(client,snapshot){
     emptyPhysicalUser:user.physical_table,registryId:user.object_id,
     protectedReferences:dependencies};
 }
+
+async function inspectLegacyStaging(client){
+  const databaseRows=(await client.query(
+    "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename=ANY($1::text[])",
+    [legacyStagingNames])).rows;
+  if(databaseRows.length!==legacyStagingNames.length)
+    throw Error('Legacy relational staging schema is not complete; cannot retire');
+  const blocked=await client.query(
+    "SELECT c.conname,c.conrelid::regclass::text AS from_table,c.confrelid::regclass::text AS to_table "+
+    "FROM pg_constraint c WHERE c.contype='f' AND c.confrelid=ANY($1::regclass[]) "+
+    "AND NOT (c.conrelid=ANY($1::regclass[]))",
+    [legacyStagingNames.map(n=>'public.'+n)]);
+  if(blocked.rowCount)throw Error('Active SQL schema still has foreign keys to legacy staging');
+  const dependencyRows=[];
+  for(const name of legacyStagingNames){
+    const sql=(await client.query(dependenciesSql,['public.'+name])).rows[0];
+    if(sql.triggers||sql.rules)throw Error('Custom SQL dependency blocks legacy retirement');
+    dependencyRows.push({table:name,inboundForeignKeys:sql.inbound_fks});
+  }
+  // A live seed package ledger and typed object registry must remain anchored
+  // to the separate metadrive_rel_tenants table (which is NOT in this allowlist).
+  const anchors=await client.query(
+    "SELECT (SELECT count(*) FROM metadrive_rel_tenants) AS tenants,"+
+    "(SELECT count(*) FROM md_v2_object_registry) AS objects,"+
+    "(SELECT count(*) FROM md_seed_package_versions) AS seeded");
+  if(Number(anchors.rows[0]?.tenants)<1||Number(anchors.rows[0]?.objects)<1)
+    throw Error('Missing live tenant/object schema; refusing staging retirement');
+  return {tables:legacyStagingNames.length,tenantAnchorKept:true,
+    existingSeedLedgerRows:Number(anchors.rows[0].seeded),dependencies:dependencyRows};
+}
 async function requireCurrentDeployedUserRuntime(){
   const expected=process.env.METADRIVE_CLEANUP_EXPECTED_DEPLOY_SHA;
   if(!/^[a-f0-9]{40}$/.test(expected??''))
@@ -150,19 +199,21 @@ try {
     verifyProof(JSON.parse(readFileSync(proofPath,'utf8')),snapshot);
   }
   const checks=[];
-  if(!removeSystemUser)
+  if(!removeSystemUser&&!retireLegacyStaging)
     for(const name of duplicateBackupNames)checks.push(await check(name,active));
   const systemUser=removeSystemUser?await inspectSystemUserDuplicates(active,snapshot):null;
+  const oldStaging=retireLegacyStaging?await inspectLegacyStaging(active):null;
   const report={mode:applying?'apply':'dry-run',database:target,revision:snapshot.version,
-    ...(systemUser?{systemUser}:{
+    ...(oldStaging?{oldStaging}:{}),
+    ...(systemUser?{systemUser}:(retireLegacyStaging?{}:{
       candidates:checks.map(item=>({
         table:item.name,rows:item.targetCopy.rows,identicalCopyInDefaultdb:item.verified,
         inboundDependencies:!item.noInboundDependencies
       }))
-    })};
+    }))};
   if(checks.some(item=>!item.verified))
     throw Error('Duplicate cleanup preflight failed: '+JSON.stringify(report));
-  if(applying&&removeSystemUser)await requireCurrentDeployedUserRuntime();
+  if(applying&&(removeSystemUser||retireLegacyStaging))await requireCurrentDeployedUserRuntime();
   if(!applying){
     process.stdout.write(JSON.stringify(report,null,2)+'\n');
   }else{
@@ -181,7 +232,17 @@ try {
           [systemUser.registryId]);
         await client.query('DROP TABLE public.'+systemUser.emptyPhysicalUser+' RESTRICT');
         await client.query('DROP TABLE public.metadrive_rel_users RESTRICT');
-      }else{
+      }
+      if(retireLegacyStaging){
+        for(const name of legacyStagingNames)
+          await client.query('LOCK TABLE public.'+name+' IN ACCESS EXCLUSIVE MODE NOWAIT');
+        const inside=await inspectLegacyStaging(client);
+        if(JSON.stringify(inside)!==JSON.stringify(oldStaging))
+          throw Error('Legacy staging dependencies changed while locking');
+        for(const name of legacyStagingNames)
+          await client.query('DROP TABLE public.'+name+' RESTRICT');
+      }
+      if(!removeSystemUser&&!retireLegacyStaging){
         for(const name of duplicateBackupNames){
           await client.query('LOCK TABLE public.'+name+' IN ACCESS EXCLUSIVE MODE NOWAIT');
           const inside=await check(name,client);
@@ -192,7 +253,11 @@ try {
       }
       await client.query('COMMIT');
       process.stdout.write(JSON.stringify({...report,result:'committed',
-        removed:removeSystemUser?[systemUser.emptyPhysicalUser,'metadrive_rel_users']:duplicateBackupNames})+'\n');
+        removed:[
+          ...(removeSystemUser?[systemUser.emptyPhysicalUser,'metadrive_rel_users']:[]),
+          ...(retireLegacyStaging?legacyStagingNames:[]),
+          ...(!removeSystemUser&&!retireLegacyStaging?duplicateBackupNames:[])
+        ]})+'\n');
     }catch(error){
       await client.query('ROLLBACK');
       throw error;
