@@ -1,5 +1,6 @@
 import type { FlowMetadata, ObjectMetadata, StoredNamedCredential, IntegrationConnection, ConnectorDefinition, EmailAlert, ApprovalProcess, FlowPlatformEvent, FlowValidationDependencies } from '../../index.js';
 import { validateScreenElement } from './screen-validation.js';
+import { flowReferenceErrors } from './reference-validation.js';
 
 /** Metadata-only validation; never executes a Flow or performs business-data writes. */
 export function createFlowValidator(deps: FlowValidationDependencies) {
@@ -19,6 +20,7 @@ function validateFlow(
 ): { valid: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
+  errors.push(...flowReferenceErrors(flow, objects));
   const starts = flow.elements.filter((element) => element.type === 'Start');
   if (starts.length !== 1) errors.push('A flow must have exactly one Start element.');
   else if (flow.elements[0]?.id !== starts[0].id) errors.push('Move the Start element to the beginning of the flow.');
