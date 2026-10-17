@@ -27,6 +27,10 @@ test('@ search lists the main page object first and filters app objects and fiel
   assert.equal(groups[0].primary, true);
   assert.deepEqual(mentionGroups(objects, 'Sale', ['Sale', 'Customer'], 'email')
     .map(group => group.objectApiName), ['Customer']);
+  assert.deepEqual(mentionGroups(objects, 'Sale', ['Sale', 'Customer'], 'sale.am')
+    .flatMap(group => group.fields.map(field => field.fieldApiName)), ['Amount']);
+  assert.deepEqual(mentionGroups(objects, 'Sale', ['Sale', 'Customer'], 'Sale.')
+    .map(group => group.objectApiName), ['Sale']);
   assert.deepEqual(mentionGroups(objects, 'Sale', ['Sale', 'Customer'], '', 'number')
     .flatMap(group => group.fields.map(field => field.fieldApiName)), ['Amount', 'Qty']);
   assert.deepEqual(mentionGroups(objects, 'Sale', ['Sale', 'Customer', 'Product'], '', 'image')
