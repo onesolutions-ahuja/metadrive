@@ -6,7 +6,7 @@
 .md-checklist-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .md-checklist-chip button,.md-checklist-clear{border:0;background:transparent;cursor:pointer;color:inherit;display:grid;place-items:center;padding:2px;border-radius:4px}
 .md-checklist-chip button:hover,.md-checklist-clear:hover{background:#d1def3}
-.md-checklist-trigger{flex:1;display:flex;align-items:center;justify-content:flex-end;gap:8px;background:transparent;border:0;text-align:left;color:#6a7480;cursor:pointer;min-height:29px;min-width:54px;padding:0 5px}
+.md-checklist-trigger{min-height:var(--md-control-height,40px);flex:1;display:flex;align-items:center;justify-content:flex-end;gap:8px;background:transparent;border:0;text-align:left;color:#6a7480;cursor:pointer;min-width:54px;padding:0 5px}
 .md-checklist-trigger span{flex:1}.md-checklist-trigger svg{flex:none;transition:transform .15s ease}.md-checklist-chevron-open{transform:rotate(180deg)}
 .md-checklist-clear{flex:none;color:#66778c}
 .md-checklist-popover{position:absolute;top:calc(100% + 5px);left:0;right:0;z-index:35;border:1px solid #cdd5df;background:var(--surface,#fff);box-shadow:0 12px 24px #1c293c1f;border-radius:8px;overflow:hidden}
@@ -24,4 +24,4 @@
 .md-checklist-footer button{display:flex;gap:5px;align-items:center;border:0;color:var(--md-primary,#1d4ed8);background:transparent;font-size:12px;cursor:pointer}
 @media(max-width:550px){.md-checklist-option-meta{max-width:32%}.md-checklist-popover{z-index:50}}
 
-@media(pointer:coarse){.md-checklist-control,.md-checklist-option{min-height:var(--md-control-touch,44px)}}
+@media(pointer:coarse){.md-checklist-control,.md-checklist-trigger,.md-checklist-option{min-height:var(--md-control-touch,44px)}}
