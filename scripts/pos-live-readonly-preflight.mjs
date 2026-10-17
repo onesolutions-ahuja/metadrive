@@ -4,6 +4,7 @@
  * No metadata or business records are written.
  */
 import { assessCheckoutReadiness } from './pos-checkout-readiness.mjs';
+import { planPosDraftRepair } from './pos-checkout-draft-repair.mjs';
 
 const base=(process.env.METADRIVE_API_BASE||'https://metadrive-production.up.railway.app').replace(/\/$/,'');
 const email=process.env.METADRIVE_TEST_EMAIL,password=process.env.METADRIVE_TEST_PASSWORD;
@@ -26,6 +27,12 @@ const [o,f,p]=await Promise.all([
  request('/metadata/pages',token)
 ]);
 const result=assessCheckoutReadiness({objects:o.objects??[],flows:f.flows??[],pages:p.pages??[]});
+let repairPlan;
+try{
+ const plan=planPosDraftRepair(o.objects??[],f.flows??[]);
+ repairPlan={safeDraftRepairPossible:true,missingAgeFields:plan.fieldsToAdd,
+  requiresDraftFlowUpdate:Boolean(plan.flow)};
+}catch(error){repairPlan={safeDraftRepairPossible:false,blocker:String(error?.message??error)};}
 async function aggregateRecords(objectName){
  try{
   let rows=[],total=0;
@@ -84,7 +91,7 @@ const inspect={
 console.log(JSON.stringify({status:empty?'TEST_IDENTITY_IS_NOT_CHECKOUT_TENANT':'READ_ONLY_CHECKOUT_PREFLIGHT',
   readOnly:true,source:'authenticated tenant-scoped API',checks:result.checks,issues:result.issues,
   checkoutFlow:result.checkoutFlow,tillPage:result.tillPage,customerPage:result.customerPage,
-  runtimeAssertionsPending:result.runtimeAssertions,inspection:inspect,recordAggregates},null,2));
+  runtimeAssertionsPending:result.runtimeAssertions,repairPlan,inspection:inspect,recordAggregates},null,2));
 // Distinguish an absent production test tenant from a complete POS.
 if(empty)process.exitCode=2;
 else if(result.issues.length)process.exitCode=1;
