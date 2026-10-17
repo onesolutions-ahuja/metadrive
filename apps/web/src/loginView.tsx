@@ -22,6 +22,7 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
   const recoveryQuery = new URLSearchParams(window.location.search);
   const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [resetToken, setResetToken] = useState(recoveryQuery.get('resetToken') ?? '');
   const [resetRequested, setResetRequested] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -177,7 +178,12 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
       <label className="form-label" htmlFor="login-email">Email</label>
       <input className="form-control" id="login-email" name="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
       <label className="form-label" htmlFor="login-password">Password</label>
-      <input className="form-control" id="login-password" name="password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+      <input className="form-control" id="login-password" name="password" type={passwordVisible ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+      <button className="text-action" type="button" aria-controls="login-password" onClick={(event) => {
+        const field = event.currentTarget.form?.elements.namedItem('password');
+        if (field instanceof HTMLInputElement) setPassword(field.value);
+        setPasswordVisible(value => !value);
+      }}>{passwordVisible ? 'Hide password' : 'Show password'}</button>
       <button className="text-action auth-forgot" type="button" onClick={() => { setMessage(''); setShowPasswordReset(true); }}>Forgot password?</button>
       <button className="btn btn-brand auth-submit" disabled={submitting}>{submitting ? 'Signing in…' : 'Sign in'}</button>
     </form>
