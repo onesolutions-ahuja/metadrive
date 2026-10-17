@@ -61,7 +61,7 @@ test('POS draft repair only extends age metadata and maps loop product into Sale
  assert(result.flow.connectors.some(x=>x.from===5&&x.to===gate.id));
  assert(result.flow.connectors.some(x=>x.from===gate.id&&x.to===7&&x.label==='Default'));
  assert(!result.flow.connectors.some(x=>x.from===5&&x.to===7),'Sale must never bypass cash validation');
- assert.deepEqual(result.page.components[0].properties.actionFlows.checkout.inputs,{SessionKey:'$event.sessionKey'});
+ assert.deepEqual(result.page.components[0].properties.actionFlows.checkout.inputs,{SessionKey:'$event.sessionKey',CheckoutRequestKey:'$event.requestId'});
  assert.equal(JSON.stringify({objects,flows,pages}),original,'Planner must not mutate tenant state');
  const second=planPosDraftRepair([...objects.filter(x=>x.apiName!=='Product__c'),result.product],
   [result.flow],[result.page]);
