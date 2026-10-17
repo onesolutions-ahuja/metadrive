@@ -76,7 +76,7 @@ function ConversationInbox({props}) {
   [contact.name,contact.phone].join(' ').toLowerCase().includes(contactSearch.trim().toLowerCase())).slice(0,30);
  const title=item=>item.contactName||item.phoneNumber||item.label||item.name||'Conversation';
  return <section className={'one-conversation-inbox'+((selected||newConversation)?' one-conversation-inbox--open':'')}
-  style={{'--one-accent':props.accentColor||'#168657'}}>
+  style={{'--one-accent':props.accentColor||'var(--md-primary, #1d4ed8)'}}>
   <aside className="one-surface one-conversation-list">
    <header>
     <div className="one-row" style={{justifyContent:'space-between'}}>
