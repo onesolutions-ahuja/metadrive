@@ -69,7 +69,7 @@ export function validatePlatformEditorBinding(
  * central workspace implementation; aliases are not separate modules.
  */
 const workspaceAliases:Readonly<Record<string,string>>={
- 'Currencies':'company-settings','Named Devices':'named-credentials',
+ 'Currencies':'company-settings',
  'Users':'rbac','Roles':'rbac','Public Groups':'rbac','Profiles':'rbac',
  'Permission Sets':'rbac','Permission Set Groups':'rbac',
  'Sharing Settings':'rbac','Sharing Rules':'rbac',
