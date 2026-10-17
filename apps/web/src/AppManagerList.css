@@ -1,10 +1,10 @@
 .app-manager-list{border:1px solid var(--md-border,#e0e5eb);border-radius:10px;background:var(--surface,#fff);overflow:hidden;padding:0;max-width:none;width:100%;box-sizing:border-box}
-.app-manager-list-head{padding:18px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-.app-manager-list-head h2{font-size:17px;font-weight:600;margin:0 0 4px}
+.app-manager-list-head{padding:var(--md-space-4,16px);display:flex;align-items:center;justify-content:space-between;gap:16px}
+.app-manager-list-head h2{font-size:var(--md-fs-lg,16px);font-weight:600;margin:0 0 4px}
 .app-manager-list-head h2 span{color:#687789;background:#eef1f5;border-radius:12px;padding:3px 8px;font-size:12px;font-weight:500}
 .app-manager-list-head p{font-size:12px;color:#687789;margin:0}
 .app-manager-list-search{display:flex;align-items:center;gap:9px;min-height:var(--md-control-height,40px);min-width:180px;width:min(100%,300px);padding:0 11px;border:1px solid #d6dce5;border-radius:7px;color:#617189}
-.app-manager-list-search:focus-within{outline:2px solid #1672dc;outline-offset:1px}
+.app-manager-list-search:focus-within{outline:2px solid var(--md-primary,#1d4ed8);outline-offset:1px}
 .app-manager-list-search input{width:100%;border:0;background:transparent;outline:none;min-width:0;font-size:13px;color:inherit}
 .app-manager-list-scroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--md-scroll-thumb,#abb8c8) transparent;overscroll-behavior:contain}
 .app-manager-list-table{width:100%;border-collapse:collapse;text-align:left;min-width:690px;font-size:13px}
@@ -18,6 +18,8 @@
 .app-manager-list-name small{display:block;font-size:11px;color:#6d7888;line-height:1.45;margin-top:3px}
 .app-manager-list-color{width:5px;min-height:31px;border-radius:4px;flex:none}
 .app-manager-list-actions{display:flex;gap:8px;align-items:center}
-.app-manager-list-actions .btn{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.app-manager-list-actions .btn{min-height:var(--md-control-height,40px);display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
 .app-manager-list-empty{text-align:center;padding:36px 16px;color:#64748b;font-size:13px}
 @media(max-width:670px){.app-manager-list-head{align-items:stretch;flex-direction:column}.app-manager-list-search{width:100%}}
+
+@media(pointer:coarse){.app-manager-list-actions .btn{min-height:var(--md-control-touch,44px)}}
