@@ -162,3 +162,31 @@ test('text field length is returned in metadata and enforced when writing record
   const rbac={require:async()=>{}} as unknown as RbacEngine;
   await assert.rejects(()=>new RecordEngine(db,rbac).create('tenant','user','Item__c',{Name:'Too long'}),/Invalid text length/);
 });
+
+
+test('SQL cutover inventory preserves inactive objects and flags unresolved lookups',async()=>{
+  const {inspectSqlCutover}=await import('./cutover-preflight.js');
+  const tables=['md_v2_object_registry','md_v2_field_registry','metadrive_rel_tenants'];
+  const objects=[
+    {object_id:'a',tenant_id:'dev',api_name:'Sale__c',object_label:'Sale',physical_table:'md_obj_'+'a'.repeat(32),active:true},
+    {object_id:'b',tenant_id:'dev',api_name:'DeletedProduct__c',object_label:'Deleted',physical_table:'md_obj_'+'b'.repeat(32),active:false}
+  ];
+  tables.push(objects[0].physical_table);
+  const fields=[
+    {field_id:'f',object_id:'a',api_name:'CustomerId',field_label:'Customer',source_data_type:'Lookup(User)',physical_column:'md_fld_'+'a'.repeat(32),active:true},
+    {field_id:'g',object_id:'b',api_name:'InactiveField',field_label:'Old',source_data_type:'Text',physical_column:'md_fld_'+'b'.repeat(32),active:true}
+  ];
+  const db={query:async(sql:string)=>{
+    if(sql.includes('information_schema.tables'))return {rows:tables.map(table_name=>({table_name}))};
+    if(sql.includes('md_v2_object_registry'))return {rows:objects};
+    if(sql.includes('md_v2_field_registry'))return {rows:fields};
+    throw Error('Unexpected SQL');
+  }} as unknown as SqlPersistence;
+  const report=await inspectSqlCutover(db);
+  assert.equal(report.source.activeObjects,1);
+  assert.equal(report.source.retiredObjects,1);
+  assert.equal(report.source.activeFields,1);
+  assert.equal(report.source.unresolvedLookups,1);
+  assert.equal(report.safeToMigrate,false);
+  assert.ok(report.blockers.some(x=>x.code==='LOOKUP_TARGET_MISSING'&&x.target==='User'));
+});
