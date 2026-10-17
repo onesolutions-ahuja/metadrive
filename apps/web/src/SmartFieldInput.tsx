@@ -47,7 +47,10 @@ export default function SmartFieldInput({
   const options = useMemo(() =>
     mentionGroups(objects, primaryObjectApiName, appObjectApiNames, query, kind),
     [objects, primaryObjectApiName, appObjectApiNames, query, kind]);
-  const segments = mentionSegments(value, objects, kind);
+  const visibleObjects = appObjectApiNames.length
+    ? objects.filter(object => object.apiName === primaryObjectApiName || appObjectApiNames.includes(object.apiName))
+    : objects;
+  const segments = mentionSegments(value, visibleObjects, kind);
 
   const putCursor = (next: number) => {
     cursorRef.current = next;
