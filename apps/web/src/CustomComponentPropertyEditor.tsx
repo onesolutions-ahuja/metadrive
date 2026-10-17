@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import SmartFieldInput from './SmartFieldInput';
+import type { ObjectMetadata } from './metadata';
 import { sortComponentSettings, validateComponentSetting, type ComponentSettingDefinition } from './componentSettingDefinitions';
 import {
   addComponentProperty,
@@ -13,13 +15,17 @@ export default function CustomComponentPropertyEditor({
   onChange,
   disabled = false,
   addOnly = false,
-  definitions
+  definitions,
+  objects = [], primaryObjectApiName = '', appObjectApiNames = []
 }: {
   properties: ComponentPropertyValues;
   onChange: (next: ComponentPropertyValues) => void;
   disabled?: boolean;
   addOnly?: boolean;
   definitions?: readonly ComponentSettingDefinition[];
+  objects?: readonly ObjectMetadata[];
+  primaryObjectApiName?: string;
+  appObjectApiNames?: readonly string[];
 }) {
   const [propertyName, setPropertyName] = useState('');
   const [propertyType, setPropertyType] = useState<ComponentPropertyKind>('text');
@@ -69,11 +75,16 @@ export default function CustomComponentPropertyEditor({
                     onChange={(event) => event.target.value === '' ? remove(name) : update(name, Number(event.target.value))} />
                 </label>
               : typeof value === 'string'
-                ? <label className="form-label" htmlFor={id}>{label}
-                    <input id={id} className="form-control" disabled={disabled}
-                      type={definition?.kind === 'COLOR' ? 'text' : (/color/i.test(name) && /^#[0-9a-f]{6}$/i.test(value) ? 'color' : 'text')}
-                      value={value} onChange={(event) => update(name, event.target.value)} />
-                  </label>
+                ? <div className="form-label"><label htmlFor={id}>{label}</label>
+                    {definition?.kind === 'COLOR' || /color/i.test(name)
+                      ? <input id={id} className="form-control" disabled={disabled}
+                          type={/^#[0-9a-f]{6}$/i.test(value) ? 'color' : 'text'}
+                          value={value} onChange={event => update(name, event.target.value)} />
+                      : <SmartFieldInput id={id} disabled={disabled} value={value} onChange={next => update(name, next)}
+                          objects={objects} primaryObjectApiName={primaryObjectApiName} appObjectApiNames={appObjectApiNames}
+                          kind={/image|src/i.test(name) ? 'image' : /url|link/i.test(name) ? 'url' : /formula|expression/i.test(name) ? 'formula' : 'text'}
+                          multiline={/text|body|description|content|formula|expression/i.test(name) && value.length > 90} />}
+                  </div>
                 : <div className="properties-help">{label} contains structured data; its existing value is preserved.</div>}
           {definition && !validateComponentSetting(definition,value) && <span className="auth-error">Invalid {label.toLowerCase()}</span>}
           <button className="btn btn-small" type="button" disabled={disabled || Boolean(definition?.required)}
