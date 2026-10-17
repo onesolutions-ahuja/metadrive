@@ -10,6 +10,8 @@ on:
       - 'apps/server/src/normalized-typed-records.mjs'
       - 'apps/server/src/postgres-state.ts'
       - 'apps/server/scripts/prove-typed-records-on-restore.mjs'
+      - 'apps/server/scripts/migrate-retired-commerce-typed-sql.mjs'
+      - 'apps/server/src/retired-object-names.mjs'
       - 'apps/server/src/normalized-state-tree.mjs'
       - 'apps/server/src/normalized-object-schema.mjs'
       - 'apps/server/sql/normalized-state-v3.sql'
@@ -99,6 +101,26 @@ jobs:
             -v "${RUNNER_TEMP}:/work" --entrypoint pg_restore postgres:18 \
             -h 127.0.0.1 -U postgres -d metadrive_restored \
             --no-owner --no-acl --exit-on-error /work/metadrive-private.dump
+          # Repair ONLY known orphaned Object metadata on the isolated restored
+          # backup, before strict typed-SQL verification. Never write to Aiven.
+          TENANT_ID=$(DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" node --input-type=module <<'NODE'
+          import pg from 'pg';
+          const pool = new pg.Pool({connectionString:process.env.DATABASE_URL,ssl:false});
+          try {
+            const r = await pool.query(
+              "SELECT DISTINCT tenant_id FROM md_v2_object_registry WHERE active=true "+
+              "AND api_name IN ('Campaign','Global_Settings__c','KioskSettings__c','OrderLineModifier__c','Tenant__c','TillSession__c') "+
+              "AND to_regclass('public.'||physical_table) IS NULL");
+            if(r.rows.length!==1) throw Error('Expected precisely one tenant with retired missing SQL tables');
+            console.log(r.rows[0].tenant_id);
+          } finally { await pool.end(); }
+          NODE
+          )
+          DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" \
+            PGSSLMODE=disable METADRIVE_SQL_TARGET_DB=metadrive_sql_20261012 \
+            METADRIVE_EXPECTED_TENANT_ID="$TENANT_ID" \
+            METADRIVE_ISOLATED_SQL_RESTORE=true \
+            node apps/server/scripts/migrate-retired-commerce-typed-sql.mjs --apply
           DATABASE_URL="postgres://postgres:postgres@127.0.0.1:5432/metadrive_restored" \
             PGSSLMODE=disable METADRIVE_DIGEST_FILE="${RUNNER_TEMP}/restored.sha" \
             node apps/server/scripts/verify-aiven-state.mjs
