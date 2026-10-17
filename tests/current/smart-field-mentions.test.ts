@@ -55,10 +55,11 @@ test('references resolve only fields in permission-filtered context and preserve
   const permitted = { Sale: ['Amount', 'Qty'], Customer: [] as string[] };
   assert.equal(resolveMentionValue('@Sale.Amount', data, permitted), 18);
   assert.equal(resolveMentionValue('Total @Sale.Amount', data, permitted), 'Total 18');
-  assert.equal(resolveMentionValue('Hello @Customer.Name', data, permitted), 'Hello ');
+  assert.equal(resolveMentionValue('Hello @Customer.Name', data, permitted), 'Hello @Customer.Name');
+  assert.equal(resolveMentionValue('Hello @Sale.Amoun', data, permitted), 'Hello @Sale.Amoun');
   assert.equal(resolveMentionValue('support@example.com', data, permitted), 'support@example.com');
   assert.deepEqual(resolveMentionProperties({ amount: '@Sale.Amount', greeting: 'Hello @Customer.Name' },
-    data, permitted), { amount: 18, greeting: 'Hello ' });
+    data, permitted), { amount: 18, greeting: 'Hello @Customer.Name' });
 });
 
 test('existing formula grammar evaluates same-object @ references; unrelated objects fail closed', () => {
