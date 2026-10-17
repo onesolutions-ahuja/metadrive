@@ -17,7 +17,7 @@ window.addEventListener('vite:preloadError', (event: Event) => {
 // out of the initial public marketing bundle.
 const Workspace = lazy(async () => {
   await Promise.all([
-    import('./styles.css'), import('./styles-part2.css'), import('./styles-audit.css')
+    import('./styles.css'), import('./styles-part2.css'), import('./styles-audit.css'), import('./design-system.css')
   ]);
   return import('./App');
 });
