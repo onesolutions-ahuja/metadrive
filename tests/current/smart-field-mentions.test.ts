@@ -82,6 +82,9 @@ test('resolves by lookup ID, never a random first Customer; missing records and 
     { ...data, Customer: [{ Id: 'c-2' }] }, props);
   assert.equal(resolveMentionValue(props.greeting, blocked.records, blocked.fields), props.greeting);
   assert.equal(resolveMentionValue(props.greeting, {}, {}), props.greeting);
+  assert.equal(resolveMentionValue(props.greeting, {}, {}, objects, 'Sale'), 'Hello ');
+  assert.equal(resolveMentionValue('Hello @Sale.Customer.Nam', {}, {}, objects, 'Sale'),
+    'Hello @Sale.Customer.Nam');
   assert.equal(resolveMentionValue('support@example.com', context.records, context.fields), 'support@example.com');
 });
 
@@ -125,6 +128,7 @@ test('Dashboard relationship fields need one source record and escape dynamic HT
   const props = { heading: '@Sale.Customer.Name' };
   const unspecified = dashboardMentionContext(objects, 'Sale', rows, props);
   assert.equal(resolveMentionValue(props.heading, unspecified.records, unspecified.fields), props.heading);
+  assert.equal(resolveMentionValue(props.heading, unspecified.records, unspecified.fields, objects, 'Sale'), '');
   const explicit = dashboardMentionContext(objects, 'Sale', rows, props, 's-2');
   assert.equal(resolveMentionValue(props.heading, explicit.records, explicit.fields), '<script>alert(1)</script>');
   const escaped = htmlSafeMentionContext(explicit);
