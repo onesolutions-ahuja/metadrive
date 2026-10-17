@@ -58,7 +58,7 @@ export function assessApplicationSetup({
   ];
   add({
     id: 'identity', title: 'Application identity', level: identityFindings.length ? 'action' : 'configured',
-    detail: identityFindings.length ? 'Finish the application name before saving.' : 'Application name follows the Lightning App naming rules.',
+    detail: identityFindings.length ? 'Finish the application name before saving.' : 'Application name follows the app developer-name rules.',
     findings: identityFindings
   });
 
