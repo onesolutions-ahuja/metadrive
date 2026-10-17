@@ -27,10 +27,41 @@ const [o,f,p]=await Promise.all([
 ]);
 const result=assessCheckoutReadiness({objects:o.objects??[],flows:f.flows??[],pages:p.pages??[]});
 const empty=!result.checkoutFlow.found||!result.checks.find(c=>c.id==='product:available')?.pass;
+const relevantObjects=(o.objects??[]).filter(item=>/product|order|invoice|payment|stock|inventory|sale|unit|tax|address|age|location/i.test(item.apiName));
+const checkout=(f.flows??[]).find(item=>/COPILOT POS - Cash Checkout/i.test(item.label));
+const inspect={
+ objectInventory:relevantObjects.map(item=>({
+   apiName:item.apiName,
+   kind:item.kind,
+   fieldSummary:(item.fields??[]).map(field=>({
+     apiName:field.apiName,dataType:field.dataType,
+     target:field.relationship?.targetObject??null,
+     picklistCount:field.picklistValues?.length??null,
+     required:field.required
+   }))
+ })),
+ checkoutSteps:(checkout?.elements??[]).map(step=>({
+   type:step.type,label:step.label,
+   object:typeof step.config?.object==='string'?step.config.object:null,
+   resource:typeof step.config?.outputVariable==='string'?step.config.outputVariable:null,
+   filterFields:Array.isArray(step.config?.conditions)
+     ?step.config.conditions.map(x=>({field:x.field,operator:x.operator,valueKind:
+         typeof x.value==='string'&&/^\\{!?[A-Za-z_$]/.test(x.value)?'reference':'literal'})):[],
+   screenFieldTypes:Array.isArray(step.config?.fields)?step.config.fields.map(x=>({type:x.type,label:x.label})):[],
+ })),
+ checkoutResources:(checkout?.resources??[]).map(x=>({name:x.name,type:x.type,dataType:x.dataType,isInput:x.availableForInput,isOutput:x.availableForOutput})),
+ relevantPages:(p.pages??[]).filter(x=>/cashier|till|customer.*display/i.test(x.apiName+' '+x.label))
+   .map(x=>({apiName:x.apiName,label:x.label,status:x.status,
+     components:(x.components??[]).map(k=>({type:k.type,
+       flowNames:typeof k.properties?.actionFlows==='object'
+         ?Object.values(k.properties.actionFlows).map(v=>v?.flowApiName).filter(Boolean):[],
+       stateSyncEnabled:k.properties?.stateSyncEnabled===true
+     }))}))
+};
 console.log(JSON.stringify({status:empty?'TEST_IDENTITY_IS_NOT_CHECKOUT_TENANT':'READ_ONLY_CHECKOUT_PREFLIGHT',
   readOnly:true,source:'authenticated tenant-scoped API',checks:result.checks,issues:result.issues,
   checkoutFlow:result.checkoutFlow,tillPage:result.tillPage,customerPage:result.customerPage,
-  runtimeAssertionsPending:result.runtimeAssertions},null,2));
+  runtimeAssertionsPending:result.runtimeAssertions,inspection:inspect},null,2));
 // Distinguish an absent production test tenant from a complete POS.
 if(empty)process.exitCode=2;
 else if(result.issues.length)process.exitCode=1;
