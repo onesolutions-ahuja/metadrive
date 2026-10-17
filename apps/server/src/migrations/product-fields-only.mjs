@@ -5,7 +5,8 @@
 const legacy='Product',canonical='Product__c';
 const identityKeys=new Set(['object','objectApiName','targetObject','triggerObject',
  'relatedObject','childObjectApiName','primaryObjectApiName','rootObjectApiName',
- 'recordObject','parentObject','dataType','objectName','objectApiNames']);
+ 'recordObject','parentObject','dataType','objectName','objectApiNames',
+ 'navigationItems','rootObjectApiName','targetObjectApiName']);
 function rewrite(value,key=''){
  if(typeof value==='string'){
   if(value==='Lookup(Product)')return 'Lookup(Product__c)';
@@ -16,7 +17,9 @@ function rewrite(value,key=''){
  }
  if(Array.isArray(value))return value.map(item=>rewrite(item,key));
  if(!value||typeof value!=='object')return value;
- return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,rewrite(v,k)]));
+ const output=Object.fromEntries(Object.entries(value).map(([k,v])=>[k,rewrite(v,k)]));
+ if(value.type==='Object'&&output.apiName===legacy)output.apiName=canonical;
+ return output;
 }
 function transferPermissions(tenant){
  const members=[...(tenant.accessControl?.profiles??[]),
@@ -89,7 +92,24 @@ export function migrateProductFieldsOnly(tenant){
    triggerObject:rewrite(flow.triggerObject,'triggerObject'),
    elements:rewrite(flow.elements),resources:rewrite(flow.resources),
    connectors:rewrite(flow.connectors)};
-  // Archived versions are intentionally immutable historical snapshots.
+  // Preserve archived versions and publish a new version of changed active Flows.
+  if(JSON.stringify([next.startConfig,next.triggerObject,next.elements,next.resources,next.connectors])===
+    JSON.stringify([flow.startConfig,flow.triggerObject,flow.elements,flow.resources,flow.connectors]))return flow;
+  const now=new Date().toISOString();
+  const snapshot={versionNumber:flow.versionNumber,status:flow.status,savedAt:now,
+    label:flow.label,description:flow.description,flowType:flow.flowType,
+    triggerObject:flow.triggerObject,startConfig:flow.startConfig,elements:flow.elements,
+    connectors:flow.connectors,resources:flow.resources,tests:flow.tests??[]};
+  const histories=new Map((flow.versions??[]).map(v=>[v.versionNumber,v]));
+  histories.set(flow.versionNumber,snapshot);
+  const number=Math.max(flow.versionNumber??0,...histories.keys())+1;
+  next.versionNumber=number;
+  next.activeVersion=flow.activeVersion==null?null:number;
+  next.lastModifiedAt=now;
+  next.versions=[...histories.values()].map(v=>v.status==='Active'?{...v,status:'Obsolete'}:v);
+  if(next.activeVersion!=null)next.versions.push({...snapshot,versionNumber:number,status:'Active',
+    triggerObject:next.triggerObject,startConfig:next.startConfig,
+    elements:next.elements,connectors:next.connectors,resources:next.resources});
   return next;
  });
  transferPermissions(tenant);
@@ -99,6 +119,11 @@ export function migrateProductFieldsOnly(tenant){
   delete tenant.sharingSettings[legacy];
  }
  delete tenant.records[legacy];
+ const consumers=JSON.stringify([tenant.objects,tenant.apps,tenant.pages,tenant.flows.map(f=>({
+   startConfig:f.startConfig,triggerObject:f.triggerObject,elements:f.elements,
+   connectors:f.connectors,resources:f.resources})),tenant.reports,tenant.dashboards]);
+ if(/"(?:targetObject|object|objectApiName|triggerObject|dataType)":"(?:Product|Lookup\\(Product\\))"/.test(consumers))
+  throw Error('Unresolved Product references in live metadata');
  tenant.fieldHistory=(tenant.fieldHistory??[]).filter(r=>r.objectApiName!==legacy);
  tenant.recordShares=(tenant.recordShares??[]).filter(r=>r.objectApiName!==legacy);
  return {alreadyDone:false,added,discardedRecords:oldRecords.length};
