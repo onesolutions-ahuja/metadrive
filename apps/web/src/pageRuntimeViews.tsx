@@ -395,7 +395,7 @@ function MetadataBoundPageComponent({
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
   const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
     recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
-  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields);
+  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
