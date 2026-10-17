@@ -59,12 +59,18 @@ export class RecordEngine {
     return prepared;
   }
   async create(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
-    return this.db.transaction(client=>this.createInTransaction(client,tenantId,userId,objectApi,values));
+    await this.rbac.require(tenantId,userId,objectApi,'create');
+    // Reject invalid input before reserving a transaction connection.
+    const prepared=await this.prepare(tenantId,userId,objectApi,values,true);
+    return this.db.transaction(client=>this.insertPrepared(client,tenantId,objectApi,prepared));
   }
   /** All Flow record mutations share one transaction, including relationship checks. */
   async createInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
     const prepared=await this.prepare(tenantId,userId,objectApi,values,true,client);
+    return this.insertPrepared(client,tenantId,objectApi,prepared);
+  }
+  private async insertPrepared(client:PoolClient,tenantId:string,objectApi:string,prepared:Map<string,Storable>) {
     const {rows}=await client.query<{id:string}>(
       'INSERT INTO md_records (tenant_id,object_api) VALUES ($1,$2) RETURNING id',
       [tenantId,objectApi]);
