@@ -6,6 +6,8 @@ const expression=/^\{!?([A-Za-z_$][A-Za-z0-9_$.]*)\}$/;
 const invalidExpression=/^\{!?[A-Za-z_$]|^@[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)?$/;
 const specialFields=new Map([['Id','Id'],['CreatedDate','DateTime'],['LastModifiedDate','DateTime']]);
 const rows=(value:unknown):Row[]=>Array.isArray(value)?value.filter((x):x is Row=>x!==null&&typeof x==='object'&&!Array.isArray(x)):[];
+const lookupTarget=(type:string):string|undefined=>
+  /^(?:Lookup|Master-Detail)\(([^)]+)\)$/i.exec(type.trim())?.[1]?.trim();
 const typed=(dataType:string):string=>
   /^(Lookup|Master-Detail)\(/.test(dataType)?'lookup':
   /^(Number|Currency|Percent)(\(|$)/.test(dataType)?'number':
@@ -121,7 +123,7 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
       }
       if(target){
         const expected=typed(String(target.dataType??'')),actual=typed(type);
-        const relatedObject=field?.relationship?.targetObject;
+        const relatedObject=field?.relationship?.targetObject||lookupTarget(type);
         const sourceObject=actual==='lookup'?relatedObject
           :parts[0]==='Id'?source.objectName:undefined;
         const valid=expected==='lookup'
@@ -152,7 +154,7 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
   const conditionCheck=(element:{id:number;label:string},condition:Row,objectName:string|undefined)=>{
     if(['Is Null','Is Not Null'].includes(String(condition.operator)))return;
     const fld=object(objectName)?.fields.find(x=>x.apiName===condition.field);
-    const target=fld?{dataType:fld.dataType,relationshipTarget:fld.relationship?.targetObject}
+    const target=fld?{dataType:fld.dataType,relationshipTarget:fld.relationship?.targetObject||lookupTarget(fld.dataType)}
       :condition.field==='Id'&&object(objectName)?{dataType:'Id',relationshipTarget:objectName}:undefined;
     validate(condition.value,target,element,'condition '+String(condition.field||'?'));
   };
@@ -165,7 +167,7 @@ export function flowReferenceErrors(flow:FlowMetadata,objects:ObjectMetadata[]):
     if(['Create Records','Update Records'].includes(element.type))
       for(const entry of rows(config.fieldValues)){
         const field=object(objectName)?.fields.find(x=>x.apiName===entry.field);
-        validate(entry.value,field?{dataType:field.dataType,relationshipTarget:field.relationship?.targetObject}:undefined,
+        validate(entry.value,field?{dataType:field.dataType,relationshipTarget:field.relationship?.targetObject||lookupTarget(field.dataType)}:undefined,
           element,'field '+String(entry.field||'?'));
       }
     if(element.type==='Assignment')validate(config.value,undefined,element,'assigned value');
