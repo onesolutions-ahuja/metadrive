@@ -205,7 +205,7 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
     if(!Number.isInteger(limit)||!Number.isInteger(offset)||limit<1||offset<0) throw new Error('Invalid pagination');
-    res.json({records:await records.list(actor.tenant_id,actor.user_id,req.params.objectApi,limit,offset)});
+    res.json(await records.list(actor.tenant_id,actor.user_id,req.params.objectApi,limit,offset));
   }));
   app.post('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;

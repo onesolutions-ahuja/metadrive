@@ -119,3 +119,29 @@ test('atomic object creation rejects unsupported fields before any SQL write', a
   await assert.rejects(()=>new ObjectDefinitionService(db).create('tenant','A__c','A',
     [{apiName:'Private',dataType:'UnsupportedValue'}]),/Invalid field definition/);
 });
+
+test('Records HTTP API returns the actual list rather than double-nested records', async () => {
+  const {createSystemServer}=await import('./server.js');
+  const db={
+    query:async(sql:string)=>{
+      if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
+      if(sql.includes('FROM md_permission_rules'))return {rows:[{allow_granted:true,deny_granted:false}]};
+      if(sql.includes('WITH selected AS'))return {rows:[]};
+      if(sql.includes('count(*)::text'))return {rows:[{total:'0'}]};
+      throw new Error('Unexpected SQL '+sql);
+    }
+  } as unknown as SqlPersistence;
+  const app=createSystemServer(db);
+  const listener=app.listen(0,'127.0.0.1');
+  try {
+    if(!listener.listening)await import('node:events').then(({once})=>once(listener,'listening'));
+    const port=(listener.address() as import('node:net').AddressInfo).port;
+    const response=await fetch(`http://127.0.0.1:${port}/api/records/Product__c`,{
+      headers:{Authorization:'Bearer valid-token'}
+    });
+    assert.equal(response.status,200);
+    assert.deepEqual(await response.json(),{records:[],total:0});
+  } finally {
+    if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+  }
+});
