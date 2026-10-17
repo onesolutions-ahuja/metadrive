@@ -13,10 +13,11 @@ type Props = {
   field?: FieldMetadata;
   ariaLabel: string;
   placeholder?: string;
+  multiline?: boolean;
 };
 
 /** Shared no-code value editor for Flow conditions, assignments and record filters. */
-export default function FlowReferenceInput({value,onChange,flow,elementId,objects,field,ariaLabel,placeholder}:Props) {
+export default function FlowReferenceInput({value,onChange,flow,elementId,objects,field,ariaLabel,placeholder,multiline=false}:Props) {
   const [open,setOpen]=useState(false);
   const [search,setSearch]=useState('');
   const id=useId();
@@ -33,8 +34,12 @@ export default function FlowReferenceInput({value,onChange,flow,elementId,object
     if(!event.currentTarget.contains(event.relatedTarget))setOpen(false);
   }}>
     <div className={'flow-reference-input-row'+(selected?' is-valid':'')+(badReference?' is-invalid':'')}>
-      <input className="form-control" aria-label={ariaLabel} placeholder={placeholder??'Enter a value or choose a Flow reference'}
-        value={value} onChange={event=>onChange(event.target.value)} aria-invalid={badReference}/>
+      {multiline ? <textarea className="form-control" rows={4} aria-label={ariaLabel}
+          placeholder={placeholder??'Enter text or choose a Flow reference'} value={value}
+          onChange={event=>onChange(event.target.value)} aria-invalid={badReference}/>
+        : <input className="form-control" aria-label={ariaLabel}
+          placeholder={placeholder??'Enter a value or choose a Flow reference'} value={value}
+          onChange={event=>onChange(event.target.value)} aria-invalid={badReference}/>} 
       <button type="button" aria-expanded={open} aria-controls={id} aria-label={'Choose reference for '+ariaLabel}
         title="Choose a previous record or Flow variable" onClick={()=>{setSearch('');setOpen(!open)}}>
         <AtSign size={16}/>
