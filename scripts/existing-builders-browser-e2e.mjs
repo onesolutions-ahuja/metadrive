@@ -56,6 +56,7 @@ try {
   // Guided App Manager: interactive UI smoke in this disposable authenticated tenant.
   await page.goto('http://127.0.0.1:5173/une/setup/app-manager');
   await page.getByRole('heading',{name:'App Manager',exact:true}).waitFor();
+  await page.getByRole('heading',{name:/Existing Apps/}).waitFor();
   await page.getByRole('button',{name:'New App'}).click();
   await page.getByRole('heading',{name:'Create New App'}).waitFor();
   await page.getByLabel('App Label').fill('MD07 Guided UI');
@@ -73,6 +74,28 @@ try {
   const apiToken=(await request('/auth/login',undefined,'POST',{email:login.email,password:login.password})).access_token;
   const newApp=(await request('/metadata/apps',apiToken)).apps.find(item=>item.apiName===suggestedName);
   if(!newApp || !newApp.navigationItems.includes('Account'))throw Error('Guided UI did not preserve existing app save semantics');
+  await page.getByRole('heading',{name:/Existing Apps/}).waitFor();
+  await page.getByRole('button',{name:'Edit MD07 Guided UI'}).click();
+  await page.getByRole('heading',{name:'App Details'}).waitFor();
+  if(await page.getByLabel('Developer Name').inputValue()!==suggestedName)throw Error('Pencil did not open the selected app');
+  await page.getByRole('button',{name:/All Apps/}).click();
+  await page.getByRole('heading',{name:/Existing Apps/}).waitFor();
+  // Cancel must not create anything; accept must create a new tenant-owned app.
+  page.once('dialog',dialog => void dialog.dismiss());
+  await page.getByRole('button',{name:'Clone MD07 Guided UI'}).click();
+  const afterCancel=(await request('/metadata/apps',apiToken)).apps;
+  if(afterCancel.some(item=>item.apiName===suggestedName+'Copy'))throw Error('Cancelled clone created an app');
+  page.once('dialog',dialog => void dialog.accept());
+  await page.getByRole('button',{name:'Clone MD07 Guided UI'}).click();
+  await page.getByRole('status').filter({hasText:'App cloned as MD07 Guided UI Copy.'}).waitFor();
+  const cloned=(await request('/metadata/apps',apiToken)).apps.find(item=>item.apiName==='MD07GuidedUICopy');
+  if(!cloned || cloned.label!=='MD07 Guided UI Copy' ||
+    !cloned.navigationItems.includes('Account') || cloned.installationAppKey)
+    throw Error('Confirmed clone did not preserve safe metadata or created installation ownership');
+  await page.getByRole('button',{name:'Edit MD07 Guided UI Copy'}).click();
+  await page.getByRole('heading',{name:'App Details'}).waitFor();
+  if(await page.getByLabel('Developer Name').inputValue()!=='MD07GuidedUICopy')
+    throw Error('Cloned app cannot be edited from list');
   await page.goto('http://127.0.0.1:5173/une/setup/component-library');
   await page.getByRole('heading',{name:'Global Component Library'}).waitFor();
   await page.getByRole('button',{name:'Register component'}).click();
