@@ -2,6 +2,7 @@
 // No business object, field or action is hardcoded into SQL identifiers.
 // Registry UUIDs are durable; removed schema is retained for lossless rollback.
 import {randomUUID} from 'node:crypto';
+import {isRetiredObject} from './retired-object-names.mjs';
 import {planNormalizedObjectTable,postgresFieldType,physicalObjectTable,physicalFieldColumn,canWidenPhysicalFieldType,physicalTenantOwnerConstraint,validPhysicalTenantOwnerConstraint} from './normalized-object-schema.mjs';
 
 const platformFields=[
@@ -115,6 +116,10 @@ async function prepare(client,state){
     mapping.delete(identifier);
   }
   for(const item of expected.values()){
+    // Last line of defence against deleted physical SQL tables being recreated
+    // by a stale seed, installer, API caller or restored metadata snapshot.
+    if(isRetiredObject(item.object.apiName))
+      throw Error('Retired Object cannot be re-registered or recreated: '+item.object.apiName);
     let current=mapping.get(key(item.tenantId,item.object.apiName));
     if(!current){
       const dormant=await client.query('SELECT object_id,tenant_id,api_name,object_label,physical_table FROM md_v2_object_registry WHERE tenant_id=$1 AND api_name=$2 AND active=false',[item.tenantId,item.object.apiName]);
