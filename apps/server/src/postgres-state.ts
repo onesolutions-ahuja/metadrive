@@ -127,6 +127,7 @@ export async function waitForSchedulerSqlRefresh(): Promise<void> {
   if (writeFailure !== null && !isSqlRevisionConflict(writeFailure)) throw writeFailure;
 }
 export function acknowledgeVerifiedSqlRefresh(): void {
+  if (writeFailure === null) return;
   if (!verifiedRecoverySnapshot || normalizedSnapshot !== verifiedRecoverySnapshot)
     throw new Error('A verified SQL refresh must complete before persistence recovery');
   if (writeFailure !== null && !isSqlRevisionConflict(writeFailure))
