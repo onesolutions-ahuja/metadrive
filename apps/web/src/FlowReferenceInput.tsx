@@ -36,10 +36,18 @@ export default function FlowReferenceInput({value,onChange,flow,elementId,object
     <div className={'flow-reference-input-row'+(selected?' is-valid':'')+(badReference?' is-invalid':'')}>
       {multiline ? <textarea className="form-control" rows={4} aria-label={ariaLabel}
           placeholder={placeholder??'Enter text or choose a Flow reference'} value={value}
-          onChange={event=>onChange(event.target.value)} aria-invalid={badReference}/>
+          onChange={event=>{
+            const next=event.target.value;
+            onChange(next);
+            if(next.trim().startsWith('@')){setOpen(true);setSearch(next.trim().slice(1))}
+          }} aria-invalid={badReference}/>
         : <input className="form-control" aria-label={ariaLabel}
           placeholder={placeholder??'Enter a value or choose a Flow reference'} value={value}
-          onChange={event=>onChange(event.target.value)} aria-invalid={badReference}/>} 
+          onChange={event=>{
+            const next=event.target.value;
+            onChange(next);
+            if(next.trim().startsWith('@')){setOpen(true);setSearch(next.trim().slice(1))}
+          }} aria-invalid={badReference}/>} 
       <button type="button" aria-expanded={open} aria-controls={id} aria-label={'Choose reference for '+ariaLabel}
         title="Choose a previous record or Flow variable" onClick={()=>{setSearch('');setOpen(!open)}}>
         <AtSign size={16}/>
