@@ -192,7 +192,12 @@ async function main(){
    if(!fresh.product&&!fresh.flow&&!fresh.page){verified=true;break}
    try{
     if(fresh.product)await api('/metadata/objects/Product__c','PUT',fresh.product);
-    else if(fresh.flow)await api('/metadata/flows/COPILOT_POS_Cash_Checkout','PUT',fresh.flow);
+    else if(fresh.flow){
+     const validation=await api('/metadata/flows/COPILOT_POS_Cash_Checkout/validate','POST',fresh.flow);
+     if(validation.valid!==true)
+      throw Error('Checkout Flow Check rejected draft: '+JSON.stringify(validation.errors??[]).slice(0,4500));
+     await api('/metadata/flows/COPILOT_POS_Cash_Checkout','PUT',fresh.flow);
+    }
     else await api('/metadata/pages/COPILOT_POS_Cashier_Till','PUT',fresh.page);
    }catch(error){
     if(!/HTTP (409|502|503|504)\b/.test(String(error))||attempt===7)throw error;
