@@ -40,6 +40,17 @@ export function planPosDraftRepair(objects,flows){
   (e.config?.object==='SaleItem__c'||e.config?.object==='SaleLine__c'));
  if(!writer)throw Error('Sale Line writer missing');
  const next=structuredClone(flow);
+ const draftOrder=next.elements.find(e=>e.type==='Get Records'&&e.config?.object==='Order__c'&&
+   /draft order/i.test(e.label??''));
+ if(!draftOrder)throw Error('Draft Order query missing');
+ const sessionCondition=(draftOrder.config.conditions??[]).find(c=>c.field==='BasketSessionKey');
+ if(!sessionCondition)throw Error('Draft basket session filter missing');
+ sessionCondition.value='{!SessionKey}';
+ const sessionInput=(next.resources??[]).find(r=>r.name==='SessionKey');
+ if(sessionInput && (sessionInput.availableForInput!==true||sessionInput.isCollection))
+  throw Error('SessionKey resource exists but is not a usable Flow input');
+ if(!sessionInput)next.resources.push({name:'SessionKey',label:'Session Key',type:'Variable',dataType:'Text',
+  isCollection:false,availableForInput:true,availableForOutput:false});
  const create=next.elements.find(e=>e.id===writer.id);
  const existing=new Map((create.config.fieldValues??[]).map(f=>[f.field,f.value]));
  if(create.config.object==='SaleItem__c'){
