@@ -3,6 +3,21 @@ name: SQL-only Aiven encrypted backup and restore proof
 on:
   workflow_dispatch:
     inputs:
+      migrate_shared_commerce:
+        description: 'Migrate shared category/modifier Object fields and repair previously removed SQL Object metadata'
+        type: boolean
+        required: true
+        default: false
+      commerce_tenant_id:
+        description: 'Exact tenant ID for explicit commerce migration (not required for backup-only)'
+        type: string
+        required: false
+        default: ''
+      confirm_backend_offline:
+        description: 'Confirm the API and background writers are stopped for a tenant SQL migration'
+        type: boolean
+        required: true
+        default: false
       cleanup_verified_duplicates:
         description: 'After successful independent restore, remove only two proven duplicate backup copies'
         type: boolean
@@ -125,7 +140,7 @@ jobs:
             "$RUNNER_TEMP/sql-target.enc" "$RUNNER_TEMP/sql-target.verified"
           cmp "$RUNNER_TEMP/sql-target.dump" "$RUNNER_TEMP/sql-target.verified"
       - name: Generate proof from independently restored encrypted SQL backup
-        if: github.event_name == 'workflow_dispatch' && (inputs.cleanup_verified_duplicates == true || inputs.cleanup_user_duplicates == true || inputs.cleanup_legacy_staging == true) && github.ref == 'refs/heads/main'
+        if: github.event_name == 'workflow_dispatch' && (inputs.cleanup_verified_duplicates == true || inputs.cleanup_user_duplicates == true || inputs.cleanup_legacy_staging == true || inputs.migrate_shared_commerce == true) && github.ref == 'refs/heads/main'
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_proof
           PGSSLMODE: disable
