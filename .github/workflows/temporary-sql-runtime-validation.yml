@@ -17,10 +17,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Detect missing source references
-        run: node scripts/verify-project-references.mjs
       - name: Compile full web and new SQL backend
         run: npm run build
+      - name: Detect missing source references
+        run: node scripts/verify-project-references.mjs
       - name: SQL security and runtime tests
         run: npm run test:unit
       - name: Check published web assets
