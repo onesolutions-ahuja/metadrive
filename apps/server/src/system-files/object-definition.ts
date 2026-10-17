@@ -21,7 +21,7 @@ export class ObjectDefinitionService {
       const name=field.apiName;
       const dataType=typeof field.dataType==='string'?field.dataType:'';
       const key=dataType.toLowerCase().replace(/\s+/g,'');
-      const match=/^text\\(([0-9]+)\\)$/.exec(key);
+      const match=/^text\(([0-9]+)\)$/.exec(key);
       const type=match?'text':types[key];
       const maxLength=match?Number(match[1]):null;
       if(maxLength!==null && (!Number.isSafeInteger(maxLength)||maxLength<1||maxLength>1000000))
@@ -50,8 +50,8 @@ export class ObjectDefinitionService {
   }
   async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
-    const normalized=dataType.toLowerCase().replace(/\\s+/g,'');
-    const lengthMatch=/^text\\(([0-9]+)\\)$/.exec(normalized);
+    const normalized=dataType.toLowerCase().replace(/\s+/g,'');
+    const lengthMatch=/^text\(([0-9]+)\)$/.exec(normalized);
     const types:Record<string,string>={text:'text',number:'number',checkbox:'boolean',boolean:'boolean',date:'date',datetime:'datetime','date/time':'datetime',lookup:'reference',reference:'reference'};
     const type=lengthMatch?'text':types[normalized];
     const maxLength=lengthMatch?Number(lengthMatch[1]):null;
