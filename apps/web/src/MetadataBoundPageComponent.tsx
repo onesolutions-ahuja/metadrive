@@ -213,7 +213,7 @@ export default function MetadataBoundPageComponent({
       onChange: (value: unknown) => {
         if (actionFlows.change) void onAction({ event: 'change', value }).catch(() => {});
       },
-      loading: dataLoading, sessionId,
+      loading: dataLoading, sessionId, previewOnly: disableActions,
       ...(objectApiName ? { records: visibleRecords } : {}),
       ...presented
     }} />
