@@ -61,7 +61,6 @@ import type {
   ReportMetadata,
   ReportRunMetadata
 } from './metadata';
-
 type DashboardBuilderProps = {
   dashboards: DashboardMetadata[];
   dashboardFolders: DashboardFolderMetadata[];
@@ -103,7 +102,6 @@ type DashboardBuilderProps = {
   onSaveTerritories: (territories: Array<Pick<DashboardTerritoryMetadata, 'id' | 'label' | 'parentTerritoryId' | 'userIds'>>) => Promise<DashboardTerritoryMetadata[]>;
   onNotify: (message: string) => void;
 };
-
 export default function DashboardBuilder({
   dashboards, dashboardFolders, objects, libraryComponents, reports, shareUsers, shareGroups, folderPublicGroups, folderPermissionSetGroups, folderRoles, dashboardTerritories, canManageTerritories, subscriptionUsers, runningUserIds, smtpCredentials, canSchedule, userId, canCreate, canManageAll, viewerMode = false, selectedApiName, onSelect, onOpenViewer, onExitViewer, onLoadRecords, onRunReport, onLoadSnapshots, onCreateSnapshot, onDeleteSnapshot, onLoadSubscriptions, onSaveSubscription, onDeleteSubscription, onRunSubscription, onSave, onDelete, onSaveFolder, onDeleteFolder, onSaveTerritories, onNotify
 }: DashboardBuilderProps) {
@@ -164,7 +162,6 @@ export default function DashboardBuilder({
   const [editingSubscriptionId, setEditingSubscriptionId] = useState('');
   const [subscriptionBusy, setSubscriptionBusy] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState('');
-
   const current = draft ?? dashboards.find((dashboard) => dashboard.apiName === selectedApiName)
     ?? (viewerMode ? null : dashboards[0] ?? null);
   const dashboardRunningUserId = current?.allowViewerToSelectRunningUser
@@ -251,7 +248,6 @@ export default function DashboardBuilder({
     field.formula
       ? /^(Number|Currency|Percent)$/.test(field.formula.returnType)
       : /^(Number|Currency|Percent)(\(|$)/.test(field.dataType)) ?? [];
-
   useEffect(() => {
     if (!selectedApiName) {
       if (!draft) setDraft(dashboards[0] ?? null);
@@ -265,7 +261,6 @@ export default function DashboardBuilder({
       setCrossFilters([]);
     }
   }, [selectedApiName, dashboards, viewerMode]);
-
   useEffect(() => {
     setViewFilterValues(Object.fromEntries((current?.filters ?? []).map((filter) => [filter.id, filter.value])));
   }, [current?.apiName, current?.filters]);
@@ -1007,9 +1002,8 @@ export default function DashboardBuilder({
     const data = { [component.objectApiName]: contextRecord };
     const visibleFields = { [component.objectApiName]: fields };
     const resolve = (value: string) => resolveMentionValue(value, data, visibleFields);
-    const safeHtmlRecord = contextRecord ? Object.fromEntries(Object.entries(contextRecord).map(([key, value]) =>
-      [key, typeof value === 'string' ? value.replace(/[&<>"']/g, character =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string,string>)[character]) : value])) : undefined;
+    const escapeHtml = (text: string) => text.replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'} as Record<string,string>)[char]);
+    const safeHtmlRecord = contextRecord ? Object.fromEntries(Object.entries(contextRecord).map(([key, val]) => [key, typeof val === 'string' ? escapeHtml(val) : val])) : undefined;
     if (component.type === 'Rich Text') {
       return <iframe
         className="dashboard-rich-text-frame"
@@ -2322,19 +2316,12 @@ export default function DashboardBuilder({
               <button type="button" className="btn btn-small" disabled={!canEditCurrent} onClick={() => wrapRichTextSelection('<h2>', '</h2>')}>Heading</button>
               <button type="button" className="btn btn-small" disabled={!canEditCurrent} onClick={() => wrapRichTextSelection('<ul><li>', '</li></ul>')}>List</button>
             </div>
-            <SmartFieldInput multiline rows={6} ariaLabel="Rich text HTML content" textareaRef={richTextEditorRef}
-              objects={objects} primaryObjectApiName={selected.objectApiName} disabled={!canEditCurrent}
-              maxLength={20_000} value={selected.richTextContent ?? ''}
-              onChange={next => updateComponent(selected.id, { richTextContent: next })}
-              placeholder="Add formatted text using safe HTML." />
+            <SmartFieldInput multiline rows={6} ariaLabel="Rich text HTML content" textareaRef={richTextEditorRef} objects={objects} primaryObjectApiName={selected.objectApiName} disabled={!canEditCurrent} maxLength={20_000} value={selected.richTextContent ?? ''} onChange={next => updateComponent(selected.id, { richTextContent: next })} placeholder="Add formatted text using safe HTML." />
             <small>Basic formatting is supported. Scripts, forms, and embedded content are removed when saved.</small>
           </>}
           {selected.type === 'Image' && <>
             <label className="form-label" htmlFor="dashboard-image-url">Image URL</label>
-            <SmartFieldInput id="dashboard-image-url" kind="image" objects={objects} primaryObjectApiName={selected.objectApiName}
-              disabled={!canEditCurrent} maxLength={2048} value={selected.imageUrl ?? ''}
-              onChange={next => updateComponent(selected.id, { imageUrl: next })}
-              placeholder="https://example.com/image.png" />
+            <SmartFieldInput id="dashboard-image-url" kind="image" objects={objects} primaryObjectApiName={selected.objectApiName} disabled={!canEditCurrent} maxLength={2048} value={selected.imageUrl ?? ''} onChange={next => updateComponent(selected.id, { imageUrl: next })} placeholder="https://example.com/image.png" />
             <label className="form-label" htmlFor="dashboard-image-alt">Alternative text</label>
             <input id="dashboard-image-alt" className="form-control" maxLength={500}
               disabled={!canEditCurrent} value={selected.imageAltText ?? ''}
