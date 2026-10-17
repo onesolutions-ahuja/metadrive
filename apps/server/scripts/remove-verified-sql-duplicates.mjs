@@ -28,7 +28,8 @@ export const duplicateBackupNames=Object.freeze([
 const target=process.env.METADRIVE_SQL_TARGET_DB;
 const input=process.env.DATABASE_URL;
 const applying=process.argv.includes('--apply');
-if(process.argv.some(arg=>!['--apply'].includes(arg)))
+const removeSystemUser=process.argv.includes('--user-duplicates');
+if(process.argv.some(arg=>!['--apply','--user-duplicates'].includes(arg)))
   throw Error('Unknown argument');
 if(!input||target!=='metadrive_sql_20261012')
   throw Error('Expected explicit SQL-only database and DATABASE_URL');
@@ -83,6 +84,58 @@ function verifyProof(proof,snapshot){
     throw Error('Fresh independently restored SQL backup proof missing or mismatched');
   // On-disk archive and fresh encrypted backup are separate data-recovery layers.
 }
+
+/** The SQL-only identity projection is the ONLY authoritative User data.
+ * A zero-row typed User table must not be recreated by the generic Object
+ * synchroniser; the deployed version is checked again before any DROP.
+ */
+async function inspectSystemUserDuplicates(client,snapshot){
+  const realUsers=snapshot.state.users??[];
+  if(!realUsers.length || realUsers.some(u=>!u.id||!u.email||!u.passwordHash||!u.passwordSalt))
+    throw Error('Canonical user identities are missing or incomplete');
+  const known=new Map(realUsers.map(u=>[u.id,u]));
+  if(known.size!==realUsers.length)throw Error('Duplicate canonical User identity IDs');
+  const old=(await client.query('SELECT user_id,email FROM metadrive_rel_users')).rows;
+  if(old.some(u=>!known.has(u.user_id)||
+      known.get(u.user_id).email.toLowerCase()!==u.email.toLowerCase()))
+    throw Error('Legacy user rows are not a subset of canonical authentication identities');
+  const matches=(await client.query(
+    "SELECT object_id,physical_table,active FROM md_v2_object_registry WHERE api_name='User'")).rows;
+  if(matches.length!==1||!/^md_obj_[0-9a-f]{32}$/.test(matches[0].physical_table))
+    throw Error('Expected exactly one immutable generic User registry entry');
+  const user=matches[0];
+  const count=(await client.query('SELECT count(*)::int AS n FROM public.'+user.physical_table)).rows[0].n;
+  const presence=(await client.query(
+    'SELECT count(*)::int AS n FROM md_v2_field_presence WHERE object_id=$1',
+    [user.object_id])).rows[0].n;
+  if(count!==0||presence!==0)throw Error('Generic physical User table contains data; refuse cleanup');
+  const dependencies=[];
+  for(const name of [user.physical_table,'metadrive_rel_users']){
+    const row=(await client.query(dependenciesSql,['public.'+name])).rows[0];
+    if(row.inbound_fks||row.triggers||row.rules)
+      throw Error('External SQL dependency prevents User cleanup');
+    dependencies.push(name);
+  }
+  const reference=(snapshot.state.tenants??{});
+  if(Object.values(reference).some(t=>(t.records?.User??[]).length!==0))
+    throw Error('User was written as an ordinary business Object');
+  return {canonicalUsers:realUsers.length,legacyUsers:old.length,
+    emptyPhysicalUser:user.physical_table,registryId:user.object_id,
+    protectedReferences:dependencies};
+}
+async function requireCurrentDeployedUserRuntime(){
+  const expected=process.env.METADRIVE_CLEANUP_EXPECTED_DEPLOY_SHA;
+  if(!/^[a-f0-9]{40}$/.test(expected??''))
+    throw Error('Newly deployed commit SHA is required for User migration');
+  const res=await fetch('https://metadrive.onrender.com/health',{
+    signal:AbortSignal.timeout(15000)});
+  if(!res.ok)throw Error('Live backend health check failed');
+  const health=await res.json();
+  if(health.persistenceMode!=='typed'||health.database!=='healthy'||
+     health.deployedCommit!==expected)
+    throw Error('Production is not running the verified User-de-duplication code');
+}
+
 let client;
 try {
   if((await active.query('SELECT current_database() AS db')).rows[0]?.db!==target)
@@ -97,30 +150,49 @@ try {
     verifyProof(JSON.parse(readFileSync(proofPath,'utf8')),snapshot);
   }
   const checks=[];
-  for(const name of duplicateBackupNames)checks.push(await check(name,active));
+  if(!removeSystemUser)
+    for(const name of duplicateBackupNames)checks.push(await check(name,active));
+  const systemUser=removeSystemUser?await inspectSystemUserDuplicates(active,snapshot):null;
   const report={mode:applying?'apply':'dry-run',database:target,revision:snapshot.version,
-    candidates:checks.map(item=>({
-      table:item.name,rows:item.targetCopy.rows,identicalCopyInDefaultdb:item.verified,
-      inboundDependencies:!item.noInboundDependencies
-    }))};
+    ...(systemUser?{systemUser}:{
+      candidates:checks.map(item=>({
+        table:item.name,rows:item.targetCopy.rows,identicalCopyInDefaultdb:item.verified,
+        inboundDependencies:!item.noInboundDependencies
+      }))
+    })};
   if(checks.some(item=>!item.verified))
     throw Error('Duplicate cleanup preflight failed: '+JSON.stringify(report));
+  if(applying&&removeSystemUser)await requireCurrentDeployedUserRuntime();
   if(!applying){
     process.stdout.write(JSON.stringify(report,null,2)+'\n');
   }else{
     client=await active.connect();
     await client.query("BEGIN; SET LOCAL lock_timeout='5s'; SET LOCAL statement_timeout='30s'");
     try{
-      for(const name of duplicateBackupNames){
-        await client.query('LOCK TABLE public.'+name+' IN ACCESS EXCLUSIVE MODE NOWAIT');
-        const inside=await check(name,client);
-        if(!inside.verified)throw Error('Backup changed during cleanup; aborting');
-      }
-      for(const name of duplicateBackupNames){
-        await client.query('DROP TABLE public.'+name+' RESTRICT');
+      if(removeSystemUser){
+        await client.query('LOCK TABLE public.md_v2_object_registry IN ROW EXCLUSIVE MODE NOWAIT');
+        await client.query('LOCK TABLE public.'+systemUser.emptyPhysicalUser+' IN ACCESS EXCLUSIVE MODE NOWAIT');
+        await client.query('LOCK TABLE public.metadrive_rel_users IN ACCESS EXCLUSIVE MODE NOWAIT');
+        const inside=await inspectSystemUserDuplicates(client,snapshot);
+        if(JSON.stringify(inside)!==JSON.stringify(systemUser))
+          throw Error('User cleanup changed during migration');
+        await client.query(
+          "UPDATE md_v2_object_registry SET active=false WHERE object_id=$1 AND api_name='User'",
+          [systemUser.registryId]);
+        await client.query('DROP TABLE public.'+systemUser.emptyPhysicalUser+' RESTRICT');
+        await client.query('DROP TABLE public.metadrive_rel_users RESTRICT');
+      }else{
+        for(const name of duplicateBackupNames){
+          await client.query('LOCK TABLE public.'+name+' IN ACCESS EXCLUSIVE MODE NOWAIT');
+          const inside=await check(name,client);
+          if(!inside.verified)throw Error('Backup changed during cleanup; aborting');
+        }
+        for(const name of duplicateBackupNames)
+          await client.query('DROP TABLE public.'+name+' RESTRICT');
       }
       await client.query('COMMIT');
-      process.stdout.write(JSON.stringify({...report,result:'committed',removed:duplicateBackupNames})+'\n');
+      process.stdout.write(JSON.stringify({...report,result:'committed',
+        removed:removeSystemUser?[systemUser.emptyPhysicalUser,'metadrive_rel_users']:duplicateBackupNames})+'\n');
     }catch(error){
       await client.query('ROLLBACK');
       throw error;
