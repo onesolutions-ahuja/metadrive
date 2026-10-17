@@ -30,7 +30,7 @@ export function mentionGroups(
         || (q.includes('.') && [object.label, object.apiName].some(part =>
           part.toLowerCase().includes(q.slice(0, q.indexOf('.')))) &&
           [field.label, field.apiName].some(part =>
-            part.toLowerCase().includes(q.slice(q.indexOf('.') + 1)))))
+            part.toLowerCase().startsWith(q.slice(q.indexOf('.') + 1)))))
     ).map(field => ({
       objectApiName: object.apiName, objectLabel: object.label,
       fieldApiName: field.apiName, fieldLabel: field.label, dataType: field.dataType
