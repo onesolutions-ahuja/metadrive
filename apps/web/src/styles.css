@@ -266,7 +266,7 @@ h1, h2, h3, p { margin-top: 0; }
 .metadata-row small { margin-top: 3px; color: #6e7777; font-size:var(--md-fs-xs,11px); }
 .limit-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
 .limit-grid > div { display: grid; gap: 6px; padding: 16px; border: 1px solid #e7e1da; border-radius: 8px; background: #faf8f5; }
-.limit-grid strong { font-size: 23px; color: #153e40; }
+.limit-grid strong { font-size: var(--md-fs-h2,24px); color: var(--md-primary,#1d4ed8); }
 .limit-grid span { color: #6e7777; font-size:var(--md-fs-xs,11px); }
 .table-scroll { overflow-x: auto; }
 .field-link { min-height: 32px; border: 0; padding: 6px 0; background: none; color: #0176d3; text-align: left; }
