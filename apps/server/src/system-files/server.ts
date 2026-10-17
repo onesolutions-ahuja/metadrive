@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from './sql-persistence.js';
 import { AuthenticationService } from './authentication.js';
+import {sessionMetadata} from './session-metadata.js';
 import { ObjectDefinitionService } from './object-definition.js';
 import { RbacEngine } from './rbac-engine.js';
 import { RecordEngine } from './record-engine.js';
@@ -126,7 +127,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.use('/api',authorize);
   app.get('/api/auth/me',route(async(req,res)=>{
-    res.json({userId:req.actor!.user_id,tenantId:req.actor!.tenant_id});
+    res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
   }));
   app.post('/api/auth/logout',route(async(req,res)=>{
     await auth.signOut(req.get('authorization')!.slice(7),getCookie(req));
@@ -176,6 +177,14 @@ export function createSystemServer(db:SqlPersistence) {
       throw new Error('Invalid field definition');
     await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject);
     res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
+  }));
+  app.get('/api/component-library',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
+    res.json({
+      components:await components.list(actor.tenant_id),
+      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
+    });
   }));
   app.get('/api/metadata/components',route(async(req,res)=>{
     const actor=req.actor!;

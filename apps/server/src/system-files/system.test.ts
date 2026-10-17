@@ -363,3 +363,48 @@ test('first-login rotation writes a fresh hash only once for matched domain/acco
   assert.equal(await rotateFirstLoginPassword(db,env),'already-rotated');
   assert.equal(updates,1);
 });
+
+
+test('Setup session metadata uses SQL grants, and denies override grants',async()=>{
+  const {sessionMetadata}=await import('./session-metadata.js');
+  const db={query:async(sql:string,params:unknown[])=>{
+    assert.ok(sql.includes('md_role_permission_sets'));
+    assert.deepEqual(params,['tenant','developer']);
+    return {rows:[
+      {capability:'metadata:read',allowed:true,denied:false},
+      {capability:'metadata:write',allowed:true,denied:false},
+      {capability:'security:manage',allowed:true,denied:true},
+      {capability:'platform:tenants:manage',allowed:false,denied:false}
+    ]};
+  }} as unknown as SqlPersistence;
+  const result=await sessionMetadata(db,'tenant','developer');
+  assert.equal(result.user.id,'developer');
+  assert.equal(result.user.tenantId,'tenant');
+  assert.deepEqual(result.user.permissions,['metadata:read','metadata:write']);
+  assert.deepEqual(result.user.fieldAccess,{});
+});
+test('Setup /auth/me returns the authenticated SQL policy, not an empty permission response',async()=>{
+  const {createSystemServer}=await import('./server.js');
+  const db={query:async(sql:string)=>{
+    if(sql.includes('FROM md_sessions s JOIN md_users'))
+      return {rows:[{tenant_id:'tenant',user_id:'developer'}]};
+    if(sql.includes('WITH requested(resource, action, capability)'))
+      return {rows:[{capability:'metadata:read',allowed:true,denied:false},
+        {capability:'metadata:write',allowed:true,denied:false}]};
+    throw new Error('Unexpected query');
+  }} as unknown as SqlPersistence;
+  const listener=createSystemServer(db).listen(0,'127.0.0.1');
+  try {
+    if(!listener.listening)await import('node:events').then(({once})=>once(listener,'listening'));
+    const port=(listener.address() as import('node:net').AddressInfo).port;
+    const response=await fetch('http://127.0.0.1:'+port+'/api/auth/me',{
+      headers:{Authorization:'Bearer validtoken'}
+    });
+    assert.equal(response.status,200);
+    const json=await response.json() as {user?:{id:string;permissions:string[]}};
+    assert.equal(json.user?.id,'developer');
+    assert.ok(json.user?.permissions.includes('metadata:read'));
+  }finally {
+    if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+  }
+});
