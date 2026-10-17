@@ -324,3 +324,42 @@ test('reconciliation repairs one matching account exactly once',async()=>{
   assert.equal(await reconcileBootstrapPassword(db,env),'already-done');
   assert.equal(updates,1);
 });
+
+test('first-login password rotation is opt-in and refuses multi-user SQL',async()=>{
+  const {rotateFirstLoginPassword}=await import('./first-login-rotation.js');
+  let transactions=0;
+  const db={query:async()=>({rows:[{tenants:1,users:2}]}),
+    transaction:async()=>{transactions++;}} as unknown as SqlPersistence;
+  assert.equal(await rotateFirstLoginPassword(db,{}),'disabled');
+  await assert.rejects(()=>rotateFirstLoginPassword(db,{
+    METADRIVE_ROTATE_FIRST_LOGIN_ONCE:'true',
+    METADRIVE_BOOTSTRAP_DOMAIN:'example.org',
+    METADRIVE_BOOTSTRAP_ADMIN_EMAIL:'dev@example.org',
+    METADRIVE_BOOTSTRAP_ADMIN_PASSWORD:'abcdefghjkmnpqrstuvwxyz23456789'
+  }),/precisely one tenant and one user/);
+  assert.equal(transactions,0);
+});
+test('first-login rotation writes a fresh hash only once for matched domain/account',async()=>{
+  const {rotateFirstLoginPassword}=await import('./first-login-rotation.js');
+  const auth=new AuthenticationService({} as SqlPersistence);
+  let saved='',rotated=false,updates=0;
+  const db={query:async()=>({rows:[{tenants:1,users:1}]}),
+    transaction:async(fn:(c:{query:(sql:string,args?:unknown[])=>Promise<unknown>})=>Promise<unknown>)=>fn({
+      query:async(sql:string,args:unknown[]=[])=>{
+        if(sql.includes('FROM md_users u JOIN'))return {rows:[{id:'dev',tenant_id:'one'}]};
+        if(sql.includes('FROM md_initial_password_rotations'))return {rows:rotated?[{}]:[]};
+        if(sql.includes('UPDATE md_users SET')){saved=String(args[0]);updates++;}
+        if(sql.includes('INSERT INTO md_initial_password_rotations'))rotated=true;
+        return {rows:[],rowCount:1};
+      }
+    })
+  } as unknown as SqlPersistence;
+  const env={METADRIVE_ROTATE_FIRST_LOGIN_ONCE:'true',
+    METADRIVE_BOOTSTRAP_DOMAIN:'example.org',
+    METADRIVE_BOOTSTRAP_ADMIN_EMAIL:'dev@example.org',
+    METADRIVE_BOOTSTRAP_ADMIN_PASSWORD:'abcdefghjkmnpqrstuvwxyz23456789'};
+  assert.equal(await rotateFirstLoginPassword(db,env),'rotated');
+  assert.equal(await auth.verifyPassword(env.METADRIVE_BOOTSTRAP_ADMIN_PASSWORD,saved),true);
+  assert.equal(await rotateFirstLoginPassword(db,env),'already-rotated');
+  assert.equal(updates,1);
+});

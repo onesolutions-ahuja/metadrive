@@ -9,7 +9,7 @@ import { PageRuntime } from './page-runtime.js';
 import { FlowRuntime } from './flow-runtime.js';
 import { AppRuntime } from './app-runtime.js';
 import { TenantProvisioning } from './tenant-provisioning.js';
-import {verifyLiveBootstrapLogin} from './live-login-self-check.js';
+import {rotateFirstLoginPassword} from './first-login-rotation.js';
 import {reconcileBootstrapPassword} from './bootstrap-password-sync.js';
 
 type Actor={tenant_id:string;user_id:string};
@@ -270,15 +270,22 @@ export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessE
 }
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  try { await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status); }
+  try { await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
+    const firstLogin=await rotateFirstLoginPassword(db);
+    if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);
+    if(firstLogin==='rotated'){
+      const {rows}=await db.query<{id:string}>(`SELECT t.id FROM md_tenants t JOIN md_tenant_domains d ON d.tenant_id=t.id WHERE d.domain=$1`,
+        [process.env.METADRIVE_BOOTSTRAP_DOMAIN]);
+      if(!rows[0])throw new Error('New login verification has no registered domain');
+      const auth=new AuthenticationService(db);
+      const session=await auth.signIn(rows[0].id,
+        process.env.METADRIVE_BOOTSTRAP_ADMIN_EMAIL??'',
+        process.env.METADRIVE_BOOTSTRAP_ADMIN_PASSWORD??'');
+      await auth.signOut(session.accessToken,session.refreshToken);
+      console.info('New developer login verification: passed');
+    } }
   catch(error) { await db.close(); throw error; }
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');
-  const listener=createSystemServer(db).listen(port,'0.0.0.0');
-  if(process.env.METADRIVE_LOGIN_SELF_CHECK==='true') {
-    listener.once('listening',()=>{
-      void verifyLiveBootstrapLogin(db,port).catch(()=>console.error('Bootstrap login self-check failed'));
-    });
-  }
-  return listener;
+  return createSystemServer(db).listen(port,'0.0.0.0');
 }
