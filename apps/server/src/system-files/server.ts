@@ -211,7 +211,8 @@ export function createSystemServer(db:SqlPersistence) {
 }
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  await db.query('SELECT 1 FROM md_tenants LIMIT 1');
+  try { await db.verifySchema(); }
+  catch(error) { await db.close(); throw error; }
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');
   return createSystemServer(db).listen(port,'0.0.0.0');
