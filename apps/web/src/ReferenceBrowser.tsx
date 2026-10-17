@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AtSign, ChevronLeft, ChevronRight, Database, Search, X } from 'lucide-react';
 import './ReferenceBrowser.css';
 
@@ -42,13 +42,12 @@ export default function ReferenceBrowser({
   id, groups, directOptions = [], query, onQueryChange, onChoose, onClose, emptyHint
 }: Props) {
   const [selectedPath, setSelectedPath] = useState('');
-  useEffect(() => setSelectedPath(''), [query]);
   const q = query.trim().replace(/^@/, '');
   const auto = [...groups].sort((a, b) => b.path.length - a.path.length)
     .find(group => lower(q).startsWith(lower(group.path) + '.'));
   const path = auto?.path ?? selectedPath;
   const selected = groups.find(group => group.path === path);
-  const search = auto ? q.slice(auto.path.length + 1) : selected ? '' : q;
+  const search = auto ? q.slice(auto.path.length + 1) : q === selected?.path ? '' : q;
   const matching = (option: ReferenceOption) =>
     !search || [option.label, option.detail ?? '', option.reference, option.dataType ?? '']
       .some(text => lower(text).includes(lower(search)));
@@ -71,7 +70,7 @@ export default function ReferenceBrowser({
   return <div className="metadata-reference-browser" id={id} role="dialog" aria-label="Choose a metadata reference">
     <div className="metadata-reference-header">
       {selected && <button type="button" aria-label="Back to available resources"
-        onMouseDown={event => event.preventDefault()} onClick={() => setSelectedPath('')}>
+        onMouseDown={event => event.preventDefault()} onClick={() => { setSelectedPath(''); onQueryChange(''); }}>
         <ChevronLeft size={15}/>
       </button>}
       <Search size={14}/>
@@ -87,7 +86,7 @@ export default function ReferenceBrowser({
     <div className="metadata-reference-results">
       {uniqueGroups.map(group => <button type="button" key={group.path} className="metadata-reference-group"
         onMouseDown={event => event.preventDefault()}
-        onClick={() => setSelectedPath(group.path)}>
+        onClick={() => { setSelectedPath(group.path); onQueryChange(''); }}>
         <Database size={15}/><span><strong>{group.label}</strong><small>{group.detail || group.path}</small></span>
         <ChevronRight size={15}/>
       </button>)}
