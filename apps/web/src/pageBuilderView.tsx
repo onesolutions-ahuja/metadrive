@@ -1201,7 +1201,7 @@ function PageBuilder({
       properties: component.properties,
       object: page.pageType === 'Record Page' ? targetObject : undefined,
       device,
-      preview: true,
+      preview: true, previewOnly: true, pageSessionKey: (builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName,
       disabled: !interactivePreview,
       onAction: previewProperties.onAction,
       onChange: previewProperties.onChange,
@@ -1314,7 +1314,7 @@ function PageBuilder({
                         pageSessionKey={(builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName}
                         reports={reports} formFactor={device === 'Phone' ? 'Phone' : 'Desktop'}
                         availableFlows={flows.filter((flow) => ['Screen Flow', 'Autolaunched Flow'].includes(flow.flowType))}
-                        onNavigate={() => {}} onLaunchFlow={(flowApiName: string, inputs: Record<string, unknown>) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions={!interactivePreview} />
+                        onNavigate={() => {}} onLaunchFlow={(flowApiName: string, inputs: Record<string, unknown>) => { onLaunchFlow(flowApiName, inputs); externalPreviewWindowRef.current?.opener?.focus?.(); }} disableActions />
                   : customDefinition
                     ? <RegisteredComponent definition={customDefinition} props={libraryPreview ? customPreviewProps : {
                       ...component.properties,
@@ -1322,7 +1322,7 @@ function PageBuilder({
                       label: component.label,
                       properties: component.properties,
                       object: page.pageType === 'Record Page' ? targetObject : undefined,
-                      device,
+                      device, previewOnly: true, pageSessionKey: (builderAppApiName || apps[0]?.apiName || 'Records') + ':' + page.apiName,
                       children: nestedChildren,
                       ...(customDefinition.apiName === 'OneSplitPane' ? {left:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane !== 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview)),right:childrenOf(page.components, component.id).filter(child => child.properties.layoutPane === 'second').map(child => renderPageComponent(child, page.components.findIndex(item => item.id === child.id), libraryPreview, interactivePreview))} : {})
                     }} />
