@@ -23,11 +23,16 @@ if(process.env.METADRIVE_SQL_TARGET_DB!==db||!target)throw Error('Explicit targe
 const input=process.env.DATABASE_URL;
 if(!input)throw Error('DATABASE_URL required');
 const url=new URL(input);
-if(!['postgres:','postgresql:'].includes(url.protocol)||
-   !url.hostname.toLowerCase().endsWith('.aivencloud.com')||
-   url.pathname!=='/'+db)throw Error('Database connection target mismatch');
+const isolated=process.env.METADRIVE_ISOLATED_SQL_RESTORE==='true';
+if(!['postgres:','postgresql:'].includes(url.protocol))throw Error('Invalid SQL URL');
+if(isolated){
+ if(process.env.GITHUB_ACTIONS!=='true'||url.hostname!=='127.0.0.1'||
+    url.pathname!=='/metadrive_sql_proof')
+   throw Error('Isolated SQL restore may run only inside GitHub proof job');
+}else if(!url.hostname.toLowerCase().endsWith('.aivencloud.com')||
+   url.pathname!=='/'+db)throw Error('Live database connection target mismatch');
 for(const k of ['sslmode','sslcert','sslkey','sslrootcert'])url.searchParams.delete(k);
-const ssl={rejectUnauthorized:process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT!=='true',
+const ssl=isolated?false:{rejectUnauthorized:process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT!=='true',
   ...(process.env.METADRIVE_DB_CA_CERT?{ca:process.env.METADRIVE_DB_CA_CERT.replace(/\\n/g,'\n')}:{})};
 const pool=new pg.Pool({connectionString:url.toString(),ssl,max:2,connectionTimeoutMillis:15000});
 const retired=new Set(['Campaign','Global_Settings__c','KioskSettings__c',
@@ -241,16 +246,18 @@ try{
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length};
  if(!apply){console.log(JSON.stringify({mode:'dry-run',...summary},null,2));}
  else{
-  if(process.env.METADRIVE_COMMERCE_MIGRATION_APPROVED!=='true'||
-     process.env.METADRIVE_BACKEND_MAINTENANCE_CONFIRMED!=='true')
-   throw Error('Explicit approved migration and offline API maintenance required');
-  const file=process.env.METADRIVE_SQL_CLEANUP_PROOF_FILE;
-  if(!file)throw Error('Independently restored encrypted backup proof required');
-  const proof=JSON.parse(readFileSync(file,'utf8'));
-  if(proof.database!==db||proof.revision!==snapshot.version||
-    proof.stateDigest!==snapshot.digest||proof.restoredDatabaseVerified!==true||
-    !/^[a-f0-9]{64}$/.test(proof.encryptedBackupSha256??''))
-   throw Error('Fresh SQL restore proof does not match this revision');
+  if(!isolated){
+   if(process.env.METADRIVE_COMMERCE_MIGRATION_APPROVED!=='true'||
+      process.env.METADRIVE_BACKEND_MAINTENANCE_CONFIRMED!=='true')
+    throw Error('Explicit approved migration and offline API maintenance required');
+   const file=process.env.METADRIVE_SQL_CLEANUP_PROOF_FILE;
+   if(!file)throw Error('Independently restored encrypted backup proof required');
+   const proof=JSON.parse(readFileSync(file,'utf8'));
+   if(proof.database!==db||proof.revision!==snapshot.version||
+      proof.stateDigest!==snapshot.digest||proof.restoredDatabaseVerified!==true||
+      !/^[a-f0-9]{64}$/.test(proof.encryptedBackupSha256??''))
+    throw Error('Fresh SQL restore proof does not match this revision');
+  }
   const result=await writeNormalizedState(pool,next,snapshot,synchronizeTypedRecords);
   console.log(JSON.stringify({mode:'committed',...summary,newRevision:result.version,
     physicalTablesDropped:false}));
