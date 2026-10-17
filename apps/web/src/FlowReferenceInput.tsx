@@ -2,7 +2,8 @@ import { useId, useRef, useState } from 'react';
 import { AtSign } from 'lucide-react';
 import type { FieldMetadata, FlowDefinitionMetadata, ObjectMetadata } from './metadata';
 import { compatibleFlowValue, flowReferenceChoices, referenceName } from './builders/flowReferenceCatalog';
-import ReferenceBrowser, { type ReferenceGroup, type ReferenceOption } from './ReferenceBrowser';
+import { flowReferenceBrowserGroups } from './builders/flowReferenceBrowserModel';
+import ReferenceBrowser from './ReferenceBrowser';
 import './FlowReferenceInput.css';
 
 type Props = {
@@ -33,30 +34,7 @@ export default function FlowReferenceInput({
   const path=referenceName(value);
   const badReference=Boolean(path&&!selected) ||
     (!open && /^@[A-Za-z_$][A-Za-z0-9_$.]*$/.test(value.trim()));
-  const groups=new Map<string,ReferenceGroup>();
-  const directOptions:ReferenceOption[]=[];
-  for(const choice of catalog){
-    const token=referenceName(choice.reference);
-    if(!token)continue;
-    const parts=token.split('.');
-    const compatible=compatibleFlowValue(choice,field,targetObjectApiName);
-    const option:ReferenceOption={
-      reference:choice.reference,
-      label:parts.length>1?choice.label.split(' → ').slice(1).join(' → ')||parts.at(-1)!:choice.label,
-      detail:choice.detail,
-      dataType:choice.dataType,
-      disabled:!compatible||Boolean(choice.unavailableReason),
-      reason:choice.unavailableReason||(!compatible?'Incompatible with the selected target field type or relationship.':undefined)
-    };
-    if(parts.length===1){directOptions.push(option);continue;}
-    const root=parts[0];
-    if(!groups.has(root)){
-      const stepName=choice.label.split(' → ')[0];
-      groups.set(root,{path:root,label:root,detail:stepName===root
-        ?choice.category:stepName+' · '+choice.category,options:[]});
-    }
-    groups.get(root)!.options.push(option);
-  }
+  const {groups,directOptions}=flowReferenceBrowserGroups(flow,elementId,objects,field,targetObjectApiName);
   const pick=(reference:string)=>{onChange(reference);setOpen(false);setSearch('')};
   const update=(next:string)=>{
     onChange(next);
@@ -80,7 +58,7 @@ export default function FlowReferenceInput({
     {badReference && <small className="flow-reference-error" role="status">
       Unknown, incompatible or unavailable reference. Browse @ to select a valid record field.
     </small>}
-    {open && <ReferenceBrowser id={id} groups={[...groups.values()]}
+    {open && <ReferenceBrowser id={id} groups={groups}
       directOptions={directOptions} query={search} onQueryChange={setSearch}
       onChoose={pick} onClose={()=>setOpen(false)}
       emptyHint="No matching available resource. Check the Loop collection, selected Object, relationship metadata and Get Records fields to store."/>}
