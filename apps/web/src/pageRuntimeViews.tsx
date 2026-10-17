@@ -82,6 +82,7 @@ import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, i
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import {resolveMentionProperties} from './smartFieldMentions';
+import { explicitMentionRecordId, useRelationshipMentionContext } from './useRelationshipMentionContext';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
@@ -390,9 +391,9 @@ function MetadataBoundPageComponent({
   })).filter(contact => contact.id && contact.phone);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
-  const resolvedProperties = resolveMentionProperties(properties,
-    { [objectApiName]: visibleRecords[0] },
-    { [objectApiName]: fields.map(field => field.apiName) });
+  const mentionContext = useRelationshipMentionContext(objects, objectApiName,
+    explicitMentionRecordId(properties), properties, apiRequest, revision);
+  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields);
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
@@ -407,7 +408,7 @@ function MetadataBoundPageComponent({
     }
     if (typeof source === 'string' && source.startsWith('$record.')) {
       const fieldName = source.slice(8);
-      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? mentionContext.records[objectApiName]?.[fieldName] : undefined;
     }
     return source;
   };
