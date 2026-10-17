@@ -295,7 +295,7 @@ function migrateTenant(t){
  t.records.ProductModifier__c=alternatives;
  // Move legacy Product business identities to the canonical object before
  // deactivating the retired metadata. Physical old SQL rows remain archived.
- t.__productConsolidation=consolidateRetiredProducts(t);
+ const productConsolidation=consolidateRetiredProducts(t);
  // Sale items must never disappear silently if actual transactions exist.
  if((t.records.SaleItem__c??[]).length)
   throw Error('SaleItem contains business records; migration requires validated SaleLine mapping');
@@ -311,6 +311,7 @@ function migrateTenant(t){
   return desired?{...page,components:structuredClone(desired.components)}:page;
  });
  assertNoForeignReferences(t);
+ return productConsolidation;
 }
 /** Delete the specifically retired Product table after independent backup.
  * Executed inside the same guarded SQL transaction as metadata retirement.
@@ -355,7 +356,7 @@ try{
  }else{
   tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
     .map(row=>[row.Id,row.GroupId]));
-  migrateTenant(tenant);
+  const productConsolidation=migrateTenant(tenant);
   productConsolidation={fieldsOnly:true,canonical:'Product__c'};
  }
  const repairedRecordAudits=productOnly?{}:repairMigratedRecordAuditFields(tenant);
@@ -373,7 +374,7 @@ try{
  }
  const noChanges=missingSql.rows.length===0&&JSON.stringify(snapshot.state)===JSON.stringify(next);
  const summary={database:db,tenant:target,revision:snapshot.version,
-   productConsolidation:tenant.__productConsolidation,
+   productConsolidation,
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
    repairedRecordAudits,
