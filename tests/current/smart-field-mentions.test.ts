@@ -37,7 +37,7 @@ test('picker lists only current fields then actual lookup paths, not unrelated a
   assert.ok(!groups.some(group => group.objectApiName === 'Product'));
   const customer = groups.find(group => group.path === 'Sale.Customer')!;
   assert.equal(customer.fields.find(f => f.fieldApiName === 'Name')?.reference, '@Sale.Customer.Name');
-  assert.equal(groups.find(group => group.path === 'Sale.BillingCustomer')?.fields[0].reference,
+  assert.equal(groups.find(group => group.path === 'Sale.BillingCustomer')?.fields.find(field => field.fieldApiName === 'Name')?.reference,
     '@Sale.BillingCustomer.Name');
   assert.deepEqual(mentionGroups(objects, 'Sale', [], 'sale.customer.na')
     .flatMap(group => group.fields.map(f => f.fieldApiName)), ['Name']);
