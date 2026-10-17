@@ -51,3 +51,33 @@ test('SQL record CRUD rejects fields not registered in metadata', async () => {
     /Invalid number/
   );
 });
+
+test('registered browser origin cannot select another tenant by slug', async () => {
+  const {createSystemServer}=await import('./server.js');
+  const touched:string[]=[];
+  const db={
+    query:async(sql:string,params:unknown[])=>{
+      touched.push(sql);
+      if(sql.includes('FROM md_tenant_domains')) {
+        assert.deepEqual(params,['tenant-a.example']);
+        return {rows:[{tenant_id:'tenant-a'}],rowCount:1};
+      }
+      if(sql.includes('FROM md_tenants')) return {rows:[{id:'tenant-b'}],rowCount:1};
+      throw new Error('Cross-tenant authentication must stop before reading credentials');
+    }
+  } as unknown as SqlPersistence;
+  const app=createSystemServer(db);
+  const listener=app.listen(0,'127.0.0.1');
+  try {
+    const port=(listener.address() as import('node:net').AddressInfo).port;
+    const response=await fetch(`http://127.0.0.1:${port}/api/auth/login`,{
+      method:'POST',
+      headers:{'Origin':'https://tenant-a.example','Content-Type':'application/json'},
+      body:JSON.stringify({tenantSlug:'tenant-b',email:'test@example.com',password:'password'})
+    });
+    assert.equal(response.status,401);
+    assert.equal(touched.some(sql=>sql.includes('FROM md_users')),false);
+  } finally {
+    await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+  }
+});

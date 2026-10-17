@@ -26,16 +26,24 @@ function cookieOptions(req:Request) {
   return `HttpOnly; Path=/api/auth; Max-Age=2592000; SameSite=${crossSite?'None':'Lax'}${crossSite||process.env.NODE_ENV==='production'?'; Secure':''}`;
 }
 async function resolveTenant(db:SqlPersistence,req:Request,tenantSlug?:unknown) {
+  // Explicit tenant selection must never override the tenant owning the browser origin.
+  const source=req.get('origin');
+  let originTenant:string|undefined;
+  if(source) {
+    const host=new URL(source).hostname.toLowerCase();
+    const {rows}=await db.query<{tenant_id:string}>(
+      'SELECT tenant_id FROM md_tenant_domains WHERE domain=$1',[host]);
+    originTenant=rows[0]?.tenant_id;
+    if(!originTenant) return undefined;
+  }
   if(tenantSlug!==undefined) {
-    if(typeof tenantSlug!=='string'|| !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(tenantSlug)) throw new Error('Invalid tenant');
+    if(typeof tenantSlug!=='string'|| !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(tenantSlug))
+      throw new Error('Invalid tenant');
     const {rows}=await db.query<{id:string}>('SELECT id FROM md_tenants WHERE slug=$1',[tenantSlug]);
+    if(originTenant && rows[0]?.id!==originTenant) return undefined;
     return rows[0]?.id;
   }
-  const source=req.get('origin');
-  if(!source) return undefined;
-  const host=new URL(source).hostname.toLowerCase();
-  const {rows}=await db.query<{tenant_id:string}>('SELECT tenant_id FROM md_tenant_domains WHERE domain=$1',[host]);
-  return rows[0]?.tenant_id;
+  return originTenant;
 }
 export function createSystemServer(db:SqlPersistence) {
   const app=express();
