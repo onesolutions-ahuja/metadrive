@@ -11,6 +11,9 @@ function fixtures(){
   {apiName:'SaleLine__c',label:'Sale Line',fields:[lookup('ProductId','Product__c'),lookup('SaleId','Sale__c')]},
   {apiName:'Sale__c',label:'Sale',fields:[]}
  ];
+ const pages=[{apiName:'COPILOT_POS_Cashier_Till',status:'Draft',components:[
+  {id:'cart',type:'Custom:OneShoppingCart',properties:{title:'Till'}}
+ ]}];
  const flows=[{
   apiName:'COPILOT_POS_Cash_Checkout',status:'Draft',activeVersion:null,
   elements:[
@@ -30,12 +33,12 @@ function fixtures(){
   ],
   resources:[{name:'StandardCatalogProduct',type:'Record',dataType:'Product'}]
  }];
- return {objects,flows};
+ return {objects,flows,pages};
 }
 test('POS draft repair only extends age metadata and maps loop product into SaleLine',()=>{
- const {objects,flows}=fixtures();
- const original=JSON.stringify({objects,flows});
- const result=planPosDraftRepair(objects,flows);
+ const {objects,flows,pages}=fixtures();
+ const original=JSON.stringify({objects,flows,pages});
+ const result=planPosDraftRepair(objects,flows,pages);
  assert.deepEqual(result.fieldsToAdd,['AgeRestricted','MinimumAge']);
  const writer=result.flow.elements.find(x=>x.id===3);
  assert.equal(writer.config.object,'SaleLine__c');
@@ -47,11 +50,13 @@ test('POS draft repair only extends age metadata and maps loop product into Sale
  assert.deepEqual(result.flow.elements[2].config.conditions,[
   {field:'Id',operator:'Equals',value:'{!CurrentOrderLine.ProductId}'}]);
  assert.equal(result.flow.resources[0].dataType,'Product__c');
- assert.equal(JSON.stringify({objects,flows}),original,'Planner must not mutate tenant state');
+ assert.deepEqual(result.page.components[0].properties.actionFlows.checkout.inputs,{SessionKey:'$event.sessionKey'});
+ assert.equal(JSON.stringify({objects,flows,pages}),original,'Planner must not mutate tenant state');
  const second=planPosDraftRepair([...objects.filter(x=>x.apiName!=='Product__c'),result.product],
-  [result.flow]);
+  [result.flow],[result.page]);
  assert.equal(second.product,null);
  assert.equal(second.flow,null,'Repair must be idempotent');
+ assert.equal(second.page,null,'Page bindings must remain unchanged on replay');
 });
 test('POS draft repair rejects wrong relationship rather than forcing incompatible Product ID',()=>{
  const {objects,flows}=fixtures();
