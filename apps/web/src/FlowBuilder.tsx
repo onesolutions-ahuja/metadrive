@@ -533,9 +533,7 @@ export default function FlowBuilder({
               {condition.operator !== 'Is Null' && condition.operator !== 'Is Not Null' && <FlowReferenceInput
                 ariaLabel="Outcome condition value" value={displayValue(condition.value)}
                 flow={flow} elementId={selected.id} objects={objects}
-                field={decisionObject?.fields.find(field=>field.apiName===condition.field)
-                  ??(condition.field==='Id'?{apiName:'Id',label:'Record ID',dataType:'Id',required:true,unique:true}:undefined)}
-                targetObjectApiName={decisionObject?.apiName}
+                field={decisionObject?.fields.find(field=>field.apiName===condition.field)??(condition.field==='Id'?{apiName:'Id',label:'Record ID',dataType:'Id',required:true,unique:true}:undefined)} targetObjectApiName={decisionObject?.apiName}
                 onChange={value=>setOutcomes(outcomes.map((item,itemIndex)=>itemIndex===index
                   ? {...item,conditions:item.conditions.map((entry,entryIndex)=>
                     entryIndex===conditionIndex?{...entry,value}:entry)}:item))} />}
