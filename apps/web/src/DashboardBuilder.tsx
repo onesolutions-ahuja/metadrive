@@ -264,7 +264,6 @@ export default function DashboardBuilder({
   useEffect(() => {
     setViewFilterValues(Object.fromEntries((current?.filters ?? []).map((filter) => [filter.id, filter.value])));
   }, [current?.apiName, current?.filters]);
-
   useEffect(() => {
     let active = true;
     setActiveSnapshotId('');
@@ -993,6 +992,7 @@ export default function DashboardBuilder({
     }
     return values;
   };
+  const displayMentionText = (component: DashboardComponentMetadata, raw: string) => { const object = objectFor(component.objectApiName); const record = filteredRecords(component)[0]; return String(resolveMentionValue(raw, { [component.objectApiName]: record }, { [component.objectApiName]: object?.fields.map(field => field.apiName) ?? [] }) ?? ''); };
   const renderComponent = (component: DashboardComponentMetadata) => {
     const chartPalette = chartPaletteFor(component.chartColorPalette);
     const records = filteredRecords(component);
@@ -1896,7 +1896,7 @@ export default function DashboardBuilder({
               {activeSnapshot.components.map((component) => {
                 const chartPalette = chartPaletteFor(component.chartColorPalette);
                 return <section className={`dashboard-preview-card surface ${component.type.toLocaleLowerCase().replace(/\s+/g, '-')} dashboard-width-${(component.width ?? (component.type === 'Table' ? 'Full' : 'Half')).toLocaleLowerCase()} dashboard-height-${(component.height ?? 'Medium').toLocaleLowerCase()}`} key={component.componentId}>
-                <header><div><h2>{component.title}</h2><p>{component.subtitle || `${component.objectApiName} · Snapshot`}</p></div></header>
+                <header><div><h2>{displayMentionText(component, component.title)}</h2><p>{(component.subtitle && displayMentionText(component, component.subtitle)) || `${component.objectApiName} · Snapshot`}</p></div></header>
                 {component.unavailableReason && <p className="dashboard-snapshot-unavailable" role="status">{component.unavailableReason}</p>}
                 {component.type === 'Rich Text' && !component.unavailableReason && <iframe
                   className="dashboard-rich-text-frame"
@@ -2206,7 +2206,7 @@ export default function DashboardBuilder({
                     {component.columns.map((column) => <td key={column.apiName}>{formatValue(row[column.apiName])}</td>)}
                   </tr>)}</tbody>
                 </table><p className="dashboard-snapshot-table-count">First {component.rows.length} of {component.totalRows.toLocaleString()} matching records captured.</p></div>}
-                {component.footer && <p className="dashboard-widget-footer">{component.footer}</p>}
+                {component.footer && <p className="dashboard-widget-footer">{displayMentionText(component, component.footer)}</p>}
                 </section>;
               })}
             </div>
@@ -2246,11 +2246,11 @@ export default function DashboardBuilder({
         <div className="dashboard-panel-heading"><strong>{selected ? 'Component Properties' : 'Dashboard Properties'}</strong></div>
         {selected ? <>
           <label className="form-label" htmlFor="dashboard-component-title">Title</label>
-          <input id="dashboard-component-title" className="form-control" disabled={!canEditCurrent} maxLength={80} value={selected.title} onChange={(event) => updateComponent(selected.id, { title: event.target.value })} />
+          <SmartFieldInput id="dashboard-component-title" disabled={!canEditCurrent} maxLength={80} value={selected.title} objects={objects} primaryObjectApiName={selected.objectApiName} onChange={next => updateComponent(selected.id, { title: next })} />
           <label className="form-label" htmlFor="dashboard-component-subtitle">Subtitle</label>
-          <input id="dashboard-component-subtitle" className="form-control" disabled={!canEditCurrent} maxLength={250} value={selected.subtitle ?? ''} onChange={(event) => updateComponent(selected.id, { subtitle: event.target.value })} />
+          <SmartFieldInput id="dashboard-component-subtitle" disabled={!canEditCurrent} maxLength={250} value={selected.subtitle ?? ''} objects={objects} primaryObjectApiName={selected.objectApiName} onChange={next => updateComponent(selected.id, { subtitle: next })} />
           <label className="form-label" htmlFor="dashboard-component-footer">Footer</label>
-          <input id="dashboard-component-footer" className="form-control" disabled={!canEditCurrent} maxLength={250} value={selected.footer ?? ''} onChange={(event) => updateComponent(selected.id, { footer: event.target.value })} />
+          <SmartFieldInput id="dashboard-component-footer" disabled={!canEditCurrent} maxLength={250} value={selected.footer ?? ''} objects={objects} primaryObjectApiName={selected.objectApiName} onChange={next => updateComponent(selected.id, { footer: next })} />
           <label className="form-label" htmlFor="dashboard-component-width">Width</label>
           <select id="dashboard-component-width" className="form-control" disabled={!canEditCurrent} value={selected.width ?? (selected.type === 'Table' ? 'Full' : 'Half')} onChange={(event) => updateComponent(selected.id, { width: event.target.value as DashboardComponentMetadata['width'] })}>
             <option>Quarter</option><option>Half</option><option>ThreeQuarter</option><option>Full</option>
