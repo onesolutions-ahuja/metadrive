@@ -26,8 +26,8 @@
 .one-label small{font-weight:400;opacity:.7}
 .one-tabs{display:flex;gap:4px;border-bottom:1px solid var(--one-border);flex-wrap:wrap}
 .one-tab{padding:9px 13px;border:0;border-bottom:2px solid transparent;background:transparent;cursor:pointer;color:inherit;font:inherit}
-.one-tab[aria-selected="true"]{border-bottom-color:var(--one-accent);color:var(--one-accent);font-weight:650}
-.one-badge{display:inline-flex;padding:4px 10px;border-radius:99px;background:color-mix(in srgb,var(--one-accent) 14%,var(--one-bg));font-size:.8em;font-weight:650;width:fit-content}
+.one-tab[aria-selected="true"]{border-bottom-color:var(--one-accent);color:var(--one-accent);font-weight:600}
+.one-badge{display:inline-flex;padding:4px 10px;border-radius:99px;background:color-mix(in srgb,var(--one-accent) 14%,var(--one-bg));font-size:.8em;font-weight:600;width:fit-content}
 .one-alert{border-left:4px solid var(--one-accent);padding:12px 14px}
 .one-progress{width:100%;accent-color:var(--one-accent);height:9px}
 .one-metric{font-size:2.3em;font-weight:700;letter-spacing:-.035em;line-height:1.2}
