@@ -308,7 +308,7 @@ function ShoppingCartTill({props}) {
     {props.showCategoryTabs!==false&&categories.length>0&&<nav className="one-shopping-categories" aria-label={props.categoryTabsLabel||'Product categories'}>
      <button className="one-btn" type="button" aria-pressed={!selectedCategory} onClick={()=>setSelectedCategory('')}>{props.allCategoriesLabel||'All'}</button>
      {categories.map(category=><button key={category} className="one-btn" type="button" aria-pressed={selectedCategory===category} onClick={()=>setSelectedCategory(category)}>{category}</button>)}
-    </nav>
+    </nav>}
     {props.loading&&<p role="status">Loading products…</p>}
     {!props.loading&&!filtered.length&&<p className="one-empty">{props.emptyProductsText||'No products found.'}</p>}
     <div className="one-shopping-products">{filtered.map(product=><button className="one-item one-item--interactive"
