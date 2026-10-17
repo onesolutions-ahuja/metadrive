@@ -24,7 +24,7 @@ test('metadata registration uses parameters and rejects invalid names', async ()
   const calls: Array<{sql:string;args:unknown[]}> = [];
   const db = { query: async (sql: string, args: unknown[]) => { calls.push({sql,args}); return {rows:[{id:'new-object'}]}; } } as unknown as SqlPersistence;
   const service = new ObjectDefinitionService(db);
-  await assert.rejects(() => service.register('tenant','abc;DROP TABLE', 'Bad'), /Invalid object API name/);
+  await assert.rejects(() => service.register('tenant','abc;DROP TABLE', 'Bad'), /Invalid object definition/);
   await service.register('tenant','Product__c', 'Product');
   assert.match(calls[0].sql, /\$1/);
   assert.equal(calls[0].args[1], 'Product__c');
