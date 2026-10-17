@@ -65,10 +65,14 @@ test('User Object metadata is served by the identity runtime, never an extra phy
   assert.equal(defined.size,1);
   assert.equal(defined.has(JSON.stringify(['tenantA','User'])),false);
   assert.equal(defined.has(JSON.stringify(['tenantA','Product'])),true);
-  assert.throws(()=>definedObjects({tenants:{tenantA:{
+  // Historical relational/JSONB migration snapshots may have populated User
+  // record buckets; isolated restore must preserve them, not drop user data.
+  const historical=definedObjects({tenants:{tenantA:{
     ...state.tenants.tenantA,
-    records:{User:[{Id:'must-not-be-business-record'}],Product:[]}
-  }}}),/User identity records unexpectedly exist/);
+    records:{User:[{Id:'historical-business-row'}],Product:[]}
+  }}});
+  assert.equal(historical.size,2);
+  assert.equal(historical.get(JSON.stringify(['tenantA','User']))?.records.length,1);
   const code=source('apps/server/src/normalized-typed-records.mjs');
   assert.match(code,/assertRetiredSystemUserTableIsEmpty/);
   assert.match(code,/Never auto-drop on startup/);
