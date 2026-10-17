@@ -11,11 +11,11 @@
 .flow-reference-search{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #e6eaf1}
 .flow-reference-search input{background:transparent;border:0;outline:0;min-width:0;flex:1;font-size:12px;color:inherit}
 .flow-reference-search>button{border:0;background:transparent;cursor:pointer;color:#6a7687}
-.flow-reference-results{max-height:270px;overflow-y:auto;overscroll-behavior:contain}
-.flow-reference-group{font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:650;color:#63748b;margin:0;padding:9px 11px 4px;background:#f5f8fc}
+.flow-reference-results{max-height:270px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--md-scroll-thumb,#abb8c8) transparent;overscroll-behavior:contain}
+.flow-reference-group{font-size:var(--md-fs-xs,11px);text-transform:uppercase;letter-spacing:.04em;font-weight:600;color:#63748b;margin:0;padding:9px 11px 4px;background:#f5f8fc}
 .flow-reference-option{border:0;background:transparent;width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;cursor:pointer;text-align:left;padding:8px 12px}
 .flow-reference-option:hover,.flow-reference-option:focus-visible{background:#eaf3ff}
 .flow-reference-option strong{font-size:12px;font-weight:550}
-.flow-reference-option small{font-size:10px;color:#6a798b}
+.flow-reference-option small{font-size:var(--md-fs-xs,11px);color:#6a798b}
 .flow-reference-empty{padding:12px;font-size:12px;color:#66758a;line-height:1.5}
-.flow-reference-foot{font-size:10px;color:#69768a;border-top:1px solid #e6eaf1;padding:8px 11px}
+.flow-reference-foot{font-size:var(--md-fs-xs,11px);color:#69768a;border-top:1px solid #e6eaf1;padding:8px 11px}
