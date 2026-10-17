@@ -69,13 +69,17 @@ export function assessCheckoutReadiness({objects=[],flows=[],pages=[]}={}){
  check('flow:stock-update',!cashFlow||elements.some(e=>['Create Records','Update Records'].includes(e.type)
    && ['StockBalance','InventoryTransaction','InventoryTransactionItem'].includes(String(e.config?.object??''))),
    'Stock movement must be written as business records');
- const till=pages.find(p=>/cashier|till/i.test(p.label+' '+p.apiName));
- const customer=pages.find(p=>/customer.*display/i.test(p.label+' '+p.apiName));
+ const till=pages.find(p=>/^COPILOT_POS_Cashier/i.test(p.apiName))
+   ??pages.find(p=>/cashier|till/i.test(p.label+' '+p.apiName));
+ const customer=pages.find(p=>/^COPILOT_POS_Customer/i.test(p.apiName))
+   ??pages.find(p=>/customer.*display/i.test(p.label+' '+p.apiName));
  check('page:till',Boolean(till),'Cashier Page must exist');
  check('page:customer',Boolean(customer),'Customer display Page must exist');
  check('page:drafts',(!till||till.status!=='Active')&&(!customer||customer.status!=='Active'),
    'Do not activate Pages before safe end-to-end checkout test');
- check('page:sync',Boolean(till&&customer), 'Both Pages must be paired and tested in a browser');
+ const syncReady=Boolean(till&&customer&&[till,customer].every(page=>(page.components??[])
+   .some(component=>component.properties?.stateSyncEnabled===true)));
+ check('page:sync',syncReady, 'Both Pages need secure session synchronisation; separate browser/paired-device testing is still required');
  return {readyForLiveTest:issues.length===0,checks,issues,
    checkoutFlow:{found:Boolean(cashFlow),status:cashFlow?.status??'Missing',elements:elements.length},
    tillPage:till?.status??'Missing',customerPage:customer?.status??'Missing',
