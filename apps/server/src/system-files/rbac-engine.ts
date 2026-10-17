@@ -14,7 +14,7 @@ export class RbacEngine {
       SELECT COALESCE(bool_or(r.effect='allow'),false) AS allow_granted,
              COALESCE(bool_or(r.effect='deny'),false) AS deny_granted
         FROM md_permission_rules r JOIN assigned a ON a.permission_set_id=r.permission_set_id
-        WHERE r.tenant_id=$1 AND r.resource=$3 AND r.action=$4
+        WHERE r.tenant_id=$1 AND r.resource IN ($3,'*') AND r.action IN ($4,'*')
     `,[tenantId,userId,resource,action]);
     return rows[0]?.allow_granted === true && rows[0]?.deny_granted !== true;
   }

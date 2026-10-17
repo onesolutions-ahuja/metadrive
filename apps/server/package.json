@@ -9,7 +9,8 @@
     "test": "npm run test:unit --prefix ../..",
     "start": "node dist-system/system-files/entrypoint.js",
     "build:system": "tsc -p tsconfig.system-files.json",
-    "test:system": "tsx --test src/system-files/system.test.ts"
+    "test:system": "tsx --test src/system-files/system.test.ts",
+    "provision:tenant": "node dist-system/system-files/provision-cli.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
