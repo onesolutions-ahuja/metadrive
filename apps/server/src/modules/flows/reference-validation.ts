@@ -41,7 +41,17 @@ function sourceFor(flow:FlowMetadata,root:string):Choice|undefined{
   }
   const loop=flow.elements.find(element=>element.type==='Loop'&&element.config.loopVariable===root);
   const resource=flow.resources.find(r=>r.name===root);
-  if(loop&&resource?.type==='Record')return {type:'Record',objectName:resource.dataType,origin:loop.id};
+  if(loop){
+    const collectionName=String(loop.config.collection||'');
+    const collection=flow.resources.find(item=>item.name===collectionName&&item.isCollection);
+    const getSource=flow.elements.find(item=>item.type==='Get Records'
+      &&String(item.config.outputVariable||`element${item.id}`)===collectionName
+      &&String(item.config.recordLimit??'1')!=='1');
+    const objectName=collection?.dataType||String(getSource?.config.object||'');
+    if(objectName)return {type:'Record',objectName,origin:loop.id,
+      fields:getSource&&Array.isArray(getSource.config.fields)
+        ?getSource.config.fields.filter((f):f is string=>typeof f==='string'):undefined};
+  }
   if(resource)return {type:resource.type==='Record'?'Record':resource.dataType,
     objectName:resource.dataType,isCollection:resource.isCollection};
   // Screen inputs are persisted as top-level Flow variables after the interview is submitted.
