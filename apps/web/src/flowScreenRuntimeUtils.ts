@@ -1,4 +1,5 @@
 import type { FlowElementMetadata } from './metadata';
+import { resolveMentionValue } from './smartFieldMentions';
 
 export function initialScreenValues(screen: FlowElementMetadata): Record<string, unknown> {
   const fields = Array.isArray(screen.config.fields)
@@ -45,7 +46,7 @@ export function screenFieldIsVisible(field: Record<string, unknown>, values: Rec
 
 /** Plain-text resource bindings for metadata-authored Screen Flow instructions. */
 export function resolveScreenText(text: unknown, values: Record<string, unknown>): string {
-  return String(text ?? '').replace(/\{!([A-Za-z_][A-Za-z0-9_.]*)\}/g, (_match, path: string) => {
+  const merged = String(text ?? '').replace(/\{!([A-Za-z_][A-Za-z0-9_.]*)\}/g, (_match, path: string) => {
     let value: unknown = values;
     for (const key of path.split('.')) {
       if (['__proto__', 'prototype', 'constructor'].includes(key)
@@ -54,4 +55,8 @@ export function resolveScreenText(text: unknown, values: Record<string, unknown>
     }
     return ['string', 'number', 'boolean'].includes(typeof value) ? String(value) : '';
   });
+  const records = Object.fromEntries(Object.entries(values).filter(([, value]) =>
+    value && typeof value === 'object' && !Array.isArray(value))) as Record<string, Record<string, unknown>>;
+  const fields = Object.fromEntries(Object.entries(records).map(([name, record]) => [name, Object.keys(record)]));
+  return String(resolveMentionValue(merged, records, fields) ?? '');
 }
