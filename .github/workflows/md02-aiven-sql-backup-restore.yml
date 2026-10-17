@@ -213,6 +213,14 @@ jobs:
           try {
             const verified=await readNormalizedState(pool,verifyTypedRecords);
             if(verified.version<2)throw Error('Commerce SQL restore migration revision absent');
+            // The runtimeRecordSchema requires both timestamps on every row.
+            // Prevent a SQL-valid migration from crashing app hydration.
+            for(const [tenantId,tenant] of Object.entries(verified.state.tenants??{}))
+              for(const [object,rows] of Object.entries(tenant.records??{}))
+                for(const row of rows)
+                  for(const field of ['CreatedDate','LastModifiedDate'])
+                    if(typeof row[field]!=='string'||!Number.isFinite(Date.parse(row[field])))
+                      throw Error('Hydration would fail: invalid '+field+' in '+tenantId+'/'+object);
             console.log('PASS: commerce migration verified against independently restored typed SQL');
           } finally {await pool.end();}
           NODE
@@ -250,7 +258,13 @@ jobs:
             const state=await readNormalizedState(pool,verifyTypedRecords);
             if(!state.state.tenants?.[process.env.METADRIVE_EXPECTED_TENANT_ID])
               throw Error('Tenant not found after SQL commerce migration');
-            console.log('PASS: live typed SQL normalized state and registered physical records verified');
+            for(const [tenantId,tenant] of Object.entries(state.state.tenants??{}))
+              for(const [object,rows] of Object.entries(tenant.records??{}))
+                for(const row of rows)
+                  for(const field of ['CreatedDate','LastModifiedDate'])
+                    if(typeof row[field]!=='string'||!Number.isFinite(Date.parse(row[field])))
+                      throw Error('Live runtime record hydration invalid: '+tenantId+'/'+object+'/'+field);
+            console.log('PASS: live typed SQL normalized state, record timestamps and registry verified');
           } finally {await pool.end();}
           NODE
       - name: Remove identical unused historical backup copies only
