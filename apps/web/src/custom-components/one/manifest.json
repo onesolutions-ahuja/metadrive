@@ -2296,7 +2296,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 6,
+      "version": 7,
       "scope": "platform-core",
       "jsxFile": "one/OneData.jsx",
       "cssFile": "one/one.css",
