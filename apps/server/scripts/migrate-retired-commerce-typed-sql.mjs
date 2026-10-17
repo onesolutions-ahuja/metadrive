@@ -20,7 +20,8 @@ import {migrateProductFieldsOnly} from '../src/migrations/product-fields-only.mj
 const db='metadrive_sql_20261012';
 const target=process.env.METADRIVE_EXPECTED_TENANT_ID;
 const apply=process.argv.includes('--apply');
-if(process.argv.slice(2).some(x=>x!=='--apply'))throw Error('Unknown argument');
+const productOnly=process.argv.includes('--product-fields-only');
+if(process.argv.slice(2).some(x=>!['--apply','--product-fields-only'].includes(x)))throw Error('Unknown argument');
 if(process.env.METADRIVE_SQL_TARGET_DB!==db||!target)throw Error('Explicit target database and tenant required');
 const input=process.env.DATABASE_URL;
 if(!input)throw Error('DATABASE_URL required');
@@ -312,10 +313,16 @@ try{
  const tenant=next.tenants?.[target];
  if(!tenant)throw Error('Tenant not found: '+target);
  // Capture parent group links BEFORE stripping obsolete lookup fields.
- tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
-   .map(row=>[row.Id,row.GroupId]));
- migrateTenant(tenant);
- const repairedRecordAudits=repairMigratedRecordAuditFields(tenant);
+ let productConsolidation;
+ if(productOnly){
+  productConsolidation=migrateProductFieldsOnly(tenant);
+ }else{
+  tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
+    .map(row=>[row.Id,row.GroupId]));
+  migrateTenant(tenant);
+  productConsolidation={fieldsOnly:true,canonical:'Product__c'};
+ }
+ const repairedRecordAudits=productOnly?{}:repairMigratedRecordAuditFields(tenant);
  const missingSql=await pool.query(
   "SELECT o.tenant_id,o.api_name,o.physical_table,count(p.record_id)::int AS presence "+
   "FROM md_v2_object_registry o LEFT JOIN md_v2_field_presence p ON p.object_id=o.object_id "+
@@ -333,7 +340,7 @@ try{
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
    repairedRecordAudits,
-   productConsolidation:{fieldsOnly:true,canonical:'Product__c',oldRecordValuesNotCopied:true},
+   productConsolidation:{...productConsolidation,fieldsOnly:true,canonical:'Product__c',oldRecordValuesNotCopied:true},
    missingPhysicalObjects:missingSql.rows.map(({tenant_id,api_name,physical_table})=>({tenantId:tenant_id,apiName:api_name,table:physical_table}))};
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
