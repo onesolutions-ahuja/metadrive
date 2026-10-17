@@ -2989,7 +2989,7 @@
         "dashboard",
         "flow"
       ],
-      "version": 7,
+      "version": 8,
       "scope": "platform-core",
       "jsxFile": "one/OneShoppingCart.jsx",
       "cssFile": "one/one.css",
