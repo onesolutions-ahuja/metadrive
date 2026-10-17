@@ -1392,9 +1392,9 @@ function PageBuilder({
                     {childrenOf(page.components, null).map((component) => renderPageComponent(component, page.components.findIndex((item) => item.id === component.id), true, true))}
                   </div>
                 : <BuilderTemplatePreviewLayout page={page} phone={device==='Phone'}
-                    header={page.components.filter(item=>(item.region??'main')==='header').map((item,index)=>renderPageComponent(item,index,true,true))}
-                    main={page.components.filter(item=>(item.region??'main')==='main').map((item,index)=>renderPageComponent(item,index,true,true))}
-                    sidebar={page.components.filter(item=>item.region==='sidebar').map((item,index)=>renderPageComponent(item,index,true,true))}/>}
+                    header={childrenOf(page.components,null).filter(item=>(item.region??'main')==='header').map((item,index)=>renderPageComponent(item,index,true,true))}
+                    main={childrenOf(page.components,null).filter(item=>(item.region??'main')==='main').map((item,index)=>renderPageComponent(item,index,true,true))}
+                    sidebar={childrenOf(page.components,null).filter(item=>item.region==='sidebar').map((item,index)=>renderPageComponent(item,index,true,true))}/>}
             </div>
           </div>
         </div>,

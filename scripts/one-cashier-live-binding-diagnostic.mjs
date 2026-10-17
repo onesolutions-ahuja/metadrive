@@ -20,7 +20,7 @@ const cashierCandidates=pages.filter(p=>/cashier|till/i.test(p.label+' '+p.apiNa
 const draftWithOneComponents=pages.filter(p=>p.status==='Draft'&&(p.components??[]).some(c=>/One(SplitPane|Tabs|ItemGrid|ShoppingCart)/i.test(c.type)));
 const page=[...cashierCandidates].sort((a,b)=>(b.components?.length??0)-(a.components?.length??0))[0]??null;
 console.log(JSON.stringify({result:'DRAFT_INVENTORY',candidateCount:cashierCandidates.length,
- candidates:cashierCandidates.map(p=>({apiName:p.apiName,componentCount:p.components?.length??0,
+ candidates:cashierCandidates.map(p=>({apiName:p.apiName,layoutMode:p.layoutMode,componentCount:p.components?.length??0,
  types:(p.components??[]).map(c=>c.type).filter(t=>/One(SplitPane|Tabs|ItemGrid|ShoppingCart)/.test(t))})),
  otherDraftsWithOneComponents:draftWithOneComponents.length}));
 if(!page){

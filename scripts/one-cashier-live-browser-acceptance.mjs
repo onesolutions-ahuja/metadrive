@@ -49,6 +49,7 @@ try{
  popup.setDefaultTimeout(25000);
  const catalogue=popup.locator('.one-grid .one-item--interactive');
  await popup.getByRole('tab',{name:'Chicken'}).waitFor();
+ assert.equal(await popup.getByRole('tab').count(),categories.length,'Nested tabs must render exactly once');
  await popup.waitForFunction(()=>document.querySelectorAll('.one-grid .one-item--interactive').length===5);
  await popup.getByRole('tab',{name:'Chicken'}).click();
  await popup.waitForFunction(count=>document.querySelectorAll('.one-grid .one-item--interactive').length===count,expected);
