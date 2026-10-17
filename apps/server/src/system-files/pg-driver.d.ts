@@ -10,7 +10,7 @@ declare module 'pg' {
     release(): void;
   }
   export class Pool {
-    constructor(options: { connectionString: string; max?: number; connectionTimeoutMillis?: number });
+    constructor(options: { connectionString: string; ssl?: { ca: string; rejectUnauthorized: boolean; servername: string }; max?: number; connectionTimeoutMillis?: number });
     query<T extends QueryResultRow = QueryResultRow>(statement: string, params?: unknown[]): Promise<QueryResult<T>>;
     connect(): Promise<PoolClient>;
     end(): Promise<void>;
