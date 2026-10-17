@@ -5,6 +5,7 @@
  * Run without approval for a read-only plan; apply through secured Object/Flow APIs.
  */
 import {pathToFileURL} from 'node:url';
+import {planCashAgeStockFlow} from './pos-checkout-safety-flow.mjs';
 
 const ageFields=[
  {apiName:'AgeRestricted',label:'Age Restricted',dataType:'Checkbox',required:false,unique:false},
@@ -118,6 +119,17 @@ export function planPosDraftRepair(objects,flows,pages=[]){
   if(resource.name==='StandardCatalogProduct'&&resource.dataType==='Product')
    resource.dataType='Product__c';
  }
+ const safetyReady=['POS_CashPayment__c','POS_StockBalance__c','POS_StockMovement__c']
+  .every(name=>objects.some(object=>object.apiName===name));
+ if(safetyReady){
+  const prepared=planCashAgeStockFlow(next,objects);
+  if(prepared){
+   next.elements=prepared.elements;
+   next.connectors=prepared.connectors;
+   next.resources=prepared.resources;
+   next.description=prepared.description;
+  }
+ }
  const cashier=pages.find(page=>page.apiName==='COPILOT_POS_Cashier_Till');
  let updatedPage=null;
  if(cashier){
@@ -130,7 +142,7 @@ export function planPosDraftRepair(objects,flows,pages=[]){
   if(configured&&configured.flowApiName!=='COPILOT_POS_Cash_Checkout')
    throw Error('Cashier checkout is already bound to another Flow');
   const desired={actionType:'Flow',flowApiName:'COPILOT_POS_Cash_Checkout',
-   inputs:{SessionKey:'$event.sessionKey'}};
+   inputs:{SessionKey:'$event.sessionKey',CheckoutRequestKey:'$event.requestId'}};
   const updated={...bindings,checkout:{...configured,...desired,
    inputs:{...configured?.inputs,...desired.inputs}}};
   if(JSON.stringify(updated)!==JSON.stringify(bindings)){
@@ -140,7 +152,8 @@ export function planPosDraftRepair(objects,flows,pages=[]){
  }
   return {product:fieldsToAdd.length?{...product,fields:[...product.fields,...fieldsToAdd]}:null,
   flow:JSON.stringify(next.elements)===JSON.stringify(flow.elements)&&
-       JSON.stringify(next.resources)===JSON.stringify(flow.resources)?null:next,
+       JSON.stringify(next.resources)===JSON.stringify(flow.resources)&&
+       JSON.stringify(next.connectors)===JSON.stringify(flow.connectors)?null:next,
   page:updatedPage,fieldsToAdd:fieldsToAdd.map(f=>f.apiName)};
 }
 
