@@ -78,11 +78,11 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
     if(!obj)return;
     const fields=[...specialFields,...obj.fields.filter(field=>!specialFields.some(s=>s.apiName===field.apiName))];
     for(const field of fields){
+      const linkedObject=obj.fields.find(candidate=>candidate.apiName===field.apiName)?.relationship?.targetObject;
       const choice:FlowReferenceChoice={reference:`{!${root}.${field.apiName}}`,label:label+' → '+field.label,
         detail:root+'.'+field.apiName+' · '+obj.label,category,dataType:field.dataType,
         ...(field.apiName==='Id'?{targetObject:objectName}
-          : 'relationship' in field && field.relationship?.targetObject
-            ?{targetObject:field.relationship.targetObject}:{})};
+          :linkedObject?{targetObject:linkedObject}:{})};
       if(compatibleFlowValue(choice,target))result.push(choice);
     }
   };
