@@ -17,6 +17,7 @@ import {commerceFlows} from '../../../scripts/kiosk-phase4-flows.mjs';
 import {commercePages} from '../../../scripts/kiosk-phase4-pages.mjs';
 import {retiredObjectApiNames} from '../src/retired-object-names.mjs';
 import {migrateProductFieldsOnly} from '../src/migrations/product-fields-only.mjs';
+import {repairProductImageCaseCollision} from '../src/migrations/repair-product-image-alias.mjs';
 
 const db='metadrive_sql_20261012';
 const target=process.env.METADRIVE_EXPECTED_TENANT_ID;
@@ -346,8 +347,19 @@ try{
  const productDiscardCount=(tenant.records?.Product??[]).length;
  // Capture parent group links BEFORE stripping obsolete lookup fields.
  let productConsolidation;
+ let imageFieldRepair=null;
  if(productOnly){
   productConsolidation=migrateProductFieldsOnly(tenant);
+  imageFieldRepair=repairProductImageCaseCollision(next,target);
+  if(imageFieldRepair.removedEmptyField){
+   const presence=await pool.query(
+    "SELECT count(p.record_id)::int AS n FROM md_v2_object_registry o "+
+    "JOIN md_v2_field_registry f ON f.object_id=o.object_id "+
+    "LEFT JOIN md_v2_field_presence p ON p.field_id=f.field_id "+
+    "WHERE o.tenant_id=$1 AND o.api_name='Product__c' AND f.api_name='ImageURL'",[target]);
+   if(presence.rows[0]?.n!==0)
+    throw Error('Product image repair: SQL ImageURL has stored business values; refusing removal');
+  }
  }else{
   tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
     .map(row=>[row.Id,row.GroupId]));
@@ -373,6 +385,7 @@ try{
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
    repairedRecordAudits,
    productConsolidation:{...productConsolidation,fieldsOnly:true,canonical:'Product__c',oldRecordValuesNotCopied:true},
+   productImageAliasRepair:imageFieldRepair,
    missingPhysicalObjects:missingSql.rows.map(({tenant_id,api_name,physical_table})=>({tenantId:tenant_id,apiName:api_name,table:physical_table}))};
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
