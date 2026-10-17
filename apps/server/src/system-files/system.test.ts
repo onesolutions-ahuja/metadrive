@@ -223,3 +223,19 @@ test('Flow execution refuses unauthorized callers without creating runs',async()
   await assert.rejects(()=>new FlowRuntime(db,rbac).execute('tenant','Flow','user'),/Permission denied/);
   assert.equal(called,false);
 });
+
+
+test('Fresh bootstrap never touches existing tenants or runs without explicit opt-in', async () => {
+  const {bootstrapFreshTenant}=await import('./server.js');
+  let queries=0;
+  let transactions=0;
+  const db={
+    query:async()=>{queries++;return{rows:[{count:'1'}]};},
+    transaction:async()=>{transactions++;throw Error('Existing tenants must never be modified');}
+  } as unknown as SqlPersistence;
+  assert.equal(await bootstrapFreshTenant(db,{}),false);
+  assert.equal(queries,0);
+  assert.equal(await bootstrapFreshTenant(db,{METADRIVE_FRESH_BOOTSTRAP:'true'}),false);
+  assert.equal(queries,1);
+  assert.equal(transactions,0);
+});

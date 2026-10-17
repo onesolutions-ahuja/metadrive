@@ -8,6 +8,7 @@ import { ComponentRuntime } from './component-runtime.js';
 import { PageRuntime } from './page-runtime.js';
 import { FlowRuntime } from './flow-runtime.js';
 import { AppRuntime } from './app-runtime.js';
+import { TenantProvisioning } from './tenant-provisioning.js';
 
 type Actor={tenant_id:string;user_id:string};
 type AuthenticatedRequest=Request & {actor?:Actor};
@@ -241,9 +242,27 @@ export function createSystemServer(db:SqlPersistence) {
   });
   return app;
 }
+/**
+ * Explicit first-run bootstrap: tenant and credentials are supplied only via env.
+ * Never modifies an existing tenant, even when the bootstrap flag remains set.
+ */
+export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessEnv=process.env) {
+  if(env.METADRIVE_FRESH_BOOTSTRAP!=='true')return false;
+  const {rows}=await db.query<{count:string}>('SELECT count(*)::text AS count FROM md_tenants');
+  if(Number(rows[0]?.count)!==0)return false;
+  const requireEnv=(name:string)=>{const value=env[name]?.trim();if(!value)throw new Error('Missing fresh install setting: '+name);return value;};
+  await new TenantProvisioning(db).provision({
+    slug:requireEnv('METADRIVE_BOOTSTRAP_TENANT_ID'),
+    name:requireEnv('METADRIVE_BOOTSTRAP_TENANT_NAME'),
+    domain:requireEnv('METADRIVE_BOOTSTRAP_DOMAIN'),
+    developerEmail:requireEnv('METADRIVE_BOOTSTRAP_ADMIN_EMAIL'),
+    developerPassword:requireEnv('METADRIVE_BOOTSTRAP_ADMIN_PASSWORD')
+  });
+  return true;
+}
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  try { await db.verifySchema(); }
+  try { await db.verifySchema(); await bootstrapFreshTenant(db); }
   catch(error) { await db.close(); throw error; }
   const port=Number(process.env.PORT??10000);
   if(!Number.isInteger(port)||port<1||port>65535) throw new Error('Invalid PORT');

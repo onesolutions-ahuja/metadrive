@@ -3,7 +3,18 @@ export class SqlPersistence {
   readonly pool: Pool;
   constructor(databaseUrl: string) {
     if (!databaseUrl) throw new Error('DATABASE_URL is required; JSON fallback is forbidden');
-    this.pool = new Pool({ connectionString: databaseUrl, max: 10, connectionTimeoutMillis: 10000 });
+    // Aiven's dedicated SQL database is selected by environment configuration.
+    // Retain TLS and credential options from the original DATABASE_URL.
+    const override = process.env.METADRIVE_DB_NAME_OVERRIDE?.trim();
+    let resolvedUrl=databaseUrl;
+    if(override) {
+      if(!/^[A-Za-z][A-Za-z0-9_]{0,62}$/.test(override)) throw new Error('Invalid database name override');
+      const uri=new URL(databaseUrl);
+      if(!['postgres:','postgresql:'].includes(uri.protocol))throw new Error('Invalid PostgreSQL connection URL');
+      uri.pathname='/'+override;
+      resolvedUrl=uri.toString();
+    }
+    this.pool = new Pool({ connectionString: resolvedUrl, max: 10, connectionTimeoutMillis: 10000 });
   }
   query<T extends QueryResultRow = QueryResultRow>(sql: string, params: readonly unknown[] = []) {
     return this.pool.query<T>(sql, [...params]);
