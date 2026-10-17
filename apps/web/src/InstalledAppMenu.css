@@ -1,7 +1,7 @@
 /* Reusable installed-app launcher inside the shared authenticated top bar. */
 .header-installed-apps{display:inline-flex;align-items:center;gap:6px;padding:0 8px;min-width:120px;color:#506178;font-size:12px;white-space:nowrap}
-.header-installed-apps select{height:34px;min-width:100px;max-width:180px;border:1px solid #d5deec;border-radius:8px;background:var(--surface,#fff);color:inherit;padding:0 8px;font:inherit;cursor:pointer}
-.header-installed-apps select:focus-visible{outline:2px solid #2a6de8;outline-offset:2px}
+.header-installed-apps select{height:var(--md-control-height,40px);min-width:100px;max-width:180px;border:1px solid #d5deec;border-radius:8px;background:var(--surface,#fff);color:inherit;padding:0 8px;font:inherit;cursor:pointer}
+.header-installed-apps select:focus-visible{outline:2px solid var(--md-primary,#1d4ed8);outline-offset:2px}
 @media(max-width:800px){.header-installed-apps{min-width:0;padding:0 4px}.header-installed-apps>span{display:none}.header-installed-apps select{max-width:118px}}
 
 /* A single app launcher. Page-specific, metadata-declared actions share the top bar. */
@@ -26,9 +26,11 @@
 /* All metadata-driven app page navigation now lives in the one top bar. */
 .header-page-context{flex:0 1 auto;max-width:min(43vw,560px)}
 .header-page-tabs{display:flex;align-items:center;gap:3px;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--md-scroll-thumb,#abb8c8) transparent;overscroll-behavior:contain}
-.header-page-tab{border:1px solid transparent;background:transparent;color:var(--text,#334155);font:inherit;font-size:12px;padding:8px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+.header-page-tab{min-height:var(--md-control-height,40px);border:1px solid transparent;background:transparent;color:var(--text,#334155);font:inherit;font-size:12px;padding:8px 10px;border-radius:7px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
 .header-page-tab:hover{background:#edf3fa}
-.header-page-tab.active{font-weight:700;color:#0b5fc1;background:#edf5ff;border-color:#d7e7fd}
+.header-page-tab.active{font-weight:700;color:var(--md-primary,#1d4ed8);background:#edf5ff;border-color:#d7e7fd}
 .header-page-tab:focus-visible{outline:2px solid var(--focus,#2574d8);outline-offset:1px}
 @media(max-width:1100px){.header-page-context{max-width:36vw}.header-page-tab{padding:7px 6px}}
 @media(max-width:640px){.header-page-context{max-width:55vw}.header-page-tabs{max-width:140px}}
+
+@media(pointer:coarse){.header-installed-apps select,.header-page-tab,.header-page-action{min-height:var(--md-control-touch,44px)}}
