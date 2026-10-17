@@ -29,3 +29,25 @@ test('metadata registration uses parameters and rejects invalid names', async ()
   assert.match(calls[0].sql, /\$1/);
   assert.equal(calls[0].args[1], 'Product__c');
 });
+
+test('explicit deny takes precedence over a grant', async () => {
+  const db={query:async()=>({rows:[{allow_granted:true,deny_granted:true}]})} as unknown as SqlPersistence;
+  assert.equal(await new RbacEngine(db).allowed('tenant','user','Product__c','read'),false);
+});
+test('SQL record CRUD rejects fields not registered in metadata', async () => {
+  const db={
+    query:async(sql:string)=> sql.includes('FROM md_field_definitions')
+      ?{rows:[{api_name:'Price',data_type:'number',related_object:null,required:false}]}
+      :{rows:[],rowCount:0}
+  } as unknown as SqlPersistence;
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const {RecordEngine}=await import('./record-engine.js');
+  await assert.rejects(
+    ()=>new RecordEngine(db,rbac).create('tenant','user','Product__c',{Unexpected:1}),
+    /Unknown field/
+  );
+  await assert.rejects(
+    ()=>new RecordEngine(db,rbac).create('tenant','user','Product__c',{Price:'not a number'}),
+    /Invalid number/
+  );
+});

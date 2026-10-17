@@ -31,7 +31,7 @@ Visual Builders, specialised viewing/reporting tools, integration providers and 
 Each application declares its Objects, Fields, Components, properties, Pages, Actions, Flows, navigation, dependencies and OneEngine grants. Installation is tenant-specific and managed by AppExchange. Deactivation/uninstall stops owned routes, jobs and Flows while preserving shared dependencies and customer business records.
 
 ### SQL and configuration
-SQL is the runtime source of truth for metadata, settings, permissions, installations and business data. Use relational columns for stable/queryable properties and validated JSONB for flexible properties. Seeders are independent, versioned, idempotent, tenant-aware and must not erase user customisations.
+SQL is the runtime source of truth for metadata, settings, permissions, installations and business data. Use relational SQL columns and typed metadata/property tables. Seeders are independent, versioned, idempotent, tenant-aware and must not erase user customisations.
 
 ## 3. Current Scope and Decisions
 
@@ -66,7 +66,7 @@ Validate and repair the current Page, Flow, Dashboard and Report Builders using 
 **Done when:** existing Builders perform their supported workflows and published content runs without loading Builder code.
 
 ### Step 5 — SQL, seeders and OneEngine verification
-Validate relational/JSONB metadata, safe migrations, independent seeders, idempotent reruns and central server-side Object/Field/Record/Action/Flow permissions. Maintain separate tenant developer and platform developer policy scopes.
+Validate relational SQL metadata, safe migrations, independent seeders, idempotent reruns and central server-side Object/Field/Record/Action/Flow permissions. Maintain separate tenant developer and platform developer policy scopes.
 
 **Done when:** verified SQL persistence and seeder repeatability preserve settings, data and administrator changes.
 

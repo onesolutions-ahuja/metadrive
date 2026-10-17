@@ -37,7 +37,7 @@ export class RecordEngine {
           text=String(value);break;
         case 'date':
           if(typeof value!=='string'||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)||
-             new Date(value+'T00:00:00.000Z').toISOString().slice(0,10)!==value)
+             (!Number.isFinite(Date.parse(value+'T00:00:00.000Z')) || new Date(value+'T00:00:00.000Z').toISOString().slice(0,10)!==value))
             throw new Error('Invalid date field: '+key);
           text=value;break;
         case 'datetime':

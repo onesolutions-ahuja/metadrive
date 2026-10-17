@@ -1,11 +1,23 @@
-# Fresh System Runtime Services
+# SQL-only MetaDrive system runtime
 
-These independent modules are an initial SQL-backed foundation. They do **not** import legacy JSON, platform-state, or deleted seeders.
+The active server uses `apps/server/src/system-files/entrypoint.ts` and
+`system-files/server.ts`. It does **not** import the removed legacy state
+modules, seeders or JSON snapshot files.
 
-Use `schema.sql` only on an approved empty/fresh database after review; it creates separate `md_*` tables and does not migrate or read existing tenant data. Never auto-run this SQL in production.
+**Database contract:** `schema.sql` creates fresh relational `md_*` tables
+for tenants, identities, tenant domains, sessions, RBAC, metadata, typed records,
+flow definitions and applications. Data values use SQL columns, not JSON/JSONB.
+Never execute this schema as an automatic production migration: it does not
+import or adapt pre-existing MetaDrive SQL metadata.
 
-Files are intentionally **not wired into the existing server**. The current server still imports deleted modules and must be independently refactored before startup can work.
+**Commands:** `npm run build --workspace apps/server`,
+`npm run test:system --workspace apps/server`, `npm run check`.
 
-Security and functional gaps before production: tenant-scoped foreign-key enforcement, record-level/field-level permissions, SQL type validation and reference integrity, credential and user enrolment, flow executor, client renderer registry, token lifecycle, tests and complete RBAC denial semantics.
+**Not yet feature parity:** existing Aiven data migration, MFA, field/record
+sharing policies, full Flow executor, metadata publishing/versioning, component
+client rendering, builder endpoint parity and installation migrations are not
+implemented. Existing app installations are not automatically recreated.
 
-No bootstrap seed data is generated, no existing object metadata is read, and no production database has been changed.
+The branch must remain unmerged/undeployed until a non-destructive SQL
+migration, complete security checks, end-to-end login, builders, CRUD, and flow
+checks pass. Compiling the isolated service does not prove production readiness.
