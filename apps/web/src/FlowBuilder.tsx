@@ -753,7 +753,6 @@ export default function FlowBuilder({
                         itemIndex === index ? { ...item, componentPropsJson: JSON.stringify(properties) } : item))}
                     />
                   </>}
-
               <label className="checkbox-row"><input type="checkbox" checked={field.required === true} onChange={(event) => setConfig('fields', screenFields.map((item, itemIndex) => itemIndex === index ? { ...item, required: event.target.checked } : item))} />Required</label>
             </>
             : field.type === 'Display Text'
