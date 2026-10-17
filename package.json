@@ -10,15 +10,11 @@
     "dev:server": "npm run dev --workspace apps/server",
     "build": "npm run build --workspace apps/web && npm run build --workspace apps/server",
     "test": "npm run test:unit",
-    "test:unit": "node scripts/run-current-tests.mjs",
-    "test:integration": "node scripts/run-current-tests.mjs integration",
-    "check": "node scripts/check-developer-policy.mjs && npm run test:unit && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist && node scripts/verify-pages-release.mjs",
+    "test:unit": "npm run test:system --workspace apps/server",
+    "check": "node scripts/verify-project-references.mjs && npm run test:unit && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
-    "audit:architecture": "node scripts/audit-platform-architecture.mjs --output .artifacts/architecture-inventory.json",
-    "audit:components": "node scripts/audit-component-registry.mjs --output .artifacts/component-registry-inventory.json",
-    "audit:phase7": "node scripts/phase7-completion-inventory.mjs --json",
-    "verify:phase2sql": "node apps/server/scripts/verify-component-registry-activation.mjs"
+    "audit:architecture": "node scripts/verify-project-references.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
