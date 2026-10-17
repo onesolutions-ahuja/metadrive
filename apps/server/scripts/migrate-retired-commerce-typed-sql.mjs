@@ -136,6 +136,26 @@ function migrateCashCheckoutFlow(tenant){
  if(next.activeVersion!==null)next.versions.push(flowSnapshot(next,now));
  tenant.flows[index]=next;
 }
+// OnePOSV2 is the superseded UK off-licence app. Do not retire any
+// COPILOT_POS_* Flow or shared reusable component with the old app.
+function retireSupersededPosApp(tenant){
+ const legacyApp='OnePOSV2';
+ const legacyPage='UK_Off_Licence_POS_Customer_Display_Screen';
+ const app=(tenant.apps??[]).find(x=>x.apiName===legacyApp);
+ const page=(tenant.pages??[]).find(x=>x.apiName===legacyPage);
+ if(page && page.status!=='Draft')
+  throw Error('Legacy customer-display Page is published; review before retirement');
+ if(app){
+  tenant.apps=tenant.apps.filter(x=>x.apiName!==legacyApp);
+ }
+ if(page){
+  const referencedByOtherApps=(tenant.apps??[]).some(x=>
+   JSON.stringify([x.navigationItems,x.navigationOrder,x.navigationPageApiNames]).includes(legacyPage));
+  if(referencedByOtherApps)
+   throw Error('Legacy POS Page remains referenced by another app');
+  tenant.pages=tenant.pages.filter(x=>x.apiName!==legacyPage);
+ }
+}
 function assertNoForeignReferences(tenant){
  const buckets=[
   ...(tenant.flows??[]).filter(f=>!f.apiName.startsWith('MD_Commerce_'))
@@ -231,6 +251,7 @@ function migrateTenant(t){
  for(const apiName of retired){t.objects=t.objects.filter(x=>x.apiName!==apiName);delete t.records[apiName];}
  t.fieldHistory=(t.fieldHistory??[]).filter(h=>!retired.has(h.objectApiName));
  removeAccessGrants(t);
+ retireSupersededPosApp(t);
  replaceManagedFlows(t);
  migrateCashCheckoutFlow(t);
  t.pages=(t.pages??[]).map(page=>{
