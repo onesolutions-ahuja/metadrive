@@ -15,6 +15,7 @@ import {customisationObjectExtensions,basketObjectExtensions} from '../../../scr
 import {commerceFlows} from '../../../scripts/kiosk-phase4-flows.mjs';
 import {commercePages} from '../../../scripts/kiosk-phase4-pages.mjs';
 import {retiredObjectApiNames} from '../src/retired-object-names.mjs';
+import {migrateProductFieldsOnly} from '../src/migrations/product-fields-only.mjs';
 
 const db='metadrive_sql_20261012';
 const target=process.env.METADRIVE_EXPECTED_TENANT_ID;
@@ -40,7 +41,9 @@ for(const k of ['sslmode','sslcert','sslkey','sslrootcert'])url.searchParams.del
 const ssl=isolated?false:{rejectUnauthorized:process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT!=='true',
   ...(process.env.METADRIVE_DB_CA_CERT?{ca:process.env.METADRIVE_DB_CA_CERT.replace(/\\n/g,'\n')}:{})};
 const pool=new pg.Pool({connectionString:url.toString(),ssl,max:2,connectionTimeoutMillis:15000});
-const retired=new Set(retiredObjectApiNames);
+// Product retirement runs through a dedicated fields-only migration, not the
+// generic legacy metadata removal, so it can rebind live consumers first.
+const retired=new Set(retiredObjectApiNames.filter(name=>name!=='Product'));
 const mandatory=['ProductCategory','Product__c','ProductModifierGroup__c',
   'ProductModifier__c','OrderLine__c','SaleLine__c'];
 function mapByName(records){return new Map(records.map(r=>[String(r.Name??'').trim().toLowerCase(),r]));}
@@ -227,6 +230,7 @@ function repairMigratedRecordAuditFields(tenant) {
 }
 function migrateTenant(t){
  if(!t||!Array.isArray(t.objects)||!t.records)throw Error('Tenant metadata unavailable');
+ const productMigration=migrateProductFieldsOnly(t);
  const objects=new Map(t.objects.map(o=>[o.apiName,o]));
  for(const name of mandatory)if(!objects.has(name))throw Error('Missing replacement Object: '+name);
  for(const [name,fields] of Object.entries({...customisationObjectExtensions,...basketObjectExtensions}))
@@ -329,6 +333,7 @@ try{
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
    repairedRecordAudits,
+   productConsolidation:{fieldsOnly:true,canonical:'Product__c',oldRecordValuesNotCopied:true},
    missingPhysicalObjects:missingSql.rows.map(({tenant_id,api_name,physical_table})=>({tenantId:tenant_id,apiName:api_name,table:physical_table}))};
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
