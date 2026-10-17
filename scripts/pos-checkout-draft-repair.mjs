@@ -12,7 +12,7 @@ const ageFields=[
 ];
 const byName=(objects,name)=>objects.find(o=>o.apiName===name);
 const lookup=(obj,field)=>obj?.fields?.find(f=>f.apiName===field)?.relationship?.targetObject
- ??/^(?:Lookup|Master-Detail)\\(([^)]+)\\)$/.exec(obj?.fields?.find(f=>f.apiName===field)?.dataType??'')?.[1];
+ ??/^(?:Lookup|Master-Detail)\(([^)]+)\)$/.exec(obj?.fields?.find(f=>f.apiName===field)?.dataType??'')?.[1];
 
 export function planPosDraftRepair(objects,flows){
  const product=byName(objects,'Product__c');
@@ -26,7 +26,7 @@ export function planPosDraftRepair(objects,flows){
   throw Error('Order/Sale Product relationships disagree with active SQL metadata');
  const fieldsToAdd=ageFields.filter(required=>{
   const existing=product.fields.find(field=>field.apiName===required.apiName);
-  if(existing && existing.dataType.replace(/\\s+/g,'')!==required.dataType.replace(/\\s+/g,''))
+  if(existing && existing.dataType.replace(/\s+/g,'')!==required.dataType.replace(/\s+/g,''))
    throw Error('Incompatible existing age field: '+required.apiName);
   return !existing;
  });
@@ -80,8 +80,8 @@ export function planPosDraftRepair(objects,flows){
 }
 
 async function main(){
- const origin=String(process.env.METADRIVE_API_URL||'').replace(/\\/$/,'').replace(/\\/api$/,'');
- if(!/^https:\\/\\//.test(origin))throw Error('HTTPS METADRIVE_API_URL required');
+ const origin=String(process.env.METADRIVE_API_URL||'').replace(/\/$/,'').replace(/\/api$/,'');
+ if(!/^https:\/\//.test(origin))throw Error('HTTPS METADRIVE_API_URL required');
  const user=process.env.METADRIVE_ADMIN_EMAIL,password=process.env.METADRIVE_ADMIN_PASSWORD;
  const tenant=process.env.METADRIVE_EXPECTED_TENANT_ID;
  if(!user||!password||!tenant)throw Error('Tenant-scoped admin credentials and expected tenant ID required');
