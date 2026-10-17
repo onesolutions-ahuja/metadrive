@@ -44,7 +44,8 @@ export default function PlatformWorkspaceSurface({
   'apiRequest'|'objects'|'apps'|'pages'|'currentAppId'|'reports'|'availableFlows'|'formFactor'|'onNavigate'|'onLaunchFlow'>;
 }){
  const definition=resolveSystemWorkspace(workspace);
- if(!definition||!permitted)return <div role="alert">Workspace unavailable</div>;
+ if(!definition)return <div role="alert">Setup workspace configuration unavailable. The route is not registered.</div>;
+ if(!permitted)return <div role="alert">Access to this Setup workspace has not been verified. Check your OneEngine permission policy or refresh the session. No permission checks have been bypassed.</div>;
  const pageName='MetaDrive_Admin_'+workspace.replace(/-/g,'_');
  const page=pages.find(item=>item.apiName===pageName&&item.scope==='platform-system'&&item.ownerNamespace==='MetaDrive'&&item.status==='Active'&&Array.isArray(item.requiredPermissions)&&item.requiredPermissions.length===1&&item.requiredPermissions[0]===definition.requiredPermission);
  const registered=page?.components.filter(instance=>instance.visible&&!instance.properties.platformSlotKey&&instance.type.startsWith('Custom:'))
