@@ -24,9 +24,25 @@ function Calendar({p,rows}){const [date,setDate]=React.useState(()=>new Date());
 function Board({p,rows}){const field=p.groupField||'status',groups=Array.isArray(p.groups)?p.groups:[...new Set(rows.map(x=>view(x[field]||'Unassigned')))];return <div className="one-grid" style={{gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))'}}>{groups.map(g=><section className="one-surface" key={String(g)}><strong>{view(g)}</strong><div className="one-stack" style={{flexDirection:'column',marginTop:10}}>{rows.filter(r=>view(r[field]||'Unassigned')===String(g)).map((r,i)=><button className="one-item one-item--interactive" type="button" key={r.Id??r.id??i} onClick={()=>fire(p,'itemSelect',r)}>{title(r)}</button>)}</div></section>)}</div>}
 function Timeline({p,rows}){return <div className="one-surface">{rows.map((r,i)=><div className="one-row" key={r.Id??r.id??i} style={{padding:'12px 0',borderBottom:'1px solid var(--one-border)',alignItems:'start'}}><span className="one-dot"/><div><strong>{title(r)}</strong><div className="one-muted">{view(r[p.dateField||'date']??r.createdAt??'')}</div><div>{view(r.description??'')}</div></div></div>)}{!rows.length&&<div className="one-empty">No activity</div>}</div>}
 function ItemGrid({p,rows}){
+ const [sharedFilters,setSharedFilters]=React.useState({});
+ React.useEffect(()=>{
+  if(!p.pageSessionKey||typeof window==='undefined')return undefined;
+  const receive=event=>{
+   const data=event.detail;
+   if(data?.pageSessionKey!==p.pageSessionKey)return;
+   if(data.filterKey===(p.filterKey||'category'))setSharedFilters(previous=>({...previous,category:{
+    value:String(data.value??''),label:String(data.label??data.value??''),recordId:String(data.recordId??'')
+   }}));
+   if(data.filterKey===(p.searchKey||'catalogue'))setSharedFilters(previous=>({...previous,search:String(data.value??'')}));
+  };
+  window.addEventListener('metadrive:page-filter-selected',receive);
+  return()=>window.removeEventListener('metadrive:page-filter-selected',receive);
+ },[p.pageSessionKey,p.filterKey,p.searchKey]);
  const count=Math.max(1,Math.min(8,Number(p.desktopColumns)||3));
- const categoryField=String(p.categoryFieldApiName||'').trim(),selectedCategory=String(p.selectedCategory||'').trim();
- const categoryValues=[selectedCategory,p.selectedCategoryLabel,p.selectedCategoryRecordId].filter(v=>v!==undefined&&v!==null&&String(v).trim()).map(v=>String(v).trim().toLowerCase());
+ const categoryField=String(p.categoryFieldApiName||'').trim();
+ const selectedCategory=String(sharedFilters.category?.value??p.selectedCategory??'').trim();
+ const categoryValues=[selectedCategory,sharedFilters.category?.label??p.selectedCategoryLabel,
+  sharedFilters.category?.recordId??p.selectedCategoryRecordId].filter(v=>v!==undefined&&v!==null&&String(v).trim()).map(v=>String(v).trim().toLowerCase());
  const categorySelected=categoryValues.length>0;
  const categoryFieldExists=Boolean(categoryField)&&rows.some(row=>Object.prototype.hasOwnProperty.call(row,categoryField));
  const matchesCategory=row=>{
@@ -36,7 +52,7 @@ function ItemGrid({p,rows}){
    ? [raw.Id,raw.id,raw.Name,raw.name,raw.value,raw.label]:[raw];
   return values.some(value=>value!==undefined&&value!==null&&categoryValues.includes(String(value).trim().toLowerCase()));
  };
- const searchQuery=String(p.searchQuery||'').trim().toLocaleLowerCase();
+ const searchQuery=String(sharedFilters.search??p.searchQuery??'').trim().toLocaleLowerCase();
  const searchFields=String(p.searchFieldApiNames||'Name,SKU,Barcode').split(',').map(x=>x.trim()).filter(Boolean);
  const titleField=String(p.titleFieldApiName||'Name'),imageField=String(p.imageFieldApiName||'ImageURL'),priceField=String(p.priceFieldApiName||'DefaultPrice');
  const visibleRows=rows.filter(row=>matchesCategory(row)
