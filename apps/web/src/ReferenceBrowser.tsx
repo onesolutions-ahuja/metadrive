@@ -87,7 +87,7 @@ export default function ReferenceBrowser({
     <div className="metadata-reference-results">
       {uniqueGroups.map(group => <button type="button" key={group.path} className="metadata-reference-group"
         onMouseDown={event => event.preventDefault()}
-        onClick={() => { setSelectedPath(group.path); onQueryChange(''); }}>
+        onClick={() => setSelectedPath(group.path)}>
         <Database size={15}/><span><strong>{group.label}</strong><small>{group.detail || group.path}</small></span>
         <ChevronRight size={15}/>
       </button>)}
