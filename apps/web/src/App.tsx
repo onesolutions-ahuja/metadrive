@@ -68,7 +68,7 @@ type NewFieldLookupFilterDraft = {
 
 
 
-type AuthState = 'loading' | 'anonymous' | 'authenticated' | 'error';
+type AuthState = 'anonymous' | 'authenticated' | 'error';
 type LandingBootstrap = {
   objects: ObjectMetadata[];
   pages: LightningPageMetadata[];
@@ -109,10 +109,11 @@ type ChatterPost = {
 };
 
 function App() {
-  const [authState, setAuthState] = useState<AuthState>('loading');
+  const [authState, setAuthState] = useState<AuthState>('anonymous');
   const [authError, setAuthError] = useState('');
   const [entryTiming, setEntryTiming] = useState<EntryTiming | null>(null);
   const sessionRestoreStarted = useRef(false);
+  // Login remains visible while session restore runs. API downtime must never block the form.
   // Discard any in-flight refresh response after logout or another auth transition.
   const sessionGeneration = useRef(0);
   useEffect(() => {
@@ -224,10 +225,10 @@ function App() {
     return () => { cancelled = true; };
   }, [authState,entryTiming]);
 
-  if (authState === 'loading') return <div className="auth-loading">Loading your workspace…</div>;
   const loginSuccess = (timing: EntryTiming) => { sessionGeneration.current += 1; setEntryTiming(timing); setAuthState('authenticated'); };
-  if (authState === 'anonymous') return <Login onSuccess={loginSuccess} />;
-  if (authState === 'error') return <Login error={authError} onSuccess={loginSuccess} onRetry={() => { setAuthState('loading'); void restoreSession(); }} />;
+  const cancelRestore = () => { sessionGeneration.current += 1; };
+  if (authState === 'anonymous') return <Login onStart={cancelRestore} onSuccess={loginSuccess} />;
+  if (authState === 'error') return <Login error={authError} onStart={cancelRestore} onSuccess={loginSuccess} onRetry={() => { setAuthError(''); setAuthState('anonymous'); void restoreSession(); }} />;
   return <SetupApp entryTiming={entryTiming} onLogout={() => { sessionGeneration.current += 1; setEntryTiming(null); setAccessToken(undefined); setAuthState('anonymous'); }} />;
 }
 
