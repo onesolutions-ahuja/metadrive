@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CircleHelp, ExternalLink } from 'lucide-react';
 import { assessApplicationSetup, type SetupDestination } from './appSetupReadiness';
 import type {
@@ -17,17 +17,46 @@ type Props = {
   reports?: ReportMetadata[];
   dashboards?: DashboardMetadata[];
   creating?: boolean;
+  request?: <T>(path: string) => Promise<T>;
   onOpenWorkspace?: (destination: SetupDestination) => void;
 };
 
 export default function AppSetupGuide(props: Props) {
+  const [loaded, setLoaded] = useState<{
+    flows?: FlowDefinitionMetadata[]; reports?: ReportMetadata[]; dashboards?: DashboardMetadata[];
+    error: string;
+  }>({error:''});
+  useEffect(() => {
+    if (!props.request) return;
+    let active = true;
+    const load = async () => {
+      const [flows, reports, dashboards] = await Promise.allSettled([
+        props.request!<{flows: FlowDefinitionMetadata[]}>('/metadata/flows'),
+        props.request!<{reports: ReportMetadata[]}>('/metadata/reports'),
+        props.request!<{dashboards: DashboardMetadata[]}>('/metadata/dashboards')
+      ]);
+      if (!active) return;
+      setLoaded({
+        flows: flows.status === 'fulfilled' ? flows.value.flows ?? [] : undefined,
+        reports: reports.status === 'fulfilled' ? reports.value.reports ?? [] : undefined,
+        dashboards: dashboards.status === 'fulfilled' ? dashboards.value.dashboards ?? [] : undefined,
+        error: [flows, reports, dashboards].some(result => result.status === 'rejected')
+          ? 'Some optional metadata could not be loaded; those references are marked for verification.' : ''
+      });
+    };
+    void load();
+    return () => { active = false; };
+  }, [props.request]);
+  const knownFlows = props.request ? loaded.flows : props.flows;
+  const knownReports = props.request ? loaded.reports : props.reports;
+  const knownDashboards = props.request ? loaded.dashboards : props.dashboards;
   const checks = useMemo(() => assessApplicationSetup({
     app: props.app, apps: props.apps, creating: props.creating,
     objects: props.objects, pages: props.pages,
-    flows: props.flows, libraryComponents: props.libraryComponents,
-    reports: props.reports, dashboards: props.dashboards
+    flows: knownFlows, libraryComponents: props.libraryComponents,
+    reports: knownReports, dashboards: knownDashboards
   }), [props.app, props.apps, props.creating, props.objects, props.pages,
-    props.flows, props.libraryComponents, props.reports, props.dashboards]);
+    knownFlows, props.libraryComponents, knownReports, knownDashboards]);
   const configured = checks.filter(item => item.level === 'configured').length;
   const actions = checks.filter(item => item.level === 'action').length;
   const review = checks.filter(item => item.level === 'review').length;
@@ -43,6 +72,7 @@ export default function AppSetupGuide(props: Props) {
         <span>{review} need verification</span>
       </div>
     </div>
+    {loaded.error && <p className="app-setup-guide-note" role="status">{loaded.error}</p>}
     <ol className="app-setup-guide-list">
       {checks.map((check, index) => <li key={check.id} className={'app-setup-guide-item app-setup-guide-' + check.level}>
         <div className="app-setup-guide-icon" aria-hidden="true">
