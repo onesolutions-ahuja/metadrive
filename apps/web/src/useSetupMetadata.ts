@@ -106,7 +106,9 @@ export function useSetupMetadata(ctx: any) {
         const request = (async () => {
           try { return await apiRequest<T>(path); }
           catch (error) {
-            if (isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
+            // Never convert an unavailable identity endpoint into an empty set of
+            // permissions. That incorrectly looks like an RBAC denial in Setup.
+            if (path === '/auth/me' || isAuthErrorMessage(error instanceof Error ? error.message : String(error))) throw error;
             failures.push(`${path}: ${error instanceof Error ? error.message : String(error)}`);
             return fallback;
           }
