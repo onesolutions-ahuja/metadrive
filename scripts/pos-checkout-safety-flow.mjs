@@ -77,6 +77,9 @@ export function planCashAgeStockFlow(source,objects){
   screen.config.fields.push(field);
  // Explicitly gate an empty cart and absent idempotency key.
  const outcomes=gate.config.outcomes;
+ if(!outcomes.some(x=>x.name==='MissingTotal'))outcomes.splice(outcomes.length-1,0,
+  {name:'MissingTotal',label:'MissingTotal',conditions:[
+   condition('{!element3.Total}','Is Null')]});
  if(!outcomes.some(x=>x.name==='EmptyBasket'))outcomes.splice(outcomes.length-1,0,
   {name:'EmptyBasket',label:'EmptyBasket',conditions:[
    condition('{!CurrentOrderLines.length}','Less Than',1)]});
@@ -85,7 +88,7 @@ export function planCashAgeStockFlow(source,objects){
    condition('{!CheckoutRequestKey}','Is Null')]});
  const reject=next.elements.find(e=>e.label==='Cash Checkout Rejected');
  if(!reject)throw Error('Cash rejection End node missing');
- for(const label of ['EmptyBasket','MissingRequestKey']){
+ for(const label of ['EmptyBasket','MissingRequestKey','MissingTotal']){
   if(!graph.some(e=>e.from===gate.id&&e.label===label))
    graph.push(link(gate.id,reject.id,label));
  }
@@ -123,12 +126,19 @@ export function planCashAgeStockFlow(source,objects){
   condition('Id','Equals','{!ValidationLine.ProductId}')],'ValidationProduct');checkout.push(validationProduct);
  const age=add('Decision','POS Safety - Challenge 25',decision(0,'',[
   outcome('ProductMissing',condition('{!ValidationProduct.Id}','Is Null')),
+  outcome('InactiveProduct',condition('{!ValidationProduct.IsActive}','Not Equals',true)),
+  outcome('InvalidLineQuantity',condition('{!ValidationLine.Quantity}','Less Than',1)),
   outcome('MissingID',condition('{!ValidationProduct.AgeRestricted}','Equals',true),
    condition('{!IDChecked}','Not Equals',true)),
   outcome('AgeMissing',condition('{!ValidationProduct.AgeRestricted}','Equals',true),
    condition('{!VerifiedCustomerAge}','Is Null')),
   outcome('Underage',condition('{!ValidationProduct.AgeRestricted}','Equals',true),
-   condition('{!VerifiedCustomerAge}','Less Than',18))
+   condition('{!VerifiedCustomerAge}','Less Than',18)),
+  outcome('BelowProductMinimum',condition('{!ValidationProduct.AgeRestricted}','Equals',true),
+   condition('{!VerifiedCustomerAge}','Less Than','{!ValidationProduct.MinimumAge}')),
+  outcome('ImplausibleAge',condition('{!ValidationProduct.AgeRestricted}','Equals',true),
+   condition('{!VerifiedCustomerAge}','Greater Than',120)),
+  outcome('AgeClassificationMissing',condition('{!ValidationProduct.AgeRestricted}','Is Null'))
  ]).config);
  const validationStock=get(id++,'POS Safety - Available Stock','POS_StockBalance__c',[
   condition('ProductId','Equals','{!ValidationLine.ProductId}')],'ValidationStock');checkout.push(validationStock);
@@ -177,7 +187,7 @@ export function planCashAgeStockFlow(source,objects){
   link(existingSale.id,validationLoop.id,'Default'),
   link(validationLoop.id,validationProduct.id,'For Each'),
   link(validationProduct.id,age.id));
- for(const name of ['ProductMissing','MissingID','AgeMissing','Underage'])
+ for(const name of ['ProductMissing','InactiveProduct','InvalidLineQuantity','MissingID','AgeMissing','Underage','BelowProductMinimum','ImplausibleAge','AgeClassificationMissing'])
   graph.push(link(age.id,failed.id,name));
  graph.push(link(age.id,validationStock.id,'Default'),
   link(validationStock.id,available.id));
