@@ -21,19 +21,13 @@ const products=[
 ];
 const session='isolated-cashier-test',basketKey='cashier';
 function Harness(){
- const [filters,setFilters]=React.useState({}),[selectedIds,setSelectedIds]=React.useState({});
- React.useEffect(()=>{
-  const listener=e=>{if(e.detail?.pageSessionKey===session){setFilters(old=>({...old,[e.detail.filterKey]:e.detail.value}));if(e.detail.recordId)setSelectedIds(old=>({...old,[e.detail.filterKey]:e.detail.recordId}));}};
-  window.addEventListener('metadrive:page-filter-selected',listener);
-  return()=>window.removeEventListener('metadrive:page-filter-selected',listener);
- },[]);
  return <div>
   <OneLayout kind="Tabs" label="Categories" dynamicTabs={true} records={categories}
     objectApiName="ProductCategory" filterKey="category" pageSessionKey={session} previewOnly={true}/>
   <OneActions kind="Search" label="Find product" searchKey="catalogue" pageSessionKey={session}/>
   <OneData kind="ItemGrid" title="Products" records={products} imageFieldApiName="ImageURL" titleFieldApiName="Name"
-    priceFieldApiName="DefaultPrice" categoryFieldApiName="CategoryId" selectedCategory={filters.category||''} selectedCategoryRecordId={selectedIds.category||''}
-    searchQuery={filters.catalogue||''} cartTargetKey={basketKey} pageSessionKey={session}/>
+    priceFieldApiName="DefaultPrice" categoryFieldApiName="CategoryId" filterKey="category" searchKey="catalogue"
+    cartTargetKey={basketKey} pageSessionKey={session}/>
   <OneShoppingCart viewMode="basket" title="Basket" previewOnly={true} cartTargetKey={basketKey}
     pageSessionKey={session} nameFieldApiName="Name" priceFieldApiName="DefaultPrice"/>
  </div>;
