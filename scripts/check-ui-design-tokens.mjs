@@ -34,6 +34,17 @@ for (const path of ['styles.css', 'styles-part2.css', 'styles-md227.css']) {
 const tenant = web('TenantManagement.css');
 assert.ok(!tenant.includes('#12605c'), 'Removed teal tenant primary has returned');
 assert.match(tenant, /--md-primary/, 'Tenant administration must use shared primary');
+const tenantDomains = web('TenantDomains.css');
+assert.ok(!tenantDomains.includes('#0b4550') && !tenantDomains.includes('#126474'),
+  'Tenant Domains must not restore the retired teal primary');
+assert.match(tenantDomains, /--md-primary/, 'Tenant Domains buttons must use shared primary');
+const appearance = web('registeredComponentAppearance.css');
+assert.ok(!appearance.includes('#3176cc'), 'Shared card fallback must use design tokens');
+for (const path of ['ChecklistMultiSelect.css', 'SmartFieldInput.css', 'FlowReferenceInput.css']) {
+  const css = web(path);
+  assert.doesNotMatch(css, /font-size:\\s*(?:[7-9]|10)px\\b/,
+    'No operational microtype below 11px: ' + path);
+}
 const one = web('custom-components/one/one.css');
 assert.match(one, /--md-primary/, 'One CSS should consume shared primary');
 for (const file of [
