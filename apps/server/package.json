@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs",
+    "build": "node --max-old-space-size=384 ../../node_modules/typescript/bin/tsc -p tsconfig.json && node scripts/copy-runtime-assets.mjs",
     "test": "npm run test:unit --prefix ../..",
     "start": "node dist/index.js"
   },
