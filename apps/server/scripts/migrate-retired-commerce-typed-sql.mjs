@@ -1,9 +1,10 @@
 /**
  * Owner-approved retirement of obsolete commerce Object metadata.
  * Runs OFFLINE against canonical SQL with a fresh, independently verified
- * encrypted backup. Dry run unless --apply is supplied. Never drops tables.
+ * encrypted backup. Dry run unless --apply is supplied. Product retirement
+ * drops only its verified physical table in the same SQL transaction.
  *
- * Historical SQL tables remain for separate, owner-controlled DROP TABLE.
+ * Other historical SQL tables remain untouched.
  * Uses the shared normalized SQL state CAS and typed synchronization engine.
  */
 import pg from 'pg';
@@ -15,11 +16,13 @@ import {customisationObjectExtensions,basketObjectExtensions} from '../../../scr
 import {commerceFlows} from '../../../scripts/kiosk-phase4-flows.mjs';
 import {commercePages} from '../../../scripts/kiosk-phase4-pages.mjs';
 import {retiredObjectApiNames} from '../src/retired-object-names.mjs';
+import {migrateProductFieldsOnly} from '../src/migrations/product-fields-only.mjs';
 
 const db='metadrive_sql_20261012';
 const target=process.env.METADRIVE_EXPECTED_TENANT_ID;
 const apply=process.argv.includes('--apply');
-if(process.argv.slice(2).some(x=>x!=='--apply'))throw Error('Unknown argument');
+const productOnly=process.argv.includes('--product-fields-only');
+if(process.argv.slice(2).some(x=>!['--apply','--product-fields-only'].includes(x)))throw Error('Unknown argument');
 if(process.env.METADRIVE_SQL_TARGET_DB!==db||!target)throw Error('Explicit target database and tenant required');
 const input=process.env.DATABASE_URL;
 if(!input)throw Error('DATABASE_URL required');
@@ -40,7 +43,9 @@ for(const k of ['sslmode','sslcert','sslkey','sslrootcert'])url.searchParams.del
 const ssl=isolated?false:{rejectUnauthorized:process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT!=='true',
   ...(process.env.METADRIVE_DB_CA_CERT?{ca:process.env.METADRIVE_DB_CA_CERT.replace(/\\n/g,'\n')}:{})};
 const pool=new pg.Pool({connectionString:url.toString(),ssl,max:2,connectionTimeoutMillis:15000});
-const retired=new Set(retiredObjectApiNames);
+// Product retirement runs through a dedicated fields-only migration, not the
+// generic legacy metadata removal, so it can rebind live consumers first.
+const retired=new Set(retiredObjectApiNames.filter(name=>name!=='Product'));
 const mandatory=['ProductCategory','Product__c','ProductModifierGroup__c',
   'ProductModifier__c','OrderLine__c','SaleLine__c'];
 function mapByName(records){return new Map(records.map(r=>[String(r.Name??'').trim().toLowerCase(),r]));}
@@ -227,6 +232,7 @@ function repairMigratedRecordAuditFields(tenant) {
 }
 function migrateTenant(t){
  if(!t||!Array.isArray(t.objects)||!t.records)throw Error('Tenant metadata unavailable');
+ const productMigration=migrateProductFieldsOnly(t);
  const objects=new Map(t.objects.map(o=>[o.apiName,o]));
  for(const name of mandatory)if(!objects.has(name))throw Error('Missing replacement Object: '+name);
  for(const [name,fields] of Object.entries({...customisationObjectExtensions,...basketObjectExtensions}))
@@ -302,16 +308,53 @@ function migrateTenant(t){
  });
  assertNoForeignReferences(t);
 }
+/** Delete the specifically retired Product table after independent backup.
+ * Executed inside the same guarded SQL transaction as metadata retirement.
+ */
+async function retireStandardProductPhysical(client,expectedRows){
+ const result=await client.query(
+  "SELECT object_id,physical_table,active FROM md_v2_object_registry "+
+  "WHERE tenant_id=$1 AND api_name='Product' FOR UPDATE",[target]);
+ if(result.rowCount!==1)throw Error('Missing legacy Product SQL registration');
+ const row=result.rows[0];
+ if(row.active!==false||!/^md_obj_[0-9a-f]{32}$/.test(row.physical_table))
+  throw Error('Legacy Product registry not safely retired');
+ const name='public.'+row.physical_table;
+ const exists=await client.query('SELECT to_regclass($1) AS table_ref',[name]);
+ if(!exists.rows[0].table_ref)throw Error('Legacy Product table missing');
+ const count=await client.query('SELECT count(*)::int AS n FROM '+name+
+  ' WHERE tenant_id=$1',[target]);
+ const foreign=await client.query('SELECT count(*)::int AS n FROM '+name+
+  ' WHERE tenant_id<>$1',[target]);
+ if(count.rows[0].n!==expectedRows||foreign.rows[0].n!==0)
+  throw Error('Product physical row count or tenant ownership mismatch');
+ const inbound=await client.query(
+  "SELECT count(*)::int AS n FROM pg_constraint WHERE contype='f' "+
+  'AND confrelid=to_regclass($1)',[name]);
+ if(inbound.rows[0].n!==0)throw Error('Dependent foreign keys prohibit Product retirement');
+ await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1',[row.object_id]);
+ await client.query('DELETE FROM md_v2_field_registry WHERE object_id=$1',[row.object_id]);
+ await client.query('DELETE FROM md_v2_object_registry WHERE object_id=$1',[row.object_id]);
+ await client.query('DROP TABLE '+name);
+}
 try{
  const snapshot=await readNormalizedState(pool);
  const next=structuredClone(snapshot.state);
  const tenant=next.tenants?.[target];
  if(!tenant)throw Error('Tenant not found: '+target);
+ const productRetiring=tenant.objects.some(o=>o.apiName==='Product');
+ const productDiscardCount=(tenant.records?.Product??[]).length;
  // Capture parent group links BEFORE stripping obsolete lookup fields.
- tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
-   .map(row=>[row.Id,row.GroupId]));
- migrateTenant(tenant);
- const repairedRecordAudits=repairMigratedRecordAuditFields(tenant);
+ let productConsolidation;
+ if(productOnly){
+  productConsolidation=migrateProductFieldsOnly(tenant);
+ }else{
+  tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
+    .map(row=>[row.Id,row.GroupId]));
+  migrateTenant(tenant);
+  productConsolidation={fieldsOnly:true,canonical:'Product__c'};
+ }
+ const repairedRecordAudits=productOnly?{}:repairMigratedRecordAuditFields(tenant);
  const missingSql=await pool.query(
   "SELECT o.tenant_id,o.api_name,o.physical_table,count(p.record_id)::int AS presence "+
   "FROM md_v2_object_registry o LEFT JOIN md_v2_field_presence p ON p.object_id=o.object_id "+
@@ -329,6 +372,7 @@ try{
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
    repairedRecordAudits,
+   productConsolidation:{...productConsolidation,fieldsOnly:true,canonical:'Product__c',oldRecordValuesNotCopied:true},
    missingPhysicalObjects:missingSql.rows.map(({tenant_id,api_name,physical_table})=>({tenantId:tenant_id,apiName:api_name,table:physical_table}))};
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
@@ -360,8 +404,11 @@ try{
       !/^[a-f0-9]{64}$/.test(proof.encryptedBackupSha256??''))
     throw Error('Fresh SQL restore proof does not match this revision');
   }
-  const result=await writeNormalizedState(pool,next,snapshot,synchronizeTypedRecords);
+  const beforeCommit=productRetiring
+   ?async(client)=>retireStandardProductPhysical(client,productDiscardCount)
+   :null;
+  const result=await writeNormalizedState(pool,next,snapshot,synchronizeTypedRecords,false,beforeCommit);
   console.log(JSON.stringify({mode:'committed',...summary,newRevision:result.version,
-    physicalTablesDropped:false}));
+    physicalTablesDropped:productRetiring}));
  }
 }finally{await pool.end();}

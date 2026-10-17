@@ -1,10 +1,12 @@
-/** Retired metadata API names whose legacy SQL tables have been removed.
+/** Retired metadata API names prohibited from future seeding/re-registration.
+ * Historical physical tables can remain archived until a separate verified drop.
  * Keep this single tombstone catalog for all automatic seed/install paths.
  * User is deliberately not listed: its canonical identity metadata remains
  * valid even when the duplicate generic physical User table was removed.
  */
 export const retiredObjectApiNames = Object.freeze([
   'Campaign',
+  'Product', // Consolidated into Product__c; do not recreate by seeds or installers.
   'Global_Settings__c',
   'KioskSettings__c',
   'OrderLineModifier__c',
