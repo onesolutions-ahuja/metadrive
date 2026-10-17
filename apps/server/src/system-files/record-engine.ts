@@ -1,19 +1,20 @@
 import type {SqlPersistence} from './sql-persistence.js';
+import type {PoolClient} from 'pg';
 import type {RbacEngine} from './rbac-engine.js';
 type FieldDefinition={api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null};
 type Storable={value_text:string|null;reference_record_id:string|null};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class RecordEngine {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
-  private async fields(tenantId:string,objectApi:string):Promise<FieldDefinition[]> {
-    const {rows}=await this.db.query<FieldDefinition>(
+  private async fields(tenantId:string,objectApi:string,client?:PoolClient):Promise<FieldDefinition[]> {
+    const {rows}=await (client??this.db).query<FieldDefinition>(
       'SELECT api_name,data_type,related_object,required,max_length FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',
       [tenantId,objectApi]);
     return rows;
   }
-  private async prepare(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>,creating:boolean) {
+  private async prepare(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>,creating:boolean,client?:PoolClient) {
     if(Object.getPrototypeOf(values)!==Object.prototype && Object.getPrototypeOf(values)!==null) throw new Error('Invalid record');
-    const definitions=await this.fields(tenantId,objectApi);
+    const definitions=await this.fields(tenantId,objectApi,client);
     const fields=new Map(definitions.map(f=>[f.api_name,f]));
     if(creating) for(const field of definitions)
       if(field.required && (values[field.api_name]===undefined || values[field.api_name]===null))
@@ -47,7 +48,7 @@ export class RecordEngine {
           text=new Date(value).toISOString();break;
         case 'reference':
           if(typeof value!=='string'||!uuid.test(value)||!field.related_object)throw new Error('Invalid relationship: '+key);
-          { const match=await this.db.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
+          { const match=await (client??this.db).query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3',
             [tenantId,field.related_object,value]);
             if(!match.rowCount)throw new Error('Invalid relationship target: '+key); }
           text='';reference=value;break;
@@ -58,17 +59,19 @@ export class RecordEngine {
     return prepared;
   }
   async create(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
+    return this.db.transaction(client=>this.createInTransaction(client,tenantId,userId,objectApi,values));
+  }
+  /** All Flow record mutations share one transaction, including relationship checks. */
+  async createInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
     await this.rbac.require(tenantId,userId,objectApi,'create');
-    const prepared=await this.prepare(tenantId,userId,objectApi,values,true);
-    return this.db.transaction(async client=>{
-      const {rows}=await client.query<{id:string}>(
-        'INSERT INTO md_records (tenant_id,object_api) VALUES ($1,$2) RETURNING id',
-        [tenantId,objectApi]);
-      for(const [field,value] of prepared) await client.query(
-        'INSERT INTO md_record_values (tenant_id,record_id,object_api,field_api,value_text,reference_record_id) VALUES ($1,$2,$3,$4,$5,$6)',
-        [tenantId,rows[0].id,objectApi,field,value.value_text,value.reference_record_id]);
-      return rows[0].id;
-    });
+    const prepared=await this.prepare(tenantId,userId,objectApi,values,true,client);
+    const {rows}=await client.query<{id:string}>(
+      'INSERT INTO md_records (tenant_id,object_api) VALUES ($1,$2) RETURNING id',
+      [tenantId,objectApi]);
+    for(const [field,value] of prepared)await client.query(
+      'INSERT INTO md_record_values (tenant_id,record_id,object_api,field_api,value_text,reference_record_id) VALUES ($1,$2,$3,$4,$5,$6)',
+      [tenantId,rows[0].id,objectApi,field,value.value_text,value.reference_record_id]);
+    return rows[0].id;
   }
   async list(tenantId:string,userId:string,objectApi:string,limit=50,offset=0) {
     await this.rbac.require(tenantId,userId,objectApi,'read');
