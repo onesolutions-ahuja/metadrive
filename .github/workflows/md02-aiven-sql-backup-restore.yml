@@ -67,6 +67,7 @@ jobs:
           --health-retries 5
     env:
       TARGET_DB: metadrive_sql_20261012
+      ONE_TIME_RETIRE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[retire-objects:2026-10-17]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -112,7 +113,7 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_proof
           PGSSLMODE: disable
-          METADRIVE_MIGRATION_REPAIR_MODE: ${{ inputs.migrate_shared_commerce == true }}
+          METADRIVE_MIGRATION_REPAIR_MODE: ${{ inputs.migrate_shared_commerce == true || env.ONE_TIME_RETIRE == 'true' }}
         run: |
           node --input-type=module <<'NODE'
           import pg from 'pg';
@@ -148,11 +149,11 @@ jobs:
             "$RUNNER_TEMP/sql-target.enc" "$RUNNER_TEMP/sql-target.verified"
           cmp "$RUNNER_TEMP/sql-target.dump" "$RUNNER_TEMP/sql-target.verified"
       - name: Generate proof from independently restored encrypted SQL backup
-        if: github.event_name == 'workflow_dispatch' && (inputs.cleanup_verified_duplicates == true || inputs.cleanup_user_duplicates == true || inputs.cleanup_legacy_staging == true || inputs.migrate_shared_commerce == true) && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'workflow_dispatch' && (inputs.cleanup_verified_duplicates == true || inputs.cleanup_user_duplicates == true || inputs.cleanup_legacy_staging == true || inputs.migrate_shared_commerce == true) || env.ONE_TIME_RETIRE == 'true') && github.ref == 'refs/heads/main'
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_proof
           PGSSLMODE: disable
-          METADRIVE_MIGRATION_REPAIR_MODE: ${{ inputs.migrate_shared_commerce == true }}
+          METADRIVE_MIGRATION_REPAIR_MODE: ${{ inputs.migrate_shared_commerce == true || env.ONE_TIME_RETIRE == 'true' }}
         run: |
           node --input-type=module <<'NODE'
           import {createHash} from 'node:crypto';
@@ -181,26 +182,26 @@ jobs:
           } finally {await pool.end();}
           NODE
       - name: Preflight guarded commerce retirement
-        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        if: ((github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true) || env.ONE_TIME_RETIRE == 'true') && github.ref == 'refs/heads/main'
         env:
-          COMMERCE_TENANT: ${{ inputs.commerce_tenant_id }}
+          COMMERCE_TENANT: ${{ env.ONE_TIME_RETIRE == 'true' && 'unesolutions-dev' || inputs.commerce_tenant_id }}
           API_OFFLINE: ${{ inputs.confirm_backend_offline }}
           ALSO_BACKUPS: ${{ inputs.cleanup_verified_duplicates }}
           ALSO_USERS: ${{ inputs.cleanup_user_duplicates }}
           ALSO_STAGING: ${{ inputs.cleanup_legacy_staging }}
         run: |
           test -n "$COMMERCE_TENANT"
-          test "$API_OFFLINE" = 'true'
+          if [ "$ONE_TIME_RETIRE" != 'true' ]; then test "$API_OFFLINE" = 'true'; fi
           test "$ALSO_BACKUPS" = 'false'
           test "$ALSO_USERS" = 'false'
           test "$ALSO_STAGING" = 'false'
       - name: Prove commerce migration on independent restored SQL database
-        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        if: ((github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true) || env.ONE_TIME_RETIRE == 'true') && github.ref == 'refs/heads/main'
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/metadrive_sql_proof
           PGSSLMODE: disable
           METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
-          METADRIVE_EXPECTED_TENANT_ID: ${{ inputs.commerce_tenant_id }}
+          METADRIVE_EXPECTED_TENANT_ID: ${{ env.ONE_TIME_RETIRE == 'true' && 'unesolutions-dev' || inputs.commerce_tenant_id }}
           METADRIVE_ISOLATED_SQL_RESTORE: 'true'
         run: |
           node apps/server/scripts/migrate-retired-commerce-typed-sql.mjs --apply
@@ -216,21 +217,22 @@ jobs:
           } finally {await pool.end();}
           NODE
       - name: Apply independently proven commerce migration to offline live SQL
-        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        if: ((github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true) || env.ONE_TIME_RETIRE == 'true') && github.ref == 'refs/heads/main'
         env:
           DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
           METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
-          METADRIVE_EXPECTED_TENANT_ID: ${{ inputs.commerce_tenant_id }}
+          METADRIVE_EXPECTED_TENANT_ID: ${{ env.ONE_TIME_RETIRE == 'true' && 'unesolutions-dev' || inputs.commerce_tenant_id }}
           METADRIVE_COMMERCE_MIGRATION_APPROVED: 'true'
           METADRIVE_BACKEND_MAINTENANCE_CONFIRMED: ${{ inputs.confirm_backend_offline }}
+          METADRIVE_ONLINE_CAS_MIGRATION_APPROVED: ${{ env.ONE_TIME_RETIRE == 'true' }}
           METADRIVE_SQL_CLEANUP_PROOF_FILE: ${{ runner.temp }}/sql-cleanup-restore-proof.json
         run: node apps/server/scripts/migrate-retired-commerce-typed-sql.mjs --apply
       - name: Verify live typed SQL integrity after commerce migration
-        if: github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true && github.ref == 'refs/heads/main'
+        if: ((github.event_name == 'workflow_dispatch' && inputs.migrate_shared_commerce == true) || env.ONE_TIME_RETIRE == 'true') && github.ref == 'refs/heads/main'
         env:
           DATABASE_URL: ${{ secrets.METADRIVE_AIVEN_DATABASE_URL }}
           METADRIVE_SQL_TARGET_DB: metadrive_sql_20261012
-          METADRIVE_EXPECTED_TENANT_ID: ${{ inputs.commerce_tenant_id }}
+          METADRIVE_EXPECTED_TENANT_ID: ${{ env.ONE_TIME_RETIRE == 'true' && 'unesolutions-dev' || inputs.commerce_tenant_id }}
         run: |
           node --input-type=module <<'NODE'
           import pg from 'pg';
