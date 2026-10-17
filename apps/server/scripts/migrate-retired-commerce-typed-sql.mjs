@@ -304,12 +304,28 @@ try{
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
   if(!isolated){
-   if(process.env.METADRIVE_COMMERCE_MIGRATION_APPROVED!=='true'||
-      process.env.METADRIVE_BACKEND_MAINTENANCE_CONFIRMED!=='true')
-    throw Error('Explicit approved migration and offline API maintenance required');
+   const approved=process.env.METADRIVE_COMMERCE_MIGRATION_APPROVED==='true';
+   const offline=process.env.METADRIVE_BACKEND_MAINTENANCE_CONFIRMED==='true';
+   const onlineCas=process.env.METADRIVE_ONLINE_CAS_MIGRATION_APPROVED==='true';
+   if(!approved||(!offline&&!onlineCas))
+    throw Error('Approved SQL migration and either offline maintenance or guarded live CAS mode required');
+   if(onlineCas&&!offline){
+    // For one-time migration when the app cannot be suspended through the
+    // hosting connector. No active client statements may be in flight; state
+    // revision+digest compare-and-swap and every typed sync share one TX.
+    const writers=await pool.query(
+      "SELECT count(*)::int AS n FROM pg_stat_activity "+
+      "WHERE datname=current_database() AND pid<>pg_backend_pid() "+
+      "AND backend_type='client backend' AND state='active'");
+    if(writers.rows[0].n!==0)
+      throw Error('Concurrent active SQL sessions; refusing live migration');
+   }
    const file=process.env.METADRIVE_SQL_CLEANUP_PROOF_FILE;
    if(!file)throw Error('Independently restored encrypted backup proof required');
    const proof=JSON.parse(readFileSync(file,'utf8'));
+   if(onlineCas&&!offline && (!Number.isFinite(Date.parse(proof.verifiedAt)) ||
+      Date.now()-Date.parse(proof.verifiedAt)>30*60*1000 || Date.now()<Date.parse(proof.verifiedAt)))
+     throw Error('Live migration requires a fresh, independently restored snapshot');
    if(proof.database!==db||proof.revision!==snapshot.version||
       proof.stateDigest!==snapshot.digest||proof.restoredDatabaseVerified!==true||
       !/^[a-f0-9]{64}$/.test(proof.encryptedBackupSha256??''))
