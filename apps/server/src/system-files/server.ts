@@ -178,6 +178,14 @@ export function createSystemServer(db:SqlPersistence) {
     await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject);
     res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
   }));
+  app.get('/api/component-library',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
+    res.json({
+      components:await components.list(actor.tenant_id),
+      canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
+    });
+  }));
   app.get('/api/metadata/components',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
