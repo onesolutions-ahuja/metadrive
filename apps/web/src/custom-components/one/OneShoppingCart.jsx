@@ -155,6 +155,12 @@ function ShoppingCartTill({props}) {
     setBusy(false);setPaymentStatus('failed');setError('The sale could not be validated. Check the basket and try again.');
     publish(cart,'payment-failed');
    }else if(status==='AgeRejected'){
+    // A missing Product age classification must not retry unchanged stock forever.
+    if(!cart.some(item=>item.ageRestricted)){
+     setBusy(false);setPaymentStatus('age-rejected');
+     setError('Age restriction verification failed. Check Product age metadata before retrying.');
+     publish(cart,'age-rejected');return;
+    }
     const eligible=cart.filter(item=>!item.ageRestricted);updateCart(eligible);
     if(!eligible.length){setPaymentStatus('age-rejected');publish([],'age-rejected');return;}
     setBusy(true);
@@ -165,6 +171,10 @@ function ShoppingCartTill({props}) {
      .finally(()=>setBusy(false));
    }else if(status==='Accepted'){
     setPaymentStatus('complete');publish(cart,'complete',Math.round(Number(outputs.ChangeDue||0)*100));
+   }else if(status==='OutOfStock'){
+    setBusy(false);setPaymentStatus('failed');
+    setError('Insufficient or unconfigured stock. No payment was accepted.');
+    publish(cart,'payment-failed');
    }else if(status==='Declined'||status==='InsufficientCash'){
     setPaymentStatus(status==='Declined'?'declined':'insufficient-cash');
     publish(cart,status==='Declined'?'declined':'insufficient-cash');
