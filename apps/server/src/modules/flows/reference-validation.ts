@@ -39,7 +39,9 @@ function sourceFor(flow:FlowMetadata,root:string):Choice|undefined{
       type:'Record',isCollection:element.type==='Get Records'&&recordLimit!=='1',
       fields:Array.isArray(c.fields)?c.fields.filter((f):f is string=>typeof f==='string'):undefined};
   }
+  const loop=flow.elements.find(element=>element.type==='Loop'&&element.config.loopVariable===root);
   const resource=flow.resources.find(r=>r.name===root);
+  if(loop&&resource?.type==='Record')return {type:'Record',objectName:resource.dataType,origin:loop.id};
   return resource?{type:resource.type,objectName:resource.dataType,isCollection:resource.isCollection}:undefined;
 }
 
