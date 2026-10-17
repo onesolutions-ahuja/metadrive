@@ -198,6 +198,20 @@ export function renderSetupShell(ctx: any) {
             <SetupHome onNavigate={openSetupWorkspace} />
           )}
           {route.kind === 'setup' && workspace === 'object-manager' && (
+            objects.length === 0 || !objects.some((item: ObjectMetadata) => item.apiName === object.apiName) ?
+              <section className="setup-card" aria-label="Object Manager" style={{padding:24}}>
+                <h2>{objects.length === 0 ? 'No objects yet' : 'Object not found'}</h2>
+                <p>{objects.length === 0
+                  ? 'This installation has no Object definitions. Create your first Object in Object Manager.'
+                  : 'The requested Object is not installed in this workspace.'}</p>
+                <div className="toolbar-actions">
+                  {objects.length > 0 && <button className="btn" type="button" onClick={() => navigateRoute({
+                    kind:'setup',workspace:'object-manager',objectApiName:objects[0].apiName,setting:'Fields & Relationships'
+                  })}>Open available Object</button>}
+                  {canManageApps && <button type="button" className="btn btn-brand" onClick={() => setShowNewObject(true)}>Create Object</button>}
+                </div>
+              </section> :
+              (
             <PlatformWorkspaceSurface workspace="object-manager" componentRuntime={protectedPageRuntime} permitted={canReadMetadata} pages={pages} libraryComponents={libraryComponents} device={runtimeFormFactor} canEditSystemPage={canManagePlatformTenants} onEditSystemPage={(apiName: string)=>{const selected=pages.find(p=>p.apiName===apiName);if(selected)setPage(selected);navigateRoute({kind:'setup',workspace:'page-builder',resourceApiName:apiName});}} >
             <ObjectManager
               object={object}
@@ -236,6 +250,7 @@ export function renderSetupShell(ctx: any) {
               onNotify={notify}
             />
             </PlatformWorkspaceSurface>
+              )
           )}
           {route.kind === 'setup' && workspace === 'page-builder' && advancedMetadataLoaded && route.resourceApiName && !pages.some((item) => item.apiName === route.resourceApiName) && (
             <section className="setup-card" role="alert" style={{ padding: 24 }}>
