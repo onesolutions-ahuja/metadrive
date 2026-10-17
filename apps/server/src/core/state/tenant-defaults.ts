@@ -44,7 +44,6 @@ export function createTenantDefaults(deps: CreateTenantDefaultsDependencies) {
       { id: 'sales-user', label: 'Sales User', apiName: 'Sales_User', license: 'MetaDrive', description: 'Manage accounts and opportunities.', systemPermissions: deps.salesPermissions, objectPermissions: {
         Account: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false },
         Contact: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false },
-        Campaign: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false },
         Opportunity: { read: true, create: true, edit: true, delete: false, viewAll: false, modifyAll: false }
       }, recordTypePermissions: {}, fieldPermissions: { 'Opportunity.Amount': { read: true, edit: true }, 'Opportunity.StageName': { read: true, edit: true } } },
       { id: 'support-agent', label: 'Support Agent', apiName: 'Support_Agent', license: 'MetaDrive', description: 'Work on customer cases.', systemPermissions: deps.supportPermissions, objectPermissions: {
