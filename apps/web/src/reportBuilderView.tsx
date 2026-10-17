@@ -711,6 +711,28 @@ export function ReportBuilder({
     });
   };
   const filteredReports = reports.filter((report) => `${report.label} ${report.apiName}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  // A report must remain discoverable when optional folder metadata is loading,
+  // unavailable to this user, or refers to a deleted folder.
+  const knownFolderIds = new Set(reportFolders.map(folder => folder.id));
+  const otherReports = filteredReports.filter(report => !report.folderId || !knownFolderIds.has(report.folderId));
+  const openExistingReport = (report: ReportMetadata) => {
+    setDraft({
+      ...report,
+      fieldApiNames: [...report.fieldApiNames],
+      groupByFieldApiNames: [...report.groupByFieldApiNames],
+      filters: report.filters.map(filter => ({...filter, values:[...filter.values]})),
+      standardFilters: {...report.standardFilters},
+      crossFilters: report.crossFilters.map(filter => ({...filter, filters:filter.filters.map(subfilter => ({
+        ...subfilter, values:[...subfilter.values]
+      }))})),
+      rowLimit: {...report.rowLimit}
+    });
+    setSelectedApiName(report.apiName);
+    setResult(null);
+    setError('');
+    setRunPage(false);
+  };
+
   const reportFilterValueControl = (
     fieldApiName: string,
     value: string,
@@ -882,24 +904,16 @@ export function ReportBuilder({
         {reportFolders.map((folder) => {
           const folderReports = filteredReports.filter((report) => report.folderId === folder.id);
           return <div className="report-panel-block" key={folder.id}><h3>{folder.label.toLocaleUpperCase()} <span>{folderReports.length}</span></h3>
-            {folderReports.map((report) => <button className={`outline-field ${current?.apiName === report.apiName ? 'selected' : ''}`} key={report.apiName} onClick={() => {
-              setDraft({
-                ...report,
-                fieldApiNames: [...report.fieldApiNames],
-                groupByFieldApiNames: [...report.groupByFieldApiNames],
-                filters: report.filters.map((filter) => ({ ...filter, values: [...filter.values] })),
-                standardFilters: { ...report.standardFilters },
-                crossFilters: report.crossFilters.map((filter) => ({ ...filter, filters: filter.filters.map((subfilter) => ({ ...subfilter, values: [...subfilter.values] })) })),
-                rowLimit: { ...report.rowLimit }
-              });
-              setSelectedApiName(report.apiName);
-              setResult(null);
-              setError('');
-              setRunPage(false);
-            }}><FileText size={14} />{report.label}</button>)}
+            {folderReports.map(report => <button className={`outline-field ${current?.apiName === report.apiName ? 'selected' : ''}`} key={report.apiName}
+              onClick={() => openExistingReport(report)}><FileText size={14} />{report.label}</button>)}
             {!folderReports.length && <p className="dashboard-sidebar-empty">No reports in this folder.</p>}
           </div>;
         })}
+        {otherReports.length > 0 && <div className="report-panel-block">
+          <h3>OTHER REPORTS <span>{otherReports.length}</span></h3>
+          {otherReports.map(report => <button className={`outline-field ${current?.apiName === report.apiName ? 'selected' : ''}`} key={report.apiName}
+            onClick={() => openExistingReport(report)}><FileText size={14} />{report.label}</button>)}
+        </div>}
         {current && !runPage && <div className="report-outline-tabs" role="tablist" aria-label="Report builder sections">
           <button role="tab" aria-selected={builderTab === 'Outline'} className={builderTab === 'Outline' ? 'active' : ''} onClick={() => setBuilderTab('Outline')}>Outline</button>
           <button role="tab" aria-selected={builderTab === 'Filters'} className={builderTab === 'Filters' ? 'active' : ''} onClick={() => setBuilderTab('Filters')}>Filters{reportFilterRestrictionCount ? ` (${reportFilterRestrictionCount})` : ''}</button>
