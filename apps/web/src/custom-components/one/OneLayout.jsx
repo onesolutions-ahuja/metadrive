@@ -2,7 +2,7 @@
 const options=(value,fallback=[])=>Array.isArray(value)?value:String(value||'').split(',').map(x=>x.trim()).filter(Boolean).length?String(value||'').split(',').map(x=>x.trim()).filter(Boolean):fallback;
 function shared(p){
  const color=p.accentColor||'var(--md-primary, #1d4ed8)';
- const style={'--one-accent':color,'--one-radius':Math.max(0,Number(p.radius)||0)+'px','--one-pad':Math.max(0,Number(p.padding)||0)+'px','--one-gap':Math.max(0,Number(p.gap)||0)+'px','--one-blur':Math.min(20,Math.max(0,Number(p.glassBlur)||0))+'px'};
+ const style={'--one-accent':color,'--one-radius':Math.max(0,Number(p.radius??16))+'px','--one-pad':Math.max(0,Number(p.padding??16))+'px','--one-gap':Math.max(0,Number(p.gap??12))+'px','--one-blur':Math.min(20,Math.max(0,Number(p.glassBlur)||0))+'px'};
  if(p.backgroundColor)style['--one-bg']=p.backgroundColor;
  if(p.textColor)style['--one-fg']=p.textColor;
  if(p.borderColor)style['--one-border']=p.borderColor;
