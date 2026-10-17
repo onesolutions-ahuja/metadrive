@@ -82,11 +82,17 @@ export function definedObjects(state){
 }
 async function assertRetiredSystemUserTableIsEmpty(client,sqlObject){
   const table=tableName(sqlObject.object_id);
-  const [existing,fieldPresence]=await Promise.all([
-    client.query('SELECT 1 FROM '+table+' LIMIT 1'),
+  // An operator may already have retired an empty physical User table manually.
+  // Permit a verified absent table ONLY if no typed field-presence rows remain.
+  const [relation,fieldPresence]=await Promise.all([
+    client.query('SELECT to_regclass($1)::text AS name',['public.'+table]),
     client.query('SELECT 1 FROM md_v2_field_presence WHERE object_id=$1 LIMIT 1',[sqlObject.object_id])
   ]);
-  if(existing.rowCount||fieldPresence.rowCount)
+  if(fieldPresence.rowCount)
+    throw Error('System User typed field presence still contains records; refusing retirement');
+  if(!relation.rows[0]?.name) return;
+  const existing=await client.query('SELECT 1 FROM '+table+' LIMIT 1');
+  if(existing.rowCount)
     throw Error('System User physical table contains records; an explicit lossless migration is required');
 }
 async function prepare(client,state){
