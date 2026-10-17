@@ -14,6 +14,7 @@ import {synchronizeTypedRecords} from '../src/normalized-typed-records.mjs';
 import {customisationObjectExtensions,basketObjectExtensions} from '../../../scripts/kiosk-commerce-capabilities.mjs';
 import {commerceFlows} from '../../../scripts/kiosk-phase4-flows.mjs';
 import {commercePages} from '../../../scripts/kiosk-phase4-pages.mjs';
+import {retiredObjectApiNames} from '../src/retired-object-names.mjs';
 
 const db='metadrive_sql_20261012';
 const target=process.env.METADRIVE_EXPECTED_TENANT_ID;
@@ -39,9 +40,7 @@ for(const k of ['sslmode','sslcert','sslkey','sslrootcert'])url.searchParams.del
 const ssl=isolated?false:{rejectUnauthorized:process.env.METADRIVE_DB_ALLOW_SELF_SIGNED_CERT!=='true',
   ...(process.env.METADRIVE_DB_CA_CERT?{ca:process.env.METADRIVE_DB_CA_CERT.replace(/\\n/g,'\n')}:{})};
 const pool=new pg.Pool({connectionString:url.toString(),ssl,max:2,connectionTimeoutMillis:15000});
-const retired=new Set(['Campaign','Global_Settings__c','KioskSettings__c',
-  'OrderLineModifier__c','Tenant__c','TillSession__c',
-  'ModifierGroup__c','ModifierOption__c','ProductCategory__c','SaleItem__c']);
+const retired=new Set(retiredObjectApiNames);
 const mandatory=['ProductCategory','Product__c','ProductModifierGroup__c',
   'ProductModifier__c','OrderLine__c','SaleLine__c'];
 function mapByName(records){return new Map(records.map(r=>[String(r.Name??'').trim().toLowerCase(),r]));}
@@ -143,8 +142,9 @@ function retireSupersededPosApp(tenant){
  const legacyPage='UK_Off_Licence_POS_Customer_Display_Screen';
  const app=(tenant.apps??[]).find(x=>x.apiName===legacyApp);
  const page=(tenant.pages??[]).find(x=>x.apiName===legacyPage);
- if(page && page.status!=='Draft')
-  throw Error('Legacy customer-display Page is published; review before retirement');
+ // The obsolete OnePOSV2 Page may have been published before its SQL table
+ // was removed. The owner explicitly requested retiring this obsolete module;
+ // its previous definition remains recoverable from the encrypted SQL backup.
  if(app){
   tenant.apps=tenant.apps.filter(x=>x.apiName!==legacyApp);
  }
@@ -155,6 +155,20 @@ function retireSupersededPosApp(tenant){
    throw Error('Legacy POS Page remains referenced by another app');
   tenant.pages=tenant.pages.filter(x=>x.apiName!==legacyPage);
  }
+}
+function retireBrokenTillSessionFlow(tenant){
+ // Its physical TillSession__c table is already gone. Do not keep an
+ // executable Flow that will write to an Object that can never be restored.
+ // Retire only this exact old Flow; never alter cash checkout or reusable POS
+ // components. The encrypted, independently restored snapshot preserves it.
+ const apiName='COPILOT_POS_Open_Till_Session';
+ const matches=(tenant.flows??[]).filter(flow=>flow.apiName===apiName);
+ if(matches.length>1)throw Error('Duplicate legacy Till Session Flow');
+ if(matches.length&&JSON.stringify(matches[0]).includes(JSON.stringify('TillSession__c'))){
+   tenant.flows=tenant.flows.filter(flow=>flow.apiName!==apiName);
+   return [apiName];
+ }
+ return [];
 }
 function assertNoForeignReferences(tenant){
  const buckets=[
@@ -252,6 +266,7 @@ function migrateTenant(t){
  t.fieldHistory=(t.fieldHistory??[]).filter(h=>!retired.has(h.objectApiName));
  removeAccessGrants(t);
  retireSupersededPosApp(t);
+ retireBrokenTillSessionFlow(t);
  replaceManagedFlows(t);
  migrateCashCheckoutFlow(t);
  t.pages=(t.pages??[]).map(page=>{
@@ -270,11 +285,22 @@ try{
    .map(row=>[row.Id,row.GroupId]));
  migrateTenant(tenant);
  const missingSql=await pool.query(
-  "SELECT count(*)::int AS n FROM md_v2_object_registry WHERE active=true AND to_regclass('public.'||physical_table) IS NULL");
- const noChanges=missingSql.rows[0]?.n===0&&JSON.stringify(snapshot.state)===JSON.stringify(next);
+  "SELECT o.tenant_id,o.api_name,o.physical_table,count(p.record_id)::int AS presence "+
+  "FROM md_v2_object_registry o LEFT JOIN md_v2_field_presence p ON p.object_id=o.object_id "+
+  "WHERE o.active=true AND to_regclass('public.'||o.physical_table) IS NULL "+
+  "GROUP BY o.tenant_id,o.api_name,o.physical_table");
+ for(const entry of missingSql.rows){
+  if(!retired.has(entry.api_name)&&entry.api_name!=='User')
+   throw Error('Unexpected missing SQL Object; refusal to repair '+entry.api_name);
+  if(entry.presence!==0)throw Error('Missing SQL table has unarchived record field presence: '+entry.api_name);
+  if(entry.api_name!=='User'&&entry.tenant_id!==target)
+   throw Error('Deleted SQL Object belongs to another tenant; explicit tenant migration required: '+entry.api_name);
+ }
+ const noChanges=missingSql.rows.length===0&&JSON.stringify(snapshot.state)===JSON.stringify(next);
  const summary={database:db,tenant:target,revision:snapshot.version,
    stateDigest:snapshot.digest,retiredObjects:[...retired],
-   migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length};
+   migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
+   missingPhysicalObjects:missingSql.rows.map(({tenant_id,api_name,physical_table})=>({tenantId:tenant_id,apiName:api_name,table:physical_table}))};
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
   if(!isolated){
