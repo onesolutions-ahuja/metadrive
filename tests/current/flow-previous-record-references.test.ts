@@ -64,3 +64,20 @@ test('record collections cannot be used as a single record field',()=>{
  (flow.elements[2].config.conditions as Array<Record<string,string>>)[0].value='{!Lines.Id}';
  assert.match(flowReferenceErrors(flow as any,objects).join(' '),/collection|not guaranteed/);
 });
+
+test('loop record variables remain usable inside an existing record collection loop',()=>{
+ const flow=config();
+ flow.elements.push({id:4,type:'Loop',label:'Each line',config:{collection:'Lines',loopVariable:'RunningLine'}} as any);
+ flow.elements.push({id:5,type:'Assignment',label:'Sum line',config:{variable:'Amount',operator:'Add',value:'{!RunningLine.Quantity}'}} as any);
+ flow.connectors.push({id:'loopstart',from:3,to:4,kind:'normal',label:''} as any);
+ flow.connectors.push({id:'each',from:4,to:5,kind:'normal',label:'For Each'} as any);
+ flow.connectors.push({id:'next',from:5,to:4,kind:'normal',label:''} as any);
+ flow.resources.push({name:'RunningLine',label:'Running Line',type:'Record',dataType:'OrderLine__c',isCollection:false,availableForInput:false,availableForOutput:false});
+ assert(flowReferenceChoices(flow,5,objects).some(x=>x.reference==='{!RunningLine.Quantity}'));
+ assert.deepEqual(flowReferenceErrors(flow as any,objects),[]);
+});
+test('ordinary JSON literals are not misread as broken Flow references',()=>{
+ const flow=config();
+ flow.elements.push({id:4,type:'Assignment',label:'Keep JSON',config:{variable:'SessionKey',value:'{"example":1}'}} as any);
+ assert.deepEqual(flowReferenceErrors(flow as any,objects),[]);
+});
