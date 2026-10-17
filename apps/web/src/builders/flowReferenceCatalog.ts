@@ -137,8 +137,13 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       recordChoices(`record${element.id}`,element.label,String(element.config.object||''),'Earlier steps');
     if(element.type==='Loop'){
       const name=String(element.config.loopVariable||'');
-      const record=flow.resources.find(resource=>resource.name===name&&resource.type==='Record');
-      if(record)recordChoices(name,record.label,record.dataType,'Earlier steps');
+      const collectionName=String(element.config.collection||'');
+      const collection=flow.resources.find(resource=>resource.name===collectionName&&resource.isCollection);
+      const getSource=flow.elements.find(step=>step.type==='Get Records'
+        &&String(step.config.outputVariable||`element${step.id}`)===collectionName
+        &&String(step.config.recordLimit??'1')!=='1');
+      const objectName=collection?.dataType||String(getSource?.config.object||'');
+      if(objectName)recordChoices(name,element.label,objectName,'Earlier steps');
     }
   }
   const unique=new Map<string,FlowReferenceChoice>();
