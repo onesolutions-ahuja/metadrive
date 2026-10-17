@@ -1321,7 +1321,10 @@ export default function FlowBuilder({
             {flow.resources.map((resource) => <div className="flow-resource-card" key={resource.name}>
               <strong>{resource.label}</strong><small>{resource.name} · {resource.type} · {resource.dataType}</small>
               <label className="form-label">{resource.type === 'Formula' ? 'Formula Expression' : resource.type === 'Text Template' ? 'Template' : 'Default Value'}{resource.type === 'Formula' || resource.type === 'Text Template'
-                ? <textarea className="form-control" rows={resource.type === 'Text Template' ? 9 : 4} style={resource.type === 'Text Template' ? { resize: 'vertical', whiteSpace: 'pre-wrap' } : undefined} value={displayValue(resource.value)} onChange={(event) => updateResource(resource.name, { value: event.target.value })} />
+                ? <SmartFieldInput multiline rows={resource.type === 'Text Template' ? 9 : 4}
+                    kind={resource.type === 'Formula' ? 'formula' : 'text'}
+                    objects={objects} primaryObjectApiName={flow.triggerObject ?? ''}
+                    value={displayValue(resource.value)} onChange={next => updateResource(resource.name, { value: next })} />
                 : <input className="form-control" value={displayValue(resource.value)} onChange={(event) => updateResource(resource.name, { value: event.target.value })} />}</label>
               <div className="form-options"><label className="checkbox-row"><input type="checkbox" checked={resource.availableForInput} disabled={!['Variable', 'Record', 'Record Collection'].includes(resource.type)} onChange={(event) => updateResource(resource.name, { availableForInput: event.target.checked })} />Available for input</label><label className="checkbox-row"><input type="checkbox" checked={resource.availableForOutput} onChange={(event) => updateResource(resource.name, { availableForOutput: event.target.checked })} />Available for output</label></div>
               <button className="text-action" onClick={() => onFlowChange({ ...flow, resources: flow.resources.filter((item) => item.name !== resource.name) })}><X size={13} />Delete Resource</button>
