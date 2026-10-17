@@ -48,6 +48,24 @@ test('picker lists only current fields then actual lookup paths, not unrelated a
   assert.deepEqual(mentionGroups(objects, '', ['Customer']).map(group => group.path), []);
 });
 
+test('Object metadata offers Sale ID, customer relationship ID and related Customer fields under @Sale',()=>{
+ const paths=mentionGroups(objects,'Sale',[], 'sale', 'text');
+ const sale=paths.find(group=>group.path==='Sale');
+ assert(sale?.fields.some(field=>field.reference==='@Sale.Id'&&field.fieldLabel==='Record ID'));
+ assert(sale?.fields.some(field=>field.reference==='@Sale.CustomerId'));
+ assert(paths.some(group=>group.path==='Sale.Customer'
+   &&group.fields.some(field=>field.reference==='@Sale.Customer.Name')));
+ assert(validateMentionPath('@Sale.Id',objects,'Sale'));
+ assert(validateMentionPath('@Sale.CustomerId',objects,'Sale'));
+ assert.deepEqual(mentionSegments('@Sale.Id',objects,'text','Sale'),
+   [{text:'@Sale.Id',reference:true}]);
+ const saleRecord={Id:'s1',CustomerId:'c1'};
+ const mention=loadedMentionContext(objects,'Sale',saleRecord,{Sale:[saleRecord],Customer:[],Account:[],Product:[]},
+  {id:'@Sale.Id',customer:'@Sale.CustomerId'});
+ assert.equal(resolveMentionValue('@Sale.Id',mention.records,mention.fields),'s1');
+ assert.equal(resolveMentionValue('@Sale.CustomerId',mention.records,mention.fields),'c1');
+});
+
 test('field is blue only for a valid, full path from the root object', () => {
   assert.deepEqual(mentionSegments('Dear @Sale.Customer.Name', objects, 'text', 'Sale'), [
     { text: 'Dear ', reference: false },
