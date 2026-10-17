@@ -17,7 +17,7 @@ type EntryTiming = { kind: 'login' | 'restore'; startedAt: number; authenticated
 
 
 export function createLoginView(logoUrl: string) {
-function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (timing: EntryTiming) => void; onRetry?: () => void }) {
+function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart?: () => void; onSuccess?: (timing: EntryTiming) => void; onRetry?: () => void }) {
   const recoveryQuery = new URLSearchParams(window.location.search);
   const [email, setEmail] = useState(recoveryQuery.get('resetEmail') ?? '');
   const [password, setPassword] = useState('');
@@ -41,12 +41,16 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    onStart?.();
     const startedAt = performance.now();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
     setSubmitting(true);
     setMessage('');
     try {
       const session = await apiRequest<{ access_token?: string; landing?: LandingBootstrap; mfa_required?: boolean; challenge_token?: string; enrollment_required?: boolean; setup_secret?: string }>('/auth/login?landing=1', {
         method: 'POST',
+        signal: controller.signal,
         body: JSON.stringify({ email, password })
       });
       if (session.mfa_required && session.challenge_token) {
@@ -58,8 +62,13 @@ function Login({ error, onSuccess, onRetry }: { error?: string; onSuccess?: (tim
       setAccessToken(session.access_token);
       onSuccess?.({ kind: 'login', startedAt, authenticatedAt: performance.now(), landing: session.landing });
     } catch (failure) {
-      setMessage(failure instanceof Error ? failure.message : 'Unable to sign in');
+      setMessage(failure instanceof DOMException && failure.name === 'AbortError'
+        ? 'Login timed out. The workspace API is unavailable. Please retry.'
+        : failure instanceof TypeError
+          ? 'Cannot connect to the workspace API. Please retry when the service is online.'
+          : failure instanceof Error ? failure.message : 'Unable to sign in');
     } finally {
+      window.clearTimeout(timeout);
       setSubmitting(false);
     }
   };
