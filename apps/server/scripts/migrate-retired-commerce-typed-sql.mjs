@@ -19,7 +19,7 @@ import {retiredObjectApiNames} from '../src/retired-object-names.mjs';
 const db='metadrive_sql_20261012';
 const target=process.env.METADRIVE_EXPECTED_TENANT_ID;
 const apply=process.argv.includes('--apply');
-if(process.argv.some(x=>x!=='--apply'))throw Error('Unknown argument');
+if(process.argv.slice(2).some(x=>x!=='--apply'))throw Error('Unknown argument');
 if(process.env.METADRIVE_SQL_TARGET_DB!==db||!target)throw Error('Explicit target database and tenant required');
 const input=process.env.DATABASE_URL;
 if(!input)throw Error('DATABASE_URL required');
