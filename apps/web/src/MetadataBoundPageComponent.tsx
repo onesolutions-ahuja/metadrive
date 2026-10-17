@@ -121,7 +121,6 @@ export default function MetadataBoundPageComponent({
     return source;
   };
   const onAction = async (action: { event: string; value?: unknown }) => {
-    if (disableActions) throw new Error('Page Builder preview is read-only. Open the assigned app to test actions.');
     const config = actionFlows[action.event];
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       throw new Error('No metadata event action is configured for "' + action.event + '".');
@@ -137,6 +136,7 @@ export default function MetadataBoundPageComponent({
       window.dispatchEvent(new CustomEvent('metadrive:page-filter-selected', {detail:{pageSessionKey,filterKey,value}}));
       return {selected:value};
     }
+    if (disableActions) throw new Error('Builder preview permits local filters only. Publish the page to run Flows or navigation.');
     if (binding.actionType === 'Navigate') {
       const target = resolvePageActionRoute(binding, {
         objects, apps, pages, currentAppId, defaultObjectApiName: objectApiName
@@ -204,7 +204,8 @@ export default function MetadataBoundPageComponent({
     {dataError && <div className="records-message" role="alert">{dataError}</div>}
     <RegisteredComponent definition={definition} props={{
       ...properties, ...componentLayoutProps(properties, formFactor),
-      ...(typeof properties.filterKey === 'string' && properties.filterKey ? {selectedCategory:selectedCategories[properties.filterKey] || ''} : {}),
+      ...(typeof properties.filterKey === 'string' && properties.filterKey ? {selectedCategory:selectedCategories[properties.filterKey] ?? String(properties.selectedCategory ?? '')} : {}),
+      ...(typeof properties.searchKey === 'string' && properties.searchKey ? {searchQuery:selectedCategories[properties.searchKey] ?? ''} : {}),
       label: component.label, properties, objects, reports, flows: availableFlows,
        pageSessionKey, componentId: component.id,
       device: formFactor, onNavigate, onLaunchFlow, onAction, actionError,
