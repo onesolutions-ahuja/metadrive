@@ -56,7 +56,10 @@ export function registeredComponentAppearance(props: Record<string, unknown>): A
     if(value!==undefined)style[key]=value;
   }
   const border=numeric(props.borderWidth,0,24);
-  if(border!==undefined)put('--md-border-width',border+'px');
+  if(border!==undefined){
+    style.borderWidth=border;style.borderStyle=border?'solid':'none';
+    put('--md-border-width',border+'px');
+  }
   const density=option(props.cardDensity,['default','compact','comfortable','image-focused']);
   if(density==='compact'){
     put('--md-card-padding','6px');put('--md-card-height','0px');
