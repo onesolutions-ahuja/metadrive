@@ -80,3 +80,5 @@ CREATE TABLE IF NOT EXISTS md_flow_run_inputs (
 );
 
 CREATE TABLE IF NOT EXISTS md_bootstrap_password_repairs (tenant_id uuid NOT NULL, user_id uuid NOT NULL, reconciled_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,user_id), FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id));
+
+CREATE TABLE IF NOT EXISTS md_initial_password_rotations (tenant_id uuid NOT NULL, user_id uuid NOT NULL, rotated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(tenant_id,user_id), FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id));
