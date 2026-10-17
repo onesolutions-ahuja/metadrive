@@ -110,12 +110,6 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
       if(record)recordChoices(name,record.label,record.dataType,'Earlier steps');
     }
   }
-  // Explicitly declared Record outputs are assigned by a preceding Get Records step.
-  for(const element of flow.elements){
-    if(element.type!=='Get Records'||!earlier.has(element.id))continue;
-    const resource=flow.resources.find(item=>item.name===element.config.outputVariable && item.type==='Record');
-    if(resource)recordChoices(resource.name,resource.label,resource.dataType,'Earlier steps');
-  }
   const unique=new Map<string,FlowReferenceChoice>();
   for(const choice of result)unique.set(choice.reference,choice);
   return [...unique.values()];
