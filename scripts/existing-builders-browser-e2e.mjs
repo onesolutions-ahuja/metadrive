@@ -275,6 +275,43 @@ try {
   await flowName.waitFor();
   await page.waitForFunction(expected => document.querySelector('input[aria-label="Flow label"]')?.value === expected, flowEdited, {timeout:20000});
 
+  // A non-developer can bind a Get Records filter to a preceding Get Records result.
+  const referenceFlow='MD07_Previous_Record_Picker';
+  await request('/metadata/flows/'+referenceFlow,token,'PUT',{
+    apiName:referenceFlow,label:'MD07 Previous Record Picker',flowType:'Autolaunched Flow',
+    status:'Draft',versionNumber:1,activeVersion:null,triggerObject:null,startConfig:{},
+    elements:[{id:1,type:'Start',label:'Start',config:{}},
+      {id:2,type:'Get Records',label:'Find Account',config:{
+        object:'Account',outputVariable:'FoundAccount',recordLimit:'1',
+        conditions:[{field:'Name',operator:'Equals',value:'Demo Account'}]}},
+      {id:3,type:'Get Records',label:'Find Contacts',config:{
+        object:'Contact',outputVariable:'FoundContacts',recordLimit:'all',
+        conditions:[{field:'AccountId',operator:'Equals',value:''}]}}
+    ],
+    connectors:[{id:'a',from:1,to:2,label:'',kind:'normal'},
+      {id:'b',from:2,to:3,label:'',kind:'normal'}],
+    resources:[
+      {name:'FoundAccount',label:'Found Account',type:'Record',dataType:'Account',
+        isCollection:false,availableForInput:false,availableForOutput:false},
+      {name:'FoundContacts',label:'Found Contacts',type:'Record Collection',dataType:'Contact',
+        isCollection:true,availableForInput:false,availableForOutput:false}
+    ],versions:[]
+  });
+  await page.goto('http://127.0.0.1:5173/une/setup/flow-builder/'+referenceFlow);
+  await page.locator('.flow-graph-node').filter({hasText:'Find Contacts'}).click();
+  await page.getByRole('button',{name:'Choose reference for Condition value'}).click();
+  await page.getByRole('button',{name:/Find Account.*Record ID/}).click();
+  if(await page.getByRole('textbox',{name:'Condition value',exact:true}).inputValue()!=='{!FoundAccount.Id}')
+    throw Error('Previous-record Flow picker did not insert the correct runtime expression');
+  await page.getByRole('button',{name:'Save',exact:true}).click();
+  let savedReference;
+  for(let attempt=0;attempt<30;attempt++){
+    savedReference=(await request('/metadata/flows',token)).flows.find(item=>item.apiName===referenceFlow);
+    if(savedReference?.elements?.find(item=>item.id===3)?.config?.conditions?.[0]?.value==='{!FoundAccount.Id}')break;
+    await pause(250);
+    if(attempt===29)throw Error('Previous-record reference was not persisted through the normal Flow save API');
+  }
+
   // Authenticated Report Builder: create metadata through shared Object API and
   // exercise the actual editor save/reopen path in this disposable tenant.
   const reportApiName='MD07_Browser_Report';
