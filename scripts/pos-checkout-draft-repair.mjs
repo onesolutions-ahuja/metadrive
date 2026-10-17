@@ -97,15 +97,31 @@ async function main(){
  const session=await api('/auth/login','POST',{email:user,password});
  if(session.user?.tenantId!==tenant||!session.access_token)throw Error('Tenant identity mismatch');
  token=session.access_token;
- const [o,f]=await Promise.all([api('/metadata/objects'),api('/metadata/flows')]);
- const plan=planPosDraftRepair(o.objects??[],f.flows??[]);
+ const readPlan=async()=>{
+  const [objects,flows]=await Promise.all([api('/metadata/objects'),api('/metadata/flows')]);
+  return planPosDraftRepair(objects.objects??[],flows.flows??[]);
+ };
+ const plan=await readPlan();
  const apply=process.env.METADRIVE_POS_DRAFT_REPAIR_APPROVED==='true';
  if(apply){
-  if(plan.product)await api('/metadata/objects/Product__c','PUT',plan.product);
-  if(plan.flow)await api('/metadata/flows/COPILOT_POS_Cash_Checkout','PUT',plan.flow);
-  const [objects,flows]=await Promise.all([api('/metadata/objects'),api('/metadata/flows')]);
-  const remaining=planPosDraftRepair(objects.objects??[],flows.flows??[]);
-  if(remaining.product||remaining.flow)throw Error('Readback mismatch: draft repair did not persist');
+  // An SQL revision conflict is a rejected commit, never permission to overwrite
+  // a stale whole-tenant snapshot. Re-read and re-plan before EVERY attempt.
+  let verified=false;
+  for(let attempt=0;attempt<8;attempt++){
+   const fresh=await readPlan();
+   if(!fresh.product&&!fresh.flow){verified=true;break}
+   try{
+    if(fresh.product)await api('/metadata/objects/Product__c','PUT',fresh.product);
+    else await api('/metadata/flows/COPILOT_POS_Cash_Checkout','PUT',fresh.flow);
+   }catch(error){
+    if(!/HTTP (409|502|503|504)\b/.test(String(error))||attempt===7)throw error;
+   }
+   await new Promise(resolve=>setTimeout(resolve,Math.min(12000,1000*2**attempt)));
+  }
+  if(!verified){
+   const latest=await readPlan();
+   if(latest.product||latest.flow)throw Error('Draft repair not durable after verified retries');
+  }
  }
  console.log(JSON.stringify({mode:apply?'applied':'dry-run',tenantVerified:true,
   addedAgeFields:plan.fieldsToAdd,flowDraftRequiresUpdate:Boolean(plan.flow),
