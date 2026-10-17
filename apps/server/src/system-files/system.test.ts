@@ -97,3 +97,24 @@ test('tenant-specific object lookup cannot return an unregistered object', async
   await assert.rejects(()=>svc.get('tenant','OtherTenant__c'),/Object not found/);
   assert.ok(calls.every(sql=>sql.includes('tenant_id=$1')));
 });
+
+test('object creation writes Object and Fields in a single transaction', async () => {
+  const writes:string[]=[];
+  const client={query:async(sql:string)=>{writes.push(sql);return {rows:[{id:'created'}],rowCount:1}}};
+  const db={
+    transaction:async(fn:(arg:typeof client)=>Promise<unknown>)=>fn(client),
+    query:async(sql:string)=>sql.includes('md_object_definitions')?
+      {rows:[{id:'created',api_name:'Item__c',label:'Item',is_system:false}]}:{rows:[]}
+  } as unknown as SqlPersistence;
+  const object=await new ObjectDefinitionService(db).create('tenant','Item__c','Item',[
+    {apiName:'Name',label:'Name',dataType:'Text(80)',required:true,unique:false}
+  ]);
+  assert.equal(object.fields[0].apiName,'Name');
+  assert.ok(writes.some(sql=>sql.includes('INSERT INTO md_object_definitions')));
+  assert.ok(writes.some(sql=>sql.includes('INSERT INTO md_field_definitions')));
+});
+test('atomic object creation rejects unsupported fields before any SQL write', async () => {
+  const db={transaction:async()=>{throw Error('Should not be called')}} as unknown as SqlPersistence;
+  await assert.rejects(()=>new ObjectDefinitionService(db).create('tenant','A__c','A',
+    [{apiName:'Private',dataType:'UnsupportedValue'}]),/Invalid field definition/);
+});
