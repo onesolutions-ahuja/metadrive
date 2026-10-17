@@ -58,20 +58,21 @@ function primitiveType(type:string): string {
 }
 
 /** Limit selectable sources to compatible, existing typed metadata. */
-export function compatibleFlowValue(source:Pick<FlowReferenceChoice,'dataType'|'targetObject'>,target?:FieldMetadata):boolean {
+export function compatibleFlowValue(source:Pick<FlowReferenceChoice,'dataType'|'targetObject'>,target?:FieldMetadata,targetObjectApiName?:string):boolean {
   if(!target)return true;
   const need=primitiveType(target.dataType);
   const got=primitiveType(source.dataType);
   if(need==='lookup')return (got==='id'||got==='lookup') && Boolean(target.relationship?.targetObject)
     && (!source.targetObject || target.relationship?.targetObject===source.targetObject)
     && (got!=='lookup'||Boolean(source.targetObject));
-  if(need==='id')return got==='id';
+  if(need==='id')return got==='id' ? (!targetObjectApiName||!source.targetObject||source.targetObject===targetObjectApiName)
+    : got==='lookup'&&Boolean(source.targetObject)&&source.targetObject===targetObjectApiName;
   if(need==='number'||need==='boolean')return got===need;
   if(need==='Date'||need==='DateTime'||need==='Date/Time')return need===got;
   return got==='text'||got==='id';
 }
 
-export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:number,objects:readonly ObjectMetadata[],target?:FieldMetadata):FlowReferenceChoice[]{
+export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:number,objects:readonly ObjectMetadata[],target?:FieldMetadata,targetObjectApiName?:string):FlowReferenceChoice[]{
   const result:FlowReferenceChoice[]=[];
   const recordChoices=(root:string,label:string,objectName:string,category:FlowReferenceChoice['category'])=>{
     const obj=objects.find(item=>item.apiName===objectName);
@@ -83,7 +84,7 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
         detail:root+'.'+field.apiName+' · '+obj.label,category,dataType:field.dataType,
         ...(field.apiName==='Id'?{targetObject:objectName}
           :linkedObject?{targetObject:linkedObject}:{})};
-      if(compatibleFlowValue(choice,target))result.push(choice);
+      if(compatibleFlowValue(choice,target,targetObjectApiName))result.push(choice);
     }
   };
   if(flow.triggerObject && ['Record-Triggered Flow','Schedule-Triggered Flow'].includes(flow.flowType))
@@ -94,7 +95,7 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
     }else if(resource.type!=='Record Collection'){
       const choice:FlowReferenceChoice={reference:`{!${resource.name}}`,label:resource.label,
         detail:resource.name+' · '+resource.dataType,category:'Flow inputs and variables',dataType:resource.dataType};
-      if(compatibleFlowValue(choice,target))result.push(choice);
+      if(compatibleFlowValue(choice,target,targetObjectApiName))result.push(choice);
     }
   }
   const earlier=precedingFlowSteps(flow,elementId);
@@ -120,7 +121,7 @@ export function flowReferenceChoices(flow:FlowDefinitionMetadata,elementId:numbe
         category:'Earlier steps',dataType:lookup?'Id':type,
         ...(targetObject?{targetObject}:{})
       };
-      if(compatibleFlowValue(choice,target))result.push(choice);
+      if(compatibleFlowValue(choice,target,targetObjectApiName))result.push(choice);
     }
   };
   for(const element of flow.elements){
