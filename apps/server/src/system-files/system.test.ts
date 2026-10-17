@@ -145,3 +145,20 @@ test('Records HTTP API returns the actual list rather than double-nested records
     if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
 });
+
+test('creating a duplicate Field never mutates its existing type or lookup target', async () => {
+  const queries:string[]=[];
+  const db={query:async(sql:string)=>{queries.push(sql);return {rows:[],rowCount:0}}} as unknown as SqlPersistence;
+  const svc=new ObjectDefinitionService(db);
+  await assert.rejects(()=>svc.addField('tenant','Sale__c','ProductId','Lookup','Product__c'),/Field already exists/);
+  assert.ok(queries.every(q=>!q.includes('DO UPDATE')));
+});
+test('text field length is returned in metadata and enforced when writing records', async () => {
+  const db={
+    query:async(sql:string)=>sql.includes('FROM md_field_definitions')
+      ?{rows:[{api_name:'Name',data_type:'text',related_object:null,required:false,max_length:4}]}:{rows:[],rowCount:0}
+  } as unknown as SqlPersistence;
+  const {RecordEngine}=await import('./record-engine.js');
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  await assert.rejects(()=>new RecordEngine(db,rbac).create('tenant','user','Item__c',{Name:'Too long'}),/Invalid text length/);
+});

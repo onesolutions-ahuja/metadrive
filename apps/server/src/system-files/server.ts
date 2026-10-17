@@ -159,7 +159,9 @@ export function createSystemServer(db:SqlPersistence) {
   app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
-    const {apiName,dataType,relatedObject}=req.body?.field??req.body??{};
+    const field=req.body?.field??req.body??{};
+    const {apiName,dataType}=field;
+    const relatedObject=field.relatedObject??field.relationship?.targetObject;
     if(typeof apiName!=='string'||typeof dataType!=='string'||
       (relatedObject!==undefined&&typeof relatedObject!=='string'))
       throw new Error('Invalid field definition');
@@ -226,6 +228,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
+    else if(err.message==='Field already exists'||err.message==='Object already exists')res.status(409).json({error:err.message});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
     else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unknown field')) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}

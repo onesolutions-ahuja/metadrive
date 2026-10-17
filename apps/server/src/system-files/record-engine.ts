@@ -1,13 +1,13 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
-type FieldDefinition={api_name:string;data_type:string;related_object:string|null;required:boolean};
+type FieldDefinition={api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null};
 type Storable={value_text:string|null;reference_record_id:string|null};
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export class RecordEngine {
   constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine) {}
   private async fields(tenantId:string,objectApi:string):Promise<FieldDefinition[]> {
     const {rows}=await this.db.query<FieldDefinition>(
-      'SELECT api_name,data_type,related_object,required FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',
+      'SELECT api_name,data_type,related_object,required,max_length FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2',
       [tenantId,objectApi]);
     return rows;
   }
@@ -28,6 +28,7 @@ export class RecordEngine {
       switch(field.data_type) {
         case 'text':
           if(typeof value!=='string')throw new Error('Invalid text field: '+key);
+          if(field.max_length && value.length>field.max_length)throw new Error('Invalid text length: '+key);
           text=value;break;
         case 'number':
           if(typeof value!=='number'||!Number.isFinite(value))throw new Error('Invalid number field: '+key);
