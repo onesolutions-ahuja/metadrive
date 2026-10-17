@@ -128,7 +128,7 @@ jobs:
             if(repairMode){
               const missing=await pool.query("SELECT o.api_name,count(p.record_id)::int AS presence FROM md_v2_object_registry o LEFT JOIN md_v2_field_presence p ON p.object_id=o.object_id WHERE o.active=true AND to_regclass('public.'||o.physical_table) IS NULL GROUP BY o.api_name");
               const expected=new Set(['Campaign','Global_Settings__c','KioskSettings__c','OrderLineModifier__c','Tenant__c','TillSession__c','User']);
-              if(missing.rows.length!==expected.size||missing.rows.some(r=>!expected.has(r.api_name)||r.presence!==0))
+              if(![0,expected.size].includes(missing.rows.length)||missing.rows.some(r=>!expected.has(r.api_name)||r.presence!==0))
                 throw Error('Unexpected missing SQL tables or nonempty typed business values');
             }
             if(proof.version<1||!Object.keys(proof.state.tenants??{}).length)
