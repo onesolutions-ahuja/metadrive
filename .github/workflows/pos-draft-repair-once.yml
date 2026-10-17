@@ -24,6 +24,7 @@ jobs:
           METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
           METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
           METADRIVE_POS_DRAFT_REPAIR_APPROVED: 'true'
+          METADRIVE_REQUIRE_POS_SAFETY: 'true'
         run: node scripts/pos-checkout-draft-repair.mjs
 # Trigger retry of guarded repair after fresh-state CAS conflict handling.
 # Apply verified session isolation and cashier Flow binding to Draft only.
