@@ -1208,7 +1208,7 @@ function RecordWorkspace({
           ? <div key={component.id} data-layout-component-id={component.id}
               style={resolvePageComponentStyle(component.properties, component.type, layoutDevice)}>
               {!isLayoutContainer(component) && needsMetadataComponentRuntime(component.properties)
-                ? <MetadataBoundPageComponent definition={definition} component={component}
+                ? <MetadataBoundPageComponent definition={definition} component={component} recordId={String(record.Id)} defaultObjectApiName={object.apiName}
                     objects={objects} apps={apps} pages={pages} currentAppId="Records"
                     pageSessionKey={'record:' + object.apiName + ':' + String(record.Id)}
                     reports={reports} availableFlows={availableFlows} formFactor={formFactor}

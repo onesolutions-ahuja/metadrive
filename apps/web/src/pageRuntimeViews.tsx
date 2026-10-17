@@ -82,6 +82,7 @@ import { canNestComponent, componentVisualStyle, directChildren, isLayoutType, i
 import { isCanvasLocked, wrapCanvasComponent, ungroupCanvasComponent } from './canvasInteractions';
 import { filterPageComponentRecords, needsMetadataComponentRuntime } from './pageComponentBindings';
 import {resolveMentionProperties} from './smartFieldMentions';
+import { explicitMentionRecordId, useRelationshipMentionContext } from './useRelationshipMentionContext';
 import { childrenOf, canNest, componentLayoutProps, hasPageComponentAppearance, isLayoutContainer, rawLayoutParentId, reparentComponent, resolvePageComponentStyle, type LayoutDevice } from './pageComponentLayout';
 import { GlobalRecordSearch, RecordObjectPicker, useDismissOnOutside } from './TopbarRecords';
 import { pageIsAvailableInApp, resolvePageActionRoute } from './pageActionRouting';
@@ -225,7 +226,7 @@ function RuntimeReportChart({ report, objects }: { report: ReportMetadata | unde
 }
 
 function MetadataBoundPageComponent({
-  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = ''
+  definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = '', recordId = ''
 }: {
   definition: LibraryComponentMetadata;
   component: PageComponentMetadata;
@@ -241,9 +242,11 @@ function MetadataBoundPageComponent({
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   disableActions?: boolean;
   defaultObjectApiName?: string;
+  recordId?: string;
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
+  const mentionRootObjectApiName = defaultObjectApiName || objectApiName;
   // An application-independent session can be referenced by configured Flows.
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
@@ -390,9 +393,9 @@ function MetadataBoundPageComponent({
   })).filter(contact => contact.id && contact.phone);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
-  const resolvedProperties = resolveMentionProperties(properties,
-    { [objectApiName]: visibleRecords[0] },
-    { [objectApiName]: fields.map(field => field.apiName) });
+  const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
+    recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
+  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
   const presented = presentPageRecords(properties.recordPresenterApiName, visibleRecords, channelAccess);
   const rawActions = properties.actionFlows;
   const actionFlows = rawActions && typeof rawActions === 'object' && !Array.isArray(rawActions)
@@ -407,7 +410,7 @@ function MetadataBoundPageComponent({
     }
     if (typeof source === 'string' && source.startsWith('$record.')) {
       const fieldName = source.slice(8);
-      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? mentionContext.records[mentionRootObjectApiName]?.[fieldName] : undefined;
     }
     return source;
   };

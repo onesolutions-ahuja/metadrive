@@ -4,6 +4,7 @@ import {useState,useEffect,useRef} from 'react';
 import {presentPageRecords,type ChannelGrant} from './recordPresentationAdapters';
 import {filterPageComponentRecords} from './pageComponentBindings';
 import {resolveMentionProperties} from './smartFieldMentions';
+import { explicitMentionRecordId, useRelationshipMentionContext } from './useRelationshipMentionContext';
 import {resolvePageActionRoute} from './pageActionRouting';
 import {componentLayoutProps} from './pageComponentLayout';
 import RegisteredComponent from './RegisteredComponent';
@@ -11,7 +12,7 @@ import type {LibraryComponentMetadata,PageComponentMetadata,ObjectMetadata,Light
 import type {AppRoute} from './appRouting';
 
 export default function MetadataBoundPageComponent({
-  apiRequest, definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = ''
+  apiRequest, definition, component, objects, apps, pages, currentAppId, pageSessionKey, reports, availableFlows, formFactor, onNavigate, onLaunchFlow, disableActions = false, defaultObjectApiName = '', recordId = ''
 }: {
   apiRequest:<T>(path:string,init?:RequestInit)=>Promise<T>;
   definition: LibraryComponentMetadata;
@@ -28,9 +29,11 @@ export default function MetadataBoundPageComponent({
   onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
   disableActions?: boolean;
   defaultObjectApiName?: string;
+  recordId?: string;
 }) {
   const properties = component.properties;
   const objectApiName = String(properties.objectApiName || defaultObjectApiName || '');
+  const mentionRootObjectApiName = defaultObjectApiName || objectApiName;
   // An application-independent session can be referenced by configured Flows.
   const [sessionId, setSessionId] = useState(() => {
     const key = 'metadrive-page-session:' + pageSessionKey;
@@ -112,9 +115,9 @@ export default function MetadataBoundPageComponent({
   }, [properties.recordPresenterApiName, revision]);
   const fields = objects.find((item) => item.apiName === objectApiName)?.fields ?? [];
   const visibleRecords = filterPageComponentRecords(records, properties.filters, fields);
-  const resolvedProperties = resolveMentionProperties(properties,
-    { [objectApiName]: visibleRecords[0] },
-    { [objectApiName]: fields.map(field => field.apiName) });
+  const mentionContext = useRelationshipMentionContext(objects, mentionRootObjectApiName,
+    recordId || explicitMentionRecordId(properties), properties, apiRequest, revision);
+  const resolvedProperties = resolveMentionProperties(properties, mentionContext.records, mentionContext.fields, objects, mentionRootObjectApiName);
   const categoryFilterKey = typeof properties.filterKey === 'string' ? properties.filterKey : 'category';
   const categorySource = selectedFilterRecords[categoryFilterKey];
   const configuredCategoryField = String(properties.categoryFieldApiName??'').trim();
@@ -136,7 +139,7 @@ export default function MetadataBoundPageComponent({
     }
     if (typeof source === 'string' && source.startsWith('$record.')) {
       const fieldName = source.slice(8);
-      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? visibleRecords[0]?.[fieldName] : undefined;
+      return /^[A-Za-z][A-Za-z0-9_]*$/.test(fieldName) ? mentionContext.records[mentionRootObjectApiName]?.[fieldName] : undefined;
     }
     return source;
   };
