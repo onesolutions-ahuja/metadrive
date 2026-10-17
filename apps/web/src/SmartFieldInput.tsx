@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent, type Ref } from 'react';
+import { useId, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type Ref, type UIEvent } from 'react';
 import { AtSign, Database, Search } from 'lucide-react';
 import type { ObjectMetadata } from './metadata';
 import { mentionGroups, mentionSegments, type MentionKind } from './smartFieldMentions';
@@ -35,6 +35,8 @@ export default function SmartFieldInput({
   disabled = false, maxLength, textareaRef
 }: Props) {
   const inputRef = useRef<InputElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const resultId = useId();
   const mirrorRef = useRef<HTMLDivElement | null>(null);
   const cursorRef = useRef(0);
   const [open, setOpen] = useState(false);
@@ -82,23 +84,26 @@ export default function SmartFieldInput({
     'aria-label': ariaLabel,
     'aria-autocomplete': 'list' as const,
     'aria-expanded': open,
-    'aria-controls': open ? (id ?? 'smart-field') + '-results' : undefined,
+    'aria-controls': open ? resultId : undefined,
     value, placeholder, disabled, maxLength,
     onChange: onInput,
     onClick: updateCursor,
     onKeyUp: updateCursor,
-    onScroll: (event: React.UIEvent<InputElement>) => {
+    onScroll: (event: UIEvent<InputElement>) => {
       if (mirrorRef.current) {
         mirrorRef.current.scrollTop = event.currentTarget.scrollTop;
         mirrorRef.current.scrollLeft = event.currentTarget.scrollLeft;
       }
     },
-    onKeyDown: (event: React.KeyboardEvent<InputElement>) => {
+    onKeyDown: (event: KeyboardEvent<InputElement>) => {
       if (event.key === 'Escape') { setOpen(false); setForced(false); }
     },
-    onBlur: () => { setOpen(false); setForced(false); }
+    onBlur: (event: React.FocusEvent<InputElement>) => {
+      if (event.relatedTarget instanceof Node && editorRef.current?.contains(event.relatedTarget)) return;
+      setOpen(false); setForced(false);
+    }
   };
-  return <div className="smart-field-editor">
+  return <div className="smart-field-editor" ref={editorRef}>
     <div className={'smart-field-input-wrap' + (multiline ? ' is-multiline' : '')}>
       <div ref={mirrorRef} className="smart-field-mirror" aria-hidden="true">
         {segments.map((part, index) => <span key={index} className={part.reference ? 'smart-field-reference' : undefined}>{part.text}</span>)}
@@ -118,12 +123,15 @@ export default function SmartFieldInput({
         <AtSign size={15} />
       </button>
     </div>
-    {open && !disabled && objects.length > 0 && <div className="smart-field-picker" id={(id ?? 'smart-field') + '-results'}
+    {open && !disabled && objects.length > 0 && <div className="smart-field-picker" id={resultId}
       role="listbox" aria-label="Dynamic fields">
       <div className="smart-field-search">
         <Search size={13} />
         {forced ? <input autoFocus aria-label="Search objects and fields" value={search}
           placeholder="Search objects or fields" onChange={event => setSearch(event.target.value)}
+          onBlur={event => {
+            if (!(event.relatedTarget instanceof Node && editorRef.current?.contains(event.relatedTarget))) setOpen(false);
+          }}
           onKeyDown={event => { if (event.key === 'Escape') { setOpen(false); setForced(false); inputRef.current?.focus(); } }} />
           : <span>Search: {query || 'All fields'} </span>}
       </div>
