@@ -241,6 +241,11 @@ export function createSystemServer(db:SqlPersistence) {
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
     res.status(204).end();
   }));
+  // API requests must never fall through to a frontend HTML document.
+  // Unsupported legacy endpoints fail explicitly until SQL-backed routes exist.
+  app.use('/api', (_req,res)=> {
+    res.status(404).json({error:'API endpoint not implemented by the SQL runtime'});
+  });
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
     else if(err.message==='Field already exists'||err.message==='Object already exists')res.status(409).json({error:err.message});
