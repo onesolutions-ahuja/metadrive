@@ -19,7 +19,8 @@ test('Draft Flow PUT still retains mandatory SQL commit barrier',()=>{
  const req={path:'/api/metadata/flows/COPILOT_POS_Cash_Checkout',method:'PUT'};
  const res={locals:{},end(){},getHeader(){return ''},setHeader(){return this},
   removeHeader(){return this},statusCode:200};
+ const previousEnd=res.end;
  barrier(req as any,res as any,(()=>{invoked=true}) as any);
  assert.equal(invoked,true);
- assert.notEqual(res.end,undefined);
+ assert.notEqual(res.end,previousEnd,'Writes must remain gated on durable SQL commit');
 });
