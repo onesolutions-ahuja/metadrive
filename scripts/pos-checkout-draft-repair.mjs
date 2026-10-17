@@ -14,7 +14,7 @@ const byName=(objects,name)=>objects.find(o=>o.apiName===name);
 const lookup=(obj,field)=>obj?.fields?.find(f=>f.apiName===field)?.relationship?.targetObject
  ??/^(?:Lookup|Master-Detail)\(([^)]+)\)$/.exec(obj?.fields?.find(f=>f.apiName===field)?.dataType??'')?.[1];
 
-export function planPosDraftRepair(objects,flows){
+export function planPosDraftRepair(objects,flows,pages=[]){
  const product=byName(objects,'Product__c');
  const orderLine=byName(objects,'OrderLine__c');
  const saleLine=byName(objects,'SaleLine__c');
@@ -49,7 +49,7 @@ export function planPosDraftRepair(objects,flows){
  const sessionInput=(next.resources??[]).find(r=>r.name==='SessionKey');
  if(sessionInput && (sessionInput.availableForInput!==true||sessionInput.isCollection))
   throw Error('SessionKey resource exists but is not a usable Flow input');
- if(!sessionInput)next.resources.push({name:'SessionKey',label:'Session Key',type:'Variable',dataType:'Text',
+ if(!sessionInput)(next.resources??=[]).push({name:'SessionKey',label:'Session Key',type:'Variable',dataType:'Text',
   isCollection:false,availableForInput:true,availableForOutput:false});
  const create=next.elements.find(e=>e.id===writer.id);
  const existing=new Map((create.config.fieldValues??[]).map(f=>[f.field,f.value]));
@@ -84,10 +84,30 @@ export function planPosDraftRepair(objects,flows){
   if(resource.name==='StandardCatalogProduct'&&resource.dataType==='Product')
    resource.dataType='Product__c';
  }
- return {product:fieldsToAdd.length?{...product,fields:[...product.fields,...fieldsToAdd]}:null,
+ const cashier=pages.find(page=>page.apiName==='COPILOT_POS_Cashier_Till');
+ let updatedPage=null;
+ if(cashier){
+  if(cashier.status!=='Draft')throw Error('Refusing to change an active cashier Page');
+  const candidate=structuredClone(cashier);
+  const carts=candidate.components.filter(block=>block.type==='Custom:OneShoppingCart');
+  if(carts.length!==1)throw Error('Cashier Page must contain exactly one reusable Shopping Cart component');
+  const cart=carts[0],bindings=cart.properties?.actionFlows??{};
+  const configured=bindings.checkout;
+  if(configured&&configured.flowApiName!=='COPILOT_POS_Cash_Checkout')
+   throw Error('Cashier checkout is already bound to another Flow');
+  const desired={actionType:'Flow',flowApiName:'COPILOT_POS_Cash_Checkout',
+   inputs:{SessionKey:'$event.sessionKey'}};
+  const updated={...bindings,checkout:{...configured,...desired,
+   inputs:{...configured?.inputs,...desired.inputs}}};
+  if(JSON.stringify(updated)!==JSON.stringify(bindings)){
+   cart.properties={...cart.properties,actionFlows:updated};
+   updatedPage=candidate;
+  }
+ }
+  return {product:fieldsToAdd.length?{...product,fields:[...product.fields,...fieldsToAdd]}:null,
   flow:JSON.stringify(next.elements)===JSON.stringify(flow.elements)&&
        JSON.stringify(next.resources)===JSON.stringify(flow.resources)?null:next,
-  fieldsToAdd:fieldsToAdd.map(f=>f.apiName)};
+  page:updatedPage,fieldsToAdd:fieldsToAdd.map(f=>f.apiName)};
 }
 
 async function main(){
@@ -109,8 +129,8 @@ async function main(){
  if(session.user?.tenantId!==tenant||!session.access_token)throw Error('Tenant identity mismatch');
  token=session.access_token;
  const readPlan=async()=>{
-  const [objects,flows]=await Promise.all([api('/metadata/objects'),api('/metadata/flows')]);
-  return planPosDraftRepair(objects.objects??[],flows.flows??[]);
+  const [objects,flows,pages]=await Promise.all([api('/metadata/objects'),api('/metadata/flows'),api('/metadata/pages')]);
+  return planPosDraftRepair(objects.objects??[],flows.flows??[],pages.pages??[]);
  };
  const plan=await readPlan();
  const apply=process.env.METADRIVE_POS_DRAFT_REPAIR_APPROVED==='true';
@@ -120,10 +140,11 @@ async function main(){
   let verified=false;
   for(let attempt=0;attempt<8;attempt++){
    const fresh=await readPlan();
-   if(!fresh.product&&!fresh.flow){verified=true;break}
+   if(!fresh.product&&!fresh.flow&&!fresh.page){verified=true;break}
    try{
     if(fresh.product)await api('/metadata/objects/Product__c','PUT',fresh.product);
-    else await api('/metadata/flows/COPILOT_POS_Cash_Checkout','PUT',fresh.flow);
+    else if(fresh.flow)await api('/metadata/flows/COPILOT_POS_Cash_Checkout','PUT',fresh.flow);
+    else await api('/metadata/pages/COPILOT_POS_Cashier_Till','PUT',fresh.page);
    }catch(error){
     if(!/HTTP (409|502|503|504)\b/.test(String(error))||attempt===7)throw error;
    }
@@ -131,11 +152,11 @@ async function main(){
   }
   if(!verified){
    const latest=await readPlan();
-   if(latest.product||latest.flow)throw Error('Draft repair not durable after verified retries');
+   if(latest.product||latest.flow||latest.page)throw Error('Draft repair not durable after verified retries');
   }
  }
  console.log(JSON.stringify({mode:apply?'applied':'dry-run',tenantVerified:true,
-  addedAgeFields:plan.fieldsToAdd,flowDraftRequiresUpdate:Boolean(plan.flow),
+  addedAgeFields:plan.fieldsToAdd,flowDraftRequiresUpdate:Boolean(plan.flow),cashierPageRequiresUpdate:Boolean(plan.page),
   checkoutActivated:false,recordsChanged:false}));
 }
 if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href)
