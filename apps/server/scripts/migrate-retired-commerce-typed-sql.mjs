@@ -76,6 +76,54 @@ function replaceManagedFlows(tenant){
   tenant.flows[index]=next;
  }
 }
+// This existing tenant-authored Draft Flow uses the retired SaleItem Object.
+// Update its exact known checkout field contract and preserve draft/version history.
+function migrateCashCheckoutFlow(tenant){
+ const index=(tenant.flows??[]).findIndex(flow=>flow.apiName==='COPILOT_POS_Cash_Checkout');
+ if(index<0)return;
+ const old=tenant.flows[index];
+ const usesRetired=(old.elements??[]).some(e=>e.config?.object==='SaleItem__c');
+ if(!usesRetired)return;
+ const current=structuredClone(old);
+ const createLine=current.elements.find(e=>e.config?.object==='SaleItem__c');
+ if(!createLine||createLine.type!=='Create Records')throw Error('Unexpected Cash Checkout item writer');
+ const fields=new Map((createLine.config.fieldValues??[]).map(f=>[f.field,f.value]));
+ for(const required of ['Name','Quantity__c','Unit_Price__c','Sale__c','Product__c'])
+  if(!fields.has(required))throw Error('Unsupported Cash Checkout line field: '+required);
+ createLine.config.object='SaleLine__c';
+ createLine.config.fieldValues=[
+  {field:'Name',value:fields.get('Name')},
+  {field:'Quantity',value:fields.get('Quantity__c')},
+  {field:'UnitPrice',value:fields.get('Unit_Price__c')},
+  {field:'SaleId',value:fields.get('Sale__c')},
+  // OrderLine__c.ProductId already refers to Product__c (the correct target).
+  {field:'ProductId',value:'{!CurrentOrderLine.ProductId}'},
+  ...(fields.has('CurrencyIsoCode')?[{field:'CurrencyIsoCode',value:fields.get('CurrencyIsoCode')}]:[])
+ ];
+ for(const element of current.elements){
+  if(element.config?.object==='Product' && element.type==='Get Records'){
+   element.config.object='Product__c';
+   element.config.conditions=[
+    {field:'Id',operator:'Equals',value:'{!CurrentOrderLine.ProductId}'}
+   ];
+  }
+ }
+ for(const resource of current.resources??[]){
+  if(resource.name==='StandardCatalogProduct'&&resource.dataType==='Product')
+   resource.dataType='Product__c';
+ }
+ const now=new Date().toISOString();
+ const history=new Map((old.versions??[]).map(v=>[v.versionNumber,v]));
+ history.set(old.versionNumber,flowSnapshot(old,now));
+ const nextVersion=Math.max(old.versionNumber,...history.keys())+1;
+ const next={...current,versionNumber:nextVersion,
+  activeVersion:old.activeVersion===null?null:nextVersion,
+  status:old.activeVersion===null?'Draft':'Active',
+  lastModifiedAt:now,
+  versions:[...history.values()].map(v=>({...v,status:v.status==='Draft'?'Draft':'Obsolete'}))};
+ if(next.activeVersion!==null)next.versions.push(flowSnapshot(next,now));
+ tenant.flows[index]=next;
+}
 function assertNoForeignReferences(tenant){
  const buckets=[
   ...(tenant.flows??[]).filter(f=>!f.apiName.startsWith('MD_Commerce_'))
@@ -152,11 +200,8 @@ function migrateTenant(t){
  // existing ProductModifier records; only append identities that are absent.
  const alternatives=t.records.ProductModifier__c??[];
  for(const a of assignments){
-  const oldGroup=(t.records.ProductModifierGroup__c??[]).find(x=>x.Id===a.Id);
-  const sourceGroup=oldGroup && oldGroup.GroupId;
-  // Read the ORIGINAL pre-migration parent relation from the precomputed map.
-  const key=a.Id;
-  const groupId=t.__oldModifierGroups?.[key];
+  // Read the original product/group assignment before retiring the lookup.
+  const groupId=t.__oldModifierGroups?.[a.Id];
   if(!groupId)continue;
   for(const option of (t.records.ModifierOption__c??[]).filter(x=>x.GroupId===groupId)){
    if(alternatives.some(x=>x.GroupId===a.Id&&x.Name===option.Name))continue;
@@ -175,6 +220,7 @@ function migrateTenant(t){
  t.fieldHistory=(t.fieldHistory??[]).filter(h=>!retired.has(h.objectApiName));
  removeAccessGrants(t);
  replaceManagedFlows(t);
+ migrateCashCheckoutFlow(t);
  t.pages=(t.pages??[]).map(page=>{
   const desired=commercePages.find(x=>x.apiName===page.apiName);
   return desired?{...page,components:structuredClone(desired.components)}:page;
