@@ -51,7 +51,41 @@ export function planPosDraftRepair(objects,flows,pages=[]){
   throw Error('SessionKey resource exists but is not a usable Flow input');
  if(!sessionInput)(next.resources??=[]).push({name:'SessionKey',label:'Session Key',type:'Variable',dataType:'Text',
   isCollection:false,availableForInput:true,availableForOutput:false});
- const create=next.elements.find(e=>e.id===writer.id);
+ // Protect every path to the Sale writer from empty baskets or insufficient cash.
+ // No app-specific runtime logic: this is a versioned Flow Decision using shared operators.
+ if(!next.elements.some(e=>e.label==='Validate Cash and Basket')){
+  const lines=next.elements.find(e=>e.type==='Get Records'&&e.config?.object==='OrderLine__c' &&
+    String(e.config?.recordLimit??'1')!=='1');
+  const saleWriter=next.elements.find(e=>e.type==='Create Records'&&e.config?.object==='Sale__c');
+  const cash=next.elements.find(e=>e.type==='Screen'&&
+    (e.config?.fields??[]).some(f=>f.apiName==='CashReceived'&&f.type==='Currency'));
+  if(!lines||!saleWriter||!cash)throw Error('Cash/Order validation prerequisites are missing');
+  const link=next.connectors.find(edge=>edge.from===lines.id&&edge.to===saleWriter.id&&edge.kind==='normal');
+  if(!link)throw Error('Expected Order Lines to Sale path is absent; refusing to rewire unknown Flow');
+  const gateId=Math.max(...next.elements.map(e=>e.id))+1;
+  const rejectId=gateId+1;
+  next.elements.push({id:gateId,type:'Decision',label:'Validate Cash and Basket',config:{
+   outcomes:[
+    {name:'MissingBasket',label:'MissingBasket',conditions:[
+      {field:'{!element3.Id}',operator:'Is Null',value:''}]},
+    {name:'MissingCash',label:'MissingCash',conditions:[
+      {field:'{!CashReceived}',operator:'Is Null',value:''}]},
+    {name:'InsufficientCash',label:'InsufficientCash',conditions:[
+      {field:'{!CashReceived}',operator:'Less Than',value:'{!element3.Total}'}]},
+    {name:'Default',label:'Default',conditions:[]}
+   ]
+  }});
+  next.elements.push({id:rejectId,type:'End',label:'Cash Checkout Rejected',config:{}});
+  next.connectors=next.connectors.filter(edge=>edge!==link);
+  next.connectors.push(
+   {id:'cash-gate-in',from:lines.id,to:gateId,label:'',kind:'normal'},
+   {id:'cash-gate-accepted',from:gateId,to:saleWriter.id,label:'Default',kind:'normal'},
+   ...['MissingBasket','MissingCash','InsufficientCash'].map(label=>({
+    id:'cash-gate-'+label,from:gateId,to:rejectId,label,kind:'normal'
+   }))
+  );
+ }
+  const create=next.elements.find(e=>e.id===writer.id);
  const existing=new Map((create.config.fieldValues??[]).map(f=>[f.field,f.value]));
  if(create.config.object==='SaleItem__c'){
   for(const k of ['Name','Quantity__c','Unit_Price__c','Sale__c']){
