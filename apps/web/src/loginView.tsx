@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import {readSubmittedLogin} from './readSubmittedLogin';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata } from './metadata';
 import { apiRequest, setAccessToken } from './authClient';
 type LandingBootstrap = {
@@ -41,9 +42,7 @@ function Login({ error, onStart, onSuccess, onRetry }: { error?: string; onStart
   const [submitting, setSubmitting] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const submitted = new FormData(event.currentTarget);
-    const submittedEmail = String(submitted.get('email') ?? '').trim();
-    const submittedPassword = String(submitted.get('password') ?? '');
+    const {email:submittedEmail,password:submittedPassword}=readSubmittedLogin(new FormData(event.currentTarget));
     onStart?.();
     const startedAt = performance.now();
     const controller = new AbortController();
