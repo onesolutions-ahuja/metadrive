@@ -46,8 +46,8 @@ export default function CustomComponentPropertyEditor({
     ...Object.entries(properties).filter(([name]) => !definitionByName.has(name))
   ] : Object.entries(properties);
   return <div className="metadata-component-properties" aria-label="Custom component properties">
-    {(!addOnly || typedDefinitions.length > 0) && <>
-      <div className="properties-section-title">Component settings</div>
+    {(!addOnly || typedDefinitions.length > 0) && <details className="component-optional-settings" open={!addOnly}>
+      <summary className="properties-section-title">{addOnly ? 'Add optional appearance, card, image and responsive settings' : 'Component settings'}</summary>
       {!Object.keys(properties).length && <p className="properties-help">No settings yet. Add a property to configure this component.</p>}
       {(addOnly ? visibleProperties.filter(([name]) => definitionByName.has(name) && !Object.prototype.hasOwnProperty.call(properties,name)) : visibleProperties).map(([name, value]) => {
         const definition = definitionByName.get(name);
@@ -80,7 +80,7 @@ export default function CustomComponentPropertyEditor({
             aria-label={`Remove ${label} property`} onClick={() => remove(name)}>Remove property</button>
         </div>;
       })}
-    </>}
+    </details>}
     <div className="properties-section-title">Add setting</div>
     <label className="form-label">Property API name
       <input className="form-control" disabled={disabled} value={propertyName}
