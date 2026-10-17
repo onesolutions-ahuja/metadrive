@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import './marketing.css';
+import './design-system.css';
 
 const prefix = import.meta.env.BASE_URL;
 const loginHref = import.meta.env.VITE_MARKETING_LOGIN_URL || `${prefix}login`;
