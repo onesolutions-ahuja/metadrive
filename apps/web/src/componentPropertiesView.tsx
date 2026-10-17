@@ -242,6 +242,7 @@ export function MetadataComponentProperties({ properties, objects, apps, pages, 
   const fieldPicker = (key: string, value: unknown) => <label className="form-label" key={key}>{labelFor(key)}
     <select className="form-control" value={String(value ?? '')} onChange={(event) => update(key, event.target.value)}>
       <option value="">Select field…</option>
+      {key === 'categoryValueFieldApiName' && <option value="Id">Record ID (lookup value)</option>}
       {fieldsFor(key).map((field) => <option key={field.apiName} value={field.apiName}>{field.label}</option>)}
     </select>
   </label>;
