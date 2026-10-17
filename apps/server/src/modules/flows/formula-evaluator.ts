@@ -239,13 +239,14 @@ export function evaluateFormula(
     currencyRates?: Record<string, number>;
     userCurrencyIsoCode?: string;
     currencyIsoCode?: string;
+    sourceObjectApiName?: string;
   } = {}
 ): unknown {
   const timeZone = formulaContext.timeZone ?? 'UTC';
   const locale = formulaContext.locale ?? 'en-US';
   if (expression.length > 10_000) throw new Error('Formula exceeds the 10,000-character limit.');
   const tokens: string[] = [];
-  const tokenPattern = /\s*(<=|>=|<>|!=|==|&&|\|\||\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}|[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
+  const tokenPattern = /\s*(<=|>=|<>|!=|==|&&|\|\||\{!?[A-Za-z_$][A-Za-z0-9_.$]*\}|@[A-Za-z][A-Za-z0-9_]*\.[A-Za-z][A-Za-z0-9_]*|[()+\-*/%^&=<>!,]|(?:\d+(?:\.\d+)?|\.\d+)|(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|[A-Za-z_$][A-Za-z0-9_.$]*)/y;
   let offset = 0;
   while (offset < expression.length) {
     tokenPattern.lastIndex = offset;
@@ -445,6 +446,14 @@ export function evaluateFormula(
     if (token.startsWith("'") || token.startsWith('"')) {
       consume();
       return token.slice(1, -1).replace(/\\(['"\\])/g, '$1');
+    }
+    const mentionReference = /^@([A-Za-z][A-Za-z0-9_]*)\.([A-Za-z][A-Za-z0-9_]*)$/.exec(token);
+    if (mentionReference) {
+      consume();
+      if (!formulaContext.sourceObjectApiName || mentionReference[1] !== formulaContext.sourceObjectApiName) {
+        throw new Error('Formula field mentions require the active object record context.');
+      }
+      return resolveField(mentionReference[2]);
     }
     const mergeReference = /^\{!?([A-Za-z_$][A-Za-z0-9_.$]*)\}$/.exec(token);
     const identifier = mergeReference?.[1] ?? token;
