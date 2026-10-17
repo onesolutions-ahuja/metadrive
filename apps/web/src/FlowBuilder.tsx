@@ -1,3 +1,4 @@
+import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowPropertiesResizeHandle';
 import { layoutFlowGraph } from './builders/flowGraphLayout';
 import { flowTypeOptions, formulaFunctions, formulaOperators } from './builders/flowEditorCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './builders/flowEditorData';
@@ -106,7 +107,6 @@ type FlowBuilderProps = {
   onSavePlatformEvent: (event: PlatformEventMetadata) => Promise<void>;
   onDeletePlatformEvent: (apiName: string) => Promise<void>;
 };
-
 export default function FlowBuilder({
   landing = false, flow, flows, onListFlows, libraryComponents, platformEvents, objects, users, approvalProcesses, namedCredentials, emailAlerts, connectorProviders, integrationConnections, validation, isDirty, canRunFlows, selectedId, toolTab, canUndo, canRedo, onExit,
   onFlowChange, onSelectFlow, onRestoreFlowVersion, onExportFlow, onImportFlow, onCloneFlow, onDeactivateFlow, onDeleteFlow, onCreateFlow, onUndo, onRedo, onSelect, onToolTab,
@@ -175,6 +175,7 @@ export default function FlowBuilder({
     id: number; startClientX: number; startClientY: number;
     x: number; y: number; moved: boolean
   } | null>(null);
+  const {propertiesWidth, setPropertiesWidth, workareaRef, clampPropertiesWidth} = useFlowPropertiesWidth();
   const canvasRef = useRef<HTMLDivElement>(null);
   const formulaEditorRef = useRef<HTMLTextAreaElement>(null);
   const selected = flow.elements.find((element) => element.id === selectedId) ?? flow.elements[0];
@@ -222,7 +223,6 @@ export default function FlowBuilder({
     const verticalFit = (canvas.clientHeight - 48) / graphHeight;
     setZoom(Math.max(0.35, Math.min(1.5, horizontalFit, verticalFit)));
   };
-
   const setConfig = (key: string, value: unknown) => {
     if (selected) onUpdateConfig(selected.id, key, value);
   };
@@ -1055,7 +1055,6 @@ export default function FlowBuilder({
     </>;
     return <label className="form-label">Configuration<textarea className="form-control" rows={4} value={JSON.stringify(selected.config, null, 2)} readOnly /></label>;
   };
-
   if (landing) return <div className="flow-start-page flow-start-page-split">
     <div className="flow-start-heading">
       <div className="eyebrow">AUTOMATION</div>
@@ -1133,7 +1132,6 @@ export default function FlowBuilder({
     </section>
     </div>
   </div>;
-
   return <div className="flow-builder">
     <div className="flow-topbar">
       <button className="icon-button subtle" aria-label="Back to setup" onClick={onExit}><ArrowLeft size={17} /></button>
@@ -1149,7 +1147,7 @@ export default function FlowBuilder({
         <button className="icon-button subtle" title="Flow Builder help" onClick={() => onNotify('Configure the Start node, build element paths, check, then save or activate.')}><CircleHelp size={16} /></button>
       </div>
     </div>
-    <div className="flow-workarea">
+    <div className="flow-workarea" ref={workareaRef} style={{ gridTemplateColumns: `240px minmax(0, 1fr) 8px ${clampPropertiesWidth(propertiesWidth)}px` }}>
       <aside className="flow-toolbox">
         <div className="toolbox-heading"><h2>Toolbox</h2><button className="icon-button subtle" aria-label="Toolbox options" onClick={() => onNotify('Flow Builder toolbox')}><MoreHorizontal size={16} /></button></div>
         <div className="toolbox-tabs"><button className={toolTab === 'Elements' ? 'active' : ''} onClick={() => onToolTab('Elements')}>Elements</button><button className={toolTab === 'Manager' ? 'active' : ''} onClick={() => onToolTab('Manager')}>Manager</button></div>
@@ -1418,6 +1416,7 @@ export default function FlowBuilder({
         </div></div>
         <div className="flow-zoom"><button onClick={() => setZoom((value) => Math.min(1.5, value + 0.1))} aria-label="Zoom in"><Plus size={15} /></button><button onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))} aria-label="Zoom out"><span>−</span></button><button onClick={fitGraphToCanvas} aria-label="Fit to view"><MoveRight size={14} /></button></div>
       </section>
+      <FlowPropertiesResizeHandle width={propertiesWidth} setWidth={setPropertiesWidth} clamp={clampPropertiesWidth} />
       <aside className="flow-settings">
         <div className="settings-header"><h2>{selected?.type === 'Start' ? 'Configure Start' : 'Set Up'}</h2><button className="icon-button subtle" onClick={() => selected && selected.type !== 'Start' && !flow.connectors.some((connector) => connector.from === selected.id) && onRemove(selected.id)} aria-label="Delete element" disabled={!selected || selected.type === 'Start' || flow.connectors.some((connector) => connector.from === selected.id)}><X size={16} /></button></div>
         <div className="settings-element-type"><span className="flow-step-icon">{flowElementMetadata.find((item) => item.type === selected?.type)?.icon ?? '◉'}</span><div><small>{selected?.type}</small><strong>{selected?.label}</strong></div></div>
