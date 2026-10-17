@@ -14,6 +14,12 @@ async function get(path,token,method='GET',body){
 }
 const token=(await get('/auth/login',null,'POST',{email,password})).access_token;
 assert.equal(typeof token,'string');
+const registry=(await get('/component-library',token)).components??[];
+for(const [api,minimum] of [['OneTabs',5],['OneItemGrid',6],['OneShoppingCart',6]]){
+ const definition=registry.find(component=>component.apiName===api);
+ assert(definition?.status==='Published'&&definition.version>=minimum,
+  api+' upgraded SQL registry definition not published');
+}
 const pageApi='UK_Off_Licence_POS_Cashier_Till';
 const before=(await get('/metadata/pages',token)).pages.find(page=>page.apiName===pageApi);
 assert(before&&before.status==='Draft','Cashier page must remain Draft');
