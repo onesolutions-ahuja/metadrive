@@ -1,0 +1,27 @@
+name: Cashier popup filter event read-only diagnostic
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/cashier-popup-filter-event-diagnostic.mjs
+      - .github/workflows/cashier-popup-filter-event-diagnostic.yml
+permissions:
+  contents: read
+jobs:
+  popup-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --ignore-scripts playwright@1.56.1
+      - run: npx playwright install --with-deps chromium
+      - name: Trace production draft click locally, without saving or activating
+        env:
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/cashier-popup-filter-event-diagnostic.mjs
