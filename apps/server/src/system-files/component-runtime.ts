@@ -2,6 +2,12 @@ import type { SqlPersistence } from './sql-persistence.js';
 export type ComponentDefinition={api_name:string;renderer_key:string};
 export class ComponentRuntime {
   constructor(private readonly db:SqlPersistence) {}
+  async list(tenantId:string) {
+    const {rows}=await this.db.query<ComponentDefinition>(
+      'SELECT api_name,renderer_key FROM md_component_definitions WHERE tenant_id=$1 AND enabled=true ORDER BY api_name',
+      [tenantId]);
+    return rows.map(row=>({apiName:row.api_name,rendererKey:row.renderer_key}));
+  }
   async resolve(tenantId:string,apiName:string):Promise<ComponentDefinition> {
     const {rows}=await this.db.query<ComponentDefinition>(
       'SELECT api_name,renderer_key FROM md_component_definitions WHERE tenant_id=$1 AND api_name=$2 AND enabled=true',[tenantId,apiName]);

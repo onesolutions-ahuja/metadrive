@@ -126,6 +126,38 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
     res.json({objects:await definitions.list(actor.tenant_id)});
   }));
+  app.post('/api/metadata/objects',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','create');
+    const {apiName,label}=req.body??{};
+    if(typeof apiName!=='string'||typeof label!=='string')throw new Error('Invalid object definition');
+    res.status(201).json(await definitions.register(actor.tenant_id,apiName,label,false));
+  }));
+  app.post('/api/metadata/objects/:apiName/fields',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FieldDefinition','create');
+    const {apiName,dataType,relatedObject}=req.body??{};
+    if(typeof apiName!=='string'||typeof dataType!=='string'||
+      (relatedObject!==undefined&&typeof relatedObject!=='string'))
+      throw new Error('Invalid field definition');
+    await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject);
+    res.status(201).json({apiName});
+  }));
+  app.get('/api/metadata/components',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
+    res.json({components:await components.list(actor.tenant_id)});
+  }));
+  app.get('/api/metadata/pages',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
+    res.json({pages:await pages.list(actor.tenant_id)});
+  }));
+  app.get('/api/metadata/flows/list',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
+    res.json({flows:await flows.list(actor.tenant_id)});
+  }));
   app.get('/api/metadata/components/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');

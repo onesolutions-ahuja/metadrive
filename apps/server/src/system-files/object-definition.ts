@@ -13,7 +13,7 @@ export class ObjectDefinitionService {
   async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     if(!['text','number','boolean','date','datetime','reference'].includes(dataType))throw new Error('Invalid field data type');
-    if(dataType==='reference'&&!relatedObject)throw new Error('Invalid relationship target');
+    if(dataType==='reference'&&(!relatedObject||!/^[A-Za-z][A-Za-z0-9_]*$/.test(relatedObject)))throw new Error('Invalid relationship target');
     return this.db.query(`
       INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object)
       VALUES ($1,$2,$3,$4,$5)
