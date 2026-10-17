@@ -27,7 +27,8 @@ assert.equal(new Set(definitions.map(item=>item.apiName)).size,definitions.lengt
 const required={
   OneSplitPane:{version:2,properties:['splitRatio','layoutContainer']},
   OneTabs:{version:4,properties:['dynamicTabs','categoryFieldApiName','categoryValueFieldApiName','filterKey']},
-  OneItemGrid:{version:4,properties:['categoryFieldApiName','filterKey','cartTargetKey']},
+  OneItemGrid:{version:5,properties:['categoryFieldApiName','filterKey','cartTargetKey','imageFieldApiName','titleFieldApiName','priceFieldApiName','searchKey','searchFieldApiNames']},
+  OneSearch:{version:2,properties:['searchKey']},
   OneShoppingCart:{version:6,properties:['viewMode','catalogueWidthPercent','productCardMinWidth','cartTargetKey']}
 };
 for (const [name,requirements] of Object.entries(required)){
