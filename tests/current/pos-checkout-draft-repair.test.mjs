@@ -22,6 +22,11 @@ function fixtures(){
     conditions:[{field:'BasketSessionKey',operator:'Equals',value:'cashier-cart'},
       {field:'Status',operator:'Equals',value:'Draft'}]}},
    {id:2,type:'Get Records',label:'Find Product for Order Line',config:{object:'Product',conditions:[]}},
+   {id:5,type:'Get Records',label:'Find Current Order Lines',config:{object:'OrderLine__c',
+    recordLimit:'all',outputVariable:'CurrentOrderLines'}},
+   {id:6,type:'Screen',label:'Cash Checkout',config:{fields:[{
+    apiName:'CashReceived',type:'Currency',label:'Cash Received'}]}},
+   {id:7,type:'Create Records',label:'Create Sale',config:{object:'Sale__c',fieldValues:[]}},
    {id:3,type:'Create Records',label:'Create Sale Item',config:{object:'SaleItem__c',
     fieldValues:[
      {field:'Name',value:'{!CurrentOrderLine.Name}'},
@@ -31,6 +36,7 @@ function fixtures(){
      {field:'Product__c',value:'{!StandardCatalogProduct.Id}'}
     ]}}
   ],
+  connectors:[{id:'line-to-sale',from:5,to:7,label:'',kind:'normal'}],
   resources:[{name:'StandardCatalogProduct',type:'Record',dataType:'Product'}]
  }];
  return {objects,flows,pages};
@@ -50,6 +56,11 @@ test('POS draft repair only extends age metadata and maps loop product into Sale
  assert.deepEqual(result.flow.elements[2].config.conditions,[
   {field:'Id',operator:'Equals',value:'{!CurrentOrderLine.ProductId}'}]);
  assert.equal(result.flow.resources[0].dataType,'Product__c');
+ const gate=result.flow.elements.find(x=>x.label==='Validate Cash and Basket');
+ assert(gate?.config.outcomes.some(x=>x.name==='InsufficientCash'));
+ assert(result.flow.connectors.some(x=>x.from===5&&x.to===gate.id));
+ assert(result.flow.connectors.some(x=>x.from===gate.id&&x.to===7&&x.label==='Default'));
+ assert(!result.flow.connectors.some(x=>x.from===5&&x.to===7),'Sale must never bypass cash validation');
  assert.deepEqual(result.page.components[0].properties.actionFlows.checkout.inputs,{SessionKey:'$event.sessionKey'});
  assert.equal(JSON.stringify({objects,flows,pages}),original,'Planner must not mutate tenant state');
  const second=planPosDraftRepair([...objects.filter(x=>x.apiName!=='Product__c'),result.product],
