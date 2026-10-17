@@ -6,6 +6,11 @@ on:
       - 'scripts/pos-checkout-readiness.mjs'
       - 'scripts/pos-live-readonly-preflight.mjs'
       - '.github/workflows/pos-checkout-readonly-preflight.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/pos-live-readonly-preflight.mjs'
+      - '.github/workflows/pos-checkout-readonly-preflight.yml'
   workflow_dispatch:
 permissions:
   contents: read

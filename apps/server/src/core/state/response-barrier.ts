@@ -4,7 +4,12 @@ import { performance } from 'node:perf_hooks';
 /** Delay write acknowledgements until their SQL commit succeeds. */
 export function createPersistenceResponseBarrier(deps: { persistenceMode: string; readonly latestCommit: Promise<unknown> }) {
   return (req: Request, res: Response, next: NextFunction) => {
-  if (deps.persistenceMode === 'jsonb' || !req.path.startsWith('/api') || ['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  // Validating a draft is read-only despite using POST; it must work even if
+  // a previous SQL writer has failed. Real writes retain the strict barrier.
+  const readonlyFlowCheck = req.method === 'POST'
+    && /^\/api\/metadata\/flows\/[^/]+\/validate$/.test(req.path);
+  if (deps.persistenceMode === 'jsonb' || !req.path.startsWith('/api')
+    || ['GET', 'HEAD', 'OPTIONS'].includes(req.method) || readonlyFlowCheck) return next();
   const end = res.end;
   const requestStartedAt = performance.now();
   let ending = false;

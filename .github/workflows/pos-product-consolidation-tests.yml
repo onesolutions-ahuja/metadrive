@@ -1,0 +1,30 @@
+name: POS Product retirement lossless proof
+on:
+  push:
+    branches: [feature/pos-live-checkout-implementation]
+    paths:
+      - 'scripts/pos-product-consolidation.mjs'
+      - 'tests/current/pos-product-consolidation.test.mjs'
+      - 'apps/server/scripts/migrate-retired-commerce-typed-sql.mjs'
+      - '.github/workflows/pos-product-consolidation-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/pos-product-consolidation.mjs'
+      - 'apps/server/scripts/migrate-retired-commerce-typed-sql.mjs'
+      - '.github/workflows/pos-product-consolidation-tests.yml'
+permissions:
+  contents: read
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify migration syntax
+        run: node --check apps/server/scripts/migrate-retired-commerce-typed-sql.mjs
+      - name: Test lossless Product consolidation and rollback protections
+        run: node --test tests/current/pos-product-consolidation.test.mjs

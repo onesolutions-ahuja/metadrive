@@ -1,0 +1,24 @@
+name: POS live safety metadata readback
+on:
+  push:
+    branches: [feature/pos-live-checkout-implementation]
+    paths:
+      - '.github/workflows/pos-safety-live-readback.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read back tenant safety metadata without records
+        env:
+          METADRIVE_API_URL: https://metadrive-production.up.railway.app
+          METADRIVE_ADMIN_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_ADMIN_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+          METADRIVE_EXPECTED_TENANT_ID: unesolutions-dev
+        run: node scripts/pos-safety-verify-live.mjs

@@ -2,6 +2,7 @@
  * Standard Product business rows are intentionally not copied.
  * Invoke inside the verified normalized state transaction, never as raw SQL edits.
  */
+import {consolidateRetiredProducts} from '../../../../scripts/pos-product-consolidation.mjs';
 const legacy='Product',canonical='Product__c';
 const identityKeys=new Set(['object','objectApiName','targetObject','triggerObject',
  'relatedObject','childObjectApiName','primaryObjectApiName','rootObjectApiName',
@@ -50,14 +51,6 @@ export function migrateProductFieldsOnly(tenant){
   throw Error('Unexpected Product metadata; refusing unsafe retirement');
  const oldRecords=tenant.records?.[legacy]??[];
  const oldIds=new Set(oldRecords.map(r=>String(r.Id)));
- // Do not leave any surviving foreign record pointing to a deleted Product ID.
- for(const object of tenant.objects.filter(o=>o.apiName!==legacy)){
-  for(const field of object.fields.filter(f=>f.relationship?.targetObject===legacy)){
-   for(const record of tenant.records?.[object.apiName]??[])
-    if(oldIds.has(String(record[field.apiName]??'')))
-     throw Error('Old Product record referenced by '+object.apiName+'.'+field.apiName);
-  }
- }
  let added=0;
  for(const field of from.fields){
   if(to.fields.some(f=>f.apiName===field.apiName))continue;
@@ -85,6 +78,14 @@ export function migrateProductFieldsOnly(tenant){
    }
   }
   to.fields.push(copy);added++;
+ }
+ const reconciliation=consolidateRetiredProducts(tenant);
+ for(const object of tenant.objects.filter(o=>o.apiName!==legacy)){
+  for(const f of object.fields.filter(f=>f.relationship?.targetObject===legacy)){
+   for(const row of tenant.records?.[object.apiName]??[])
+    if(oldIds.has(String(row[f.apiName]??'')))
+     throw Error('Unmapped legacy Product link in '+object.apiName+'.'+f.apiName);
+  }
  }
  for(const object of tenant.objects)if(object.apiName!==legacy){
   for(const field of object.fields){
@@ -143,5 +144,5 @@ export function migrateProductFieldsOnly(tenant){
   throw Error('Unresolved Product references in live metadata');
  tenant.fieldHistory=(tenant.fieldHistory??[]).filter(r=>r.objectApiName!==legacy);
  tenant.recordShares=(tenant.recordShares??[]).filter(r=>r.objectApiName!==legacy);
- return {alreadyDone:false,added,discardedRecords:oldRecords.length};
+ return {alreadyDone:false,added,discardedRecords:0,archivedLegacyRows:oldRecords.length,...reconciliation};
 }

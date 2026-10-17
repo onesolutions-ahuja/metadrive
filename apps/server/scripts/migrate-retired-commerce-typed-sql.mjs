@@ -2,7 +2,7 @@
  * Owner-approved retirement of obsolete commerce Object metadata.
  * Runs OFFLINE against canonical SQL with a fresh, independently verified
  * encrypted backup. Dry run unless --apply is supplied. Product retirement
- * drops only its verified physical table in the same SQL transaction.
+ * archives the retired Product table without dropping customer business records.
  *
  * Other historical SQL tables remain untouched.
  * Uses the shared normalized SQL state CAS and typed synchronization engine.
@@ -307,36 +307,31 @@ function migrateTenant(t){
   return desired?{...page,components:structuredClone(desired.components)}:page;
  });
  assertNoForeignReferences(t);
+ return productMigration;
 }
 /** Delete the specifically retired Product table after independent backup.
  * Executed inside the same guarded SQL transaction as metadata retirement.
  */
-async function retireStandardProductPhysical(client,expectedRows){
+async function verifyRetiredProductArchive(client,expectedRows){
  const result=await client.query(
   "SELECT object_id,physical_table,active FROM md_v2_object_registry "+
   "WHERE tenant_id=$1 AND api_name='Product' FOR UPDATE",[target]);
  if(result.rowCount!==1)throw Error('Missing legacy Product SQL registration');
  const row=result.rows[0];
  if(row.active!==false||!/^md_obj_[0-9a-f]{32}$/.test(row.physical_table))
-  throw Error('Legacy Product registry not safely retired');
+  throw Error('Legacy Product not safely retired');
  const name='public.'+row.physical_table;
  const exists=await client.query('SELECT to_regclass($1) AS table_ref',[name]);
- if(!exists.rows[0].table_ref)throw Error('Legacy Product table missing');
+ if(!exists.rows[0].table_ref)throw Error('Legacy Product physical archive missing');
  const count=await client.query('SELECT count(*)::int AS n FROM '+name+
   ' WHERE tenant_id=$1',[target]);
  const foreign=await client.query('SELECT count(*)::int AS n FROM '+name+
   ' WHERE tenant_id<>$1',[target]);
  if(count.rows[0].n!==expectedRows||foreign.rows[0].n!==0)
-  throw Error('Product physical row count or tenant ownership mismatch');
- const inbound=await client.query(
-  "SELECT count(*)::int AS n FROM pg_constraint WHERE contype='f' "+
-  'AND confrelid=to_regclass($1)',[name]);
- if(inbound.rows[0].n!==0)throw Error('Dependent foreign keys prohibit Product retirement');
- await client.query('DELETE FROM md_v2_field_presence WHERE object_id=$1',[row.object_id]);
- await client.query('DELETE FROM md_v2_field_registry WHERE object_id=$1',[row.object_id]);
- await client.query('DELETE FROM md_v2_object_registry WHERE object_id=$1',[row.object_id]);
- await client.query('DROP TABLE '+name);
+  throw Error('Legacy Product archive row count or tenant ownership mismatch');
+ // Preserve every physical business row: this procedure never drops the table.
 }
+
 try{
  const snapshot=await readNormalizedState(pool);
  const next=structuredClone(snapshot.state);
@@ -351,8 +346,7 @@ try{
  }else{
   tenant.__oldModifierGroups=Object.fromEntries((tenant.records.ProductModifierGroup__c??[])
     .map(row=>[row.Id,row.GroupId]));
-  migrateTenant(tenant);
-  productConsolidation={fieldsOnly:true,canonical:'Product__c'};
+  productConsolidation=migrateTenant(tenant);
  }
  const repairedRecordAudits=productOnly?{}:repairMigratedRecordAuditFields(tenant);
  const missingSql=await pool.query(
@@ -372,7 +366,7 @@ try{
    stateDigest:snapshot.digest,retiredObjects:[...retired],
    migratedFlows:(tenant.flows??[]).filter(f=>f.apiName.startsWith('MD_Commerce_')).length,
    repairedRecordAudits,
-   productConsolidation:{...productConsolidation,fieldsOnly:true,canonical:'Product__c',oldRecordValuesNotCopied:true},
+   productConsolidation:{...productConsolidation,canonical:'Product__c',legacyPhysicalRowsPreserved:true},
    missingPhysicalObjects:missingSql.rows.map(({tenant_id,api_name,physical_table})=>({tenantId:tenant_id,apiName:api_name,table:physical_table}))};
  if(!apply||noChanges){console.log(JSON.stringify({mode:noChanges?'already-migrated':'dry-run',...summary},null,2));}
  else{
@@ -405,10 +399,10 @@ try{
     throw Error('Fresh SQL restore proof does not match this revision');
   }
   const beforeCommit=productRetiring
-   ?async(client)=>retireStandardProductPhysical(client,productDiscardCount)
+   ?async(client)=>verifyRetiredProductArchive(client,productDiscardCount)
    :null;
   const result=await writeNormalizedState(pool,next,snapshot,synchronizeTypedRecords,false,beforeCommit);
   console.log(JSON.stringify({mode:'committed',...summary,newRevision:result.version,
-    physicalTablesDropped:productRetiring}));
+    physicalTablesDropped:false}));
  }
 }finally{await pool.end();}

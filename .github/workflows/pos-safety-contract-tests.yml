@@ -1,0 +1,27 @@
+name: POS cash age stock metadata contract
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/pos-checkout-safety-*.mjs'
+      - 'tests/current/pos-checkout-safety-flow.test.mjs'
+      - '.github/workflows/pos-safety-contract-tests.yml'
+  push:
+    branches: [feature/pos-live-checkout-implementation]
+    paths:
+      - 'scripts/pos-checkout-safety-*.mjs'
+      - 'tests/current/pos-checkout-safety-flow.test.mjs'
+      - '.github/workflows/pos-safety-contract-tests.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test complete safety Flow and isolated metadata
+        run: node --test tests/current/pos-checkout-safety-flow.test.mjs

@@ -120,7 +120,7 @@ function ShoppingCartTill({props}) {
   const target=new BroadcastChannel('metadrive:paired-display:'+displaySession);
   target.postMessage({type:'snapshot',payload:snapshot});target.close();
  };
- const updateCart=next=>{setCart(next);setPaymentStatus('');publish(next);};
+ const updateCart=next=>{request.current='';setCart(next);setPaymentStatus('');publish(next);};
  React.useEffect(()=>{if(channel){setCart([]);setPaymentStatus('');}},[channel?.key]);
  React.useEffect(()=>{
   const value=channel?.value;
@@ -156,6 +156,11 @@ function ShoppingCartTill({props}) {
     setBusy(false);setPaymentStatus('failed');setError('The sale could not be validated. Check the basket and try again.');
     publish(cart,'payment-failed');
    }else if(status==='AgeRejected'){
+    if(!cart.some(item=>item.ageRestricted)){
+     setBusy(false);setPaymentStatus('age-rejected');
+     setError('Age restriction verification failed. Check Product metadata before retrying.');
+     publish(cart,'age-rejected');return;
+    }
     const eligible=cart.filter(item=>!item.ageRestricted);updateCart(eligible);
     if(!eligible.length){setPaymentStatus('age-rejected');publish([],'age-rejected');return;}
     setBusy(true);
@@ -166,6 +171,10 @@ function ShoppingCartTill({props}) {
      .finally(()=>setBusy(false));
    }else if(status==='Accepted'){
     setPaymentStatus('complete');publish(cart,'complete',Math.round(Number(outputs.ChangeDue||0)*100));
+   }else if(status==='OutOfStock'){
+    setBusy(false);setPaymentStatus('failed');
+    setError('Insufficient or unconfigured stock. No payment was accepted.');
+    publish(cart,'payment-failed');
    }else if(status==='Declined'||status==='InsufficientCash'){
     setPaymentStatus(status==='Declined'?'declined':'insufficient-cash');
     publish(cart,status==='Declined'?'declined':'insufficient-cash');
@@ -225,7 +234,7 @@ function ShoppingCartTill({props}) {
    .filter(item=>item.quantity>0));
  };
  const checkoutValue=items=>{
-  request.current=crypto.randomUUID();
+  if(!request.current)request.current=crypto.randomUUID();
   return {...saleValue(items),sessionKey:channel?.key||props.sessionId,requestId:request.current};
  };
  const checkout=async()=>{if(props.previewOnly===true)return;
@@ -281,7 +290,7 @@ function ShoppingCartTill({props}) {
   window.addEventListener('metadrive:page-toolbar-action',onToolbarAction);
   return ()=>window.removeEventListener('metadrive:page-toolbar-action',onToolbarAction);
  },[props.pageSessionKey,props.componentId,openDisplay]);
- const pageToolbarOwnsHeader=typeof document!=='undefined'&&
+ const pageToolbarOwnsHeader=Boolean(props.pageSessionKey)&&typeof document!=='undefined'&&
   document.querySelector('.header-page-context')?.getAttribute('data-page-session-key')===props.pageSessionKey;
  return <section className={"one-shopping-till"+(props.viewMode==="basket"?" one-shopping-basket-only":"")}>
   {props.viewMode!=='basket'&&!pageToolbarOwnsHeader&&<header className="one-row" style={{justifyContent:'space-between'}}>
