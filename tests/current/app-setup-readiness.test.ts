@@ -77,7 +77,7 @@ test('identifies inactive pages, missing component bindings, missing Flow, and m
 test('inspects Flow-backed shared state only when a component binds a Flow', () => {
   const shared=page({components:[{
     id:'state',type:'Text',label:'Shared display',visible:true,
-    properties:{stateReadFlowApiName:'ReadSharedState',stateWriteFlowApiName:'WriteSharedState'}
+    properties:{stateSyncEnabled:true,stateReadFlowApiName:'ReadSharedState',stateWriteFlowApiName:'WriteSharedState'}
   }]});
   const scope={app:app({navigationPageApiNames:['Checkout'],navigationOrder:[]}),
     apps:[app()],objects:[product()],pages:[shared]};
