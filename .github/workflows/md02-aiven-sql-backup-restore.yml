@@ -128,7 +128,7 @@ jobs:
             if(repairMode){
               const missing=await pool.query("SELECT o.api_name,count(p.record_id)::int AS presence FROM md_v2_object_registry o LEFT JOIN md_v2_field_presence p ON p.object_id=o.object_id WHERE o.active=true AND to_regclass('public.'||o.physical_table) IS NULL GROUP BY o.api_name");
               const expected=new Set(['Campaign','Global_Settings__c','KioskSettings__c','OrderLineModifier__c','Tenant__c','TillSession__c','User']);
-              if(missing.rows.length!==expected.size||missing.rows.some(r=>!expected.has(r.api_name)||r.presence!==0))
+              if(![0,expected.size].includes(missing.rows.length)||missing.rows.some(r=>!expected.has(r.api_name)||r.presence!==0))
                 throw Error('Unexpected missing SQL tables or nonempty typed business values');
             }
             if(proof.version<1||!Object.keys(proof.state.tenants??{}).length)
@@ -213,6 +213,14 @@ jobs:
           try {
             const verified=await readNormalizedState(pool,verifyTypedRecords);
             if(verified.version<2)throw Error('Commerce SQL restore migration revision absent');
+            // The runtimeRecordSchema requires both timestamps on every row.
+            // Prevent a SQL-valid migration from crashing app hydration.
+            for(const [tenantId,tenant] of Object.entries(verified.state.tenants??{}))
+              for(const [object,rows] of Object.entries(tenant.records??{}))
+                for(const row of rows)
+                  for(const field of ['CreatedDate','LastModifiedDate'])
+                    if(typeof row[field]!=='string'||!Number.isFinite(Date.parse(row[field])))
+                      throw Error('Hydration would fail: invalid '+field+' in '+tenantId+'/'+object);
             console.log('PASS: commerce migration verified against independently restored typed SQL');
           } finally {await pool.end();}
           NODE
@@ -250,7 +258,13 @@ jobs:
             const state=await readNormalizedState(pool,verifyTypedRecords);
             if(!state.state.tenants?.[process.env.METADRIVE_EXPECTED_TENANT_ID])
               throw Error('Tenant not found after SQL commerce migration');
-            console.log('PASS: live typed SQL normalized state and registered physical records verified');
+            for(const [tenantId,tenant] of Object.entries(state.state.tenants??{}))
+              for(const [object,rows] of Object.entries(tenant.records??{}))
+                for(const row of rows)
+                  for(const field of ['CreatedDate','LastModifiedDate'])
+                    if(typeof row[field]!=='string'||!Number.isFinite(Date.parse(row[field])))
+                      throw Error('Live runtime record hydration invalid: '+tenantId+'/'+object+'/'+field);
+            console.log('PASS: live typed SQL normalized state, record timestamps and registry verified');
           } finally {await pool.end();}
           NODE
       - name: Remove identical unused historical backup copies only

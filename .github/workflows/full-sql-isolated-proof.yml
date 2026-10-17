@@ -111,8 +111,15 @@ jobs:
               "SELECT DISTINCT tenant_id FROM md_v2_object_registry WHERE active=true "+
               "AND api_name IN ('Campaign','Global_Settings__c','KioskSettings__c','OrderLineModifier__c','Tenant__c','TillSession__c') "+
               "AND to_regclass('public.'||physical_table) IS NULL");
-            if(r.rows.length!==1) throw Error('Expected precisely one tenant with retired missing SQL tables');
-            console.log(r.rows[0].tenant_id);
+            if(r.rows.length>1) throw Error('Unexpected multiple tenants with retired missing SQL tables');
+            // After the first successful retirement, no broken physical tables
+            // remain. Locate the same tenant by its canonical retained ProductCategory.
+            if(r.rows.length===0){
+              const saved=await pool.query(
+                "SELECT DISTINCT tenant_id FROM md_v2_object_registry WHERE api_name='ProductCategory' AND active=true");
+              if(saved.rows.length!==1) throw Error('Expected one verified commerce tenant');
+              console.log(saved.rows[0].tenant_id);
+            } else console.log(r.rows[0].tenant_id);
           } finally { await pool.end(); }
           NODE
           )
