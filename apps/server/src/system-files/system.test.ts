@@ -190,3 +190,36 @@ test('SQL cutover inventory preserves inactive objects and flags unresolved look
   assert.equal(report.safeToMigrate,false);
   assert.ok(report.blockers.some(x=>x.code==='LOOKUP_TARGET_MISSING'&&x.target==='User'));
 });
+
+
+test('Flow with Start and End completes without unconfigured actions', async () => {
+  const {FlowRuntime}=await import('./flow-runtime.js');
+  const client={query:async(sql:string)=>{
+    if(sql.includes('INSERT INTO md_flow_runs'))return {rows:[{id:'run-id'}],rowCount:1};
+    if(sql.includes('FROM md_flow_runs r JOIN'))return {rows:[{flow_id:'flow-id',started_by:'user',status:'pending',api_name:'SimpleFlow'}]};
+    if(sql.includes('FROM md_flow_nodes WHERE'))return {rows:[
+      {id:'start-node',api_name:'start',node_type:'Start'},
+      {id:'end-node',api_name:'finish',node_type:'End'}
+    ]};
+    if(sql.includes('FROM md_flow_edges'))return {rows:[{source_api:'start',target_api:'finish',outcome:'default'}]};
+    if(sql.includes('FROM md_flow_node_properties'))return {rows:[]};
+    if(sql.includes('FROM md_flow_run_inputs'))return {rows:[]};
+    if(sql.startsWith('UPDATE md_flow_runs'))return {rows:[],rowCount:1};
+    throw new Error('Unexpected Flow query');
+  }};
+  const db={
+    query:async(sql:string)=>sql.includes('md_flow_definitions')?{rows:[{id:'flow-id',version:1}]}:{rows:[],rowCount:1},
+    transaction:async(fn:(client:typeof client)=>Promise<unknown>)=>fn(client)
+  } as unknown as SqlPersistence;
+  const rbac={require:async()=>{}} as unknown as RbacEngine;
+  const records={} as import('./record-engine.js').RecordEngine;
+  assert.deepEqual(await new FlowRuntime(db,rbac,records).execute('tenant','SimpleFlow','user'),{id:'run-id',status:'completed'});
+});
+test('Flow execution refuses unauthorized callers without creating runs',async()=>{
+  const {FlowRuntime}=await import('./flow-runtime.js');
+  let called=false;
+  const db={query:async()=>{called=true;return{rows:[]}}} as unknown as SqlPersistence;
+  const rbac={require:async()=>{throw Error('Permission denied')}} as unknown as RbacEngine;
+  await assert.rejects(()=>new FlowRuntime(db,rbac).execute('tenant','Flow','user'),/Permission denied/);
+  assert.equal(called,false);
+});
