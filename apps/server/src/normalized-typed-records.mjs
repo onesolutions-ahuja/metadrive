@@ -60,14 +60,13 @@ export function definedObjects(state){
     if(!Array.isArray(t.objects)||!t.records||typeof t.records!=='object') throw Error('Invalid metadata or record buckets');
     for(const object of t.objects){
       if(typeof object?.apiName!=='string'||!object.apiName) throw Error('Missing object API name');
-      // User is a system identity, not a business-record bucket. Its canonical
-      // persisted SQL identity lives in the verified state.users graph and is
-      // exposed through the existing permission-gated /api/records/User route.
-      // Do not create another empty md_obj_* table for the same identities.
-      if(object.apiName==='User') {
-        if((t.records.User??[]).length) throw Error('User identity records unexpectedly exist in a business-record bucket');
-        continue;
-      }
+      // The SQL-only runtime serves User identities from its canonical state
+      // graph, not from the generic business-record bucket. Avoid creating an
+      // extra EMPTY md_obj_User table on new tenants or normal runtime writes.
+      // Old migration/restore snapshots can contain historical User records in
+      // tenant.records.User: preserve them as ordinary legacy records during
+      // isolated restore, never silently discard or merge them with logins.
+      if(object.apiName==='User' && !(t.records.User??[]).length) continue;
       const id=key(tenantId,object.apiName);
       if(expected.has(id)) throw Error('Duplicate object metadata');
       const records=t.records[object.apiName]??[];
