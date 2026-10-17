@@ -1,5 +1,5 @@
 import type { Principal } from '../../auth.js';
-import type { TenantData, LocalUser } from '../../core/state/types.js';
+
 import type { RuntimeRecord } from '../../index.js';
 import type { DashboardMetadata, DashboardFilterMetadata, DashboardSubscription, DashboardSnapshot } from './schemas.js';
 import { dashboardForUser } from './folder-access.js';

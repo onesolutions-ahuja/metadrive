@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { recordWritePolicySchema } from '../../record-write-policy.js';
 import { isValidFlowDateTime, numericFieldValueError } from '../../modules/records/record-values.js';
-import type { createPersistedMetadataReadMode } from '../state/metadata-read-mode.js';
 
 /** Single Core Object/Field metadata schema registry with legacy read mode injection. */
 export function createCoreObjectSchemas(persistedMetadataReadMode: ReturnType<typeof createPersistedMetadataReadMode>) {

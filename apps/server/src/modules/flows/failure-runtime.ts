@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import type { FlowMetadata } from '../../index.js';
-import type { TenantData } from '../../core/state/types.js';
 
 /** Durable Flow failure logging through canonical tenant persistence. */
 export function createFlowFailureRuntime(deps: {

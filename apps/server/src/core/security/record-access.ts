@@ -1,5 +1,5 @@
 import type { Principal } from '../../auth.js';
-import type { LocalUser, TenantData } from '../state/types.js';
+
 import type { ObjectMetadata, RuntimeRecord } from '../../index.js';
 import type { ObjectPermission } from './access-control-schema.js';
 import { roleIdForName, profileIdForRole } from '../../modules/security/role-helpers.js';
@@ -318,7 +318,6 @@ function sanitizeRecordForRead(principal: Principal, tenant: TenantData, object:
 function assertFieldEditPermissions(principal: Principal, tenant: TenantData, object: ObjectMetadata, values: Record<string, unknown>): void {
   assertRecordFieldPermissions(principal, tenant, object, values, hasFieldPermission);
 }
-
 
  return { authorizationGrants, canNavigate, canOpenApp, canOpenTab, hasObjectPermission, hasObjectWidePermission, hasRoleHierarchyAccess, roleIsAtOrBelow, publicGroupContainsUser, queueContainsUser, sharingRuleMatchesRecord, sharingRuleGrantsUser, recordShareIndex, hasRecordAccess, hasFieldPermission, sanitizeRecordForRead, assertFieldEditPermissions };
 }

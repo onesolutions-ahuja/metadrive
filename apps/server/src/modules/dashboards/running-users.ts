@@ -1,5 +1,5 @@
 import type { Principal } from '../../auth.js';
-import type { TenantData, LocalUser } from '../../core/state/types.js';
+
 import type { DashboardMetadata } from './schemas.js';
 import { roleIdForName } from '../security/role-helpers.js';
 

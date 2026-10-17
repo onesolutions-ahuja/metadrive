@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import type { TenantData, SecurityAuditEvent } from '../state/types.js';
 
 /** Immutable tenant-scoped audited security event append; never accepts credentials. */
 export function withSecurityEvent(

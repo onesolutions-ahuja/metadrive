@@ -5,9 +5,8 @@ import { z } from 'zod';
 import { hasDefaultComponentExport, scopeLibraryCss } from './component-source.js';
 import { libraryComponentVisible, libraryComponentEditable } from '../../component-scope.mjs';
 import { pageDeletionBlockers } from '../metadata/page-deletion-route.mjs';
-import { isProtectedAdministrationPage } from '../metadata/platform-admin-pages.mjs';
+
 import { bundledLegacyMigrationDecision } from '../../bundled-component-migration.mjs';
-import type { PlatformState } from '../../core/state/types.js';
 
 type LibraryComponent = PlatformState['libraryComponents'][number];
 type Dependencies = {

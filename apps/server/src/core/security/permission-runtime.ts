@@ -1,4 +1,4 @@
-import type { LocalUser, TenantData, PlatformState } from '../state/types.js';
+
 import type { Principal } from '../../auth.js';
 import { profileIdForRole } from '../../modules/security/role-helpers.js';
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { TenantData } from '../../core/state/types.js';
+
 import type { FlowRuntimeContext } from '../../index.js';
 import { formulaLocalDate } from './formula-evaluator.js';
 import { evaluateFormula } from './formula-evaluator.js';
@@ -207,7 +207,6 @@ function flowFieldValues(config: Record<string, unknown>, context: FlowRuntimeCo
   }
   return values;
 }
-
 
  return { asConfigRows, flowVariablesForUser, flowInterviewIdentity, resolveFlowResource,
   resolveFlowValue, resolveFlowTemplate, compareFlowValue, flowConditionsMatch, flowFieldValues };

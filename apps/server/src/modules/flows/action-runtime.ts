@@ -1,5 +1,5 @@
 import type { Principal } from '../../auth.js';
-import type { TenantData, LocalUser } from '../../core/state/types.js';
+
 import type { FlowMetadata, FlowRuntimeContext } from '../../index.js';
 import type { createCoreRecordAccess } from '../../core/security/record-access.js';
 import { chatterPostSchema, customNotificationSchema, approvalRequestSchema } from '../../core/metadata/shared-data-schemas.js';
@@ -190,7 +190,6 @@ function performSubmitForApproval(
   tenant.notifications.push(...notifications);
   return groupId;
 }
-
 
  return { performPostToChatter, performCustomNotification, performSubmitForApproval };
 }
