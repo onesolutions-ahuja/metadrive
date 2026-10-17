@@ -22,8 +22,12 @@ try{
   const tenants=Object.keys(initial.state.tenants??{});
   if(!tenants.length) throw Error('No tenant in restored SQL state');
   const tenantId=tenants[0],tenant=initial.state.tenants[tenantId];
-  const object=tenant.objects.find(o=>Array.isArray(o.fields)&&o.fields.some(f=>f.apiName==='Name'&&/^Text|Name/i.test(f.dataType))) ??
-     tenant.objects.find(o=>Array.isArray(o.fields));
+  // User is a dedicated authentication identity, not an ordinary Object CRUD
+  // candidate. Exercising User as business data could alter restored login
+  // identities and incorrectly require a redundant physical SQL User table.
+  const businessObjects=tenant.objects.filter(o=>o.apiName!=='User');
+  const object=businessObjects.find(o=>Array.isArray(o.fields)&&o.fields.some(f=>f.apiName==='Name'&&/^(Text|Name)/i.test(f.dataType))) ??
+     businessObjects.find(o=>Array.isArray(o.fields));
   if(!object) throw Error('No metadata object suitable for typed SQL CRUD testing');
   const objectId=object.apiName, id='SQL-MIGRATION-PROOF-'+randomUUID();
   const companionId='SQL-MIGRATION-PROOF-'+randomUUID();
