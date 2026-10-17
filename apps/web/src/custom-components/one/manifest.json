@@ -581,7 +581,7 @@
           "propertyKey": "categoryValueFieldApiName",
           "label": "Category record value field",
           "kind": "TEXT",
-          "defaultValue": "Name",
+          "defaultValue": "Id",
           "displayOrder": 355
         }
       ]
