@@ -74,7 +74,7 @@ test('POS checkout graph checks age and stock before sale; writes ledger then pa
   'Do not write a Sale before trusted age and stock validation');
  assert(next.connectors.some(e=>e.from===movement.id&&e.to===6));
  assert(next.connectors.some(e=>e.from===6&&e.to===payment.id&&e.label==='After Last'));
- assert(next.connectors.some(e=>e.from===rollback.id&&e.to===byLabel('POS Safety - Declined').id));
+ assert(next.connectors.some(e=>e.from===rollback.id&&e.to===byLabel('POS Safety - Out of Stock').id));
  assert.equal(next.elements.some(e=>e.type==='Screen'&&/complete/i.test(e.label)),false);
  assert(next.resources.some(x=>x.name==='CheckoutRequestKey'&&x.availableForInput&&x.availableForOutput));
  assert(next.resources.some(x=>x.name==='ChangeDue'&&x.availableForOutput));
