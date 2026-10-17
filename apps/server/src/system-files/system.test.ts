@@ -103,8 +103,9 @@ test('object creation writes Object and Fields in a single transaction', async (
   const client={query:async(sql:string)=>{writes.push(sql);return {rows:[{id:'created'}],rowCount:1}}};
   const db={
     transaction:async(fn:(arg:typeof client)=>Promise<unknown>)=>fn(client),
-    query:async(sql:string)=>sql.includes('md_object_definitions')?
-      {rows:[{id:'created',api_name:'Item__c',label:'Item',is_system:false}]}:{rows:[]}
+    query:async(sql:string)=>sql.includes('md_object_definitions')
+      ? {rows:[{id:'created',api_name:'Item__c',label:'Item',is_system:false}]}
+      : {rows:[{object_api:'Item__c',api_name:'Name',data_type:'text',related_object:null,required:true}]}
   } as unknown as SqlPersistence;
   const object=await new ObjectDefinitionService(db).create('tenant','Item__c','Item',[
     {apiName:'Name',label:'Name',dataType:'Text(80)',required:true,unique:false}
