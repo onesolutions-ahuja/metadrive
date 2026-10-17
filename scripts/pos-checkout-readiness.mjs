@@ -11,8 +11,8 @@ export function assessCheckoutReadiness({objects=[],flows=[],pages=[]}={}){
  const issues=[],checks=[];
  const check=(id,pass,note)=>{checks.push({id,pass,note});if(!pass)issues.push(id)};
  const products=get(objects,'Product');
- const order=get(objects,'Order');
- const lines=get(objects,'OrderItem')||get(objects,'OrderLine__c');
+ const order=get(objects,'Order__c')||get(objects,'Order');
+ const lines=get(objects,'OrderLine__c')||get(objects,'OrderItem');
  const invoice=get(objects,'Invoice');
  const invoiceItems=get(objects,'InvoiceItem');
  const payment=get(objects,'Payment');
@@ -52,7 +52,7 @@ export function assessCheckoutReadiness({objects=[],flows=[],pages=[]}={}){
  const elements=cashFlow?.elements??[];
  check('flow:cash-screen',!cashFlow||elements.some(e=>e.type==='Screen'&&/cash|received|tender/i.test(e.label)),
    'Cash Received screen must be present');
- check('flow:order-query',!cashFlow||elements.some(e=>e.type==='Get Records'&&e.config?.object==='Order'),
+ check('flow:order-query',!cashFlow||elements.some(e=>e.type==='Get Records'&&e.config?.object===order?.apiName),
    'Checkout must query the Order from a trusted basket session');
  check('flow:line-query',!cashFlow||elements.some(e=>e.type==='Get Records'
     && ['OrderItem','OrderLine__c'].includes(String(e.config?.object??''))
