@@ -42,7 +42,7 @@ const appearance = web('registeredComponentAppearance.css');
 assert.ok(!appearance.includes('#3176cc'), 'Shared card fallback must use design tokens');
 for (const path of ['ChecklistMultiSelect.css', 'SmartFieldInput.css', 'FlowReferenceInput.css']) {
   const css = web(path);
-  assert.doesNotMatch(css, /font-size:\\s*(?:[7-9]|10)px\\b/,
+  assert.doesNotMatch(css, /font-size:\s*(?:[7-9]|10)px\b/,
     'No operational microtype below 11px: ' + path);
 }
 const one = web('custom-components/one/one.css');
