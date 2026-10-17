@@ -72,32 +72,5 @@
       "minWidth": 180,
       "minHeight": 90
     }
-  },
-  {
-    "apiName": "AdminField",
-    "label": "Administration Field",
-    "category": "Forms",
-    "description": "Reusable trusted metadata-bound administration form control; mutations stay in OneEngine owners.",
-    "scope": "platform-system",
-    "surfaces": [
-      "page",
-      "platform"
-    ],
-    "version": 1,
-    "defaults": {
-      "label": "Field",
-      "placeholder": "",
-      "helpText": "",
-      "description": "",
-      "inputType": "text"
-    },
-    "jsx": "AdminField/AdminField.jsx",
-    "css": "AdminField/AdminField.css",
-    "resize": {
-      "defaultWidth": 320,
-      "defaultHeight": 80,
-      "minWidth": 120,
-      "minHeight": 48
-    }
   }
 ]
