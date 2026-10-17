@@ -1,0 +1,24 @@
+name: Cashier Product image read-only diagnostic
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/one-cashier-live-image-diagnostic.mjs
+      - .github/workflows/one-cashier-live-image-diagnostic.yml
+permissions:
+  contents: read
+jobs:
+  read-only-image-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check live image mapping and value categories, without disclosing values
+        env:
+          METADRIVE_API_BASE: https://metadrive-production.up.railway.app
+          METADRIVE_TEST_EMAIL: ${{ secrets.METADRIVE_TEST_EMAIL }}
+          METADRIVE_TEST_PASSWORD: ${{ secrets.METADRIVE_TEST_PASSWORD }}
+        run: node scripts/one-cashier-live-image-diagnostic.mjs
