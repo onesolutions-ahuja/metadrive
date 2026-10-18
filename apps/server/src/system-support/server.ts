@@ -200,6 +200,24 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'automation-settings',req.body));
   }));
+  app.get('/api/platform/tenants/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.get(actor.tenant_id,actor.user_id,req.params.slug));
+  }));
+  app.patch('/api/platform/tenants/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.updateDetails(actor.tenant_id,actor.user_id,req.params.slug,req.body));
+  }));
+  app.patch('/api/platform/tenants/:slug/retention',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.updateRetention(actor.tenant_id,actor.user_id,req.params.slug,req.body));
+  }));
+  for(const operation of ['suspend','reactivate','archive','restore'] as const) {
+    app.post('/api/platform/tenants/:slug/'+operation,route(async(req,res)=>{
+      const actor=req.actor!;
+      res.json(await platformTenants.transition(actor.tenant_id,actor.user_id,req.params.slug,operation));
+    }));
+  }
   app.get('/api/platform/tenants',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
