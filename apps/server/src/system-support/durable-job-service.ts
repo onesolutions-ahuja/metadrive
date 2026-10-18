@@ -37,9 +37,7 @@ export class DurableJobService {
    const {rows}=await client.query<{id:string;tenant_id:string;job_type:string;actor_user_id:string|null;app_api_name:string|null;resource_id:string|null;resource_version:number|null;attempt:number}>(`
      WITH due AS (
       SELECT id FROM md_durable_jobs
-      WHERE ((status='queued' AND scheduled_at<=now())
-        OR (status='leased' AND lease_until<now()))
-        AND attempt<max_attempts
+      WHERE status='queued' AND scheduled_at<=now() AND attempt<max_attempts
       ORDER BY scheduled_at,id
       LIMIT $1 FOR UPDATE SKIP LOCKED
      )
@@ -49,7 +47,16 @@ export class DurableJobService {
      FROM due WHERE j.id=due.id AND j.attempt<j.max_attempts
      RETURNING j.id,j.tenant_id,j.job_type,j.actor_user_id,j.app_api_name,j.resource_id,j.resource_version,j.attempt
    `,[limit,workerId,leaseSeconds]);
-   await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,lease_until=NULL,updated_at=now(),error_code='LEASE_EXHAUSTED' WHERE status='leased' AND lease_until<now() AND attempt>=max_attempts`);
+   // Expired leases have an unknown outcome; never automatically replay side-effectful Flows.
+   await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,
+     lease_until=NULL,updated_at=now(),error_code='FLOW_RECONCILIATION_REQUIRED'
+     WHERE job_type='flow.execute' AND status='leased' AND lease_until<now()`);
+   await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,
+     lease_until=NULL,updated_at=now(),error_code='LEASE_EXHAUSTED'
+     WHERE job_type<>'flow.execute' AND status='leased' AND lease_until<now() AND attempt>=max_attempts`);
+   await client.query(`UPDATE md_durable_jobs SET status='queued',lease_owner=NULL,
+     lease_until=NULL,scheduled_at=now(),updated_at=now()
+     WHERE job_type<>'flow.execute' AND status='leased' AND lease_until<now() AND attempt<max_attempts`);
    return rows;
   });
  }
