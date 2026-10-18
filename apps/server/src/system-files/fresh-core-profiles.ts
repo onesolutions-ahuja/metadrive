@@ -28,6 +28,10 @@ export async function seedFreshCoreProfiles(client:PoolClient,tenantId:string) {
    for(const resource of ADMIN_PROTECTED_RESOURCES)rules.push({resource,action:'*',effect:'deny'});
   } else {
    const actions=profile.apiName==='Developer'?crud:['read','create'] as const;
+   if(profile.apiName==='Developer'){
+    for(const resource of ['AppExchange','NamedCredential','Tenant','PermissionSet','Role'])
+     rules.push({resource,action:'manage',effect:'allow'});
+   }
    for(const object of FRESH_CORE_OBJECTS) {
     for(const action of actions)rules.push({resource:object.apiName,action,effect:'allow'});
     for(const field of [...object.fields,...(object.category==='standard'?FRESH_STANDARD_FIELDS[object.apiName]:[])])
