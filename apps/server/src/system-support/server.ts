@@ -424,6 +424,14 @@ export function createSystemServer(db:SqlPersistence) {
     if(!inputs||typeof inputs!=='object'||Array.isArray(inputs))throw new Error('Invalid Flow inputs');
     res.json(await flows.execute(actor.tenant_id,req.params.apiName,actor.user_id,inputs));
   }));
+  app.post('/api/metadata/flows/:apiName/validate',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.validateDefinition(actor.tenant_id,actor.user_id,req.params.apiName,req.body));
+  }));
+  app.post('/api/metadata/flows/:apiName/deactivate',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await flows.deactivate(actor.tenant_id,actor.user_id,req.params.apiName));
+  }));
   app.get('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
