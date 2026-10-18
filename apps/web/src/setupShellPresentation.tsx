@@ -150,7 +150,7 @@ export function renderSetupShell(ctx: any) {
                           || (workspace === 'app-exchange' && item === 'AppExchange')
                           || (workspace === 'tenant-management' && item === 'Tenant Management')
                           || (workspace === 'named-credentials' && item === 'Named Credentials')
-                          || (workspace === 'connector-settings' && item === 'Une Connectors')
+                          || (workspace === 'connector-settings' && (item === 'Connector Settings' || item === 'Une Connectors'))
                           || (workspace === 'flow-interviews' && item === 'Paused and Waiting Interviews')
                           || (workspace === 'scheduled-flows' && item === 'Scheduled Flows')
                           || (workspace === 'flow-logs' && item === 'Failed Flow Logs')) ? 'tree-item selected' : 'tree-item'}
