@@ -7,8 +7,6 @@
     "/auth/mfa/policy",
     "/auth/mfa/status",
     "/auth/mfa/verify",
-    "/auth/password-reset/confirm",
-    "/auth/password-reset/request",
     "/component-library/${encodeURIComponent(apiName)}",
     "/component-library/${encodeURIComponent(apiName)}/publish",
     "/component-library/${encodeURIComponent(apiName)}/rollback",
