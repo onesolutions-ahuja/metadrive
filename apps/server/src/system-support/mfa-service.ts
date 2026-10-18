@@ -112,6 +112,22 @@ export class MfaService {
   if(!valid)throw new Error('Invalid authenticator code');
   return {enrolled:true};
  }
+ /** Replay-resistant authenticator verification for privileged tenant actions. */
+ async verifyFresh(tenantId:string,userId:string,code:unknown):Promise<void>{
+  await this.db.transaction(async client=>{
+   const {rows}=await client.query<{
+    secret_ciphertext:Buffer;key_id:string;last_counter:number
+   }>('SELECT secret_ciphertext,key_id,last_counter FROM md_user_mfa_secrets WHERE tenant_id=$1 AND user_id=$2 FOR UPDATE',
+    [tenantId,userId]);
+   const stored=rows[0];
+   if(!stored)throw new Error('MFA enrollment required for privileged operation');
+   const secret=this.vault.decryptOpaque(stored.secret_ciphertext,stored.key_id);
+   const counter=acceptableCounter(secret,code,Number(stored.last_counter));
+   if(counter===null)throw new Error('Invalid or previously used authenticator code');
+   await client.query('UPDATE md_user_mfa_secrets SET last_counter=$3 WHERE tenant_id=$1 AND user_id=$2',
+    [tenantId,userId,counter]);
+  });
+ }
  async disable(tenantId:string,userId:string,password:unknown,code:unknown){
   if(await this.mode(tenantId)==='Required')throw new Error('MFA required by tenant policy');
   if(typeof password!=='string')throw new Error('Invalid credentials');
