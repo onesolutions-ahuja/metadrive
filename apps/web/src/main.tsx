@@ -1,8 +1,9 @@
 import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import MarketingSite from './MarketingSite';
-import { registerUniversalShell } from './universalShell';
-import { isMissingDynamicChunk, recoverMissingDynamicChunk, reloadLatestWorkspace } from './dynamicChunkRecovery';
+import './design-system.css';
+import MarketingSite from './core/public/MarketingSite/MarketingSite';
+import { registerUniversalShell } from './core/workspace/Bootstrap/universalShell';
+import { isMissingDynamicChunk, recoverMissingDynamicChunk, reloadLatestWorkspace } from './core/workspace/Bootstrap/dynamicChunkRecovery';
 
 registerUniversalShell();
 
@@ -17,9 +18,9 @@ window.addEventListener('vite:preloadError', (event: Event) => {
 // out of the initial public marketing bundle.
 const Workspace = lazy(async () => {
   await Promise.all([
-    import('./styles.css'), import('./styles-part2.css'), import('./styles-audit.css'), import('./design-system.css')
+    import('./core/workspace/WorkspaceTheme/styles.css'), import('./core/workspace/WorkspaceTheme/styles-part2.css'), import('./core/workspace/WorkspaceTheme/styles-audit.css')
   ]);
-  return import('./App');
+  return import('./core/workspace/App/App');
 });
 
 function WorkspaceLoadingFallback() {

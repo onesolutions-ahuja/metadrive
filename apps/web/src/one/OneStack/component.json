@@ -1,0 +1,61 @@
+{
+  "apiName": "OneStack",
+  "label": "One-Stack",
+  "category": "Layout",
+  "description": "Universal Stack component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 3,
+  "scope": "platform-core",
+  "jsxFile": "one/OneStack/OneStack.jsx",
+  "cssFile": "one/OneStack/OneStack.css",
+  "resize": {
+    "defaultWidth": 560,
+    "defaultHeight": 260,
+    "minWidth": 140,
+    "minHeight": 70
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Stack",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Stack",
+          "label": "One-Stack"
+        }
+      ]
+    },
+    {
+      "propertyKey": "direction",
+      "label": "Direction",
+      "kind": "SELECT",
+      "displayOrder": 300,
+      "defaultValue": "row",
+      "choices": [
+        {
+          "key": "row",
+          "label": "Row"
+        },
+        {
+          "key": "column",
+          "label": "Column"
+        }
+      ]
+    },
+    {
+      "propertyKey": "layoutContainer",
+      "label": "Accept nested components",
+      "kind": "BOOLEAN",
+      "defaultValue": true,
+      "displayOrder": 390
+    }
+  ]
+}

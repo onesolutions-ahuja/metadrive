@@ -1,0 +1,51 @@
+{
+  "apiName": "OneImage",
+  "label": "One-Image",
+  "category": "Display",
+  "description": "Universal Image component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneImage/OneImage.jsx",
+  "cssFile": "one/OneImage/OneImage.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Image",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Image",
+          "label": "One-Image"
+        }
+      ]
+    },
+    {
+      "propertyKey": "src",
+      "label": "Image URL",
+      "kind": "IMAGE",
+      "displayOrder": 300,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "alt",
+      "label": "Alternative text",
+      "kind": "TEXT",
+      "displayOrder": 310,
+      "defaultValue": ""
+    }
+  ]
+}

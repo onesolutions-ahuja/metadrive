@@ -1,0 +1,44 @@
+{
+  "apiName": "OneIcon",
+  "label": "One-Icon",
+  "category": "Display",
+  "description": "Universal Icon component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneIcon/OneIcon.jsx",
+  "cssFile": "one/OneIcon/OneIcon.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Icon",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Icon",
+          "label": "One-Icon"
+        }
+      ]
+    },
+    {
+      "propertyKey": "icon",
+      "label": "Icon glyph",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "★"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "apiName": "OneTree",
+  "label": "One-Tree",
+  "category": "Data",
+  "description": "Universal Tree component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneTree/OneTree.jsx",
+  "cssFile": "one/OneTree/OneTree.css",
+  "resize": {
+    "defaultWidth": 660,
+    "defaultHeight": 360,
+    "minWidth": 240,
+    "minHeight": 120
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Tree",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Tree",
+          "label": "One-Tree"
+        }
+      ]
+    },
+    {
+      "propertyKey": "labelField",
+      "label": "Display field",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "label"
+    }
+  ]
+}

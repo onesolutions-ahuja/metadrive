@@ -1,6 +1,6 @@
 import type {SqlPersistence} from './sql-persistence.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
-type SqlField={object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null};
+type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null};
 export class ObjectDefinitionService {
   constructor(private readonly db:SqlPersistence) {}
   async register(tenantId:string,apiName:string,label:string,isSystem=false) {
@@ -33,7 +33,7 @@ export class ObjectDefinitionService {
         throw new Error('Invalid relationship target');
       if(field.unique===true||field.formula||field.defaultValue!==undefined||field.valueSettings)
         throw new Error('Unsupported field options cannot be saved');
-      return {apiName:name,dataType:type,relatedObject:type==='reference'?target as string:null,required:field.required===true,maxLength};
+      return {apiName:name,label:typeof field.label==='string'&&field.label.trim()?field.label.trim():name,dataType:type,relatedObject:type==='reference'?target as string:null,required:field.required===true,maxLength};
     });
     if(new Set(normalized.map(x=>x.apiName.toLowerCase())).size!==normalized.length)
       throw new Error('Duplicate field API name');
@@ -43,12 +43,12 @@ export class ObjectDefinitionService {
         [tenantId,apiName,label]);
       if(!inserted.rowCount)throw new Error('Object already exists');
       for(const field of normalized)await client.query(
-        'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength]);
+        'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,field.label]);
     });
     return this.get(tenantId,apiName);
   }
-  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string) {
+  async addField(tenantId:string,objectApi:string,fieldApi:string,dataType:string,relatedObject?:string,label?:string) {
     if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
     const normalized=dataType.toLowerCase().replace(/\s+/g,'');
     const lengthMatch=/^text\(([0-9]+)\)$/.exec(normalized);
@@ -61,12 +61,71 @@ export class ObjectDefinitionService {
     if(type==='reference'&&(!relatedObject||!/^[A-Za-z][A-Za-z0-9_]*$/.test(relatedObject)))
       throw new Error('Invalid relationship target');
     const result=await this.db.query(`
-      INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,max_length)
-      VALUES ($1,$2,$3,$4,$5,$6)
+      INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,max_length,label)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
       ON CONFLICT (tenant_id,object_api,api_name) DO NOTHING RETURNING id
-    `,[tenantId,objectApi,fieldApi,type,type==='reference'?relatedObject:null,maxLength]);
+    `,[tenantId,objectApi,fieldApi,type,type==='reference'?relatedObject:null,maxLength,label?.trim()||fieldApi]);
     if(!result.rowCount)throw new Error('Field already exists');
     return result;
+  }
+  /** Only mutable SQL-backed field properties may be edited; unsupported options fail closed. */
+  async updateField(tenantId:string,objectApi:string,fieldApi:string,proposal:Record<string,unknown>){
+    if(typeof proposal.label!=='string'||!proposal.label.trim()||proposal.label.length>160
+      || (proposal.apiName!==undefined&&proposal.apiName!==fieldApi))
+      throw new Error('Invalid field update');
+    const original=await this.get(tenantId,objectApi);
+    const current=original.fields.find(x=>x.apiName===fieldApi);
+    if(!current)throw new Error('Field not found');
+    if(proposal.dataType!==undefined&&proposal.dataType!==current.dataType)
+      throw new Error('Field datatype migration requires a versioned migration');
+    const mutable=new Set(['id','apiName','label','dataType','required','unique','relationship']);
+    if(Object.keys(proposal).some(key=>!mutable.has(key))||
+      (proposal.required!==undefined&&proposal.required!==current.required)||
+      (proposal.unique!==undefined&&proposal.unique!==current.unique)||
+      (proposal.relationship!==undefined&&JSON.stringify(proposal.relationship)!==JSON.stringify(current.relationship)))
+      throw new Error('Unsupported field update requires a metadata migration');
+    const changed=await this.db.query(
+      'UPDATE md_field_definitions SET label=$4 WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 RETURNING id',
+      [tenantId,objectApi,fieldApi,proposal.label.trim()]);
+    if(!changed.rowCount)throw new Error('Field not found');
+    return this.get(tenantId,objectApi);
+  }
+  /** Refuse destructive removal if any tenant record contains a value in this field. */
+  async deleteField(tenantId:string,objectApi:string,fieldApi:string){
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))throw new Error('Invalid field API name');
+    await this.db.transaction(async client=>{
+      const {rows}=await client.query<{id:string}>(`
+        SELECT id FROM md_field_definitions
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 FOR UPDATE
+      `,[tenantId,objectApi,fieldApi]);
+      if(!rows[0])throw new Error('Field not found');
+      const usage=await client.query(`
+        SELECT 1 FROM md_record_values WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3 LIMIT 1
+      `,[tenantId,objectApi,fieldApi]);
+      if(usage.rows.length)throw new Error('Field has stored records; removal requires reviewed migration');
+      await client.query(
+        'DELETE FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+        [tenantId,objectApi,fieldApi]);
+    });
+    return this.get(tenantId,objectApi);
+  }
+  /** Relational lookup dependencies. No inferred or hardcoded app references. */
+  async dependencies(tenantId:string,apiName:string) {
+    await this.get(tenantId,apiName);
+    const {rows}=await this.db.query<{object_api:string;related_object:string}>(
+      'SELECT object_api,related_object FROM md_field_definitions WHERE tenant_id=$1 AND (object_api=$2 OR related_object=$2) AND related_object IS NOT NULL ORDER BY object_api,related_object',
+      [tenantId,apiName]);
+    return {dependencies:[...new Set(rows.map(row=>row.object_api===apiName?row.related_object:row.object_api))].filter((name):name is string=>Boolean(name)).sort()};
+  }
+  async fieldDependencies(tenantId:string,apiName:string) {
+    const object=await this.get(tenantId,apiName);
+    const {rows}=await this.db.query<{api_name:string;related_object:string|null}>(
+      'SELECT api_name,related_object FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 ORDER BY api_name',
+      [tenantId,apiName]);
+    return {fields:object.fields.map(field=>({
+      fieldApiName:field.apiName,
+      dependencies:rows.filter(row=>row.api_name===field.apiName&&row.related_object!==null).map(row=>row.related_object as string)
+    }))};
   }
   async get(tenantId:string,apiName:string) {
     const objects=await this.list(tenantId);
@@ -78,7 +137,7 @@ export class ObjectDefinitionService {
     const {rows:objects}=await this.db.query<SqlObject>(
       'SELECT id,api_name,label,is_system FROM md_object_definitions WHERE tenant_id=$1 ORDER BY api_name',[tenantId]);
     const {rows:fields}=await this.db.query<SqlField>(
-      'SELECT object_api,api_name,data_type,related_object,required,max_length FROM md_field_definitions WHERE tenant_id=$1 ORDER BY object_api,api_name',[tenantId]);
+      'SELECT id,object_api,api_name,label,data_type,related_object,required,max_length FROM md_field_definitions WHERE tenant_id=$1 ORDER BY object_api,api_name',[tenantId]);
     const byObject=new Map<string,SqlField[]>();
     for(const field of fields) {
       const list=byObject.get(field.object_api)??[];
@@ -88,11 +147,11 @@ export class ObjectDefinitionService {
       text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup'
     };
     return objects.map(obj=>({
-      apiName:obj.api_name,label:obj.label,pluralLabel:obj.label,
+      id:obj.id,apiName:obj.api_name,label:obj.label,pluralLabel:obj.label,
       kind:obj.is_system?'Standard Object' as const:'Custom Object' as const,
       description:'',
       fields:(byObject.get(obj.api_name)??[]).map(f=>({
-        apiName:f.api_name,label:f.api_name,
+        id:f.id,apiName:f.api_name,label:f.label??f.api_name,
         dataType:f.data_type==='text'&&f.max_length?`Text(${f.max_length})`:(typeLabel[f.data_type]??f.data_type),required:f.required,unique:false,
         ...(f.related_object?{relationship:{
           type:'Lookup' as const,targetObject:f.related_object,

@@ -1,38 +1,27 @@
-# MetaDrive SQL-only backend
+# MetaDrive SQL runtime architecture
 
-The active server entry is `apps/server/src/system-files/entrypoint.ts`. It uses
-only PostgreSQL; no legacy snapshot or JSONB runtime is imported.
+The approved Core is exactly the following fifteen files in `apps/server/src/system-files/`:
+`sql-persistence.ts`, `object-definition.ts`, `authentication.ts`,
+`rbac-engine.ts`, `record-engine.ts`, `component-runtime.ts`,
+`page-runtime.ts`, `flow-runtime.ts`, `app-runtime.ts`,
+`tenant-provisioning.ts`, `schema.sql`, `README.md`,
+`session-metadata.ts`, `platform-tenant-service.ts`,
+`system-definition-service.ts`.
 
-## Source structure
+Auxiliary HTTP entrypoints, encrypted credential handling, authentication bootstrap
+and SQL upgrade migrations live in `apps/server/src/system-support/`.
+Independent app seeders live in `apps/server/src/app-seeders/`. Tests live under
+`apps/server/test/system/` and build/smoke utilities under `apps/server/scripts/`.
 
-- `system-files/sql-persistence.ts`: SQL pool and transactions
-- `system-files/object-definition.ts`: metadata and relationship definitions
-- `system-files/authentication.ts`: hashed passwords and durable sessions
-- `system-files/rbac-engine.ts`: grant/deny enforcement
-- `system-files/record-engine.ts`: typed field validation, SQL record storage
-- `system-files/component-runtime.ts`: registered component lookup
-- `system-files/page-runtime.ts`: page/component SQL lookup
-- `system-files/flow-runtime.ts`: restricted transactional Flow execution (Start, Assignment, Decision, CreateRecord, End)
-- `system-files/app-runtime.ts`: licensed tenant installations
-- `system-files/tenant-provisioning.ts`: tenant data creation
+The running server entrypoint is `apps/server/src/system-support/entrypoint.ts`.
+The fresh-install SQL schema is not a production data migration. Additive upgrades
+are applied by the versioned migration runner; tenant and business records must be
+preserved. The Core must be tenant-safe, SQL-backed and enforced through OneEngine RBAC.
 
-`system-files/schema.sql` defines **new** relational `md_*` tables, not a
-migration of existing MetaDrive tables. It must not be applied automatically to
-production or used to overwrite existing business records.
+`npm run check` verifies imports, builds, tests and file boundaries.
+`npm run test:system --workspace apps/server` verifies system unit behaviour.
+The SQL smoke job runs against disposable PostgreSQL in CI.
 
-Use `npm run build --workspace apps/server` and
-`npm run test:system --workspace apps/server` to validate the new backend.
-Use `npm run check` for the repository-wide reference scan and build.
-Use `npm run preflight:sql --workspace apps/server` to inspect the existing SQL schema without modifying it.
-
-## Compatibility and release gate
-
-This is a new runtime, **not a verified feature-parity replacement**. Before
-deployment, migrate the approved existing SQL data and metadata, configure
-tenant domains and permissions, implement the remaining Flow execution,
-component rendering bindings, profile/field/record RBAC, app migrations and
-frontend endpoint contracts, and test production authentication.
-
-A successful compilation alone does not verify runtime compatibility or
-authorization correctness. Old source modules have been removed from the PR
-branch only. No production database changes have been made.
+**Important:** Core file-count consistency does not establish functional parity.
+Unimplemented endpoints and builder features still require separate verified work.
+Do not report full platform completeness based solely on build success.

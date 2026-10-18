@@ -1,0 +1,358 @@
+{
+  "apiName": "OneShoppingCart",
+  "label": "One-Shopping-Cart",
+  "category": "Data",
+  "description": "Universal product catalogue, basket and paired-display presentation; server Flows own checkout and permissions.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 9,
+  "scope": "platform-core",
+  "jsxFile": "one/OneShoppingCart/OneShoppingCart.jsx",
+  "cssFile": "one/OneShoppingCart/OneShoppingCart.css",
+  "resize": {
+    "defaultWidth": 900,
+    "defaultHeight": 650,
+    "minWidth": 320,
+    "minHeight": 320
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "ShoppingCart",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "ShoppingCart",
+          "label": "One-Shopping-Cart"
+        }
+      ]
+    },
+    {
+      "propertyKey": "viewMode",
+      "label": "Presentation",
+      "kind": "SELECT",
+      "displayOrder": 300,
+      "defaultValue": "till",
+      "choices": [
+        {
+          "key": "till",
+          "label": "Product catalogue and basket"
+        },
+        {
+          "key": "display",
+          "label": "Paired customer display"
+        },
+        {
+          "key": "basket",
+          "label": "Basket only"
+        }
+      ]
+    },
+    {
+      "propertyKey": "title",
+      "label": "Title",
+      "kind": "TEXT",
+      "displayOrder": 305,
+      "defaultValue": "Shopping cart"
+    },
+    {
+      "propertyKey": "nameFieldApiName",
+      "label": "Product name field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 310,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "priceFieldApiName",
+      "label": "Product price field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 320,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "barcodeFieldApiName",
+      "label": "Barcode field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 330,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "skuFieldApiName",
+      "label": "SKU field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 340,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "imageFieldApiName",
+      "label": "Product image field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 350,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "ageRestrictedFieldApiName",
+      "label": "Age restriction field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 360,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "vatApplicableFieldApiName",
+      "label": "VAT applicability field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 370,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "customerDisplayUrl",
+      "label": "Customer display URL",
+      "kind": "TEXT",
+      "displayOrder": 380,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "currencyCode",
+      "label": "Currency code",
+      "kind": "TEXT",
+      "displayOrder": 390,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "showVatTotal",
+      "label": "Show VAT total",
+      "kind": "BOOLEAN",
+      "displayOrder": 400,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "stateSyncEnabled",
+      "label": "Synchronise paired display through Flow",
+      "kind": "BOOLEAN",
+      "displayOrder": 410,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "stateReadFlowApiName",
+      "label": "State read Flow",
+      "kind": "TEXT",
+      "displayOrder": 420,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "stateWriteFlowApiName",
+      "label": "State write Flow",
+      "kind": "TEXT",
+      "displayOrder": 430,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "stateObjectApiName",
+      "label": "State object",
+      "kind": "TEXT",
+      "displayOrder": 440,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "stateValueFieldApiName",
+      "label": "State value field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 450,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "stateVersionFieldApiName",
+      "label": "State revision field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 460,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "stateKeyInput",
+      "label": "State key input",
+      "kind": "TEXT",
+      "displayOrder": 470,
+      "defaultValue": "Key"
+    },
+    {
+      "propertyKey": "stateValueInput",
+      "label": "State value input",
+      "kind": "TEXT",
+      "displayOrder": 480,
+      "defaultValue": "Value"
+    },
+    {
+      "propertyKey": "stateValueOutput",
+      "label": "State value output",
+      "kind": "TEXT",
+      "displayOrder": 490,
+      "defaultValue": "Value"
+    },
+    {
+      "propertyKey": "stateVersionOutput",
+      "label": "State revision output",
+      "kind": "TEXT",
+      "displayOrder": 500,
+      "defaultValue": "Version"
+    },
+    {
+      "propertyKey": "stateRecordIdOutput",
+      "label": "State record output",
+      "kind": "TEXT",
+      "displayOrder": 510,
+      "defaultValue": "RecordId"
+    },
+    {
+      "propertyKey": "statePollIntervalMs",
+      "label": "State polling interval (ms)",
+      "kind": "NUMBER",
+      "displayOrder": 520,
+      "defaultValue": 1500
+    },
+    {
+      "propertyKey": "stateSessionQueryParam",
+      "label": "Display session query parameter",
+      "kind": "TEXT",
+      "displayOrder": 530,
+      "defaultValue": "displaySession"
+    },
+    {
+      "propertyKey": "operationEvents",
+      "label": "Configured operation events",
+      "kind": "TEXT",
+      "displayOrder": 540,
+      "defaultValue": "[]"
+    },
+    {
+      "propertyKey": "standalonePresentation",
+      "label": "Standalone paired display",
+      "kind": "BOOLEAN",
+      "displayOrder": 550,
+      "defaultValue": false
+    },
+    {
+      "propertyKey": "storeName",
+      "label": "Store name",
+      "kind": "TEXT",
+      "displayOrder": 560,
+      "defaultValue": "Welcome"
+    },
+    {
+      "propertyKey": "displayButtonLabel",
+      "label": "Customer display button",
+      "kind": "TEXT",
+      "displayOrder": 565,
+      "defaultValue": "Open customer display"
+    },
+    {
+      "propertyKey": "topbarActionEvent",
+      "label": "Topbar action event",
+      "kind": "TEXT",
+      "displayOrder": 570,
+      "defaultValue": "openDisplay"
+    },
+    {
+      "propertyKey": "topbarActionLabelProperty",
+      "label": "Topbar action label property",
+      "kind": "TEXT",
+      "displayOrder": 580,
+      "defaultValue": "displayButtonLabel"
+    },
+    {
+      "propertyKey": "topbarActionRequiresProperty",
+      "label": "Topbar action requires property",
+      "kind": "TEXT",
+      "displayOrder": 590,
+      "defaultValue": "customerDisplayUrl"
+    },
+    {
+      "propertyKey": "catalogueWidthPercent",
+      "label": "Catalogue width percentage",
+      "kind": "NUMBER",
+      "defaultValue": 60,
+      "displayOrder": 450
+    },
+    {
+      "propertyKey": "productCardMinWidth",
+      "label": "Minimum product card width",
+      "kind": "NUMBER",
+      "defaultValue": 170,
+      "displayOrder": 460
+    },
+    {
+      "propertyKey": "cartTargetKey",
+      "label": "Shared basket key",
+      "kind": "TEXT",
+      "defaultValue": "cashier",
+      "displayOrder": 480
+    },
+    {
+      "propertyKey": "categoryFieldApiName",
+      "label": "Product category field",
+      "kind": "OBJECT_FIELD",
+      "displayOrder": 610,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "showCategoryTabs",
+      "label": "Show category tabs",
+      "kind": "BOOLEAN",
+      "displayOrder": 620,
+      "defaultValue": true
+    },
+    {
+      "propertyKey": "categoryTabsLabel",
+      "label": "Category tabs accessibility label",
+      "kind": "TEXT",
+      "displayOrder": 630,
+      "defaultValue": "Product categories"
+    },
+    {
+      "propertyKey": "allCategoriesLabel",
+      "label": "All categories label",
+      "kind": "TEXT",
+      "displayOrder": 640,
+      "defaultValue": "All"
+    },
+    {
+      "propertyKey": "vatRate",
+      "label": "Tax rate (%)",
+      "kind": "NUMBER",
+      "displayOrder": 800
+    },
+    {
+      "propertyKey": "checkoutStatusOutput",
+      "label": "Checkout lifecycle output",
+      "kind": "TEXT",
+      "displayOrder": 810,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "checkoutRequestOutput",
+      "label": "Checkout request output",
+      "kind": "TEXT",
+      "displayOrder": 820,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "checkoutMessageOutput",
+      "label": "Checkout message output",
+      "kind": "TEXT",
+      "displayOrder": 830,
+      "defaultValue": ""
+    },
+    {
+      "propertyKey": "checkoutChangeOutput",
+      "label": "Checkout change (minor units) output",
+      "kind": "TEXT",
+      "displayOrder": 840,
+      "defaultValue": ""
+    }
+  ]
+}

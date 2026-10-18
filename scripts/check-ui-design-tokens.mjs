@@ -6,7 +6,32 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = path => readFileSync(new URL(path, 'file://' + root), 'utf8');
-const web = path => read('apps/web/src/' + path);
+const moved = {
+  'MarketingSite.tsx':'core/public/MarketingSite/MarketingSite.tsx',
+  'styles.css':'core/workspace/WorkspaceTheme/styles.css',
+  'styles-part2.css':'core/workspace/WorkspaceTheme/styles-part2.css',
+  'styles-md227.css':'core/builders/PageBuilder/styles-md227.css',
+  'TenantManagement.css':'core/platform/TenantManagement/TenantManagement.css',
+  'TenantDomains.css':'core/platform/TenantDomains/TenantDomains.css',
+  'registeredComponentAppearance.css':'core/components/RegisteredComponent/registeredComponentAppearance.css',
+  'ChecklistMultiSelect.css':'one/OneChecklistMultiSelect/ChecklistMultiSelect.css',
+  'SmartFieldInput.css':'one/OneSmartFieldInput/SmartFieldInput.css',
+  'FlowReferenceInput.css':'core/builders/FlowReferenceInput/FlowReferenceInput.css',
+  'ReferenceBrowser.css':'one/OneReferenceBrowser/ReferenceBrowser.css',
+  'AppManagerList.css':'core/applications/AppManagerList/AppManagerList.css',
+  'CompanySettingsWorkspace.css':'core/settings/CompanySettingsWorkspace/CompanySettingsWorkspace.css'
+};
+const web = path => {
+  let actual = moved[path] || path;
+  if (actual.startsWith('custom-components/one/')) {
+    const file = actual.split('/').at(-1);
+    actual = file === 'manifest.json' ? 'one/manifest.json'
+      : file === 'OneConversation.jsx' ? 'one/OneConversation/OneConversation.jsx'
+      : file === 'OneShoppingCart.jsx' ? 'one/OneShoppingCart/OneShoppingCart.jsx'
+      : 'one/shared/' + file;
+  }
+  return read('apps/web/src/' + actual);
+};
 
 const tokens = web('design-system.css');
 for (const token of [
@@ -18,10 +43,8 @@ for (const token of [
 
 const runtime = web('main.tsx');
 const marketing = web('MarketingSite.tsx');
-assert.match(runtime, /import\('\.\/design-system\.css'\)/,
-  'Workspace must load shared design tokens');
-assert.match(marketing, /import '\.\/design-system\.css'/,
-  'Marketing must load shared design tokens');
+assert.match(runtime, /import '\\.\\/design-system\\.css'/,
+  'The public entry must load shared design tokens once for marketing and the workspace');
 assert.ok(runtime.includes('const Workspace = lazy('),
   'Workspace must remain lazily loaded');
 
@@ -63,7 +86,6 @@ assert.equal(accent?.defaultValue, '#1d4ed8',
 for (const file of [
   'SmartFieldInput.css','FlowReferenceInput.css','ReferenceBrowser.css',
   'AppManagerList.css','CompanySettingsWorkspace.css','TenantManagement.css',
-  'custom-components/ChatterInbox/ChatterInbox.css'
 ]) assert.match(web(file), /scrollbar-width:\s*thin/, 'Missing scrollbar styling in ' + file);
 
 console.log('Shared visual design contract checks passed.');

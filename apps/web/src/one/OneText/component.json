@@ -1,0 +1,51 @@
+{
+  "apiName": "OneText",
+  "label": "One-Text",
+  "category": "Display",
+  "description": "Universal Text component; metadata-configured presentation, data and events.",
+  "surfaces": [
+    "page",
+    "dashboard",
+    "flow"
+  ],
+  "version": 2,
+  "scope": "platform-core",
+  "jsxFile": "one/OneText/OneText.jsx",
+  "cssFile": "one/OneText/OneText.css",
+  "resize": {
+    "defaultWidth": 360,
+    "defaultHeight": 100,
+    "minWidth": 90,
+    "minHeight": 40
+  },
+  "propertyDefinitions": [
+    {
+      "propertyKey": "kind",
+      "label": "Component kind",
+      "kind": "SELECT",
+      "required": true,
+      "defaultValue": "Text",
+      "displayOrder": 0,
+      "choices": [
+        {
+          "key": "Text",
+          "label": "One-Text"
+        }
+      ]
+    },
+    {
+      "propertyKey": "text",
+      "label": "Text",
+      "kind": "TEXT",
+      "displayOrder": 300,
+      "defaultValue": "Text"
+    },
+    {
+      "propertyKey": "fontSize",
+      "label": "Font size",
+      "kind": "NUMBER",
+      "displayOrder": 310,
+      "defaultValue": 16
+    }
+  ]
+}
