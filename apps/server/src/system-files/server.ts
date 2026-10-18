@@ -397,6 +397,17 @@ export function createSystemServer(db:SqlPersistence) {
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
     res.status(201).json({id});
   }));
+  app.post('/api/records/:objectApi/import',route(async(req,res)=>{
+    const actor=req.actor!,rows=req.body?.records;
+    if(!Array.isArray(rows)||rows.length<1||rows.length>1000||
+       rows.some((x:unknown)=>!x||typeof x!=='object'||Array.isArray(x)))
+      throw new Error('Invalid import records');
+    await db.transaction(async client=>{
+      for(const values of rows)
+        await records.createInTransaction(client,actor.tenant_id,actor.user_id,req.params.objectApi,values);
+    });
+    res.json({count:rows.length});
+  }));
   app.get('/api/records/:objectApi/:id',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({record:await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id)});
