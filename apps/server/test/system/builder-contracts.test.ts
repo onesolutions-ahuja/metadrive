@@ -37,7 +37,7 @@ test('registered Origin can preflight Page, App and Flow PUT endpoints',async()=
       });
       assert.equal(response.status,204,path);
       assert.equal(response.headers.get('Access-Control-Allow-Origin'),'https://tenant.example');
-      assert.match(response.headers.get('Access-Control-Allow-Methods')??'',/\\bPUT\\b/);
+      assert.ok((response.headers.get('Access-Control-Allow-Methods')??'').split(',').includes('PUT'));
     }
   }finally{
     if(server.listening)await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
