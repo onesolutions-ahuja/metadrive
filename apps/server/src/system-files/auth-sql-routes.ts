@@ -53,6 +53,7 @@ export function registerAuthSqlRoutes(app:Express,db:SqlPersistence,rbac:RbacEng
   res.json({mode:'Disabled',enrolled:false,available:false});
  }));
  app.get('/api/auth/password-recovery/settings',wrap(async(_req,res)=>{
-  res.json({smtpCredentialId:'',fromEmail:'',linkReady:false,policy:{method:'OTP'},available:false});
+  const available=Boolean(process.env.METADRIVE_RESET_SMTP_URL&&process.env.METADRIVE_RESET_FROM_EMAIL&&process.env.METADRIVE_OTP_HMAC_KEY&&Buffer.byteLength(process.env.METADRIVE_OTP_HMAC_KEY)>=32);
+  res.json({smtpCredentialId:'',fromEmail:process.env.METADRIVE_RESET_FROM_EMAIL??'',linkReady:available,policy:{method:'OTP'},available});
  }));
 }
