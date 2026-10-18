@@ -92,7 +92,7 @@ export function createSystemServer(db:SqlPersistence) {
     const origin=req.get('origin');
     if(origin) {
       let host:string;
-      try { const parsed=new URL(origin); if(!['https:','http:'].includes(parsed.protocol)) throw Error(); host=parsed.hostname.toLowerCase(); }
+      try { const parsed=new URL(origin); if(!['https:','http:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname!=='/' || parsed.search || parsed.hash) throw Error(); if(process.env.NODE_ENV==='production' && (parsed.protocol!=='https:' || (parsed.port && parsed.port!=='443')))throw Error(); host=parsed.hostname.toLowerCase(); }
       catch { res.status(403).json({error:'Unrecognised origin'});return; }
       const authorized=await db.query('SELECT tenant_id FROM md_tenant_domains WHERE domain=$1',[host]);
       if(!authorized.rows.length) { res.status(403).json({error:'Unregistered origin'});return; }
