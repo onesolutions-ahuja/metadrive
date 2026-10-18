@@ -670,3 +670,29 @@ test('App removal only clears tenant installation and app-owned home bindings',a
  assert.ok(sql.some(query=>query.includes('md_app_installations')));
  assert.ok(sql.some(query=>query.includes('md_app_home_pages')));
 });
+
+test('Tenant route aliases are revisioned and resolve only installed app targets',async()=>{
+ const {AppRuntime}=await import('../../src/system-files/app-runtime.js');
+ const queries:Array<{sql:string;args:unknown[]}>=[],db={
+  query:async(sql:string,args:unknown[])=>{
+    queries.push({sql,args});
+    if(sql.includes('FROM md_apps a')&&sql.includes('md_app_installations'))return {rows:[{id:'app'}]};
+    if(sql.includes('FROM md_object_definitions'))return {rows:[{id:'object'}]};
+    if(sql.includes('INSERT INTO md_app_route_aliases'))return {rows:[{version:1}],rowCount:1};
+    if(sql.includes('UPDATE md_app_route_aliases'))return {rows:[],rowCount:1};
+    if(sql.includes('SELECT r.kind,r.target_api'))return {rows:[{kind:'Record List',target_api:'Customer__c'}]};
+    return {rows:[],rowCount:0};
+  }
+ } as unknown as SqlPersistence;
+ const apps=new AppRuntime(db);
+ await assert.rejects(()=>apps.saveAlias('tenant','MyApp','customers',{appId:'MyApp',slug:'customers',
+   kind:'Record List',targetApiName:'Customer__c',expectedVersion:-1}),/Invalid route alias/);
+ const saved=await apps.saveAlias('tenant','MyApp','customers',{appId:'MyApp',slug:'customers',
+   kind:'Record List',targetApiName:'Customer__c',expectedVersion:0});
+ assert.equal(saved.version,1);
+ const resolution=await apps.resolveAlias('tenant','MyApp','customers');
+ assert.match(resolution.path,/^\/une\/o\/Customer__c\/list\?/);
+ await apps.disableAlias('tenant','MyApp','customers',1);
+ assert.ok(queries.every(query=>query.args[0]==='tenant'));
+ assert.ok(queries.some(query=>query.sql.includes('version=$4')&&query.sql.includes("status='Active'")));
+});
