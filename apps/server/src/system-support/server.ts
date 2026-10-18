@@ -319,6 +319,24 @@ export function createSystemServer(db:SqlPersistence) {
       res.status(204).end();
     }));
   }
+  app.get('/api/connector-apps/capabilities',route(async(req,res)=>{
+    const actor=req.actor!;
+    const decisions=await rbac.allowedMany(actor.tenant_id,actor.user_id,[
+      {resource:'AppExchange',action:'read'},
+      {resource:'AppExchange',action:'manage'},
+      {resource:'NamedCredential',action:'read'},
+      {resource:'NamedCredential',action:'manage'},
+      {resource:'AppExchange',action:'install'},
+      {resource:'Licence',action:'manage'}
+    ]);
+    res.json({view:decisions[0],edit:decisions[1],secrets:decisions[2],
+      test:decisions[3],install:decisions[4]||decisions[1],licence:decisions[5]});
+  }));
+  app.get('/api/connector-apps/catalog',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
+    res.json(await apps.marketplace(actor.tenant_id));
+  }));
   app.get('/api/metadata/flow-logs',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await flows.failedLogs(actor.tenant_id,actor.user_id));
