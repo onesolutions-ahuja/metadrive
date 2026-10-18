@@ -89,7 +89,7 @@ test('39 audited dynamic API call sites resolve to registered SQL runtime method
    continue;
   }
   for(const contract of item.contracts){
-   const matching=routes.filter(r=>r.method===contract.method&&match(contract.path,r.path));
+   const matching=routes.filter(r=>r.method===contract.method&&match('/api'+contract.path,r.path));
    if(matching.length!==1)mismatches.push('#'+item.id+' '+contract.method+' /api'+contract.path+
     ': '+matching.length+' registered routes ('+item.description+')');
   }
