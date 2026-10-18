@@ -199,3 +199,34 @@ INSERT INTO md_user_profiles(tenant_id,user_id,profile_id)
  SELECT u.tenant_id,u.id,p.id FROM md_users u
  JOIN md_profiles p ON p.tenant_id=u.tenant_id AND p.api_name='Default'
  ON CONFLICT(tenant_id,user_id) DO NOTHING;
+
+
+-- Record types and allowed picklist values are object-scoped relational rows.
+CREATE TABLE IF NOT EXISTS md_object_record_types (
+ tenant_id uuid NOT NULL,
+ object_api text NOT NULL,
+ record_type_id text NOT NULL CHECK(length(record_type_id) BETWEEN 1 AND 128),
+ developer_name text NOT NULL,
+ label text NOT NULL,
+ description text NOT NULL DEFAULT '',
+ active boolean NOT NULL DEFAULT true,
+ is_default boolean NOT NULL DEFAULT false,
+ sort_order integer NOT NULL DEFAULT 0,
+ PRIMARY KEY(tenant_id,object_api,record_type_id),
+ FOREIGN KEY(tenant_id,object_api) REFERENCES md_object_definitions(tenant_id,api_name) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS md_object_record_type_values (
+ tenant_id uuid NOT NULL,object_api text NOT NULL,record_type_id text NOT NULL,
+ field_api text NOT NULL,field_value text NOT NULL,sort_order integer NOT NULL,
+ PRIMARY KEY(tenant_id,object_api,record_type_id,field_api,field_value),
+ FOREIGN KEY(tenant_id,object_api,record_type_id)
+  REFERENCES md_object_record_types(tenant_id,object_api,record_type_id) ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,object_api,field_api)
+  REFERENCES md_field_definitions(tenant_id,object_api,api_name)
+);
+ALTER TABLE md_records ADD COLUMN IF NOT EXISTS record_type_id text;
+INSERT INTO md_object_record_types(tenant_id,object_api,record_type_id,developer_name,label,active,is_default,sort_order)
+ SELECT o.tenant_id,o.api_name,'master','Master','Master',true,true,0
+ FROM md_object_definitions o WHERE NOT EXISTS(
+  SELECT 1 FROM md_object_record_types r WHERE r.tenant_id=o.tenant_id AND r.object_api=o.api_name
+ ) ON CONFLICT DO NOTHING;
