@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
@@ -516,6 +517,29 @@ export function createSystemServer(db:SqlPersistence) {
       components:await components.list(actor.tenant_id),
       canManage:await rbac.allowed(actor.tenant_id,actor.user_id,'ComponentDefinition','create')
     });
+  }));
+  // Authenticated publication of display-only metadata. No cached record data or grants.
+  app.get('/api/metadata/offline-publication',route(async(req,res)=>{
+    const actor=req.actor!;
+    await Promise.all(['ObjectDefinition','PageDefinition','ComponentDefinition'].map(
+      resource=>rbac.require(actor.tenant_id,actor.user_id,resource,'read')));
+    const [objects,publishedPages,availableApps,library]=await Promise.all([
+      definitions.list(actor.tenant_id),
+      pages.list(actor.tenant_id),
+      apps.listMetadata(actor.tenant_id),
+      components.list(actor.tenant_id)
+    ]);
+    const content={
+      pages:publishedPages,
+      apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,availableApps),
+      objects,components:library
+    };
+    const digest=createHash('sha256').update(JSON.stringify(content)).digest('hex');
+    res.setHeader('Cache-Control','no-store');
+    res.json({content,publication:{
+      revision:{version:1,publishedAt:Date.now(),digest},
+      verifiedDigest:digest,minimumVersion:1
+    }});
   }));
   app.get('/api/metadata/components',route(async(req,res)=>{
     const actor=req.actor!;
