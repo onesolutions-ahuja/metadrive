@@ -105,6 +105,13 @@ try{
  assert.equal((await records.list(t,cashier,'Invoice')).total,0);
  await assert.rejects(()=>records.create(t,cashier,'Invoice',{Name:'Implicit default type'}),/Permission denied/);
  await save(s=>{const p=s.profiles.find(p=>p.id===profile);p.advancedRules=[];p.deniedPermissions=[];p.recordTypePermissions['Invoice.master']=true;});
+ // A policy administrator retaining broad data grants can recover a tenant-wide restriction.
+ await save(s=>{s.sharingSettings.Invoice.restrictionRules=[
+  {id:'tenant_wide_restriction',tenantId:t,objectApiName:'Invoice',enabled:true,subjectType:'all',
+   conditionLogic:'all',conditions:[{field:'Total',operator:'eq',value:'10'}]}];});
+ assert.equal((await records.list(t,supervisor,'Invoice')).total,1);
+ await save(s=>{s.sharingSettings.Invoice.restrictionRules=[];});
+ assert.equal((await records.list(t,supervisor,'Invoice')).total,2);
  // A delegated security administrator cannot grow its own rights indirectly.
  const limited=await user('delegated-admin@example.invalid'),limitedSet=randomUUID(),limitedRole=randomUUID();
  await save(s=>{

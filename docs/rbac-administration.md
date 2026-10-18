@@ -32,7 +32,9 @@ also requires User edit. Own role/profile/set/group assignments cannot be change
 An actor cannot delegate a new grant or restore a denial beyond their own authority.
 The transaction checks for indirect increases in the actor's effective permissions and
 record access, and verifies that Security read/manage remain available before commit.
-A second authorized administrator restores an actor's revoked permissions.
+A second authorized administrator restores an actor's revoked permissions. An administrator
+retaining existing broad data grants can remove a record restriction without creating new
+Object/Field grants, so tenant-wide restriction policies remain recoverable.
 
 PlatformDeveloper administration and assignment require that separate platform authority;
 tenant administration cannot manufacture it. Platform lifecycle/support access continues

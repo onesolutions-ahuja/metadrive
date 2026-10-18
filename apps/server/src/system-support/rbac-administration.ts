@@ -78,11 +78,11 @@ export class RbacAdministration{
     [tenant,actor]);
    for(const r of newAllows)await tx.query('INSERT INTO md_rbac_actor_before VALUES($3,$4,md_rbac_allowed($1,$2,$3,$4)) ON CONFLICT DO NOTHING',
     [tenant,actor,r.resource,r.action]);
-   await tx.query("CREATE TEMP TABLE md_rbac_records_before ON COMMIT DROP AS SELECT id,md_record_access($1,$2,id,'read') AS can_read,md_record_access($1,$2,id,'edit') AS can_edit,md_record_access($1,$2,id,'delete') AS can_delete FROM md_records WHERE tenant_id=$1",
+   await tx.query("CREATE TEMP TABLE md_rbac_records_before ON COMMIT DROP AS SELECT id,object_api,(md_rbac_allowed($1,$2,object_api,'modifyAll') OR md_rbac_allowed($1,$2,'Record','viewAll')) AS can_restore,md_record_access($1,$2,id,'read') AS can_read,md_record_access($1,$2,id,'edit') AS can_edit,md_record_access($1,$2,id,'delete') AS can_delete FROM md_records WHERE tenant_id=$1",
     [tenant,actor]);
    // Preserve additional legacy role assignments when the primary role was not edited.
    await writeRbac(tx,tenant,next,previous);
-   const escalated=await tx.query<{escalated:boolean}>("SELECT EXISTS(SELECT 1 FROM md_rbac_actor_before WHERE NOT allowed AND md_rbac_allowed($1,$2,resource,action)) OR EXISTS(SELECT 1 FROM md_rbac_records_before WHERE (NOT can_read AND md_record_access($1,$2,id,'read')) OR (NOT can_edit AND md_record_access($1,$2,id,'edit')) OR (NOT can_delete AND md_record_access($1,$2,id,'delete'))) AS escalated",[tenant,actor]);
+   const escalated=await tx.query<{escalated:boolean}>("SELECT EXISTS(SELECT 1 FROM md_rbac_actor_before WHERE NOT allowed AND md_rbac_allowed($1,$2,resource,action)) OR EXISTS(SELECT 1 FROM md_rbac_records_before WHERE NOT can_restore AND ((NOT can_read AND md_record_access($1,$2,id,'read')) OR (NOT can_edit AND md_record_access($1,$2,id,'edit')) OR (NOT can_delete AND md_record_access($1,$2,id,'delete')))) AS escalated",[tenant,actor]);
    if(escalated.rows[0]?.escalated)throw Error('Cannot escalate own effective permissions');
    await currentRbac.require(tenant,actor,'Security','manage');
    await currentRbac.require(tenant,actor,'Security','read');
