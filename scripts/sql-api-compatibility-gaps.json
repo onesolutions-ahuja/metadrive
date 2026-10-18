@@ -22,7 +22,6 @@
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}/run",
-    "/metadata/dashboards/${encodeURIComponent(dashboardApiName)}/data/${encodeURIComponent(objectApiName)}${runningUserId ",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}",
