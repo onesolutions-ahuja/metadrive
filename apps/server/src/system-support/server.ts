@@ -174,6 +174,32 @@ export function createSystemServer(db:SqlPersistence) {
       throw error;
     }
   }));
+  app.get('/api/tenant/company-profile',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({profile:await platformTenants.getSetting(actor.tenant_id,actor.user_id,'company-profile')});
+  }));
+  app.put('/api/tenant/company-profile',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({profile:await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'company-profile',req.body)});
+  }));
+  app.get('/api/metadata/currencies',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.getSetting(actor.tenant_id,actor.user_id,'currencies')??
+      {corporateCurrency:'USD',standardVatRate:20,currencies:[{currencyIsoCode:'USD',conversionRate:1}]});
+  }));
+  app.put('/api/metadata/currencies',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'currencies',req.body));
+  }));
+  app.get('/api/metadata/automation-settings',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.getSetting(actor.tenant_id,actor.user_id,'automation-settings')??
+      {autoRetryFailedFlows:false,maxRetryAttempts:10,conversationIdleMinutes:15});
+  }));
+  app.put('/api/metadata/automation-settings',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await platformTenants.saveSetting(actor.tenant_id,actor.user_id,'automation-settings',req.body));
+  }));
   app.get('/api/platform/tenants',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await platformTenants.list(actor.tenant_id,actor.user_id,req.query));
