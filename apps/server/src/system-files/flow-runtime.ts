@@ -28,6 +28,81 @@ function scalarFrom(text:string|null,type:string):Scalar {
 /** Atomic, bounded SQL Flow executor. Unsupported or dangerous actions fail closed. */
 export class FlowRuntime {
   constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,private readonly records?:RecordEngine) {}
+  async notifications(tenantId:string,userId:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'Notification','read');
+    const [{rows},{rows:counts}]=await Promise.all([
+      this.db.query<{
+        id:string;recipient_id:string;title:string;body:string;flow_api_name:string;
+        sent_by:string|null;created_at:Date;read_at:Date|null
+      }>(`SELECT id,recipient_id,title,body,flow_api_name,sent_by,created_at,read_at
+          FROM md_notifications WHERE tenant_id=$1 AND recipient_id=$2
+          ORDER BY created_at DESC LIMIT 100`,[tenantId,userId]),
+      this.db.query<{total:string}>(`SELECT count(*)::text AS total FROM md_notifications
+          WHERE tenant_id=$1 AND recipient_id=$2 AND read_at IS NULL`,[tenantId,userId])
+    ]);
+    return {notifications:rows.map(row=>({
+      id:row.id,recipientId:row.recipient_id,title:row.title,body:row.body,
+      flowApiName:row.flow_api_name,sentBy:row.sent_by??'',
+      createdAt:new Date(row.created_at).toISOString(),
+      readAt:row.read_at?new Date(row.read_at).toISOString():null
+    })),unreadCount:Number(counts[0]?.total??0)};
+  }
+  async readNotification(tenantId:string,userId:string,id:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'Notification','read');
+    if(!/^[0-9a-f-]{36}$/i.test(id))throw new Error('Invalid notification');
+    const {rows}=await this.db.query<{
+      id:string;recipient_id:string;title:string;body:string;flow_api_name:string;
+      sent_by:string|null;created_at:Date;read_at:Date
+    }>(`UPDATE md_notifications SET read_at=COALESCE(read_at,now())
+      WHERE tenant_id=$1 AND recipient_id=$2 AND id=$3::uuid
+      RETURNING id,recipient_id,title,body,flow_api_name,sent_by,created_at,read_at`,
+      [tenantId,userId,id]);
+    const row=rows[0];if(!row)throw new Error('Notification not found');
+    return {notification:{
+      id:row.id,recipientId:row.recipient_id,title:row.title,body:row.body,
+      flowApiName:row.flow_api_name,sentBy:row.sent_by??'',
+      createdAt:new Date(row.created_at).toISOString(),readAt:new Date(row.read_at).toISOString()
+    }};
+  }
+  async approvalInbox(tenantId:string,userId:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'ApprovalRequest','read');
+    const {rows}=await this.db.query<{
+      id:string;group_id:string;object_api_name:string;object_label:string;record_id:string;
+      record_name:string;flow_api_name:string;submitted_by:string;submitted_by_name:string;
+      approver_id:string;status:'Pending';comments:string;decision_comments:string;
+      created_at:Date;decided_at:Date|null;decided_by:string|null
+    }>(`SELECT a.id,a.group_id,a.object_api_name,a.object_label,a.record_id,a.record_name,
+      a.flow_api_name,a.submitted_by,u.display_name AS submitted_by_name,
+      a.approver_id,a.status,a.comments,a.decision_comments,a.created_at,a.decided_at,a.decided_by
+      FROM md_approval_requests a JOIN md_users u
+        ON u.tenant_id=a.tenant_id AND u.id=a.submitted_by
+      WHERE a.tenant_id=$1 AND a.approver_id=$2 AND a.status='Pending'
+      ORDER BY a.created_at DESC LIMIT 100`,[tenantId,userId]);
+    return {requests:rows.map(row=>({
+      id:row.id,groupId:row.group_id,objectApiName:row.object_api_name,
+      objectLabel:row.object_label,recordId:row.record_id,recordName:row.record_name,
+      flowApiName:row.flow_api_name,submittedBy:row.submitted_by,
+      submittedByName:row.submitted_by_name,approverId:row.approver_id,
+      status:row.status,comments:row.comments,decisionComments:row.decision_comments,
+      createdAt:new Date(row.created_at).toISOString(),decidedAt:row.decided_at,
+      decidedBy:row.decided_by
+    }))};
+  }
+  async decideApproval(tenantId:string,userId:string,id:string,decision:unknown) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    await this.rbac.require(tenantId,userId,'ApprovalRequest','approve');
+    if(!/^[0-9a-f-]{36}$/i.test(id)||!['Approved','Rejected'].includes(String(decision)))
+      throw new Error('Invalid approval decision');
+    const {rows}=await this.db.query<{id:string;status:string;group_id:string}>(
+      `UPDATE md_approval_requests SET status=$4,decided_by=$2,decided_at=now()
+       WHERE tenant_id=$1 AND approver_id=$2 AND id=$3::uuid AND status='Pending'
+       RETURNING id,status,group_id`,[tenantId,userId,id,decision]);
+    if(!rows[0])throw new Error('Approval request not found');
+    return {request:{id:rows[0].id,status:rows[0].status,groupId:rows[0].group_id}};
+  }
   async list(tenantId:string) {
     const {rows}=await this.db.query<{id:string;api_name:string;label:string|null;flow_type:string;version:number;active:boolean}>(
       'SELECT id,api_name,label,flow_type,version,active FROM md_flow_definitions WHERE tenant_id=$1 ORDER BY api_name,version DESC LIMIT 100',
