@@ -1,11 +1,10 @@
 import {randomBytes} from 'node:crypto';
-import nodemailer from 'nodemailer';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {AuthenticationService} from '../system-files/authentication.js';
-import {decryptStoredCredential,secureRecoveryHash} from './mfa-crypto.js';
+import {secureRecoveryHash} from './mfa-crypto.js';
+import {openSmtpTransport} from './named-credential-transport.js';
 type Settings={smtp_credential_id:string|null;from_email:string;policy:{
  method:'OTP'|'LINK';templates?:{email?:{subject:string;body:string}}}};
-type Credential={base_url:string;auth_type:string;secret_ciphertext:Buffer|null;
  configuration_ciphertext:Buffer|null;protocol:string};
 const emailPattern=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const response={message:'If the account has password recovery enabled, verification instructions will be emailed.'};
@@ -22,25 +21,7 @@ export class PasswordResetService {
  }
  private async send(tenantId:string,userEmail:string,code:string,settings:Settings,tenantName:string){
   if(!settings.smtp_credential_id||!settings.from_email)return false;
-  const {rows}=await this.db.query<Credential>(
-   'SELECT base_url,auth_type,secret_ciphertext,configuration_ciphertext,protocol FROM md_named_credentials WHERE tenant_id=$1 AND id=$2 AND enabled=true',
-   [tenantId,settings.smtp_credential_id]);
-  const c=rows[0];if(!c||c.protocol!=='SMTP')return false;
-  const url=new URL(c.base_url);
-  if(!['smtp:','smtps:'].includes(url.protocol)||!url.hostname||url.username||url.password)
-   throw new Error('Invalid SMTP credential');
-  const port=url.port?Number(url.port):url.protocol==='smtps:'?465:587;
-  if(![465,587].includes(port))throw new Error('Invalid SMTP security settings');
-  const config=c.configuration_ciphertext
-   ?JSON.parse(decryptStoredCredential(c.configuration_ciphertext)) as Record<string,string>:{};
-  const user=config.username??config.user;
-  const password=c.secret_ciphertext?decryptStoredCredential(c.secret_ciphertext):'';
-  if(c.auth_type!=='None'&&(!user||!password))throw new Error('SMTP authentication incomplete');
-  const transport=nodemailer.createTransport({
-   host:url.hostname,port,secure:port===465,requireTLS:port===587,
-   tls:{rejectUnauthorized:true},connectionTimeout:8000,greetingTimeout:8000,socketTimeout:12000,
-   ...(c.auth_type==='None'?{}:{auth:{user,pass:password}})
-  });
+  const transport=await openSmtpTransport(this.db,tenantId,settings.smtp_credential_id);
   const template=settings.policy.templates?.email;
   const subject=render(template?.subject??'{!Tenant.Name} account recovery',tenantName,code);
   const body=render(template?.body??'Your recovery code is {!Verification.Value}. It expires in 15 minutes.',tenantName,code);
