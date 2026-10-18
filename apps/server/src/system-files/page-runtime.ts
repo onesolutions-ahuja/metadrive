@@ -205,9 +205,12 @@ export class PageRuntime {
     const {rows}=await this.db.query<{api_name:string}>(`SELECT p.api_name FROM md_page_definitions p
       JOIN md_lightning_page_details d ON d.tenant_id=p.tenant_id AND d.page_id=p.id
       JOIN md_app_installations i ON i.tenant_id=p.tenant_id
-      JOIN md_apps a ON a.id=i.app_id AND a.enabled=true AND a.api_name=$2
+      JOIN md_apps a ON a.id=i.app_id AND a.enabled=true
+        AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=p.tenant_id)
+      LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=i.tenant_id AND m.app_id=i.app_id
       JOIN md_app_entitlements e ON e.tenant_id=i.tenant_id AND e.app_id=i.app_id AND e.active=true
       WHERE p.tenant_id=$1 AND p.api_name=$3 AND p.enabled=true
+        AND COALESCE(m.api_name,a.api_name)=$2
         AND d.status='Active' AND d.page_type='App Page'
         AND (e.expires_at IS NULL OR e.expires_at>now())
         AND EXISTS(SELECT 1 FROM md_lightning_page_activation x
