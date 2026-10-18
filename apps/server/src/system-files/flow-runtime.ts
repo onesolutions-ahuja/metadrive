@@ -486,7 +486,7 @@ export class FlowRuntime {
             history_elements=$4,step_count=$5,updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,
             [tenantId,runId,current,history,steps+1]);
           return {interviewId:runId,screen:node,outcomes:this.screenOutcomes(node),
-            canGoBack:history.length>1,values:vars};
+            canGoBack:history.length>0,values:vars};
         }
         if(node.type==='End'){
           await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now() WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
