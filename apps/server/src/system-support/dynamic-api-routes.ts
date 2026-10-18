@@ -68,7 +68,8 @@ export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:Rbac
       throw new Error('Invalid typed filter');
     const size=req.query.limit===undefined?50:Number(req.query.limit);
     const ids=await records.filterTyped(actor.tenant_id,actor.user_id,req.params.objectApi,
-      req.params.fieldApi,op as 'eq'|'lt'|'lte'|'gt'|'gte',value,size);
+      req.params.fieldApi,op as 'eq'|'lt'|'lte'|'gt'|'gte',value,size,
+      req.query.direction==='desc'?'desc':'asc');
     res.setHeader('Cache-Control','private, no-store');
     res.json({ids});
   }));
