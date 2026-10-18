@@ -57,7 +57,7 @@ export class FlowRuntime {
       ids.add(node.id);
       const type=String(node.type??'');
       types.set(node.id,type);
-      if(!['Start','Assignment','Decision','Create Records','CreateRecord','HTTP Callout','End',
+      if(!['Start','Assignment','Decision','Create Records','CreateRecord','Update Records','HTTP Callout','End',
         ...(data.flowType==='Screen Flow'?['Screen']:[])].includes(type)){
         errors.push('Unsupported SQL Flow element: '+type);
       }
@@ -67,6 +67,22 @@ export class FlowRuntime {
         continue;
       }
       const properties=config as Record<string,unknown>;
+      if(type==='Update Records'){
+        if(typeof properties.object!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(properties.object))
+          errors.push('Update Records requires a valid Object API name');
+        if(typeof properties.recordId!=='string'||!properties.recordId.trim())
+          errors.push('Update Records requires an explicit record ID or Flow resource reference; bulk updates are not supported');
+        if(!Array.isArray(properties.fieldValues)||!properties.fieldValues.length)
+          errors.push('Update Records requires field assignments');
+        else for(const entry of properties.fieldValues){
+          const field=(entry&&typeof entry==='object'&&!Array.isArray(entry))
+            ?String((entry as Record<string,unknown>).field??''):'';
+          if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field))
+            errors.push('Update Records field assignment must use a valid API name');
+        }
+        if(properties.conditions&&Array.isArray(properties.conditions)&&properties.conditions.length)
+          errors.push('Update Records filter-based bulk updates are not supported');
+      }
       if(type==='HTTP Callout'){
         if(typeof properties.namedCredentialId!=='string'
           ||!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(properties.namedCredentialId))
@@ -106,7 +122,8 @@ export class FlowRuntime {
     }
     if([...types.values()].filter(x=>x==='Start').length!==1)errors.push('Flow must contain exactly one Start');
     if(![...types.values()].includes('End'))errors.push('Flow must contain an End');
-    const outgoing=new Map<number,number[]>();
+    const outgoing=new Map<number,number[]>(),incoming=new Map<number,number[]>();
+    const connectors=new Map<number,Array<{to:number;label:string;kind:string}>>();
     for(const link of links){
       if(!link||typeof link!=='object'||Array.isArray(link)){errors.push('Invalid Flow connector');continue;}
       const edge=link as Record<string,unknown>;
@@ -115,6 +132,21 @@ export class FlowRuntime {
       }
       if(edge.kind!==undefined&&!['normal','fault'].includes(String(edge.kind)))errors.push('Unsupported SQL Flow connector type');
       outgoing.set(edge.from,[...(outgoing.get(edge.from)??[]),edge.to]);
+      incoming.set(edge.to,[...(incoming.get(edge.to)??[]),edge.from]);
+      connectors.set(edge.from,[...(connectors.get(edge.from)??[]),{
+        to:edge.to,label:String(edge.label??''),kind:String(edge.kind??'normal')}]);
+    }
+    for(const id of ids){
+      if(types.get(id)==='End'&&(outgoing.get(id)?.length??0)>0)
+        errors.push('End must not have outgoing connectors: '+id);
+    }
+    // Every reachable branch must lead to a terminal End; one valid branch is not enough.
+    const canFinish=new Set<number>(),reverseStack=[...types].filter(([,type])=>type==='End').map(([id])=>id);
+    while(reverseStack.length){
+      const id=reverseStack.pop()!;
+      if(canFinish.has(id))continue;
+      canFinish.add(id);
+      reverseStack.push(...(incoming.get(id)??[]));
     }
     const start=[...types].find(([,type])=>type==='Start')?.[0];
     if(start!==undefined){
@@ -126,7 +158,29 @@ export class FlowRuntime {
         stack.push(...(outgoing.get(id)??[]));
       }
       if(![...visited].some(id=>types.get(id)==='End'))errors.push('No reachable End element');
+      for(const id of visited){
+        if(!canFinish.has(id))errors.push('Flow path cannot reach End from element: '+id);
+        if(types.get(id)!=='End'&&!(connectors.get(id)??[]).some(edge=>edge.kind==='normal'))
+          errors.push('Flow element requires a normal outgoing path: '+id);
+      }
       for(const id of ids)if(!visited.has(id))warnings.push('Disconnected Flow element: '+id);
+    }
+    for(const raw of nodes){
+      if(!raw||typeof raw!=='object'||Array.isArray(raw))continue;
+      const node=raw as Record<string,unknown>;
+      if(node.type!=='Decision'||typeof node.id!=='number')continue;
+      const config=node.config as Record<string,unknown>|undefined;
+      const outcomes=Array.isArray(config?.outcomes)?config.outcomes as Array<Record<string,unknown>>:[];
+      const labels=outcomes.map(outcome=>outcome?.name==='Default'?'Default':String(outcome?.label??outcome?.name??''))
+        .filter(Boolean);
+      if(!labels.includes('Default'))labels.push('Default');
+      if(new Set(labels).size!==labels.length)errors.push('Duplicate Decision outcome labels: '+node.id);
+      const paths=(connectors.get(node.id)??[]).filter(edge=>edge.kind==='normal');
+      for(const label of labels)
+        if(paths.filter(edge=>edge.label===label).length!==1)
+          errors.push('Decision outcome needs exactly one connector: '+node.id+' / '+label);
+      for(const path of paths)if(!labels.includes(path.label))
+        errors.push('Decision has an unmatched outcome connector: '+node.id+' / '+path.label);
     }
     return {valid:errors.length===0,errors,warnings};
   }
@@ -568,6 +622,26 @@ export class FlowRuntime {
           if(typeof node.config.resultVariable==='string'&&node.config.resultVariable)
             set(node.config.resultVariable,id);
           history=[]; // Back must not replay side effects.
+        }else if(node.type==='Update Records'){
+          if(!this.records)throw new Error('Flow record engine unavailable');
+          const object=String(node.config.object??'');
+          if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(object))throw new Error('Invalid Flow Object');
+          const recordId=evaluate(node.config.recordId);
+          if(typeof recordId!=='string'||!/^[0-9a-f-]{36}$/i.test(recordId))
+            throw new Error('Update Records requires a resolved record ID');
+          if(Array.isArray(node.config.conditions)&&node.config.conditions.length)
+            throw new Error('Bulk Update Records is not supported');
+          const assignments=node.config.fieldValues;
+          if(!Array.isArray(assignments)||!assignments.length)throw new Error('Update Records requires field assignments');
+          const fields:Record<string,unknown>={};
+          for(const item of assignments as Array<Record<string,unknown>>){
+            const field=String(item.field??item.apiName??'');
+            if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(field)||Object.hasOwn(fields,field))
+              throw new Error('Invalid or duplicate Update Records field');
+            fields[field]=evaluate(item.value??null);
+          }
+          await this.records.updateInTransaction(client,tenantId,userId,object,recordId,fields);
+          history=[]; // Back must never replay an update.
         }else if(node.type==='HTTP Callout'){
           if(!this.httpCallout)throw new Error('HTTP Callout transport is unavailable');
           const stableKey=runId+'-'+node.id;
@@ -686,7 +760,7 @@ export class FlowRuntime {
         };
         const matched=conditions.find(option=>option.name!=='Default'&&match(option));
         outcome=String(matched?.label??matched?.name??'Default');
-      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord'].includes(node.type)){
+      }else if(node.type!=='Start'&&!['HTTP Callout','Create Records','CreateRecord','Update Records'].includes(node.type)){
         throw new Error('Cannot safely debug unsupported Flow action: '+node.type);
       }
       const available=edges.filter(edge=>edge.from===current&&edge.kind==='normal');

@@ -193,12 +193,15 @@ export class RecordEngine {
     return record;
   }
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,ifUnmodifiedSince?:string) {
+    return this.db.transaction(client=>this.updateInTransaction(client,tenantId,userId,objectApi,id,values,ifUnmodifiedSince));
+  }
+  /** Reuse shared CRUD validation, tenant record security, history and field RBAC within a Flow transaction. */
+  async updateInTransaction(client:PoolClient,tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>,ifUnmodifiedSince?:string) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
     const checkDate=ifUnmodifiedSince?new Date(ifUnmodifiedSince):null;
     if(checkDate&&!Number.isFinite(checkDate.getTime()))throw new Error('Invalid record modification precondition');
     await this.rbac.require(tenantId,userId,objectApi,'edit');
-    const prepared=await this.prepare(tenantId,userId,objectApi,values,false);
-    await this.db.transaction(async client=>{
+    const prepared=await this.prepare(tenantId,userId,objectApi,values,false,client);
       const found=await client.query<{updated_at:Date}>("SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 AND md_record_access($1,$4,id,'edit') FOR UPDATE",
         [tenantId,objectApi,id,userId]);
       if(!found.rowCount)throw new Error('Record not found');
@@ -231,7 +234,6 @@ export class RecordEngine {
         ON CONFLICT (tenant_id,record_id,field_api)
         DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id
       `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id]);}
-    });
   }
   async history(tenantId:string,userId:string,objectApi:string,id:string){
     if(!uuid.test(id)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))throw new Error('Invalid record reference');
