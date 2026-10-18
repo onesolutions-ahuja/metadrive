@@ -422,6 +422,32 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
     res.json({flows:await flows.list(actor.tenant_id)});
   }));
+  app.get('/api/metadata/route-aliases',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'RouteAlias','read');
+    res.json(await pages.listAliases(actor.tenant_id));
+  }));
+  app.put('/api/metadata/route-aliases/:appId/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'RouteAlias','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'manage');
+    res.json(await pages.saveAlias(actor.tenant_id,actor.user_id,req.params.appId,req.params.slug,req.body));
+  }));
+  app.delete('/api/metadata/route-aliases/:appId/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'RouteAlias','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'manage');
+    await pages.disableAlias(actor.tenant_id,actor.user_id,req.params.appId,req.params.slug,req.body?.expectedVersion);
+    res.status(204).end();
+  }));
+  app.get('/api/routes/resolve/:appId/:slug',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
+    const alias=await pages.resolveAlias(actor.tenant_id,req.params.appId,req.params.slug);
+    if(alias.kind==='App Page')await rbac.require(actor.tenant_id,actor.user_id,'Page:'+alias.targetApiName,'read');
+    if(alias.kind==='Record List')await rbac.require(actor.tenant_id,actor.user_id,alias.targetApiName,'read');
+    res.json(alias);
+  }));
   app.get('/api/metadata/components/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ComponentDefinition','read');
