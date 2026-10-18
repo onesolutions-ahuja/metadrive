@@ -34,3 +34,18 @@ test('permission set write checks OneEngine Security manage first',async()=>{
  const rbac={require:async()=>{throw Error('Permission denied')}} as unknown as RbacEngine;
  await assert.rejects(()=>new PermissionSetAdministration(db,rbac).save('tenant','actor',{permissionSets:[]}),/Permission denied/);
 });
+
+test('existing tenant developer wildcard is preserved, not recreated or revoked',async()=>{
+ const writes:string[]=[];
+ const db={transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query:async(sql:string,args:unknown[])=>{
+   writes.push(sql);
+   if(sql.includes('SELECT id,api_name FROM md_permission_sets'))return {rows:[{id,api_name:'Cashier'}]};
+   if(sql.includes('SELECT permission_set_id FROM md_permission_assignments'))return {rows:[]};
+   if(sql.includes('SELECT resource,action,effect'))return {rows:[{resource:'*',action:'*',effect:'allow'}]};
+   return {rows:[]};
+ }})} as unknown as SqlPersistence;
+ const rbac={require:async()=>{},describe:async()=>({})} as unknown as RbacEngine;
+ await new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[{...set,systemPermissions:['*:*',...set.systemPermissions]}]});
+ assert.ok(!writes.some(sql=>sql.startsWith('DELETE FROM md_permission_rules')));
+ await assert.rejects(()=>new PermissionSetAdministration(db,rbac).save('tenant','admin',{permissionSets:[set]}),/Protected wildcard/);
+});
