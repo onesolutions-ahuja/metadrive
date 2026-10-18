@@ -164,6 +164,23 @@ try{
  const http=async(token,body)=>fetch('http://127.0.0.1:'+listener.address().port+'/api/metadata/permissions',{
   method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
  assert.equal((await http(tokens.accessToken,await rbac.describe(t,supervisor))).status,403);
+ const get=async(path)=>{const response=await fetch('http://127.0.0.1:'+listener.address().port+'/api'+path,{headers:{Authorization:'Bearer '+tokens.accessToken}});
+  assert.equal(response.status,200,await response.clone().text());return response.json();};
+ await apps.install(t,'RbacTest');
+ let nav=await get('/metadata/apps');
+ assert.equal(nav.apps[0].apiName,'RbacTest');
+ assert.deepEqual(nav.apps[0].navigationItems,['Invoice']);
+ await save(s=>{s.profiles.find(p=>p.id===profile).tabPermissions.Invoice=false;});
+ nav=await get('/metadata/apps');assert.deepEqual(nav.apps[0].navigationItems,[]);
+ await save(s=>{s.profiles.find(p=>p.id===profile).appPermissions.RbacTest=false;});
+ assert.deepEqual((await get('/metadata/apps')).apps,[]);
+ // The system User view also obeys central field permissions.
+ await save(s=>{s.profiles.find(p=>p.id===profile).systemPermissions.push('User:read','User.Email:read');});
+ const visibleUsers=await get('/records/User');
+ assert.ok(visibleUsers.records.some(u=>u.Email==='cashier@example.invalid'));
+ assert.ok(visibleUsers.records.every(u=>u.Name===undefined));
+ await save(s=>{s.profiles.find(p=>p.id===profile).advancedRules=[{resource:'User.Email',action:'read',effect:'deny'}];});
+ assert.ok((await get('/records/User')).records.every(u=>u.Email===undefined));
  const adminTokens=await auth.signIn(t,'administrator@example.invalid',password);
  assert.equal((await http(adminTokens.accessToken,{...await rbac.describe(t,supervisor),revision:0})).status,409);
  console.info('RBAC SQL validation passed: profiles, groups, direct grants/revocation, denies/restoration, sharing/restrictions, queues, record types, tenant isolation, atomic rollback, migration idempotency, HTTP and app licensing');

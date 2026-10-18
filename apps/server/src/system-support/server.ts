@@ -725,7 +725,6 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
     res.json({apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,await apps.listMetadata(actor.tenant_id))});
   }));
   app.post('/api/metadata/apps',route(async(req,res)=>{
