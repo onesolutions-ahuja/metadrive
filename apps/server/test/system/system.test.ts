@@ -649,6 +649,26 @@ test('SQL Flow draft validator rejects unsupported actions and broken branches',
  assert.ok(result.errors.some(e=>e.includes('Unsupported SQL Flow element')));
  assert.ok(result.errors.some(e=>e.includes('No reachable End')));
 });
+test('SQL Flow supports scoped Update Records only with explicit record target and assignments',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ const runtime=new FlowRuntime({} as SqlPersistence,rbac);
+ const elements=[
+  {id:1,type:'Start',config:{}},
+  {id:2,type:'Update Records',config:{object:'Product',recordId:'{!recordId}',fieldValues:[{field:'Taxable',value:true}]}},
+  {id:3,type:'End',config:{}}
+ ];
+ const draft={apiName:'TestFlow',flowType:'Autolaunched Flow',elements,
+  connectors:[{from:1,to:2,kind:'normal'},{from:2,to:3,kind:'normal'}]};
+ const valid=await runtime.validateDraft('tenant','user','TestFlow',draft);
+ assert.equal(valid.valid,true,valid.errors.join('; '));
+ const invalid=await runtime.validateDraft('tenant','user','TestFlow',{
+  ...draft,elements:[elements[0],{...elements[1],config:{...elements[1].config,recordId:'',conditions:[{field:'Taxable',operator:'Equals',value:true}]}},elements[2]]
+ });
+ assert.equal(invalid.valid,false);
+ assert.ok(invalid.errors.some(e=>e.includes('explicit record ID')));
+ assert.ok(invalid.errors.some(e=>e.includes('bulk updates')));
+});
 test('SQL Flow validation fails closed without permission',async()=>{
  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
  const rbac={require:async()=>{throw new Error('Permission denied')}} as unknown as RbacEngine;
