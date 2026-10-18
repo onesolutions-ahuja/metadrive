@@ -83,13 +83,13 @@ export class RecordEngine {
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const pageSize=Math.min(Math.max(limit,1),100),start=Math.max(offset,0);
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
     }>(`
       WITH selected AS (
-        SELECT id,created_at FROM md_records WHERE tenant_id=$1 AND object_api=$2
+        SELECT id,created_at,updated_at,owner_id FROM md_records WHERE tenant_id=$1 AND object_api=$2
         ORDER BY created_at,id LIMIT $3 OFFSET $4
       )
-      SELECT r.id,r.created_at,v.field_api,v.value_text,v.reference_record_id,f.data_type
+      SELECT r.id,r.created_at,r.updated_at,r.owner_id,v.field_api,v.value_text,v.reference_record_id,f.data_type
       FROM selected r
       LEFT JOIN md_record_values v ON v.tenant_id=$1 AND v.record_id=r.id AND v.object_api=$2
       LEFT JOIN md_field_definitions f ON f.tenant_id=$1 AND f.object_api=$2 AND f.api_name=v.field_api
@@ -98,7 +98,7 @@ export class RecordEngine {
     const collected=new Map<string,Record<string,unknown>>();
     const allowed=new Map<string,boolean>();
     for(const row of rows) {
-      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at});
+      if(!collected.has(row.id))collected.set(row.id,{Id:row.id,CreatedAt:row.created_at,LastModifiedDate:row.updated_at,OwnerId:row.owner_id});
       if(!row.field_api)continue;
       if(!allowed.has(row.field_api))allowed.set(row.field_api,
         await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read'));
@@ -118,12 +118,39 @@ export class RecordEngine {
       const found=await client.query('SELECT id FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 FOR UPDATE',
         [tenantId,objectApi,id]);
       if(!found.rowCount)throw new Error('Record not found');
+      await client.query('UPDATE md_records SET updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3',[tenantId,objectApi,id]);
       for(const [field,value] of prepared)await client.query(`
         INSERT INTO md_record_values (tenant_id,record_id,object_api,field_api,value_text,reference_record_id)
         VALUES ($1,$2,$3,$4,$5,$6)
         ON CONFLICT (tenant_id,record_id,field_api)
         DO UPDATE SET value_text=EXCLUDED.value_text,reference_record_id=EXCLUDED.reference_record_id
       `,[tenantId,id,objectApi,field,value.value_text,value.reference_record_id]);
+    });
+  }
+  /** Transfer record ownership without bypassing Object/Record permissions or tenant boundaries. */
+  async transferOwner(tenantId:string,userId:string,objectApi:string,id:string,ownerId:string,ifUnmodifiedSince?:string){
+    if(!uuid.test(id)||!uuid.test(ownerId)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi))
+      throw new Error('Invalid record ownership');
+    await this.rbac.require(tenantId,userId,objectApi,'edit');
+    await this.rbac.require(tenantId,userId,objectApi+'.OwnerId','edit');
+    let revisionDate:Date|undefined;
+    if(ifUnmodifiedSince){
+      revisionDate=new Date(ifUnmodifiedSince);
+      if(!Number.isFinite(revisionDate.getTime()))throw new Error('Invalid record modification precondition');
+    }
+    return this.db.transaction(async client=>{
+      const target=await client.query('SELECT id FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',[tenantId,ownerId]);
+      if(!target.rowCount)throw new Error('Record owner not found');
+      const found=await client.query<{updated_at:Date}>(
+        'SELECT updated_at FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND id=$3 FOR UPDATE',
+        [tenantId,objectApi,id]);
+      if(!found.rows[0])throw new Error('Record not found');
+      if(revisionDate&&new Date(found.rows[0].updated_at).getTime()>revisionDate.getTime()+999)
+        throw new Error('Record has changed since it was loaded');
+      const {rows}=await client.query<{owner_id:string;updated_at:Date}>(
+        'UPDATE md_records SET owner_id=$4,updated_at=now() WHERE tenant_id=$1 AND object_api=$2 AND id=$3 RETURNING owner_id,updated_at',
+        [tenantId,objectApi,id,ownerId]);
+      return {Id:id,OwnerId:rows[0].owner_id,LastModifiedDate:rows[0].updated_at};
     });
   }
   async remove(tenantId:string,userId:string,objectApi:string,id:string) {
