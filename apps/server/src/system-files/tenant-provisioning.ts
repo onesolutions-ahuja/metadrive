@@ -36,7 +36,7 @@ export class TenantProvisioning {
       await seedFreshCoreProfiles(client,tenantId);
       const permissionSet=await client.query<{id:string}>(
         'SELECT id FROM md_permission_sets WHERE tenant_id=$1 AND api_name=$2',
-        [tenantId,'Developer']);
+        [tenantId,'OneEngineDeveloper']);
       await client.query(
         'INSERT INTO md_user_roles (tenant_id,user_id,role_id) VALUES ($1,$2,$3)',
         [tenantId,user.rows[0].id,role.rows[0].id]);
