@@ -562,6 +562,10 @@ test('Flow deactivation changes SQL state only for caller tenant and requires On
   if(sql.includes('SELECT id,api_name,label,flow_type')){
    return {rows:[{id:'f1',api_name:'MyFlow',label:'My Flow',flow_type:'Autolaunched Flow',version:2,active:false}]};
   }
+  if(sql.includes('FROM md_flow_editor_values'))return {rows:[]};
+  if(sql.includes('SELECT version,active FROM md_flow_definitions'))return {rows:[{version:2,active:false}]};
+  if(sql.includes('FROM md_flow_nodes'))return {rows:[{api_name:'start',node_type:'Start'},{api_name:'end',node_type:'End'}]};
+  if(sql.includes('FROM md_flow_edges'))return {rows:[{source_api:'start',target_api:'end',outcome:'default'}]};
   throw Error('Unexpected SQL');
  }} as unknown as SqlPersistence;
  const rbac={require:async(tenant:string,user:string,resource:string,action:string)=>{
