@@ -21,10 +21,9 @@ const builderRoutes=[
  ['DELETE','/metadata/flows/:apiName'],['POST','/metadata/flows/:apiName/validate']
 ];
 for(const [method,route] of builderRoutes){
- const registered=[...server.matchAll(/app\\.(get|post|put|patch|delete)\\(\\s*['"]\\/api([^'"]+)['"]/g),
-  ...dynamic.matchAll(/app\\.(get|post|put|patch|delete)\\(\\s*['"]\\/api([^'"]+)['"]/g)]
-  .some(match=>match[1].toUpperCase()===method&&match[2]===route);
- if(!registered)throw new Error('Missing required Builder API contract: '+method+' /api'+route);
+ const signature="app."+method.toLowerCase()+"('/api"+route+"'";
+ if(!server.includes(signature)&&!dynamic.includes(signature))
+  throw new Error('Missing required Builder API contract: '+method+' /api'+route);
 }
 if(!server.includes("'GET,POST,PUT,PATCH,DELETE,OPTIONS'"))
  throw new Error('Builder PUT methods must be allowed by tenant-scoped CORS preflight');
