@@ -49,7 +49,7 @@ export class NamedCredentialService {
   const {rows}=await this.db.query<{id:string}>(
    'INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
    [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,x.enabled!==false]);
-  return {id:rows[0].id,name:x.name};
+  return (await this.list(tenantId,userId)).find(item=>item.id===rows[0].id);
  }
  async setEnabled(tenantId:string,userId:string,id:string,enabled:unknown){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
@@ -58,6 +58,7 @@ export class NamedCredentialService {
    'UPDATE md_named_credentials SET enabled=$3,updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id',
    [tenantId,id,enabled]);
   if(!result.rowCount)throw new Error('Credential not found');
+  return (await this.list(tenantId,userId)).find(item=>item.id===id);
  }
  async remove(tenantId:string,userId:string,id:string){
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
