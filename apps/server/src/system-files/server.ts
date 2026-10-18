@@ -6,6 +6,7 @@ import {registerNotificationSqlRoutes} from './notification-sql-routes.js';
 import {registerApprovalSqlRoutes} from './approval-sql-routes.js';
 import {registerFlowAdministrationRoutes} from './flow-administration-routes.js';
 import {registerObjectDependencyRoutes} from './object-dependency-routes.js';
+import {registerRecordInteractionRoutes} from './record-interaction-routes.js';
 import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {registerAuthSqlRoutes} from './auth-sql-routes.js';
 import {registerAuthSecurityRoutes} from './auth-security-routes.js';
@@ -424,6 +425,7 @@ export function createSystemServer(db:SqlPersistence) {
   registerApprovalSqlRoutes(app,db,rbac);
   registerFlowAdministrationRoutes(app,db,rbac);
   registerObjectDependencyRoutes(app,db,rbac);
+  registerRecordInteractionRoutes(app,db,rbac);
   registerBuilderSqlRoutes(app,db,rbac);
   registerAuthSqlRoutes(app,db,rbac);
   registerAuthSecurityRoutes(app,db,rbac);
