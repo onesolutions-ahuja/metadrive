@@ -49,7 +49,7 @@ export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:Rbac
       body.recurrenceSeconds<60||body.recurrenceSeconds>31536000))
       throw new Error('Invalid recurring interval');
     const id=await jobs.enqueue(actor.tenant_id,'flow.execute',{
-      actorUserId:actor.user_id,resourceId:flowName,appApiName:app,
+      actorUserId:actor.user_id,resourceId:flowName,resourceVersion:active.version,appApiName:app,
       scheduledAt:date,idempotencyKey:body.idempotencyKey,
       recurrenceSeconds:body.recurrenceSeconds
     });
