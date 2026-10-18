@@ -1,4 +1,4 @@
-import {createHmac,randomInt,timingSafeEqual} from 'node:crypto';
+import {createHmac,createHash,randomInt,timingSafeEqual} from 'node:crypto';
 import type {Express,Request,Response,NextFunction} from 'express';
 import {recoveryConfigured,sendRecoveryCode} from './tenant-recovery-mail.js';
 import type {SqlPersistence} from './sql-persistence.js';
@@ -70,6 +70,11 @@ export function registerPasswordResetRoutes(app:Express,db:SqlPersistence,resolv
     return false;
    }
    await client.query('UPDATE md_users SET password_hash=$3 WHERE tenant_id=$1 AND id=$2',[tenantId,item.id,hash]);
+   const emailHash=createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+   await client.query('DELETE FROM md_login_attempt_counters WHERE tenant_id=$1 AND email_hash=$2',
+    [tenantId,emailHash]);
+   await client.query(`INSERT INTO md_auth_security_events(tenant_id,actor_user_id,action)
+    VALUES($1,$2,'password_reset')`,[tenantId,item.id]);
    await client.query('DELETE FROM md_password_reset_otps WHERE tenant_id=$1 AND user_id=$2',[tenantId,item.id]);
    await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,item.id]);
    await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[tenantId,item.id]);
