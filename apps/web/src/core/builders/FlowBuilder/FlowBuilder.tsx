@@ -1,7 +1,7 @@
 import { uniqueLibraryComponents, libraryComponentLabel } from '../../components/Registry/componentLibraryDiscovery';
 import { FlowPropertiesResizeHandle, useFlowPropertiesWidth } from './FlowPropertiesResizeHandle';
 import { layoutFlowGraph } from './flowGraphLayout';
-import { reconcileDecisionOutcomePaths } from './flowInsertElement.mjs';
+import { completeFlowEndPaths, reconcileDecisionOutcomePaths } from './flowInsertElement.mjs';
 import { flowTypeOptions, formulaFunctions, formulaOperators } from './flowEditorCatalog';
 import { rowsFrom, outcomesFrom, screenOutcomesFrom, displayValue, type ConfigRow, type DecisionOutcome } from './flowEditorData';
 import HttpCalloutFieldEditor from './HttpCalloutFieldEditor';
@@ -1342,6 +1342,15 @@ export default function FlowBuilder({
             <button type="button" className="btn btn-small" onClick={switchCanvasMode}
               aria-pressed={freeformLayout}>{freeformLayout ? 'Switch to Auto-Layout' : 'Switch to Freeform'}</button>
             {freeformLayout && <button type="button" className="btn btn-small" onClick={resetFreeformLayout}>Reset Positions</button>}
+            {flow.status === 'Draft' && <button type="button" className="btn btn-small" onClick={() => {
+              const repaired = completeFlowEndPaths(flow, `connector-${crypto.randomUUID()}`);
+              if (JSON.stringify(repaired) === JSON.stringify(flow)) {
+                onNotify('All current paths already have an End.');
+              } else {
+                onFlowChange(repaired);
+                onNotify('End paths added to the draft. Review, Check and Save the Flow.');
+              }
+            }}><Check size={13} />Complete End Paths</button>}
             <button className="btn btn-small" onClick={onValidate}><Activity size={13} />Errors and Warnings</button>
           </div>
         </div>
