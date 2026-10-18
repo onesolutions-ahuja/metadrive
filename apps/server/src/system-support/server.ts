@@ -754,7 +754,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(email!==undefined&&(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)))throw new Error('Invalid user email');
     if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
     if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
-    if(input.UserRoleId!==undefined&&input.UserRoleId!==null&&typeof input.UserRoleId!=='string')throw new Error('Invalid role');
+    if(input.UserRoleId)throw new Error('Invalid role assignment: use Users & Assignments to save through RBAC');
     if(creating&&(!email||typeof input.Password!=='string'))throw new Error('Invalid user credentials');
     if(!creating&&input.Password!==undefined)throw new Error('Invalid password edit');
     return {email:email as string|undefined,name:input.Name as string|undefined,
@@ -789,6 +789,7 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','create');
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
     const values=userFields(req.body,true);
     const passwordHash=await auth.hashPassword(values.password!);
     const row=await db.transaction(async client=>{

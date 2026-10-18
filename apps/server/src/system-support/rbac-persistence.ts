@@ -5,9 +5,9 @@ import {grantRules} from './rbac-contract.js';
 import {groupMutes} from './rbac-validation.js';
 export async function writeRules(tx:PoolClient,t:string,setId:string,rules:Rule[]){
  await tx.query('DELETE FROM md_permission_rules WHERE tenant_id=$1 AND permission_set_id=$2',[t,setId]);
- for(const r of rules)await tx.query(
-  'INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) VALUES($1,$2,$3,$4,$5)',
-  [t,setId,r.resource,r.action,r.effect]);
+ if(rules.length)await tx.query(
+  'INSERT INTO md_permission_rules(tenant_id,permission_set_id,resource,action,effect) SELECT $1,$2,resource,action,effect FROM unnest($3::text[],$4::text[],$5::text[]) AS r(resource,action,effect)',
+  [t,setId,rules.map(r=>r.resource),rules.map(r=>r.action),rules.map(r=>r.effect)]);
 }
 export async function writePolicies(tx:PoolClient,t:string,next:Snapshot){
  await tx.query('DELETE FROM md_record_policies WHERE tenant_id=$1',[t]);
@@ -39,15 +39,20 @@ export async function writePolicies(tx:PoolClient,t:string,next:Snapshot){
   await conditions(r.id,r.criteria.map(c=>({field:c.fieldApiName,operator:c.operator,value:c.value})));
  }
 }
+const equal=(a:unknown,b:unknown):boolean=>JSON.stringify(a,(_k,v)=>
+ v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([x],[y])=>x.localeCompare(y))):v)===
+ JSON.stringify(b,(_k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([x],[y])=>x.localeCompare(y))):v);
 export async function writeRbac(tx:PoolClient,t:string,next:Snapshot,previous:Snapshot){
  for(const r of next.roles)await tx.query('INSERT INTO md_roles(tenant_id,id,api_name,label) VALUES($1,$2,$3,$4) ON CONFLICT(tenant_id,id) DO UPDATE SET api_name=EXCLUDED.api_name,label=EXCLUDED.label',[t,r.id,r.apiName,r.name]);
  for(const r of next.roles)await tx.query('UPDATE md_roles SET parent_role_id=$3 WHERE tenant_id=$1 AND id=$2',[t,r.id,r.parentRoleId]);
  for(const p of next.permissionSets){
+  if(equal(p,previous.permissionSets.find(old=>old.id===p.id)))continue;
   await tx.query('INSERT INTO md_permission_sets(tenant_id,id,api_name,label,description,license,navigation_default_access) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,id) DO UPDATE SET api_name=EXCLUDED.api_name,label=EXCLUDED.label,description=EXCLUDED.description,license=EXCLUDED.license,navigation_default_access=EXCLUDED.navigation_default_access',
    [t,p.id,p.apiName,p.label,p.description,p.license,p.navigationDefaultAccess]);
   await writeRules(tx,t,p.id,grantRules(p));
  }
  for(const p of next.profiles){
+  if(equal(p,previous.profiles.find(old=>old.id===p.id)))continue;
   const old=await tx.query<{editor_set_id:string|null}>('SELECT editor_set_id FROM md_profiles WHERE tenant_id=$1 AND id=$2',[t,p.id]);
   const setId=old.rows[0]?.editor_set_id??randomUUID();
   if(!old.rows[0]?.editor_set_id)await tx.query(
@@ -61,6 +66,7 @@ export async function writeRbac(tx:PoolClient,t:string,next:Snapshot,previous:Sn
   await writeRules(tx,t,setId,grantRules(p));
  }
  for(const g of next.permissionSetGroups){
+  if(equal(g,previous.permissionSetGroups.find(old=>old.id===g.id)))continue;
   await tx.query('INSERT INTO md_permission_set_groups(tenant_id,id,api_name,label,description) VALUES($1,$2,$3,$4,$5) ON CONFLICT(tenant_id,id) DO UPDATE SET api_name=EXCLUDED.api_name,label=EXCLUDED.label,description=EXCLUDED.description,calculated_at=now()',
    [t,g.id,g.apiName,g.label,g.description]);
   await tx.query('DELETE FROM md_permission_group_sets WHERE tenant_id=$1 AND group_id=$2',[t,g.id]);
@@ -71,6 +77,7 @@ export async function writeRbac(tx:PoolClient,t:string,next:Snapshot,previous:Sn
    'INSERT INTO md_permission_group_mutes(tenant_id,group_id,resource,action) VALUES($1,$2,$3,$4)',[t,g.id,r.resource,r.action]);
  }
  for(const g of [...next.publicGroups,...next.queues]){
+  if(equal(g,[...previous.publicGroups,...previous.queues].find(old=>old.id===g.id)))continue;
   await tx.query('INSERT INTO md_access_groups(tenant_id,id,kind,api_name,label,description) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,id) DO UPDATE SET api_name=EXCLUDED.api_name,label=EXCLUDED.label,description=EXCLUDED.description',
    [t,g.id,'groupIds' in g?'PublicGroup':'Queue',g.apiName,g.label,g.description]);
   await tx.query('DELETE FROM md_access_group_members WHERE tenant_id=$1 AND group_id=$2',[t,g.id]);
@@ -85,6 +92,7 @@ export async function writeRbac(tx:PoolClient,t:string,next:Snapshot,previous:Sn
   }
  }
  for(const u of next.users){
+  if(equal(u,previous.users.find(old=>old.id===u.id)))continue;
   if(previous.users.find(old=>old.id===u.id)?.roleId!==u.roleId){
    await tx.query('DELETE FROM md_user_roles WHERE tenant_id=$1 AND user_id=$2',[t,u.id]);
    if(u.roleId)await tx.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',[t,u.id,u.roleId]);
@@ -98,7 +106,7 @@ export async function writeRbac(tx:PoolClient,t:string,next:Snapshot,previous:Sn
   await tx.query('UPDATE md_users SET time_zone=$3,locale=$4,currency_iso_code=$5,user_type=$6,external_account_id=$7 WHERE tenant_id=$1 AND id=$2',
    [t,u.id,u.timeZone,u.locale,u.currencyIsoCode??null,u.userType,u.externalAccountId??null]);
  }
- await writePolicies(tx,t,next);
+ if(!equal(next.sharingSettings,previous.sharingSettings)||!equal(next.sharingRules,previous.sharingRules))await writePolicies(tx,t,next);
  for(const [table,ids] of [
   ['md_permission_set_groups',next.permissionSetGroups.map(g=>g.id)],
   ['md_access_groups',[...next.publicGroups,...next.queues].map(g=>g.id)]

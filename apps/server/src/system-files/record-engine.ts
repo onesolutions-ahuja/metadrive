@@ -95,6 +95,16 @@ export class RecordEngine {
       }
       prepared.set(key,{value_text:reference?null:text,reference_record_id:reference});
     }
+    if(creating&&!prepared.has('__RecordTypeId__')){
+      const defaults=await (client??this.db).query<{record_type_id:string}>(
+        'SELECT record_type_id FROM md_object_record_types WHERE tenant_id=$1 AND object_api=$2 AND active=true AND is_default=true ORDER BY sort_order LIMIT 1',
+        [tenantId,objectApi]);
+      if(defaults.rows[0]){
+        const selected=defaults.rows[0].record_type_id;
+        await this.rbac.require(tenantId,userId,'RecordType:'+objectApi+'.'+selected,'read');
+        prepared.set('__RecordTypeId__',{value_text:selected,reference_record_id:null});
+      }
+    }
     return prepared;
   }
   async create(tenantId:string,userId:string,objectApi:string,values:Record<string,unknown>) {
