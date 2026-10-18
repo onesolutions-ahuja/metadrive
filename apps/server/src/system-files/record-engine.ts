@@ -165,6 +165,38 @@ export class RecordEngine {
       "SELECT count(*)::text AS total FROM md_records WHERE tenant_id=$1 AND object_api=$2 AND md_record_access($1,$3,id,'read')",[tenantId,objectApi,userId]);
     return {records:[...collected.values()],total:Number(total.rows[0]?.total??0)};
   }
+  /** Typed SQL filtering with existing Object, Field and Record authorization. */
+  async filterTyped(tenantId:string,userId:string,objectApi:string,fieldApi:string,
+    operator:'eq'|'lt'|'lte'|'gt'|'gte',raw:string,limit=50) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field reference');
+    if(!['eq','lt','lte','gt','gte'].includes(operator))throw new Error('Invalid filter operator');
+    if(!Number.isInteger(limit)||limit<1||limit>100)throw new Error('Invalid record limit');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    await this.rbac.require(tenantId,userId,objectApi+'.'+fieldApi,'read');
+    const {rows:fields}=await this.db.query<{data_type:string}>(
+      'SELECT data_type FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+      [tenantId,objectApi,fieldApi]);
+    const type=fields[0]?.data_type;
+    const columns:Record<string,string>={number:'value_number',currency:'value_number',
+      percent:'value_number',date:'value_date',datetime:'value_datetime',boolean:'value_boolean'};
+    const column=columns[type];
+    if(!column)throw new Error('Invalid typed filter field');
+    const casts:Record<string,string>={value_number:'numeric',value_date:'date',
+      value_datetime:'timestamptz',value_boolean:'boolean'};
+    if(column==='value_boolean' && operator!=='eq')throw new Error('Invalid boolean comparison');
+    const ops={eq:'=',lt:'<',lte:'<=',gt:'>',gte:'>='} as const;
+    const {rows}=await this.db.query<{id:string}>(`
+      SELECT r.id FROM md_records r JOIN md_record_values v
+        ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND v.field_api=$3
+        AND v.${column} ${ops[operator]} $4::${casts[column]}
+        AND md_record_access($1,$5,r.id,'read')
+      ORDER BY v.${column},r.id LIMIT $6
+    `,[tenantId,objectApi,fieldApi,raw,userId,limit]);
+    return rows.map(row=>row.id);
+  }
+
   /** Single-record read uses the same tenant and field-level grants as list, without pagination. */
   async get(tenantId:string,userId:string,objectApi:string,id:string) {
     if(!uuid.test(id))throw new Error('Invalid record ID');
