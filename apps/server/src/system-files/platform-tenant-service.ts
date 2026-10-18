@@ -1,5 +1,6 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
+import {TenantProvisioning} from './tenant-provisioning.js';
 
 export class PlatformTenantService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
@@ -18,6 +19,39 @@ export class PlatformTenantService {
        WHERE ur.tenant_id=$1 AND ur.user_id=$2 AND p.api_name='PlatformDeveloper'
    ) AS authorised`,[tenantId,userId]);
   return rows[0]?.authorised===true;
+ }
+ async create(tenantId:string,userId:string,details:{
+  tenantId:string;tenantName:string;email:string;password:string;developerDomain?:string;
+ },requestKey:string,hostname:string){
+  if(!(await this.platformScope(tenantId,userId)))throw Error('Platform Developer permission required');
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestKey))
+   throw Error('Idempotency-Key must be a UUID');
+  const slug=details.tenantId,name=details.tenantName,email=details.email,password=details.password;
+  if(typeof slug!=='string'||typeof name!=='string'||typeof email!=='string'||typeof password!=='string')
+   throw Error('Invalid tenant creation request');
+  if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)||!name.trim()||name.length>200)
+   throw Error('Invalid tenant identity');
+  const domain=(details.developerDomain||slug+'.'+hostname).toLowerCase();
+  if(!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(domain)||domain.length>253)throw Error('Invalid tenant domain');
+  const previous=await this.db.query<{tenant_slug:string}>(
+   'SELECT tenant_slug FROM md_platform_provision_requests WHERE operator_tenant_id=$1 AND request_key=$2',
+   [tenantId,requestKey]);
+  if(previous.rows[0]){
+   if(previous.rows[0].tenant_slug!==slug)throw Error('Provision request key was used for another tenant');
+   const existing=await this.db.query<{id:string;slug:string;name:string}>(
+    'SELECT id,slug,name FROM md_tenants WHERE slug=$1',[slug]);
+   if(!existing.rows[0])throw Error('Provision request points to a missing tenant');
+   return {tenant:{tenantId:slug,name:existing.rows[0].name,description:'',status:'ACTIVE',
+    userCount:1,activeUserCount:1,provisioning:{status:'READY',version:1,completedAt:''},developerAccount:null},replayed:true};
+  }
+  await new TenantProvisioning(this.db).provision({
+   slug,name:name.trim(),domain,developerEmail:email,developerPassword:password
+  });
+  await this.db.query(`INSERT INTO md_platform_provision_requests(operator_tenant_id,request_key,tenant_slug,requested_by)
+   VALUES($1,$2,$3,$4) ON CONFLICT(operator_tenant_id,request_key) DO NOTHING`,
+   [tenantId,requestKey,slug,userId]);
+  return {tenant:{tenantId:slug,name:name.trim(),description:'',status:'ACTIVE',
+   userCount:1,activeUserCount:1,provisioning:{status:'READY',version:1,completedAt:''},developerAccount:null},replayed:false};
  }
  async list(tenantId:string,userId:string,parameters:Record<string,unknown>){
   const platform=await this.platformScope(tenantId,userId);
