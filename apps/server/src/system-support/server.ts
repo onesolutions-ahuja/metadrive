@@ -627,7 +627,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/flows/list',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
-    res.json({flows:await flows.list(actor.tenant_id)});
+    res.json(await flows.listPage(actor.tenant_id,req.query.page,req.query.search??''));
   }));
   app.get('/api/metadata/components/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
@@ -648,7 +648,16 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/flows/:apiName',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
-    res.json({flow:await flows.loadActive(actor.tenant_id,req.params.apiName)});
+    res.json({flow:await flows.loadEditor(actor.tenant_id,req.params.apiName)});
+  }));
+  app.put('/api/metadata/flows/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({flow:await flows.saveEditor(actor.tenant_id,actor.user_id,req.params.apiName,req.body)});
+  }));
+  app.delete('/api/metadata/flows/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await flows.deleteEditor(actor.tenant_id,actor.user_id,req.params.apiName);
+    res.status(204).end();
   }));
   app.post('/api/apps/:apiName/install',route(async(req,res)=>{
     const actor=req.actor!;
