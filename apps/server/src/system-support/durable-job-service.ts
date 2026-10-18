@@ -80,6 +80,21 @@ export class DurableJobService {
   if(!rowCount)throw new Error('Job lease missing or expired');
  }
 
+ /** Inspect job outcome for operator reconciliation; never expose this without RBAC at the API. */
+ async inspect(tenantId:string,id:string){
+  const {rows}=await this.db.query<{id:string;status:string;attempt:number;error_code:string|null}>(
+   'SELECT id,status,attempt,error_code FROM md_durable_jobs WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
+  if(!rows[0])throw new Error('Job not found');
+  return rows[0];
+ }
+ /** Explicit cancel of terminal failed work, preserving historical job state until reviewed. */
+ async cancelFailed(tenantId:string,id:string){
+  const {rowCount}=await this.db.query(`
+   UPDATE md_durable_jobs SET status='cancelled',updated_at=now()
+   WHERE tenant_id=$1 AND id=$2 AND status='failed'`,[tenantId,id]);
+  if(!rowCount)throw new Error('Failed job not found');
+ }
+
  async cancelApp(tenantId:string,appApiName:string) {
   return this.db.query(`
    UPDATE md_durable_jobs SET status='cancelled',lease_owner=NULL,lease_until=NULL,updated_at=now()
