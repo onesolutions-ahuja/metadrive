@@ -120,8 +120,10 @@ export class FlowRuntime {
           return value;
         };
         let current=starts[0].api_name;
+        const debugTrace:Array<{elementApiName:string;type:string;status:string}>=[];
         for(let step=0;step<200;step++) {
           const node=nodes.get(current)!;
+          debugTrace.push({elementApiName:node.api_name,type:node.node_type,status:'Completed'});
           let result='default';
           switch(node.node_type) {
             case 'Start': break;
@@ -170,7 +172,7 @@ export class FlowRuntime {
                   throw new Error('Invalid Flow output');
                 outputs[outputName]=resolve(value);
               }
-              return {id:runId,status:'completed' as const,...(Object.keys(outputs).length?{outputs}:{})};
+              return {id:runId,status:'completed' as const,outputs,debugTrace};
             }
             default:throw new Error('Unsupported Flow element: '+node.node_type);
           }
