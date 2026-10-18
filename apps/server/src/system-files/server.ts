@@ -4,6 +4,7 @@ import { AuthenticationService } from './authentication.js';
 import {sessionMetadata} from './session-metadata.js';
 import { ObjectDefinitionService } from './object-definition.js';
 import { RbacEngine } from './rbac-engine.js';
+import {SystemDefinitionService,definitionKinds,type DefinitionKind} from './system-definition-service.js';
 import { RecordEngine } from './record-engine.js';
 import { ComponentRuntime } from './component-runtime.js';
 import { PageRuntime } from './page-runtime.js';
@@ -56,6 +57,7 @@ export function createSystemServer(db:SqlPersistence) {
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const records=new RecordEngine(db,rbac);
+  const systemDefinitions=new SystemDefinitionService(db,rbac);
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
@@ -195,6 +197,35 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({pages:await pages.list(actor.tenant_id)});
+  }));
+  // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
+  const definitionPaths:Record<string,DefinitionKind>={
+    '/metadata/platform-events':'platform-events',
+    '/metadata/email-alerts':'email-alerts',
+    '/metadata/approval-processes':'approval-processes',
+    '/metadata/dashboards':'dashboards',
+    '/metadata/dashboard-folders':'dashboard-folders',
+    '/metadata/dashboard-territories':'dashboard-territories',
+    '/metadata/report-folders':'report-folders',
+    '/metadata/reports':'reports',
+    '/connector-providers':'connector-providers'
+  };
+  for(const [path,kind] of Object.entries(definitionPaths)) {
+    app.get('/api'+path,route(async(req,res)=>{
+      const actor=req.actor!;
+      const items=await systemDefinitions.list(actor.tenant_id,actor.user_id,kind);
+      res.json({[definitionKinds[kind]]:items});
+    }));
+    app.post('/api'+path,route(async(req,res)=>{
+      const actor=req.actor!;
+      const definition=await systemDefinitions.save(actor.tenant_id,actor.user_id,kind,req.body);
+      res.status(201).json({definition});
+    }));
+  }
+  app.get('/api/metadata/flows',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
+    res.json({flows:await flows.list(actor.tenant_id)});
   }));
   app.get('/api/metadata/flows/list',route(async(req,res)=>{
     const actor=req.actor!;
