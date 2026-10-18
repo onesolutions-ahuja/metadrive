@@ -50,6 +50,8 @@ export function insertFlowElementAtPath(flow, fromId, element, connectorId, cont
       id: continuationId + '-outcome-' + index,
       from: element.id, to: terminalId, label, kind: 'normal'
     })) : [];
+    if (branches.some(item => flow.connectors.some(existing => existing.id === item.id)))
+      throw Error('New Flow connector ID must be unique.');
     return { ...flow, elements, connectors: [...flow.connectors, first, ...branches] };
   }
   const connectorIndex = flow.connectors.findIndex(connector => connector.id === selected.id);
@@ -74,7 +76,8 @@ export function decisionOutcomeLabels(outcomes) {
   const labels = outcomes.map(item => item?.name === 'Default' ? 'Default' : item?.label || item?.name)
     .filter(label => typeof label === 'string' && label.trim());
   if (!labels.includes('Default')) labels.push('Default');
-  return [...new Set(labels)];
+  if (new Set(labels).size !== labels.length) throw Error('Decision outcomes require unique labels.');
+  return labels;
 }
 
 /** Reconcile Decision outcomes without replacing existing configured branch destinations. */
@@ -84,8 +87,6 @@ export function reconcileDecisionOutcomePaths(flow, decisionId, nextOutcomes, co
   const old = Array.isArray(node.config?.outcomes) ? node.config.outcomes : [];
   const oldLabels = decisionOutcomeLabels(old);
   const nextLabels = decisionOutcomeLabels(nextOutcomes);
-  if (nextLabels.length !== new Set(nextLabels).size)
-    throw Error('Decision outcomes require unique labels.');
   const normal = flow.connectors.filter(item => item.from === decisionId && item.kind === 'normal');
   const kept = new Set();
   const connectors = [...flow.connectors];
@@ -166,7 +167,7 @@ export function completeFlowEndPaths(flow, connectorPrefix) {
         connectors[connectors.findIndex(edge => edge.id === defaultEdge.id)] = { ...defaultEdge, label: 'Default' };
       const current = new Set(connectors.filter(edge => edge.from === node.id && edge.kind === 'normal').map(edge => edge.label));
       for (const label of labels) if (!current.has(label)) link(node.id, label);
-    } else if (!paths.length && !connectors.some(edge => edge.from === node.id)) {
+    } else if (!paths.length) {
       link(node.id, '');
     }
   }
