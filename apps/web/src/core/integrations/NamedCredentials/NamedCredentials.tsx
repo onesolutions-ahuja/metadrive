@@ -45,7 +45,8 @@ export default function NamedCredentials({
   onDelete,
   onRotate,
   onTest,
-  onToggleEnabled
+  onToggleEnabled,
+  onOAuthAuthorize
 }: {
   credentials: NamedCredentialMetadata[];
   canManage: boolean;
@@ -61,6 +62,7 @@ export default function NamedCredentials({
   onRotate: (id: string) => Promise<void>;
   onTest: (id: string) => Promise<{ connected: boolean; status?: number; message: string }>;
   onToggleEnabled?: (id: string, enabled: boolean) => Promise<void>;
+  onOAuthAuthorize?: (id:string)=>Promise<string>;
 }) {
   const [draft, setDraft] = useState<CredentialDraft | null>(null);
   const modalRef = useRef<HTMLElement>(null);
@@ -164,6 +166,17 @@ export default function NamedCredentials({
     }
   };
 
+  const authorizeOAuth=async(credential:NamedCredentialMetadata)=>{
+    if(!onOAuthAuthorize||busyId)return;
+    setBusyId(credential.id);setError('');
+    try{
+      const url=await onOAuthAuthorize(credential.id);
+      const destination=new URL(url);
+      if(destination.protocol!=='https:')throw new Error('Authorization URL must use HTTPS');
+      window.location.assign(url);
+    }catch(error){setError(error instanceof Error?error.message:'OAuth authorization failed');}
+    finally{setBusyId('');}
+  };
   const testCredential = async (credential: NamedCredentialMetadata) => {
     if (busyId) return;
     setBusyId(credential.id);
@@ -204,6 +217,9 @@ export default function NamedCredentials({
           <td role="status">{testResults[credential.id] ?? 'Not tested'}</td>
           {!embedded && <td><label className="credential-switch" aria-label={`Connection status for ${credential.label}`}><input type="checkbox" role="switch" checked={credential.enabled !== false} disabled={!canManage || !onToggleEnabled || Boolean(toggleBusyId)} onChange={() => void toggleEnabled(credential)} /><span className="credential-switch-track" aria-hidden="true" /><span>{toggleBusyId === credential.id ? 'Updating…' : credential.enabled === false ? 'Disabled' : 'Enabled'}</span></label></td>}
           <td><div className="toolbar-actions">
+            {credential.authType==='OAuth Authorization Code'&&onOAuthAuthorize&&
+              <button className="btn btn-small" disabled={!canManage||Boolean(busyId)||credential.enabled===false}
+                onClick={()=>void authorizeOAuth(credential)}>Authorize</button>}
             <button className="btn btn-small" aria-label={`Test connection for ${credential.label}`} disabled={!(canTest ?? canManage) || credential.enabled === false || Boolean(busyId)} title={credential.protocol === 'SMTP' ? 'Verify SMTP connection, TLS and authentication without sending email' : 'Test saved HTTPS base URL with stored authentication'} onClick={() => void testCredential(credential)}>{busyId === credential.id ? 'Testing…' : 'Test Connection'}</button>
             <button className="icon-button subtle" aria-label={`View ${credential.label}`} onClick={() => editCredential(credential, true)}><Eye size={14} /></button>
             <button className="icon-button subtle" aria-label={`Edit ${credential.label}`} title={!canManage ? 'Manage Named Credentials permission required' : 'Edit credential'} disabled={!canManage || Boolean(busyId)} onClick={() => editCredential(credential)}><Pencil size={14} /></button>
@@ -238,11 +254,11 @@ export default function NamedCredentials({
         <PlatformPageSlot slotKey="field-credentials-04"><label className="form-label">{draft.protocol === 'SMTP' ? 'SMTP Server URL' : 'Base URL'}<input className="form-control" type="url" value={draft.baseUrl} aria-invalid={Boolean(touched.baseUrl && fieldErrors.baseUrl)} onBlur={() => blurField('baseUrl')} onChange={(event) => updateDraft({ baseUrl: event.target.value })} placeholder={draft.protocol === 'SMTP' ? 'smtp://smtp.example.com:587' : 'https://api.example.com/'} />{touched.baseUrl && fieldErrors.baseUrl && <small role="alert" className="field-error">{fieldErrors.baseUrl}</small>}</label></PlatformPageSlot>
         <PlatformPageSlot slotKey="field-credentials-05"><label className="form-label">Authentication<select className="form-control" value={draft.authType} onChange={(event) => {
           const authType = event.target.value as NamedCredentialMetadata['authType'];
-          updateDraft({ authType, configuration: authType === 'OAuth Client Credentials'
-            ? { clientId: '', tokenPath: '', scope: '', ...draft.configuration }
+          updateDraft({ authType, configuration: ['OAuth Client Credentials','OAuth Authorization Code'].includes(authType)
+            ? { clientId: '', ...(authType==='OAuth Authorization Code'?{authorizationUrl:'',tokenUrl:''}:{tokenPath:''}), scope: '', ...draft.configuration }
             : draft.configuration });
         }}>
-          {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials']).map((authType) => <option key={authType}>{authType}</option>)}
+          {(draft.protocol === 'SMTP' ? ['None', 'Basic'] : ['None', 'Bearer', 'Basic', 'API Key', 'OAuth Client Credentials', 'OAuth Authorization Code']).map((authType) => <option key={authType}>{authType}</option>)}
         </select></label></PlatformPageSlot>
         <fieldset className="connector-config-fields named-credential-span-full" style={{ border: 0, padding: 0, margin: '12px 0' }}>
           <legend>Configuration variables</legend>
@@ -257,7 +273,7 @@ export default function NamedCredentials({
             if (key && /^[A-Za-z][A-Za-z0-9_]*$/.test(key)) updateDraft({ configuration: { ...draft.configuration, [key]: '' } });
           }}>Add variable</button>}
         </fieldset>
-        {draft.authType === 'OAuth Client Credentials' && <div className="info-callout named-credential-span-full">Configure clientId, tokenPath (relative to the HTTPS Base URL), and optional scope. Enter the client secret in the encrypted Secret field. Enter the client secret in the encrypted Secret field. OAuth tokens are protected and never exposed to Flows.</div>}
+        {['OAuth Client Credentials','OAuth Authorization Code'].includes(draft.authType) && <div className="info-callout named-credential-span-full">Configure clientId and scope. Client Credentials requires tokenPath (relative to Base URL); Authorization Code requires public HTTPS authorizationUrl and tokenUrl. Enter the client secret in the encrypted Secret field. Enter the client secret in the encrypted Secret field. OAuth tokens are protected and never exposed to Flows.</div>}
         {draft.authType === 'API Key' && <PlatformPageSlot slotKey="field-credentials-06"><label className="form-label">API Key Header<input className="form-control" value={draft.headerName ?? ''} onChange={(event) => updateDraft({ headerName: event.target.value })} placeholder="X-API-Key" /></label></PlatformPageSlot>}
         {draft.authType === 'Basic' && canManageSecrets && <PlatformPageSlot slotKey="field-credentials-07"><label className="form-label">Username<input className="form-control" autoComplete="off" value={draft.username ?? ''} onChange={(event) => updateDraft({ username: event.target.value })} placeholder={draft.id ? 'Leave blank to retain' : ''} /></label></PlatformPageSlot>}
         {draft.authType !== 'None' && canManageSecrets && <PlatformPageSlot slotKey="field-credentials-08"><label className="form-label">{draft.authType === 'Basic' ? 'Password' : draft.authType === 'OAuth Client Credentials' ? 'Client Secret' : 'Secret'}<input className="form-control" type="password" autoComplete="new-password" value={draft.secret ?? ''} onChange={(event) => updateDraft({ secret: event.target.value })} placeholder={draft.id ? 'Stored securely · blank keeps existing secret' : 'Enter secret'} /></label></PlatformPageSlot>}
