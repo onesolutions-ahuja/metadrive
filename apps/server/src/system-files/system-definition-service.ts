@@ -50,14 +50,18 @@ export class SystemDefinitionService {
     if(JSON.stringify(properties).length>65536)throw new Error('Invalid definition size');
     const expected=revision===undefined?0:revision;
     if(!Number.isSafeInteger(expected)||Number(expected)<0)throw new Error('Invalid definition revision');
-    const {rows}=await this.db.query<{revision:number}>(`
-      INSERT INTO md_system_definitions(tenant_id,kind,api_name,label,properties,enabled,revision)
-      SELECT $1,$2,$3,$4,$5::jsonb,$6,1 WHERE $7=0
-      ON CONFLICT(tenant_id,kind,api_name) DO UPDATE SET
-        label=EXCLUDED.label,properties=EXCLUDED.properties,enabled=EXCLUDED.enabled,
-        revision=md_system_definitions.revision+1,updated_at=now()
-      WHERE md_system_definitions.revision=$7
-      RETURNING revision`,[tenantId,kind,apiName,label,JSON.stringify(properties),enabled!==false,expected]);
+    // Update an existing revision, or create a new definition only at revision zero.
+    // Avoid INSERT ... WHERE expected=0 in an UPSERT: that prevents updates entirely.
+    const sql=Number(expected)===0
+      ? `INSERT INTO md_system_definitions(tenant_id,kind,api_name,label,properties,enabled,revision)
+           VALUES ($1,$2,$3,$4,$5::jsonb,$6,1)
+           ON CONFLICT(tenant_id,kind,api_name) DO NOTHING RETURNING revision`
+      : `UPDATE md_system_definitions
+           SET label=$4,properties=$5::jsonb,enabled=$6,revision=revision+1,updated_at=now()
+           WHERE tenant_id=$1 AND kind=$2 AND api_name=$3 AND revision=$7
+           RETURNING revision`;
+    const {rows}=await this.db.query<{revision:number}>(sql,
+      [tenantId,kind,apiName,label,JSON.stringify(properties),enabled!==false,expected]);
     if(!rows.length)throw new Error('Definition revision conflict');
     return {apiName,label,revision:rows[0].revision};
   }
