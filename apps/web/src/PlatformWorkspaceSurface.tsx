@@ -12,8 +12,8 @@ import {resolvePageComponentStyle} from './pageComponentLayout';
  * The enclosing Setup route and every OneEngine API retain their RBAC gates.
  * A client-side descriptor does not grant permissions or execute actions.
  */
-export type SystemWorkspaceId='app-manager'|'app-exchange'|'tenant-management'|'rbac'|'company-settings'|'object-manager'|'named-credentials'|'approval-processes'|'automation-settings'|'connector-settings';
-const supported:ReadonlySet<string>=new Set(['app-manager','app-exchange','tenant-management','rbac','company-settings','object-manager','named-credentials','approval-processes','automation-settings','connector-settings']);
+export type SystemWorkspaceId='app-manager'|'app-exchange'|'tenant-management'|'rbac'|'company-settings'|'object-manager'|'named-credentials'|'approval-processes'|'automation-settings';
+const supported:ReadonlySet<string>=new Set(['app-manager','app-exchange','tenant-management','rbac','company-settings','object-manager','named-credentials','approval-processes','automation-settings']);
 const descriptions:Readonly<Record<SystemWorkspaceId,string>>={
  'app-manager':'Configure applications and navigation',
  'app-exchange':'Manage installed applications',
