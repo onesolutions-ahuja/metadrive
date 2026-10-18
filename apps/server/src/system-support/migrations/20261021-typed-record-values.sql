@@ -44,8 +44,39 @@ FROM md_field_definitions f
 WHERE f.tenant_id=v.tenant_id AND f.object_api=v.object_api AND f.api_name=v.field_api
  AND f.data_type='boolean' AND v.value_text IN ('true','false')
  AND v.value_boolean IS NULL;
--- Date/time backfill requires strict historical-data validation before casting.
--- New and updated records populate typed columns through the trigger.
+-- Use a safe partial backfill to preserve malformed historical values for repair.
+-- YYYY-MM-DD lexical validation is not enough (e.g. February 30), so use a
+-- guarded casting helper that returns NULL rather than aborting the migration.
+CREATE OR REPLACE FUNCTION md_try_record_date(raw text) RETURNS date
+LANGUAGE plpgsql IMMUTABLE AS $
+BEGIN
+ IF raw IS NULL OR raw !~ '^\\d{4}-\\d{2}-\\d{2}
+CREATE INDEX IF NOT EXISTS md_record_values_numeric_idx ON md_record_values(tenant_id,object_api,field_api,value_number) WHERE value_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS md_record_values_date_idx ON md_record_values(tenant_id,object_api,field_api,value_date) WHERE value_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS md_record_values_datetime_idx ON md_record_values(tenant_id,object_api,field_api,value_datetime) WHERE value_datetime IS NOT NULL;
+ THEN RETURN NULL; END IF;
+ RETURN raw::date;
+EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN RETURN NULL;
+END $;
+CREATE OR REPLACE FUNCTION md_try_record_datetime(raw text) RETURNS timestamptz
+LANGUAGE plpgsql STABLE AS $
+BEGIN
+ IF raw IS NULL OR raw !~ '(Z|[+-][0-9]{2}:[0-9]{2})
+CREATE INDEX IF NOT EXISTS md_record_values_numeric_idx ON md_record_values(tenant_id,object_api,field_api,value_number) WHERE value_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS md_record_values_date_idx ON md_record_values(tenant_id,object_api,field_api,value_date) WHERE value_date IS NOT NULL;
+CREATE INDEX IF NOT EXISTS md_record_values_datetime_idx ON md_record_values(tenant_id,object_api,field_api,value_datetime) WHERE value_datetime IS NOT NULL;
+ THEN RETURN NULL; END IF;
+ RETURN raw::timestamptz;
+EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN RETURN NULL;
+END $;
+UPDATE md_record_values v SET value_date=md_try_record_date(v.value_text)
+FROM md_field_definitions f
+WHERE f.tenant_id=v.tenant_id AND f.object_api=v.object_api AND f.api_name=v.field_api
+ AND f.data_type='date' AND v.value_text IS NOT NULL AND v.value_date IS NULL;
+UPDATE md_record_values v SET value_datetime=md_try_record_datetime(v.value_text)
+FROM md_field_definitions f
+WHERE f.tenant_id=v.tenant_id AND f.object_api=v.object_api AND f.api_name=v.field_api
+ AND f.data_type='datetime' AND v.value_text IS NOT NULL AND v.value_datetime IS NULL;
 CREATE INDEX IF NOT EXISTS md_record_values_numeric_idx ON md_record_values(tenant_id,object_api,field_api,value_number) WHERE value_number IS NOT NULL;
 CREATE INDEX IF NOT EXISTS md_record_values_date_idx ON md_record_values(tenant_id,object_api,field_api,value_date) WHERE value_date IS NOT NULL;
 CREATE INDEX IF NOT EXISTS md_record_values_datetime_idx ON md_record_values(tenant_id,object_api,field_api,value_datetime) WHERE value_datetime IS NOT NULL;
