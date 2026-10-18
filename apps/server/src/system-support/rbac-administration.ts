@@ -2,7 +2,7 @@ import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import {RbacEngine} from '../system-files/rbac-engine.js';
 import {snapshot,grantRules,type Snapshot,type Rule} from './rbac-contract.js';
 import {readRbac} from './rbac-description.js';
-import {validateRbac} from './rbac-validation.js';
+import {validateRbac,groupMutes} from './rbac-validation.js';
 import {writeRbac} from './rbac-persistence.js';
 const stable=(value:unknown):string=>JSON.stringify(value,(_key,v)=>
  v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);
@@ -99,6 +99,17 @@ export class RbacAdministration{
     const desired=grantRules(updated);
     for(const r of grantRules(p).filter(r=>r.effect==='deny')){
      if(!desired.some(n=>stable(n)===stable(r)))newAllows.push({...r,effect:'allow'});
+    }
+   }
+   // Removing a group mute restores grants for existing members without altering
+   // policies or assignment links. Delegated admins must hold restored authority.
+   for(const group of next.permissionSetGroups){
+    const old=previous.permissionSetGroups.find(g=>g.id===group.id);
+    if(!old)continue;
+    const stillMuted=groupMutes(group);
+    for(const rule of groupMutes(old)){
+     if(stillMuted.some(r=>stable(r)===stable(rule)))continue;
+     await currentRbac.require(tenant,actor,rule.resource,rule.action);
     }
    }
    // Changes to existing assignment links can delegate grants without changing any
