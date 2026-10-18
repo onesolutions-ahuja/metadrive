@@ -45,6 +45,18 @@ export class ObjectDefinitionService {
       for(const field of normalized)await client.query(
         'INSERT INTO md_field_definitions (tenant_id,object_api,api_name,data_type,related_object,required,max_length,label) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
         [tenantId,apiName,field.apiName,field.dataType,field.relatedObject,field.required,field.maxLength,field.label]);
+      // Create the first Page Layout together with its object and fields.
+      await client.query('INSERT INTO md_object_page_layouts (tenant_id,object_api,layout_id,label,sort_order) VALUES ($1,$2,$3,$4,0)',
+        [tenantId,apiName,'default',label+' Layout']);
+      await client.query(`INSERT INTO md_object_page_layout_sections
+        (tenant_id,object_api,layout_id,section_id,label,columns,sort_order)
+        VALUES ($1,$2,'default','details','Record Information',2,0)`,[tenantId,apiName]);
+      for(const [sortOrder,field] of normalized.entries())await client.query(`INSERT INTO md_object_page_layout_fields
+        (tenant_id,object_api,layout_id,section_id,field_api,sort_order)
+        VALUES ($1,$2,'default','details',$3,$4)`,[tenantId,apiName,field.apiName,sortOrder]);
+      for(const [sortOrder,action] of ['New','Edit','Delete'].entries())await client.query(`INSERT INTO md_object_page_layout_actions
+        (tenant_id,object_api,layout_id,action_name,sort_order)
+        VALUES ($1,$2,'default',$3,$4)`,[tenantId,apiName,action,sortOrder]);
     });
     return this.get(tenantId,apiName);
   }
@@ -214,7 +226,7 @@ export class ObjectDefinitionService {
       throw new Error('Invalid page layout request');
     const input=payload as Record<string,unknown>;
     if(!Array.isArray(input.pageLayouts)||!Array.isArray(input.pageLayoutAssignments)
-      ||input.pageLayouts.length>100||input.pageLayoutAssignments.length>1000)
+      ||input.pageLayouts.length===0||input.pageLayouts.length>100||input.pageLayoutAssignments.length>1000)
       throw new Error('Invalid page layout request');
     const string=(v:unknown,max=128):v is string=>typeof v==='string'&&v.trim().length>0&&v.length<=max;
     const list=(v:unknown,max=200):v is string[]=>Array.isArray(v)&&v.length<=max
@@ -285,6 +297,11 @@ export class ObjectDefinitionService {
       const version=await client.query<{revision:number}>(
         'SELECT revision FROM md_object_layout_versions WHERE tenant_id=$1 AND object_api=$2 FOR UPDATE',[tenantId,objectApi]);
       if(version.rows[0].revision!==expectedRevision)throw new Error('Page layout revision conflict');
+      if(typeof input.label==='string'){
+        if(!input.label.trim()||input.label.length>200)throw new Error('Invalid object label');
+        await client.query('UPDATE md_object_definitions SET label=$3 WHERE tenant_id=$1 AND api_name=$2',
+          [tenantId,objectApi,input.label.trim()]);
+      }
       await client.query('DELETE FROM md_object_page_layouts WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
       for(const [i,layout] of normalized.entries()){
         await client.query(`INSERT INTO md_object_page_layouts
