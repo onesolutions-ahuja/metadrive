@@ -36,9 +36,10 @@ export class SystemDefinitionService {
     await this.rbac.require(tenantId,userId,'SystemDefinition:'+kind,'manage');
     if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('Invalid definition');
     const body=value as Record<string,unknown>;
-    if(typeof body.apiName!=='string'||! /^[A-Za-z][A-Za-z0-9_]*$/.test(body.apiName)
+    const apiName=typeof body.apiName==='string'?body.apiName:body.name;
+    if(typeof apiName!=='string'||! /^[A-Za-z][A-Za-z0-9_]*$/.test(apiName)
       ||typeof body.label!=='string'||!body.label.trim())throw new Error('Invalid definition');
-    const {apiName,label,revision,enabled,...properties}=body;
+    const {apiName:_apiName,name:_name,id:_id,label,revision,enabled,...properties}=body;
     // Optional metadata must not become an unencrypted credential store.
     const hasSecret=(value:unknown):boolean=>{
       if(Array.isArray(value))return value.some(hasSecret);
