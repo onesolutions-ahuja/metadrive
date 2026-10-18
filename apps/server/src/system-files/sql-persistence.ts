@@ -22,6 +22,14 @@ export function resolveSqlConnection(databaseUrl:string,env:NodeJS.ProcessEnv) {
     ssl:{ca:candidate,rejectUnauthorized:true,servername:uri.hostname}
   };
 }
+export function resolveSqlPoolSize(env:NodeJS.ProcessEnv):number {
+  const raw=env.METADRIVE_DB_POOL_MAX?.trim();
+  if(!raw)return 5; // Leave headroom for additional replicas, workers and administrative connections.
+  if(!/^[1-9][0-9]*$/.test(raw))throw new Error('Invalid SQL connection pool size');
+  const value=Number(raw);
+  if(!Number.isSafeInteger(value)||value>50)throw new Error('Invalid SQL connection pool size');
+  return value;
+}
 export class SqlPersistence {
   readonly pool: Pool;
   constructor(databaseUrl: string) {
@@ -29,7 +37,7 @@ export class SqlPersistence {
     // Aiven's dedicated SQL database is selected by environment configuration.
     // Retain TLS and credential options from the original DATABASE_URL.
     const config=resolveSqlConnection(databaseUrl,process.env);
-    this.pool = new Pool({ ...config, max: 10, connectionTimeoutMillis: 10000 });
+    this.pool = new Pool({ ...config, max: resolveSqlPoolSize(process.env), connectionTimeoutMillis: 10000 });
   }
   query<T extends QueryResultRow = QueryResultRow>(sql: string, params: readonly unknown[] = []) {
     return this.pool.query<T>(sql, [...params]);
