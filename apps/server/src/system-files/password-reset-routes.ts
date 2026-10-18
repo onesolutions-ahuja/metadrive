@@ -1,6 +1,6 @@
 import {createHmac,randomInt,timingSafeEqual} from 'node:crypto';
 import type {Express,Request,Response,NextFunction} from 'express';
-import nodemailer from 'nodemailer';
+import {recoveryConfigured,sendRecoveryCode} from './tenant-recovery-mail.js';
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
 const wrap=(fn:(req:Request,res:Response)=>Promise<void>)=>(req:Request,res:Response,next:NextFunction)=>{void fn(req,res).catch(next);};
@@ -17,10 +17,11 @@ export function registerPasswordResetRoutes(app:Express,db:SqlPersistence,resolv
  app.post('/api/auth/password-reset/request',wrap(async(req,res)=>{
   const email=req.body?.email,slug=req.body?.tenantSlug;
   if(typeof email!=='string'||email.length>254||!emailPattern.test(email))throw Error('Invalid email');
-  const transport=process.env.METADRIVE_RESET_SMTP_URL,from=process.env.METADRIVE_RESET_FROM_EMAIL;
-  if(!transport||!from||!process.env.METADRIVE_OTP_HMAC_KEY)throw Error('Password recovery is not configured');
+  const secret=process.env.METADRIVE_OTP_HMAC_KEY;
+  if(!secret||Buffer.byteLength(secret)<32)throw Error('Password recovery is not configured');
   const tenantId=await resolveTenant(req,slug);
   if(!tenantId){res.json({message:generic});return;}
+  if(!(await recoveryConfigured(db,tenantId)))throw Error('Password recovery is not configured');
   const result=await db.query<{id:string}>(
    'SELECT id FROM md_users WHERE tenant_id=$1 AND lower(email)=lower($2) AND enabled=true',[tenantId,email]);
   const id=result.rows[0]?.id;
@@ -35,10 +36,8 @@ export function registerPasswordResetRoutes(app:Express,db:SqlPersistence,resolv
     WHERE md_password_reset_otps.created_at<=now()-interval '60 seconds'
     RETURNING user_id`,[tenantId,id,hash]);
    if(stored.rows[0]){
-    const smtp=nodemailer.createTransport(transport);
     try {
-     await smtp.sendMail({from,to:email,subject:'Your MetaDrive verification code',
-       text:'Your MetaDrive password reset code is '+challenge+'. It expires in 15 minutes. If you did not request this, ignore the message.'});
+     await sendRecoveryCode(db,tenantId,email,challenge);
     }catch(error){
      await db.query('DELETE FROM md_password_reset_otps WHERE tenant_id=$1 AND user_id=$2 AND otp_hash=$3',[tenantId,id,hash]);
      throw error;
