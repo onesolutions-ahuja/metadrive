@@ -486,3 +486,35 @@ test('Object relationship dependency discovery reads tenant-scoped SQL with no i
  assert.deepEqual((await engine.fieldDependencies('tenant','Sale__c')).fields,[{fieldApiName:'CustomerId',dependencies:['Customer__c']}]);
  assert.ok(calls.every(args=>args[0]==='tenant'));
 });
+
+test('Flow logs expose only the caller tenant failed SQL runs with RBAC',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const calls:unknown[][]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+   calls.push(args);
+   assert.match(sql,/r.tenant_id=\$1/);
+   if(sql.includes("status='failed'"))return {rows:[{
+     id:'r1',api_name:'ORDER_FLOW',label:'Order Flow',started_by:'user',
+     finished_at:new Date('2026-10-18T12:00:00Z'),started_at:new Date('2026-10-18T11:00:00Z'),
+     error_code:'FAILED_ACTION'
+   }]};
+   return {rows:[]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async(t:string,u:string,resource:string,action:string)=>{
+   assert.deepEqual([t,u,resource,action],['tenant','user','FlowDefinition','read']);
+ }} as unknown as RbacEngine;
+ const result=await new FlowRuntime(db,rbac).failedLogs('tenant','user');
+ assert.equal(result.logs[0].error,'FAILED_ACTION');
+ assert.equal(result.logs[0].flowApiName,'ORDER_FLOW');
+ assert.deepEqual(calls,[['tenant']]);
+});
+test('Pending Flow interviews use SQL pending runs rather than fabricated sample records',async()=>{
+ const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+ const db={query:async(sql:string,args:unknown[])=>{
+   assert.match(sql,/status='pending'/);
+   assert.deepEqual(args,['tenant']);
+   return {rows:[]};
+ }} as unknown as SqlPersistence;
+ const rbac={require:async()=>{}} as unknown as RbacEngine;
+ assert.deepEqual(await new FlowRuntime(db,rbac).pendingInterviews('tenant','user'),{interviews:[]});
+});
