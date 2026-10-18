@@ -19,6 +19,7 @@ export function registerFlowJobHandler(worker:DurableJobWorker,db:SqlPersistence
     JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
     JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
     WHERE a.api_name=$2 AND a.enabled=true AND e.active=true
+      AND (e.expires_at IS NULL OR e.expires_at>now())
       AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)`,
      [job.tenant_id,job.app_api_name]);
    if(!apps.length)return false;
