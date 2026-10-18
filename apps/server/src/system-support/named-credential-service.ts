@@ -113,6 +113,14 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','manage');
   if(!/^[0-9a-f-]{36}$/i.test(id)||!body||typeof body!=='object'||Array.isArray(body))
    throw new Error('Invalid credential');
+  const current=await this.db.query<{encryption_key_id:string;secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null}>(
+   'SELECT encryption_key_id,secret_ciphertext,configuration_ciphertext FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
+   [tenantId,id]);
+  if(!current.rows[0])throw new Error('Credential not found');
+  // A partial update cannot re-label ciphertext encrypted with an older key.
+  if(current.rows[0].encryption_key_id!==this.activeKeyId() &&
+     (current.rows[0].secret_ciphertext || current.rows[0].configuration_ciphertext))
+    throw new Error('Credential key rotation requires a complete re-encryption workflow');
   const x=body as Record<string,unknown>;
   if(typeof x.name!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(x.name)||
     typeof x.label!=='string'||!x.label.trim()||
