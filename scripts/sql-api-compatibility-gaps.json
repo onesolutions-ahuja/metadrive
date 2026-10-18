@@ -21,7 +21,6 @@
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}",
     "/named-credentials/${encodeURIComponent(id)}/oauth/start",
     "/platform/recovery/cases/",
-    "/reports/",
     "/tenant/developer-account",
     "/tenant/developer-account/activate",
     "/tenant/recovery/contacts"
