@@ -1,4 +1,5 @@
 import type {SqlPersistence} from './sql-persistence.js';
+import {ObjectMetadataHistory} from './object-metadata-history.js';
 type SqlObject={id:string;api_name:string;label:string;is_system:boolean};
 type SqlField={id:string;label:string|null;object_api:string;api_name:string;data_type:string;related_object:string|null;required:boolean;max_length:number|null;picklist_restricted?:boolean};
 const sqlFieldTypes:Record<string,string>={
@@ -295,7 +296,7 @@ export class ObjectDefinitionService {
   }
 
   /** Atomic layout replacement with optimistic concurrency and strict referential validation. */
-  async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number){
+  async replaceLayouts(tenantId:string,objectApi:string,payload:unknown,expectedRevision:number,actorUserId?:string){
     if(!payload||typeof payload!=='object'||Array.isArray(payload)
       ||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)
       throw new Error('Invalid page layout request');
@@ -396,7 +397,7 @@ export class ObjectDefinitionService {
     }
     await this.db.transaction(async client=>{
       const found=await client.query(
-        'SELECT 1 FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,objectApi]);
+        'SELECT label FROM md_object_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',[tenantId,objectApi]);
       if(!found.rows.length)throw new Error('Object not found');
       await client.query(`INSERT INTO md_object_layout_versions(tenant_id,object_api)
         VALUES ($1,$2) ON CONFLICT DO NOTHING`,[tenantId,objectApi]);
@@ -460,6 +461,12 @@ export class ObjectDefinitionService {
       }
       await client.query(`UPDATE md_object_layout_versions SET revision=revision+1,updated_at=now()
         WHERE tenant_id=$1 AND object_api=$2`,[tenantId,objectApi]);
+      await ObjectMetadataHistory.capture(client,tenantId,objectApi,expectedRevision+1,actorUserId,{
+        apiName:objectApi,label:typeof input.label==='string'?input.label.trim():
+          (found.rows[0] as {label:string}).label,
+        revision:expectedRevision+1,pageLayouts:normalized,pageLayoutAssignments:assigned,
+        ...(recordTypes?{recordTypes}:{}),
+      });
     });
     return this.get(tenantId,objectApi);
   }
