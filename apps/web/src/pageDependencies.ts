@@ -1,3 +1,4 @@
+import {resolveMetadataProperties} from './metadataReferences';
 import { resolvePageActionRoute } from './pageActionRouting';
 import { componentApiNameFromMetadata, findRegisteredComponentForInstance } from './componentRegistryLookup';
 import type {
@@ -50,7 +51,7 @@ export function inspectPageDependencies(page: LightningPageMetadata, scope: Depe
   }
 
   for (const component of page.components) {
-    const properties = component.properties ?? {};
+    const properties = resolveMetadataProperties(component.properties ?? {},scope.objects,scope.flows);
     if (component.type === 'Dashboard') {
       const name = identifier(properties.dashboardApiName);
       const dashboard = scope.dashboards.find(item => item.apiName === name);

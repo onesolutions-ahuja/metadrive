@@ -175,7 +175,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(typeof apiName!=='string'||typeof dataType!=='string'||
       (relatedObject!==undefined&&typeof relatedObject!=='string'))
       throw new Error('Invalid field definition');
-    await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject);
+    await definitions.addField(actor.tenant_id,req.params.apiName,apiName,dataType,relatedObject,typeof field.label==='string'?field.label:undefined);
     res.status(201).json({object:await definitions.get(actor.tenant_id,req.params.apiName)});
   }));
   app.get('/api/component-library',route(async(req,res)=>{
@@ -213,7 +213,7 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.post('/api/flows/:apiName/execute',route(async(req,res)=>{
     const actor=req.actor!;
-    const inputs=req.body?.inputs??{};
+    const inputs=req.body?.inputs??req.body??{};
     if(!inputs||typeof inputs!=='object'||Array.isArray(inputs))throw new Error('Invalid Flow inputs');
     res.json(await flows.execute(actor.tenant_id,req.params.apiName,actor.user_id,inputs));
   }));
@@ -221,6 +221,13 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
     res.json({flow:await flows.loadActive(actor.tenant_id,req.params.apiName)});
+  }));
+  app.post('/api/apps/:apiName/install',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    if(req.body?.pageSeed)await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','create');
+    await apps.install(actor.tenant_id,req.params.apiName,req.body?.pageSeed);
+    res.status(204).end();
   }));
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;

@@ -216,8 +216,8 @@ function RecordWorkspace({
   objects: ObjectMetadata[];
   apps: LightningAppMetadata[];
   pages: LightningPageMetadata[];
-  availableFlows: Array<Pick<FlowDefinitionMetadata, 'apiName' | 'label' | 'flowType' | 'status'>>;
-  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>) => void;
+  availableFlows: Array<Pick<FlowDefinitionMetadata, 'id' | 'apiName' | 'label' | 'flowType' | 'status'>>;
+  onLaunchFlow: (flowApiName: string, inputs?: Record<string, unknown>, context?:{requestId?:string}) => void;
   reports: ReportMetadata[];
   metadataLoaded: boolean;
   profileId: string;

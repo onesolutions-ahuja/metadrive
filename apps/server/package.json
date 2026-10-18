@@ -9,7 +9,7 @@
     "test": "npm run test:unit --prefix ../..",
     "start": "node dist-system/system-files/entrypoint.js",
     "build:system": "tsc -p tsconfig.system-files.json",
-    "test:system": "tsx --test src/system-files/system.test.ts",
+    "test:system": "node --import tsx --test src/system-files/*.test.ts",
     "provision:tenant": "node dist-system/system-files/provision-cli.js",
     "preflight:sql": "tsx src/system-files/cutover-cli.ts"
   },

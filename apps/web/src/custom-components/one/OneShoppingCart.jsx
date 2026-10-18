@@ -4,7 +4,7 @@ function flowAction(props,event,value) {
 }
 
 function currency(value,code) {
- return (Number(value||0)/100).toLocaleString(undefined,{style:'currency',currency:code||'GBP'});
+ return (Number(value||0)/100).toLocaleString(undefined,{style:'currency',currency:code});
 }
 
 function validCart(value) {
@@ -17,15 +17,14 @@ function validCart(value) {
   })):[];
 }
 
-function makeSnapshot(items,status,changeDueMinor=0) {
- const visibleStatus=status==='basket'&&items.some(item=>item.ageRestricted)?'staff-approval-required':status;
- return {status:visibleStatus,items:items.map(item=>({
+function makeSnapshot(items,status,changeDueMinor=0,message='') {
+ return {status,message,items:items.map(item=>({
   name:item.name,quantity:item.quantity,lineTotalMinor:item.unitPriceMinor*item.quantity
  })),totalMinor:items.reduce((sum,item)=>sum+item.unitPriceMinor*item.quantity,0),changeDueMinor};
 }
 
 function ShoppingCartDisplay({props}) {
- const [snapshot,setSnapshot]=React.useState({status:'waiting',items:[],totalMinor:0,changeDueMinor:0});
+ const [snapshot,setSnapshot]=React.useState({status:'waiting',message:'',items:[],totalMinor:0,changeDueMinor:0});
  const session=typeof window==='undefined'?'':new URLSearchParams(window.location.search)
   .get(props.stateSessionQueryParam||'displaySession')||'';
  const apply=payload=>{
@@ -34,7 +33,7 @@ function ShoppingCartDisplay({props}) {
    Number.isSafeInteger(item.quantity)&&item.quantity>0&&Number.isSafeInteger(item.lineTotalMinor)&&item.lineTotalMinor>=0)
    .map(item=>({name:item.name.slice(0,160),quantity:item.quantity,lineTotalMinor:item.lineTotalMinor}));
   const totalMinor=Number(payload.totalMinor),changeDueMinor=Number(payload.changeDueMinor||0);
-  setSnapshot({status:typeof payload.status==='string'?payload.status:'basket',items,
+  setSnapshot({status:typeof payload.status==='string'?payload.status:'basket',message:String(payload.message??''),items,
    totalMinor:Number.isSafeInteger(totalMinor)&&totalMinor>=0?totalMinor:0,
    changeDueMinor:Number.isSafeInteger(changeDueMinor)&&changeDueMinor>=0?changeDueMinor:0});
  };
@@ -49,16 +48,8 @@ function ShoppingCartDisplay({props}) {
   return()=>channel.close();
  },[session]);
  const status=snapshot.status;
- const statusText=props.stateChannel?.error?props.reconnectingText||'Reconnecting to the till…'
-  :status==='staff-approval-required'?props.staffApprovalText||'Staff approval required'
-  :status==='payment-pending'?props.paymentPendingText||'Payment in progress'
-  :status==='complete'?props.thankYouText||'Thank you'
-  :status==='declined'?props.paymentDeclinedText||'Payment declined'
-  :status==='insufficient-cash'?props.insufficientCashText||'Please speak to the cashier'
-  :status==='age-rejected'?props.ageCheckFailedText||'Please speak to the cashier'
-  :status==='payment-cancelled'?props.paymentCancelledText||'Payment cancelled'
-  :status==='payment-failed'?props.paymentFailedText||'Please speak to the cashier'
-  :props.waitingText||'Your basket will appear here';
+ const statusText=props.stateChannel?.error?props.reconnectingText||'Reconnecting…'
+  :snapshot.message||props.waitingText||'';
  return <main className="one-shopping-display" aria-label={props.title||'Customer display'}>
   <header><span>{props.storeName||'Welcome'}</span><strong>{props.title||'Your order'}</strong></header>
   <section aria-live="polite">
@@ -84,8 +75,9 @@ function ShoppingCartTill({props}) {
  const [busy,setBusy]=React.useState(false);
  const [displaySession,setDisplaySession]=React.useState('');
  const [paymentStatus,setPaymentStatus]=React.useState('');
- const [vatRate,setVatRate]=React.useState(Number(props.vatRate??20));
- const [settingsReady,setSettingsReady]=React.useState(typeof props.loadCompanySettings!=='function');
+ const [vatRate,setVatRate]=React.useState(props.vatRate!==''&&props.vatRate!=null?Number(props.vatRate):NaN);
+ const [settingsReady,setSettingsReady]=React.useState(false);
+ const [statusMessage,setStatusMessage]=React.useState('');
  const request=React.useRef('');
  const channel=props.stateChannel;
  const sessionReady=props.previewOnly===true||(channel?channel.ready&&channel.exists&&!channel.error:props.stateSyncEnabled!==true);
@@ -95,12 +87,11 @@ function ShoppingCartTill({props}) {
  catch{operationError='Invalid operationEvents metadata.';}
  operations=operations.filter(item=>item&&typeof item.event==='string'&&typeof item.label==='string');
 
- const price=item=>Math.round(Number(item[props.priceFieldApiName||'DefaultPrice'])*100);
- const name=item=>String(item[props.nameFieldApiName||'Name']||'');
+ const price=item=>Math.round(Number(item[props.priceFieldApiName||''])*100);
+ const name=item=>String(item[props.nameFieldApiName||'']||'');
  const gross=cart.reduce((sum,item)=>sum+item.unitPriceMinor*item.quantity,0);
  const vat=cart.reduce((sum,item)=>sum+(item.vatApplicable?
   Math.round(item.unitPriceMinor*item.quantity*vatRate/(100+vatRate)):0),0);
- const ageRestricted=cart.some(item=>item.ageRestricted);
  const saleValue=items=>{
   const total=items.reduce((sum,item)=>sum+item.unitPriceMinor*item.quantity,0);
   const tax=items.reduce((sum,item)=>sum+(item.vatApplicable?
@@ -113,74 +104,81 @@ function ShoppingCartTill({props}) {
   })),total:total/100,vatTotal:tax/100,standardVatRate:vatRate,
    hasAgeRestricted:items.some(item=>item.ageRestricted)};
  };
- const publish=(items,status='basket',changeDueMinor=0)=>{if(props.previewOnly===true)return;
-  const snapshot=makeSnapshot(items,status,changeDueMinor);
+ const publish=(items,status='basket',changeDueMinor=0,message='')=>{if(props.previewOnly===true)return;
+  const snapshot=makeSnapshot(items,status,changeDueMinor,message);
   if(channel){channel.publish({cart:items,paymentStatus:status,display:snapshot});return;}
   if(props.stateSyncEnabled===true||!displaySession||typeof BroadcastChannel==='undefined')return;
   const target=new BroadcastChannel('metadrive:paired-display:'+displaySession);
   target.postMessage({type:'snapshot',payload:snapshot});target.close();
  };
- const updateCart=next=>{setCart(next);setPaymentStatus('');publish(next);};
+ const updateCart=next=>{setCart(next);setPaymentStatus('');setStatusMessage('');publish(next);};
  React.useEffect(()=>{if(channel){setCart([]);setPaymentStatus('');}},[channel?.key]);
  React.useEffect(()=>{
   const value=channel?.value;
   if(!value||!Array.isArray(value.cart))return;
   setCart(validCart(value.cart));
-  setPaymentStatus(value.paymentStatus==='payment-pending'?'pending':value.paymentStatus==='complete'?'complete':'');
+  setPaymentStatus(['pending','complete','failed','cancelled'].includes(value.paymentStatus)?value.paymentStatus:'');
+  setStatusMessage(typeof value.display?.message==='string'?value.display.message:'');
  },[channel?.value]);
  React.useEffect(()=>{
-  if(typeof props.loadCompanySettings!=='function')return undefined;
   let active=true;
-  Promise.resolve(props.loadCompanySettings()).then(settings=>{
-   const configured=Number(settings?.standardVatRate);
+  setSettingsReady(false);
+  const validate=settings=>{
+   const raw=props.vatRate!==''&&props.vatRate!=null?props.vatRate:settings?.standardVatRate;
+   const configured=raw!==''&&raw!=null?Number(raw):NaN;
    if(!Number.isFinite(configured)||configured<0||configured>100)
-    throw Error('Company VAT rate must be between 0 and 100 percent.');
-   if(active){setVatRate(configured);setSettingsReady(true);}
-  }).catch(cause=>{
-   if(active){setSettingsReady(false);setError('Unable to load company VAT settings: '+
-    (cause instanceof Error?cause.message:'request failed'));}
+    throw Error('Configure a valid tax rate or company tax setting.');
+   if(configured>0&&!props.vatApplicableFieldApiName)throw Error('Configure the tax applicability field.');
+   if(!props.currencyCode)throw Error('Configure a currency.');
+   new Intl.NumberFormat(undefined,{style:'currency',currency:props.currencyCode});
+   if(!props.checkoutStatusOutput||!props.checkoutRequestOutput)throw Error('Configure checkout status and request outputs.');
+   if(!props.nameFieldApiName||!props.priceFieldApiName)
+    throw Error('Configure item name and price fields.');
+   if(active){setVatRate(configured);setSettingsReady(true);setError('');}
+  };
+  const settings=props.vatRate!==''&&props.vatRate!=null?Promise.resolve({})
+   :typeof props.loadCompanySettings==='function'?Promise.resolve().then(()=>props.loadCompanySettings()):Promise.resolve({});
+  settings.then(validate).catch(cause=>{
+   if(active){setSettingsReady(false);setError(cause instanceof Error?cause.message:'Unable to load financial settings.');}
   });
   return()=>{active=false;};
- },[]);
+ },[props.vatRate,props.currencyCode,props.nameFieldApiName,props.priceFieldApiName,props.checkoutStatusOutput,props.checkoutRequestOutput,props.vatApplicableFieldApiName]);
+ // Only a Flow chooses business outcomes. This component understands the generic
+ // configured output contract, never app-specific outcome names or age decisions.
+ const applyFlowResult=(outputs,expectedRequest)=>{
+  const state={status:outputs?.[props.checkoutStatusOutput],requestId:outputs?.[props.checkoutRequestOutput],
+   message:outputs?.[props.checkoutMessageOutput],changeDueMinor:outputs?.[props.checkoutChangeOutput]};
+  if(!expectedRequest||state.requestId!==expectedRequest)
+   throw Error('The Flow must return the checkout requestId through its configured output.');
+  if(!['pending','complete','failed','cancelled'].includes(state.status))
+   throw Error('The Flow returned an invalid component lifecycle status.');
+  const change=Number(state.changeDueMinor??0);
+  if(!Number.isSafeInteger(change)||change<0)throw Error('The Flow returned an invalid change amount.');
+  setBusy(false);setPaymentStatus(state.status);
+  const message=typeof state.message==='string'?state.message:'';
+  setStatusMessage(message);publish(cart,state.status,change,message);
+  if(state.status!=='pending')request.current='';
+ };
  React.useEffect(()=>{
   const flow=props.actionFlows?.checkout?.flowApiName;
   if(typeof flow!=='string'||!flow)return undefined;
   const completed=event=>{
    const detail=event.detail;
-   if(!detail||detail.flowApiName!==flow)return;
-   const outputs=detail.outputs&&typeof detail.outputs==='object'?detail.outputs:{};
-   const expected=props.actionFlows?.checkout?.inputs?.CheckoutRequestKey;
-   if(expected&&outputs.CheckoutRequestKey!==request.current)return;
-   const status=outputs.CheckoutStatus;
-   if(status==='InvalidSale'||status==='InvalidPayment'){
-    setBusy(false);setPaymentStatus('failed');setError('The sale could not be validated. Check the basket and try again.');
-    publish(cart,'payment-failed');
-   }else if(status==='AgeRejected'){
-    const eligible=cart.filter(item=>!item.ageRestricted);updateCart(eligible);
-    if(!eligible.length){setPaymentStatus('age-rejected');publish([],'age-rejected');return;}
-    setBusy(true);
-    flowAction(props,'checkout',checkoutValue(eligible)).then(result=>{
-     if(result===false||result?.error)throw Error(String(result?.error||'Checkout was not started.'));
-     setPaymentStatus('pending');publish(eligible,'payment-pending');
-    }).catch(cause=>setError(cause instanceof Error?cause.message:'Unable to continue checkout.'))
-     .finally(()=>setBusy(false));
-   }else if(status==='Accepted'){
-    setPaymentStatus('complete');publish(cart,'complete',Math.round(Number(outputs.ChangeDue||0)*100));
-   }else if(status==='Declined'||status==='InsufficientCash'){
-    setPaymentStatus(status==='Declined'?'declined':'insufficient-cash');
-    publish(cart,status==='Declined'?'declined':'insufficient-cash');
-   }
+   if(!detail||detail.flowApiName!==flow||!request.current)return;
+   if(detail.requestId?detail.requestId!==request.current:detail.outputs?.[props.checkoutRequestOutput]!==request.current)return;
+   try{applyFlowResult(detail.outputs,request.current);}
+   catch(cause){request.current='';setBusy(false);setPaymentStatus('failed');setError(cause.message);publish(cart,'failed',0,cause.message);}
   };
   const failed=event=>{
-   if(event.detail?.flowApiName!==flow)return;
-   setBusy(false);setPaymentStatus('failed');
+   if(event.detail?.flowApiName!==flow||event.detail?.requestId!==request.current)return;
+   request.current='';setBusy(false);setPaymentStatus('failed');
    setError('Checkout failed: '+(event.detail.message||'Unable to complete payment.'));
-   publish(cart,'payment-failed');
+   publish(cart,'failed',0,event.detail.message||'Flow failed.');
   };
   const cancelled=event=>{
-   if(event.detail?.flowApiName!==flow)return;
-   setBusy(false);setPaymentStatus('cancelled');setError('Checkout was cancelled. The basket is unchanged.');
-   publish(cart,'payment-cancelled');
+   if(event.detail?.flowApiName!==flow||event.detail?.requestId!==request.current)return;
+   request.current='';setBusy(false);setPaymentStatus('cancelled');setError('Checkout was cancelled. The basket is unchanged.');
+   publish(cart,'cancelled',0,'Flow cancelled.');
   };
   window.addEventListener('metadrive:flow-completed',completed);
   window.addEventListener('metadrive:flow-failed',failed);
@@ -205,8 +203,8 @@ function ShoppingCartTill({props}) {
   const current=cart.find(item=>item.productId===id);
   const next=current?cart.map(item=>item.productId===id?{...item,quantity:item.quantity+1}:item):[...cart,{
    productId:id,name:label,quantity:1,unitPriceMinor:unit,
-   vatApplicable:product[props.vatApplicableFieldApiName||'VATApplicable']!==false,
-   ageRestricted:product[props.ageRestrictedFieldApiName||'AgeRestricted']===true
+   vatApplicable:product[props.vatApplicableFieldApiName||'']===true,
+   ageRestricted:product[props.ageRestrictedFieldApiName||'']===true
   }];
   setError('');updateCart(next);
  };
@@ -229,13 +227,15 @@ function ShoppingCartTill({props}) {
   return {...saleValue(items),sessionKey:channel?.key||props.sessionId,requestId:request.current};
  };
  const checkout=async()=>{if(props.previewOnly===true)return;
-  if(!cart.length||locked||!sessionReady||channel?.error||!settingsReady)return;
+  if(request.current||!cart.length||locked||!sessionReady||channel?.error||!settingsReady)return;
   setBusy(true);setError('');
   try{
    const result=await flowAction(props,'checkout',checkoutValue(cart));
    if(result===false||result?.error)throw Error(String(result?.error||'Checkout was not started.'));
-   setPaymentStatus('pending');publish(cart,'payment-pending');
-  }catch(cause){setError(cause instanceof Error?cause.message:'Unable to start checkout.');}
+   if(result?.outputs)applyFlowResult(result.outputs,request.current);
+   else {setPaymentStatus('pending');setStatusMessage(props.paymentPendingText||'');publish(cart,'pending',0,props.paymentPendingText||'');}
+  }catch(cause){request.current='';setPaymentStatus('failed');
+   const message=cause instanceof Error?cause.message:'Unable to start checkout.';setError(message);publish(cart,'failed',0,message);}
   finally{setBusy(false);}
  };
  const openDisplay=()=>{
@@ -253,9 +253,9 @@ function ShoppingCartTill({props}) {
   }catch(cause){setError(cause instanceof Error?cause.message:'Unable to open the customer display.');}
  };
  const products=Array.isArray(props.records)?props.records:[];
- const barcode=item=>item[props.barcodeFieldApiName||'Barcode'];
- const sku=item=>item[props.skuFieldApiName||'SKU'];
- const categoryField=props.categoryFieldApiName||'Category';
+ const barcode=item=>item[props.barcodeFieldApiName||''];
+ const sku=item=>item[props.skuFieldApiName||''];
+ const categoryField=props.categoryFieldApiName||'';
  const productCategory=item=>String(item[categoryField]??'').trim();
  const categories=[...new Set(products.map(productCategory).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
  const filtered=products.filter(item=>(!selectedCategory||productCategory(item)===selectedCategory)&&[name(item),barcode(item),sku(item)]
@@ -313,8 +313,8 @@ function ShoppingCartTill({props}) {
     {!props.loading&&!filtered.length&&<p className="one-empty">{props.emptyProductsText||'No products found.'}</p>}
     <div className="one-shopping-products">{filtered.map(product=><button className="one-item one-item--interactive"
      key={product.Id} type="button" disabled={locked||!sessionReady} onClick={()=>add(product)}>
-     {props.showImage!==false&&product[props.imageFieldApiName||'ImageURL']&&<img loading="lazy" alt=""
-      src={String(product[props.imageFieldApiName||'ImageURL'])}/>}
+     {props.showImage!==false&&product[props.imageFieldApiName||'']&&<img loading="lazy" alt=""
+      src={String(product[props.imageFieldApiName||''])}/>}
      {props.showTitle!==false&&<strong>{name(product)}</strong>}
      {props.showPrice!==false&&<span>{currency(price(product),props.currencyCode)}</span>}
      {props.showAddIcon===true&&<span className="md-card-add-icon" aria-hidden="true">＋</span>}
@@ -335,12 +335,7 @@ function ShoppingCartTill({props}) {
     <div className="one-shopping-total"><span>{props.totalLabel||'Total'}</span><strong>{currency(gross,props.currencyCode)}</strong></div>
     {props.showVatTotal===true&&<div className="one-shopping-total"><span>{props.vatLabel||'VAT included'}</span>
      <span>{currency(vat,props.currencyCode)}</span></div>}
-    {paymentStatus==='pending'&&<p role="status">{props.paymentPendingText||'Complete the payment step in the Flow screen.'}</p>}
-    {paymentStatus==='complete'&&<p role="status">{props.paymentCompleteText||'Payment accepted. Clear the sale when ready.'}</p>}
-    {paymentStatus==='age-rejected'&&<p role="status">{props.ageCheckFailedText||'Restricted products were removed. No eligible items remain.'}</p>}
-    {paymentStatus==='insufficient-cash'&&<p role="status">{props.insufficientCashText||'Tendered cash was less than the sale total.'}</p>}
-    {ageRestricted&&<button className="one-btn" type="button" disabled={locked||!sessionReady}
-     onClick={()=>updateCart(cart.filter(item=>!item.ageRestricted))}>{props.removeRestrictedLabel||'Remove age-restricted items'}</button>}
+    {statusMessage&&<p role="status">{statusMessage}</p>}
     {error&&<p role="alert">{error}</p>}
     <button className="one-btn one-btn--primary" type="button" disabled={props.previewOnly===true||!cart.length||locked||!sessionReady||
      !settingsReady||Boolean(channel?.error)} onClick={()=>void checkout()}>{busy?'Starting checkout…':props.checkoutLabel||'Payment'}</button>
@@ -359,6 +354,9 @@ export default function OneShoppingCart(props) {
   '--one-catalogue-ratio':Math.min(85,Math.max(15,Number(p.catalogueWidthPercent??60)))+'fr',
   '--one-basket-ratio':(100-Math.min(85,Math.max(15,Number(p.catalogueWidthPercent??60))))+'fr',
   '--one-product-min-width':Math.min(400,Math.max(80,Number(p.productCardMinWidth??170)))+'px'};
+ if(!p.currencyCode)return <div role="alert">Configure a currency in component properties.</div>;
+ try{new Intl.NumberFormat(undefined,{style:'currency',currency:p.currencyCode});}
+ catch{return <div role="alert">Configure a valid currency in component properties.</div>;}
  if(p.backgroundColor)style['--one-bg']=p.backgroundColor;
  if(p.textColor)style['--one-fg']=p.textColor;
  if(p.borderColor)style['--one-border']=p.borderColor;

@@ -341,7 +341,7 @@ export function createSetupFlowActions(ctx: any) {
     return results;
   };
 
-  const runFlow = async (apiName = flow.apiName, inputs: Record<string, unknown> = {}) => {
+  const runFlow = async (apiName = flow.apiName, inputs: Record<string, unknown> = {}, context:{requestId?:string}={}) => {
     const selectedFlow = flows.find((item) => item.apiName === apiName);
     if (!selectedFlow) {
       notify(`Flow "${apiName}" was not found`);
@@ -369,16 +369,16 @@ export function createSetupFlowActions(ctx: any) {
       });
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
-        setFlowRun({ interviewId: result.interviewId, flowApiName: selectedFlow.apiName, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) }, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
+        setFlowRun({ requestId:context.requestId,interviewId: result.interviewId, flowApiName: selectedFlow.apiName, screen: result.screen, values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) }, outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }], canGoBack: false });
         return;
       }
       if (result.interviewId) {
         notify('Flow interview started. Approval stages and waiting work are visible in Pending Work.');
         return;
       }
-      window.dispatchEvent(new CustomEvent('metadrive:flow-completed', { detail: { flowApiName: selectedFlow.apiName, outputs: result.outputs ?? {} } })); notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
+      window.dispatchEvent(new CustomEvent('metadrive:flow-completed', { detail: { requestId:context.requestId,flowApiName: selectedFlow.apiName, outputs: result.outputs ?? {} } })); notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
     } catch (error) {
-      window.dispatchEvent(new CustomEvent('metadrive:flow-failed', { detail: { flowApiName: selectedFlow.apiName, message: error instanceof Error ? error.message : 'Unable to run flow' } })); notify(error instanceof Error ? error.message : 'Unable to run flow');
+      window.dispatchEvent(new CustomEvent('metadrive:flow-failed', { detail: { requestId:context.requestId,flowApiName: selectedFlow.apiName, message: error instanceof Error ? error.message : 'Unable to run flow' } })); notify(error instanceof Error ? error.message : 'Unable to run flow');
     }
   };
 
@@ -396,7 +396,7 @@ export function createSetupFlowActions(ctx: any) {
       if (result.interviewId && result.screen) {
         setFlowRunnerError('');
         setFlowRun({
-          interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
+          requestId:flowRun.requestId,interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
           screen: result.screen,
           values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) },
           outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }],
@@ -406,9 +406,9 @@ export function createSetupFlowActions(ctx: any) {
       }
       setFlowRun(null);
       setFlowRunnerError('');
-      window.dispatchEvent(new CustomEvent('metadrive:flow-completed', { detail: { flowApiName: flowRun.flowApiName, outputs: result.outputs ?? {} } })); notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
+      window.dispatchEvent(new CustomEvent('metadrive:flow-completed', { detail: { requestId:flowRun.requestId,flowApiName: flowRun.flowApiName, outputs: result.outputs ?? {} } })); notify(`Flow completed${result.outputs && Object.keys(result.outputs).length ? ` · ${JSON.stringify(result.outputs)}` : ''}`);
     } catch (error) {
-      window.dispatchEvent(new CustomEvent('metadrive:flow-failed', { detail: { flowApiName: flowRun.flowApiName, message: error instanceof Error ? error.message : 'Unable to continue flow' } })); setFlowRunnerError(error instanceof Error ? error.message : 'Unable to continue flow');
+      window.dispatchEvent(new CustomEvent('metadrive:flow-failed', { detail: { requestId:flowRun.requestId,flowApiName: flowRun.flowApiName, message: error instanceof Error ? error.message : 'Unable to continue flow' } })); setFlowRunnerError(error instanceof Error ? error.message : 'Unable to continue flow');
       notify(error instanceof Error ? error.message : 'Unable to continue flow');
     } finally {
       setFlowRunnerSubmitting(false);
@@ -424,7 +424,7 @@ export function createSetupFlowActions(ctx: any) {
         { method: 'POST', body: JSON.stringify({ action: 'back' }) }
       );
       setFlowRun({
-        interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
+        requestId:flowRun.requestId,interviewId: result.interviewId, flowApiName: flowRun.flowApiName,
         screen: result.screen,
         values: { ...initialScreenValues(result.screen), ...(result.values ?? {}) },
         outcomes: result.outcomes ?? [{ name: 'Default', label: 'Next' }],

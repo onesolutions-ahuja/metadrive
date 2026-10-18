@@ -182,7 +182,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const [accessControl, setAccessControl] = useState<AccessControlMetadata>(defaultAccessControl);
   const [accessControlError, setAccessControlError] = useState('');
   const [flowValidation, setFlowValidation] = useState<FlowValidationMetadata | null>(null);
-  const [flowRun, setFlowRun] = useState<{ interviewId: string; flowApiName: string; screen: FlowElementMetadata; values: Record<string, unknown>; outcomes: Array<{ name: string; label: string }>; canGoBack: boolean } | null>(null);
+  const [flowRun, setFlowRun] = useState<{ requestId?:string;interviewId: string; flowApiName: string; screen: FlowElementMetadata; values: Record<string, unknown>; outcomes: Array<{ name: string; label: string }>; canGoBack: boolean } | null>(null);
   const [flowDebug, setFlowDebug] = useState<{
     flow: FlowDefinitionMetadata;
     mode: 'debug' | 'run';
@@ -723,9 +723,9 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
   const currentApp = apps.find((app) => app.apiName === currentAppId) ?? apps[0];
   const currentAppNavigation = resolveCurrentAppNavigation(currentApp);
   const protectedPageRuntime={apiRequest,objects,apps,pages,reports,currentAppId,
-   availableFlows:flows.map(({apiName,label,flowType,status})=>({apiName,label,flowType,status})),
+   availableFlows:flows.map(({id,apiName,label,flowType,status})=>({id,apiName,label,flowType,status})),
    formFactor:runtimeFormFactor,onNavigate:navigateRoute,
-   onLaunchFlow:(apiName:string,inputs?:Record<string,unknown>)=>{void runFlow(apiName,inputs);}};
+   onLaunchFlow:(apiName:string,inputs?:Record<string,unknown>,context?:{requestId?:string})=>{void runFlow(apiName,inputs,context);}};
   // Build the complete navigable object catalogue from tenant metadata, not app tabs.
   // The field map reflects effective RBAC; record APIs check object permissions again.
   const readableRecordObjects = useMemo(() => objects.filter((item) =>

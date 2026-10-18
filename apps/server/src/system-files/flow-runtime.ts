@@ -29,10 +29,10 @@ function scalarFrom(text:string|null,type:string):Scalar {
 export class FlowRuntime {
   constructor(private readonly db:SqlPersistence,private readonly rbac?:RbacEngine,private readonly records?:RecordEngine) {}
   async list(tenantId:string) {
-    const {rows}=await this.db.query<{api_name:string;version:number;active:boolean}>(
-      'SELECT api_name,version,active FROM md_flow_definitions WHERE tenant_id=$1 ORDER BY api_name,version DESC LIMIT 100',
+    const {rows}=await this.db.query<{id:string;api_name:string;label:string|null;flow_type:string;version:number;active:boolean}>(
+      'SELECT id,api_name,label,flow_type,version,active FROM md_flow_definitions WHERE tenant_id=$1 ORDER BY api_name,version DESC LIMIT 100',
       [tenantId]);
-    return rows.map(row=>({apiName:row.api_name,versionNumber:row.version,status:row.active?'Active':'Draft'}));
+    return rows.map(row=>({id:row.id,apiName:row.api_name,label:row.label??row.api_name,flowType:row.flow_type??'Autolaunched Flow',resources:[],versionNumber:row.version,status:row.active?'Active':'Draft'}));
   }
   async loadActive(tenantId:string,apiName:string) {
     const {rows}=await this.db.query<{id:string;version:number}>(
@@ -160,7 +160,15 @@ export class FlowRuntime {
               await client.query(
                 "UPDATE md_flow_runs SET status='completed',finished_at=now() WHERE tenant_id=$1 AND id=$2",
                 [tenantId,runId]);
-              return {id:runId,status:'completed' as const};
+              const outputs:Record<string,Scalar>={};
+              for(const [key,value] of props.get(node.id)??new Map<string,NodeProperty>()) {
+                if(!key.startsWith('output.'))continue;
+                const outputName=key.slice(7);
+                if(!namePattern.test(outputName)||['__proto__','prototype','constructor'].includes(outputName))
+                  throw new Error('Invalid Flow output');
+                outputs[outputName]=resolve(value);
+              }
+              return {id:runId,status:'completed' as const,...(Object.keys(outputs).length?{outputs}:{})};
             }
             default:throw new Error('Unsupported Flow element: '+node.node_type);
           }
