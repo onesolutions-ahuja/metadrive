@@ -51,7 +51,6 @@
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/validate",
     "/metadata/offline-publication",
-    "/metadata/permissions",
     "/metadata/route-aliases",
     "/metadata/route-aliases/",
     "/named-credentials/${encodeURIComponent(id)}/oauth/start",
