@@ -190,7 +190,7 @@ export type NamedCredentialMetadata = {
   label: string;
   protocol: 'HTTPS' | 'SMTP';
   baseUrl: string;
-  authType: 'None' | 'Bearer' | 'Basic' | 'API Key' | 'OAuth Client Credentials' | 'OAuth Authorization Code';
+  authType: 'None' | 'Bearer' | 'Basic' | 'API Key';
   headerName: string;
   hasSecret: boolean;
   enabled?: boolean;
