@@ -5,7 +5,7 @@
 All rules apply to development, fixes, refactoring, migrations, installations, seeders and PRs.
 
 ## 1. Universal Lightweight Core
-One shared Core: authentication, tenant isolation, OneEngine RBAC, metadata, generic CRUD, Component Renderer, Page Runtime, routing, Actions/Flows runtime, printing, communication, AppExchange and essential settings. No app-specific business logic.
+One shared Core: authentication, tenant isolation, central RBAC with the OneEngine permission set, metadata, generic CRUD, Component Renderer, Page Runtime, routing, Actions/Flows runtime, printing, communication, AppExchange and essential settings. No app-specific business logic.
 
 ## 2. Independent Applications
 Every app must be independently installable, licensed, activated and uninstalled per tenant. Customers mix and match functionality without unnecessary dependencies.
@@ -31,11 +31,11 @@ Store active metadata, settings, permissions, installations and business data in
 ## 9. Independent Seeders
 Separate Core, shared dependency and per-app seeders. Include Objects, Fields, Components, properties, Pages, Flows, Actions, navigation and RBAC. Seeders must be versioned, idempotent, tenant-aware and upgrade-safe. Never duplicate metadata or overwrite user customisations.
 
-## 10. OneEngine RBAC
-One central permission engine for Objects, Fields, Records, Pages, Actions, Flows and administration. Enforce server-side. App installation, licence, entitlement and RBAC are separate checks. No permission bypasses.
+## 10. Central RBAC and OneEngine Permission Set
+One shared RBAC engine controls permissions for Objects, Fields, Records, Pages, Actions, Flows and administration. **OneEngine is a configurable permission set in RBAC, not the name of the RBAC engine.** It is assignable to authorised users like any other permission set. It can initially contain all applicable permissions, and administrators with appropriate RBAC authority can subsequently restrict or revoke individual grants. Users assigned OneEngine are still evaluated through the same central RBAC engine; no identity-based bypasses. Enforce access server-side, with explicit deny and revocation semantics. App installation, licence, entitlement and RBAC remain separate checks.
 
 ## 11. Developer Security Policies
-Each tenant has a tenant-scoped `developer@tenant` identity and default OneEngine Tenant Developer policy. Core and app seeders grant applicable full tenant administration permissions during setup/installation. `support@unesolutions.co.uk` receives a separate Platform Developer policy for tenant/platform administration. Tenant business-data access requires explicit, audited authorisation. No email-based bypass, shared passwords or cross-tenant access.
+Each tenant has a tenant-scoped `developer@tenant` identity. Provide a default **OneEngine** RBAC permission set that can be assigned to trusted tenant users and initially grants all applicable tenant-level administrative permissions during setup/installation. These grants must remain individually configurable and revocable through RBAC; the developer identity must not itself confer permissions. Assignments, not user names or email addresses, determine access. Platform administration uses separately scoped RBAC permission sets (for example, **Platform Developer**) assigned to authorised platform identities such as `support@unesolutions.co.uk`. Platform permissions never imply unrestricted access to tenant business data: that requires explicit, audited authorisation. No email-based bypass, shared passwords or cross-tenant access.
 
 ## 12. AppExchange Lifecycle
 Centralise discovery, dependency checks, licensing, install, seeding, RBAC, activation, updates, migrations, deactivation, uninstall and reinstall. Uninstall disables app-specific routes, Flows, jobs and modules. Preserve shared dependencies and tenant business records.
@@ -44,7 +44,7 @@ Centralise discovery, dependency checks, licensing, install, seeding, RBAC, acti
 All apps use shared Object APIs for CRUD, filtering, queries, relationships, validation and pagination. Enforce tenant, Record, Object and Field permissions. No duplicate CRUD engines.
 
 ## 14. Universal Data Loader
-One import/export engine supporting field mapping, preview, validation, bulk operations, errors, retries and applicable rollback. Enforce OneEngine RBAC and Field permissions.
+One import/export engine supporting field mapping, preview, validation, bulk operations, errors, retries and applicable rollback. Enforce central RBAC, including effective OneEngine and Field permissions.
 
 ## 15. Shared Action/Flow Engine
 Use metadata-driven Flows for CRUD, decisions, loops, formulas, HTTP, printing, communication and scheduling. No parallel workflow engines. Enforce permissions and app activation. Support durable execution and failure handling.
@@ -78,7 +78,7 @@ All developers and AI agents must follow these rules. Repository `DEVELOPER_POLI
 
 ## Permanent Principles
 
-**ONE CORE · ONE ONEENGINE RBAC · ONE METADATA PLATFORM · REUSABLE COMPONENTS · SQL SOURCE OF TRUTH · INDEPENDENT APP SEEDERS · TENANT APP INSTALLATION · LAZY LOADING · NO-CODE FIRST**
+**ONE CORE · ONE CENTRAL RBAC ENGINE · ONEENGINE PERMISSION SET · ONE METADATA PLATFORM · REUSABLE COMPONENTS · SQL SOURCE OF TRUTH · INDEPENDENT APP SEEDERS · TENANT APP INSTALLATION · LAZY LOADING · NO-CODE FIRST**
 
 Every feature must satisfy:
 1. Can a non-developer configure it?
