@@ -14,7 +14,8 @@ export class AppRuntime {
         [tenantId,rows[0].id]);
       // Seed is supplied only by the trusted app package, never HTTP input.
       const seed=await this.trustedAppSeed?.(appApi);
-      if(seed)await seedIndependentAppMetadata(client,tenantId,seed);
+      if(!seed)throw new Error('No trusted independent app seeder registered: '+appApi);
+      await seedIndependentAppMetadata(client,tenantId,seed);
     });
   }
   async uninstall(tenantId:string,appApi:string) {
