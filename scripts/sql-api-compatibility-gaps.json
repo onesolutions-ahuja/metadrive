@@ -19,8 +19,6 @@
     "/metadata/objects/${encodeURIComponent(object.apiName)}/history/${revision}",
     "/metadata/offline-publication",
     "/named-credentials/${encodeURIComponent(id)}/oauth/start",
-    "/named-credentials/${encodeURIComponent(id)}/rotate",
-    "/named-credentials/${encodeURIComponent(id)}/test",
     "/platform/recovery/cases/",
     "/platform/tenants/",
     "/reports/",
