@@ -67,18 +67,23 @@ export class RecordCollaborationService {
     WHERE p.tenant_id=$1 AND p.object_api=$2 AND p.record_id=$3
     ${postId?'AND p.id=$4':''} ORDER BY p.created_at DESC,p.id DESC LIMIT 100`,
     postId?[actor.tenant_id,objectApi,recordId,postId]:[actor.tenant_id,objectApi,recordId]);
-  const result=[];
-  for(const post of rows){
-   const comments=await this.db.query<Comment>(`
+  if(!rows.length)return [];
+  const comments=await this.db.query<Comment>(`
     SELECT c.*,COALESCE(NULLIF(u.display_name,''),u.email) AS created_by_name
     FROM md_record_chatter_comments c JOIN md_users u ON u.tenant_id=c.tenant_id AND u.id=c.created_by
-    WHERE c.tenant_id=$1 AND c.post_id=$2 ORDER BY c.created_at,c.id LIMIT 100`,
-    [actor.tenant_id,post.id]);
-   result.push({id:post.id,objectApiName:post.object_api,recordId:post.record_id,body:post.body,
-     createdBy:post.created_by,createdByName:post.created_by_name,
-     createdAt:new Date(post.created_at).toISOString(),comments:comments.rows.map(commentView)});
+    WHERE c.tenant_id=$1 AND c.post_id=ANY($2::uuid[])
+    ORDER BY c.created_at,c.id LIMIT 10000`,
+    [actor.tenant_id,rows.map(r=>r.id)]);
+  const byPost=new Map<string,ReturnType<typeof commentView>[]>();
+  for(const item of comments.rows){
+    const group=byPost.get(item.post_id)??[];
+    if(group.length<100)group.push(commentView(item));
+    byPost.set(item.post_id,group);
   }
-  return result;
+  return rows.map(post=>({id:post.id,objectApiName:post.object_api,recordId:post.record_id,body:post.body,
+    createdBy:post.created_by,createdByName:post.created_by_name,
+    createdAt:new Date(post.created_at).toISOString(),comments:byPost.get(post.id)??[]}));
+
  }
  async listPosts(actor:Identity,objectApi:string,recordId:string){
   await this.guard(actor,objectApi,recordId,'read');
