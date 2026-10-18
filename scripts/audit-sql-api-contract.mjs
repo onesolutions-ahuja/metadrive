@@ -2,15 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 const root='apps/web/src';
 const server=fs.readFileSync('apps/server/src/system-support/server.ts','utf8');
+const dynamic=fs.readFileSync('apps/server/src/system-support/dynamic-api-routes.ts','utf8');
 const files=[];
 function walk(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory())walk(p);else if(/\.tsx?$/.test(p))files.push(p);}}
 walk(root);
-const routes=[...server.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]\/api([^'"]+)['"]/g)].map(m=>({method:m[1].toUpperCase(),path:m[2]}));
+const routes=[...server.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]\/api([^'"]+)['"]/g),...dynamic.matchAll(/app\.(get|post|put|patch|delete)\(\s*['"]\/api([^'"]+)['"]/g)].map(m=>({method:m[1].toUpperCase(),path:m[2]}));
 const kinds=['platform-events','email-alerts','approval-processes','dashboards','dashboard-folders','dashboard-territories','reports','report-folders','connector-providers','integration-connections'];
 for(const name of kinds)for(const method of ['GET','POST','PUT','DELETE'])routes.push({method,path:(name.startsWith('connector')||name.startsWith('integration')?'':'/metadata')+'/'+name+(method==='PUT'||method==='DELETE'?'/:apiName':'')});
 // Required visual Builder contracts are method-sensitive. The generic path-only
 // compatibility baseline must never hide a missing operational save/edit route.
-const dynamic=fs.readFileSync('apps/server/src/system-support/dynamic-api-routes.ts','utf8');
 const builderRoutes=[
  ['GET','/metadata/apps'],['POST','/metadata/apps'],['PUT','/metadata/apps/:apiName'],
  ['DELETE','/metadata/apps/:apiName'],
