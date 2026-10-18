@@ -7,7 +7,7 @@ import type {ClaimedJob,DurableJobWorker} from './durable-job-worker.js';
 export function registerFlowJobHandler(worker:DurableJobWorker,db:SqlPersistence,
   rbac:RbacEngine,flows:FlowRuntime){
  const authorize=async(job:ClaimedJob)=>{
-  if(job.job_type!=='flow.execute'||!job.actor_user_id||!job.resource_id||
+  if(job.job_type!=='flow.execute'||!job.actor_user_id||!job.resource_id||!job.resource_version||
    !/^[A-Za-z][A-Za-z0-9_]*$/.test(job.resource_id))return false;
   const {rows:actors}=await db.query(
    'SELECT 1 FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true',
@@ -26,8 +26,8 @@ export function registerFlowJobHandler(worker:DurableJobWorker,db:SqlPersistence
   }
   const {rows:published}=await db.query(`
     SELECT 1 FROM md_flow_definitions
-    WHERE tenant_id=$1 AND api_name=$2 AND active=true AND archived=false LIMIT 1`,
-   [job.tenant_id,job.resource_id]);
+    WHERE tenant_id=$1 AND api_name=$2 AND version=$3 AND active=true AND archived=false LIMIT 1`,
+   [job.tenant_id,job.resource_id,job.resource_version]);
   if(!published.length)return false;
   return rbac.allowed(job.tenant_id,job.actor_user_id,
    'Flow:'+job.resource_id,'execute');
