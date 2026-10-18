@@ -38,6 +38,16 @@ export function registerSqlCompatibilityRoutes(app:Express,db:SqlPersistence,rba
    users:users.rows.map(u=>({id:u.id,name:u.email,username:u.email,role:'',roleId:'',profileId:'',permissionSetIds:[],permissionSetGroupIds:[],timeZone:'UTC',locale:'en-GB'})),
    sharingSettings:{}});
  }));
+ app.get('/api/connector-apps/catalog',wrap(async(req,res)=>{
+  const a=req.actor!;await rbac.require(a.tenant_id,a.user_id,'AppExchange','read');
+  const result=await db.query<{api_name:string;label:string;installed:boolean;licenced:boolean}>(
+   `SELECT a.api_name,a.label,EXISTS(SELECT 1 FROM md_app_installations i
+     WHERE i.tenant_id=$1 AND i.app_id=a.id) AS installed,
+     EXISTS(SELECT 1 FROM md_app_entitlements e WHERE e.tenant_id=$1
+       AND e.app_id=a.id AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())) AS licenced
+     FROM md_apps a WHERE a.enabled=true ORDER BY a.label`,[a.tenant_id]);
+  res.json({records:result.rows.map(a=>({apiName:a.api_name,name:a.label,label:a.label,installed:a.installed,licensed:a.licenced}))});
+ }));
  app.put('/api/metadata/objects/:apiName',wrap(async(req,res)=>{
   const a=req.actor!,api=req.params.apiName;
   await rbac.require(a.tenant_id,a.user_id,'ObjectDefinition','edit');
