@@ -10,6 +10,14 @@ export class AppRuntime {
           AND (e.expires_at IS NULL OR e.expires_at>now()) FOR UPDATE OF e
       `,[tenantId,appApi]);
       if(!rows[0])throw new Error('App licence or entitlement unavailable');
+      const missing=await client.query<{api_name:string}>(`
+        SELECT required.api_name FROM md_app_dependencies d
+        JOIN md_apps required ON required.id=d.dependency_app_id
+        LEFT JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=d.dependency_app_id
+        LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=d.dependency_app_id
+        WHERE d.app_id=$2 AND (i.app_id IS NULL OR e.active IS DISTINCT FROM true
+          OR e.expires_at<=now() OR required.enabled=false)`,[tenantId,rows[0].id]);
+      if(missing.rows.length)throw new Error('Missing installed and entitled app dependencies: '+missing.rows.map(x=>x.api_name).join(', '));
       await client.query('INSERT INTO md_app_installations (tenant_id,app_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
         [tenantId,rows[0].id]);
       // Seed is supplied only by the trusted app package, never HTTP input.
@@ -21,6 +29,13 @@ export class AppRuntime {
   async update(tenantId:string,appApi:string) { await this.install(tenantId,appApi); }
   async uninstall(tenantId:string,appApi:string) {
     await this.db.transaction(async client=>{
+      const {rows:blocking}=await client.query<{api_name:string}>(`
+       SELECT dependent.api_name FROM md_apps target
+       JOIN md_app_dependencies d ON d.dependency_app_id=target.id
+       JOIN md_apps dependent ON dependent.id=d.app_id
+       JOIN md_app_installations i ON i.app_id=dependent.id AND i.tenant_id=$1
+       WHERE target.api_name=$2`,[tenantId,appApi]);
+      if(blocking.length)throw new Error('Cannot uninstall app required by: '+blocking.map(x=>x.api_name).join(', '));
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
         AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)`,[tenantId,appApi]);
       await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)',
