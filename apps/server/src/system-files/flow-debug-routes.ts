@@ -10,7 +10,7 @@ export function registerFlowDebugRoutes(app:Express,db:SqlPersistence,rbac:RbacE
   const a=req.actor!,name=req.params.apiName,endpoint=req.params.endpoint;
   if(!api.test(name)||!['debug','debug-record'].includes(endpoint))
    throw Error('Unsupported Flow operation');
-  await rbac.require(a.tenant_id,a.user_id,'FlowDefinition','manage');
+  await rbac.require(a.tenant_id,a.user_id,'FlowDefinition','read');
   await rbac.require(a.tenant_id,a.user_id,'Flow:'+name,'execute');
   const {rows}=await db.query<{flow_type:string;version:number}>(`
    SELECT flow_type,version FROM md_flow_definitions
