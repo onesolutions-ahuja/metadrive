@@ -11,6 +11,7 @@ for(const name of kinds)for(const method of ['GET','POST','PUT','DELETE'])routes
 // Required visual Builder contracts are method-sensitive. The generic path-only
 // compatibility baseline must never hide a missing operational save/edit route.
 const dynamic=fs.readFileSync('apps/server/src/system-support/dynamic-api-routes.ts','utf8');
+for(const m of dynamic.matchAll(/app\.(get|post|put|patch|delete)\(\s*['\"]\/api([^'\"]+)['\"]/g))routes.push({method:m[1].toUpperCase(),path:m[2]});
 const builderRoutes=[
  ['GET','/metadata/apps'],['POST','/metadata/apps'],['PUT','/metadata/apps/:apiName'],
  ['DELETE','/metadata/apps/:apiName'],
