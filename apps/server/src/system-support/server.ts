@@ -796,6 +796,14 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     res.json(await reportRuntime.stored(actor,req.params.apiName,req.body??{}));
   }));
+  app.get('/api/records/:objectApi/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({record:await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id)});
+  }));
+  app.get('/api/records/:objectApi/:id/history',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await records.history(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id));
+  }));
   app.get('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
@@ -806,14 +814,16 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
     const id=await records.create(actor.tenant_id,actor.user_id,req.params.objectApi,req.body);
-    res.status(201).json({id});
+    res.status(201).json({record:await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,id)});
   }));
-  app.patch('/api/records/:objectApi/:id',route(async(req,res)=>{
+  const saveGenericRecord=route(async(req,res)=>{
     const actor=req.actor!;
-    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body)) throw new Error('Invalid record values');
-    await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,req.body);
-    res.status(204).end();
-  }));
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid record values');
+    await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,req.body,req.get('if-unmodified-since'));
+    res.json({record:await records.get(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id)});
+  });
+  app.patch('/api/records/:objectApi/:id',saveGenericRecord);
+  app.put('/api/records/:objectApi/:id',saveGenericRecord);
   app.put('/api/records/:objectApi/:id/owner',route(async(req,res)=>{
     const actor=req.actor!;
     if(typeof req.body?.ownerId!=='string')throw new Error('Invalid owner ID');
