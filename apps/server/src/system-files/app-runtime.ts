@@ -1,7 +1,8 @@
+import {seedIndependentAppMetadata,type AppSeedDefinition} from './app-metadata-seeder.js';
 import type {SqlPersistence} from './sql-persistence.js';
 export class AppRuntime {
-  constructor(private readonly db:SqlPersistence) {}
-  async install(tenantId:string,appApi:string,seed?:import('./app-page-seeder.js').AppPageSeed) {
+  constructor(private readonly db:SqlPersistence,private readonly trustedAppSeed?: (appApi:string)=>Promise<AppSeedDefinition|undefined>) {}
+  async install(tenantId:string,appApi:string) {
     await this.db.transaction(async client=>{
       const {rows}=await client.query<{id:string}>(`
         SELECT a.id FROM md_apps a JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
@@ -11,7 +12,9 @@ export class AppRuntime {
       if(!rows[0])throw new Error('App licence or entitlement unavailable');
       await client.query('INSERT INTO md_app_installations (tenant_id,app_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
         [tenantId,rows[0].id]);
-      if(seed){const {seedAppPage}=await import('./app-page-seeder.js');await seedAppPage(client,tenantId,rows[0].id,seed);}
+      // Seed is supplied only by the trusted app package, never HTTP input.
+      const seed=await this.trustedAppSeed?.(appApi);
+      if(seed)await seedIndependentAppMetadata(client,tenantId,seed);
     });
   }
   async uninstall(tenantId:string,appApi:string) {
