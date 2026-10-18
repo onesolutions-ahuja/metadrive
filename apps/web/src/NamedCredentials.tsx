@@ -205,7 +205,7 @@ export default function NamedCredentials({
     </div>}
     {error && <div className="records-message" role="alert">{error}</div>}
     {!canManage && <div className="info-callout" role="alert">This account cannot edit connector configuration. Ask an administrator for connectorApps:edit.</div>}
-    {encryptionReady === false && <div className="records-message" role="alert">Credential encryption is not configured on the server. Configure METADRIVE_CREDENTIAL_ENCRYPTION_KEY in the active server environment before creating or testing credentials. Preserve the existing encryption key when migrating between hosting providers.</div>}
+    {encryptionReady === false && <div className="records-message" role="alert">Credential encryption is not configured on the server. Check METADRIVE_CREDENTIAL_KEYS and METADRIVE_CREDENTIAL_ACTIVE_KEY_ID in the active server environment (or the legacy METADRIVE_CREDENTIAL_ENCRYPTION_KEY). Preserve existing keys when moving between hosting providers.</div>}
     <div className="table-scroll">
       <table className="slds-table">
         <thead><tr><th>Label</th><th>API Name</th><th>Protocol</th><th>Base URL</th><th>Authentication</th><th>Secret</th><th>Updated</th><th>Connection Test</th>{!embedded && <th>Status</th>}<th>Actions</th></tr></thead>
