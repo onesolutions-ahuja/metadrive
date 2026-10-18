@@ -384,7 +384,7 @@ export function renderSetupShell(ctx: any) {
               onTestIntegrationConnection={testIntegrationConnection}
               canManage={connectorRights.edit}
               onNotify={notify}
-            /> : <div className="connector-settings-page"><div className="surface connector-empty">Connector metadata is loading…</div></div>}</PlatformPageSlot></PlatformWorkspaceSurface>;
+            /> : <div className="connector-settings-page"><div className="surface connector-empty" role="status">No connector providers are configured for this tenant. Install or configure a connector in AppExchange to make it available here. If you expected existing providers, check the connector API response and your permissions.</div></div>}</PlatformPageSlot></PlatformWorkspaceSurface>;
           })()}
           {route.kind === 'setup' && workspace === 'report-builder' && <ReportBuilder reports={reports} reportFolders={reportFolders} canManageReportFolders={canManageReportFolders} accessControl={accessControl} objects={objects} onSave={saveReport} onSaveFolder={saveReportFolder} onDelete={deleteReport} onRun={runReport} onPreview={previewReport} onNotify={notify} />}
           {route.kind === 'setup' && workspace === 'scheduled-flows' && (
