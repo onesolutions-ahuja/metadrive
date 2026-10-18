@@ -1,4 +1,5 @@
 import {activeCredentialKey,encryptCredential,decryptCredential} from './credential-crypto.js';
+import {testHttpsCredential,testSmtpCredential} from './credential-connection-test.js';
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
 
@@ -118,6 +119,35 @@ export class NamedCredentialService {
   const credential=(await this.list(tenantId,userId)).find(x=>x.id===id);
   if(!credential)throw Error('Credential not found');
   return credential;
+ }
+
+ async test(tenantId:string,userId:string,id:string){
+  await this.rbac.require(tenantId,userId,'NamedCredential','manage');
+  if(!/^[0-9a-f-]{36}$/i.test(id))throw Error('Invalid credential ID');
+  const {rows}=await this.db.query<{
+   protocol:string;base_url:string;auth_type:string;header_name:string;enabled:boolean;
+   secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;
+   secret_key_id:string;configuration_key_id:string
+  }>(`SELECT protocol,base_url,auth_type,header_name,enabled,secret_ciphertext,
+      configuration_ciphertext,secret_key_id,configuration_key_id
+      FROM md_named_credentials WHERE tenant_id=$1 AND id=$2`,[tenantId,id]);
+  const current=rows[0];if(!current)throw Error('Credential not found');
+  if(!current.enabled)throw Error('Credential disabled');
+  const secret=current.secret_ciphertext?
+   decryptCredential(current.secret_ciphertext,current.secret_key_id):null;
+  const configuration=current.configuration_ciphertext?
+   JSON.parse(decryptCredential(current.configuration_ciphertext,current.configuration_key_id)) as Record<string,string>:{};
+  if(!configuration||typeof configuration!=='object'||Array.isArray(configuration))
+   throw Error('Credential configuration unavailable');
+  try{
+   if(current.protocol==='HTTPS')return await testHttpsCredential(current.base_url,current.auth_type,secret,current.header_name);
+   if(current.protocol==='SMTP')return await testSmtpCredential(current.base_url,configuration,secret);
+   throw Error('Unsupported protocol');
+  }catch(error){
+   const message=error instanceof Error&&/^(?:Unsafe credential endpoint|Credential host must be approved|Credential DNS resolves|OAuth credentials require)/.test(error.message)
+    ?error.message:'Credential connection test failed';
+   return {connected:false,message};
+  }
  }
 
 }
