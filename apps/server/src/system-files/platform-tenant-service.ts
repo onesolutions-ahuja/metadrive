@@ -19,6 +19,57 @@ export class PlatformTenantService {
    ) AS authorised`,[tenantId,userId]);
   return rows[0]?.authorised===true;
  }
+ async getSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings') {
+  await this.rbac.require(tenantId,userId,'TenantSettings','read');
+  const {rows}=await this.db.query<{properties:unknown}>(
+    'SELECT properties FROM md_tenant_settings WHERE tenant_id=$1 AND setting_key=$2',[tenantId,key]);
+  return rows[0]?.properties??null;
+ }
+ async saveSetting(tenantId:string,userId:string,key:'company-profile'|'currencies'|'automation-settings',payload:unknown) {
+  await this.rbac.require(tenantId,userId,'TenantSettings','manage');
+  if(!payload||typeof payload!=='object'||Array.isArray(payload))throw new Error('Invalid tenant settings');
+  const data=payload as Record<string,unknown>;
+  if(key==='company-profile') {
+    const fields=['logoUrl','legalName','tradingName','website','phone','email','addressLine1','addressLine2','city','postcode','country','timezone','locale','description'];
+    if(Object.keys(data).some(k=>!fields.includes(k))||Object.values(data).some(v=>typeof v!=='string'||v.length>2048))
+      throw new Error('Invalid company profile');
+    if(data.logoUrl&&(!String(data.logoUrl).startsWith('https://')||String(data.logoUrl).length>2048))
+      throw new Error('Invalid company logo URL');
+  } else if(key==='currencies') {
+    const currencies=data.currencies;
+    if(typeof data.corporateCurrency!=='string'||! /^[A-Z]{3}$/.test(data.corporateCurrency)
+      ||typeof data.standardVatRate!=='number'||!Number.isFinite(data.standardVatRate)
+      ||data.standardVatRate<0||data.standardVatRate>100||!Array.isArray(currencies)||currencies.length<1||currencies.length>100)
+      throw new Error('Invalid currency settings');
+    const codes=new Set<string>();
+    for(const item of currencies) {
+      if(!item||typeof item!=='object'||Array.isArray(item))throw new Error('Invalid currency');
+      const x=item as Record<string,unknown>;
+      if(typeof x.currencyIsoCode!=='string'||! /^[A-Z]{3}$/.test(x.currencyIsoCode)
+        ||typeof x.conversionRate!=='number'||!Number.isFinite(x.conversionRate)||x.conversionRate<=0
+        ||codes.has(x.currencyIsoCode)||Object.keys(x).some(k=>!['currencyIsoCode','conversionRate'].includes(k)))
+        throw new Error('Invalid currency');
+      codes.add(x.currencyIsoCode);
+      if(x.currencyIsoCode===data.corporateCurrency&&x.conversionRate!==1)
+        throw new Error('Invalid corporate currency conversion');
+    }
+    if(!codes.has(data.corporateCurrency)||Object.keys(data).some(k=>!['corporateCurrency','standardVatRate','currencies'].includes(k)))
+      throw new Error('Invalid currency settings');
+  } else {
+    if(typeof data.autoRetryFailedFlows!=='boolean'
+       ||!Number.isInteger(data.maxRetryAttempts)||Number(data.maxRetryAttempts)<0||Number(data.maxRetryAttempts)>100
+       ||!Number.isInteger(data.conversationIdleMinutes)||Number(data.conversationIdleMinutes)<1||Number(data.conversationIdleMinutes)>1440
+       ||Object.keys(data).some(k=>!['autoRetryFailedFlows','maxRetryAttempts','conversationIdleMinutes'].includes(k)))
+      throw new Error('Invalid automation settings');
+  }
+  const {rows}=await this.db.query<{properties:Record<string,unknown>}>(`
+    INSERT INTO md_tenant_settings(tenant_id,setting_key,properties) VALUES ($1,$2,$3::jsonb)
+    ON CONFLICT (tenant_id,setting_key) DO UPDATE
+      SET properties=EXCLUDED.properties,revision=md_tenant_settings.revision+1,updated_at=now()
+    RETURNING properties
+  `,[tenantId,key,JSON.stringify(data)]);
+  return rows[0].properties;
+ }
  async list(tenantId:string,userId:string,parameters:Record<string,unknown>){
   const platform=await this.platformScope(tenantId,userId);
   const page=Number(parameters.page??1),pageSize=Number(parameters.pageSize??25);
