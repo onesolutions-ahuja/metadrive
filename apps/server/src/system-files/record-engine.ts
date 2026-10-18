@@ -111,6 +111,31 @@ export class RecordEngine {
       'SELECT count(*)::text AS total FROM md_records WHERE tenant_id=$1 AND object_api=$2',[tenantId,objectApi]);
     return {records:[...collected.values()],total:Number(total.rows[0]?.total??0)};
   }
+  async get(tenantId:string,userId:string,objectApi:string,id:string) {
+    if(!uuid.test(id))throw new Error('Invalid record ID');
+    await this.rbac.require(tenantId,userId,objectApi,'read');
+    const {rows}=await this.db.query<{
+      id:string;created_at:Date;field_api:string|null;value_text:string|null;
+      reference_record_id:string|null;data_type:string|null
+    }>(`
+      SELECT r.id,r.created_at,v.field_api,v.value_text,v.reference_record_id,f.data_type
+      FROM md_records r
+      LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
+      LEFT JOIN md_field_definitions f ON f.tenant_id=r.tenant_id AND f.object_api=r.object_api AND f.api_name=v.field_api
+      WHERE r.tenant_id=$1 AND r.object_api=$2 AND r.id=$3
+      ORDER BY v.field_api
+    `,[tenantId,objectApi,id]);
+    if(!rows.length)throw new Error('Record not found');
+    const record:Record<string,unknown>={Id:rows[0].id,CreatedAt:rows[0].created_at};
+    for(const row of rows){
+      if(!row.field_api)continue;
+      if(!(await this.rbac.allowed(tenantId,userId,objectApi+'.'+row.field_api,'read')))continue;
+      const value=row.reference_record_id??row.value_text;
+      record[row.field_api]=value===null?null:
+        row.data_type==='number'?Number(value):row.data_type==='boolean'?value==='true':value;
+    }
+    return record;
+  }
   async update(tenantId:string,userId:string,objectApi:string,id:string,values:Record<string,unknown>) {
     await this.rbac.require(tenantId,userId,objectApi,'edit');
     const prepared=await this.prepare(tenantId,userId,objectApi,values,false);
