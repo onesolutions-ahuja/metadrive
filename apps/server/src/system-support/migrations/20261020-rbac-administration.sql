@@ -168,16 +168,16 @@ CREATE OR REPLACE FUNCTION md_policy_matches(t uuid,p text,r uuid)
 RETURNS boolean LANGUAGE sql STABLE AS $$
  WITH comparisons AS (
  SELECT CASE c.operator
-  WHEN 'eq' THEN actual.value IS NOT DISTINCT FROM expected.value
-  WHEN 'Equals' THEN actual.value IS NOT DISTINCT FROM expected.value
-  WHEN 'ne' THEN actual.value IS DISTINCT FROM expected.value
-  WHEN 'Not Equals' THEN actual.value IS DISTINCT FROM expected.value
-  WHEN 'Contains' THEN position(expected.value IN actual.value)>0
-  WHEN 'Starts With' THEN starts_with(actual.value,expected.value)
-  WHEN 'Greater Than' THEN CASE WHEN actual.value ~ '^-?[0-9]+(\.[0-9]+)?$' AND expected.value ~ '^-?[0-9]+(\.[0-9]+)?$'
-    THEN actual.value::numeric > expected.value::numeric ELSE false END
-  WHEN 'Less Than' THEN CASE WHEN actual.value ~ '^-?[0-9]+(\.[0-9]+)?$' AND expected.value ~ '^-?[0-9]+(\.[0-9]+)?$'
-    THEN actual.value::numeric < expected.value::numeric ELSE false END
+  WHEN 'eq' THEN actual.value IS NOT DISTINCT FROM expected.value_text
+  WHEN 'Equals' THEN actual.value IS NOT DISTINCT FROM expected.value_text
+  WHEN 'ne' THEN actual.value IS DISTINCT FROM expected.value_text
+  WHEN 'Not Equals' THEN actual.value IS DISTINCT FROM expected.value_text
+  WHEN 'Contains' THEN position(expected.value_text IN actual.value)>0
+  WHEN 'Starts With' THEN starts_with(actual.value,expected.value_text)
+  WHEN 'Greater Than' THEN CASE WHEN actual.value ~ '^-?[0-9]+(\.[0-9]+)?$' AND expected.value_text ~ '^-?[0-9]+(\.[0-9]+)?$'
+    THEN actual.value::numeric > expected.value_text::numeric ELSE false END
+  WHEN 'Less Than' THEN CASE WHEN actual.value ~ '^-?[0-9]+(\.[0-9]+)?$' AND expected.value_text ~ '^-?[0-9]+(\.[0-9]+)?$'
+    THEN actual.value::numeric < expected.value_text::numeric ELSE false END
   WHEN 'isNull' THEN actual.value IS NULL WHEN 'Is Null' THEN actual.value IS NULL
   WHEN 'notNull' THEN actual.value IS NOT NULL
   WHEN 'in' THEN EXISTS(SELECT 1 FROM md_policy_condition_values v WHERE v.tenant_id=t AND v.policy_id=p
