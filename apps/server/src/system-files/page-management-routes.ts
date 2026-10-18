@@ -6,6 +6,26 @@ const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response
 const safe=/^[A-Za-z][A-Za-z0-9_]*$/;
 /** Published pages must reference registered, enabled components. */
 export function registerPageManagementRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
+ app.put('/api/metadata/pages/:apiName/components/:componentId/properties',wrap(async(req,res)=>{
+  const a=req.actor!,page=req.params.apiName,id=req.params.componentId;
+  await rbac.require(a.tenant_id,a.user_id,'PageDefinition','edit');
+  if(!safe.test(page)||!(/^[0-9a-f-]{36}$/i).test(id))throw Error('Invalid Page component');
+  const properties=req.body?.properties;
+  if(!properties||typeof properties!=='object'||Array.isArray(properties))throw Error('Invalid properties');
+  const {flattenAppProperties}=await import('./app-page-seeder.js');
+  const values=flattenAppProperties(properties);
+  await db.transaction(async client=>{
+   const component=await client.query(
+    'SELECT c.id FROM md_page_components c JOIN md_page_definitions p ON p.tenant_id=c.tenant_id AND p.id=c.page_id WHERE c.tenant_id=$1 AND p.api_name=$2 AND c.id=$3 FOR UPDATE',
+    [a.tenant_id,page,id]);
+   if(!component.rowCount)throw Error('Page component not found');
+   await client.query('DELETE FROM md_page_component_properties WHERE tenant_id=$1 AND component_id=$2',[a.tenant_id,id]);
+   for(const v of values)await client.query(
+    'INSERT INTO md_page_component_properties(tenant_id,component_id,property_path,value_text,data_type,object_id,field_id,flow_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+    [a.tenant_id,id,v.path,v.text,v.type,v.objectId,v.fieldId,v.flowId]);
+  });
+  res.json({updated:true});
+ }));
  app.post('/api/metadata/pages/:apiName/activate',wrap(async(req,res)=>{
   const a=req.actor!,name=req.params.apiName;
   await rbac.require(a.tenant_id,a.user_id,'PageDefinition','edit');
