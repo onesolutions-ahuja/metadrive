@@ -156,7 +156,7 @@ try{
     namedCredentialId:'mock-ci',method:'POST',path:'pay',statusVariable:'PaymentStatus',
     onError:'FAULT_PATH'}},
    {id:5,type:'Create Records',label:'Create invoice',config:{
-    object:'AuditItem__c',fieldValues:[{field:'Name',value:'{!Amount}'}],
+    object:'AuditItem__c',fieldValues:[{field:'Name',value:'Screen Sale'}],
     resultVariable:'RecordId'}},
    {id:6,type:'End',label:'End',config:{}},
    {id:7,type:'End',label:'Payment failure',config:{}}
@@ -185,7 +185,7 @@ try{
  assert.equal(complete.completed,true);
  assert.equal(complete.outputs.PaymentStatus,200);
  assert.equal(calloutCount,1);
- assert.equal((await records.get(tenantId,userId,'AuditItem__c',complete.outputs.RecordId)).Name,'15');
+ assert.equal((await records.get(tenantId,userId,'AuditItem__c',complete.outputs.RecordId)).Name,'Screen Sale');
  await assert.rejects(()=>supportedFlows.advanceInterview(tenantId,userId,first.interviewId,{}),/not found/);
  const debug=await supportedFlows.debugGraph(tenantId,userId,checkout.apiName,{});
  assert.equal(debug.status,'waiting');
