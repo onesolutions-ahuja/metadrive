@@ -52,7 +52,7 @@ test('tenant App authoring rejects malformed metadata without database writes',a
   );
 });
 
-test('Flow drafts are checked before writes and Screen Flows fail closed at unsupported execution',async()=>{
+test('Flow drafts are checked before writes and supported Screen graph validation is enabled',async()=>{
   const db={transaction:async()=>{throw new Error('SQL should not be touched')}} as unknown as SqlPersistence;
   const rbac={require:async()=>{}} as unknown as RbacEngine;
   const engine=new FlowRuntime(db,rbac);
@@ -65,6 +65,6 @@ test('Flow drafts are checked before writes and Screen Flows fail closed at unsu
     apiName:'ScreenFlow',flowType:'Screen Flow',elements:[
       {id:1,type:'Start'},{id:2,type:'Screen'},{id:3,type:'End'}],
     connectors:[{from:1,to:2,kind:'normal'},{from:2,to:3,kind:'normal'}]});
-  assert.equal(validation.valid,false);
-  assert.ok(validation.errors.some(error=>error.includes('Autolaunched Flow')));
+  assert.equal(validation.valid,true);
+  assert.deepEqual(validation.errors,[]);
 });

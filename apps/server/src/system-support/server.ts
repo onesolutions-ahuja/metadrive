@@ -75,7 +75,8 @@ export function createSystemServer(db:SqlPersistence) {
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
-  const flows=new FlowRuntime(db,rbac,records);
+  const flows=new FlowRuntime(db,rbac,records,
+    (tenantId,userId,config,variables,key)=>namedCredentials.callout(tenantId,userId,config,variables,key));
   const apps=new AppRuntime(db);
   const platformTenants=new PlatformTenantService(db,rbac);
 
@@ -608,6 +609,12 @@ export function createSystemServer(db:SqlPersistence) {
     await flows.cancelInterview(actor.tenant_id,actor.user_id,req.params.id);
     res.status(204).end();
   }));
+  app.post('/api/flow-interviews/:id/next',route(async(req,res)=>{
+    const actor=req.actor!;
+    const result=await flows.advanceInterview(actor.tenant_id,actor.user_id,req.params.id,req.body??{});
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(result);
+  }));
   app.get('/api/metadata/flow-interviews',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await flows.pendingInterviews(actor.tenant_id,actor.user_id));
@@ -904,7 +911,7 @@ export function createSystemServer(db:SqlPersistence) {
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
     res.status(204).end();
   }));
-  registerDynamicApiRoutes(app,db,rbac,records);
+  registerDynamicApiRoutes(app,db,rbac,records,flows);
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
