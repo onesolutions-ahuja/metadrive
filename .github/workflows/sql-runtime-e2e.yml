@@ -1,0 +1,38 @@
+name: MetaDrive SQL Runtime E2E
+on:
+  push:
+    branches:
+      - feature/fresh-core-22-objects-20261018
+  pull_request:
+  workflow_dispatch:
+jobs:
+  sql-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: metadrive_test
+          POSTGRES_USER: metadrive_test
+          POSTGRES_PASSWORD: test-only-secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U metadrive_test -d metadrive_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://metadrive_test:test-only-secret@127.0.0.1:5432/metadrive_test
+      METADRIVE_SQL_E2E: 'true'
+      METADRIVE_OTP_HMAC_KEY: 'local-ci-test-key-32-bytes-long-not-for-production'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate project, SQL runtime, authentication, builders and frontend
+        run: npm run check
