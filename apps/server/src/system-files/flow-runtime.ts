@@ -228,8 +228,9 @@ export class FlowRuntime {
         VALUES($1,$2,$3,$4,$5)`,[tenantId,id,row.path,row.kind,row.text]);
       await client.query('DELETE FROM md_flow_edges WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
       await client.query('DELETE FROM md_flow_nodes WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
-      // The lightweight SQL executor receives only validated, supported active graphs.
-      if(input.status==='Active'){
+      // Screen Flows run their versioned, normalized editor graph directly. The
+      // legacy scalar graph index is used only by the Autolaunched SQL executor.
+      if(input.status==='Active' && input.flowType==='Autolaunched Flow'){
         const nodes=new Map<number,string>();
         for(const [position,el] of (input.elements as Array<Record<string,unknown>>).entries()){
           const name='step_'+String(el.id);
