@@ -1,6 +1,7 @@
 import {useState} from 'react';
-type Rule={resource:string;action:string;effect:'allow'|'deny'};
-type Policy={systemPermissions:string[];deniedPermissions?:string[];advancedRules?:Rule[];inheritedPermissionSetIds?:string[];objectPermissions?:Record<string,unknown>;fieldPermissions?:Record<string,unknown>};
+import type {PermissionSetMetadata} from '../../metadata/Definitions/metadata';
+// Use the shared metadata contract so patches are valid for both profiles and permission sets.
+type Policy=Pick<PermissionSetMetadata,'systemPermissions'|'deniedPermissions'|'advancedRules'|'objectPermissions'|'fieldPermissions'>;
 export default function AdvancedPermissionRules({policy,onChange,systemPermissionKeys}:{policy:Policy;systemPermissionKeys:string[];onChange:(patch:Partial<Policy>)=>void}){
  const [resource,setResource]=useState(''),[action,setAction]=useState('read'),[effect,setEffect]=useState<'allow'|'deny'>('deny');
  const controlled=(token:string)=>policy.systemPermissions.includes('*:*')&&(systemPermissionKeys.includes(token)||
