@@ -457,6 +457,18 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'edit');
     res.json({object:await definitions.deleteField(actor.tenant_id,req.params.apiName,req.params.fieldApi,actor.user_id)});
   }));
+  app.get('/api/metadata/objects/:apiName/history',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    res.json(await definitions.history(actor.tenant_id,req.params.apiName,Number(req.query.limit??100)));
+  }));
+  app.get('/api/metadata/objects/:apiName/history/:revision',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    res.json(await definitions.historyRevision(actor.tenant_id,req.params.apiName,Number(req.params.revision)));
+  }));
   app.get('/api/metadata/objects/:apiName/dependencies',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
