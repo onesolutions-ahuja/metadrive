@@ -17,6 +17,7 @@ import { RbacEngine } from '../system-files/rbac-engine.js';
 import {permittedApps} from './rbac-navigation.js';
 import {RbacAdministration} from './rbac-administration.js';
 import {NamedCredentialService} from './named-credential-service.js';
+import {OAuthAuthorizationService} from './oauth-authorization-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
@@ -82,6 +83,7 @@ export function createSystemServer(db:SqlPersistence) {
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
+  const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
   const passwordReset=new PasswordResetService(db,auth,(tenant,credential,from,to,subject,body)=>
     namedCredentials.sendRecoveryEmail(tenant,credential,from,to,subject,body));
@@ -174,6 +176,12 @@ export function createSystemServer(db:SqlPersistence) {
     const session=await mfa.verifyChallenge(req.body?.challenge_token,req.body?.code);
     res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
     res.json({access_token:session.accessToken,expires_in:session.expiresIn});
+  }));
+  // Provider callback uses a one-time SQL state, never an unauthenticated tenant selector.
+  app.get('/api/oauth/callback',route(async(req,res)=>{
+    const redirect=await oauth.complete(req.query.state,req.query.code);
+    res.setHeader('Cache-Control','no-store');
+    res.redirect(303,redirect);
   }));
   app.use('/api',authorize);
   // Durable notifications: only the addressed user can list or acknowledge them.
@@ -662,6 +670,11 @@ export function createSystemServer(db:SqlPersistence) {
   app.put('/api/named-credentials/:id',route(async(req,res)=>{
     const actor=req.actor!;
     res.json({credential:await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body)});
+  }));
+  app.post('/api/named-credentials/:id/oauth/start',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.setHeader('Cache-Control','no-store');
+    res.json(await oauth.start(actor.tenant_id,actor.user_id,req.params.id));
   }));
   app.post('/api/named-credentials/:id/test',route(async(req,res)=>{
     const actor=req.actor!;
