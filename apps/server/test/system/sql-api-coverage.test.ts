@@ -19,6 +19,12 @@ test('core SQL runtime registers required builder, user and AppExchange API rout
   'GET /api/auth/users','GET /api/auth/sessions','POST /api/auth/sessions/revoke-all',
   'GET /api/connector-apps/catalog','POST /api/apps/:apiName/install',
   'POST /api/apps/:apiName/update','POST /api/apps/:apiName/uninstall',
-  'POST /api/flows/:apiName/screen/start','POST /api/flow-interviews/:id/next'
+  'POST /api/flows/:apiName/screen/start','POST /api/flow-interviews/:id/next',
+  'POST /api/metadata/flows/:apiName/publish','POST /api/metadata/pages/:apiName/publish',
+  'POST /api/auth/password-reset/request','POST /api/auth/password-reset/confirm',
+  'POST /api/auth/mfa/verify','GET /api/auth/mfa/status','GET /api/auth/mfa/policy',
+  'PUT /api/auth/mfa/policy','POST /api/auth/mfa/enroll','POST /api/auth/mfa/enroll/confirm',
+  'POST /api/auth/mfa/disable','PUT /api/auth/password-recovery/settings',
+  'GET /api/metadata/flows/:apiName/versions','POST /api/flow-interviews/:id/cancel'
  ])assert.ok(registered.has(route),'Missing SQL endpoint: '+route);
 });
