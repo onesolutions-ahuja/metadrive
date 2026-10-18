@@ -80,7 +80,7 @@ export function registerDashboardRuntimeRoutes(app:Express,db:SqlPersistence,rba
     const key=String(r[group]??'Unspecified');
     counts.set(key,(counts.get(key)??0)+1);
    }
-   const columns=(comp.displayFieldApiNames??[]).filter(safe).map(apiName=>({apiName,label:apiName}));
+   const columns=(comp.displayFieldApiNames??[]).filter(name=>safe.test(name)).map(apiName=>({apiName,label:apiName}));
    components.push({...comp,componentId:comp.id,totalRows:data.length,metricValue:metric,
      groupByLabel:group??null,chartDataLabelPosition:comp.chartDataLabelPosition??'Auto',
      chartType:comp.chartType??null,chartSortOrder:comp.chartSortOrder??'Ascending',
