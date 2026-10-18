@@ -25,6 +25,9 @@ export function insertFlowElementAtPath(flow, fromId, element, connectorId, cont
   if (!connectorId && outgoing.length > 1) {
     throw Error('Select an outcome path before inserting an element on a branching Flow.');
   }
+  if (element.type === 'End' && selected) {
+    throw Error('End must terminate a path. Select a step without an outgoing connector, or remove the existing continuation first.');
+  }
   if (!continuationId || flow.connectors.some(connector => connector.id === continuationId)) {
     throw Error('New Flow connector ID must be unique.');
   }
