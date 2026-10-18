@@ -38,9 +38,6 @@
     "/platform/tenants/",
     "/records/${encodeURIComponent(route.objectApiName)}/${encodeURIComponent(route.recordId)}/history",
     "/reports/",
-    "/reports/${encodeURIComponent(apiName)}/run",
-    "/reports/${encodeURIComponent(report.apiName)}/run",
-    "/reports/preview",
     "/tenant/developer-account",
     "/tenant/developer-account/activate",
     "/tenant/recovery/contacts"
