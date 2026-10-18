@@ -43,7 +43,7 @@ function bytesFromBase32(source:string){
  }
  return Buffer.from(bytes);
 }
-function codeAt(secret:string,counter:number){
+export function totpCodeAt(secret:string,counter:number){
  const buffer=Buffer.alloc(8);buffer.writeBigUInt64BE(BigInt(counter));
  const hash=createHmac('sha1',bytesFromBase32(secret)).update(buffer).digest();
  const offset=hash[hash.length-1]&15;
@@ -54,7 +54,7 @@ export function validateTotp(secret:string,code:unknown,lastCounter=-1,now=Date.
  const current=Math.floor(now/30_000);
  for(let counter=current-1;counter<=current+1;counter++){
   if(counter<=lastCounter)continue;
-  const expected=codeAt(secret,counter);
+  const expected=totpCodeAt(secret,counter);
   if(timingSafeEqual(Buffer.from(code),Buffer.from(expected)))return counter;
  }
  return null;
