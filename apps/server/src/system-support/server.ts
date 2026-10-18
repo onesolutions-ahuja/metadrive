@@ -236,6 +236,41 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
     res.json({objects:await definitions.list(actor.tenant_id)});
   }));
+  // Validate against the SQL-supported metadata model; never report unsupported
+  // builder features as executable/publishable definitions.
+  app.post('/api/metadata/objects/:apiName/validate',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'ObjectDefinition','read');
+    await rbac.require(actor.tenant_id,actor.user_id,req.params.apiName,'read');
+    const saved=await definitions.get(actor.tenant_id,req.params.apiName);
+    const draft=req.body;
+    if(!draft||typeof draft!=='object'||Array.isArray(draft))throw new Error('Invalid object draft');
+    const errors:string[]=[];
+    if(draft.apiName!==req.params.apiName)errors.push('Object API name does not match');
+    if(typeof draft.label!=='string'||!draft.label.trim())errors.push('Object label is required');
+    if(!Array.isArray(draft.fields))errors.push('Object fields must be an array');
+    else {
+      const names=new Set<string>();
+      for(const field of draft.fields){
+        if(!field||typeof field!=='object'||Array.isArray(field)){
+          errors.push('Invalid field');continue;
+        }
+        if(typeof field.apiName!=='string'||!/^[A-Za-z][A-Za-z0-9_]*$/.test(field.apiName)){
+          errors.push('Invalid field API name');continue;
+        }
+        const key=field.apiName.toLowerCase();
+        if(names.has(key))errors.push('Duplicate field API name: '+field.apiName);
+        names.add(key);
+        const canonical=saved.fields.find(f=>f.apiName===field.apiName);
+        if(!canonical)errors.push('Field is not stored in SQL: '+field.apiName);
+        else if(field.dataType!==canonical.dataType)errors.push('Unsupported field datatype change: '+field.apiName);
+      }
+    }
+    // Draft/publishing and layouts require dedicated versioned SQL metadata support.
+    if(draft.pageLayouts?.length||draft.recordTypes?.length||draft.validationRules?.length||draft.formulaFields?.length)
+      errors.push('Advanced Object draft features are not supported by the current SQL runtime');
+    res.json({valid:errors.length===0,errors});
+  }));
   // Metadata lookups use the same tenant-scoped SQL registry as list/create.
   app.put('/api/metadata/objects/:apiName/fields/:fieldApi',route(async(req,res)=>{
     const actor=req.actor!;
