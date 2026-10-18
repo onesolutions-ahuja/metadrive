@@ -15,11 +15,11 @@ export class NamedCredentialService {
   await this.rbac.require(tenantId,userId,'NamedCredential','read');
   const {rows}=await this.db.query<{
    id:string;name:string;label:string;protocol:string;base_url:string;auth_type:string;
-   header_name:string;secret_ciphertext:Buffer|null;enabled:boolean;updated_at:Date
-  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
+   header_name:string;secret_ciphertext:Buffer|null;oauth_access_ciphertext:Buffer|null;enabled:boolean;updated_at:Date
+  }>('SELECT id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,oauth_access_ciphertext,enabled,updated_at FROM md_named_credentials WHERE tenant_id=$1 ORDER BY label,name',[tenantId]);
   return rows.map(x=>({id:x.id,name:x.name,label:x.label,protocol:x.protocol,
    baseUrl:x.base_url,authType:x.auth_type,headerName:x.header_name,
-   hasSecret:Boolean(x.secret_ciphertext),enabled:x.enabled,configuration:{},
+   hasSecret:Boolean(x.secret_ciphertext||x.oauth_access_ciphertext),enabled:x.enabled,configuration:{},
    keyId:'server-managed',updatedAt:x.updated_at}));
  }
  async create(tenantId:string,userId:string,body:unknown){
@@ -127,20 +127,27 @@ export class NamedCredentialService {
   const {rows}=await this.db.query<{
    protocol:string;base_url:string;auth_type:string;header_name:string;enabled:boolean;
    secret_ciphertext:Buffer|null;configuration_ciphertext:Buffer|null;
-   secret_key_id:string;configuration_key_id:string
+   secret_key_id:string;configuration_key_id:string;
+   oauth_access_ciphertext:Buffer|null;oauth_access_key_id:string|null;oauth_expires_at:Date|null
   }>(`SELECT protocol,base_url,auth_type,header_name,enabled,secret_ciphertext,
-      configuration_ciphertext,secret_key_id,configuration_key_id
+      configuration_ciphertext,secret_key_id,configuration_key_id,
+      oauth_access_ciphertext,oauth_access_key_id,oauth_expires_at
       FROM md_named_credentials WHERE tenant_id=$1 AND id=$2`,[tenantId,id]);
   const current=rows[0];if(!current)throw Error('Credential not found');
   if(!current.enabled)throw Error('Credential disabled');
-  const secret=current.secret_ciphertext?
-   decryptCredential(current.secret_ciphertext,current.secret_key_id):null;
+  const oauth=current.auth_type==='OAuth Authorization Code';
+  if(oauth&&(!current.oauth_access_ciphertext||!current.oauth_access_key_id
+     ||!current.oauth_expires_at||new Date(current.oauth_expires_at).getTime()<=Date.now()))
+   return {connected:false,message:'OAuth authorisation is required or token has expired'};
+  const secret=oauth
+   ?decryptCredential(current.oauth_access_ciphertext!,current.oauth_access_key_id!)
+   :current.secret_ciphertext?decryptCredential(current.secret_ciphertext,current.secret_key_id):null;
   const configuration=current.configuration_ciphertext?
    JSON.parse(decryptCredential(current.configuration_ciphertext,current.configuration_key_id)) as Record<string,string>:{};
   if(!configuration||typeof configuration!=='object'||Array.isArray(configuration))
    throw Error('Credential configuration unavailable');
   try{
-   if(current.protocol==='HTTPS')return await testHttpsCredential(current.base_url,current.auth_type,secret,current.header_name);
+   if(current.protocol==='HTTPS')return await testHttpsCredential(current.base_url,oauth?'Bearer':current.auth_type,secret,current.header_name);
    if(current.protocol==='SMTP')return await testSmtpCredential(current.base_url,configuration,secret);
    throw Error('Unsupported protocol');
   }catch(error){
