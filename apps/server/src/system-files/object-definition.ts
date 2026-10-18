@@ -86,6 +86,71 @@ export class ObjectDefinitionService {
       dependencies:rows.filter(row=>row.api_name===field.apiName&&row.related_object!==null).map(row=>row.related_object as string)
     }))};
   }
+  /** Editable field attributes only; structural changes never discard existing records. */
+  async updateField(tenantId:string,objectApi:string,fieldApi:string,input:unknown) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field name');
+    if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('Invalid field definition');
+    const field=input as Record<string,unknown>;
+    if(field.apiName!==undefined && field.apiName!==fieldApi)throw new Error('Field API name cannot be changed');
+    const allowed=new Set(['id','apiName','label','dataType','required','unique','relationship']);
+    if(Object.keys(field).some(key=>!allowed.has(key)))throw new Error('Unsupported field options cannot be saved');
+    if(field.label!==undefined && (typeof field.label!=='string'||!field.label.trim()))throw new Error('Invalid field label');
+    if(field.required!==undefined && typeof field.required!=='boolean')throw new Error('Invalid field required flag');
+    if(field.unique===true)throw new Error('Unique constraints are not configured for this field');
+    await this.db.transaction(async client=>{
+      const {rows}=await client.query<{data_type:string;related_object:string|null;max_length:number|null;required:boolean;label:string|null}>(`
+        SELECT data_type,related_object,max_length,required,label
+        FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 FOR UPDATE
+      `,[tenantId,objectApi,fieldApi]);
+      const original=rows[0];
+      if(!original)throw new Error('Field not found');
+      const readableType=original.data_type==='text'&&original.max_length?`Text(${original.max_length})`:
+        ({text:'Text',number:'Number',boolean:'Checkbox',date:'Date',datetime:'Date/Time',reference:'Lookup'} as Record<string,string>)[original.data_type];
+      if(field.dataType!==undefined && field.dataType!==readableType)throw new Error('Field type changes require explicit migration');
+      if(field.relationship!==undefined){
+        const inputTarget=(field.relationship as Record<string,unknown>)?.targetObject;
+        if(original.data_type!=='reference'||inputTarget!==original.related_object)
+          throw new Error('Relationship changes require explicit migration');
+      }
+      if(field.required===true && !original.required){
+        const count=await client.query<{exists:boolean}>(`
+          SELECT EXISTS(SELECT 1 FROM md_records r
+            WHERE r.tenant_id=$1 AND r.object_api=$2
+              AND NOT EXISTS(SELECT 1 FROM md_record_values v
+                WHERE v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.field_api=$3
+                  AND (v.value_text IS NOT NULL OR v.reference_record_id IS NOT NULL))) AS exists
+        `,[tenantId,objectApi,fieldApi]);
+        if(count.rows[0]?.exists)throw new Error('Cannot make field required while records have missing values');
+      }
+      await client.query(`
+        UPDATE md_field_definitions
+        SET label=COALESCE($4,label), required=COALESCE($5,required)
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3
+      `,[tenantId,objectApi,fieldApi,field.label??null,field.required??null]);
+    });
+    return this.get(tenantId,objectApi);
+  }
+  async deleteField(tenantId:string,objectApi:string,fieldApi:string) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(fieldApi))
+      throw new Error('Invalid field name');
+    if(fieldApi==='Id')throw new Error('Cannot delete system identity field');
+    await this.db.transaction(async client=>{
+      const field=await client.query<{id:string}>(`
+        SELECT id FROM md_field_definitions
+        WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3 FOR UPDATE
+      `,[tenantId,objectApi,fieldApi]);
+      if(!field.rows[0])throw new Error('Field not found');
+      const used=await client.query<{exists:boolean}>(`
+        SELECT EXISTS(SELECT 1 FROM md_record_values
+         WHERE tenant_id=$1 AND object_api=$2 AND field_api=$3) AS exists
+      `,[tenantId,objectApi,fieldApi]);
+      if(used.rows[0]?.exists)throw new Error('Field has business records; deletion refused');
+      await client.query('DELETE FROM md_field_definitions WHERE tenant_id=$1 AND object_api=$2 AND api_name=$3',
+        [tenantId,objectApi,fieldApi]);
+    });
+    return this.get(tenantId,objectApi);
+  }
   async get(tenantId:string,apiName:string) {
     const objects=await this.list(tenantId);
     const object=objects.find(item=>item.apiName===apiName);
