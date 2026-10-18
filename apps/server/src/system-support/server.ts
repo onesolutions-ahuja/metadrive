@@ -133,6 +133,35 @@ export function createSystemServer(db:SqlPersistence) {
     } catch {res.status(401).json({error:'Invalid refresh session'});}
   }));
   app.use('/api',authorize);
+  // Durable notifications: only the addressed user can list or acknowledge them.
+  const notificationView=(row:{id:string;recipient_id:string;title:string;body:string;flow_api_name:string;sent_by:string|null;created_at:Date;read_at:Date|null})=>({
+    id:row.id,recipientId:row.recipient_id,title:row.title,body:row.body,
+    flowApiName:row.flow_api_name,sentBy:row.sent_by??'',
+    createdAt:new Date(row.created_at).toISOString(),
+    readAt:row.read_at?new Date(row.read_at).toISOString():null
+  });
+  app.get('/api/notifications',route(async(req,res)=>{
+    const actor=req.actor!;
+    const {rows}=await db.query<{
+      id:string;recipient_id:string;title:string;body:string;flow_api_name:string;
+      sent_by:string|null;created_at:Date;read_at:Date|null
+    }>('SELECT id,recipient_id,title,body,flow_api_name,sent_by,created_at,read_at FROM md_notifications WHERE tenant_id=$1 AND recipient_id=$2 ORDER BY created_at DESC,id DESC LIMIT 100',[actor.tenant_id,actor.user_id]);
+    const {rows:counts}=await db.query<{count:string}>(
+      'SELECT count(*)::text AS count FROM md_notifications WHERE tenant_id=$1 AND recipient_id=$2 AND read_at IS NULL',[actor.tenant_id,actor.user_id]);
+    res.json({notifications:rows.map(notificationView),unreadCount:Number(counts[0]?.count??0)});
+  }));
+  app.post('/api/notifications/:id/read',route(async(req,res)=>{
+    const actor=req.actor!;
+    if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.id))
+      throw new Error('Invalid notification ID');
+    const {rows}=await db.query<{
+      id:string;recipient_id:string;title:string;body:string;flow_api_name:string;
+      sent_by:string|null;created_at:Date;read_at:Date|null
+    }>('UPDATE md_notifications SET read_at=COALESCE(read_at,now()) WHERE tenant_id=$1 AND recipient_id=$2 AND id=$3 RETURNING id,recipient_id,title,body,flow_api_name,sent_by,created_at,read_at',
+      [actor.tenant_id,actor.user_id,req.params.id]);
+    if(!rows[0]){res.status(404).json({error:'Notification not found'});return;}
+    res.json({notification:notificationView(rows[0])});
+  }));
   app.get('/api/auth/me',route(async(req,res)=>{
     res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
   }));
