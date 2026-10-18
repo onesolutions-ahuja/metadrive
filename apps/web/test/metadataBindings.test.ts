@@ -58,6 +58,38 @@ test('VAT-enabled cart rejects products without an explicit boolean tax classifi
  assert.match(source,/This product has no verified VAT applicability value/);
  assert.match(source,/vatApplicable: vatValue === true/);
 });
+test('basket cannot add products until VAT settings load and product tax status is explicitly verified',async()=>{
+ const slots:any[]=[];let cursor=0;const scheduled:(()=>void)[]=[];const deps:any[][]=[];
+ const handlers=new Map<string,any>();
+ const React={createElement:(type:any,props:any,...children:any[])=>({type,props:props??{},children}),
+  useState:(initial:any)=>{const i=cursor++;if(!(i in slots))slots[i]=typeof initial==='function'?initial():initial;return[slots[i],(v:any)=>{slots[i]=typeof v==='function'?v(slots[i]):v;}];},
+  useRef:(initial:any)=>{const i=cursor++;return slots[i]??(slots[i]={current:initial});},
+  useEffect:(fn:()=>void,d:any[]=[])=>{const i=cursor++;if(!deps[i]||d.some((v,j)=>v!==deps[i][j])){deps[i]=d;scheduled.push(fn);}}};
+ const window={addEventListener:(name:string,callback:any)=>handlers.set(name,callback),removeEventListener:()=>{}};
+ const m=await cartModule(React,window);
+ let releaseSettings:(value:any)=>void=()=>{};
+ const settings=new Promise(resolve=>{releaseSettings=resolve});
+ const props={viewMode:'basket',currencyCode:'GBP',vatRate:'',nameFieldApiName:'Label',priceFieldApiName:'Amount',
+  vatApplicableFieldApiName:'Taxable',checkoutStatusOutput:'Status',checkoutRequestOutput:'Request',
+  cartTargetKey:'cart',pageSessionKey:'page',loadCompanySettings:()=>settings};
+ const render=()=>{cursor=0;m.ShoppingCartTill({props});for(const effect of scheduled.splice(0))effect();};
+ const send=(product:any)=>handlers.get('metadrive:page-cart-add')({
+  detail:{pageSessionKey:'page',cartTargetKey:'cart',record:product}
+ });
+ render();
+ send({Id:'p1',Label:'Apple',Amount:1,Taxable:true});
+ assert.equal(slots[0].length,0);
+ assert.match(slots[3],/Financial settings are not ready/);
+ releaseSettings({standardVatRate:20});
+ await new Promise(resolve=>setTimeout(resolve,0));
+ render();
+ send({Id:'p1',Label:'Apple',Amount:1});
+ assert.equal(slots[0].length,0);
+ assert.match(slots[3],/no verified VAT applicability/);
+ send({Id:'p1',Label:'Apple',Amount:1,Taxable:false});
+ assert.equal(slots[0].length,1);
+ assert.equal(slots[0][0].vatApplicable,false);
+});
 test('cart formatting does not invent a currency or an age approval outcome',async()=>{
  const m=await cartModule({});
  assert.throws(()=>m.currency(100,undefined));
