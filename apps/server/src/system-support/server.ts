@@ -10,6 +10,7 @@ import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
 import {SqlReportRuntime} from './sql-report-runtime.js';
+import {DashboardSubscriptionService} from './dashboard-subscription-service.js';
 import {RecordCollaborationService} from './record-collaboration-service.js';
 
 import { ComponentRuntime } from '../system-files/component-runtime.js';
@@ -66,6 +67,7 @@ export function createSystemServer(db:SqlPersistence) {
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
+  const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac);
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const namedCredentials=new NamedCredentialService(db,rbac);
@@ -787,6 +789,19 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.post('/api/records/:objectApi/:id/chatter/:postId/comments',route(async(req,res)=>{
     res.status(201).json(await collaboration.addComment(req.actor!,req.params.objectApi,req.params.id,req.params.postId,req.body?.body));
+  }));
+  app.get('/api/metadata/dashboards/:apiName/subscriptions',route(async(req,res)=>{
+    res.json(await dashboardSubscriptions.list(req.actor!,req.params.apiName));
+  }));
+  app.post('/api/metadata/dashboards/:apiName/subscriptions',route(async(req,res)=>{
+    res.status(201).json(await dashboardSubscriptions.save(req.actor!,req.params.apiName,req.body));
+  }));
+  app.put('/api/metadata/dashboards/:apiName/subscriptions/:id',route(async(req,res)=>{
+    res.json(await dashboardSubscriptions.save(req.actor!,req.params.apiName,req.body,req.params.id));
+  }));
+  app.delete('/api/metadata/dashboards/:apiName/subscriptions/:id',route(async(req,res)=>{
+    await dashboardSubscriptions.remove(req.actor!,req.params.apiName,req.params.id);
+    res.status(204).end();
   }));
   app.post('/api/reports/preview',route(async(req,res)=>{
     const actor=req.actor!;
