@@ -1,6 +1,7 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from './sql-persistence.js';
 import {registerSqlCompatibilityRoutes} from './sql-compat-routes.js';
+import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {applySystemMigrations} from './system-migrations.js';
 import { AuthenticationService } from './authentication.js';
 import {sessionMetadata} from './session-metadata.js';
@@ -339,6 +340,7 @@ export function createSystemServer(db:SqlPersistence) {
     res.status(204).end();
   }));
   registerSqlCompatibilityRoutes(app,db,rbac,definitions);
+  registerBuilderSqlRoutes(app,db,rbac);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
