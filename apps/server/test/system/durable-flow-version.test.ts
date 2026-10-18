@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {DurableJobService} from '../../src/system-support/durable-job-service.js';
-import {DurableJobWorker} from '../../src/system-support/durable-job-worker.js';
+import {DurableJobWorker,type ClaimedJob} from '../../src/system-support/durable-job-worker.js';
 import {registerFlowJobHandler} from '../../src/system-support/flow-job-handler.js';
 import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
 import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
@@ -27,8 +27,8 @@ test('worker never executes a Flow when its published version has changed',async
   complete:async()=>{throw new Error('Must not complete');},
   fail:async()=>{}
  } as unknown as DurableJobService;
- let auth:((x:typeof job)=>Promise<boolean>)|undefined;
- const worker=new DurableJobWorker(service,j=>auth?.(j as typeof job)??Promise.resolve(false),'worker');
+ let auth:((x:ClaimedJob)=>Promise<boolean>)|undefined;
+ const worker=new DurableJobWorker(service,j=>auth?.(j)??Promise.resolve(false),'worker');
  auth=registerFlowJobHandler(worker,queries,rbac,flows);
  assert.deepEqual(await worker.runOnce(),{claimed:1,completed:0,failed:1});
  assert.equal(calls,0);
