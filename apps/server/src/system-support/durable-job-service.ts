@@ -33,8 +33,9 @@ export class DurableJobService {
    const {rows}=await client.query<{id:string;tenant_id:string;job_type:string;actor_user_id:string|null;app_api_name:string|null;resource_id:string|null;attempt:number}>(`
      WITH due AS (
       SELECT id FROM md_durable_jobs
-      WHERE (status='queued' AND scheduled_at<=now())
-        OR (status='leased' AND lease_until<now())
+      WHERE ((status='queued' AND scheduled_at<=now())
+        OR (status='leased' AND lease_until<now()))
+        AND attempt<max_attempts
       ORDER BY scheduled_at,id
       LIMIT $1 FOR UPDATE SKIP LOCKED
      )
@@ -44,6 +45,7 @@ export class DurableJobService {
      FROM due WHERE j.id=due.id AND j.attempt<j.max_attempts
      RETURNING j.id,j.tenant_id,j.job_type,j.actor_user_id,j.app_api_name,j.resource_id,j.attempt
    `,[limit,workerId,leaseSeconds]);
+   await client.query(`UPDATE md_durable_jobs SET status='failed',lease_owner=NULL,lease_until=NULL,updated_at=now(),error_code='LEASE_EXHAUSTED' WHERE status='leased' AND lease_until<now() AND attempt>=max_attempts`);
    return rows;
   });
  }
