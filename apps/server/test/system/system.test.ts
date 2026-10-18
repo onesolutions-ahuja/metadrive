@@ -435,3 +435,38 @@ test('SQL RBAC metadata access fails closed without Security read permission',as
  const db={query:async()=>({rows:[]})} as unknown as SqlPersistence;
  await assert.rejects(()=>new RbacEngine(db).describe('tenant','user'),/Permission denied/);
 });
+
+test('Account password change checks old password and revokes sessions in the same SQL transaction',async()=>{
+ const events:string[]=[];
+ const seed=new AuthenticationService({} as SqlPersistence);
+ const existing=await seed.hashPassword('CurrentPasswordABC123!');
+ const db={
+   transaction:async(run:(client:{query:(sql:string,args?:unknown[])=>Promise<unknown>})=>Promise<void>)=>
+     run({query:async(sql:string,args:unknown[]=[])=>{
+       events.push(sql);
+       assert.equal(args[0],'tenant');
+       assert.equal(args[1],'user');
+       if(sql.includes('SELECT password_hash'))return {rows:[{password_hash:existing}]};
+       return {rows:[],rowCount:1};
+     }})
+ } as unknown as SqlPersistence;
+ await new AuthenticationService(db).changePassword('tenant','user','CurrentPasswordABC123!','ChangedPasswordABC123!');
+ assert.equal(events.filter(s=>s.includes('UPDATE md_sessions')).length,1);
+ assert.equal(events.filter(s=>s.includes('UPDATE md_refresh_sessions')).length,1);
+ assert.equal(events.filter(s=>s.includes('UPDATE md_users')).length,1);
+ events.length=0;
+ await assert.rejects(
+   ()=>new AuthenticationService(db).changePassword('tenant','user','IncorrectPassword','ChangedPasswordABC123!'),
+   /Invalid credentials/
+ );
+ assert.equal(events.filter(s=>s.startsWith('UPDATE')).length,0);
+});
+test('Account session list returns only current tenant/user SQL rows',async()=>{
+ const db={query:async(sql:string,args:unknown[])=>{
+   assert.match(sql,/WHERE tenant_id=\$1 AND user_id=\$2/);
+   assert.deepEqual(args,['tenant','user']);
+   return {rows:[{id:'family',expires_at:new Date('2026-10-20T12:00:00Z')}]};
+ }} as unknown as SqlPersistence;
+ const result=await new AuthenticationService(db).activeSessions('tenant','user');
+ assert.deepEqual(result.sessions,[{familyId:'family',expiresAt:1792497600,mfaVerified:false}]);
+});
