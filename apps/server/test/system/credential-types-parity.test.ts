@@ -7,9 +7,9 @@ test('Shared Named Credential types match supported SQL transport auth types',()
  const service=readFileSync(new URL('../../src/system-support/named-credential-service.ts',import.meta.url),'utf8');
  const declaration=metadata.match(/authType: ([^;]+);/);
  assert.ok(declaration);
- for(const type of ['None','Bearer','Basic','API Key']){
+ for(const type of ['None','Bearer','Basic','API Key','OAuth Client Credentials']){
   assert.ok(declaration[1].includes("'"+type+"'"),type);
   assert.ok(service.includes("'"+type+"'"),type);
  }
- assert.doesNotMatch(declaration[1],/OAuth Client Credentials|OAuth Authorization Code/);
+ assert.doesNotMatch(declaration[1],/OAuth Authorization Code/);
 });
