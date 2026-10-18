@@ -70,9 +70,10 @@ export function parseAppRoute(pathname: string, search = ''): AppRoute {
       return { kind: 'setup', workspace: 'dashboard-builder', resourceApiName: decodeURIComponent(segments[1]), dashboardView: true };
     }
     if (segments[0] === 'setup') {
-      const workspace = decodeURIComponent(segments[1] ?? 'home') as WorkspaceId;
+      const requestedWorkspace = decodeURIComponent(segments[1] ?? 'home');
+      if (requestedWorkspace === 'connector-settings') return { kind: 'setup', workspace: 'named-credentials' };
+      const workspace = requestedWorkspace as WorkspaceId;
       const validWorkspaces: WorkspaceId[] = ['home', 'object-manager', 'page-builder', 'dashboard-builder', 'report-builder', 'flow-builder', 'flow-interviews', 'scheduled-flows', 'flow-logs', 'automation-settings', 'approval-processes', 'component-library', 'app-manager', 'app-exchange', 'named-credentials', 'company-settings', 'tenant-management', 'rbac'];
-      if (workspace === 'connector-settings') return { kind: 'setup', workspace: 'named-credentials' };
       if (!validWorkspaces.includes(workspace)) return { kind: 'setup', workspace: 'home' };
       if (workspace === 'object-manager') {
         return {
