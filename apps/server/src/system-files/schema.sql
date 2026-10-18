@@ -106,3 +106,35 @@ CREATE TABLE IF NOT EXISTS md_app_seed_pages (
  FOREIGN KEY(tenant_id,page_id) REFERENCES md_page_definitions(tenant_id,id),
  FOREIGN KEY(tenant_id,component_id) REFERENCES md_page_components(tenant_id,id)
 );
+
+-- Run by the versioned SQL migration runner before enabling the new routes.
+-- Shared metadata for optional runtime definitions. Never stores credentials or secrets.
+CREATE TABLE IF NOT EXISTS md_system_definitions (
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ kind text NOT NULL CHECK (kind IN ('platform-events','email-alerts','approval-processes','dashboards','dashboard-folders','dashboard-territories','report-folders','reports','connector-providers','integration-connections')),
+ api_name text NOT NULL,
+ label text NOT NULL,
+ properties jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(properties)='object'),
+ enabled boolean NOT NULL DEFAULT true,
+ revision integer NOT NULL DEFAULT 1 CHECK (revision>0),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY (tenant_id,kind,api_name)
+);
+CREATE INDEX IF NOT EXISTS md_system_definitions_lookup ON md_system_definitions(tenant_id,kind,enabled);
+
+-- Isolated encrypted credential storage. The SQL record never contains plaintext secrets.
+CREATE TABLE IF NOT EXISTS md_named_credentials (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ name text NOT NULL,
+ label text NOT NULL,
+ protocol text NOT NULL CHECK(protocol IN ('HTTPS','SMTP')),
+ base_url text NOT NULL,
+ auth_type text NOT NULL,
+ header_name text NOT NULL DEFAULT '',
+ secret_ciphertext bytea,
+ configuration_ciphertext bytea,
+ enabled boolean NOT NULL DEFAULT true,
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(tenant_id,name),UNIQUE(tenant_id,id)
+);

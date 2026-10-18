@@ -1,9 +1,12 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from './sql-persistence.js';
+import {applySystemMigrations} from './system-migrations.js';
 import { AuthenticationService } from './authentication.js';
 import {sessionMetadata} from './session-metadata.js';
 import { ObjectDefinitionService } from './object-definition.js';
 import { RbacEngine } from './rbac-engine.js';
+import {NamedCredentialService} from './named-credential-service.js';
+import {SystemDefinitionService,definitionKinds,type DefinitionKind} from './system-definition-service.js';
 import { RecordEngine } from './record-engine.js';
 import { ComponentRuntime } from './component-runtime.js';
 import { PageRuntime } from './page-runtime.js';
@@ -56,6 +59,8 @@ export function createSystemServer(db:SqlPersistence) {
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
   const records=new RecordEngine(db,rbac);
+  const systemDefinitions=new SystemDefinitionService(db,rbac);
+  const namedCredentials=new NamedCredentialService(db,rbac);
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
@@ -196,6 +201,74 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({pages:await pages.list(actor.tenant_id)});
   }));
+  app.get('/api/named-credentials/readiness',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await namedCredentials.readiness(actor.tenant_id,actor.user_id));
+  }));
+  app.get('/api/named-credentials',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({credentials:await namedCredentials.list(actor.tenant_id,actor.user_id)});
+  }));
+  app.post('/api/named-credentials',route(async(req,res)=>{
+    const actor=req.actor!;
+    const credential=await namedCredentials.create(actor.tenant_id,actor.user_id,req.body);
+    res.status(201).json({credential});
+  }));
+  app.put('/api/named-credentials/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json({credential:await namedCredentials.update(actor.tenant_id,actor.user_id,req.params.id,req.body)});
+  }));
+  app.patch('/api/named-credentials/:id/enabled',route(async(req,res)=>{
+    const actor=req.actor!;
+    const credential=await namedCredentials.setEnabled(actor.tenant_id,actor.user_id,req.params.id,req.body?.enabled);
+    res.json({credential});
+  }));
+  app.delete('/api/named-credentials/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await namedCredentials.remove(actor.tenant_id,actor.user_id,req.params.id);
+    res.status(204).end();
+  }));
+  // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
+  const definitionPaths:Record<string,DefinitionKind>={
+    '/metadata/platform-events':'platform-events',
+    '/metadata/email-alerts':'email-alerts',
+    '/metadata/approval-processes':'approval-processes',
+    '/metadata/dashboards':'dashboards',
+    '/metadata/dashboard-folders':'dashboard-folders',
+    '/metadata/dashboard-territories':'dashboard-territories',
+    '/metadata/report-folders':'report-folders',
+    '/metadata/reports':'reports',
+    '/connector-providers':'connector-providers',
+    '/integration-connections':'integration-connections'
+  };
+  for(const [path,kind] of Object.entries(definitionPaths)) {
+    app.get('/api'+path,route(async(req,res)=>{
+      const actor=req.actor!;
+      const items=await systemDefinitions.list(actor.tenant_id,actor.user_id,kind);
+      res.json({[definitionKinds[kind]]:items});
+    }));
+    app.post('/api'+path,route(async(req,res)=>{
+      const actor=req.actor!;
+      const definition=await systemDefinitions.save(actor.tenant_id,actor.user_id,kind,req.body);
+      res.status(201).json({[kind==='email-alerts'?'emailAlert':kind==='approval-processes'?'approvalProcess':kind==='platform-events'?'platformEvent':'definition']:definition});
+    }));
+    app.put('/api'+path+'/:apiName',route(async(req,res)=>{
+      const actor=req.actor!;
+      if(req.params.apiName!==req.body?.apiName)throw new Error('Invalid definition identity');
+      const definition=await systemDefinitions.save(actor.tenant_id,actor.user_id,kind,req.body);
+      res.json({[kind==='email-alerts'?'emailAlert':kind==='approval-processes'?'approvalProcess':kind==='platform-events'?'platformEvent':'definition']:definition});
+    }));
+    app.delete('/api'+path+'/:apiName',route(async(req,res)=>{
+      const actor=req.actor!;
+      await systemDefinitions.remove(actor.tenant_id,actor.user_id,kind,req.params.apiName);
+      res.status(204).end();
+    }));
+  }
+  app.get('/api/metadata/flows',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
+    res.json({flows:await flows.list(actor.tenant_id)});
+  }));
   app.get('/api/metadata/flows/list',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','read');
@@ -257,6 +330,7 @@ export function createSystemServer(db:SqlPersistence) {
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
     res.status(204).end();
   }));
+  app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
     if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
     else if(err.message==='Field already exists'||err.message==='Object already exists')res.status(409).json({error:err.message});
@@ -286,7 +360,7 @@ export async function bootstrapFreshTenant(db:SqlPersistence,env:NodeJS.ProcessE
 }
 export async function startSystemServer() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');
-  try { await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
+  try { await applySystemMigrations(db); await db.verifySchema(); await bootstrapFreshTenant(db); const status=await reconcileBootstrapPassword(db); if(status!=='disabled')console.info('First-install credential reconciliation:',status);
     const firstLogin=await rotateFirstLoginPassword(db);
     if(firstLogin!=='disabled')console.info('First-login credential rotation:',firstLogin);
     if(firstLogin==='rotated'){
