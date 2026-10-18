@@ -582,7 +582,7 @@ function SetupApp({ onLogout, entryTiming }: { onLogout: () => void; entryTiming
         const {systemPermissions: _system, objectPermissions: _object, fieldPermissions: _field, ...remaining} = set;
         return remaining;
       };
-      if (JSON.stringify(previousSets.map(unsupportedFields)) !== JSON.stringify(nextSets.map(unsupportedFields)))
+      if (previousSets.some(oldSet => { const updated = nextSets.find(set => set.id === oldSet.id); return !updated || JSON.stringify(unsupportedFields(oldSet)) !== JSON.stringify(unsupportedFields(updated)); }))
         throw new Error('Permission set names and advanced settings cannot be edited in this SQL runtime.');
       saved = await apiRequest<AccessControlMetadata>('/metadata/permissions/sets', {
         method: 'PUT',
