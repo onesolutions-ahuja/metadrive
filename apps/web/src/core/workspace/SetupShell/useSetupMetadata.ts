@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Tenant-scoped bootstrap: core metadata first, optional admin metadata afterwards.
 import { useEffect, useRef } from 'react';
+import { resolveSqlComponentLibrary } from '../../components/Registry/bundledRegistryClient';
 import type { ObjectMetadata, LightningPageMetadata, LightningAppMetadata, FlowDefinitionMetadata, PlatformEventMetadata, NamedCredentialMetadata, EmailAlertMetadata, ApprovalProcessMetadata, ConnectorProviderMetadata, IntegrationConnectionMetadata, LibraryComponentMetadata, DashboardMetadata, DashboardFolderMetadata, DashboardTerritoryMetadata, ReportFolderMetadata, ReportMetadata, AccessControlMetadata } from '../../metadata/Definitions/metadata';
 import type { MetadataPublicationResponse } from '../../metadata/Cache/verifiedMetadataCache';
 export function useSetupMetadata(ctx: any) {
@@ -224,7 +225,7 @@ export function useSetupMetadata(ctx: any) {
         setApprovalProcesses(approvalProcessPayload.approvalProcesses);
         setConnectorProviders(providerPayload.providers);
         setIntegrationConnections(integrationPayload.connections);
-        setLibraryComponents(libraryPayload.components);
+        setLibraryComponents(await resolveSqlComponentLibrary(libraryPayload.components));
         setCanManageLibrary(libraryPayload.canManage);
         setDashboards(dashboardPayload.dashboards);
         setDashboardFolders(folderPayload.folders);

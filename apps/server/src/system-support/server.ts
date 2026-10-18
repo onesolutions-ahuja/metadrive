@@ -2,11 +2,14 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
 import {seedCoreObjectsForExistingTenants} from '../app-seeders/fresh-core-objects.js';
+import {seedBundledComponentsForExistingTenants} from '../app-seeders/bundled-components.js';
+import {seedProductImageFieldForExistingTenants} from '../app-seeders/product-image-field.js';
 import { AuthenticationService } from '../system-files/authentication.js';
 import {PasswordRecoverySettingsService} from './password-recovery-settings-service.js';
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
+import { RoleAdministration } from './role-administration.js';
 import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
@@ -66,6 +69,7 @@ export function createSystemServer(db:SqlPersistence) {
   app.use(express.json({limit:'64kb'}));
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
+  const roleAdministration=new RoleAdministration(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -93,7 +97,7 @@ export function createSystemServer(db:SqlPersistence) {
       res.setHeader('Access-Control-Allow-Origin',origin);
       res.setHeader('Access-Control-Allow-Credentials','true');
       res.setHeader('Vary','Origin');
-      res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, X-MetaDrive-Request-Source');
+      res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, If-Match, X-MetaDrive-Request-Source');
       res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,PATCH,DELETE,OPTIONS');
     }
     if(req.method==='OPTIONS') {res.status(204).end();return;}
@@ -359,6 +363,10 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/permissions',route(async(req,res)=>{
     const actor=req.actor!;
     res.json(await rbac.describe(actor.tenant_id,actor.user_id));
+  }));
+  app.put('/api/metadata/permissions',route(async(req,res)=>{
+    const actor=req.actor!;
+    res.json(await roleAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.get('/api/objects',route(async(req,res)=>{
     const actor=req.actor!;
