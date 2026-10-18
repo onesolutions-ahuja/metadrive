@@ -1,5 +1,6 @@
 import type { SqlPersistence } from '../system-files/sql-persistence.js';
 import type { RbacEngine } from '../system-files/rbac-engine.js';
+import {toPermissionRule} from '../system-files/permission-resource-map.js';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const name=/^[A-Za-z][A-Za-z0-9_]{0,79}$/;
@@ -14,16 +15,15 @@ function parseRules(set:SetRow) {
  const append=(resource:string,action:string)=>{if(resource.includes('*')||action.includes('*'))throw Error('Wildcard grants require separate privileged policy workflow');rules.push({resource,action});};
  for(const item of set.systemPermissions){
    if(item==='*:*'){rules.push({resource:'*',action:'*'});continue;}
-   if(typeof item!=='string'||item.length>150||!item.includes(':'))throw Error('Invalid system permission');
-   const index=item.lastIndexOf(':'),resource=item.slice(0,index),action=item.slice(index+1);
-   if(!/^[A-Za-z][A-Za-z0-9_:.-]*$/.test(resource)||!name.test(action))throw Error('Invalid system permission');
-   append(resource,action);
+   if(typeof item!=='string'||item.length>150)throw Error('Invalid system permission');
+   const rule=toPermissionRule(item);
+   append(rule.resource,rule.action);
  }
  for(const [obj,actions] of Object.entries(set.objectPermissions)){
    if(!validResource(obj)||!value(actions))throw Error('Invalid object grant');
    for(const [action,enabled] of Object.entries(actions)){
      if(!objectActions.includes(action)||typeof enabled!=='boolean')throw Error('Invalid object grant');
-     if(enabled)append('Object:'+obj,action);
+     if(enabled)append(obj,action);
    }
  }
  for(const [field,actions] of Object.entries(set.fieldPermissions)){
@@ -31,7 +31,7 @@ function parseRules(set:SetRow) {
    if(parts.length!==2||parts.some(part=>!validResource(part))||!value(actions))throw Error('Invalid field grant');
    for(const [action,enabled] of Object.entries(actions)){
      if(!fieldActions.includes(action)||typeof enabled!=='boolean')throw Error('Invalid field grant');
-     if(enabled)append('Field:'+field,action);
+     if(enabled)append(field,action);
    }
  }
  if(new Set(rules.map(r=>r.resource+':'+r.action)).size!==rules.length||rules.length>2500)
