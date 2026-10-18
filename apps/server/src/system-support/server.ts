@@ -441,6 +441,113 @@ export function createSystemServer(db:SqlPersistence) {
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
     res.json({apps:await apps.listInstalled(actor.tenant_id)});
   }));
+
+  // The User object is a secure view of md_users, never a second md_records copy.
+  const userRecord=(row:{id:string;email:string;display_name:string;enabled:boolean})=>({
+    Id:row.id,Name:row.display_name||row.email,Email:row.email,Username:row.email,
+    IsActive:row.enabled
+  });
+  const userFields=(input:Record<string,unknown>,creating:boolean)=>{
+    const allowed=new Set(['Name','Email','Username','IsActive','Password','UserRoleId']);
+    for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
+    const email=input.Email??input.Username;
+    if(email!==undefined&&(typeof email!=='string'||!/^\\S+@\\S+\\.\\S+$/.test(email)))throw new Error('Invalid user email');
+    if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
+    if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
+    if(input.UserRoleId!==undefined&&input.UserRoleId!==null&&typeof input.UserRoleId!=='string')throw new Error('Invalid role');
+    if(creating&&(!email||typeof input.Password!=='string'))throw new Error('Invalid user credentials');
+    if(!creating&&input.Password!==undefined)throw new Error('Invalid password edit');
+    return {email:email as string|undefined,name:input.Name as string|undefined,
+      enabled:input.IsActive as boolean|undefined,password:input.Password as string|undefined,
+      role:input.UserRoleId as string|undefined|null};
+  };
+  const readUser=async(tenantId:string,id:string)=>{
+    const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
+      'SELECT id,email,display_name,enabled FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
+    if(!result.rows[0])throw new Error('Record not found');
+    return userRecord(result.rows[0]);
+  };
+  app.get('/api/records/User',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','read');
+    const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
+    if(!Number.isInteger(limit)||!Number.isInteger(offset)||limit<1||offset<0)throw new Error('Invalid pagination');
+    const [users,count]=await Promise.all([
+      db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
+        'SELECT id,email,display_name,enabled FROM md_users WHERE tenant_id=$1 ORDER BY email,id LIMIT $2 OFFSET $3',
+        [actor.tenant_id,Math.min(limit,100),offset]),
+      db.query<{total:string}>('SELECT count(*)::text AS total FROM md_users WHERE tenant_id=$1',[actor.tenant_id])
+    ]);
+    res.json({records:users.rows.map(userRecord),total:Number(count.rows[0]?.total??0)});
+  }));
+  app.get('/api/records/User/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','read');
+    res.json({record:await readUser(actor.tenant_id,req.params.id)});
+  }));
+  app.post('/api/records/User',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','create');
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
+    const values=userFields(req.body,true);
+    const passwordHash=await auth.hashPassword(values.password!);
+    const row=await db.transaction(async client=>{
+      const result=await client.query<{id:string}>(
+        'INSERT INTO md_users(tenant_id,email,display_name,password_hash,enabled) VALUES($1,$2,$3,$4,$5) RETURNING id',
+        [actor.tenant_id,values.email,values.name??'',passwordHash,values.enabled??true]);
+      if(values.role){
+        const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
+        if(!role.rowCount)throw new Error('Invalid role');
+        await client.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',
+          [actor.tenant_id,result.rows[0].id,values.role]);
+      }
+      return result.rows[0];
+    });
+    res.status(201).json({record:await readUser(actor.tenant_id,row.id)});
+  }));
+  const editUser=route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','edit');
+    if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
+    const values=userFields(req.body,false);
+    if(req.params.id===actor.user_id&&values.enabled===false)throw new Error('Invalid self deactivation');
+    await db.transaction(async client=>{
+      const updated=await client.query(
+        'UPDATE md_users SET email=COALESCE($3,email),display_name=COALESCE($4,display_name),enabled=COALESCE($5,enabled) WHERE tenant_id=$1 AND id=$2 RETURNING id',
+        [actor.tenant_id,req.params.id,values.email??null,values.name??null,values.enabled??null]);
+      if(!updated.rowCount)throw new Error('Record not found');
+      if(values.role!==undefined){
+        if(values.role){
+          const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
+          if(!role.rowCount)throw new Error('Invalid role');
+        }
+        await client.query('DELETE FROM md_user_roles WHERE tenant_id=$1 AND user_id=$2',[actor.tenant_id,req.params.id]);
+        if(values.role)await client.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',
+          [actor.tenant_id,req.params.id,values.role]);
+      }
+      if(values.enabled===false){
+        await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
+        await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
+      }
+    });
+    res.json({record:await readUser(actor.tenant_id,req.params.id)});
+  });
+  app.put('/api/records/User/:id',editUser);
+  app.patch('/api/records/User/:id',editUser);
+  app.delete('/api/records/User/:id',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'User','delete');
+    if(req.params.id===actor.user_id)throw new Error('Invalid self deactivation');
+    await db.transaction(async client=>{
+      const result=await client.query('UPDATE md_users SET enabled=false WHERE tenant_id=$1 AND id=$2 RETURNING id',
+        [actor.tenant_id,req.params.id]);
+      if(!result.rowCount)throw new Error('Record not found');
+      await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
+      await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
+    });
+    res.status(204).end();
+  }));
+
   app.get('/api/records/:objectApi',route(async(req,res)=>{
     const actor=req.actor!;
     const limit=Number(req.query.limit??50),offset=Number(req.query.offset??0);
