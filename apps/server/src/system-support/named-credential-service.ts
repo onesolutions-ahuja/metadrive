@@ -1,4 +1,7 @@
-import {createCipheriv,randomBytes} from 'node:crypto';
+import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
+import {lookup} from 'node:dns/promises';
+import {isIP} from 'node:net';
+import {request as secureRequest} from 'node:https';
 import type {SqlPersistence} from '../system-files/sql-persistence.js';
 import type {RbacEngine} from '../system-files/rbac-engine.js';
 
@@ -120,6 +123,107 @@ export class NamedCredentialService {
    [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig]);
   if(!result.rowCount)throw new Error('Credential not found');
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
+ }
+ 
+ /** One reusable, host-independent outbound HTTP transport. Credential secrets are never returned to a Flow. */
+ async callout(tenantId:string,userId:string,config:Record<string,unknown>,
+   variables:Record<string,string|number|boolean|null>,idempotencyKey:string){
+  await this.rbac.require(tenantId,userId,'NamedCredential','read');
+  await this.rbac.require(tenantId,userId,'HTTPCallout','execute');
+  if(typeof config.namedCredentialId!=='string'||!/^[0-9a-f-]{36}$/i.test(config.namedCredentialId))
+    throw new Error('HTTP Callout requires a saved HTTPS Named Credential');
+  const {rows}=await this.db.query<{
+   protocol:string;base_url:string;auth_type:string;header_name:string;
+   secret_ciphertext:Buffer|null;enabled:boolean
+  }>('SELECT protocol,base_url,auth_type,header_name,secret_ciphertext,enabled FROM md_named_credentials WHERE tenant_id=$1 AND id=$2',
+    [tenantId,config.namedCredentialId]);
+  const item=rows[0];
+  if(!item||!item.enabled||item.protocol!=='HTTPS')throw new Error('HTTPS credential unavailable');
+  const method=String(config.method??'GET').toUpperCase();
+  if(!['GET','POST','PUT','PATCH','DELETE'].includes(method))throw new Error('Unsupported HTTP method');
+  if(config.deliveryMode==='DURABLE_ASYNC')throw new Error('Durable async HTTP Callout requires the SQL job dispatcher');
+  if(typeof config.path!=='string'||config.path.startsWith('/')||config.path.includes('\\')||config.path.length>2048)
+    throw new Error('Invalid relative callout path');
+  const substitute=(source:string)=>source.replace(/\{!([A-Za-z][A-Za-z0-9_.]*)\}/g,(_,key:string)=>{
+   if(!Object.hasOwn(variables,key))throw new Error('Unknown HTTP Callout resource');
+   return String(variables[key]??'');
+  });
+  const base=new URL(item.base_url);
+  if(base.protocol!=='https:'||base.username||base.password||base.hash||base.port&&base.port!=='443')
+    throw new Error('HTTP Callouts require a standard HTTPS origin');
+  const destination=new URL(substitute(config.path),base.href.endsWith('/')?base.href:base.href+'/');
+  if(destination.origin!==base.origin||destination.username||destination.password||destination.hash)
+    throw new Error('HTTP Callout destination is outside Named Credential');
+  if(isIP(destination.hostname)||destination.hostname==='localhost'||destination.hostname.endsWith('.local'))
+    throw new Error('Direct IP and local network callouts are prohibited');
+  const resolved=await lookup(destination.hostname,{all:true,verbatim:true});
+  const publicIp=(address:string)=>{
+   if(isIP(address)===4){
+    const [a,b]=address.split('.').map(Number);
+    return !(a===0||a===10||a===127||a>=224||a===169&&b===254||a===172&&b>=16&&b<=31||
+      a===192&&b===168||a===100&&b>=64&&b<=127||a===198&&b>=18&&b<=19||
+      a===192&&b===0||a===192&&b===88||a===192&&b===0||a===198&&b===51||
+      a===203&&b===0);
+   }
+   if(isIP(address)===6){
+    const v=address.toLowerCase();
+    return !(/^(::|fc|fd|fe8|fe9|fea|feb)/.test(v)||v.includes(':ffff:'));
+   }
+   return false;
+  };
+  if(!resolved.length||resolved.some(x=>!publicIp(x.address)))
+    throw new Error('HTTP Callout destination resolves to a restricted network');
+  const header:Record<string,string>={'Accept':'application/json'};
+  if(typeof config.headers==='string'&&config.headers.trim()){
+   for(const line of config.headers.split(/\r?\n/)){
+    const colon=line.indexOf(':');
+    if(colon<1)throw new Error('Invalid HTTP header');
+    const name=line.slice(0,colon).trim(),value=substitute(line.slice(colon+1).trim());
+    if(!/^X-[a-z0-9-]+$/i.test(name)||/[\r\n]/.test(value))throw new Error('Restricted HTTP header');
+    header[name]=value;
+   }
+  }
+  if(item.auth_type!=='None'){
+   const encrypted=item.secret_ciphertext;
+   const key=this.key();
+   if(!encrypted||!key||encrypted.length<29)throw new Error('Named Credential cannot be decrypted');
+   const decipher=createDecipheriv('aes-256-gcm',key,encrypted.subarray(0,12));
+   decipher.setAuthTag(encrypted.subarray(encrypted.length-16));
+   const secret=Buffer.concat([decipher.update(encrypted.subarray(12,encrypted.length-16)),decipher.final()]).toString('utf8');
+   if(item.auth_type==='Bearer')header.Authorization='Bearer '+secret;
+   else if(item.auth_type==='Basic')header.Authorization='Basic '+Buffer.from(secret).toString('base64');
+   else if(item.auth_type==='API Key'){
+    if(!/^X-[a-z0-9-]+$/i.test(item.header_name))throw new Error('Credential header must be an X- header');
+    header[item.header_name]=secret;
+   }else throw new Error('OAuth token exchange is not configured for this credential');
+  }
+  if(method!=='GET')header['Idempotency-Key']=idempotencyKey;
+  if(typeof config.queryParameters==='string'&&config.queryParameters.trim())
+    throw new Error('Structured query parameters must be configured through supported mappings');
+  const body=typeof config.body==='string'&&config.body.trim()?substitute(config.body):undefined;
+  if(body&&Buffer.byteLength(body)>32768)throw new Error('HTTP Callout body too large');
+  if(body)header['Content-Type']='application/json';
+  const timeout=Math.min(30000,Math.max(1000,Number(config.timeoutMs)||15000));
+  const address=resolved[0];
+  const result=await new Promise<{status:number;body:string}>((resolve,reject)=>{
+   const call=secureRequest(destination,{method,headers:header,timeout,
+    agent:false,lookup:(_host,_options,cb)=>cb(null,address.address,address.family)},res=>{
+      const status=res.statusCode??0;
+      const chunks:Buffer[]=[];let length=0;
+      res.on('data',(chunk:Buffer)=>{
+       length+=chunk.length;
+       if(length>65536){call.destroy(new Error('HTTP response exceeded limit'));return;}
+       chunks.push(chunk);
+      });
+      res.on('end',()=>resolve({status,body:Buffer.concat(chunks).toString('utf8')}));
+   });
+   call.on('timeout',()=>call.destroy(new Error('HTTP Callout timeout')));
+   call.on('error',reject);
+   if(body)call.write(body);
+   call.end();
+  });
+  if(result.status<200||result.status>=300)throw new Error('HTTP Callout failed with status '+result.status);
+  return {status:result.status,body:result.body.slice(0,4096)};
  }
 
 }
