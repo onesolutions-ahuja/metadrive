@@ -5,7 +5,7 @@ import type {AppSeedDefinition} from '../system-files/app-metadata-seeder.js';
  * is embedded in Core and nothing is loaded for an uninstalled app.
  */
 export const appSeeders:Readonly<Record<string,()=>Promise<{default:AppSeedDefinition}>>> = Object.freeze({
-  // Example only (not installed): MyApp: () => import('./my-app/seed.js')
+  // Independent app packages register trusted lazy imports when installed.
 });
 export async function loadTrustedAppSeed(apiName:string):Promise<AppSeedDefinition|undefined>{
  const load=appSeeders[apiName];
