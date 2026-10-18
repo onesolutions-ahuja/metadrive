@@ -19,6 +19,7 @@ DECLARE
  v_action text;
  v_snapshot jsonb;
  v_revision bigint;
+ v_actor uuid;
 BEGIN
  IF TG_OP='DELETE' THEN
   v_tenant:=OLD.tenant_id;
@@ -35,6 +36,7 @@ BEGIN
   ELSE 'Object.'||
     CASE TG_OP WHEN 'INSERT' THEN 'Created' WHEN 'UPDATE' THEN 'Updated' ELSE 'Deleted' END
  END;
+ v_actor:=NULLIF(current_setting('metadrive.actor_user_id',true),'')::uuid;
  PERFORM pg_advisory_xact_lock(hashtextextended(v_tenant::text||':'||v_api,0));
  SELECT jsonb_build_object(
    'id',o.id,'apiName',o.api_name,'label',o.label,'pluralLabel',o.label,
@@ -62,8 +64,8 @@ BEGIN
  FROM md_object_definitions o WHERE o.tenant_id=v_tenant AND o.api_name=v_api;
  SELECT COALESCE(MAX(revision),0)+1 INTO v_revision FROM md_object_metadata_history
  WHERE tenant_id=v_tenant AND object_api=v_api;
- INSERT INTO md_object_metadata_history(tenant_id,object_api,revision,action,snapshot)
- VALUES(v_tenant,v_api,v_revision,v_action,v_snapshot);
+ INSERT INTO md_object_metadata_history(tenant_id,object_api,revision,action,actor_user_id,snapshot)
+ VALUES(v_tenant,v_api,v_revision,v_action,v_actor,v_snapshot);
  RETURN NULL;
 END $$;
 DROP TRIGGER IF EXISTS md_audit_object_metadata ON md_object_definitions;
