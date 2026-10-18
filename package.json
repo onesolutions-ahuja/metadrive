@@ -11,7 +11,7 @@
     "build": "npm run build --workspace apps/web && npm run build --workspace apps/server",
     "test": "npm run test:unit",
     "test:unit": "npm run test:system --workspace apps/server && npm run test:metadata",
-    "check": "node scripts/verify-project-references.mjs && npm run test:unit && npm run test:login && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist",
+    "check": "node scripts/verify-system-file-boundaries.mjs && node scripts/verify-project-references.mjs && npm run test:unit && npm run test:login && npm run build && node apps/web/src/shared/verify-lazy-bundle.mjs apps/web/dist",
     "start:web": "npm run preview --workspace apps/web",
     "start:server": "npm run start --workspace apps/server",
     "audit:architecture": "node scripts/verify-project-references.mjs",
