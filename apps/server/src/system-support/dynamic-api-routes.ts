@@ -33,6 +33,19 @@ export function registerDynamicApiRoutes(app:Express,db:SqlPersistence,rbac:Rbac
     res.json({cancelled:true});
   }));
 
+  app.post('/api/jobs/:id/reconcile',wrap(async(req,res)=>{
+    const actor=authenticated(req);
+    await rbac.require(actor.tenant_id,actor.user_id,'FlowDefinition','manage');
+    if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw new Error('Invalid job ID');
+    const decision=req.body?.decision;
+    if(decision!=='acknowledge'&&decision!=='retry')throw new Error('Invalid job reconciliation');
+    // Explicit confirmation is mandatory because retry may duplicate irreversible effects.
+    if(req.body?.reviewedExternalEffects!==true)throw new Error('Invalid reconciliation confirmation');
+    await jobs.reconcileFailed(actor.tenant_id,req.params.id,actor.user_id,decision);
+    res.setHeader('Cache-Control','private, no-store');
+    res.json({resolved:true,decision});
+  }));
+
   app.post('/api/flows/:apiName/schedule',wrap(async(req,res)=>{
     const actor=authenticated(req),flowName=req.params.apiName;
     if(!api.test(flowName))throw new Error('Invalid Flow name');
