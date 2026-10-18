@@ -20,8 +20,6 @@
     "/integration-connections/${encodeURIComponent(id)}/test",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/snapshots/${encodeURIComponent(snapshotId)}",
-    "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions",
-    "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}",
     "/metadata/dashboards/${encodeURIComponent(apiName)}/subscriptions/${encodeURIComponent(subscriptionId)}/run",
     "/metadata/dashboards/${encodeURIComponent(dashboardApiName)}/data/${encodeURIComponent(objectApiName)}${runningUserId ",
     "/metadata/objects/${encodeURIComponent(object.apiName)}/formulas/validate",
