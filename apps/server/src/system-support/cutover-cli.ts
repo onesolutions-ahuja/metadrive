@@ -1,4 +1,4 @@
-import { SqlPersistence } from './sql-persistence.js';
+import { SqlPersistence } from '../system-files/sql-persistence.js';
 import { inspectSqlCutover } from './cutover-preflight.js';
 async function main() {
   const db=new SqlPersistence(process.env.DATABASE_URL??'');

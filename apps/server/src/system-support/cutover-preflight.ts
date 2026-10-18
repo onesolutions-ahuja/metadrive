@@ -1,4 +1,4 @@
-import type { SqlPersistence } from './sql-persistence.js';
+import type { SqlPersistence } from '../system-files/sql-persistence.js';
 export type LegacySqlObject = {
   object_id:string;tenant_id:string;api_name:string;object_label:string;physical_table:string;active:boolean;
 };
