@@ -19,6 +19,13 @@ export function registerFlowManagementRoutes(app:Express,db:SqlPersistence,rbac:
      "SELECT definition FROM md_builder_drafts WHERE tenant_id=$1 AND kind='flow' AND api_name=$2 FOR UPDATE",
      [a.tenant_id,name])).rows[0]?.definition;
    const next=await publishSimpleFlow(client,a.tenant_id,name,body);
+   const flowVersion=await client.query<{id:string}>(
+    'SELECT id FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 AND version=$3',
+    [a.tenant_id,name,next.versionNumber]);
+   if(!flowVersion.rows[0])throw Error('Published Flow version missing');
+   await client.query(`INSERT INTO md_flow_publications(tenant_id,flow_id,definition)
+    VALUES($1,$2,$3::jsonb)`,
+    [a.tenant_id,flowVersion.rows[0].id,JSON.stringify(next)]);
    await client.query(`INSERT INTO md_builder_drafts(tenant_id,kind,api_name,definition,published)
     VALUES($1,'flow',$2,$3::jsonb,true)
     ON CONFLICT(tenant_id,kind,api_name) DO UPDATE SET
