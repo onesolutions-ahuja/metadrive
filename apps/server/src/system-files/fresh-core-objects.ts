@@ -1,4 +1,5 @@
 import type {PoolClient} from 'pg';
+import {FRESH_STANDARD_FIELDS} from './fresh-standard-fields.js';
 
 /** Fresh install Core catalog. Metadata only: no business records or sample data. */
 export const FRESH_CORE_OBJECTS = [
@@ -526,10 +527,10 @@ export async function seedFreshCoreObjects(client:PoolClient,tenantId:string) {
       [tenantId,object.apiName,object.label,object.category==='system']);
   }
   // Register all objects first so reference-field foreign keys are valid.
-  for(const object of FRESH_CORE_OBJECTS) for(const field of object.fields) {
+  for(const object of FRESH_CORE_OBJECTS) for(const field of [...object.fields,...(object.category==='standard'?FRESH_STANDARD_FIELDS[object.apiName]:[])]) {
     const relatedObject='relatedObject' in field ? field.relatedObject : null;
     await client.query(
-      'INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING',
-      [tenantId,object.apiName,field.apiName,field.label,field.dataType,relatedObject]);
+      'INSERT INTO md_field_definitions(tenant_id,object_api,api_name,label,data_type,related_object,max_length,required) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_id,object_api,api_name) DO NOTHING',
+      [tenantId,object.apiName,field.apiName,field.label,field.dataType,relatedObject,'maxLength' in field?field.maxLength:null,false]);
   }
 }
