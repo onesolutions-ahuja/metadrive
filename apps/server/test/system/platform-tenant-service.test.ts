@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {PlatformTenantService} from './platform-tenant-service.js';
-import type {SqlPersistence} from './sql-persistence.js';
-import type {RbacEngine} from './rbac-engine.js';
+import {PlatformTenantService} from '../../src/system-files/platform-tenant-service.js';
+import type {SqlPersistence} from '../../src/system-files/sql-persistence.js';
+import type {RbacEngine} from '../../src/system-files/rbac-engine.js';
 
 test('tenant list binds every SQL argument including pagination and default search',async()=>{
  const queries:Array<{sql:string;args:unknown[]}>=[],db={

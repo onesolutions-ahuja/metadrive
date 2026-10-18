@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-const built=new URL('../../dist-system/system-files/',import.meta.url);
+const built=new URL('../dist-system/system-files/',import.meta.url);
 const [{SqlPersistence},{applySystemMigrations},{RbacEngine},{SystemDefinitionService}]=await Promise.all([
  'sql-persistence.js','system-migrations.js','rbac-engine.js','system-definition-service.js'
 ].map(file=>import(new URL(file,built).href)));
@@ -10,7 +10,7 @@ const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
 if(!url)throw new Error('METADRIVE_SQL_TEST_DATABASE_URL is required');
 const db=new SqlPersistence(url);
 try{
- const core=readFileSync(fileURLToPath(new URL('./schema.sql',import.meta.url)),'utf8');
+ const core=readFileSync(fileURLToPath(new URL('../src/system-files/schema.sql',import.meta.url)),'utf8');
  await db.query(core);
  await applySystemMigrations(db);
  await applySystemMigrations(db);

@@ -8,8 +8,8 @@
     "build": "npm run build:system",
     "test": "npm run test:unit --prefix ../..",
     "start": "node dist-system/system-files/entrypoint.js",
-    "build:system": "tsc -p tsconfig.system-files.json && node src/system-files/copy-migrations.mjs",
-    "test:system": "node --import tsx --test src/system-files/*.test.ts",
+    "build:system": "tsc -p tsconfig.system-files.json && node scripts/copy-system-migrations.mjs",
+    "test:system": "node --import tsx --test test/system/*.test.ts",
     "provision:tenant": "node dist-system/system-files/provision-cli.js",
     "preflight:sql": "tsx src/system-files/cutover-cli.ts"
   },

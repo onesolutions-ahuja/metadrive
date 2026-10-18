@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'apps/server/src/system-files/**'
+      - 'apps/server/test/**'
+      - 'apps/server/scripts/**'
       - 'apps/server/package.json'
       - 'apps/web/src/**'
       - 'package.json'
@@ -33,6 +35,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - run: node apps/server/src/system-files/sql-smoke.mjs
+      - run: node apps/server/scripts/sql-smoke.mjs
         env:
           METADRIVE_SQL_TEST_DATABASE_URL: postgresql://postgres:test-only-password@localhost:5432/metadrive_test
