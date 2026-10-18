@@ -119,6 +119,42 @@ export class RecordEngine {
     const prepared=await this.prepare(tenantId,userId,objectApi,values,true,client);
     return this.insertPrepared(client,tenantId,userId,objectApi,prepared);
   }
+  /** Shared, atomic CSV/Data Loader import: new records or explicitly selected existing IDs. */
+  async importRecords(tenantId:string,userId:string,objectApi:string,records:unknown) {
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(objectApi) || objectApi==='User')
+      throw new Error('Invalid import object');
+    if(!Array.isArray(records)||records.length===0||records.length>200)
+      throw new Error('Invalid import batch size (1-200 records)');
+    const ids=new Set<string>();
+    const updates=records.map((item:unknown)=>{
+      if(!item||typeof item!=='object'||Array.isArray(item)
+        ||(Object.getPrototypeOf(item)!==Object.prototype&&Object.getPrototypeOf(item)!==null))
+        throw new Error('Invalid import record');
+      const data=item as Record<string,unknown>;
+      const id=data.Id;
+      if(id!==undefined&&(!('Id' in data)||typeof id!=='string'||!uuid.test(id)))
+        throw new Error('Invalid import record ID');
+      if(typeof id==='string'){
+        if(ids.has(id.toLowerCase()))throw new Error('Duplicate import record ID');
+        ids.add(id.toLowerCase());
+      }
+      const values=Object.fromEntries(Object.entries(data).filter(([key])=>key!=='Id'));
+      if(!Object.keys(values).length)throw new Error('Invalid import record without fields');
+      return {id,values};
+    });
+    const mode=updates.every(item=>typeof item.id==='string')?'update'
+      :updates.every(item=>item.id===undefined)?'create':null;
+    if(!mode)throw new Error('Invalid import batch: cannot mix creates and updates');
+    await this.db.transaction(async client=>{
+      for(const item of updates){
+        if(mode==='update')
+          await this.updateInTransaction(client,tenantId,userId,objectApi,item.id as string,item.values);
+        else
+          await this.createInTransaction(client,tenantId,userId,objectApi,item.values);
+      }
+    });
+    return {count:updates.length,mode};
+  }
   private async insertPrepared(client:PoolClient,tenantId:string,userId:string,objectApi:string,prepared:Map<string,Storable>) {
     const selectedType=prepared.get('__RecordTypeId__')?.value_text??null;
     const selectedOwner=prepared.get('__OwnerId__')?.value_text??userId,queue=prepared.get('__OwnerQueue__')?.value_text==='true';
