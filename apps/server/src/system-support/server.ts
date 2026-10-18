@@ -720,6 +720,13 @@ export function createSystemServer(db:SqlPersistence) {
     await records.update(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id,req.body);
     res.status(204).end();
   }));
+  app.put('/api/records/:objectApi/:id/owner',route(async(req,res)=>{
+    const actor=req.actor!;
+    if(typeof req.body?.ownerId!=='string')throw new Error('Invalid owner ID');
+    const record=await records.transferOwner(actor.tenant_id,actor.user_id,req.params.objectApi,
+      req.params.id,req.body.ownerId,req.get('if-unmodified-since'));
+    res.json({record});
+  }));
   app.delete('/api/records/:objectApi/:id',route(async(req,res)=>{
     const actor=req.actor!;
     await records.remove(actor.tenant_id,actor.user_id,req.params.objectApi,req.params.id);
