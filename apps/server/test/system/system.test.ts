@@ -410,3 +410,28 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
     if(listener.listening)await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   }
 });
+
+test('SQL RBAC metadata endpoint exposes tenant-only policy definitions',async()=>{
+ const calls:string[]=[];
+ const db={query:async(sql:string,args:unknown[])=>{
+  calls.push(sql);
+  assert.equal(args[0],'tenant');
+  if(sql.includes('WITH assigned AS'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
+  if(sql.includes('FROM md_permission_sets'))return {rows:[{id:'ps1',api_name:'TenantDeveloper'}]};
+  if(sql.includes('FROM md_roles'))return {rows:[{id:'r1',api_name:'Developer',label:'Developer',parent_role_id:null}]};
+  if(sql.includes('FROM md_permission_rules'))return {rows:[{permission_set_id:'ps1',resource:'ObjectDefinition',action:'read',effect:'allow'}]};
+  if(sql.includes('FROM md_users'))return {rows:[{id:'u1',email:'dev@example.invalid'}]};
+  throw new Error('Unexpected SQL');
+ }} as unknown as SqlPersistence;
+ const result=await new RbacEngine(db).describe('tenant','user');
+ assert.equal(result.tenantId,'tenant');
+ assert.equal(result.permissionSets[0].apiName,'TenantDeveloper');
+ assert.deepEqual(result.permissionSets[0].systemPermissions,['ObjectDefinition:read']);
+ assert.equal(result.roles[0].name,'Developer');
+ assert.equal(result.users[0].username,'dev@example.invalid');
+ assert.ok(calls.every(query=>query.includes('tenant_id=$1')||query.includes('r.tenant_id=$1')));
+});
+test('SQL RBAC metadata access fails closed without Security read permission',async()=>{
+ const db={query:async()=>({rows:[]})} as unknown as SqlPersistence;
+ await assert.rejects(()=>new RbacEngine(db).describe('tenant','user'),/Permission denied/);
+});
