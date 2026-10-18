@@ -3,6 +3,7 @@ import {expandAppProperties} from '../system-support/app-page-seeder.js';
 import type { SqlPersistence } from './sql-persistence.js';
 
 type PropRow=MetadataValueRow;
+type NodeRow={component_key:string;component_type:string;label:string;region:string;visible:boolean};
 const encodePageValue=encodeMetadataValue;
 const decodePageValues=decodeMetadataValues;
 
