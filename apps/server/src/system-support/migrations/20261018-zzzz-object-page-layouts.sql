@@ -166,3 +166,36 @@ CREATE TABLE IF NOT EXISTS md_lightning_page_activation (
 );
 CREATE INDEX IF NOT EXISTS md_lightning_page_active_lookup
  ON md_lightning_page_details(tenant_id,target_object,page_type,status);
+
+
+-- Explicit tenant profiles and grants. Permission evaluation continues to use the shared SQL RBAC engine.
+CREATE TABLE IF NOT EXISTS md_profiles (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ tenant_id uuid NOT NULL REFERENCES md_tenants(id),
+ api_name text NOT NULL,
+ label text NOT NULL,
+ UNIQUE(tenant_id,id), UNIQUE(tenant_id,api_name)
+);
+CREATE TABLE IF NOT EXISTS md_user_profiles (
+ tenant_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ profile_id uuid NOT NULL,
+ PRIMARY KEY(tenant_id,user_id),
+ FOREIGN KEY(tenant_id,user_id) REFERENCES md_users(tenant_id,id) ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,profile_id) REFERENCES md_profiles(tenant_id,id)
+);
+CREATE TABLE IF NOT EXISTS md_profile_permission_sets (
+ tenant_id uuid NOT NULL,
+ profile_id uuid NOT NULL,
+ permission_set_id uuid NOT NULL,
+ PRIMARY KEY(tenant_id,profile_id,permission_set_id),
+ FOREIGN KEY(tenant_id,profile_id) REFERENCES md_profiles(tenant_id,id) ON DELETE CASCADE,
+ FOREIGN KEY(tenant_id,permission_set_id) REFERENCES md_permission_sets(tenant_id,id) ON DELETE CASCADE
+);
+INSERT INTO md_profiles(tenant_id,api_name,label)
+ SELECT id,'Default','Default Profile' FROM md_tenants
+ ON CONFLICT(tenant_id,api_name) DO NOTHING;
+INSERT INTO md_user_profiles(tenant_id,user_id,profile_id)
+ SELECT u.tenant_id,u.id,p.id FROM md_users u
+ JOIN md_profiles p ON p.tenant_id=u.tenant_id AND p.api_name='Default'
+ ON CONFLICT(tenant_id,user_id) DO NOTHING;
