@@ -114,6 +114,8 @@ export class DashboardSnapshotService{
      const scoped=allFilters.filter(f=>f.objectApiName===c.objectApiName);
      return dashboard.filterLogic==='Any'?scoped.some(f=>this.match(row,f)):scoped.every(f=>this.match(row,f));
     });
+    base.sourceRecordIds=matches.map(row=>row.Id).filter((id):id is string=>typeof id==='string');
+    base.sourceFieldApiNames=[...new Set(referenced)];
     base.totalRows=matches.length;
     base.metricValue=this.aggregate(matches,c);
     if(c.type==='Table'){
@@ -143,7 +145,39 @@ export class DashboardSnapshotService{
     INSERT INTO md_dashboard_snapshots(tenant_id,dashboard_api,label,created_by,content)
     VALUES($1,$2,$3,$4,$5::jsonb) RETURNING id,created_at`,
     [actor.tenant_id,api,content.label,actor.user_id,JSON.stringify(content)]);
-  return {...content,id:rows[0].id,createdAt:rows[0].created_at.toISOString()};
+  return {...content,components:this.publicComponents(components),id:rows[0].id,
+   createdAt:rows[0].created_at.toISOString()};
+ }
+ private publicComponents(components:Record<string,unknown>[]):Record<string,unknown>[]{
+  return components.map(component=>{
+   const {sourceRecordIds:_sourceRecordIds,sourceFieldApiNames:_sourceFieldApiNames,...output}=component;
+   return output;
+  });
+ }
+ private async canReadSnapshot(actor:Actor,content:Record<string,unknown>):Promise<boolean>{
+  if(!Array.isArray(content.components))return false;
+  for(const component of content.components){
+   if(!component||typeof component!=='object'||Array.isArray(component))return false;
+   const c=component as Record<string,unknown>;
+   if(!Array.isArray(c.sourceRecordIds))continue;
+   if(typeof c.objectApiName!=='string'||!key.test(c.objectApiName))return false;
+   const ids=[...new Set(c.sourceRecordIds)];
+   if(ids.some(id=>typeof id!=='string'||!/^[0-9a-f-]{36}$/i.test(id)))return false;
+   try {
+    await this.rbac.require(actor.tenant_id,actor.user_id,c.objectApiName,'read');
+    const fields=c.sourceFieldApiNames;
+    if(!Array.isArray(fields)||fields.some(f=>typeof f!=='string'||!key.test(f)))return false;
+    for(const field of fields)await this.rbac.require(actor.tenant_id,actor.user_id,c.objectApiName+'.'+field,'read');
+   }catch{return false;}
+   if(ids.length){
+    const {rows}=await this.db.query<{n:number}>(`
+     SELECT count(*)::integer AS n FROM md_records WHERE tenant_id=$1 AND object_api=$2
+       AND id=ANY($3::uuid[]) AND md_record_access($1,$4,id,'read')`,
+      [actor.tenant_id,c.objectApiName,ids,actor.user_id]);
+    if(rows[0]?.n!==ids.length)return false;
+   }
+  }
+  return true;
  }
  async list(actor:Actor,api:string){
   await this.dashboard(actor,api);
@@ -151,7 +185,13 @@ export class DashboardSnapshotService{
    SELECT id,content,created_at FROM md_dashboard_snapshots
    WHERE tenant_id=$1 AND dashboard_api=$2 AND created_by=$3
    ORDER BY created_at DESC LIMIT 100`,[actor.tenant_id,api,actor.user_id]);
-  return rows.map(row=>({...row.content,id:row.id,createdAt:row.created_at.toISOString()}));
+  const visible=[];
+  for(const row of rows){
+   if(!(await this.canReadSnapshot(actor,row.content)))continue;
+   const components=this.publicComponents(row.content.components as Record<string,unknown>[]);
+   visible.push({...row.content,components,id:row.id,createdAt:row.created_at.toISOString()});
+  }
+  return visible;
  }
  async remove(actor:Actor,api:string,id:string){
   await this.dashboard(actor,api);
