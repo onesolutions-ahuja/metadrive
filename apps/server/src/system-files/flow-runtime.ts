@@ -75,6 +75,19 @@ export class FlowRuntime {
       waitUntil:null,retryAt:null,attempts:0
     }))};
   }
+  async deactivate(tenantId:string,userId:string,apiName:string) {
+    if(!this.rbac)throw new Error('Flow permissions not configured');
+    if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(apiName))throw new Error('Invalid Flow name');
+    await this.rbac.require(tenantId,userId,'FlowDefinition','manage');
+    const {rowCount}=await this.db.query(
+      'UPDATE md_flow_definitions SET active=false WHERE tenant_id=$1 AND api_name=$2 AND active=true',
+      [tenantId,apiName]);
+    if(!rowCount)throw new Error('Active flow not found');
+    const rows=await this.list(tenantId);
+    const flow=rows.find(item=>item.apiName===apiName);
+    if(!flow)throw new Error('Flow not found');
+    return {flow};
+  }
   async loadActive(tenantId:string,apiName:string) {
     const {rows}=await this.db.query<{id:string;version:number}>(
       'SELECT id,version FROM md_flow_definitions WHERE tenant_id=$1 AND api_name=$2 AND active=true ORDER BY version DESC LIMIT 1',
