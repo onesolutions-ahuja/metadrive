@@ -583,3 +583,20 @@ test('Tenant currency validation rejects duplicate ISO codes and invalid rates b
    autoRetryFailedFlows:true,maxRetryAttempts:10000,conversationIdleMinutes:5
  }),/Invalid automation settings/);
 });
+
+test('Flow draft validator enforces OneEngine permission and fails closed on unsupported shapes',async()=>{
+  const {FlowRuntime}=await import('../../src/system-files/flow-runtime.js');
+  const rbac={require:async(_tenant:string,_user:string,resource:string,action:string)=>{
+    assert.equal(resource,'FlowDefinition');assert.equal(action,'manage');
+  }} as unknown as RbacEngine;
+  const flow=new FlowRuntime({} as SqlPersistence,rbac);
+  const bad=await flow.validateDefinition('tenant','developer','ExampleFlow',{apiName:'ExampleFlow',nodes:[
+    {apiName:'Start',type:'Start'},{apiName:'Start',type:'End'}
+  ]});
+  assert.equal(bad.valid,false);
+  assert.ok(bad.errors.some(e=>e.includes('unique')));
+  const good=await flow.validateDefinition('tenant','developer','ExampleFlow',{apiName:'ExampleFlow',nodes:[
+    {apiName:'Start',type:'Start'},{apiName:'End',type:'End'}
+  ]});
+  assert.equal(good.valid,true);
+});
