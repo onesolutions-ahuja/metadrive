@@ -227,34 +227,8 @@ export class FlowRuntime {
         VALUES($1,$2,$3,$4,$5)`,[tenantId,id,row.path,row.kind,row.text]);
       await client.query('DELETE FROM md_flow_edges WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
       await client.query('DELETE FROM md_flow_nodes WHERE tenant_id=$1 AND flow_id=$2',[tenantId,id]);
-      // Screen Flows run their versioned, normalized editor graph directly. The
-      // legacy scalar graph index is used only by the Autolaunched SQL executor.
-      if(input.status==='Active' && input.flowType==='Autolaunched Flow'){
-        const nodes=new Map<number,string>();
-        for(const [position,el] of (input.elements as Array<Record<string,unknown>>).entries()){
-          const name='step_'+String(el.id);
-          nodes.set(Number(el.id),name);
-          const node=await client.query<{id:string}>(`
-            INSERT INTO md_flow_nodes(tenant_id,flow_id,api_name,node_type,sort_order)
-            VALUES($1,$2,$3,$4,$5) RETURNING id`,
-            [tenantId,id,name,el.type,position]);
-          for(const [key,value] of Object.entries(el.config as Record<string,unknown>)){
-            if(!scalar(value))continue;
-            const encoded=scalarText(value);
-            await client.query(`
-              INSERT INTO md_flow_node_properties(tenant_id,node_id,api_name,value_text,data_type)
-              VALUES($1,$2,$3,$4,$5)`,[tenantId,node.rows[0].id,key,encoded.text,encoded.type]);
-          }
-        }
-        for(const edge of input.connectors as Array<Record<string,unknown>>){
-          const from=nodes.get(Number(edge.from))!,to=nodes.get(Number(edge.to))!;
-          const outcome=String(edge.label??'default').toLowerCase();
-          await client.query(`
-            INSERT INTO md_flow_edges(tenant_id,flow_id,source_api,target_api,outcome)
-            VALUES($1,$2,$3,$4,$5)`,[tenantId,id,from,to,
-              outcome==='true'||outcome==='false'?outcome:'default']);
-        }
-      }
+      // Published definitions execute directly from md_flow_editor_values.
+      // md_flow_nodes and md_flow_edges are retained only for older SQL-only Flows.
     });
     return this.loadEditor(tenantId,apiName);
   }
