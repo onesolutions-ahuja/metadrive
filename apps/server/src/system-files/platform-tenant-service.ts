@@ -1,5 +1,6 @@
 import type {SqlPersistence} from './sql-persistence.js';
 import type {RbacEngine} from './rbac-engine.js';
+import {TenantProvisioning} from './tenant-provisioning.js';
 
 export class PlatformTenantService {
  constructor(private readonly db:SqlPersistence,private readonly rbac:RbacEngine){}
@@ -70,6 +71,108 @@ export class PlatformTenantService {
   `,[tenantId,key,JSON.stringify(data)]);
   return rows[0].properties;
  }
+ private async requirePlatform(tenantId:string,userId:string){
+  if(!(await this.platformScope(tenantId,userId)))throw new Error('Permission denied');
+ }
+ async create(tenantId:string,userId:string,body:unknown,idempotencyKey:unknown) {
+  await this.requirePlatform(tenantId,userId);
+  if(!body||typeof body!=='object'||Array.isArray(body)||typeof idempotencyKey!=='string')
+    throw new Error('Invalid tenant');
+  const x=body as Record<string,unknown>;
+  if(typeof x.tenantId!=='string'||typeof x.tenantName!=='string'
+    ||typeof x.adminName!=='string'||typeof x.email!=='string'
+    ||typeof x.password!=='string'||typeof x.developerDomain!=='string'||!x.developerDomain.trim())
+    throw new Error('Invalid tenant provisioning request: a developer domain is required');
+  const base=process.env.METADRIVE_TENANT_BASE_DOMAIN?.trim().toLowerCase();
+  const expectedDomain=base?x.tenantId.toLowerCase()+'.'+base:'';
+  if(!base||!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(base)
+     ||x.developerDomain.toLowerCase()!==expectedDomain)
+    throw new Error('Invalid tenant domain: use the configured platform-owned tenant subdomain');
+  const result=await new TenantProvisioning(this.db).provision({
+    slug:x.tenantId.toLowerCase(),name:x.tenantName,domain:x.developerDomain.toLowerCase(),
+    developerEmail:x.email,developerPassword:x.password,developerName:x.adminName
+  },{actorTenantId:tenantId,actorUserId:userId,idempotencyKey});
+  return {...await this.get(tenantId,userId,result.slug),replayed:result.replayed};
+ }
+ async get(tenantId:string,userId:string,slug:string) {
+  const platform=await this.platformScope(tenantId,userId);
+  if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))throw new Error('Invalid tenant');
+  const {rows}=await this.db.query<{
+   id:string;slug:string;name:string;description:string;status:'ACTIVE'|'SUSPENDED'|'ARCHIVED';
+   created_at:Date;updated_at:Date;archived_at:Date|null;retention_until:Date|null;legal_hold:boolean;
+   users:string;active_users:string
+  }>(`
+    SELECT t.id,t.slug,t.name,t.description,t.status,t.created_at,t.updated_at,
+      t.archived_at,t.retention_until,t.legal_hold,
+      (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id) AS users,
+      (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id AND u.enabled=true) AS active_users
+    FROM md_tenants t WHERE t.slug=$1 AND ($2::uuid IS NULL OR t.id=$2)
+  `,[slug,platform?null:tenantId]);
+  const t=rows[0];if(!t)throw new Error('Tenant not found');
+  return {tenant:{
+   tenantId:t.slug,name:t.name,description:t.description,status:t.status,
+   createdAt:t.created_at,updatedAt:t.updated_at,archivedAt:t.archived_at,
+   retentionUntil:t.retention_until,legalHold:t.legal_hold,
+   userCount:Number(t.users),activeUserCount:Number(t.active_users),
+   provisioning:{status:'READY' as const,version:1,completedAt:t.created_at},developerAccount:null
+  }};
+ }
+ async updateDetails(tenantId:string,userId:string,slug:string,body:unknown) {
+  await this.requirePlatform(tenantId,userId);
+  if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Invalid tenant');
+  const {name,description}=body as Record<string,unknown>;
+  if(typeof name!=='string'||!name.trim()||name.length>200
+     ||typeof description!=='string'||description.length>2000)throw new Error('Invalid tenant');
+  const {rowCount}=await this.db.query(
+    'UPDATE md_tenants SET name=$2,description=$3,updated_at=now() WHERE slug=$1',
+    [slug,name.trim(),description]);
+  if(!rowCount)throw new Error('Tenant not found');
+  return this.get(tenantId,userId,slug);
+ }
+ async updateRetention(tenantId:string,userId:string,slug:string,body:unknown) {
+  await this.requirePlatform(tenantId,userId);
+  if(!body||typeof body!=='object'||Array.isArray(body))throw new Error('Invalid retention');
+  const {retentionUntil,legalHold}=body as Record<string,unknown>;
+  if(typeof legalHold!=='boolean'
+    ||!(retentionUntil===null||(typeof retentionUntil==='string'&&Number.isFinite(Date.parse(retentionUntil)))))
+    throw new Error('Invalid retention');
+  const {rowCount}=await this.db.query(
+   'UPDATE md_tenants SET retention_until=$2::timestamptz,legal_hold=$3,updated_at=now() WHERE slug=$1',
+   [slug,retentionUntil,legalHold]);
+  if(!rowCount)throw new Error('Tenant not found');
+  return this.get(tenantId,userId,slug);
+ }
+ async transition(tenantId:string,userId:string,slug:string,operation:'suspend'|'reactivate'|'archive'|'restore') {
+  await this.requirePlatform(tenantId,userId);
+  if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))throw new Error('Invalid tenant');
+  const transition={
+   suspend:{from:'ACTIVE',to:'SUSPENDED'},
+   reactivate:{from:'SUSPENDED',to:'ACTIVE'},
+   archive:{from:'SUSPENDED',to:'ARCHIVED'},
+   restore:{from:'ARCHIVED',to:'SUSPENDED'}
+  }[operation];
+  await this.db.transaction(async client=>{
+   const target=await client.query<{id:string;status:string}>(
+    'SELECT id,status FROM md_tenants WHERE slug=$1 FOR UPDATE',[slug]);
+   const row=target.rows[0];if(!row)throw new Error('Tenant not found');
+   if(row.status!==transition.from)throw new Error('Invalid tenant status transition');
+   await client.query(`
+     UPDATE md_tenants SET status=$2,updated_at=now(),
+       archived_at=CASE WHEN $2='ARCHIVED' THEN now() ELSE NULL END
+     WHERE id=$1`,[row.id,transition.to]);
+   // Once suspended or archived, access AND refresh sessions must not remain valid.
+   if(transition.to!=='ACTIVE'){
+     await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND revoked_at IS NULL',[row.id]);
+     await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND revoked_at IS NULL',[row.id]);
+   }
+   await client.query(`
+    INSERT INTO md_tenant_lifecycle_audit
+     (actor_tenant_id,actor_user_id,target_tenant_id,operation,previous_status,new_status)
+    VALUES ($1,$2,$3,$4,$5,$6)`,
+    [tenantId,userId,row.id,operation,transition.from,transition.to]);
+  });
+  return this.get(tenantId,userId,slug);
+ }
  async list(tenantId:string,userId:string,parameters:Record<string,unknown>){
   const platform=await this.platformScope(tenantId,userId);
   const page=Number(parameters.page??1),pageSize=Number(parameters.pageSize??25);
@@ -82,30 +185,33 @@ export class PlatformTenantService {
    throw new Error('Invalid status');
   const search=q?('%'+q.replace(/[%_\\]/g,'\\$&')+'%'):null;
   const scopedTenant=platform?null:tenantId;
-  const statusFilter=status==='ALL'||status==='ACTIVE';
   const {rows}=await this.db.query<{
-   id:string;slug:string;name:string;created_at:Date|null;users:string;active_users:string;
+   id:string;slug:string;name:string;description:string;status:'ACTIVE'|'SUSPENDED'|'ARCHIVED';
+   created_at:Date;updated_at:Date;archived_at:Date|null;retention_until:Date|null;legal_hold:boolean;
+   users:string;active_users:string;
   }>(`
-    SELECT t.id,t.slug,t.name,null::timestamptz AS created_at,
+    SELECT t.id,t.slug,t.name,t.description,t.status,t.created_at,t.updated_at,
+      t.archived_at,t.retention_until,t.legal_hold,
       (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id) AS users,
-      (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id AND u.enabled) AS active_users
+      (SELECT count(*)::text FROM md_users u WHERE u.tenant_id=t.id AND u.enabled=true) AS active_users
     FROM md_tenants t
     WHERE ($1::uuid IS NULL OR t.id=$1)
       AND ($2::text IS NULL OR t.slug ILIKE $2 OR t.name ILIKE $2)
-      AND $3::boolean
+      AND ($3::text='ALL' OR t.status=$3)
     ORDER BY t.slug LIMIT $4 OFFSET $5
-  `,[scopedTenant,search,statusFilter,pageSize,(page-1)*pageSize]);
+  `,[scopedTenant,search,status,pageSize,(page-1)*pageSize]);
   const {rows:counts}=await this.db.query<{total:string}>(`
     SELECT count(*)::text AS total FROM md_tenants t
     WHERE ($1::uuid IS NULL OR t.id=$1)
       AND ($2::text IS NULL OR t.slug ILIKE $2 OR t.name ILIKE $2)
-      AND $3::boolean
-  `,[scopedTenant,search,statusFilter]);
+      AND ($3::text='ALL' OR t.status=$3)
+  `,[scopedTenant,search,status]);
   return {tenants:rows.map(t=>({
-   tenantId:t.slug,name:t.name,description:'',status:'ACTIVE' as const,
-   createdAt:t.created_at??new Date(0),updatedAt:t.created_at??new Date(0),
+   tenantId:t.slug,name:t.name,description:t.description,status:t.status,
+   createdAt:t.created_at,updatedAt:t.updated_at,archivedAt:t.archived_at,
+   retentionUntil:t.retention_until,legalHold:t.legal_hold,
    userCount:Number(t.users),activeUserCount:Number(t.active_users),
-   provisioning:{status:'READY' as const,version:1,completedAt:''},developerAccount:null
+   provisioning:{status:'READY' as const,version:1,completedAt:t.created_at},developerAccount:null
   })),total:Number(counts[0]?.total??0)};
  }
 }
