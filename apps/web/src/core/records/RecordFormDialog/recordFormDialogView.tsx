@@ -222,6 +222,7 @@ export function RecordFormDialog({
   saving,
   editing,
   actionAllowed,
+  embedded = false,
   onChange,
   onClose,
   onSubmit
@@ -240,6 +241,7 @@ export function RecordFormDialog({
   saving: boolean;
   editing: boolean;
   actionAllowed: boolean;
+  embedded?: boolean;
   onChange: (apiName: string, value: unknown) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -483,8 +485,8 @@ export function RecordFormDialog({
       {helpText}
     </label>;
   };
-  return <div className="record-form-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
-    <section className="record-form-dialog surface" role="dialog" aria-modal="true" aria-labelledby="record-form-title" onKeyDown={(event) => { if (event.key === 'Escape' && !saving && !lookupDialogField) onClose(); }}>
+  return <div className={embedded ? "record-form-inline" : "record-form-backdrop"} role="presentation" onMouseDown={(event) => { if (!embedded && event.target === event.currentTarget && !saving) onClose(); }}>
+    <section className="record-form-dialog surface" role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-labelledby="record-form-title" onKeyDown={(event) => { if (event.key === 'Escape' && !saving && !lookupDialogField) onClose(); }}>
       <header><div><div className="eyebrow">{object.label}</div><h2 id="record-form-title">{editing ? 'Edit Record' : `New ${object.label}`}</h2></div>
         <button className="icon-button" aria-label="Close" onClick={onClose} disabled={saving}><X size={16} /></button></header>
       <form onSubmit={onSubmit}>
