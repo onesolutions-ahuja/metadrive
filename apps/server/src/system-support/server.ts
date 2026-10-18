@@ -75,7 +75,8 @@ export function createSystemServer(db:SqlPersistence) {
   const definitions=new ObjectDefinitionService(db);
   const components=new ComponentRuntime(db);
   const pages=new PageRuntime(db);
-  const flows=new FlowRuntime(db,rbac,records);
+  const flows=new FlowRuntime(db,rbac,records,
+    (tenantId,userId,config,variables,key)=>namedCredentials.callout(tenantId,userId,config,variables,key));
   const apps=new AppRuntime(db);
   const platformTenants=new PlatformTenantService(db,rbac);
 
@@ -607,6 +608,12 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await flows.cancelInterview(actor.tenant_id,actor.user_id,req.params.id);
     res.status(204).end();
+  }));
+  app.post('/api/flow-interviews/:id/next',route(async(req,res)=>{
+    const actor=req.actor!;
+    const result=await flows.advanceInterview(actor.tenant_id,actor.user_id,req.params.id,req.body??{});
+    res.setHeader('Cache-Control','private, no-store');
+    res.json(result);
   }));
   app.get('/api/metadata/flow-interviews',route(async(req,res)=>{
     const actor=req.actor!;
