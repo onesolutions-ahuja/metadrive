@@ -63,7 +63,7 @@ test('Flow drafts are checked before writes and supported Screen graph validatio
   );
   const validation=await engine.validateDraft('tenant','user','ScreenFlow',{
     apiName:'ScreenFlow',flowType:'Screen Flow',elements:[
-      {id:1,type:'Start'},{id:2,type:'Screen'},{id:3,type:'End'}],
+      {id:1,type:'Start',config:{}},{id:2,type:'Screen',config:{fields:[]}},{id:3,type:'End',config:{}}],
     connectors:[{from:1,to:2,kind:'normal'},{from:2,to:3,kind:'normal'}]});
   assert.equal(validation.valid,true);
   assert.deepEqual(validation.errors,[]);
