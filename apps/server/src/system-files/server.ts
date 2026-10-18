@@ -3,6 +3,7 @@ import { SqlPersistence } from './sql-persistence.js';
 import {registerSqlCompatibilityRoutes} from './sql-compat-routes.js';
 import {registerBuilderSqlRoutes} from './builder-sql-routes.js';
 import {registerAuthSqlRoutes} from './auth-sql-routes.js';
+import {registerPasswordResetRoutes} from './password-reset-routes.js';
 import {registerFlowManagementRoutes} from './flow-management-routes.js';
 import {registerPageManagementRoutes} from './page-management-routes.js';
 import {registerScreenInterviewRoutes} from './screen-interview-routes.js';
@@ -139,6 +140,7 @@ export function createSystemServer(db:SqlPersistence) {
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch {res.status(401).json({error:'Invalid refresh session'});}
   }));
+  registerPasswordResetRoutes(app,db,(req,slug)=>resolveTenant(db,req,slug));
   app.use('/api',authorize);
   app.get('/api/auth/me',route(async(req,res)=>{
     res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
