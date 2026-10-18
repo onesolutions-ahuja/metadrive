@@ -714,7 +714,7 @@ function Permissions({
           </>;
         })()}
         {tab === 'profiles' && selectedProfile && <>
-          <AdvancedPermissionRules policy={selectedProfile} onChange={patch=>patchProfile(selectedProfile.id,patch)}/>
+          <AdvancedPermissionRules systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedProfile} onChange={patch=>patchProfile(selectedProfile.id,patch)}/>
           <div className="section-toolbar"><div><h2>{selectedProfile.label}</h2><p>Profile · {selectedProfile.apiName}{selectedProfile.isStandard ? ' · Standard' : ''}</p></div><button className="btn" onClick={() => {
             if (selectedProfile.isStandard || draft.users.some((user) => user.profileId === selectedProfile.id)) return;
             setDraft((current) => ({ ...current, profiles: current.profiles.filter((item) => item.id !== selectedProfile.id) }));
@@ -761,7 +761,7 @@ function Permissions({
           })}</tbody></table></div></details>)}
         </>}
         {tab === 'sets' && selectedSet && <>
-          <AdvancedPermissionRules policy={selectedSet} onChange={patch=>patchSet(selectedSet.id,patch)}/>
+          <AdvancedPermissionRules systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedSet} onChange={patch=>patchSet(selectedSet.id,patch)}/>
           <div className="section-toolbar"><div><h2>{selectedSet.label}</h2><p>Permission Set · {selectedSet.apiName}</p></div><button className="btn" onClick={() => {
             if (selectedSet.id === 'system-administrator'
               || draft.users.some((user) => user.permissionSetIds.includes(selectedSet.id))

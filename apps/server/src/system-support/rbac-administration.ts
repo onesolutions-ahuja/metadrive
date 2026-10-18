@@ -29,6 +29,9 @@ export class RbacAdministration{
    if(previous.revision!==next.revision)throw Error('RBAC revision conflict; reload permissions before saving');
    await validateRbac(tx,tenant,next);
    const beforeUser=previous.users.find(u=>u.id===actor),afterUser=next.users.find(u=>u.id===actor);
+   for(const u of next.users){const old=previous.users.find(p=>p.id===u.id)!;
+    if(u.name!==old.name||u.username!==old.username)throw Error('Invalid user identity edits: use User records');
+   }
    if(!beforeUser||!afterUser||assignments(beforeUser)!==assignments(afterUser))throw Error('Cannot alter own permission assignments');
    if(next.users.some(u=>assignments(u)!==assignments(previous.users.find(p=>p.id===u.id)!)))
     await currentRbac.require(tenant,actor,'User','edit');

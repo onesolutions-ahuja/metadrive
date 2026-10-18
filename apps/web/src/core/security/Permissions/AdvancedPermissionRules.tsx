@@ -1,8 +1,11 @@
 import {useState} from 'react';
 type Rule={resource:string;action:string;effect:'allow'|'deny'};
-type Policy={systemPermissions:string[];deniedPermissions?:string[];advancedRules?:Rule[];inheritedPermissionSetIds?:string[]};
-export default function AdvancedPermissionRules({policy,onChange}:{policy:Policy;onChange:(patch:Partial<Policy>)=>void}){
+type Policy={systemPermissions:string[];deniedPermissions?:string[];advancedRules?:Rule[];inheritedPermissionSetIds?:string[];objectPermissions?:Record<string,unknown>;fieldPermissions?:Record<string,unknown>};
+export default function AdvancedPermissionRules({policy,onChange,systemPermissionKeys}:{policy:Policy;systemPermissionKeys:string[];onChange:(patch:Partial<Policy>)=>void}){
  const [resource,setResource]=useState(''),[action,setAction]=useState('read'),[effect,setEffect]=useState<'allow'|'deny'>('deny');
+ const controlled=(token:string)=>policy.systemPermissions.includes('*:*')&&(systemPermissionKeys.includes(token)||
+  Object.hasOwn(policy.objectPermissions??{},token.slice(0,token.lastIndexOf(':')))||
+  Object.hasOwn(policy.fieldPermissions??{},token.slice(0,token.lastIndexOf(':')))||/^(RecordType:|App:|Tab:)/.test(token));
  const add=()=>{
   if(!resource.trim()||!action.trim())return;
   onChange({advancedRules:[...(policy.advancedRules??[]).filter(r=>r.resource!==resource.trim()||r.action!==action.trim()),
@@ -16,7 +19,7 @@ export default function AdvancedPermissionRules({policy,onChange}:{policy:Policy
    onChange={e=>onChange({systemPermissions:e.target.checked?[...policy.systemPermissions,'*:*']:policy.systemPermissions.filter(p=>p!=='*:*')})}/>
    Full starting access, with individual restrictions</label>
   {(policy.deniedPermissions??[]).map(token=><div key={token} className="settings-row">
-   <span>Deny {token}</span><button type="button" className="btn"
+   <span>Deny {token}</span><button type="button" className="btn" disabled={controlled(token)} title={controlled(token)?'Restore with the corresponding permission checkbox':'Remove explicit denial'}
     onClick={()=>onChange({deniedPermissions:policy.deniedPermissions?.filter(p=>p!==token)})}>Remove explicit denial</button>
   </div>)}
   {(policy.advancedRules??[]).map((r,index)=><div key={r.resource+':'+r.action} className="settings-row">
