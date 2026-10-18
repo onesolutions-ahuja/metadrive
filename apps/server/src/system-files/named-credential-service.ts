@@ -84,10 +84,26 @@ export class NamedCredentialService {
     !['HTTPS','SMTP'].includes(String(x.protocol))||
     !['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))||
     typeof x.baseUrl!=='string'||typeof x.headerName!=='string')throw new Error('Invalid credential');
-  if(x.configuration && Object.keys(x.configuration as object).length)throw new Error('Credential configuration requires encrypted field mapping');
+  if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)
+    ||Object.values(x.configuration as object).some(value=>typeof value!=='string')))
+    throw new Error('Invalid credential configuration');
+  if(x.secret!==undefined && typeof x.secret!=='string')throw new Error('Invalid credential secret');
+  const encrypt=(plain:string):Buffer=>{
+   const key=this.key();if(!key)throw new Error('Credential encryption is not configured');
+   const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);
+   return Buffer.concat([iv,cipher.update(plain,'utf8'),cipher.final(),cipher.getAuthTag()]);
+  };
+  const encrypted=x.secret?encrypt(x.secret as string):null;
+  const configuration=x.configuration as Record<string,string>|undefined;
+  const encryptedConfig=configuration&&Object.keys(configuration).length
+    ?encrypt(JSON.stringify(configuration)):null;
   const result=await this.db.query(
-   'UPDATE md_named_credentials SET name=$3,label=$4,protocol=$5,base_url=$6,auth_type=$7,header_name=$8,updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id',
-   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName]);
+   `UPDATE md_named_credentials SET name=$3,label=$4,protocol=$5,base_url=$6,
+     auth_type=$7,header_name=$8,
+     secret_ciphertext=COALESCE($9,secret_ciphertext),
+     configuration_ciphertext=COALESCE($10,configuration_ciphertext),
+     updated_at=now() WHERE tenant_id=$1 AND id=$2 RETURNING id`,
+   [tenantId,id,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfig]);
   if(!result.rowCount)throw new Error('Credential not found');
   return (await this.list(tenantId,userId)).find(c=>c.id===id);
  }
