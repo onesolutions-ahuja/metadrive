@@ -25,12 +25,17 @@ export async function publishPageDefinition(client:PoolClient,tenantId:string,ap
    ON s.tenant_id=p.tenant_id AND s.page_id=p.id
    WHERE p.tenant_id=$1 AND p.api_name=$2 LIMIT 1`,[tenantId,apiName]);
  if(seeded.rowCount)throw Error('App-owned Page requires app seeder publication');
- const registry=await client.query<{api_name:string}>(`
-  SELECT api_name FROM md_component_definitions WHERE tenant_id=$1 AND enabled=true
-   AND api_name=ANY($2::text[])`,[tenantId,prepared.map(x=>x.component.type)]);
- const available=new Set(registry.rows.map(x=>x.api_name));
- for(const {component} of prepared)if(!available.has(component.type))
-  throw Error('Unregistered or disabled Page component: '+component.type);
+ const registry=await client.query<{api_name:string;renderer_key:string}>(`
+  SELECT api_name,renderer_key FROM md_component_definitions WHERE tenant_id=$1 AND enabled=true
+   AND (api_name=ANY($2::text[]) OR renderer_key=ANY($2::text[]))`,
+  [tenantId,prepared.map(x=>x.component.type)]);
+ const apiByType=new Map<string,string>();
+ for(const {component} of prepared){
+  const exact=registry.rows.find(x=>x.api_name===component.type);
+  const candidates=exact?[exact]:registry.rows.filter(x=>x.renderer_key===component.type);
+  if(candidates.length!==1)throw Error('Unregistered or ambiguous Page component: '+component.type);
+  apiByType.set(component.type,candidates[0].api_name);
+ }
  const existing=await client.query<{id:string}>(
   'SELECT id FROM md_page_definitions WHERE tenant_id=$1 AND api_name=$2 FOR UPDATE',
   [tenantId,apiName]);
@@ -48,7 +53,7 @@ export async function publishPageDefinition(client:PoolClient,tenantId:string,ap
    VALUES($1,$2,$3,$4,$5,$6)
    ON CONFLICT(tenant_id,page_id,editor_key) WHERE editor_key IS NOT NULL
    DO UPDATE SET component_api=EXCLUDED.component_api,slot=EXCLUDED.slot,sort_order=EXCLUDED.sort_order
-   RETURNING id`,[tenantId,pageId,c.type,c.region??'main',i,c.id]);
+   RETURNING id`,[tenantId,pageId,apiByType.get(c.type),c.region??'main',i,c.id]);
   const componentId=created.rows[0].id;
   await client.query('DELETE FROM md_page_component_properties WHERE tenant_id=$1 AND component_id=$2',
    [tenantId,componentId]);
