@@ -167,8 +167,11 @@ export class AppRuntime {
   async install(tenantId:string,appApi:string,seed?:import('../system-support/app-page-seeder.js').AppPageSeed) {
     await this.db.transaction(async client=>{
       const {rows}=await client.query<{id:string}>(`
-        SELECT a.id FROM md_apps a JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
-        WHERE a.api_name=$2 AND a.enabled=true AND e.active=true
+        SELECT a.id FROM md_apps a
+        JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
+        LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
+        WHERE COALESCE(m.api_name,a.api_name)=$2 AND a.enabled=true AND e.active=true
+          AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
           AND (e.expires_at IS NULL OR e.expires_at>now()) FOR UPDATE OF e
       `,[tenantId,appApi]);
       if(!rows[0])throw new Error('App licence or entitlement unavailable');
@@ -178,25 +181,37 @@ export class AppRuntime {
     });
   }
   async uninstall(tenantId:string,appApi:string) {
+    const catalog=await this.catalogApi(tenantId,appApi);
     await this.db.transaction(async client=>{
       await client.query(`DELETE FROM md_app_home_pages WHERE tenant_id=$1
-        AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)`,[tenantId,appApi]);
+        AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)`,[tenantId,catalog]);
       await client.query('DELETE FROM md_app_installations WHERE tenant_id=$1 AND app_id IN (SELECT id FROM md_apps WHERE api_name=$2)',
-        [tenantId,appApi]);
+        [tenantId,catalog]);
     });
   }
-  async homePage(tenantId:string,appApi:string,formFactor:string) {
-    // A URL cannot reveal pages for uninstalled, disabled or unlicensed apps.
-    const {rows}=await this.db.query<{api_name:string}>(`
-      SELECT p.api_name FROM md_apps a
+  async homePage(tenantId:string,appApi:string,formFactor:string,profileId='') {
+    const {rows}=await this.db.query<{api_name:string|null}>(`
+      SELECT COALESCE(home.api_name,p.api_name) AS api_name FROM md_apps a
       JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
       JOIN md_app_entitlements e ON e.app_id=a.id AND e.tenant_id=$1
-      LEFT JOIN md_app_home_pages h ON h.tenant_id=$1 AND h.app_id=a.id
-        AND h.form_factor=$3
+      LEFT JOIN md_tenant_app_metadata m ON m.app_id=a.id AND m.tenant_id=$1
+      LEFT JOIN md_app_home_pages h ON h.tenant_id=$1 AND h.app_id=a.id AND h.form_factor=$3
       LEFT JOIN md_page_definitions p ON p.id=h.page_id AND p.tenant_id=$1 AND p.enabled=true
-      WHERE a.api_name=$2 AND a.enabled=true
+      LEFT JOIN LATERAL (
+        SELECT hp.api_name FROM md_lightning_page_activation x
+        JOIN md_lightning_page_details d ON d.tenant_id=x.tenant_id AND d.page_id=x.page_id
+        JOIN md_page_definitions hp ON hp.tenant_id=d.tenant_id AND hp.id=d.page_id
+        WHERE x.tenant_id=$1 AND x.app_api=$2 AND d.status='Active'
+          AND d.page_type='Home Page' AND hp.enabled=true
+          AND ((x.scope='App Default') OR (x.scope='App and Profile' AND x.profile_id=$4))
+          AND (($3='desktop' AND x.desktop) OR ($3='phone' AND x.phone))
+        ORDER BY CASE x.scope WHEN 'App and Profile' THEN 2 ELSE 1 END DESC,
+          d.updated_at DESC LIMIT 1
+      ) home ON true
+      WHERE COALESCE(m.api_name,a.api_name)=$2 AND a.enabled=true
+        AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
         AND e.active=true AND (e.expires_at IS NULL OR e.expires_at>now())
-    `,[tenantId,appApi,formFactor]);
+    `,[tenantId,appApi,formFactor,profileId]);
     if(!rows.length)throw new Error('Permission denied');
     return rows[0].api_name?{apiName:rows[0].api_name}:null;
   }
@@ -204,12 +219,14 @@ export class AppRuntime {
     const {rows}=await this.db.query<{
       id:string;api_name:string;label:string;installed:boolean;expires_at:Date|null;licensed:boolean
     }>(`
-      SELECT a.id,a.api_name,a.label,(i.app_id IS NOT NULL) AS installed,
+      SELECT a.id,COALESCE(m.api_name,a.api_name) AS api_name,COALESCE(m.label,a.label) AS label,
+        (i.app_id IS NOT NULL) AS installed,
         e.expires_at,(COALESCE(e.active,false) AND
           (e.expires_at IS NULL OR e.expires_at>now())) AS licensed
       FROM md_apps a
       LEFT JOIN md_app_installations i ON i.tenant_id=$1 AND i.app_id=a.id
       LEFT JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
+      LEFT JOIN md_tenant_app_metadata m ON m.tenant_id=$1 AND m.app_id=a.id
       WHERE a.enabled=true AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
       ORDER BY a.label
     `,[tenantId]);
@@ -225,11 +242,13 @@ export class AppRuntime {
     const {rows}=await this.db.query<{
       app_api:string;slug:string;kind:string;target_api:string;status:string;version:number
     }>(`
-      SELECT r.app_api,r.slug,r.kind,r.target_api,r.status,r.version
+      SELECT COALESCE(m.api_name,r.app_api) AS app_api,r.slug,r.kind,r.target_api,r.status,r.version
       FROM md_app_route_aliases r
       JOIN md_apps a ON a.api_name=r.app_api
       JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=r.tenant_id
-      WHERE r.tenant_id=$1 ORDER BY r.app_api,r.slug
+      LEFT JOIN md_tenant_app_metadata m ON m.app_id=a.id AND m.tenant_id=r.tenant_id
+      WHERE r.tenant_id=$1 AND (a.tenant_owner_id IS NULL OR a.tenant_owner_id=$1)
+      ORDER BY app_api,r.slug
     `,[tenantId]);
     return {aliases:rows.map(r=>({
       appId:r.app_api,slug:r.slug,kind:r.kind,
@@ -246,13 +265,14 @@ export class AppRuntime {
       !Number.isSafeInteger(expected)||Number(expected)<0)
       throw new Error('Invalid route alias');
     if(kind==='App Home'&&target!==appApi)throw new Error('Invalid App Home destination');
+    const catalog=await this.catalogApi(tenantId,appApi);
     const {rows:install}=await this.db.query<{id:string}>(`
       SELECT a.id FROM md_apps a
       JOIN md_app_installations i ON i.app_id=a.id AND i.tenant_id=$1
       JOIN md_app_entitlements e ON e.tenant_id=$1 AND e.app_id=a.id
       WHERE a.api_name=$2 AND a.enabled=true AND e.active=true
         AND (e.expires_at IS NULL OR e.expires_at>now())
-    `,[tenantId,appApi]);
+    `,[tenantId,catalog]);
     if(!install.length)throw new Error('App not installed or licensed');
     if(kind!=='App Home'){
       const query=kind==='App Page'
@@ -271,7 +291,7 @@ export class AppRuntime {
       SET kind=$4,target_api=$5,status='Active',version=version+1,updated_at=now()
       WHERE tenant_id=$1 AND app_api=$2 AND slug=$3 AND version=$6
       RETURNING version
-    `,version===0?[tenantId,appApi,slug,kind,target]:[tenantId,appApi,slug,kind,target,version]);
+    `,version===0?[tenantId,catalog,slug,kind,target]:[tenantId,catalog,slug,kind,target,version]);
     if(!rows.length)throw new Error('Route alias version conflict');
     return {appId:appApi,slug,kind,targetApiName:target,status:'Active',version:rows[0].version};
   }
@@ -280,14 +300,16 @@ export class AppRuntime {
       !/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])$/.test(slug)||
       !Number.isSafeInteger(expectedVersion)||Number(expectedVersion)<1)
       throw new Error('Invalid route alias');
+    const catalog=await this.catalogApi(tenantId,appApi);
     const {rowCount}=await this.db.query(`
       UPDATE md_app_route_aliases
       SET status='Disabled',version=version+1,updated_at=now()
       WHERE tenant_id=$1 AND app_api=$2 AND slug=$3 AND version=$4 AND status='Active'
-    `,[tenantId,appApi,slug,expectedVersion]);
+    `,[tenantId,catalog,slug,expectedVersion]);
     if(!rowCount)throw new Error('Route alias version conflict');
   }
   async resolveAlias(tenantId:string,appApi:string,slug:string){
+    const catalog=await this.catalogApi(tenantId,appApi);
     const {rows}=await this.db.query<{kind:string;target_api:string}>(`
       SELECT r.kind,r.target_api FROM md_app_route_aliases r
       JOIN md_apps a ON a.api_name=r.app_api
@@ -296,7 +318,7 @@ export class AppRuntime {
       WHERE r.tenant_id=$1 AND r.app_api=$2 AND r.slug=$3 AND r.status='Active'
         AND a.enabled=true AND e.active=true
         AND (e.expires_at IS NULL OR e.expires_at>now())
-    `,[tenantId,appApi,slug]);
+    `,[tenantId,catalog,slug]);
     const record=rows[0];
     if(!record)throw new Error('Route alias unavailable');
     const target=record.target_api;
