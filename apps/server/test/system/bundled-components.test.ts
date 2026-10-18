@@ -5,7 +5,7 @@ import type { PoolClient } from 'pg';
 import { BUNDLED_COMPONENTS,seedFreshBundledComponents } from '../../src/app-seeders/bundled-components.js';
 
 test('SQL component seed matches the reviewed One manifest without duplicates', async()=>{
-  const catalog=JSON.parse(await readFile(new URL('../../../../web/src/one/manifest.json',import.meta.url),'utf8')) as {components:string[]};
+  const catalog=JSON.parse(await readFile(new URL('../../../web/src/one/manifest.json',import.meta.url),'utf8')) as {components:string[]};
   assert.deepEqual([...BUNDLED_COMPONENTS],catalog.components.map(path=>path.split('/')[0]));
   assert.ok(BUNDLED_COMPONENTS.includes('OneShoppingCart'));
   assert.ok(BUNDLED_COMPONENTS.includes('OneItemGrid'));
