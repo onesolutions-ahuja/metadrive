@@ -204,8 +204,17 @@ export class ObjectDefinitionService {
     const names=['md_object_layout_versions','md_object_page_layouts','md_object_page_layout_sections',
       'md_object_page_layout_fields','md_object_page_layout_actions','md_object_page_layout_related_lists',
       'md_object_page_layout_links','md_object_page_layout_assignments'];
+    // Each table exposes a subset of these named SQL columns; the corresponding
+    // reader below only accesses columns from that table.
+    type LayoutSqlRow={
+      object_api:string;revision:number;sort_order:number;
+      layout_id:string;label:string;section_id:string;columns:number;
+      field_api:string;action_name:string;list_name:string;
+      link_id:string;url:string;open_in_new_window:boolean;
+      profile_id:string;record_type_id:string;
+    };
     const [versions,layouts,sections,fields,actions,related,links,assignments]=await Promise.all(
-      names.map(name=>this.db.query(`SELECT * FROM ${name} WHERE tenant_id=$1`,[tenantId])));
+      names.map(name=>this.db.query<LayoutSqlRow>(`SELECT * FROM ${name} WHERE tenant_id=$1`,[tenantId])));
     type Layout={id:string;label:string;sections:{id:string;label:string;columns:1|2;fieldApiNames:string[]}[];
       relatedLists:string[];actions:string[];customLinks:{id:string;label:string;url:string;openInNewWindow:boolean}[]};
     const byObject=new Map<string,{revision:number;pageLayouts:Layout[];pageLayoutAssignments:{profileId:string;recordTypeId:string;pageLayoutId:string}[]}>();
