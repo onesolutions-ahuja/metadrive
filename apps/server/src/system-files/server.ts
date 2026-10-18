@@ -219,8 +219,8 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.patch('/api/named-credentials/:id/enabled',route(async(req,res)=>{
     const actor=req.actor!;
-    await namedCredentials.setEnabled(actor.tenant_id,actor.user_id,req.params.id,req.body?.enabled);
-    res.json({enabled:req.body.enabled});
+    const credential=await namedCredentials.setEnabled(actor.tenant_id,actor.user_id,req.params.id,req.body?.enabled);
+    res.json({credential});
   }));
   app.delete('/api/named-credentials/:id',route(async(req,res)=>{
     const actor=req.actor!;
