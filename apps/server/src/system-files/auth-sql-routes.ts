@@ -63,7 +63,7 @@ export function registerAuthSqlRoutes(app:Express,db:SqlPersistence,rbac:RbacEng
    policy=req.body?.policy??{method:'OTP'};
   await rbac.require(a.tenant_id,a.user_id,'Tenant','edit');
   if(typeof id!=='string'||id&& !/^[0-9a-f-]{36}$/i.test(id)
-    ||typeof from!=='string'||from.length>254||(id&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from))
+    ||typeof from!=='string'||from.length>254||(id&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))
     ||!policy||typeof policy!=='object'||Array.isArray(policy)||policy.method!=='OTP'
     ||policy.defaultChannel!=='email'||!Array.isArray(policy.allowedChannels)
     ||policy.allowedChannels.some((x:unknown)=>x!=='email'))
