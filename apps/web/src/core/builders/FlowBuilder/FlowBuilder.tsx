@@ -362,7 +362,7 @@ export default function FlowBuilder({
         onNotify('Every Decision outcome already has a connector');
         return;
       }
-      label = outcome.label;
+      label = outcome.name === 'Default' ? 'Default' : outcome.label;
     } else if (selected.type === 'Screen') {
       const outcomes = screenOutcomesFrom(selected.config.outcomes);
       const outcome = outcomes.find((item) => !outgoing.some((connector) => connector.label === item.label || connector.label === item.name));
