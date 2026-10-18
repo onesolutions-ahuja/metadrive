@@ -440,8 +440,11 @@ export class FlowRuntime {
           updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,[tenantId,runId,current,history]);
         const screen=byId.get(current);
         if(!screen||screen.type!=='Screen')throw new Error('Invalid Screen history');
+        const fields=Array.isArray(screen.config.fields)?screen.config.fields as Array<Record<string,unknown>>:[];
         return {interviewId:runId,screen,outcomes:this.screenOutcomes(screen),
-          canGoBack:history.length>0,values:vars};
+          canGoBack:history.length>0,
+          values:Object.fromEntries(fields.filter(f=>typeof f.apiName==='string'&&Object.hasOwn(vars,f.apiName))
+            .map(f=>[f.apiName,vars[String(f.apiName)]]))};
       }
       const visible=byId.get(current);
       const values=request.values??{};
@@ -450,7 +453,13 @@ export class FlowRuntime {
         const fields=Array.isArray(visible.config.fields)?visible.config.fields as Array<Record<string,unknown>>:[];
         const allowed=new Set(fields.map(field=>field.apiName).filter((key):key is string=>typeof key==='string'));
         for(const [key,value] of Object.entries(values)){
-          if(!allowed.has(key)||!scalar(value)||typeof value==='string'&&value.length>4096)
+          if(!allowed.has(key)){
+            // The UI may echo previously returned Flow resource values; never let
+            // a Screen silently overwrite variables it does not own.
+            if(Object.hasOwn(vars,key)&&vars[key]===value)continue;
+            throw new Error('Invalid Screen field: '+key);
+          }
+          if(!scalar(value)||typeof value==='string'&&value.length>4096)
             throw new Error('Invalid Screen field: '+key);
           set(key,value);
         }
@@ -489,8 +498,11 @@ export class FlowRuntime {
           await client.query(`UPDATE md_flow_interview_state SET current_element=$3,
             history_elements=$4,step_count=$5,updated_at=now() WHERE tenant_id=$1 AND run_id=$2`,
             [tenantId,runId,current,history,steps+1]);
+          const fields=Array.isArray(node.config.fields)?node.config.fields as Array<Record<string,unknown>>:[];
           return {interviewId:runId,screen:node,outcomes:this.screenOutcomes(node),
-            canGoBack:history.length>0,values:vars};
+            canGoBack:history.length>0,
+            values:Object.fromEntries(fields.filter(f=>typeof f.apiName==='string'&&Object.hasOwn(vars,f.apiName))
+              .map(f=>[f.apiName,vars[String(f.apiName)]]))};
         }
         if(node.type==='End'){
           await client.query("UPDATE md_flow_runs SET status='completed',finished_at=now() WHERE tenant_id=$1 AND id=$2",[tenantId,runId]);
