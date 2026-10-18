@@ -126,9 +126,9 @@ export class RecordEngine {
     if(!uuid.test(id))throw new Error('Invalid record ID');
     await this.rbac.require(tenantId,userId,objectApi,'read');
     const {rows}=await this.db.query<{
-      id:string;created_at:Date;updated_at:Date;owner_id:string|null;
+      id:string;created_at:Date;updated_at:Date;owner_id:string|null;record_type_id:string|null;
       field_api:string|null;value_text:string|null;reference_record_id:string|null;data_type:string|null
-    }>(`SELECT r.id,r.created_at,r.updated_at,r.owner_id,
+    }>(`SELECT r.id,r.created_at,r.updated_at,r.owner_id,r.record_type_id,
       v.field_api,v.value_text,v.reference_record_id,f.data_type
       FROM md_records r
       LEFT JOIN md_record_values v ON v.tenant_id=r.tenant_id AND v.record_id=r.id AND v.object_api=r.object_api
