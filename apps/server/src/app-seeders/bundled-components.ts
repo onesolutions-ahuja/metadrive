@@ -53,7 +53,7 @@ export async function seedFreshBundledComponents(client: PoolClient, tenantId: s
   for (const apiName of BUNDLED_COMPONENTS) {
     await client.query(
       'INSERT INTO md_component_definitions(tenant_id,api_name,renderer_key,enabled) VALUES($1,$2,$3,true) ON CONFLICT(tenant_id,api_name) DO NOTHING',
-      [tenantId,apiName,apiName]);
+      [tenantId,apiName,'one-bundled:'+apiName]);
   }
 }
 
