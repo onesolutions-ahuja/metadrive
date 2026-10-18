@@ -36,7 +36,7 @@ export class NamedCredentialService {
     ||!['None','Bearer','Basic','API Key','OAuth Client Credentials','OAuth Authorization Code'].includes(String(x.authType))
     ||typeof x.baseUrl!=='string'||typeof x.headerName!=='string')
     throw new Error('Invalid credential');
-  if(x.configuration && Object.keys(x.configuration as object).length)throw new Error('Credential configuration requires encrypted field mapping');
+  if(x.configuration && (typeof x.configuration!=='object'||Array.isArray(x.configuration)||Object.values(x.configuration as object).some(v=>typeof v!=='string')))throw new Error('Invalid credential configuration');
   const secret=x.secret;
   if(secret!==undefined && typeof secret!=='string')throw new Error('Invalid credential secret');
   const key=secret?this.key():null;
@@ -46,9 +46,16 @@ export class NamedCredentialService {
    const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',key,iv);
    encrypted=Buffer.concat([iv,cipher.update(secret,'utf8'),cipher.final(),cipher.getAuthTag()]);
   }
+  let encryptedConfiguration:Buffer|null=null;
+  const config=x.configuration as Record<string,string>|undefined;
+  if(config && Object.keys(config).length){
+   if(!this.key())throw new Error('Credential encryption is not configured');
+   const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',this.key()!,iv);
+   encryptedConfiguration=Buffer.concat([iv,cipher.update(JSON.stringify(config),'utf8'),cipher.final(),cipher.getAuthTag()]);
+  }
   const {rows}=await this.db.query<{id:string}>(
-   'INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id',
-   [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,x.enabled!==false]);
+   'INSERT INTO md_named_credentials(tenant_id,name,label,protocol,base_url,auth_type,header_name,secret_ciphertext,configuration_ciphertext,enabled) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id',
+   [tenantId,x.name,x.label,x.protocol,x.baseUrl,x.authType,x.headerName,encrypted,encryptedConfiguration,x.enabled!==false]);
   return (await this.list(tenantId,userId)).find(item=>item.id===rows[0].id);
  }
  async setEnabled(tenantId:string,userId:string,id:string,enabled:unknown){
