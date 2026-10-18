@@ -10,6 +10,7 @@
     "/auth/mfa/verify",
     "/auth/password-reset/confirm",
     "/auth/password-reset/request",
+    "/auth/users/",
     "/component-library/${encodeURIComponent(apiName)}",
     "/component-library/${encodeURIComponent(apiName)}/publish",
     "/component-library/${encodeURIComponent(apiName)}/rollback",
