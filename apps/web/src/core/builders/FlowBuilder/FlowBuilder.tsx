@@ -491,6 +491,7 @@ export default function FlowBuilder({
   );
   const renderElementSettings = () => {
     if (!selected || selected.type === 'Start') return renderStartSettings();
+    if (selected.type === 'End') return <div className="info-callout">This terminal element completes the Flow. Add it to each required path and configure any returned outputs in the Flow metadata.</div>;
     if (selected.type === 'Roll Back Records') {
       return <div className="info-callout">
         Restores record changes made earlier in this Flow transaction. Execution continues, so later record changes can still be saved.
