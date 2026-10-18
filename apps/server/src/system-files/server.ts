@@ -121,6 +121,7 @@ export function createSystemServer(db:SqlPersistence) {
     if(!tenantId) {res.status(401).json({error:'Invalid credentials or tenant domain'});return;}
     try {
       const session=await auth.signIn(tenantId,email,password);
+      if('mfa_required' in session){res.json(session);return;}
       res.setHeader('Set-Cookie',`${tokenCookie}=${session.refreshToken}; ${cookieOptions(req)}`);
       res.json({access_token:session.accessToken,expires_in:session.expiresIn});
     } catch(error) {
@@ -427,6 +428,7 @@ export async function startSystemServer() {
       const session=await auth.signIn(rows[0].id,
         process.env.METADRIVE_BOOTSTRAP_ADMIN_EMAIL??'',
         process.env.METADRIVE_BOOTSTRAP_ADMIN_PASSWORD??'');
+      if('mfa_required' in session)throw new Error('Bootstrap verification requires MFA');
       await auth.signOut(session.accessToken,session.refreshToken);
       console.info('New developer login verification: passed');
     } }
