@@ -1,3 +1,4 @@
+import type {PermissionPolicyExtras,ProfilePolicyExtras} from './rbacPolicyMetadata';
 import {
   BarChart3,
   Building2,
@@ -29,6 +30,7 @@ export type WorkspaceId =
   | 'company-settings'
   | 'tenant-management'
   | 'rbac';
+
 export type FieldMetadata = {
   id?: string;
   apiName: string;
@@ -56,18 +58,21 @@ export type FieldMetadata = {
     allowReparenting?: boolean;
   };
 };
+
 export type PageLayoutSectionMetadata = {
   id: string;
   label: string;
   columns: 1 | 2;
   fieldApiNames: string[];
 };
+
 export type PageLayoutCustomLinkMetadata = {
   id: string;
   label: string;
   url: string;
   openInNewWindow: boolean;
 };
+
 export type PageLayoutMetadata = {
   id: string;
   label: string;
@@ -76,21 +81,25 @@ export type PageLayoutMetadata = {
   actions: string[];
   customLinks?: PageLayoutCustomLinkMetadata[];
 };
+
 export type PageLayoutAssignmentMetadata = {
   profileId: string;
   recordTypeId: string;
   pageLayoutId: string;
 };
+
 export type CompactLayoutMetadata = {
   id: string;
   label: string;
   fieldApiNames: string[];
 };
+
 export type CompactLayoutAssignmentMetadata = {
   profileId: string;
   recordTypeId: string;
   compactLayoutId: string;
 };
+
 export type RecordTypeMetadata = {
   id: string;
   label: string;
@@ -100,11 +109,13 @@ export type RecordTypeMetadata = {
   isDefault: boolean;
   picklistValues?: Record<string, string[]>;
 };
+
 export type FieldSetMetadata = {
   apiName: string;
   label: string;
   fieldApiNames: string[];
 };
+
 export type RelatedLookupFilterMetadata = {
   id: string;
   fieldApiName: string;
@@ -115,6 +126,7 @@ export type RelatedLookupFilterMetadata = {
   valueFieldApiName?: string;
   required: boolean;
 };
+
 export type ObjectActionMetadata = {
   id: string;
   label: string;
@@ -124,6 +136,7 @@ export type ObjectActionMetadata = {
   fieldApiName?: string;
   value?: string;
 };
+
 export type ObjectSettingsMetadata = {
   allowReports: boolean;
   allowActivities: boolean;
@@ -133,6 +146,7 @@ export type ObjectSettingsMetadata = {
   recordNameType: 'Text' | 'Auto Number';
   recordNameFormat: string;
 };
+
 export type ObjectMetadata = {
   id?: string;
   apiName: string;
@@ -162,12 +176,14 @@ export type ObjectMetadata = {
   customTab?: { style: 'Blue' | 'Green' | 'Orange' | 'Purple' | 'Red' | 'Teal' | 'Yellow' };
   settings?: ObjectSettingsMetadata;
 };
+
 export type FlowElementMetadata = {
   id: number;
   type: string;
   label: string;
   config: Record<string, unknown>;
 };
+
 export type NamedCredentialMetadata = {
   id: string;
   name: string;
@@ -182,6 +198,7 @@ export type NamedCredentialMetadata = {
   keyId: string;
   updatedAt: string;
 };
+
 export type EmailAlertMetadata = {
   id: string;
   name: string;
@@ -195,6 +212,7 @@ export type EmailAlertMetadata = {
   createdAt: string;
   updatedAt: string;
 };
+
 export type CustomNotificationMetadata = {
   id: string;
   recipientId: string;
@@ -205,6 +223,7 @@ export type CustomNotificationMetadata = {
   createdAt: string;
   readAt: string | null;
 };
+
 export type ApprovalRequestMetadata = {
   id: string;
   groupId: string;
@@ -223,6 +242,7 @@ export type ApprovalRequestMetadata = {
   decidedAt: string | null;
   decidedBy: string | null;
 };
+
 export type ApprovalProcessMetadata = {
   apiName: string;
   label: string;
@@ -232,7 +252,9 @@ export type ApprovalProcessMetadata = {
   createdAt: string;
   updatedAt: string;
 };
+
 export type ApprovalProcessInput = Omit<ApprovalProcessMetadata, 'createdAt' | 'updatedAt'>;
+
 export type FlowConnectorMetadata = {
   id: string;
   from: number;
@@ -245,6 +267,7 @@ export type FlowConnectorMetadata = {
     offsetUnit: 'Minutes' | 'Hours' | 'Days';
   };
 };
+
 export type FlowResourceMetadata = {
   name: string;
   label: string;
@@ -255,6 +278,7 @@ export type FlowResourceMetadata = {
   availableForOutput: boolean;
   value?: unknown;
 };
+
 export type FlowVersionMetadata = {
   versionNumber: number;
   status: 'Draft' | 'Active' | 'Obsolete';
@@ -269,11 +293,13 @@ export type FlowVersionMetadata = {
   resources: FlowResourceMetadata[];
   tests?: FlowTestCaseMetadata[];
 };
+
 export type FlowValidationMetadata = {
   valid: boolean;
   errors: string[];
   warnings: string[];
 };
+
 export type FlowExecutionLogMetadata = {
   id: string;
   flowApiName: string;
@@ -283,6 +309,7 @@ export type FlowExecutionLogMetadata = {
   error: string;
   userId: string | null;
 };
+
 export type FlowInterviewMetadata = {
   id: string;
   flowApiName: string;
@@ -299,6 +326,7 @@ export type FlowInterviewMetadata = {
   retryAt: string | null;
   attempts: number;
 };
+
 export type FlowTestCaseMetadata = {
   id: string;
   label: string;
@@ -310,6 +338,7 @@ export type FlowTestCaseMetadata = {
   expectedStatus: 'completed' | 'waiting' | 'skipped';
   expectedOutputs?: Record<string, unknown>;
 };
+
 export type FlowDefinitionMetadata = {
   id?: string;
   apiName: string;
@@ -331,12 +360,14 @@ export type FlowDefinitionMetadata = {
   versions: FlowVersionMetadata[];
   tests?: FlowTestCaseMetadata[];
 };
+
 export type PlatformEventMetadata = {
   apiName: string;
   label: string;
   description: string;
   fields: FieldMetadata[];
 };
+
 export type PageComponentMetadata = {
   id: string;
   type: string;
@@ -347,11 +378,13 @@ export type PageComponentMetadata = {
   parentId?: string;
   position?: { x: number; y: number; width: number; height: number };
 };
+
 export type LightningPageTemplate =
   | 'one-region'
   | 'header-main'
   | 'main-sidebar'
   | 'header-main-sidebar';
+
 export type LightningPageMetadata = {
   revision?: number;
   apiName: string; scope?: 'tenant'|'platform-system'; ownerNamespace?: string; definitionVersion?: number; overridePolicy?: 'presentation-only'|'none'; requiredPermissions?: string[];
@@ -368,6 +401,7 @@ export type LightningPageMetadata = {
   components: PageComponentMetadata[];
   activationAssignments?: PageActivationAssignmentMetadata[];
 };
+
 export type DashboardComponentMetadata = {
   id: string;
   title: string;
@@ -412,6 +446,7 @@ export type DashboardComponentMetadata = {
   chartType: 'Bar' | 'Column' | 'Horizontal Bar' | 'Stacked Bar' | 'Stacked Column' | '100% Stacked Bar' | '100% Stacked Column' | 'Line' | 'Area' | 'Scatter' | 'Donut' | 'Pie' | 'Funnel' | 'Gauge';
   displayFieldApiNames: string[];
 };
+
 export type DashboardFilterMetadata = {
   id: string;
   objectApiName: string;
@@ -419,6 +454,7 @@ export type DashboardFilterMetadata = {
   operator: 'Equals' | 'Not Equal To' | 'Contains' | 'Starts With' | 'Greater Than' | 'Less Than' | 'Includes' | 'Excludes' | 'Is Null' | 'Is Not Null';
   value: string;
 };
+
 export type DashboardMetadata = {
   apiName: string;
   label: string;
@@ -438,11 +474,13 @@ export type DashboardMetadata = {
   filters: DashboardFilterMetadata[];
   refreshIntervalMinutes?: 0 | 1 | 5 | 15 | 60;
 };
+
 export type DashboardFolderShareMetadata = {
   targetType: 'User' | 'PublicGroup' | 'PermissionSetGroup' | 'Role' | 'RoleAndSubordinates' | 'Territory';
   targetId: string;
   accessLevel: 'Viewer' | 'Editor' | 'Manager';
 };
+
 export type DashboardTerritoryMetadata = {
   id: string;
   label: string;
@@ -451,6 +489,7 @@ export type DashboardTerritoryMetadata = {
   createdAt: string;
   updatedAt: string;
 };
+
 export type DashboardFolderMetadata = {
   id: string;
   label: string;
@@ -461,7 +500,9 @@ export type DashboardFolderMetadata = {
   updatedAt: string;
   accessLevel?: 'Viewer' | 'Editor' | 'Manager' | null;
 };
+
 export type DashboardFolderInput = Pick<DashboardFolderMetadata, 'label' | 'parentFolderId' | 'shares'>;
+
 export type DashboardSnapshot = {
   id: string;
   dashboardApiName: string;
@@ -519,6 +560,7 @@ export type DashboardSnapshot = {
     rows: Array<Record<string, unknown>>;
   }>;
 };
+
 export type DashboardSubscriptionInput = {
   label: string;
   frequency: 'Daily' | 'Weekly';
@@ -531,6 +573,7 @@ export type DashboardSubscriptionInput = {
   active: boolean;
   saveSnapshots: boolean;
 };
+
 export type DashboardSubscription = DashboardSubscriptionInput & {
   id: string;
   dashboardApiName: string;
@@ -542,6 +585,7 @@ export type DashboardSubscription = DashboardSubscriptionInput & {
   createdAt: string;
   updatedAt: string;
 };
+
 export type ReportFilterMetadata = {
   id: string;
   fieldApiName: string;
@@ -550,12 +594,14 @@ export type ReportFilterMetadata = {
   values: string[];
   locked: boolean;
 };
+
 export type ReportCrossFilterMetadata = {
   id: string;
   childObjectApiName: string;
   mode: 'With' | 'Without';
   filters: ReportFilterMetadata[];
 };
+
 export type ReportDateRange =
   | 'All Time'
   | 'Today'
@@ -571,6 +617,7 @@ export type ReportDateRange =
   | 'Last Quarter'
   | 'This Year'
   | 'Last Year';
+
 export type ReportStandardFiltersMetadata = {
   showMe: 'All' | 'My';
   dateFieldApiName: string | null;
@@ -578,11 +625,13 @@ export type ReportStandardFiltersMetadata = {
   statusFieldApiName: string | null;
   statusSelection: string;
 };
+
 export type ReportRowLimitMetadata = {
   limit: number | null;
   sortFieldApiName: string | null;
   sortDirection: 'Ascending' | 'Descending';
 };
+
 export type ReportSummaryOperation = 'Count' | 'Sum' | 'Average' | 'Minimum' | 'Maximum';
 export type ReportDateGrouping = 'Day' | 'Month' | 'Quarter' | 'Year';
 export type ReportBucketRangeMetadata = {
@@ -597,6 +646,7 @@ export type ReportBucketMetadata = {
   ranges: ReportBucketRangeMetadata[];
   treatBlanksAsZero: boolean;
 };
+
 export type ReportMetadata = {
   reportType: 'Standard';
   apiName: string;
@@ -622,11 +672,13 @@ export type ReportMetadata = {
   folderName: string;
   folderId: string | null;
 };
+
 export type ReportFolderMetadata = DashboardFolderMetadata & {
   visibility: 'Private' | 'All Users';
   accessLevel: 'Viewer' | 'Editor' | 'Manager' | null;
 };
 export type ReportFolderInput = Pick<ReportFolderMetadata, 'label' | 'parentFolderId' | 'shares' | 'visibility'>;
+
 export type ReportRunMetadata = {
   report: ReportMetadata;
   rows: Array<Record<string, unknown>>;
@@ -660,6 +712,7 @@ export type ReportRunMetadata = {
   truncated: boolean;
   generatedAt: string;
 };
+
 export type LibraryComponentMetadata = { propertyDefinitions?: import('../../components/Properties/componentSettingDefinitions').ComponentSettingDefinition[]; primitiveMetadata?: import('../../components/RegisteredComponent/sharedPrimitiveMetadata').PrimitiveMetadata;
   tenantId?: string;
   apiName: string;
@@ -692,16 +745,19 @@ export type LibraryComponentMetadata = { propertyDefinitions?: import('../../com
     jsxSource: string; cssSource: string; compiledJs: string; scopedCss: string; updatedAt: string;
   };
 };
+
 export type ConnectorSettingFieldMetadata = {
   apiName: string;
   label: string;
   value: string;
 };
+
 export type ConnectorSettingsMetadata = {
   apiName: string;
   label: string;
   fields: ConnectorSettingFieldMetadata[];
 };
+
 export type ConnectorProviderMetadata = {
   connectorKey: string;
   name: string;
@@ -721,6 +777,7 @@ export type ConnectorProviderMetadata = {
   retryPolicy: { maxAttempts: number };
   status: 'ACTIVE' | 'INACTIVE';
 };
+
 export type IntegrationConnectionMetadata = {
   id: string;
   connectorKey: string;
@@ -735,7 +792,9 @@ export type IntegrationConnectionMetadata = {
   createdAt: string;
   updatedAt: string;
 };
+
 export type DashboardWidgetMetadata = PageComponentMetadata;
+
 export type PageActivationAssignmentMetadata = {
   id: string;
   scope: 'Org Default' | 'App Default' | 'App and Profile' | 'App, Record Type, and Profile';
@@ -744,9 +803,8 @@ export type PageActivationAssignmentMetadata = {
   recordTypeId: string | null;
   formFactors: Array<'Desktop' | 'Phone'>;
 };
-export type PermissionSetMetadata = {
-  deniedPermissions?:string[];
-  advancedRules?:Array<{resource:string;action:string;effect:'allow'|'deny'}>;
+
+export type PermissionSetMetadata = PermissionPolicyExtras & {
   id: string;
   label: string;
   apiName: string;
@@ -760,6 +818,7 @@ export type PermissionSetMetadata = {
   navigationDefaultAccess?: 'Allow' | 'Deny';
   fieldPermissions: Record<string, { read: boolean; edit: boolean; create?: boolean; delete?: boolean }>;
 };
+
 export type PermissionSetGroupMetadata = {
   id: string;
   label: string;
@@ -775,10 +834,8 @@ export type PermissionSetGroupMetadata = {
   mutedTabPermissions?: Record<string, boolean>;
   mutedFieldPermissions: Record<string, { read?: boolean; edit?: boolean; create?: boolean; delete?: boolean }>;
 };
-export type ProfileMetadata = {
-  deniedPermissions?:string[];
-  advancedRules?:Array<{resource:string;action:string;effect:'allow'|'deny'}>;
-  inheritedPermissionSetIds?:string[];
+
+export type ProfileMetadata = ProfilePolicyExtras & {
   id: string;
   label: string;
   apiName: string;
@@ -792,6 +849,7 @@ export type ProfileMetadata = {
   tabPermissions?: Record<string, boolean>;
   fieldPermissions: Record<string, { read: boolean; edit: boolean; create?: boolean; delete?: boolean }>;
 };
+
 export type UserMetadata = {
   id: string;
   name: string;
@@ -807,12 +865,14 @@ export type UserMetadata = {
   userType?: 'internal' | 'external';
   externalAccountId?: string;
 };
+
 export type RoleMetadata = {
   id: string;
   name: string;
   apiName: string;
   parentRoleId: string | null;
 };
+
 export type PublicGroupMetadata = {
   id: string;
   label: string;
@@ -823,6 +883,7 @@ export type PublicGroupMetadata = {
   roleAndSubordinateIds: string[];
   groupIds: string[];
 };
+
 export type QueueMetadata = {
   id: string;
   label: string;
@@ -834,6 +895,7 @@ export type QueueMetadata = {
   roleAndSubordinateIds: string[];
   publicGroupIds: string[];
 };
+
 export type SharingRuleMetadata = {
   id: string;
   label: string;
@@ -852,6 +914,7 @@ export type SharingRuleMetadata = {
   targetId: string;
   accessLevel: 'Read' | 'Edit';
 };
+
 export type RestrictionConditionMetadata = {
   field:string;
   operator:'eq'|'ne'|'in'|'notIn'|'isNull'|'notNull';
@@ -870,8 +933,7 @@ export type SharingSettingMetadata = {
   portalAccountField?:string;
 };
 export type AccessControlMetadata = {
-  revision?:number;
-  tenantId?:string;
+  tenantId?:string;revision?:number;
   profiles: ProfileMetadata[];
   permissionSets: PermissionSetMetadata[];
   permissionSetGroups: PermissionSetGroupMetadata[];
@@ -882,16 +944,19 @@ export type AccessControlMetadata = {
   users: UserMetadata[];
   sharingSettings: Record<string, SharingSettingMetadata>;
 };
+
 export type CurrencySettingsMetadata = {
   corporateCurrency: string;
   standardVatRate: number;
   currencies: Array<{ currencyIsoCode: string; conversionRate: number }>;
 };
+
 export type WorkspaceMetadata = {
   id: WorkspaceId;
   label: string;
   icon: LucideIcon;
 };
+
 export const workspaces: WorkspaceMetadata[] = [
   { id: 'home', label: 'Setup Home', icon: LayoutTemplate },
   { id: 'object-manager', label: 'Object Manager', icon: Database },
@@ -909,6 +974,7 @@ export const workspaces: WorkspaceMetadata[] = [
   { id: 'tenant-management', label: 'Tenant Management', icon: Building2 },
   { id: 'rbac', label: 'Users & Permissions', icon: ShieldCheck }
 ];
+
 export const setupNavigation = [
   { group: 'Platform Administration', items: ['Tenant Management'] },
   { group: 'Company Settings', items: ['Company Settings'] },
@@ -918,6 +984,7 @@ export const setupNavigation = [
   { group: 'Analytics', items: ['Reports', 'Dashboards'] },
   { group: 'Security', items: ['Users', 'Roles', 'Public Groups', 'Profiles', 'Permission Sets', 'Permission Set Groups', 'Sharing Settings', 'Sharing Rules'] }
 ];
+
 export type LightningAppMetadata = {
   apiName: string; installationAppKey?: string;
   label: string;
@@ -928,6 +995,7 @@ export type LightningAppMetadata = {
   brandColor: string;
   utilityItems: Array<'Notes' | 'History'>;
 };
+
 export const objectMetadata: ObjectMetadata[] = [
   {
     apiName: 'User',
@@ -1055,6 +1123,7 @@ export const objectMetadata: ObjectMetadata[] = [
     ]
   }
 ];
+
 export const setupShortcuts = [
   { title: 'Object Manager', description: 'Manage objects, fields, and relationships', workspace: 'object-manager' as const, icon: Database },
   { title: 'Page Builder', description: 'Create and edit app pages', workspace: 'page-builder' as const, icon: LayoutTemplate },
@@ -1065,6 +1134,7 @@ export const setupShortcuts = [
   { title: 'Company Settings', description: 'Manage company settings, tax and currencies', workspace: 'company-settings' as const, icon: Building2 },
   { title: 'Permission Sets', description: 'Manage access to apps and data', workspace: 'rbac' as const, icon: ShieldCheck }
 ];
+
 export const flowElementMetadata = [
   { type: 'Screen', group: 'Interaction', icon: '▣' },
   { type: 'Decision', group: 'Logic', icon: '◇' },
@@ -1085,6 +1155,7 @@ export const flowElementMetadata = [
   { type: 'Subflow', group: 'Interaction', icon: '↪' },
   { type: 'Orchestration Stage', group: 'Interaction', icon: '☷' }
 ];
+
 export const recordMetadata = [
   { name: 'Edge Communications', owner: 'Alexandra Curtis', type: 'Customer - Direct', industry: 'Electronics', employees: '1,000', status: 'Active' },
   { name: 'Express Logistics and Transport', owner: 'David Kim', type: 'Customer - Channel', industry: 'Transportation', employees: '4,800', status: 'Active' },
@@ -1092,6 +1163,7 @@ export const recordMetadata = [
   { name: 'GenePoint', owner: 'Alexandra Curtis', type: 'Prospect', industry: 'Biotechnology', employees: '265', status: 'New' },
   { name: 'Grand Hotels & Resorts Ltd', owner: 'Chris Johnson', type: 'Customer - Direct', industry: 'Hospitality', employees: '3,200', status: 'Active' }
 ];
+
 export const defaultFlow: FlowDefinitionMetadata = {
   apiName: 'Renewal_Risk_Evaluation',
   label: 'Renewal Risk Evaluation',
@@ -1115,6 +1187,7 @@ export const defaultFlow: FlowDefinitionMetadata = {
   ],
   versions: []
 };
+
 export const defaultLightningPage: LightningPageMetadata = {
   apiName: 'Account_Record_Page',
   label: 'Account Record Page',
@@ -1136,7 +1209,9 @@ export const defaultLightningPage: LightningPageMetadata = {
     { id: 'account-default-phone', scope: 'Org Default', appId: null, profileId: null, recordTypeId: null, formFactors: ['Phone'] }
   ]
 };
+
 const fullObjectAccess = { read: true, create: true, edit: true, delete: true, viewAll: true, modifyAll: true };
+
 export const defaultAccessControl: AccessControlMetadata = {
   profiles: [
     {

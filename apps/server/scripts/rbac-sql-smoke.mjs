@@ -108,6 +108,7 @@ try{
  // A delegated security administrator cannot grow its own rights indirectly.
  const limited=await user('delegated-admin@example.invalid'),limitedSet=randomUUID(),limitedRole=randomUUID();
  await save(s=>{
+  s.sharingSettings.Invoice.grantAccessUsingHierarchies=true;
   s.roles.push({id:limitedRole,apiName:'DelegatedRole',name:'Delegated role',parentRoleId:null});
   s.permissionSets.push({...policy(limitedSet,'DelegatedAdministration'),
    systemPermissions:['security:read','security:manage','User:edit'],
