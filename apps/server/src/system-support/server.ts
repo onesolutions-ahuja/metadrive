@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {ComponentLibraryService} from './component-library-service.js';
 import {DashboardSnapshotService} from './dashboard-snapshot-service.js';
+import {DashboardSubscriptionService} from './dashboard-subscription-service.js';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { SqlPersistence } from '../system-files/sql-persistence.js';
 import {applySystemMigrations} from './system-migrations.js';
@@ -85,6 +86,7 @@ export function createSystemServer(db:SqlPersistence) {
   const collaboration=new RecordCollaborationService(db,rbac);
   const systemDefinitions=new SystemDefinitionService(db,rbac);
   const dashboardSnapshots=new DashboardSnapshotService(db,rbac,records,systemDefinitions);
+  const dashboardSubscriptions=new DashboardSubscriptionService(db,rbac,systemDefinitions,namedCredentials,dashboardSnapshots);
   const namedCredentials=new NamedCredentialService(db,rbac);
   const oauth=new OAuthAuthorizationService(db,rbac,namedCredentials);
   const mfa=new MfaService(db,rbac,auth,namedCredentials);
@@ -730,6 +732,22 @@ export function createSystemServer(db:SqlPersistence) {
   app.delete('/api/metadata/dashboards/:apiName/snapshots/:id',route(async(req,res)=>{
     await dashboardSnapshots.remove(req.actor!,req.params.apiName,req.params.id);
     res.status(204).end();
+  }));
+  app.get('/api/metadata/dashboards/:apiName/subscriptions',route(async(req,res)=>{
+    res.json({subscriptions:await dashboardSubscriptions.list(req.actor!,req.params.apiName)});
+  }));
+  app.post('/api/metadata/dashboards/:apiName/subscriptions',route(async(req,res)=>{
+    res.status(201).json({subscription:await dashboardSubscriptions.save(req.actor!,req.params.apiName,req.body)});
+  }));
+  app.put('/api/metadata/dashboards/:apiName/subscriptions/:id',route(async(req,res)=>{
+    res.json({subscription:await dashboardSubscriptions.save(req.actor!,req.params.apiName,req.body,req.params.id)});
+  }));
+  app.delete('/api/metadata/dashboards/:apiName/subscriptions/:id',route(async(req,res)=>{
+    await dashboardSubscriptions.remove(req.actor!,req.params.apiName,req.params.id);
+    res.status(204).end();
+  }));
+  app.post('/api/metadata/dashboards/:apiName/subscriptions/:id/run',route(async(req,res)=>{
+    res.json({subscription:await dashboardSubscriptions.run(req.actor!,req.params.apiName,req.params.id)});
   }));
   // Universal SQL-backed definition API. Names are compatibility routes, data is SQL.
   app.post('/api/integration-connections/:id/test',route(async(req,res)=>{
