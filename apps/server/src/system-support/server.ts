@@ -649,6 +649,12 @@ export function createSystemServer(db:SqlPersistence) {
     res.json({view:decisions[0],edit:decisions[1],secrets:decisions[2],
       test:decisions[3],install:decisions[4]||decisions[1],licence:decisions[5]});
   }));
+  app.post('/api/connector-apps/:appKey/licence',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'AppEntitlement','manage');
+    res.json(await apps.grantLicence(actor.tenant_id,actor.user_id,req.params.appKey));
+  }));
   app.get('/api/connector-apps/catalog',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
