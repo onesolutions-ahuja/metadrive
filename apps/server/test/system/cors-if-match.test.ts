@@ -27,7 +27,7 @@ test('registered tenant origin can preflight field updates with If-Match', async
     });
     assert.equal(response.status, 204);
     assert.equal(response.headers.get('access-control-allow-origin'), 'https://tenant.example');
-    const allowed = response.headers.get('access-control-allow-headers')?.toLowerCase().split(/,\\s*/).map(value => value.trim()) ?? [];
+    const allowed = response.headers.get('access-control-allow-headers')?.toLowerCase().split(',').map(value => value.trim()) ?? [];
     assert.ok(allowed.includes('if-match'));
     assert.equal(response.headers.get('access-control-allow-credentials'), 'true');
   } finally {
