@@ -441,7 +441,8 @@ export function createSystemServer(db:SqlPersistence) {
     const factor=String(req.query.formFactor??'Desktop');
     if(!['Desktop','Phone'].includes(factor))throw new Error('Invalid form factor');
     await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
-    const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase());
+    const session=await sessionMetadata(db,actor.tenant_id,actor.user_id);
+    const assigned=await apps.homePage(actor.tenant_id,req.params.appId,factor.toLowerCase(),session.user.profileId);
     res.json({page:assigned?.apiName?(await pages.load(actor.tenant_id,assigned.apiName)).page:null});
   }));
   app.get('/api/apps/:appId/pages/:pageApiName',route(async(req,res)=>{
@@ -703,7 +704,20 @@ export function createSystemServer(db:SqlPersistence) {
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
-    res.json({apps:await apps.listInstalled(actor.tenant_id)});
+    res.json({apps:await apps.listMetadata(actor.tenant_id)});
+  }));
+  app.post('/api/metadata/apps',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'Licence','manage');
+    const app=await apps.saveMetadata(actor.tenant_id,req.body?.apiName,req.body,false);
+    res.status(201).json({app});
+  }));
+  app.put('/api/metadata/apps/:apiName',route(async(req,res)=>{
+    const actor=req.actor!;
+    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','manage');
+    await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.apiName,'manage');
+    res.json({app:await apps.saveMetadata(actor.tenant_id,req.params.apiName,req.body,true)});
   }));
 
   // The User object is a secure view of md_users, never a second md_records copy.
