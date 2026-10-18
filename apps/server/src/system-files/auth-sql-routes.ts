@@ -8,6 +8,24 @@ const wrap=(fn:(req:Req,res:Response)=>Promise<void>)=>(req:Request,res:Response
 /** SQL auth settings reflect actual capabilities. Never claim MFA/recovery is ready without a provider. */
 export function registerAuthSqlRoutes(app:Express,db:SqlPersistence,rbac:RbacEngine){
  const auth=new AuthenticationService(db);
+ app.post('/api/auth/change-password',wrap(async(req,res)=>{
+  const a=req.actor!,old=req.body?.currentPassword,next=req.body?.newPassword;
+  if(typeof old!=='string'||typeof next!=='string'||next.length<12||next.length>1024||old===next)
+   throw Error('Invalid password change');
+  await db.transaction(async client=>{
+   const {rows}=await client.query<{password_hash:string}>(
+    'SELECT password_hash FROM md_users WHERE tenant_id=$1 AND id=$2 AND enabled=true FOR UPDATE',
+    [a.tenant_id,a.user_id]);
+   if(!rows[0]||!(await auth.verifyPassword(old,rows[0].password_hash)))
+    throw Error('Invalid credentials');
+   const hash=await auth.hashPassword(next);
+   await client.query('UPDATE md_users SET password_hash=$3 WHERE tenant_id=$1 AND id=$2',
+    [a.tenant_id,a.user_id,hash]);
+   await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,a.user_id]);
+   await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[a.tenant_id,a.user_id]);
+  });
+  res.status(204).end();
+ }));
  app.get('/api/auth/sessions',wrap(async(req,res)=>{
   const a=req.actor!;
   const {rows}=await db.query<{id:string;expires_at:Date}>(
