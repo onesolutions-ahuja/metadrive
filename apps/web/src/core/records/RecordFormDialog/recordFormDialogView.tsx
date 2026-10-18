@@ -405,8 +405,8 @@ export function RecordFormDialog({
       </div>;
     }
     if (object.apiName === 'User' && field.apiName === 'UserRoleId') return <label className="form-label" key={field.apiName}>User Role
-      <select className="form-control" value={value} required disabled={common.disabled} onChange={(event) => onChange('UserRoleId',event.target.value)}>
-        <option value="">Select role…</option>{userRoles.map((role) => <option key={role.id} value={role.name}>{role.name}</option>)}
+      <select className="form-control" value={value} disabled title="Assign roles through Setup → Users & Permissions → Users & Assignments">
+        <option value="">Manage in Users & Assignments</option>{userRoles.map((role) => <option key={role.id} value={role.name}>{role.name}</option>)}
       </select></label>;
     if (dataType === 'picklist') return <label className="form-label" htmlFor={common.id} key={field.apiName}>{displayFieldLabel(field)}{field.required && <b aria-hidden="true"> *</b>}
       <select className="form-control" {...common} value={value} onChange={(event) => changeFieldValue(field.apiName, event.target.value)}>

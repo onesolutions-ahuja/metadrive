@@ -8,6 +8,7 @@ import { objectSettings, parseAppRoute, appRoutePath, type AppRoute } from '../.
 import { NavigationLoadTime, resolveCurrentAppNavigation } from '../../workspace/Navigation/appNavigationView';
 import { isStandalonePagePresentation, pageCanvasPresentationStyle } from '../../pages/PageRuntime/pageRuntimePresentation';
 import { insertFlowElementAtPath } from '../../builders/FlowBuilder/flowInsertElement.mjs';
+import AdvancedPermissionRules from './AdvancedPermissionRules';
 import AdvancedSharingSettings from './AdvancedSharingSettings';
 import {resolveSetupNavigation} from '../../platform/Workspace/platformSetupNavigation';
 import {readVerifiedMetadata,saveVerifiedMetadata,type MetadataPublicationResponse} from '../../metadata/Cache/verifiedMetadataCache';
@@ -713,6 +714,7 @@ function Permissions({
           </>;
         })()}
         {tab === 'profiles' && selectedProfile && <>
+          <AdvancedPermissionRules systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedProfile} onChange={patch=>patchProfile(selectedProfile.id,patch)}/>
           <div className="section-toolbar"><div><h2>{selectedProfile.label}</h2><p>Profile · {selectedProfile.apiName}{selectedProfile.isStandard ? ' · Standard' : ''}</p></div><button className="btn" onClick={() => {
             if (selectedProfile.isStandard || draft.users.some((user) => user.profileId === selectedProfile.id)) return;
             setDraft((current) => ({ ...current, profiles: current.profiles.filter((item) => item.id !== selectedProfile.id) }));
@@ -724,19 +726,20 @@ function Permissions({
             <PlatformPageSlot slotKey="field-rbac-20"><label className="form-label">License<input className="form-control" value={selectedProfile.license} onChange={(event) => patchProfile(selectedProfile.id, { license: event.target.value })} /></label></PlatformPageSlot>
             <PlatformPageSlot slotKey="field-rbac-21"><label className="form-label">Description<input className="form-control" value={selectedProfile.description} onChange={(event) => patchProfile(selectedProfile.id, { description: event.target.value })} /></label></PlatformPageSlot>
           </div>
+          <p className="permission-help">Inherited permission sets: {(selectedProfile.inheritedPermissionSetIds??[]).map(id=>draft.permissionSets.find(s=>s.id===id)?.label??id).join(', ')||'None'}</p>
           <h3 className="permission-section-heading">System Permissions</h3>
           <div className="permission-check-grid">{allSystemPermissions.map(([key, label]) => <label className="checkbox-row" key={key}><input type="checkbox" checked={selectedProfile.systemPermissions.includes(key)} onChange={() => patchProfile(selectedProfile.id, { systemPermissions: toggleString(selectedProfile.systemPermissions, key) })} />{label}</label>)}</div>
           
           <h3 className="permission-section-heading">Application Access</h3>
           <p className="permission-help">Navigation access does not grant underlying data permissions.</p>
           <div className="permission-check-grid">{navigationApps.map((app) => <label className="checkbox-row" key={app.apiName}>
-            <input type="checkbox" checked={(selectedProfile.appPermissions?.[app.apiName] !== false)}
+            <input type="checkbox" checked={Boolean(selectedProfile.appPermissions?.[app.apiName])}
               onChange={(event) => patchProfile(selectedProfile.id, { appPermissions: { ...selectedProfile.appPermissions, [app.apiName]: event.target.checked } })} />
             {app.label}
           </label>)}</div>
           <h3 className="permission-section-heading">Tab Visibility</h3>
           <div className="permission-check-grid">{objects.map((object) => <label className="checkbox-row" key={object.apiName}>
-            <input type="checkbox" checked={(selectedProfile.tabPermissions?.[object.apiName] !== false)}
+            <input type="checkbox" checked={Boolean(selectedProfile.tabPermissions?.[object.apiName])}
               onChange={(event) => patchProfile(selectedProfile.id, { tabPermissions: { ...selectedProfile.tabPermissions, [object.apiName]: event.target.checked } })} />
             {object.label}
           </label>)}</div>
@@ -758,6 +761,7 @@ function Permissions({
           })}</tbody></table></div></details>)}
         </>}
         {tab === 'sets' && selectedSet && <>
+          <AdvancedPermissionRules systemPermissionKeys={allSystemPermissions.map(([key])=>key)} policy={selectedSet} onChange={patch=>patchSet(selectedSet.id,patch)}/>
           <div className="section-toolbar"><div><h2>{selectedSet.label}</h2><p>Permission Set · {selectedSet.apiName}</p></div><button className="btn" onClick={() => {
             if (selectedSet.id === 'system-administrator'
               || draft.users.some((user) => user.permissionSetIds.includes(selectedSet.id))
@@ -846,7 +850,7 @@ function Permissions({
         </>}
         {tab === 'users' && <>
           <div className="section-toolbar"><div><h2>User Assignments</h2><p>Direct permission-set and permission-set-group memberships for this tenant.</p></div><button className="btn btn-brand" onClick={onOpenUserRecords}>Manage Users (CRUD)</button></div>
-          {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><PlatformPageSlot slotKey="field-rbac-29"><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-30"><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-31"><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-32"><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-33"><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-34"><label className="form-label">User Type
+          {draft.users.map((user) => <details className="permission-user-card" key={user.id}><summary><strong>{user.name}</strong><span>{user.username}</span><span>{draft.roles.find((role) => role.id === user.roleId)?.name ?? user.role}</span></summary><PlatformPageSlot slotKey="field-rbac-29"><label className="form-label">Role<select className="form-control" value={user.roleId} onChange={(event) => patchUser(user.id, { roleId: event.target.value, role: draft.roles.find((role) => role.id === event.target.value)?.name ?? user.role })}><option value="">No role</option>{draft.roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-30"><label className="form-label">Profile<select className="form-control" value={user.profileId} onChange={(event) => patchUser(user.id, { profileId: event.target.value })}><option value="">No profile</option>{draft.profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.label} · {profile.license}</option>)}</select></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-31"><label className="form-label">Time Zone (IANA)<input className="form-control" value={user.timeZone} onChange={(event) => patchUser(user.id, { timeZone: event.target.value })} placeholder="America/Los_Angeles" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-32"><label className="form-label">Locale (BCP 47)<input className="form-control" value={user.locale} onChange={(event) => patchUser(user.id, { locale: event.target.value })} placeholder="en-US" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-33"><label className="form-label">Currency (ISO 4217)<input className="form-control" value={user.currencyIsoCode ?? ''} onChange={(event) => patchUser(user.id, { currencyIsoCode: event.target.value.toUpperCase() || undefined })} placeholder="USD" /></label></PlatformPageSlot><PlatformPageSlot slotKey="field-rbac-34"><label className="form-label">User Type
           <select className="form-control" value={user.userType ?? 'internal'}
             onChange={(event) => patchUser(user.id, {
               userType: event.target.value as 'internal' | 'external',

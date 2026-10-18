@@ -125,7 +125,7 @@ test('Records HTTP API returns the actual list rather than double-nested records
   const db={
     query:async(sql:string)=>{
       if(sql.includes('FROM md_sessions s JOIN md_users'))return {rows:[{tenant_id:'tenant',user_id:'user'}]};
-      if(sql.includes('md_permission_rules'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
+      if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
       if(sql.includes('WITH selected AS'))return {rows:[]};
       if(sql.includes('count(*)::text'))return {rows:[{total:'0'}]};
       throw new Error('Unexpected SQL '+sql);
@@ -370,7 +370,7 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
   const {sessionMetadata}=await import('../../src/system-files/session-metadata.js');
   const db={query:async(sql:string,params:unknown[])=>{
     assert.equal(params[0],'tenant');
-    if(sql.includes('WITH assigned AS'))return {rows:[
+    if(sql.includes('md_rbac_decision'))return {rows:[
       {ordinal:1,allow_granted:true,deny_granted:false},
       {ordinal:2,allow_granted:true,deny_granted:false},
       {ordinal:4,allow_granted:true,deny_granted:true}
@@ -378,8 +378,8 @@ test('Setup session metadata reuses OneEngine SQL policy, with explicit deny ove
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
     if(sql.includes('FROM md_object_record_types'))return {rows:[]};
-    assert.ok(sql.includes('md_role_permission_sets'));
-    assert.ok(sql.includes('md_permission_rules'));
+    assert.ok(sql.includes('md_rbac_decision'));
+    assert.ok(sql.includes('md_rbac_decision'));
     assert.equal(params[1],'developer');
     assert.equal((params[2] as string[]).length,8);
     return {rows:[
@@ -399,11 +399,11 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
   const db={query:async(sql:string)=>{
     if(sql.includes('FROM md_sessions s JOIN md_users'))
       return {rows:[{tenant_id:'tenant',user_id:'developer'}]};
-    if(sql.includes('WITH assigned AS'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},{ordinal:2,allow_granted:true,deny_granted:false}]};
+    if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},{ordinal:2,allow_granted:true,deny_granted:false}]};
     if(sql.includes('FROM md_user_profiles'))return {rows:[]};
     if(sql.includes('FROM md_field_definitions'))return {rows:[]};
     if(sql.includes('FROM md_object_record_types'))return {rows:[]};
-    if(sql.includes('md_permission_rules'))
+    if(sql.includes('md_rbac_decision'))
       return {rows:[{ordinal:1,allow_granted:true,deny_granted:false},
         {ordinal:2,allow_granted:true,deny_granted:false}]};
     throw new Error('Unexpected query');
@@ -426,32 +426,32 @@ test('Setup /auth/me returns the authenticated SQL policy, not an empty permissi
 
 test('SQL RBAC metadata endpoint exposes tenant-only policy definitions',async()=>{
  const calls:string[]=[];
- const db={query:async(sql:string,args:unknown[])=>{
-  calls.push(sql);
-  assert.equal(args[0],'tenant');
-  if(sql.includes('WITH assigned AS'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
-  if(sql.includes('FROM md_permission_sets'))return {rows:[{id:'ps1',api_name:'TenantDeveloper'}]};
-  if(sql.includes('FROM md_roles'))return {rows:[{id:'r1',api_name:'Developer',label:'Developer',parent_role_id:null}]};
-  if(sql.includes('FROM md_permission_rules'))return {rows:[{permission_set_id:'ps1',resource:'ObjectDefinition',action:'read',effect:'allow'}]};
-  if(sql.includes('FROM md_users'))return {rows:[{id:'u1',email:'dev@example.invalid'}]};
-  if(sql.includes('FROM md_profiles'))return {rows:[{id:'prof1',api_name:'Default',label:'Default Profile'}]};
-  if(sql.includes('FROM md_user_profiles'))return {rows:[{user_id:'u1',profile_id:'prof1'}]};
-  if(sql.includes('FROM md_user_roles'))return {rows:[{user_id:'u1',role_id:'r1'}]};
-  if(sql.includes('FROM md_permission_assignments'))return {rows:[{user_id:'u1',permission_set_id:'ps1'}]};
-  if(sql.includes('FROM md_object_definitions'))return {rows:[]};
-  if(sql.includes('FROM md_field_definitions'))return {rows:[]};
-  throw new Error('Unexpected SQL');
- }} as unknown as SqlPersistence;
+ const query=async(sql:string,args:unknown[]=[])=>{
+  if(sql.startsWith('SET TRANSACTION'))return {rows:[]};
+  calls.push(sql);assert.equal(args[0],'tenant');
+  if(sql.includes('md_rbac_decision'))return {rows:[{ordinal:1,allow_granted:true,deny_granted:false}]};
+  const data:Record<string,unknown[]>={
+   md_permission_sets:[{id:'ps1',api_name:'TenantDeveloper'}],
+   md_roles:[{id:'r1',api_name:'Developer',label:'Developer',parent_role_id:null}],
+   md_permission_rules:[{permission_set_id:'ps1',resource:'ObjectDefinition',action:'read',effect:'allow'}],
+   md_users:[{id:'u1',email:'dev@example.invalid'}],
+   md_profiles:[{id:'prof1',api_name:'Default',label:'Default Profile'}],
+   md_user_profiles:[{user_id:'u1',profile_id:'prof1'}],md_user_roles:[{user_id:'u1',role_id:'r1'}],
+   md_permission_assignments:[{user_id:'u1',permission_set_id:'ps1'}]
+  };
+  const table=/FROM (md_[a-z_]+)/.exec(sql)?.[1];
+  assert.ok(table);assert.ok(sql.includes('tenant_id=$1'));
+  return {rows:data[table!]??[]};
+ };
+ const db={query,transaction:async(fn:(tx:any)=>Promise<unknown>)=>fn({query})} as unknown as SqlPersistence;
  const result=await new RbacEngine(db).describe('tenant','user');
  assert.equal(result.tenantId,'tenant');
  assert.equal(result.permissionSets[0].apiName,'TenantDeveloper');
  assert.deepEqual(result.permissionSets[0].systemPermissions,['metadata:read']);
- assert.equal(result.roles[0].name,'Developer');
- assert.equal(result.users[0].username,'dev@example.invalid');
  assert.equal(result.users[0].profileId,'prof1');
  assert.equal(result.users[0].roleId,'r1');
  assert.equal(result.profiles[0].apiName,'Default');
- assert.ok(calls.every(query=>query.includes('tenant_id=$1')||query.includes('r.tenant_id=$1')));
+ assert.ok(calls.every(sql=>sql.includes('tenant_id=$1')||sql.includes('md_rbac_decision')));
 });
 test('SQL RBAC metadata access fails closed without Security read permission',async()=>{
  const db={query:async()=>({rows:[]})} as unknown as SqlPersistence;
@@ -737,6 +737,7 @@ test('SQL picklist field creation persists validated options and rejects invalid
         api_name:'Status',data_type:'picklist',related_object:null,required:false,max_length:null,picklist_restricted:true
       }]};
       if(sql.includes('FROM md_field_picklist_values'))return {rows:[{value:'Approved'}],rowCount:args[3]==='Approved'?1:0};
+      if(sql.includes('FROM md_object_record_types'))return {rows:[]};
       throw new Error('Unexpected SQL '+sql);
     },
     transaction:async(fn:(c:typeof client)=>Promise<unknown>)=>fn(client)

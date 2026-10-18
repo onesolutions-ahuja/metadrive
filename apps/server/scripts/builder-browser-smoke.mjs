@@ -14,7 +14,7 @@ const url=process.env.METADRIVE_SQL_TEST_DATABASE_URL;
 if(!url)throw new Error('SQL test database is required');
 const db=new SqlPersistence(url);
 const api=createSystemServer(db),listener=api.listen(0,'127.0.0.1');
-let frontend,browser;
+let frontend,browser,page;
 try{
  if(!listener.listening)await once(listener,'listening');
  const apiPort=listener.address().port;
@@ -48,9 +48,9 @@ try{
  if(!ready)throw new Error('Vite test frontend did not start');
  browser=await chromium.launch({headless:true});
  const context=await browser.newContext({viewport:{width:1440,height:900}});
- await context.addCookies([{name:'md_refresh',value:tokens.refreshToken,url:origin+'/api/auth/refresh',
+ await context.addCookies([{name:'md_refresh',value:tokens.refreshToken,domain:'127.0.0.1',path:'/api/auth',
   httpOnly:true,sameSite:'Lax'}]);
- const page=await context.newPage();
+ page=await context.newPage();
  const failures=[];
  page.on('pageerror',error=>failures.push(error.message));
  await page.goto(origin+'/une/setup/flow-builder',{waitUntil:'domcontentloaded'});
@@ -119,9 +119,47 @@ try{
  await page.goto(origin+'/une/setup/flow-builder',{waitUntil:'domcontentloaded'});
  await page.waitForTimeout(800);
  await page.screenshot({path:new URL('../artifacts/flow-builder.png',import.meta.url).pathname});
+ // Exercise the actual permission-editor Save button, refresh and SQL round-trip.
+ await page.goto(origin+'/une/setup/rbac',{waitUntil:'domcontentloaded'});
+ await page.getByRole('button',{name:'Profiles',exact:true}).click();
+ await page.getByRole('button',{name:'New Profile',exact:true}).click();
+ await page.getByLabel('Label',{exact:true}).fill('Browser Cashier Profile');
+ await page.getByLabel('API Name',{exact:true}).fill('BrowserCashierProfile');
+ const savedProfile=page.waitForResponse(r=>r.url().endsWith('/api/metadata/permissions')&&r.request().method()==='PUT');
+ await page.getByRole('button',{name:'Save Changes',exact:true}).click();
+ const profileResponse=await savedProfile;
+ assert.equal(profileResponse.status(),200,await profileResponse.text());
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.getByRole('button',{name:'Profiles',exact:true}).click();
+ await page.getByRole('button',{name:/Browser Cashier Profile/}).click();
+ assert.equal(await page.getByLabel('Label',{exact:true}).inputValue(),'Browser Cashier Profile');
+ const sqlProfile=await db.query('SELECT label FROM md_profiles WHERE tenant_id=$1 AND api_name=$2',[tenantId,'BrowserCashierProfile']);
+ assert.equal(sqlProfile.rows[0]?.label,'Browser Cashier Profile');
+ await page.getByRole('button',{name:'Permission Sets',exact:true}).click();
+ await page.getByRole('button',{name:'New Permission Set',exact:true}).click();
+ await page.getByLabel('Label',{exact:true}).fill('Browser Cashier Set');
+ await page.getByLabel('API Name',{exact:true}).fill('BrowserCashierSet');
+ await page.getByLabel('Description',{exact:true}).fill('Saved from the real browser');
+ const savedSet=page.waitForResponse(r=>r.url().endsWith('/api/metadata/permissions')&&r.request().method()==='PUT');
+ await page.getByRole('button',{name:'Save Changes',exact:true}).click();
+ const setResponse=await savedSet;
+ assert.equal(setResponse.status(),200,await setResponse.text());
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.getByRole('button',{name:'Permission Sets',exact:true}).click();
+ await page.getByRole('button',{name:/Browser Cashier Set/}).click();
+ assert.equal(await page.getByLabel('Description',{exact:true}).inputValue(),'Saved from the real browser');
+ await page.screenshot({path:new URL('../artifacts/rbac-editor.png',import.meta.url).pathname});
+ console.info('RBAC browser Save/refresh/SQL checks passed for profile creation and permission-set metadata');
  const severe=failures.filter(message=>/TypeError|Cannot read properties|ReferenceError/i.test(message));
  assert.deepEqual(severe,[],'Browser runtime exceptions: '+severe.join(' | '));
  console.info('Browser UI loaded: Page save/load/archive and Flow save/start/submit/complete/archive passed');
+}catch(error){
+ if(page){
+  console.error('Browser failure URL:',page.url());
+  console.error('Browser failure text:',(await page.locator('body').innerText().catch(()=>'' )).slice(0,4000));
+  await page.screenshot({path:new URL('../artifacts/rbac-failure.png',import.meta.url).pathname}).catch(()=>{});
+ }
+ throw error;
 }finally{
  if(browser)await browser.close();
  if(frontend){frontend.kill('SIGTERM');}

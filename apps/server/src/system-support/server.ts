@@ -9,8 +9,8 @@ import {PasswordRecoverySettingsService} from './password-recovery-settings-serv
 import {sessionMetadata} from '../system-files/session-metadata.js';
 import { ObjectDefinitionService } from '../system-files/object-definition.js';
 import { RbacEngine } from '../system-files/rbac-engine.js';
-import { RoleAdministration } from './role-administration.js';
-import { PermissionSetAdministration } from './permission-set-administration.js';
+import {permittedApps} from './rbac-navigation.js';
+import {RbacAdministration} from './rbac-administration.js';
 import {NamedCredentialService} from './named-credential-service.js';
 import {SystemDefinitionService,definitionKinds,type DefinitionKind} from '../system-files/system-definition-service.js';
 import { RecordEngine } from '../system-files/record-engine.js';
@@ -67,11 +67,10 @@ async function resolveTenant(db:SqlPersistence,req:Request,tenantSlug?:unknown) 
 export function createSystemServer(db:SqlPersistence) {
   const app=express();
   app.disable('x-powered-by');
-  app.use(express.json({limit:'64kb'}));
+  app.use(express.json({limit:'2mb'}));
   const auth=new AuthenticationService(db);
   const rbac=new RbacEngine(db);
-  const roleAdministration=new RoleAdministration(db,rbac);
-  const permissionSetAdministration=new PermissionSetAdministration(db,rbac);
+  const rbacAdministration=new RbacAdministration(db,rbac);
   const recoverySettings=new PasswordRecoverySettingsService(db,rbac);
   const records=new RecordEngine(db,rbac);
   const reportRuntime=new SqlReportRuntime(db,rbac,records);
@@ -368,11 +367,11 @@ export function createSystemServer(db:SqlPersistence) {
   }));
   app.put('/api/metadata/permissions/sets',route(async(req,res)=>{
     const actor=req.actor!;
-    res.json(await permissionSetAdministration.save(actor.tenant_id,actor.user_id,req.body));
+    res.json(await rbacAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.put('/api/metadata/permissions',route(async(req,res)=>{
     const actor=req.actor!;
-    res.json(await roleAdministration.save(actor.tenant_id,actor.user_id,req.body));
+    res.json(await rbacAdministration.save(actor.tenant_id,actor.user_id,req.body));
   }));
   app.get('/api/objects',route(async(req,res)=>{
     const actor=req.actor!;
@@ -716,16 +715,17 @@ export function createSystemServer(db:SqlPersistence) {
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'App:'+req.params.appId,'read');
     const resolution=await apps.resolveAlias(actor.tenant_id,req.params.appId,req.params.slug);
-    if(resolution.kind==='Record List')
+    if(resolution.kind==='Record List'){
+      await rbac.require(actor.tenant_id,actor.user_id,'Tab:'+resolution.targetApiName,'read');
       await rbac.require(actor.tenant_id,actor.user_id,resolution.targetApiName,'read');
+    }
     else if(resolution.kind==='App Page')
       await rbac.require(actor.tenant_id,actor.user_id,'PageDefinition','read');
     res.json({path:resolution.path});
   }));
   app.get('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
-    await rbac.require(actor.tenant_id,actor.user_id,'AppExchange','read');
-    res.json({apps:await apps.listMetadata(actor.tenant_id)});
+    res.json({apps:await permittedApps(rbac,actor.tenant_id,actor.user_id,await apps.listMetadata(actor.tenant_id))});
   }));
   app.post('/api/metadata/apps',route(async(req,res)=>{
     const actor=req.actor!;
@@ -742,29 +742,33 @@ export function createSystemServer(db:SqlPersistence) {
   }));
 
   // The User object is a secure view of md_users, never a second md_records copy.
-  const userRecord=(row:{id:string;email:string;display_name:string;enabled:boolean})=>({
-    Id:row.id,Name:row.display_name||row.email,Email:row.email,Username:row.email,
-    IsActive:row.enabled
-  });
+  const userRecord=async(row:{id:string;email:string;display_name:string;enabled:boolean},actor:Actor)=>{
+    const fields={Name:row.display_name||row.email,Email:row.email,Username:row.email,IsActive:row.enabled};
+    const checks=Object.keys(fields).map(field=>({resource:'User.'+field,action:'read'}));
+    const allowed=await rbac.allowedMany(actor.tenant_id,actor.user_id,checks);
+    return {Id:row.id,...Object.fromEntries(Object.entries(fields).filter((_,i)=>allowed[i]))};
+  };
+  const requireUserFields=async(actor:Actor,values:Record<string,unknown>,action:string)=>{
+    for(const field of Object.keys(values))await rbac.require(actor.tenant_id,actor.user_id,'User.'+field,action);
+  };
   const userFields=(input:Record<string,unknown>,creating:boolean)=>{
-    const allowed=new Set(['Name','Email','Username','IsActive','Password','UserRoleId']);
+    const allowed=new Set(['Name','Email','Username','IsActive','Password']);
     for(const key of Object.keys(input))if(!allowed.has(key))throw new Error('Unknown field: '+key);
     const email=input.Email??input.Username;
     if(email!==undefined&&(typeof email!=='string'||!/^\S+@\S+\.\S+$/.test(email)))throw new Error('Invalid user email');
     if(input.Name!==undefined&&typeof input.Name!=='string')throw new Error('Invalid user name');
     if(input.IsActive!==undefined&&typeof input.IsActive!=='boolean')throw new Error('Invalid active flag');
-    if(input.UserRoleId!==undefined&&input.UserRoleId!==null&&typeof input.UserRoleId!=='string')throw new Error('Invalid role');
     if(creating&&(!email||typeof input.Password!=='string'))throw new Error('Invalid user credentials');
     if(!creating&&input.Password!==undefined)throw new Error('Invalid password edit');
     return {email:email as string|undefined,name:input.Name as string|undefined,
       enabled:input.IsActive as boolean|undefined,password:input.Password as string|undefined,
-      role:input.UserRoleId as string|undefined|null};
+      role:undefined};
   };
-  const readUser=async(tenantId:string,id:string)=>{
+  const readUser=async(tenantId:string,userId:string,id:string)=>{
     const result=await db.query<{id:string;email:string;display_name:string;enabled:boolean}>(
       'SELECT id,email,display_name,enabled FROM md_users WHERE tenant_id=$1 AND id=$2',[tenantId,id]);
     if(!result.rows[0])throw new Error('Record not found');
-    return userRecord(result.rows[0]);
+    return userRecord(result.rows[0],{tenant_id:tenantId,user_id:userId});
   };
   app.get('/api/records/User',route(async(req,res)=>{
     const actor=req.actor!;
@@ -777,17 +781,19 @@ export function createSystemServer(db:SqlPersistence) {
         [actor.tenant_id,Math.min(limit,100),offset]),
       db.query<{total:string}>('SELECT count(*)::text AS total FROM md_users WHERE tenant_id=$1',[actor.tenant_id])
     ]);
-    res.json({records:users.rows.map(userRecord),total:Number(count.rows[0]?.total??0)});
+    res.json({records:await Promise.all(users.rows.map(row=>userRecord(row,actor))),total:Number(count.rows[0]?.total??0)});
   }));
   app.get('/api/records/User/:id',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','read');
-    res.json({record:await readUser(actor.tenant_id,req.params.id)});
+    res.json({record:await readUser(actor.tenant_id,actor.user_id,req.params.id)});
   }));
   app.post('/api/records/User',route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','create');
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
+    await rbac.require(actor.tenant_id,actor.user_id,'Security','manage');
+    await requireUserFields(actor,req.body,'create');
     const values=userFields(req.body,true);
     const passwordHash=await auth.hashPassword(values.password!);
     const row=await db.transaction(async client=>{
@@ -799,20 +805,15 @@ export function createSystemServer(db:SqlPersistence) {
       if(profile.rows[0])await client.query(
         'INSERT INTO md_user_profiles(tenant_id,user_id,profile_id) VALUES($1,$2,$3)',
         [actor.tenant_id,result.rows[0].id,profile.rows[0].id]);
-      if(values.role){
-        const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
-        if(!role.rowCount)throw new Error('Invalid role');
-        await client.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',
-          [actor.tenant_id,result.rows[0].id,values.role]);
-      }
       return result.rows[0];
     });
-    res.status(201).json({record:await readUser(actor.tenant_id,row.id)});
+    res.status(201).json({record:await readUser(actor.tenant_id,actor.user_id,row.id)});
   }));
   const editUser=route(async(req,res)=>{
     const actor=req.actor!;
     await rbac.require(actor.tenant_id,actor.user_id,'User','edit');
     if(!req.body||typeof req.body!=='object'||Array.isArray(req.body))throw new Error('Invalid user');
+    await requireUserFields(actor,req.body,'edit');
     const values=userFields(req.body,false);
     if(req.params.id===actor.user_id&&values.enabled===false)throw new Error('Invalid self deactivation');
     await db.transaction(async client=>{
@@ -820,21 +821,12 @@ export function createSystemServer(db:SqlPersistence) {
         'UPDATE md_users SET email=COALESCE($3,email),display_name=COALESCE($4,display_name),enabled=COALESCE($5,enabled) WHERE tenant_id=$1 AND id=$2 RETURNING id',
         [actor.tenant_id,req.params.id,values.email??null,values.name??null,values.enabled??null]);
       if(!updated.rowCount)throw new Error('Record not found');
-      if(values.role!==undefined){
-        if(values.role){
-          const role=await client.query('SELECT id FROM md_roles WHERE tenant_id=$1 AND id=$2',[actor.tenant_id,values.role]);
-          if(!role.rowCount)throw new Error('Invalid role');
-        }
-        await client.query('DELETE FROM md_user_roles WHERE tenant_id=$1 AND user_id=$2',[actor.tenant_id,req.params.id]);
-        if(values.role)await client.query('INSERT INTO md_user_roles(tenant_id,user_id,role_id) VALUES($1,$2,$3)',
-          [actor.tenant_id,req.params.id,values.role]);
-      }
       if(values.enabled===false){
         await client.query('UPDATE md_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
         await client.query('UPDATE md_refresh_sessions SET revoked_at=now() WHERE tenant_id=$1 AND user_id=$2 AND revoked_at IS NULL',[actor.tenant_id,req.params.id]);
       }
     });
-    res.json({record:await readUser(actor.tenant_id,req.params.id)});
+    res.json({record:await readUser(actor.tenant_id,actor.user_id,req.params.id)});
   });
   app.put('/api/records/User/:id',editUser);
   app.patch('/api/records/User/:id',editUser);
@@ -929,10 +921,13 @@ export function createSystemServer(db:SqlPersistence) {
   registerTenantInspectionRoutes(app,db,rbac,platformTenants);
   app.use('/api',(_req,res)=>{res.status(404).json({error:'API endpoint not implemented in SQL runtime'});});
   app.use((err:Error,_req:Request,res:Response,_next:NextFunction)=>{
-    if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
+    if(err.message.startsWith('RBAC revision conflict'))res.status(409).json({error:err.message});
+    else if(/^(Cannot alter own|Cannot escalate own|Standard profile|Reserved permission)/.test(err.message))res.status(403).json({error:err.message});
+    else if(err.message==='Permission denied') res.status(403).json({error:'Permission denied'});
     else if(err.message==='Field already exists'||err.message==='Object already exists'||err.message==='Page layout revision conflict'||err.message==='Page revision conflict'||err.message==='Record has changed since it was loaded')res.status(409).json({error:err.message});
+    else if(['23503','23505'].includes((err as Error&{code?:string}).code??''))res.status(409).json({error:'Policy dependency or duplicate identity conflict'});
     else if(err.message==='Record not found'||err.message.endsWith('not found')) res.status(404).json({error:err.message});
-    else if(err.message.startsWith('Invalid ')||err.message.startsWith('Unknown field')) res.status(400).json({error:err.message});
+    else if(err.message.startsWith('Invalid ')||/^(Unknown |Duplicate |Cyclic |Stale |External |Queue |Active sharing|Restriction |Portal |Too many)/.test(err.message)) res.status(400).json({error:err.message});
     else {console.error('SQL system request failed',err);res.status(503).json({error:'SQL service unavailable'});}
   });
   return app;

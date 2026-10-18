@@ -1,3 +1,4 @@
+import type {PermissionPolicyExtras,ProfilePolicyExtras} from './rbacPolicyMetadata';
 import {
   BarChart3,
   Building2,
@@ -10,7 +11,6 @@ import {
   Workflow,
   type LucideIcon
 } from 'lucide-react';
-
 export type WorkspaceId =
   | 'home'
   | 'object-manager'
@@ -804,7 +804,7 @@ export type PageActivationAssignmentMetadata = {
   formFactors: Array<'Desktop' | 'Phone'>;
 };
 
-export type PermissionSetMetadata = {
+export type PermissionSetMetadata = PermissionPolicyExtras & {
   id: string;
   label: string;
   apiName: string;
@@ -835,7 +835,7 @@ export type PermissionSetGroupMetadata = {
   mutedFieldPermissions: Record<string, { read?: boolean; edit?: boolean; create?: boolean; delete?: boolean }>;
 };
 
-export type ProfileMetadata = {
+export type ProfileMetadata = ProfilePolicyExtras & {
   id: string;
   label: string;
   apiName: string;
@@ -933,7 +933,7 @@ export type SharingSettingMetadata = {
   portalAccountField?:string;
 };
 export type AccessControlMetadata = {
-  tenantId?:string;
+  tenantId?:string;revision?:number;
   profiles: ProfileMetadata[];
   permissionSets: PermissionSetMetadata[];
   permissionSetGroups: PermissionSetGroupMetadata[];

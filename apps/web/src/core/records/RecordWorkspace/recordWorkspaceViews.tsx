@@ -733,7 +733,7 @@ function RecordWorkspace({
       const path = `/records/${encodeURIComponent(object.apiName)}${editingId ? `/${encodeURIComponent(editingId)}` : ''}`;
       const writableValues = Object.fromEntries(Object.entries(formValues).filter(([apiName]) =>
         apiName !== 'OwnerId' && (object.apiName === 'User'
-          ? ['Name', 'Email', 'Username', 'IsActive', 'UserRoleId', 'Password'].includes(apiName)
+          ? ['Name', 'Email', 'Username', 'IsActive', 'Password'].includes(apiName)
             && (fieldAccess[`${object.apiName}.${apiName}`]?.edit !== false)
           : (apiName === 'RecordTypeId' || fieldAccess[`${object.apiName}.${apiName}`]?.edit))
       ));
@@ -746,7 +746,7 @@ function RecordWorkspace({
           writableValues.Password = formValues.Password;
         }
         // The identity API accepts only these explicit fields. No arbitrary metadata fields or password edits.
-        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'UserRoleId', 'Password']);
+        const allowed = new Set(['Name', 'Email', 'Username', 'IsActive', 'Password']);
         Object.keys(writableValues).forEach((name) => { if (!allowed.has(name)) delete writableValues[name]; });
       }
       if (!navigator.onLine) {
