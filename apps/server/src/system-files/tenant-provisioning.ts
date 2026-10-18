@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {SqlPersistence} from './sql-persistence.js';
 import {AuthenticationService} from './authentication.js';
-import {seedFreshCoreObjects} from './fresh-core-objects.js';
+import {seedFreshCoreObjects} from '../app-seeders/fresh-core-objects.js';
 
 export type TenantRequest={
   slug:string;
