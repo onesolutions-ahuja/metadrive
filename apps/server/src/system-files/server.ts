@@ -17,6 +17,7 @@ import {registerRecordOwnershipRoutes} from './record-ownership-routes.js';
 import {registerReportRuntimeRoutes} from './report-runtime-routes.js';
 import {registerDashboardRuntimeRoutes} from './dashboard-runtime-routes.js';
 import {registerFormulaValidationRoutes} from './formula-validation-routes.js';
+import {registerOAuthStartRoutes,registerOAuthPublicCallback} from './named-credential-oauth-routes.js';
 import {registerOfflinePublicationRoutes} from './offline-publication-routes.js';
 import {registerComponentPublishingRoutes} from './component-publishing-routes.js';
 import {registerFlowDebugRoutes} from './flow-debug-routes.js';
@@ -177,6 +178,7 @@ export function createSystemServer(db:SqlPersistence) {
     }
   }));
   registerPasswordResetRoutes(app,db,(req,slug)=>resolveTenant(db,req,slug));
+  registerOAuthPublicCallback(app,db);
   app.use('/api',authorize);
   app.get('/api/auth/me',route(async(req,res)=>{
     res.json(await sessionMetadata(db,req.actor!.tenant_id,req.actor!.user_id));
@@ -318,6 +320,7 @@ export function createSystemServer(db:SqlPersistence) {
     const credential=await namedCredentials.setEnabled(actor.tenant_id,actor.user_id,req.params.id,req.body?.enabled);
     res.json({credential});
   }));
+  registerOAuthStartRoutes(app,db,rbac);
   app.post('/api/named-credentials/:id/test',route(async(req,res)=>{
     const a=req.actor!;
     res.json(await namedCredentials.test(a.tenant_id,a.user_id,req.params.id));
