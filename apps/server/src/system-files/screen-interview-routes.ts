@@ -59,7 +59,7 @@ export function registerScreenInterviewRoutes(app:Express,db:SqlPersistence,rbac
    ||Object.keys(values).length>100||JSON.stringify(values).length>16384)
    throw Error('Invalid Screen inputs');
   for(const [key,value] of Object.entries(values)){
-   if(!safe.test(key)||!['string','number','boolean'].includes(typeof value)&&value!==null
+   if(!safe.test(key)||['__proto__','prototype','constructor'].includes(key)||!['string','number','boolean'].includes(typeof value)&&value!==null
     ||typeof value==='string'&&value.length>4096
     ||typeof value==='number'&&!Number.isFinite(value))
     throw Error('Invalid Screen input');
